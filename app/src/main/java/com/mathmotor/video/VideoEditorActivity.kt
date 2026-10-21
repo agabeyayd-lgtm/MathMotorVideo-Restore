@@ -104,6 +104,7 @@ class VideoEditorActivity : Activity() {
     private val previewTicker = object : Runnable {
         override fun run() {
             refreshPreviewOverlay()
+            updatePlayheadUi(currentTimelinePositionMs())
             syncAudioPreviews()
             previewHandler.postDelayed(this, 100L)
         }
@@ -500,7 +501,9 @@ class VideoEditorActivity : Activity() {
         }
         textPanel.addView(textInput, matchWrap())
         textInput.addTextChangedListener(object : android.text.TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {
+                recordUndoState()
+            }
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                 refreshTimelineTracks()
                 refreshPreviewOverlay()
@@ -574,7 +577,7 @@ class VideoEditorActivity : Activity() {
                 soundStartMs = (progress * 1000L).coerceAtMost((total - 1L).coerceAtLeast(0L))
                 updateSoundControls()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStartTrackingTouch(seekBar: SeekBar?) { recordUndoState() }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         })
         audioPanel.addView(soundStartSeek, matchWrap())
@@ -1749,6 +1752,7 @@ class VideoEditorActivity : Activity() {
             status.text = "Önce kaldırılacak klibi seç."
             return
         }
+        recordUndoState()
         clips.removeAt(selectedClipIndex)
         selectedClipIndex = if (clips.isEmpty()) -1 else selectedClipIndex.coerceAtMost(clips.lastIndex)
         previewingSequence = false
@@ -1775,6 +1779,7 @@ class VideoEditorActivity : Activity() {
             status.text = if (delta < 0) "Bu klip zaten ilk sırada." else "Bu klip zaten son sırada."
             return
         }
+        recordUndoState()
         val clip = clips.removeAt(selectedClipIndex)
         clips.add(target, clip)
         selectedClipIndex = target
@@ -1911,9 +1916,14 @@ class VideoEditorActivity : Activity() {
             )
             .build()
 
-        val videoEffects = if (overlayText.isNullOrBlank()) {
-            emptyList()
-        } else {
+        val videoEffects = mutableListOf<androidx.media3.common.Effect>()
+        val (outputWidth, outputHeight) = outputDimensions()
+        videoEffects.add(Presentation.createForWidthAndHeight(
+            outputWidth,
+            outputHeight,
+            Presentation.LAYOUT_SCALE_TO_FIT
+        ))
+        if (!overlayText.isNullOrBlank()) {
             val styled = SpannableString(overlayText).apply {
                 setSpan(ForegroundColorSpan(Color.WHITE), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                 setSpan(BackgroundColorSpan(Color.argb(190, 0, 0, 0)), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
@@ -1928,7 +1938,7 @@ class VideoEditorActivity : Activity() {
                 .setBackgroundFrameAnchor(0f, y)
                 .setOverlayFrameAnchor(0f, 0f)
                 .build()
-            listOf(OverlayEffect(listOf(TextOverlay.createStaticTextOverlay(styled, settings))))
+            videoEffects.add(OverlayEffect(listOf(TextOverlay.createStaticTextOverlay(styled, settings))))
         }
         val audio = if (keepSourceAudio.isChecked) audioEffects(sourceAudioVolume) else emptyList()
         return EditedMediaItem.Builder(mediaItem)
