@@ -73,13 +73,57 @@ class MainActivity : Activity() {
         super.onCreate(kayıtInstanceState)
         window.statusBarColor = Color.rgb(15, 31, 45)
         window.navigationBarColor = Color.rgb(15, 31, 45)
-        if (Build.VERSION.SDK_INT in 26..28 &&
-            checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), 1001)
-        }
         buildUi()
         latestUri = VideoRecordStore.list(this).firstOrNull()?.uri
         registerUpdateReceiver()
+        requestRequiredPermissions()
+    }
+
+    private fun requestRequiredPermissions() {
+        val permissions = mutableListOf<String>()
+        if (Build.VERSION.SDK_INT >= 33) {
+            if (checkSelfPermission(Manifest.permission.READ_MEDIA_VIDEO) != PackageManager.PERMISSION_GRANTED) {
+                permissions.add(Manifest.permission.READ_MEDIA_VIDEO)
+            }
+        } else if (checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+            permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+        if (Build.VERSION.SDK_INT in 26..28 &&
+            checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+            permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        }
+        if (permissions.isEmpty()) {
+            importExistingVideos()
+        } else {
+            requestPermissions(permissions.distinct().toTypedArray(), 1001)
+        }
+    }
+
+    @Deprecated("Use Activity Result API")
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != 1001) return
+        val readPermission = if (Build.VERSION.SDK_INT >= 33) {
+            Manifest.permission.READ_MEDIA_VIDEO
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+        if (checkSelfPermission(readPermission) == PackageManager.PERMISSION_GRANTED) {
+            importExistingVideos()
+        }
+    }
+
+    private fun importExistingVideos() {
+        Thread {
+            val imported = runCatching { VideoRecordStore.importPublicMovies(this) }.getOrDefault(0)
+            val latest = VideoRecordStore.list(this).firstOrNull()?.uri
+            runOnUiThread {
+                if (!latest.isNullOrBlank()) latestUri = latest
+                if (imported > 0) {
+                    status.text = "ÖNCEKİ VİDEOLAR KURTARILDI\\n$imported video Movies/MathMotorVideo klasöründen geçmişe eklendi."
+                }
+            }
+        }.start()
     }
 
     private fun buildUi() {
