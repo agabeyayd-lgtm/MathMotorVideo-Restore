@@ -399,17 +399,17 @@ class VideoEditorActivity : Activity() {
             minimumHeight = dp(34)
         }
         textTrackContent = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
+            orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_VERTICAL
             minimumHeight = dp(34)
         }
         musicTrackContent = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
+            orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_VERTICAL
             minimumHeight = dp(34)
         }
         soundTrackContent = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
+            orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_VERTICAL
             minimumHeight = dp(34)
         }
@@ -1294,6 +1294,8 @@ class VideoEditorActivity : Activity() {
         textEndSeek.isEnabled = total > 0L
         textStartLabel.text = "Yazı başlangıcı: " + formatMs(textStartMs)
         textEndLabel.text = "Yazı bitişi: " + formatMs(textEndMs)
+        syncSelectedTextLayerFromControls()
+        refreshTextLayerList()
         refreshTimelineTracks()
         refreshPreviewOverlay()
     }
@@ -1742,7 +1744,7 @@ class VideoEditorActivity : Activity() {
             clipToPadding = false
         }
         laneScroll.addView(content, ViewGroup.LayoutParams(
-            dp(timelineContentWidthDp()), ViewGroup.LayoutParams.MATCH_PARENT
+            dp(timelineContentWidthDp()), ViewGroup.LayoutParams.WRAP_CONTENT
         ))
         laneScroll.setOnScrollChangeListener { view: View, scrollX: Int, _: Int, _: Int, _: Int ->
             if (!syncingTimelineScroll) {
@@ -1754,8 +1756,9 @@ class VideoEditorActivity : Activity() {
             }
         }
         timelineScrollViews.add(laneScroll)
-        row.addView(laneScroll, LinearLayout.LayoutParams(0, dp(38), 1f))
-        host.addView(row, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(38)).apply {
+        row.addView(laneScroll, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        host.addView(row, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            minHeight = dp(38)
             bottomMargin = dp(2)
         })
     }
@@ -1834,7 +1837,7 @@ class VideoEditorActivity : Activity() {
             dp(widthDp), ViewGroup.LayoutParams.MATCH_PARENT
         )
         params.width = dp(widthDp)
-        params.height = ViewGroup.LayoutParams.MATCH_PARENT
+        params.height = ViewGroup.LayoutParams.WRAP_CONTENT
         content.layoutParams = params
     }
 
@@ -1864,26 +1867,21 @@ class VideoEditorActivity : Activity() {
                 loadTrimControls()
             }
         }
-        val text = if (::textInput.isInitialized) textInput.text?.toString()?.trim().orEmpty() else ""
-        if (text.isBlank() || selectedClip() == null) {
+        if (selectedClip() == null) {
             previewTextOverlay.visibility = View.GONE
             return
         }
-
         val timeMs = currentTimelinePositionMs()
-        val inRange = timeMs >= textStartMs && timeMs < textEndMs
-        if (!inRange) {
+        val activeLayers = textLayers.filter { it.text.isNotBlank() && timeMs >= it.startMs && timeMs < it.endMs }
+        if (activeLayers.isEmpty()) {
             previewTextOverlay.visibility = View.GONE
             return
         }
-
-        previewTextOverlay.text = text
+        previewTextOverlay.text = activeLayers.joinToString("\n") { it.text }
+        val selectedPosition = activeLayers.firstOrNull { it.id == selectedTextLayerId }?.position ?: activeLayers.first().position
         val layoutParams = (previewTextOverlay.layoutParams as? FrameLayout.LayoutParams)
-            ?: FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-        layoutParams.gravity = when (textPosition) {
+            ?: FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        layoutParams.gravity = when (selectedPosition) {
             TextPosition.TOP -> Gravity.TOP or Gravity.CENTER_HORIZONTAL
             TextPosition.CENTER -> Gravity.CENTER
             TextPosition.BOTTOM -> Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
