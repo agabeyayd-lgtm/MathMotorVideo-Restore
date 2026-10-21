@@ -1092,6 +1092,127 @@ class VideoEditorActivity : Activity() {
         content.layoutParams = params
     }
 
+    private fun outputOffsetForClip(index: Int): Long {
+        if (index <= 0 || index !in clips.indices) return 0L
+        return clips.take(index).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
+    }
+
+    private fun currentTimelinePositionMs(): Long {
+        val playbackPosition = player?.currentPosition?.coerceAtLeast(0L) ?: 0L
+        return previewTimelineOffsetMs + playbackPosition
+    }
+
+    private fun refreshPreviewOverlay() {
+        if (!::previewTextOverlay.isInitialized) return
+        val text = if (::textInput.isInitialized) textInput.text?.toString()?.trim().orEmpty() else ""
+        if (text.isBlank() || selectedClip() == null) {
+            previewTextOverlay.visibility = View.GONE
+            return
+        }
+
+        val timeMs = currentTimelinePositionMs()
+        val inRange = timeMs >= textStartMs && timeMs < textEndMs
+        if (!inRange) {
+            previewTextOverlay.visibility = View.GONE
+            return
+        }
+
+        previewTextOverlay.text = text
+        val layoutParams = (previewTextOverlay.layoutParams as? FrameLayout.LayoutParams)
+            ?: FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        layoutParams.gravity = when (textPosition) {
+            TextPosition.TOP -> Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            TextPosition.CENTER -> Gravity.CENTER
+            TextPosition.BOTTOM -> Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+        }
+        layoutParams.leftMargin = dp(12)
+        layoutParams.rightMargin = dp(12)
+        layoutParams.topMargin = dp(14)
+        layoutParams.bottomMargin = dp(14)
+        previewTextOverlay.layoutParams = layoutParams
+        previewTextOverlay.visibility = View.VISIBLE
+    }
+
+    private fun syncAudioPreviews() {
+        val main = player
+        if (main == null || clips.isEmpty() || selectedClipIndex !in clips.indices || !main.isPlaying) {
+            musicPreviewPlayer?.pause()
+            soundPreviewPlayer?.pause()
+            return
+        }
+
+        val timelineMs = currentTimelinePositionMs()
+
+        val music = musicPreviewPlayer
+        if (previewMusicSource != musicUri) {
+            previewMusicSource = musicUri
+            music?.playWhenReady = false
+            music?.stop()
+            music?.clearMediaItems()
+            if (musicUri != null) {
+                music?.repeatMode = Player.REPEAT_MODE_ONE
+                music?.setMediaItem(MediaItem.fromUri(musicUri!!))
+                music?.volume = musicVolume.coerceIn(0, 100) / 100f
+                music?.prepare()
+            }
+        }
+        if (musicUri == null) {
+            music?.pause()
+        } else if (music != null) {
+            music.volume = musicVolume.coerceIn(0, 100) / 100f
+            if (music.playbackState == Player.STATE_READY && music.duration > 0L) {
+                val target = timelineMs % music.duration
+                if (!music.isPlaying || kotlin.math.abs(music.currentPosition - target) > 900L) {
+                    music.seekTo(target)
+                }
+                music.playWhenReady = true
+            } else if (music.playbackState == Player.STATE_BUFFERING) {
+                music.playWhenReady = true
+            }
+        }
+
+        val sound = soundPreviewPlayer
+        if (previewSoundSource != soundUri) {
+            previewSoundSource = soundUri
+            sound?.playWhenReady = false
+            sound?.stop()
+            sound?.clearMediaItems()
+            if (soundUri != null) {
+                sound?.repeatMode = Player.REPEAT_MODE_OFF
+                sound?.setMediaItem(MediaItem.fromUri(soundUri!!))
+                sound?.volume = soundVolume.coerceIn(0, 100) / 100f
+                sound?.prepare()
+            }
+        }
+        if (soundUri == null || sound == null) {
+            sound?.pause()
+            return
+        }
+        sound.volume = soundVolume.coerceIn(0, 100) / 100f
+        val expectedSoundDuration = soundDurationMs.coerceAtLeast(0L)
+        val soundEnd = soundStartMs + expectedSoundDuration
+        if (timelineMs < soundStartMs) {
+            sound.playWhenReady = false
+            if (sound.currentPosition > 0L) sound.seekTo(0L)
+        } else if (timelineMs < soundEnd && sound.playbackState == Player.STATE_READY) {
+            val target = (timelineMs - soundStartMs).coerceAtLeast(0L)
+            if (sound.duration <= 0L || target < sound.duration) {
+                if (!sound.isPlaying || kotlin.math.abs(sound.currentPosition - target) > 700L) {
+                    sound.seekTo(target)
+                }
+                sound.playWhenReady = true
+            } else {
+                sound.playWhenReady = false
+            }
+        } else {
+            sound.playWhenReady = false
+            if (timelineMs < soundStartMs && sound.currentPosition > 0L) sound.seekTo(0L)
+        }
+    }
+
     private fun refreshTimelineTracks() {
         if (!::timelineRulerContent.isInitialized ||
             !::textTrackContent.isInitialized ||
@@ -1589,15 +1710,29 @@ class VideoEditorActivity : Activity() {
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
+    override fun onStart() {
+        super.onStart()
+        previewHandler.removeCallbacks(previewTicker)
+        previewHandler.post(previewTicker)
+    }
+
     override fun onStop() {
+        previewHandler.removeCallbacks(previewTicker)
         player?.pause()
+        musicPreviewPlayer?.pause()
+        soundPreviewPlayer?.pause()
         super.onStop()
     }
 
     override fun onDestroy() {
+        previewHandler.removeCallbacks(previewTicker)
         playerView.player = null
         player?.release()
+        musicPreviewPlayer?.release()
+        soundPreviewPlayer?.release()
         player = null
+        musicPreviewPlayer = null
+        soundPreviewPlayer = null
         super.onDestroy()
     }
 }
