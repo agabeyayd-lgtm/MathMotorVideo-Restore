@@ -133,6 +133,12 @@ class VideoPlayerActivity : Activity() {
                                     videoSize.width + "×" + videoSize.height
                             }
                         }
+                        override fun onRenderedFirstFrame() {
+                            val size = exo.videoSize
+                            info.text = if (size.width > 0 && size.height > 0) {
+                                "Görüntü oynatılıyor: " + size.width + "×" + size.height
+                            } else "Görüntünün ilk karesi gösterildi."
+                        }
                         override fun onPlayerError(error: PlaybackException) {
                             info.text = "Video oynatılamadı: " + error.errorCodeName + "\nBaşka bir video dosyası dene."
                         }
