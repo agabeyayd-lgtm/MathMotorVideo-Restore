@@ -977,26 +977,21 @@ class VideoEditorActivity : Activity() {
         } catch (_: Exception) { }
         status.text = "Video bilgileri okunuyor…"
         Thread {
-            val duration = runCatching {
-                val retriever = MediaMetadataRetriever()
-                try {
-                    retriever.setDataSource(this, uri)
-                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-                } finally {
-                    retriever.release()
-                }
-            }.getOrDefault(0L)
+            val metadata = runCatching { readVideoMetadata(uri) }.getOrDefault(0L to 30f)
+            val duration = metadata.first
+            val frameRate = metadata.second
             val title = queryDisplayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Video klibi"
             runOnUiThread {
                 if (duration <= 0L) {
                     status.text = "Bu videonun süresi okunamadı. Başka bir video dosyası seç."
                     return@runOnUiThread
                 }
+                recordUndoState()
                 if (replaceExisting) {
                     clips.clear()
                     selectedClipIndex = -1
                 }
-                clips.add(Clip(uri, title, duration, 0L, duration))
+                clips.add(Clip(uri, title, duration, 0L, duration, frameRate))
                 selectedClipIndex = clips.lastIndex
                 previewingSequence = false
                 previewTimelineOffsetMs = outputOffsetForClip(selectedClipIndex)
@@ -1050,11 +1045,12 @@ class VideoEditorActivity : Activity() {
                 put("durationMs", clip.durationMs)
                 put("startMs", clip.startMs)
                 put("endMs", clip.endMs)
+                put("frameRate", clip.frameRate.toDouble())
             })
         }
         return JSONObject().apply {
             put("format", "MathMotorVideoProject")
-            put("version", 1)
+            put("version", 2)
             put("clips", clipArray)
             put("selectedClipIndex", selectedClipIndex)
             put("musicUri", musicUri?.toString() ?: JSONObject.NULL)
@@ -1073,12 +1069,14 @@ class VideoEditorActivity : Activity() {
             put("soundVolume", soundVolume)
             put("keepSourceAudio", keepSourceAudio.isChecked)
             put("exportName", exportNameInput.text?.toString().orEmpty())
+            put("outputAspectIndex", outputAspectIndex)
+            put("outputResolutionIndex", outputResolutionIndex)
         }
     }
 
-    private fun applyProjectJson(json: JSONObject) {
+    private fun applyProjectJson(json: JSONObject, allowEmptyClips: Boolean = false) {
         require(json.optString("format") == "MathMotorVideoProject") { "Bu dosya MathMotorVideo proje dosyası değil." }
-        require(json.optInt("version", 0) == 1) { "Bu proje sürümü desteklenmiyor." }
+        require(json.optInt("version", 0) in 1..2) { "Bu proje sürümü desteklenmiyor." }
         val loadedClips = mutableListOf<Clip>()
         val clipArray = json.optJSONArray("clips") ?: JSONArray()
         for (i in 0 until clipArray.length()) {
@@ -1091,13 +1089,14 @@ class VideoEditorActivity : Activity() {
             val start = item.optLong("startMs", 0L).coerceIn(0L, duration)
             val end = item.optLong("endMs", duration).coerceIn(start, duration)
             require(duration > 0L && end > start) { "Projede geçersiz klip aralığı var." }
-            loadedClips.add(Clip(uri, item.optString("title", "Video klibi"), duration, start, end))
+            val frameRate = item.optDouble("frameRate", 30.0).toFloat().takeIf { it in 1f..120f } ?: 30f
+            loadedClips.add(Clip(uri, item.optString("title", "Video klibi"), duration, start, end, frameRate))
         }
-        require(loadedClips.isNotEmpty()) { "Projede video klibi bulunamadı." }
+        require(loadedClips.isNotEmpty() || allowEmptyClips) { "Projede video klibi bulunamadı." }
 
         clips.clear()
         clips.addAll(loadedClips)
-        selectedClipIndex = json.optInt("selectedClipIndex", 0).coerceIn(0, clips.lastIndex)
+        selectedClipIndex = if (clips.isEmpty()) -1 else json.optInt("selectedClipIndex", 0).coerceIn(0, clips.lastIndex)
         musicUri = json.optString("musicUri").takeIf { it.isNotBlank() && it != "null" }?.let(Uri::parse)
         musicTitle = json.optString("musicTitle").takeIf { it.isNotBlank() && it != "null" }
         soundUri = json.optString("soundUri").takeIf { it.isNotBlank() && it != "null" }?.let(Uri::parse)
@@ -1111,6 +1110,10 @@ class VideoEditorActivity : Activity() {
         sourceAudioVolume = json.optInt("sourceAudioVolume", 100).coerceIn(0, 100)
         musicVolume = json.optInt("musicVolume", 45).coerceIn(0, 100)
         soundVolume = json.optInt("soundVolume", 100).coerceIn(0, 100)
+        outputAspectIndex = json.optInt("outputAspectIndex", 0).coerceIn(0, aspectOptions.lastIndex)
+        outputResolutionIndex = json.optInt("outputResolutionIndex", 1).coerceIn(0, resolutionOptions.lastIndex)
+        if (::aspectSpinner.isInitialized) aspectSpinner.setSelection(outputAspectIndex, false)
+        if (::resolutionSpinner.isInitialized) resolutionSpinner.setSelection(outputResolutionIndex, false)
 
         textInput.setText(json.optString("text", ""))
         textPositionGroup.check(when (textPosition) {
@@ -1138,10 +1141,12 @@ class VideoEditorActivity : Activity() {
             player?.volume = if (keepSourceAudio.isChecked) sourceAudioVolume / 100f else 0f
             player?.prepare()
             player?.playWhenReady = false
-        }
+        } ?: player?.clearMediaItems()
         refreshTimelineTracks()
         refreshPreviewOverlay()
-        status.text = "PROJE AÇILDI. Klipler, kesmeler, yazı ve ses ayarları geri yüklendi."
+        updatePlayheadUi(0L)
+        updateUndoRedoButtons()
+        status.text = if (clips.isEmpty()) "Boş proje geri yüklendi." else "PROJE AÇILDI. Klipler, kesmeler, yazı ve ses ayarları geri yüklendi."
     }
 
     private fun chooseVideo(append: Boolean) {
@@ -1748,31 +1753,25 @@ class VideoEditorActivity : Activity() {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
                 val clip = selectedClip() ?: return
-                val maxStart = (clip.durationMs - 250L).coerceAtLeast(0L)
-                clip.startMs = (progress * 1000L).coerceAtMost(maxStart)
-                if (clip.endMs - clip.startMs < 500L) {
-                    clip.endMs = (clip.startMs + 1000L).coerceAtMost(clip.durationMs)
-                    endSeek.progress = ceil(clip.endMs / 1000.0).toInt()
-                }
+                val minGap = (1000f / clip.frameRate.coerceIn(1f, 120f)).roundToLong().coerceAtLeast(1L)
+                clip.startMs = msForFrame(clip, progress).coerceAtMost((clip.endMs - minGap).coerceAtLeast(0L))
                 updateTrimLabels()
                 refreshClipList()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStartTrackingTouch(seekBar: SeekBar?) { recordUndoState() }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         })
         endSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
                 val clip = selectedClip() ?: return
-                clip.endMs = (progress * 1000L).coerceAtMost(clip.durationMs)
-                if (clip.endMs - clip.startMs < 500L) {
-                    clip.startMs = (clip.endMs - 1000L).coerceAtLeast(0L)
-                    startSeek.progress = (clip.startMs / 1000L).toInt()
-                }
+                val minGap = (1000f / clip.frameRate.coerceIn(1f, 120f)).roundToLong().coerceAtLeast(1L)
+                clip.endMs = msForFrame(clip, progress).coerceAtLeast((clip.startMs + minGap).coerceAtMost(clip.durationMs))
+                    .coerceAtMost(clip.durationMs)
                 updateTrimLabels()
                 refreshClipList()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStartTrackingTouch(seekBar: SeekBar?) { recordUndoState() }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         })
     }
@@ -1780,7 +1779,7 @@ class VideoEditorActivity : Activity() {
     private fun loadTrimControls() {
         val clip = selectedClip()
         if (clip == null) {
-            selectedClipLabel.text = "Önce bir video seç."
+            selectedClipLabel.text = "Önce + Video ile klip ekle."
             startSeek.max = 1
             endSeek.max = 1
             startSeek.progress = 0
@@ -1792,21 +1791,22 @@ class VideoEditorActivity : Activity() {
         }
         startSeek.isEnabled = true
         endSeek.isEnabled = true
-        val durationSeconds = ceil(clip.durationMs / 1000.0).toInt().coerceAtLeast(1)
-        startSeek.max = durationSeconds
-        endSeek.max = durationSeconds
-        startSeek.progress = (clip.startMs / 1000L).toInt()
-        endSeek.progress = ceil(clip.endMs / 1000.0).toInt().coerceAtMost(durationSeconds)
-        selectedClipLabel.text = "Seçili klip: ${clip.title} • ${formatMs(clip.durationMs)}"
+        val frameCount = framesFor(clip)
+        startSeek.max = frameCount
+        endSeek.max = frameCount
+        startSeek.progress = frameForMs(clip, clip.startMs)
+        endSeek.progress = frameForMs(clip, clip.endMs).coerceAtMost(frameCount)
+        selectedClipLabel.text = "Seçili klip: ${clip.title} • ${formatMs(clip.durationMs)} • ${clip.frameRate.toInt()} FPS"
         updateTrimLabels()
     }
 
     private fun updateTrimLabels() {
         val clip = selectedClip()
-        startLabel.text = "Başlangıç: ${formatMs(clip?.startMs ?: 0L)}"
-        endLabel.text = "Bitiş: ${formatMs(clip?.endMs ?: 0L)}"
+        startLabel.text = "Başlangıç: ${formatPreciseMs(clip?.startMs ?: 0L)}"
+        endLabel.text = "Bitiş: ${formatPreciseMs(clip?.endMs ?: 0L)}"
         updateSoundControls()
         updateTextControls()
+        updatePlayheadUi(currentTimelinePositionMs())
     }
 
     private fun totalOutputDurationMs(): Long =
@@ -2055,6 +2055,12 @@ class VideoEditorActivity : Activity() {
     private fun formatMs(ms: Long): String {
         val total = (ms.coerceAtLeast(0L) / 1000L).toInt()
         return String.format(Locale.US, "%02d:%02d", total / 60, total % 60)
+    }
+
+    private fun formatPreciseMs(ms: Long): String {
+        val value = ms.coerceAtLeast(0L)
+        val totalSeconds = value / 1000L
+        return String.format(Locale.US, "%02d:%02d.%03d", totalSeconds / 60L, totalSeconds % 60L, value % 1000L)
     }
 
     private fun label(value: String, size: Float, color: Int, bold: Boolean): TextView =
