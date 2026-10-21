@@ -155,16 +155,10 @@ class MainActivity : Activity() {
         setContentView(scroll)
     }
 
-    private fun createNewScenario() {
-        scenario = ScenarioEngine.generate(System.currentTimeMillis())
-        updateScenarioText()
-        status.text = "DÜNYA OLUŞTURULDU\nseed=${scenario.seed}\nframes=${scenario.world.frameCount}\nkind=${scenario.kind.label}\nPHYSX=${if (MathEngine.validate(scenario.world).isEmpty()) "GEÇERLİ" else "GEÇERSİZ"}"
-    }
-
     private fun createVideo() {
         if (rendering.get()) { status.text = "Video zaten oluşturuluyor."; return }
         val errors = MathEngine.validate(scenario.world)
-        if (errors.isNotEmpty()) { status.text = "DÜNYA DOĞRULAMADAN GEÇEMEDİ\n${errors.joinToString("\n")}"; return }
+        if (errors.isNotEmpty()) { status.text = "VİDEO KONTROLÜ BAŞARISIZ\n${errors.joinToString("\n")}"; return }
         if (!rendering.compareAndSet(false, true)) return
         status.text = "VİDEO OLUŞTURULUYOR\n${scenario.title}\n540×960 • 30 FPS • 300 kare"
         HumanVideoRenderer.render(this, scenario) { uri, error ->
@@ -175,18 +169,10 @@ class MainActivity : Activity() {
                     VideoRecordStore.add(this, VideoRecord(scenario.title, uri, scenario.seed, System.currentTimeMillis()))
                     status.text = "VİDEO KAYDEDİLDİ\n${scenario.title}\n${uri}\nÖnizlemek için Son Videoyu Aç'a dokun."
                 } else {
-                    status.text = "VİDEO OLUŞTURMA BAŞARISIZ\n${error?.message ?: "Bilinmeyen kodlayıcı hatası"}\nFizik / Kare Testi'ni çalıştır ve cihaz depolamasını kontrol et."
+                    status.text = "VİDEO OLUŞTURMA BAŞARISIZ\n${error?.message ?: "Bilinmeyen kodlayıcı hatası"}\nBaşka bir video dosyası dene ve telefon depolamasını kontrol et."
                 }
             }
         }
-    }
-
-    private fun runPhysicsTest() {
-        status.text = "ÜRETİLEN FİZİK DÜNYASI TEST EDİLİYOR…"
-        Thread {
-            val report = PhysXFrameTest.run()
-            runOnUiThread { status.text = "ÜRETİM DÜNYASI TESTİ\n" + report.toDisplayText() }
-        }.start()
     }
 
     private fun chooseVideo() {
