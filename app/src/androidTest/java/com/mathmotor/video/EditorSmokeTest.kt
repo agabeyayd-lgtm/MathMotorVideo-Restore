@@ -8,6 +8,9 @@ import androidx.test.espresso.action.ViewActions.scrollTo
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.withText
+import androidx.test.rule.GrantPermissionRule
+import android.Manifest
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -17,6 +20,10 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class EditorSmokeTest {
+
+    @get:Rule
+    val videoPermissionRule: GrantPermissionRule =
+        GrantPermissionRule.grant(Manifest.permission.READ_MEDIA_VIDEO)
 
     @Test
     fun mainScreenOpensEditorAndShowsTimelineTracks() {
