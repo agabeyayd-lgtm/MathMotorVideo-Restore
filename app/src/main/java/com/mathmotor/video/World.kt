@@ -76,11 +76,11 @@ object MathEngine {
 }
 
 enum class SceneKind(val label: String) {
-    TEA_TRAY("Tea tray"),
-    BOX_STACK("Box stack"),
-    TOOLBOX("Toolbox"),
-    BROOM_BUCKET("Broom and bucket"),
-    SHOP_CART("Shop cart")
+    TEA_TRAY("Çay tepsisi"),
+    BOX_STACK("Kutu istifi"),
+    TOOLBOX("Alet çantası"),
+    BROOM_BUCKET("Süpürge ve kova"),
+    SHOP_CART("Dükkân arabası")
 }
 
 data class HumanScenario(
