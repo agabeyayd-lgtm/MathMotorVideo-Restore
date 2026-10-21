@@ -449,12 +449,12 @@ class VideoEditorActivity : Activity() {
         exportButton.isEnabled = false
         status.text = "MP4 dışa aktarılıyor…\nKlip birleştirme, yazı ve ek ses uygulanıyor. Uygulamayı kapatma."
         val tempOutput = File(cacheDir, "mm_editor_${System.currentTimeMillis()}.mp4")
-        val videoSequence = EditedMediaItemSequence.withAudioAndVideoFrom(videoItems)
+        val videoSequence = EditedMediaItemSequence.Builder(videoItems).build()
         val audioSequence = musicUri?.let { uri ->
             val audioItem = EditedMediaItem.Builder(MediaItem.fromUri(uri))
                 .setRemoveVideo(true)
                 .build()
-            EditedMediaItemSequence.withAudioFrom(listOf(audioItem)).buildUpon().setIsLooping(true).build()
+            EditedMediaItemSequence.Builder(listOf(audioItem)).setIsLooping(true).build()
         }
         val composition = if (audioSequence != null) {
             Composition.Builder(videoSequence, audioSequence).build()
@@ -492,7 +492,7 @@ class VideoEditorActivity : Activity() {
                         runOnUiThread {
                             exporting = false
                             exportButton.isEnabled = true
-                            status.text = "DIŞA AKTARMA BAŞARISIZ\n${exportException.message ?: exportException.errorCodeName}"
+                            status.text = "DIŞA AKTARMA BAŞARISIZ\n${exportException.message ?: "Kod ${exportException.errorCode}"}"
                         }
                     }
                 })
