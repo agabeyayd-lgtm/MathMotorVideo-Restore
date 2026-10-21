@@ -14,29 +14,61 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Build debug APK
+
+      - name: Restore persistent release signing key
+        id: signing
+        env:
+          MMV_SIGNING_BUNDLE_B64: ${{ secrets.MMV_SIGNING_BUNDLE_B64 }}
         run: |
-          gradle --version
-          gradle --no-daemon assembleDebug testDebugUnitTest
+          if [ -z "$MMV_SIGNING_BUNDLE_B64" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "Signing key is not configured; tests will run, but no APK release will be published."
+            echo "## APK release skipped" >> "$GITHUB_STEP_SUMMARY"
+            echo "Add repository Actions secret `MMV_SIGNING_BUNDLE_B64` using the private signing bundle provided for this project, then run this workflow again." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/mmv-signing"
+          printf '%s' "$MMV_SIGNING_BUNDLE_B64" | base64 --decode > "$RUNNER_TEMP/mmv-signing/bundle.zip"
+          unzip -oq "$RUNNER_TEMP/mmv-signing/bundle.zip" -d "$RUNNER_TEMP/mmv-signing"
+          test -s "$RUNNER_TEMP/mmv-signing/release.p12"
+          test -s "$RUNNER_TEMP/mmv-signing/keystore.properties"
+          echo "MMV_SIGNING_PROPERTIES=$RUNNER_TEMP/mmv-signing/keystore.properties" >> "$GITHUB_ENV"
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+
+      - name: Run unit tests
+        run: gradle --no-daemon testDebugUnitTest
+
+      - name: Build signed release APK
+        if: steps.signing.outputs.configured == 'true'
+        run: gradle --no-daemon assembleRelease
+
       - name: Prepare release APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk MathMotorVideo.apk
+        if: steps.signing.outputs.configured == 'true'
+        run: cp app/build/outputs/apk/release/app-release.apk MathMotorVideo.apk
+
       - name: Read app version
+        if: steps.signing.outputs.configured == 'true'
         id: app_version
         run: echo "code=$(grep -E 'versionCode[[:space:]]*=' app/build.gradle.kts | head -1 | grep -oE '[0-9]+')" >> "$GITHUB_OUTPUT"
-      - name: Publish latest APK
+
+      - name: Publish latest signed APK
+        if: steps.signing.outputs.configured == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: app-v8.1-${{ github.run_number }}
-          name: MathMotor Video APK build ${{ github.run_number }}
+          tag_name: app-v8.3-${{ github.run_number }}
+          name: MathMotor Video signed APK build ${{ github.run_number }}
           body: "versionCode=${{ steps.app_version.outputs.code }}"
           make_latest: true
           files: MathMotorVideo.apk
