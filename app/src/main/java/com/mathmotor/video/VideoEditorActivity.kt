@@ -145,7 +145,7 @@ class VideoEditorActivity : Activity() {
     private val previewTicker = object : Runnable {
         override fun run() {
             refreshPreviewOverlay()
-            updatePlayheadUi(currentTimelinePositionMs())
+            if (!isScrubbingPlayhead) updatePlayheadUi(currentTimelinePositionMs())
             syncAudioPreviews()
             previewHandler.postDelayed(this, 100L)
         }
@@ -178,6 +178,7 @@ class VideoEditorActivity : Activity() {
     private val redoStates = mutableListOf<String>()
     private var restoringHistory = false
     private var updatingPlayhead = false
+    private var isScrubbingPlayhead = false
     private val aspectOptions = listOf("9:16 Dikey", "16:9 Yatay", "1:1 Kare")
     private val resolutionOptions = listOf("480p", "720p", "1080p")
     private var outputAspectIndex = 0
@@ -453,8 +454,11 @@ class VideoEditorActivity : Activity() {
                 val target = (total * progress.toLong() / 10000L).coerceIn(0L, total)
                 playheadLabel.text = "${formatPreciseMs(target)} / ${formatPreciseMs(total)}"
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                isScrubbingPlayhead = true
+            }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                isScrubbingPlayhead = false
                 if (seekBar != null) {
                     val total = totalOutputDurationMs()
                     val target = total * seekBar.progress.toLong() / 10000L
@@ -1489,7 +1493,7 @@ class VideoEditorActivity : Activity() {
                 if (textEndMs <= textStartMs) textEndMs = (textStartMs + 1000L).coerceAtMost(totalOutputDurationMs())
                 updateTextControls()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStartTrackingTouch(seekBar: SeekBar?) { recordUndoState() }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         })
         textEndSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -1500,7 +1504,7 @@ class VideoEditorActivity : Activity() {
                 if (textEndMs <= textStartMs) textStartMs = (textEndMs - 1000L).coerceAtLeast(0L)
                 updateTextControls()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStartTrackingTouch(seekBar: SeekBar?) { recordUndoState() }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         })
     }
@@ -1733,6 +1737,7 @@ class VideoEditorActivity : Activity() {
 
     private fun createProjectJson(): JSONObject {
         syncSelectedTextLayerFromControls()
+        syncSelectedAudioLayerFromControls()
         val clipArray = JSONArray()
         clips.forEach { clip ->
             clipArray.put(JSONObject().apply {
