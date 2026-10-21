@@ -30,18 +30,34 @@ jobs:
         id: signing
         env:
           MMV_SIGNING_BUNDLE_B64: ${{ secrets.MMV_SIGNING_BUNDLE_B64 }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          if [ -z "$MMV_SIGNING_BUNDLE_B64" ]; then
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "Signing key is not configured; tests will run, but no APK release will be published."
-            echo "## APK release skipped" >> "$GITHUB_STEP_SUMMARY"
-            echo "Add repository Actions secret `MMV_SIGNING_BUNDLE_B64` using the private signing bundle provided for this project, then run this workflow again." >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/mmv-signing"
-          printf '%s' "$MMV_SIGNING_BUNDLE_B64" | base64 --decode > "$RUNNER_TEMP/mmv-signing/bundle.zip"
-          unzip -oq "$RUNNER_TEMP/mmv-signing/bundle.zip" -d "$RUNNER_TEMP/mmv-signing"
+          if [ -n "$MMV_SIGNING_BUNDLE_B64" ]; then
+            printf '%s' "$MMV_SIGNING_BUNDLE_B64" | base64 --decode > "$RUNNER_TEMP/mmv-signing/bundle.zip"
+            unzip -oq "$RUNNER_TEMP/mmv-signing/bundle.zip" -d "$RUNNER_TEMP/mmv-signing"
+          elif [ -n "$ANDROID_KEYSTORE_BASE64" ] && [ -n "$ANDROID_KEYSTORE_PASSWORD" ] && [ -n "$ANDROID_KEY_ALIAS" ] && [ -n "$ANDROID_KEY_PASSWORD" ]; then
+            printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/mmv-signing/release.p12"
+            {
+              printf 'storeFile=release.p12\n'
+              printf 'storeType=PKCS12\n'
+              printf 'storePassword=%s\n' "$ANDROID_KEYSTORE_PASSWORD"
+              printf 'keyAlias=%s\n' "$ANDROID_KEY_ALIAS"
+              printf 'keyPassword=%s\n' "$ANDROID_KEY_PASSWORD"
+            } > "$RUNNER_TEMP/mmv-signing/keystore.properties"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "Signing key secret is missing; no installable APK release will be published."
+            {
+              echo "## APK release not published"
+              echo "Add repository Actions secret `MMV_SIGNING_BUNDLE_B64` or use the existing Android keystore secrets to publish."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           test -s "$RUNNER_TEMP/mmv-signing/release.p12"
           test -s "$RUNNER_TEMP/mmv-signing/keystore.properties"
           echo "MMV_SIGNING_PROPERTIES=$RUNNER_TEMP/mmv-signing/keystore.properties" >> "$GITHUB_ENV"
