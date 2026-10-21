@@ -2,6 +2,7 @@ package com.mathmotor.video
 
 import android.app.Activity
 import android.content.ContentValues
+import android.content.ClipData
 import android.content.Intent
 import android.database.Cursor
 import android.graphics.Color
@@ -20,6 +21,7 @@ import android.text.style.BackgroundColorSpan
 import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
 import android.view.Gravity
+import android.view.DragEvent
 import android.widget.FrameLayout
 import android.view.View
 import android.view.ViewGroup
@@ -29,6 +31,9 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
+import android.widget.Spinner
+import android.widget.ArrayAdapter
+import android.widget.AdapterView
 import android.widget.TextView
 import android.widget.Toast
 import org.json.JSONArray
@@ -41,6 +46,7 @@ import androidx.media3.common.audio.ChannelMixingAudioProcessor
 import androidx.media3.common.audio.ChannelMixingMatrix
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.OverlayEffect
+import androidx.media3.effect.Presentation
 import androidx.media3.effect.OverlaySettings
 import androidx.media3.effect.TextOverlay
 import androidx.media3.exoplayer.ExoPlayer
@@ -57,6 +63,8 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.util.Locale
 import kotlin.math.ceil
+import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 
 @OptIn(UnstableApi::class)
 class VideoEditorActivity : Activity() {
@@ -65,7 +73,8 @@ class VideoEditorActivity : Activity() {
         val title: String,
         val durationMs: Long,
         var startMs: Long = 0L,
-        var endMs: Long = durationMs
+        var endMs: Long = durationMs,
+        val frameRate: Float = 30f
     )
 
     private val clips = mutableListOf<Clip>()
@@ -116,6 +125,20 @@ class VideoEditorActivity : Activity() {
     private lateinit var endLabel: TextView
     private lateinit var startSeek: SeekBar
     private lateinit var endSeek: SeekBar
+    private lateinit var playheadSeek: SeekBar
+    private lateinit var playheadLabel: TextView
+    private lateinit var undoButton: Button
+    private lateinit var redoButton: Button
+    private lateinit var aspectSpinner: Spinner
+    private lateinit var resolutionSpinner: Spinner
+    private val undoStates = mutableListOf<String>()
+    private val redoStates = mutableListOf<String>()
+    private var restoringHistory = false
+    private var updatingPlayhead = false
+    private val aspectOptions = listOf("9:16 Dikey", "16:9 Yatay", "1:1 Kare")
+    private val resolutionOptions = listOf("480p", "720p", "1080p")
+    private var outputAspectIndex = 0
+    private var outputResolutionIndex = 1
     private lateinit var musicLabel: TextView
     private lateinit var soundLabel: TextView
     private lateinit var soundStartLabel: TextView
@@ -191,6 +214,34 @@ class VideoEditorActivity : Activity() {
         titleBlock.addView(label("MathMotor Studio", 20f, Color.WHITE, true))
         titleBlock.addView(label("VİDEO DÜZENLE", 10f, muted, true))
         header.addView(titleBlock, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        undoButton = Button(this).apply {
+            text = "↶"
+            contentDescription = "Geri al"
+            isAllCaps = false
+            textSize = 21f
+            setTextColor(Color.WHITE)
+            minWidth = dp(42)
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.rgb(44, 49, 61))
+                cornerRadius = dp(10).toFloat()
+            }
+            setOnClickListener { undoLastChange() }
+        }
+        header.addView(undoButton, LinearLayout.LayoutParams(dp(42), dp(40)).apply { marginEnd = dp(4) })
+        redoButton = Button(this).apply {
+            text = "↷"
+            contentDescription = "Yinele"
+            isAllCaps = false
+            textSize = 21f
+            setTextColor(Color.WHITE)
+            minWidth = dp(42)
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.rgb(44, 49, 61))
+                cornerRadius = dp(10).toFloat()
+            }
+            setOnClickListener { redoLastChange() }
+        }
+        header.addView(redoButton, LinearLayout.LayoutParams(dp(42), dp(40)).apply { marginEnd = dp(4) })
         val back = Button(this).apply {
             text = "Kapat"
             isAllCaps = false
@@ -332,6 +383,38 @@ class VideoEditorActivity : Activity() {
             bottomMargin = dp(4)
         })
 
+        // One playhead controls the time shown in the preview and in every timeline lane.
+        val playheadRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(2), 0, dp(2), dp(2))
+        }
+        playheadLabel = label("00:00.000 / 00:00.000", 11f, Color.WHITE, true)
+        playheadRow.addView(playheadLabel, LinearLayout.LayoutParams(dp(115), ViewGroup.LayoutParams.WRAP_CONTENT))
+        playheadSeek = SeekBar(this).apply {
+            max = 10000
+            progress = 0
+            isEnabled = false
+        }
+        playheadRow.addView(playheadSeek, LinearLayout.LayoutParams(0, dp(36), 1f))
+        root.addView(playheadRow)
+        playheadSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (!fromUser || updatingPlayhead) return
+                val total = totalOutputDurationMs()
+                val target = (total * progress.toLong() / 10000L).coerceIn(0L, total)
+                playheadLabel.text = "${formatPreciseMs(target)} / ${formatPreciseMs(total)}"
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                if (seekBar != null) {
+                    val total = totalOutputDurationMs()
+                    val target = total * seekBar.progress.toLong() / 10000L
+                    seekToTimelineTime(target, preservePlayback = true)
+                }
+            }
+        })
+
         // Tool navigation
         val toolBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -393,6 +476,8 @@ class VideoEditorActivity : Activity() {
         clipPanel.addView(endLabel)
         endSeek = SeekBar(this)
         clipPanel.addView(endSeek, matchWrap())
+        clipPanel.addView(actionButton("✂ BÖL • Oynatma noktasında") { splitSelectedClipAtPlayhead() })
+        clipPanel.addView(label("Kesme hassasiyeti: kare kare", 11f, muted, false))
         installTrimListeners()
 
         // Text panel
@@ -549,6 +634,30 @@ class VideoEditorActivity : Activity() {
         }
         projectPanel.addView(label("Dışa aktarılacak videonun adı", 12f, muted, false))
         projectPanel.addView(exportNameInput, matchWrap())
+        projectPanel.addView(label("Video biçimi", 12f, muted, false))
+        aspectSpinner = Spinner(this)
+        val aspectAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, aspectOptions).apply {
+            setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        }
+        aspectSpinner.adapter = aspectAdapter
+        aspectSpinner.setSelection(outputAspectIndex, false)
+        projectPanel.addView(aspectSpinner, matchWrap())
+        projectPanel.addView(label("Çözünürlük", 12f, muted, false))
+        resolutionSpinner = Spinner(this)
+        val resolutionAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, resolutionOptions).apply {
+            setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        }
+        resolutionSpinner.adapter = resolutionAdapter
+        resolutionSpinner.setSelection(outputResolutionIndex, false)
+        projectPanel.addView(resolutionSpinner, matchWrap())
+        aspectSpinner.onItemSelectedListener = simpleSelectionListener {
+            if (!restoringHistory && outputAspectIndex != it) recordUndoState()
+            outputAspectIndex = it.coerceIn(0, aspectOptions.lastIndex)
+        }
+        resolutionSpinner.onItemSelectedListener = simpleSelectionListener {
+            if (!restoringHistory && outputResolutionIndex != it) recordUndoState()
+            outputResolutionIndex = it.coerceIn(0, resolutionOptions.lastIndex)
+        }
         projectPanel.addView(actionButton("Projeyi farklı kaydet (.JSON)") { requestSaveProject() })
         projectPanel.addView(actionButton("Kayıtlı projeyi aç") { requestOpenProject() })
         exportButton = actionButton("MP4 OLARAK DIŞA AKTAR") { exportEditedVideo() }.apply {
@@ -611,6 +720,8 @@ class VideoEditorActivity : Activity() {
         })
 
         setContentView(root)
+        updateUndoRedoButtons()
+        updatePlayheadUi(0L)
     }
 
     // Reference used only while constructing the tool sections.
