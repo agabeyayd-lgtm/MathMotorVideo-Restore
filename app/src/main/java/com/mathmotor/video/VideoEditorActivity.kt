@@ -144,6 +144,15 @@ class VideoEditorActivity : Activity() {
         val muted = Color.rgb(165, 174, 190)
         val accent = Color.rgb(0, 202, 170)
 
+        fun compactButton(value: String, action: () -> Unit): Button = actionButton(value, action).apply {
+            textSize = 12f
+            minHeight = dp(40)
+            layoutParams = LinearLayout.LayoutParams(0, dp(42), 1f).apply {
+                marginStart = dp(3)
+                marginEnd = dp(3)
+            }
+        }
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(10), dp(4), dp(10), dp(6))
@@ -228,7 +237,7 @@ class VideoEditorActivity : Activity() {
         }
         timelineAction("+ Müzik", Color.rgb(49, 112, 133)) { chooseAudio(true) }
         timelineAction("+ Ses efekti", Color.rgb(49, 112, 133)) { chooseAudio(false) }
-        quickActionScroll.addView(quickActions, android.widget.HorizontalScrollView.LayoutParams(
+        quickActionScroll.addView(quickActions, ViewGroup.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ))
         root.addView(quickActionScroll)
@@ -245,7 +254,7 @@ class VideoEditorActivity : Activity() {
         timelineRulerContent = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            minHeight = dp(34)
+            minimumHeight = dp(34)
         }
         clipList = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
