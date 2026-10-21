@@ -153,6 +153,8 @@ class VideoEditorActivity : Activity() {
         root.addView(selectedClipLabel)
         root.addView(actionButton("SEÇİLİ KLİBİ ÖNİZLE") { previewSelectedClip() })
         root.addView(actionButton("SEÇİLİ KLİBİ ZAMAN ÇİZELGESİNDEN KALDIR") { removeSelectedClip() })
+        root.addView(actionButton("SEÇİLİ KLİBİ ÖNE AL") { moveSelectedClip(-1) })
+        root.addView(actionButton("SEÇİLİ KLİBİ SONA KAYDIR") { moveSelectedClip(1) })
 
         startLabel = label("Başlangıç: 00:00", 13f, Color.rgb(225, 233, 237), true)
         root.addView(startLabel)
@@ -519,7 +521,7 @@ class VideoEditorActivity : Activity() {
                     selectedClipIndex = index
                     refreshClipList()
                     loadTrimControls()
-                    player?.setMediaItem(MediaItem.fromUri(clip.uri))
+                    player?.setMediaItem(clippedMediaItem(clip))
                     player?.prepare()
                     player?.playWhenReady = true
                 })
@@ -545,6 +547,38 @@ class VideoEditorActivity : Activity() {
         }
         status.text = if (clips.isEmpty()) "Zaman çizelgesi boş." else "Klip kaldırıldı. Kalan klipler yerinde duruyor."
     }
+
+    private fun moveSelectedClip(delta: Int) {
+        if (selectedClipIndex !in clips.indices) {
+            status.text = "Önce taşınacak klibi seç."
+            return
+        }
+        val target = selectedClipIndex + delta
+        if (target !in clips.indices) {
+            status.text = if (delta < 0) "Bu klip zaten ilk sırada." else "Bu klip zaten son sırada."
+            return
+        }
+        val clip = clips.removeAt(selectedClipIndex)
+        clips.add(target, clip)
+        selectedClipIndex = target
+        refreshClipList()
+        loadTrimControls()
+        player?.setMediaItem(clippedMediaItem(clip))
+        player?.prepare()
+        player?.playWhenReady = true
+        status.text = "Klip sırası değiştirildi. Dışa aktarma bu sırayı kullanacak."
+    }
+
+    private fun clippedMediaItem(clip: Clip): MediaItem =
+        MediaItem.Builder()
+            .setUri(clip.uri)
+            .setClippingConfiguration(
+                MediaItem.ClippingConfiguration.Builder()
+                    .setStartPositionMs(clip.startMs)
+                    .setEndPositionMs(clip.endMs)
+                    .build()
+            )
+            .build()
 
     private fun installTrimListeners() {
         startSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -632,11 +666,10 @@ class VideoEditorActivity : Activity() {
             status.text = "Önizleme için önce video seç."
             return
         }
-        player?.setMediaItem(MediaItem.fromUri(clip.uri))
-        player?.seekTo(clip.startMs)
+        player?.setMediaItem(clippedMediaItem(clip))
         player?.prepare()
         player?.playWhenReady = true
-        status.text = "Önizleme başladı. Kesme aralığı dışa aktarmada uygulanacak."
+        status.text = "Seçili kesme aralığının önizlemesi başladı."
     }
 
     private fun buildClipSegment(
