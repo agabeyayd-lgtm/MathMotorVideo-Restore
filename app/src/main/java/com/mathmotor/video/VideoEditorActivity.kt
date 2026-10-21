@@ -62,6 +62,10 @@ class VideoEditorActivity : Activity() {
     private var selectedClipIndex = -1
     private var musicUri: Uri? = null
     private var musicTitle: String? = null
+    private var soundUri: Uri? = null
+    private var soundTitle: String? = null
+    private var soundDurationMs: Long = 0L
+    private var soundStartMs: Long = 0L
     private var player: ExoPlayer? = null
     private lateinit var playerView: PlayerView
     private lateinit var clipList: LinearLayout
@@ -71,6 +75,9 @@ class VideoEditorActivity : Activity() {
     private lateinit var startSeek: SeekBar
     private lateinit var endSeek: SeekBar
     private lateinit var musicLabel: TextView
+    private lateinit var soundLabel: TextView
+    private lateinit var soundStartLabel: TextView
+    private lateinit var soundStartSeek: SeekBar
     private lateinit var textInput: EditText
     private lateinit var keepSourceAudio: CheckBox
     private lateinit var status: TextView
@@ -80,7 +87,8 @@ class VideoEditorActivity : Activity() {
     companion object {
         private const val REQUEST_MAIN_VIDEO = 5101
         private const val REQUEST_ADD_VIDEO = 5102
-        private const val REQUEST_AUDIO = 5103
+        private const val REQUEST_MUSIC = 5103
+        private const val REQUEST_SOUND = 5104
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -149,14 +157,42 @@ class VideoEditorActivity : Activity() {
         root.addView(label("Yazı dışa aktarılan videoya uygulanır.", 12f, Color.rgb(173, 191, 204), false))
 
         root.addView(gap(6))
-        root.addView(label("MÜZİK / SES", 14f, Color.rgb(121, 202, 218), true))
-        musicLabel = label("Ek ses seçilmedi.", 12f, Color.rgb(225, 233, 237), false)
+        root.addView(label("MÜZİK KATMANI", 14f, Color.rgb(121, 202, 218), true))
+        musicLabel = label("Müzik seçilmedi.", 12f, Color.rgb(225, 233, 237), false)
         root.addView(musicLabel)
-        root.addView(actionButton("TELEFONDAN MÜZİK / SES EKLE") { chooseAudio() })
-        root.addView(actionButton("EKLENEN SESİ KALDIR") {
+        root.addView(actionButton("TELEFONDAN MÜZİK EKLE • VİDEO BOYUNCA") { chooseAudio(true) })
+        root.addView(actionButton("MÜZİĞİ KALDIR") {
             musicUri = null
             musicTitle = null
-            musicLabel.text = "Ek ses seçilmedi."
+            musicLabel.text = "Müzik seçilmedi."
+        })
+
+        root.addView(gap(4))
+        root.addView(label("SES / SES EFEKTİ KATMANI", 14f, Color.rgb(121, 202, 218), true))
+        soundLabel = label("Ses veya efekt seçilmedi.", 12f, Color.rgb(225, 233, 237), false)
+        root.addView(soundLabel)
+        root.addView(actionButton("TELEFONDAN SES / EFEKT EKLE") { chooseAudio(false) })
+        soundStartLabel = label("Ses başlangıcı: 00:00", 12f, Color.rgb(225, 233, 237), true)
+        root.addView(soundStartLabel)
+        soundStartSeek = SeekBar(this).apply { max = 0; isEnabled = false }
+        soundStartSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                val total = totalOutputDurationMs()
+                soundStartMs = (progress * 1000L).coerceAtMost((total - 1L).coerceAtLeast(0L))
+                updateSoundControls()
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
+        root.addView(soundStartSeek, matchWrap())
+        root.addView(actionButton("SES / EFEKT KATMANINI KALDIR") {
+            soundUri = null
+            soundTitle = null
+            soundDurationMs = 0L
+            soundStartMs = 0L
+            soundLabel.text = "Ses veya efekt seçilmedi."
+            updateSoundControls()
         })
         keepSourceAudio = CheckBox(this).apply {
             text = "Videonun kendi sesini koru"
@@ -225,14 +261,14 @@ class VideoEditorActivity : Activity() {
         }
     }
 
-    private fun chooseAudio() {
+    private fun chooseAudio(forMusic: Boolean) {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "audio/*"
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
         }
         try {
-            startActivityForResult(intent, REQUEST_AUDIO)
+            startActivityForResult(intent, if (forMusic) REQUEST_MUSIC else REQUEST_SOUND)
         } catch (e: Exception) {
             status.text = "Ses seçici açılamadı: ${e.message}"
         }
@@ -283,11 +319,39 @@ class VideoEditorActivity : Activity() {
                     }
                 }.start()
             }
-            REQUEST_AUDIO -> {
+            REQUEST_MUSIC -> {
                 musicUri = uri
-                musicTitle = queryDisplayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Ek ses"
-                musicLabel.text = "Ek ses: ${musicTitle}"
-                status.text = "Ses dosyası eklendi. Dışa aktarmada video sesiyle birlikte mikslenir."
+                musicTitle = queryDisplayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Müzik"
+                musicLabel.text = "Müzik: ${musicTitle} • video boyunca döngü"
+                status.text = "Müzik katmanı eklendi. Video süresi boyunca çalar."
+            }
+            REQUEST_SOUND -> {
+                status.text = "Ses dosyasının süresi okunuyor…"
+                Thread {
+                    val duration = runCatching {
+                        val retriever = MediaMetadataRetriever()
+                        try {
+                            retriever.setDataSource(this, uri)
+                            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                        } finally {
+                            retriever.release()
+                        }
+                    }.getOrDefault(0L)
+                    val title = queryDisplayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Ses efekti"
+                    runOnUiThread {
+                        if (duration <= 0L) {
+                            status.text = "Ses dosyasının süresi okunamadı. Başka bir ses dosyası seç."
+                        } else {
+                            soundUri = uri
+                            soundTitle = title
+                            soundDurationMs = duration
+                            soundStartMs = 0L
+                            soundLabel.text = "Ses/efekt: ${title} • ${formatMs(duration)}"
+                            updateSoundControls()
+                            status.text = "Ses katmanı eklendi. Başlama saniyesini aşağıdaki kaydırıcıdan ayarla."
+                        }
+                    }
+                }.start()
             }
         }
     }
@@ -406,6 +470,21 @@ class VideoEditorActivity : Activity() {
         val clip = selectedClip()
         startLabel.text = "Başlangıç: ${formatMs(clip?.startMs ?: 0L)}"
         endLabel.text = "Bitiş: ${formatMs(clip?.endMs ?: 0L)}"
+        updateSoundControls()
+    }
+
+    private fun totalOutputDurationMs(): Long =
+        clips.sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
+
+    private fun updateSoundControls() {
+        if (!::soundStartSeek.isInitialized || !::soundStartLabel.isInitialized) return
+        val total = totalOutputDurationMs()
+        val maxSeconds = ceil(total / 1000.0).toInt().coerceAtLeast(0)
+        soundStartSeek.max = maxSeconds
+        soundStartMs = soundStartMs.coerceAtMost((total - 1L).coerceAtLeast(0L))
+        soundStartSeek.progress = (soundStartMs / 1000L).toInt().coerceAtMost(maxSeconds)
+        soundStartSeek.isEnabled = soundUri != null && total > 0L
+        soundStartLabel.text = "Ses başlangıcı: ${formatMs(soundStartMs)}"
     }
 
     private fun previewSelectedClip() {
@@ -467,20 +546,41 @@ class VideoEditorActivity : Activity() {
 
         exporting = true
         exportButton.isEnabled = false
-        status.text = "MP4 dışa aktarılıyor…\nKlip birleştirme, yazı ve ek ses uygulanıyor. Uygulamayı kapatma."
+        status.text = "MP4 dışa aktarılıyor…\nKlipler, yazı, müzik ve ses katmanları uygulanıyor. Uygulamayı kapatma."
         val tempOutput = File(cacheDir, "mm_editor_${System.currentTimeMillis()}.mp4")
         val videoSequence = EditedMediaItemSequence.Builder(videoItems).build()
-        val audioSequence = musicUri?.let { uri ->
-            val audioItem = EditedMediaItem.Builder(MediaItem.fromUri(uri))
+        val compositionSequences = mutableListOf(videoSequence)
+        musicUri?.let { uri ->
+            val musicItem = EditedMediaItem.Builder(MediaItem.fromUri(uri))
                 .setRemoveVideo(true)
                 .build()
-            EditedMediaItemSequence.Builder(listOf(audioItem)).setIsLooping(true).build()
+            compositionSequences.add(
+                EditedMediaItemSequence.Builder(listOf(musicItem)).setIsLooping(true).build()
+            )
         }
-        val composition = if (audioSequence != null) {
-            Composition.Builder(videoSequence, audioSequence).build()
-        } else {
-            Composition.Builder(videoSequence).build()
+        soundUri?.let { uri ->
+            val outputDurationMs = totalOutputDurationMs()
+            val offsetMs = soundStartMs.coerceAtMost((outputDurationMs - 1L).coerceAtLeast(0L))
+            val remainingMs = (outputDurationMs - offsetMs).coerceAtLeast(1L)
+            val soundLengthMs = soundDurationMs.coerceAtLeast(1L).coerceAtMost(remainingMs)
+            val soundMediaItem = MediaItem.Builder()
+                .setUri(uri)
+                .setClippingConfiguration(
+                    MediaItem.ClippingConfiguration.Builder()
+                        .setStartPositionMs(0L)
+                        .setEndPositionMs(soundLengthMs)
+                        .build()
+                )
+                .build()
+            val soundItem = EditedMediaItem.Builder(soundMediaItem)
+                .setRemoveVideo(true)
+                .build()
+            val soundSequenceBuilder = EditedMediaItemSequence.Builder()
+            if (offsetMs > 0L) soundSequenceBuilder.addGap(offsetMs * 1000L)
+            soundSequenceBuilder.addItem(soundItem)
+            compositionSequences.add(soundSequenceBuilder.build())
         }
+        val composition = Composition.Builder(compositionSequences).build()
 
         val transformer = try {
             Transformer.Builder(this)
