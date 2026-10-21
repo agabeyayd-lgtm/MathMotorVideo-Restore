@@ -129,12 +129,8 @@ class VideoEditorActivity : Activity() {
     private var textPosition = TextPosition.BOTTOM
     private enum class TextPosition { TOP, CENTER, BOTTOM }
     private var player: ExoPlayer? = null
-    private var musicPreviewPlayer: ExoPlayer? = null
-    private var soundPreviewPlayer: ExoPlayer? = null
     private var previewTimelineOffsetMs = 0L
     private var previewingSequence = false
-    private var previewMusicSource: Uri? = null
-    private var previewSoundSource: Uri? = null
     private val previewHandler = Handler(Looper.getMainLooper())
     private val previewTicker = object : Runnable {
         override fun run() {
@@ -1053,6 +1049,20 @@ class VideoEditorActivity : Activity() {
         onOpenAudioTool?.invoke()
     }
 
+    private fun syncSelectedAudioLayerFromControls() {
+        musicLayers.firstOrNull { it.id == selectedMusicLayerId }?.let { layer ->
+            layer.volume = musicVolume.coerceIn(0, 100)
+            layer.fadeInMs = musicFadeInSeek.progress * 1000L
+            layer.fadeOutMs = musicFadeOutSeek.progress * 1000L
+        }
+        soundLayers.firstOrNull { it.id == selectedSoundLayerId }?.let { layer ->
+            layer.startMs = soundStartMs.coerceAtLeast(0L)
+            layer.volume = soundVolume.coerceIn(0, 100)
+            layer.fadeInMs = soundFadeInSeek.progress * 1000L
+            layer.fadeOutMs = soundFadeOutSeek.progress * 1000L
+        }
+    }
+
     private fun audioGain(volumePercent: Int, relativePositionMs: Long, trackDurationMs: Long, fadeInMs: Long, fadeOutMs: Long): Float {
         val base = volumePercent.coerceIn(0, 100) / 100f
         var fade = 1f
@@ -1561,16 +1571,19 @@ class VideoEditorActivity : Activity() {
         selectedClipIndex = if (clips.isEmpty()) -1 else json.optInt("selectedClipIndex", 0).coerceIn(0, clips.lastIndex)
         textLayers.clear()
         textLayers.addAll(loadedTextLayers)
-        selectedTextLayerId = json.optLong("selectedTextLayerId", loadedTextLayers.lastOrNull()?.id ?: 0L)
-            .takeIf { value -> loadedTextLayers.any { it.id == value } }
+        val savedTextLayerId = json.optString("selectedTextLayerId").toLongOrNull()
+        selectedTextLayerId = loadedTextLayers.firstOrNull { it.id == savedTextLayerId }?.id
+            ?: loadedTextLayers.lastOrNull()?.id
         musicLayers.clear()
         musicLayers.addAll(parseAudioLayers(json.optJSONArray("musicLayers"), true))
         soundLayers.clear()
         soundLayers.addAll(parseAudioLayers(json.optJSONArray("soundLayers"), false))
-        selectedMusicLayerId = json.optLong("selectedMusicLayerId", musicLayers.lastOrNull()?.id ?: 0L)
-            .takeIf { value -> musicLayers.any { it.id == value } }
-        selectedSoundLayerId = json.optLong("selectedSoundLayerId", soundLayers.lastOrNull()?.id ?: 0L)
-            .takeIf { value -> soundLayers.any { it.id == value } }
+        val savedMusicLayerId = json.optString("selectedMusicLayerId").toLongOrNull()
+        selectedMusicLayerId = musicLayers.firstOrNull { it.id == savedMusicLayerId }?.id
+            ?: musicLayers.lastOrNull()?.id
+        val savedSoundLayerId = json.optString("selectedSoundLayerId").toLongOrNull()
+        selectedSoundLayerId = soundLayers.firstOrNull { it.id == savedSoundLayerId }?.id
+            ?: soundLayers.lastOrNull()?.id
         nextLayerId = maxOf(
             json.optLong("nextLayerId", 1L),
             (textLayers.map { it.id } + musicLayers.map { it.id } + soundLayers.map { it.id }).maxOrNull()?.plus(1L) ?: 1L
@@ -2685,8 +2698,7 @@ class VideoEditorActivity : Activity() {
     override fun onStop() {
         previewHandler.removeCallbacks(previewTicker)
         player?.pause()
-        musicPreviewPlayer?.pause()
-        soundPreviewPlayer?.pause()
+        audioPreviewPlayers.values.forEach { it.pause() }
         super.onStop()
     }
 
@@ -2694,11 +2706,10 @@ class VideoEditorActivity : Activity() {
         previewHandler.removeCallbacks(previewTicker)
         playerView.player = null
         player?.release()
-        musicPreviewPlayer?.release()
-        soundPreviewPlayer?.release()
+        audioPreviewPlayers.values.forEach { it.release() }
+        audioPreviewPlayers.clear()
+        audioPreviewSources.clear()
         player = null
-        musicPreviewPlayer = null
-        soundPreviewPlayer = null
         super.onDestroy()
     }
 }
