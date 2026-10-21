@@ -259,22 +259,22 @@ class VideoEditorActivity : Activity() {
         clipList = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            minHeight = dp(34)
+            minimumHeight = dp(34)
         }
         textTrackContent = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            minHeight = dp(34)
+            minimumHeight = dp(34)
         }
         musicTrackContent = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            minHeight = dp(34)
+            minimumHeight = dp(34)
         }
         soundTrackContent = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            minHeight = dp(34)
+            minimumHeight = dp(34)
         }
         timelineScrollViews.clear()
         addTimelineLane(timelineTracks, "SÜRE", timelineRulerContent, Color.rgb(165, 174, 190))
@@ -996,7 +996,7 @@ class VideoEditorActivity : Activity() {
             setPadding(dp(2), dp(1), dp(2), dp(1))
             clipToPadding = false
         }
-        laneScroll.addView(content, android.widget.HorizontalScrollView.LayoutParams(
+        laneScroll.addView(content, ViewGroup.LayoutParams(
             dp(timelineContentWidthDp()), ViewGroup.LayoutParams.MATCH_PARENT
         ))
         laneScroll.setOnScrollChangeListener { view: View, scrollX: Int, _: Int, _: Int, _: Int ->
@@ -1029,7 +1029,7 @@ class VideoEditorActivity : Activity() {
             textSize = 10f
             gravity = Gravity.CENTER
             setTextColor(textColor)
-            minHeight = dp(34)
+            minimumHeight = dp(34)
             setPadding(dp(8), dp(1), dp(8), dp(1))
             background = android.graphics.drawable.GradientDrawable().apply {
                 setColor(fill)
@@ -1084,7 +1084,7 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun setTimelineContentWidth(content: LinearLayout, widthDp: Int) {
-        val params = content.layoutParams ?: android.widget.HorizontalScrollView.LayoutParams(
+        val params = content.layoutParams ?: ViewGroup.LayoutParams(
             dp(widthDp), ViewGroup.LayoutParams.MATCH_PARENT
         )
         params.width = dp(widthDp)
