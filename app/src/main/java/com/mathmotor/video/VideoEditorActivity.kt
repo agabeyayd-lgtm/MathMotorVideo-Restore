@@ -10,6 +10,8 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.Environment
 import android.provider.MediaStore
 import android.text.SpannableString
@@ -18,6 +20,7 @@ import android.text.style.BackgroundColorSpan
 import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
 import android.view.Gravity
+import android.widget.FrameLayout
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
@@ -31,6 +34,7 @@ import android.widget.Toast
 import org.json.JSONArray
 import org.json.JSONObject
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.audio.ChannelMixingAudioProcessor
@@ -81,7 +85,21 @@ class VideoEditorActivity : Activity() {
     private var textPosition = TextPosition.BOTTOM
     private enum class TextPosition { TOP, CENTER, BOTTOM }
     private var player: ExoPlayer? = null
+    private var musicPreviewPlayer: ExoPlayer? = null
+    private var soundPreviewPlayer: ExoPlayer? = null
+    private var previewTimelineOffsetMs = 0L
+    private var previewMusicSource: Uri? = null
+    private var previewSoundSource: Uri? = null
+    private val previewHandler = Handler(Looper.getMainLooper())
+    private val previewTicker = object : Runnable {
+        override fun run() {
+            refreshPreviewOverlay()
+            syncAudioPreviews()
+            previewHandler.postDelayed(this, 100L)
+        }
+    }
     private lateinit var playerView: PlayerView
+    private lateinit var previewTextOverlay: TextView
     private lateinit var clipList: LinearLayout
     private lateinit var timelineTracks: LinearLayout
     private lateinit var timelineRulerContent: LinearLayout
@@ -134,6 +152,9 @@ class VideoEditorActivity : Activity() {
         window.navigationBarColor = Color.rgb(15, 31, 45)
         buildUi()
         player = ExoPlayer.Builder(this).build().also { playerView.player = it }
+        musicPreviewPlayer = ExoPlayer.Builder(this).build()
+        soundPreviewPlayer = ExoPlayer.Builder(this).build()
+        previewHandler.post(previewTicker)
         val incoming = intent.getStringExtra("video_uri")
         if (!incoming.isNullOrBlank()) addClip(Uri.parse(incoming), false)
     }
@@ -188,6 +209,29 @@ class VideoEditorActivity : Activity() {
             setBackgroundColor(Color.BLACK)
             useController = true
         }
+        previewTextOverlay = TextView(this).apply {
+            setTextColor(Color.WHITE)
+            textSize = 21f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            textAlignment = View.TEXT_ALIGNMENT_CENTER
+            maxLines = 3
+            setPadding(dp(12), dp(7), dp(12), dp(7))
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.argb(205, 0, 0, 0))
+                cornerRadius = dp(7).toFloat()
+            }
+            visibility = View.GONE
+        }
+        playerView.overlayFrameLayout?.addView(
+            previewTextOverlay,
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
+                leftMargin = dp(12)
+                rightMargin = dp(12)
+                bottomMargin = dp(14)
+                topMargin = dp(14)
+            }
+        )
         root.addView(playerView, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(205)).apply {
             topMargin = dp(4)
             bottomMargin = dp(6)
@@ -373,6 +417,7 @@ class VideoEditorActivity : Activity() {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                 refreshTimelineTracks()
+                refreshPreviewOverlay()
             }
             override fun afterTextChanged(s: android.text.Editable?) {}
         })
@@ -399,6 +444,7 @@ class VideoEditorActivity : Activity() {
                     2 -> TextPosition.CENTER
                     else -> TextPosition.BOTTOM
                 }
+                refreshPreviewOverlay()
             }
         }
         textPanel.addView(textPositionGroup, matchWrap())
@@ -422,6 +468,7 @@ class VideoEditorActivity : Activity() {
         musicVolumeSeek.setOnSeekBarChangeListener(volumeListener { value ->
             musicVolume = value
             musicVolumeLabel.text = "Müzik ses seviyesi: " + value + "%"
+            musicPreviewPlayer?.volume = value / 100f
         })
         audioPanel.addView(musicVolumeSeek, matchWrap())
         audioPanel.addView(View(this).apply { setBackgroundColor(Color.rgb(55, 62, 76)) },
@@ -451,6 +498,7 @@ class VideoEditorActivity : Activity() {
         soundVolumeSeek.setOnSeekBarChangeListener(volumeListener { value ->
             soundVolume = value
             soundVolumeLabel.text = "Ses/efekt seviyesi: " + value + "%"
+            soundPreviewPlayer?.volume = value / 100f
         })
         audioPanel.addView(soundVolumeSeek, matchWrap())
         audioPanel.addView(actionButton("Ses efektini kaldır") {
@@ -466,6 +514,9 @@ class VideoEditorActivity : Activity() {
             text = "Videonun kendi sesini koru"
             isChecked = true
             setTextColor(Color.WHITE)
+            setOnCheckedChangeListener { _, checked ->
+                player?.volume = if (checked) sourceAudioVolume / 100f else 0f
+            }
         }
         audioPanel.addView(keepSourceAudio)
         sourceVolumeLabel = label("Orijinal video sesi: 100%", 12f, Color.WHITE, true)
@@ -474,6 +525,7 @@ class VideoEditorActivity : Activity() {
         sourceVolumeSeek.setOnSeekBarChangeListener(volumeListener { value ->
             sourceAudioVolume = value
             sourceVolumeLabel.text = "Orijinal video sesi: " + value + "%"
+            player?.volume = if (keepSourceAudio.isChecked) value / 100f else 0f
         })
         audioPanel.addView(sourceVolumeSeek, matchWrap())
 
@@ -616,6 +668,7 @@ class VideoEditorActivity : Activity() {
         textStartLabel.text = "Yazı başlangıcı: " + formatMs(textStartMs)
         textEndLabel.text = "Yazı bitişi: " + formatMs(textEndMs)
         refreshTimelineTracks()
+        refreshPreviewOverlay()
     }
 
     private fun audioEffects(volumePercent: Int): List<AudioProcessor> {
@@ -657,7 +710,9 @@ class VideoEditorActivity : Activity() {
                 }
                 clips.add(Clip(uri, title, duration, 0L, duration))
                 selectedClipIndex = clips.lastIndex
-                player?.setMediaItem(MediaItem.fromUri(uri))
+                previewTimelineOffsetMs = outputOffsetForClip(selectedClipIndex)
+                player?.setMediaItem(clippedMediaItem(clips.last()))
+                player?.volume = if (keepSourceAudio.isChecked) sourceAudioVolume / 100f else 0f
                 player?.prepare()
                 player?.playWhenReady = true
                 refreshClipList()
@@ -784,13 +839,18 @@ class VideoEditorActivity : Activity() {
         soundVolumeLabel.text = "Ses/efekt seviyesi: $soundVolume%"
         sourceVolumeSeek.progress = sourceAudioVolume
         sourceVolumeLabel.text = "Orijinal video sesi: $sourceAudioVolume%"
+        player?.volume = if (keepSourceAudio.isChecked) sourceAudioVolume / 100f else 0f
         refreshClipList()
         loadTrimControls()
         selectedClip()?.let { clip ->
+            previewTimelineOffsetMs = outputOffsetForClip(selectedClipIndex)
             player?.setMediaItem(clippedMediaItem(clip))
+            player?.volume = if (keepSourceAudio.isChecked) sourceAudioVolume / 100f else 0f
             player?.prepare()
             player?.playWhenReady = false
         }
+        refreshTimelineTracks()
+        refreshPreviewOverlay()
         status.text = "PROJE AÇILDI. Klipler, kesmeler, yazı ve ses ayarları geri yüklendi."
     }
 
@@ -871,7 +931,9 @@ class VideoEditorActivity : Activity() {
                             val clip = Clip(uri, title, details, 0L, details)
                             clips.add(clip)
                             selectedClipIndex = clips.lastIndex
-                            player?.setMediaItem(MediaItem.fromUri(uri))
+                            previewTimelineOffsetMs = outputOffsetForClip(selectedClipIndex)
+                            player?.setMediaItem(clippedMediaItem(clip))
+                            player?.volume = if (keepSourceAudio.isChecked) sourceAudioVolume / 100f else 0f
                             player?.prepare()
                             player?.playWhenReady = true
                             refreshClipList()
@@ -886,7 +948,7 @@ class VideoEditorActivity : Activity() {
                 musicTitle = queryDisplayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Müzik"
                 musicLabel.text = "Müzik: ${musicTitle} • video boyunca döngü"
                 refreshTimelineTracks()
-                status.text = "Müzik zaman çizelgesine eklendi. Video süresi boyunca çalar."
+                status.text = "Müzik eklendi. Önizlemede videoyla birlikte çalar."
             }
             REQUEST_SOUND -> {
                 status.text = "Ses dosyasının süresi okunuyor…"
@@ -912,7 +974,7 @@ class VideoEditorActivity : Activity() {
                             soundLabel.text = "Ses/efekt: ${title} • ${formatMs(duration)}"
                             updateSoundControls()
                             refreshTimelineTracks()
-                            status.text = "Ses efekti zaman çizelgesine eklendi. Başlama saniyesini Ses sekmesinden ayarlayabilirsin."
+                            status.text = "Ses efekti eklendi. Önizlemede seçtiğin zamanda çalar."
                         }
                     }
                 }.start()
@@ -955,9 +1017,11 @@ class VideoEditorActivity : Activity() {
                     0
                 ) {
                     selectedClipIndex = index
+                    previewTimelineOffsetMs = outputOffsetForClip(index)
                     refreshClipList()
                     loadTrimControls()
                     player?.setMediaItem(clippedMediaItem(clip))
+                    player?.volume = if (keepSourceAudio.isChecked) sourceAudioVolume / 100f else 0f
                     player?.prepare()
                     player?.playWhenReady = true
                     status.text = "Seçili klip: ${clip.title}"
@@ -1324,6 +1388,7 @@ class VideoEditorActivity : Activity() {
         }
         clips.removeAt(selectedClipIndex)
         selectedClipIndex = if (clips.isEmpty()) -1 else selectedClipIndex.coerceAtMost(clips.lastIndex)
+        previewTimelineOffsetMs = outputOffsetForClip(selectedClipIndex)
         refreshClipList()
         loadTrimControls()
         val selected = selectedClip()
@@ -1349,9 +1414,11 @@ class VideoEditorActivity : Activity() {
         val clip = clips.removeAt(selectedClipIndex)
         clips.add(target, clip)
         selectedClipIndex = target
+        previewTimelineOffsetMs = outputOffsetForClip(selectedClipIndex)
         refreshClipList()
         loadTrimControls()
         player?.setMediaItem(clippedMediaItem(clip))
+        player?.volume = if (keepSourceAudio.isChecked) sourceAudioVolume / 100f else 0f
         player?.prepare()
         player?.playWhenReady = true
         status.text = "Klip sırası değiştirildi. Dışa aktarma bu sırayı kullanacak."
@@ -1455,9 +1522,12 @@ class VideoEditorActivity : Activity() {
             status.text = "Önizleme için önce video seç."
             return
         }
+        previewTimelineOffsetMs = outputOffsetForClip(selectedClipIndex)
         player?.setMediaItem(clippedMediaItem(clip))
+        player?.volume = if (keepSourceAudio.isChecked) sourceAudioVolume / 100f else 0f
         player?.prepare()
         player?.playWhenReady = true
+        refreshPreviewOverlay()
         status.text = "Seçili kesme aralığının önizlemesi başladı."
     }
 
