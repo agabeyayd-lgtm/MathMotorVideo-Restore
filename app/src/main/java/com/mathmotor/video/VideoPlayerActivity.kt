@@ -16,6 +16,7 @@ import android.widget.TextView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import android.widget.Toast
@@ -115,16 +116,22 @@ class VideoPlayerActivity : Activity() {
                     playerView.player = exo
                     exo.addListener(object : Player.Listener {
                         override fun onPlaybackStateChanged(playbackState: Int) {
-                            if (playbackState == Player.STATE_BUFFERING) info.text = "Video yükleniyor…"
-                            if (playbackState == Player.STATE_READY) {
-                                val size = exo.videoSize
-                                info.text = if (size.width > 0 && size.height > 0) {
-                                    "Görüntü hazır: " + size.width + "×" + size.height
-                                } else "Ses hazır; bu dosyada görüntü akışı bulunamadı."
+                            when (playbackState) {
+                                Player.STATE_BUFFERING -> info.text = "Video yükleniyor…"
+                                Player.STATE_READY -> {
+                                    val size = exo.videoSize
+                                    info.text = if (size.width > 0 && size.height > 0) {
+                                        "Görüntü hazır: " + size.width + "×" + size.height
+                                    } else "Oynatma hazır; görüntü akışı bekleniyor."
+                                }
+                                Player.STATE_ENDED -> info.text = "Video tamamlandı."
                             }
                         }
-                        override fun onRenderedFirstFrame() {
-                            info.text = "Görüntü oynatılıyor."
+                        override fun onVideoSizeChanged(videoSize: VideoSize) {
+                            if (videoSize.width > 0 && videoSize.height > 0) {
+                                info.text = "Görüntü oynatılıyor: " +
+                                    videoSize.width + "×" + videoSize.height
+                            }
                         }
                         override fun onPlayerError(error: PlaybackException) {
                             info.text = "Video oynatılamadı: " + error.errorCodeName + "\nBaşka bir video dosyası dene."
@@ -158,7 +165,7 @@ class VideoPlayerActivity : Activity() {
         val pick = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "video/*"
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
         }
         try { startActivityForResult(pick, pickVideoRequest) }
         catch (_: Exception) { Toast.makeText(this, "Video seçici açılamadı.", Toast.LENGTH_SHORT).show() }
