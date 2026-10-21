@@ -596,6 +596,7 @@ class VideoEditorActivity : Activity() {
         textEndSeek.isEnabled = total > 0L
         textStartLabel.text = "Yazı başlangıcı: " + formatMs(textStartMs)
         textEndLabel.text = "Yazı bitişi: " + formatMs(textEndMs)
+        refreshTimelineTracks()
     }
 
     private fun audioEffects(volumePercent: Int): List<AudioProcessor> {
@@ -891,7 +892,8 @@ class VideoEditorActivity : Activity() {
                             soundStartMs = 0L
                             soundLabel.text = "Ses/efekt: ${title} • ${formatMs(duration)}"
                             updateSoundControls()
-                            status.text = "Ses katmanı eklendi. Başlama saniyesini aşağıdaki kaydırıcıdan ayarla."
+                            refreshTimelineTracks()
+                            status.text = "Ses efekti zaman çizelgesine eklendi. Başlama saniyesini Ses sekmesinden ayarlayabilirsin."
                         }
                     }
                 }.start()
@@ -1193,6 +1195,7 @@ class VideoEditorActivity : Activity() {
         soundStartSeek.progress = (soundStartMs / 1000L).toInt().coerceAtMost(maxSeconds)
         soundStartSeek.isEnabled = soundUri != null && total > 0L
         soundStartLabel.text = "Ses başlangıcı: ${formatMs(soundStartMs)}"
+        refreshTimelineTracks()
     }
 
     private fun previewSelectedClip() {
