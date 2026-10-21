@@ -1301,16 +1301,37 @@ class VideoEditorActivity : Activity() {
         refreshPreviewOverlay()
     }
 
-    private fun audioEffects(volumePercent: Int): List<AudioProcessor> {
-        if (volumePercent >= 100) return emptyList()
-        val gain = volumePercent.coerceIn(0, 100) / 100f
-        val processor = ChannelMixingAudioProcessor()
-        for (channels in 1..8) {
-            val coefficients = FloatArray(channels * channels)
-            for (channel in 0 until channels) coefficients[channel * channels + channel] = gain
-            processor.putChannelMixingMatrix(ChannelMixingMatrix(channels, channels, coefficients))
+    private fun audioEffects(
+        volumePercent: Int,
+        fadeInMs: Long = 0L,
+        fadeOutMs: Long = 0L,
+        trackDurationMs: Long = 0L
+    ): List<AudioProcessor> {
+        val processors = mutableListOf<AudioProcessor>()
+        if (volumePercent < 100) {
+            val gain = volumePercent.coerceIn(0, 100) / 100f
+            val processor = ChannelMixingAudioProcessor()
+            for (channels in 1..8) {
+                val coefficients = FloatArray(channels * channels)
+                for (channel in 0 until channels) coefficients[channel * channels + channel] = gain
+                processor.putChannelMixingMatrix(ChannelMixingMatrix(channels, channels, coefficients))
+            }
+            processors.add(processor)
         }
-        return listOf(processor)
+        if (trackDurationMs > 0L && (fadeInMs > 0L || fadeOutMs > 0L)) {
+            val fadeIn = fadeInMs.coerceAtLeast(0L).coerceAtMost(trackDurationMs)
+            val fadeOut = fadeOutMs.coerceAtLeast(0L).coerceAtMost(trackDurationMs)
+            val builder = DefaultGainProvider.Builder(1f)
+            if (fadeIn > 0L) {
+                builder.addFadeAt(0L, fadeIn * 1000L, DefaultGainProvider.FADE_IN_LINEAR)
+            }
+            if (fadeOut > 0L) {
+                builder.addFadeAt((trackDurationMs - fadeOut).coerceAtLeast(0L) * 1000L,
+                    fadeOut * 1000L, DefaultGainProvider.FADE_OUT_LINEAR)
+            }
+            processors.add(GainProcessor(builder.build()))
+        }
+        return processors
     }
 
     private fun addClip(uri: Uri, replaceExisting: Boolean) {
