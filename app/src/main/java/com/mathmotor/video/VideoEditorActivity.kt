@@ -1378,6 +1378,7 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun createProjectJson(): JSONObject {
+        syncSelectedTextLayerFromControls()
         val clipArray = JSONArray()
         clips.forEach { clip ->
             clipArray.put(JSONObject().apply {
@@ -1389,11 +1390,43 @@ class VideoEditorActivity : Activity() {
                 put("frameRate", clip.frameRate.toDouble())
             })
         }
+        val textLayerArray = JSONArray()
+        textLayers.forEach { layer ->
+            textLayerArray.put(JSONObject().apply {
+                put("id", layer.id)
+                put("text", layer.text)
+                put("startMs", layer.startMs)
+                put("endMs", layer.endMs)
+                put("position", layer.position.name)
+            })
+        }
+        fun audioArray(layers: List<AudioLayer>) = JSONArray().apply {
+            layers.forEach { layer ->
+                put(JSONObject().apply {
+                    put("id", layer.id)
+                    put("uri", layer.uri.toString())
+                    put("title", layer.title)
+                    put("durationMs", layer.durationMs)
+                    put("startMs", layer.startMs)
+                    put("volume", layer.volume)
+                    put("fadeInMs", layer.fadeInMs)
+                    put("fadeOutMs", layer.fadeOutMs)
+                })
+            }
+        }
         return JSONObject().apply {
             put("format", "MathMotorVideoProject")
-            put("version", 2)
+            put("version", 3)
             put("clips", clipArray)
             put("selectedClipIndex", selectedClipIndex)
+            put("textLayers", textLayerArray)
+            put("musicLayers", audioArray(musicLayers))
+            put("soundLayers", audioArray(soundLayers))
+            put("selectedTextLayerId", selectedTextLayerId ?: JSONObject.NULL)
+            put("selectedMusicLayerId", selectedMusicLayerId ?: JSONObject.NULL)
+            put("selectedSoundLayerId", selectedSoundLayerId ?: JSONObject.NULL)
+            put("nextLayerId", nextLayerId)
+            // Keep legacy fields for compatibility with projects saved by earlier editor builds.
             put("musicUri", musicUri?.toString() ?: JSONObject.NULL)
             put("musicTitle", musicTitle ?: JSONObject.NULL)
             put("soundUri", soundUri?.toString() ?: JSONObject.NULL)
@@ -1417,7 +1450,7 @@ class VideoEditorActivity : Activity() {
 
     private fun applyProjectJson(json: JSONObject, allowEmptyClips: Boolean = false) {
         require(json.optString("format") == "MathMotorVideoProject") { "Bu dosya MathMotorVideo proje dosyası değil." }
-        require(json.optInt("version", 0) in 1..2) { "Bu proje sürümü desteklenmiyor." }
+        require(json.optInt("version", 0) in 1..3) { "Bu proje sürümü desteklenmiyor." }
         val loadedClips = mutableListOf<Clip>()
         val clipArray = json.optJSONArray("clips") ?: JSONArray()
         for (i in 0 until clipArray.length()) {
@@ -1435,15 +1468,92 @@ class VideoEditorActivity : Activity() {
         }
         require(loadedClips.isNotEmpty() || allowEmptyClips) { "Projede video klibi bulunamadı." }
 
+        val loadedTextLayers = mutableListOf<TextLayer>()
+        val textArray = json.optJSONArray("textLayers")
+        if (textArray != null) {
+            for (i in 0 until textArray.length()) {
+                val item = textArray.getJSONObject(i)
+                val id = item.optLong("id", 0L).takeIf { it > 0L } ?: (i + 1L)
+                val start = item.optLong("startMs", 0L).coerceAtLeast(0L)
+                val end = item.optLong("endMs", totalOutputDurationMs()).coerceAtLeast(start)
+                val position = runCatching { TextPosition.valueOf(item.optString("position", "BOTTOM")) }.getOrDefault(TextPosition.BOTTOM)
+                loadedTextLayers.add(TextLayer(id, item.optString("text", ""), start, end, position))
+            }
+        } else {
+            val oldText = json.optString("text", "")
+            if (oldText.isNotBlank()) {
+                val id = 1L
+                loadedTextLayers.add(TextLayer(
+                    id, oldText, json.optLong("textStartMs", 0L).coerceAtLeast(0L),
+                    json.optLong("textEndMs", totalOutputDurationMs()).coerceAtLeast(0L),
+                    runCatching { TextPosition.valueOf(json.optString("textPosition", "BOTTOM")) }.getOrDefault(TextPosition.BOTTOM)
+                ))
+            }
+        }
+
+        fun parseAudioLayers(array: JSONArray?, isMusic: Boolean): MutableList<AudioLayer> {
+            val layers = mutableListOf<AudioLayer>()
+            if (array != null) {
+                for (i in 0 until array.length()) {
+                    val item = array.getJSONObject(i)
+                    val rawUri = item.optString("uri")
+                    if (rawUri.isBlank() || rawUri == "null") continue
+                    val uri = Uri.parse(rawUri)
+                    try {
+                        contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    } catch (_: Exception) { }
+                    layers.add(AudioLayer(
+                        item.optLong("id", 0L).takeIf { it > 0L } ?: (1000L + i),
+                        uri,
+                        item.optString("title", if (isMusic) "Müzik" else "Ses efekti"),
+                        item.optLong("durationMs", if (isMusic) totalOutputDurationMs() else 0L).coerceAtLeast(1L),
+                        item.optLong("startMs", 0L).coerceAtLeast(0L),
+                        item.optInt("volume", if (isMusic) 45 else 100).coerceIn(0, 100),
+                        item.optLong("fadeInMs", 0L).coerceAtLeast(0L),
+                        item.optLong("fadeOutMs", 0L).coerceAtLeast(0L)
+                    ))
+                }
+            } else {
+                val key = if (isMusic) "musicUri" else "soundUri"
+                val rawUri = json.optString(key)
+                if (rawUri.isNotBlank() && rawUri != "null") {
+                    val uri = Uri.parse(rawUri)
+                    try {
+                        contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    } catch (_: Exception) { }
+                    layers.add(AudioLayer(
+                        if (isMusic) 1000L else 2000L,
+                        uri,
+                        json.optString(if (isMusic) "musicTitle" else "soundTitle", if (isMusic) "Müzik" else "Ses efekti"),
+                        json.optLong(if (isMusic) "musicDurationMs" else "soundDurationMs", if (isMusic) totalOutputDurationMs() else 1L).coerceAtLeast(1L),
+                        if (isMusic) 0L else json.optLong("soundStartMs", 0L).coerceAtLeast(0L),
+                        json.optInt(if (isMusic) "musicVolume" else "soundVolume", if (isMusic) 45 else 100).coerceIn(0, 100)
+                    ))
+                }
+            }
+            return layers
+        }
+
         clips.clear()
         clips.addAll(loadedClips)
         selectedClipIndex = if (clips.isEmpty()) -1 else json.optInt("selectedClipIndex", 0).coerceIn(0, clips.lastIndex)
-        musicUri = json.optString("musicUri").takeIf { it.isNotBlank() && it != "null" }?.let(Uri::parse)
-        musicTitle = json.optString("musicTitle").takeIf { it.isNotBlank() && it != "null" }
-        soundUri = json.optString("soundUri").takeIf { it.isNotBlank() && it != "null" }?.let(Uri::parse)
-        soundTitle = json.optString("soundTitle").takeIf { it.isNotBlank() && it != "null" }
-        soundDurationMs = json.optLong("soundDurationMs", 0L).coerceAtLeast(0L)
-        soundStartMs = json.optLong("soundStartMs", 0L).coerceAtLeast(0L)
+        textLayers.clear()
+        textLayers.addAll(loadedTextLayers)
+        selectedTextLayerId = json.optLong("selectedTextLayerId", loadedTextLayers.lastOrNull()?.id ?: 0L)
+            .takeIf { value -> loadedTextLayers.any { it.id == value } }
+        musicLayers.clear()
+        musicLayers.addAll(parseAudioLayers(json.optJSONArray("musicLayers"), true))
+        soundLayers.clear()
+        soundLayers.addAll(parseAudioLayers(json.optJSONArray("soundLayers"), false))
+        selectedMusicLayerId = json.optLong("selectedMusicLayerId", musicLayers.lastOrNull()?.id ?: 0L)
+            .takeIf { value -> musicLayers.any { it.id == value } }
+        selectedSoundLayerId = json.optLong("selectedSoundLayerId", soundLayers.lastOrNull()?.id ?: 0L)
+            .takeIf { value -> soundLayers.any { it.id == value } }
+        nextLayerId = maxOf(
+            json.optLong("nextLayerId", 1L),
+            (textLayers.map { it.id } + musicLayers.map { it.id } + soundLayers.map { it.id }).maxOrNull()?.plus(1L) ?: 1L
+        )
+
         textStartMs = json.optLong("textStartMs", 0L).coerceAtLeast(0L)
         textEndMs = json.optLong("textEndMs", totalOutputDurationMs()).coerceAtLeast(0L)
         textTimingCustomized = json.optBoolean("textTimingCustomized", false)
@@ -1456,7 +1566,17 @@ class VideoEditorActivity : Activity() {
         if (::aspectSpinner.isInitialized) aspectSpinner.setSelection(outputAspectIndex, false)
         if (::resolutionSpinner.isInitialized) resolutionSpinner.setSelection(outputResolutionIndex, false)
 
-        textInput.setText(json.optString("text", ""))
+        val fallbackTextLayer = textLayers.firstOrNull { it.id == selectedTextLayerId }
+            ?: textLayers.lastOrNull()
+        val fallbackMusicLayer = musicLayers.firstOrNull { it.id == selectedMusicLayerId } ?: musicLayers.lastOrNull()
+        val fallbackSoundLayer = soundLayers.firstOrNull { it.id == selectedSoundLayerId } ?: soundLayers.lastOrNull()
+        suppressLayerControlCallbacks = true
+        textInput.setText(fallbackTextLayer?.text ?: json.optString("text", ""))
+        textPosition = fallbackTextLayer?.position
+            ?: runCatching { TextPosition.valueOf(json.optString("textPosition", "BOTTOM")) }.getOrDefault(TextPosition.BOTTOM)
+        textStartMs = fallbackTextLayer?.startMs ?: json.optLong("textStartMs", 0L).coerceAtLeast(0L)
+        textEndMs = fallbackTextLayer?.endMs ?: json.optLong("textEndMs", totalOutputDurationMs()).coerceAtLeast(0L)
+        textTimingCustomized = fallbackTextLayer != null || json.optBoolean("textTimingCustomized", false)
         textPositionGroup.check(when (textPosition) {
             TextPosition.TOP -> 1
             TextPosition.CENTER -> 2
@@ -1464,15 +1584,19 @@ class VideoEditorActivity : Activity() {
         })
         keepSourceAudio.isChecked = json.optBoolean("keepSourceAudio", true)
         exportNameInput.setText(json.optString("exportName", "MathMotor_Edit"))
-        musicLabel.text = musicTitle?.let { "Müzik: $it • video boyunca döngü" } ?: "Müzik seçilmedi."
-        soundLabel.text = soundTitle?.let { "Ses/efekt: $it • ${formatMs(soundDurationMs)}" } ?: "Ses veya efekt seçilmedi."
-        musicVolumeSeek.progress = musicVolume
-        musicVolumeLabel.text = "Müzik ses seviyesi: $musicVolume%"
-        soundVolumeSeek.progress = soundVolume
-        soundVolumeLabel.text = "Ses/efekt seviyesi: $soundVolume%"
+        suppressLayerControlCallbacks = false
+        loadSelectedMusicLayer(fallbackMusicLayer)
+        loadSelectedSoundLayer(fallbackSoundLayer)
+        musicPreviewPlayersCompatibilityRefresh()
+        musicVolume = fallbackMusicLayer?.volume ?: json.optInt("musicVolume", 45).coerceIn(0, 100)
+        soundVolume = fallbackSoundLayer?.volume ?: json.optInt("soundVolume", 100).coerceIn(0, 100)
         sourceVolumeSeek.progress = sourceAudioVolume
         sourceVolumeLabel.text = "Orijinal video sesi: $sourceAudioVolume%"
         player?.volume = if (keepSourceAudio.isChecked) sourceAudioVolume / 100f else 0f
+        previewHandler.removeCallbacks(previewTicker)
+        audioPreviewPlayers.values.forEach { it.release() }
+        audioPreviewPlayers.clear()
+        audioPreviewSources.clear()
         refreshClipList()
         loadTrimControls()
         selectedClip()?.let { clip ->
@@ -1483,11 +1607,13 @@ class VideoEditorActivity : Activity() {
             player?.prepare()
             player?.playWhenReady = false
         } ?: player?.clearMediaItems()
+        refreshTextLayerList()
         refreshTimelineTracks()
         refreshPreviewOverlay()
         updatePlayheadUi(0L)
         updateUndoRedoButtons()
-        status.text = if (clips.isEmpty()) "Boş proje geri yüklendi." else "PROJE AÇILDI. Klipler, kesmeler, yazı ve ses ayarları geri yüklendi."
+        previewHandler.post(previewTicker)
+        status.text = if (clips.isEmpty()) "Boş proje geri yüklendi." else "PROJE AÇILDI. Klipler, katmanlar, kesmeler ve ses ayarları geri yüklendi."
     }
 
     private fun chooseVideo(append: Boolean) {
