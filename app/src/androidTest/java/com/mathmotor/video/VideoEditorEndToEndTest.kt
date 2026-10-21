@@ -98,7 +98,7 @@ class VideoEditorEndToEndTest {
                 statusText.contains("Düzenlenmiş MP4 kaydedildi", ignoreCase = true))
 
             val exportedUri = Regex("content://[^\\s]+").find(statusText)?.value
-            assertNotNull("Successful export should report a MediaStore URI", exportedUri)
+                ?: throw AssertionError("Successful export did not report a MediaStore URI: $statusText")
             val retriever = MediaMetadataRetriever()
             try {
                 retriever.setDataSource(context, Uri.parse(exportedUri))
