@@ -1984,95 +1984,118 @@ class VideoEditorActivity : Activity() {
         listOf(timelineRulerContent, clipList, textTrackContent, musicTrackContent, soundTrackContent)
             .forEach { setTimelineContentWidth(it, widthDp) }
 
-        // Visible ruler ticks share the same time scale as all four tracks.
         timelineRulerContent.removeAllViews()
-        val totalSeconds = (duration / 1000L).toInt()
         if (duration <= 0L) {
-            addTimedTimelineChip(timelineRulerContent, "00:00", Color.rgb(38, 43, 53), Color.LTGRAY, 75, 0) {}
+            addTimedTimelineChip(timelineRulerContent, "00:00.000", Color.rgb(38, 43, 53), Color.LTGRAY, 94, 0) {}
         } else {
+            val totalSeconds = ceil(duration / 1000.0).toInt()
+            val step = if (totalSeconds > 180) 30 else if (totalSeconds > 60) 10 else 5
             var tick = 0
             while (tick <= totalSeconds) {
-                val labelView = TextView(this).apply {
+                val mark = TextView(this).apply {
                     text = formatMs(tick * 1000L)
                     textSize = 9f
                     setTextColor(Color.rgb(165, 174, 190))
                     gravity = Gravity.CENTER_VERTICAL or Gravity.START
                     setPadding(dp(3), 0, 0, 0)
                 }
-                val intervalWidth = (scale * 5f).toInt().coerceAtLeast(32)
-                timelineRulerContent.addView(labelView, LinearLayout.LayoutParams(dp(intervalWidth), dp(31)))
-                tick += 5
+                val tickWidth = (scale * step).toInt().coerceAtLeast(32)
+                timelineRulerContent.addView(mark, LinearLayout.LayoutParams(dp(tickWidth), dp(31)))
+                tick += step
             }
         }
 
-        // Text layer: its left offset and visible width reflect its actual timing.
+        // Each text overlay is an independent row with its own start and end.
         textTrackContent.removeAllViews()
-        val overlayText = if (::textInput.isInitialized) textInput.text?.toString()?.trim().orEmpty() else ""
-        if (overlayText.isBlank()) {
-            addTimedTimelineChip(textTrackContent, "+ Metin ekle", Color.rgb(89, 82, 156), Color.WHITE, 92, 0) {
+        if (textLayers.isEmpty()) {
+            addTimelineLayerRow(textTrackContent, "+ Metin ekle", Color.rgb(89, 82, 156), Color.WHITE, 0, 92) {
                 onOpenTextTool?.invoke()
             }
         } else {
-            val shownText = if (overlayText.length > 18) overlayText.take(18) + "…" else overlayText
-            val startDp = (textStartMs.coerceAtLeast(0L) / 1000f * scale).toInt().coerceIn(0, widthDp - 38)
-            val textDuration = (textEndMs - textStartMs).coerceAtLeast(1000L)
-            val layerWidth = ((textDuration / 1000f) * scale).toInt().coerceAtLeast(54)
-                .coerceAtMost((widthDp - startDp).coerceAtLeast(38))
-            addTimedTimelineChip(
-                textTrackContent,
-                "T  $shownText",
-                Color.rgb(116, 87, 178),
-                Color.WHITE,
-                layerWidth,
-                startDp
-            ) {
-                onOpenTextTool?.invoke()
+            textLayers.forEachIndexed { index, layer ->
+                val startDp = (layer.startMs.coerceAtLeast(0L) / 1000f * scale).toInt().coerceIn(0, widthDp - 38)
+                val layerDuration = (layer.endMs - layer.startMs).coerceAtLeast(1L)
+                val layerWidth = ((layerDuration / 1000f) * scale).toInt().coerceAtLeast(48)
+                    .coerceAtMost((widthDp - startDp).coerceAtLeast(38))
+                val name = layer.text.trim().ifBlank { "Metin ${index + 1}" }.let {
+                    if (it.length > 16) it.take(16) + "…" else it
+                }
+                addTimelineLayerRow(
+                    textTrackContent,
+                    "T${index + 1}  $name",
+                    if (layer.id == selectedTextLayerId) Color.rgb(177, 139, 255) else Color.rgb(116, 87, 178),
+                    if (layer.id == selectedTextLayerId) Color.BLACK else Color.WHITE,
+                    startDp,
+                    layerWidth
+                ) { selectTextLayer(layer) }
             }
         }
 
-        // Music spans the complete output timeline.
+        // Every music track spans the output timeline, each on its own row.
         musicTrackContent.removeAllViews()
-        if (musicUri == null) {
-            addTimedTimelineChip(musicTrackContent, "+ Müzik ekle", Color.rgb(42, 92, 132), Color.WHITE, 92, 0) {
+        if (musicLayers.isEmpty()) {
+            addTimelineLayerRow(musicTrackContent, "+ Müzik ekle", Color.rgb(42, 92, 132), Color.WHITE, 0, 104) {
                 chooseAudio(true)
             }
         } else {
-            val title = musicTitle?.take(18) ?: "Müzik"
-            addTimedTimelineChip(
-                musicTrackContent,
-                "♪  $title",
-                Color.rgb(37, 101, 149),
-                Color.WHITE,
-                widthDp - 4,
-                0
-            ) {
-                onOpenAudioTool?.invoke()
+            musicLayers.forEachIndexed { index, layer ->
+                addTimelineLayerRow(
+                    musicTrackContent,
+                    "♪ M${index + 1}  ${layer.title.take(18)}",
+                    if (layer.id == selectedMusicLayerId) Color.rgb(90, 175, 255) else Color.rgb(37, 101, 149),
+                    if (layer.id == selectedMusicLayerId) Color.BLACK else Color.WHITE,
+                    0,
+                    (widthDp - 4).coerceAtLeast(38)
+                ) { selectAudioLayer(layer, isMusic = true) }
             }
         }
 
-        // Sound effects are placed at their chosen start time on the same axis.
+        // Every sound effect has its own start position and duration.
         soundTrackContent.removeAllViews()
-        if (soundUri == null) {
-            addTimedTimelineChip(soundTrackContent, "+ Ses efekti ekle", Color.rgb(130, 82, 40), Color.WHITE, 112, 0) {
+        if (soundLayers.isEmpty()) {
+            addTimelineLayerRow(soundTrackContent, "+ Ses efekti ekle", Color.rgb(130, 82, 40), Color.WHITE, 0, 124) {
                 chooseAudio(false)
             }
         } else {
-            val startDp = (soundStartMs.coerceAtLeast(0L) / 1000f * scale).toInt().coerceIn(0, widthDp - 38)
-            val visibleDuration = minOf(soundDurationMs, (duration - soundStartMs).coerceAtLeast(0L))
-            val layerWidth = ((visibleDuration / 1000f) * scale).toInt().coerceAtLeast(50)
-                .coerceAtMost((widthDp - startDp).coerceAtLeast(38))
-            val title = soundTitle?.take(16) ?: "Ses efekti"
-            addTimedTimelineChip(
-                soundTrackContent,
-                "♫  $title",
-                Color.rgb(154, 98, 46),
-                Color.WHITE,
-                layerWidth,
-                startDp
-            ) {
-                onOpenAudioTool?.invoke()
+            soundLayers.forEachIndexed { index, layer ->
+                val startDp = (layer.startMs.coerceAtLeast(0L) / 1000f * scale).toInt().coerceIn(0, widthDp - 38)
+                val remaining = (duration - layer.startMs).coerceAtLeast(0L)
+                val displayedDuration = minOf(layer.durationMs, remaining)
+                val layerWidth = ((displayedDuration / 1000f) * scale).toInt().coerceAtLeast(44)
+                    .coerceAtMost((widthDp - startDp).coerceAtLeast(38))
+                addTimelineLayerRow(
+                    soundTrackContent,
+                    "♫ S${index + 1}  ${layer.title.take(14)}",
+                    if (layer.id == selectedSoundLayerId) Color.rgb(255, 174, 84) else Color.rgb(154, 98, 46),
+                    if (layer.id == selectedSoundLayerId) Color.BLACK else Color.WHITE,
+                    startDp,
+                    layerWidth
+                ) { selectAudioLayer(layer, isMusic = false) }
             }
         }
+    }
+
+    private fun addTimelineLayerRow(
+        host: LinearLayout,
+        title: String,
+        fill: Int,
+        textColor: Int,
+        startDp: Int,
+        widthDp: Int,
+        action: () -> Unit
+    ) {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = dp(33)
+        }
+        if (startDp > 0) {
+            row.addView(View(this), LinearLayout.LayoutParams(dp(startDp), dp(31)))
+        }
+        addTimedTimelineChip(row, title, fill, textColor, widthDp, 0, action)
+        host.addView(row, LinearLayout.LayoutParams(dp(timelineContentWidthDp()), dp(34)).apply {
+            bottomMargin = dp(1)
+        })
     }
 
     private fun removeSelectedClip() {
