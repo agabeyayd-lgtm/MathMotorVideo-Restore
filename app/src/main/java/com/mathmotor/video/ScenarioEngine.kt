@@ -10,11 +10,11 @@ object ScenarioEngine {
     )
 
     private val templates = listOf(
-        Template("The Overcareful Tea Tray", "A server tries to keep a loaded tray perfectly level.", "The last glass stays upright while everything else settles.", SceneKind.TEA_TRAY),
-        Template("One More Box", "A worker adds one last box to a tall stack.", "The stack settles into an absurdly neat final shape.", SceneKind.BOX_STACK),
-        Template("The Toolbox That Wouldn't Stay Shut", "A mechanic carefully closes a crowded toolbox.", "One tiny tool is the only thing left moving.", SceneKind.TOOLBOX),
-        Template("Broom, Bucket, Balance", "A cleaner balances a broom beside a bucket.", "The broom finds a stable resting point at the last moment.", SceneKind.BROOM_BUCKET),
-        Template("The Shop Cart", "A shopkeeper tries to stop a lightly rolling cart.", "The cart stops exactly where it started to cause trouble.", SceneKind.SHOP_CART)
+        Template("Aşırı Dikkatli Çay Tepsisi", "Bir garson dolu çay tepsisini dümdüz tutmaya çalışır.", "Diğer her şey yerleşirken son bardak dik kalır.", SceneKind.TEA_TRAY),
+        Template("Bir Kutu Daha", "Bir işçi yüksek istife son bir kutu daha ekler.", "İstif, gülünç derecede düzgün bir şekle oturur.", SceneKind.BOX_STACK),
+        Template("Kapanmayan Alet Çantası", "Bir tamirci ağzına kadar dolu alet çantasını dikkatle kapatır.", "Hareket etmeye devam eden tek şey küçücük bir alettir.", SceneKind.TOOLBOX),
+        Template("Süpürge, Kova, Denge", "Bir temizlikçi kovanın yanında süpürgeyi dengede tutmaya çalışır.", "Süpürge son anda dengeli bir noktaya oturur.", SceneKind.BROOM_BUCKET),
+        Template("Dükkân Arabası", "Bir dükkân sahibi hafifçe kayan arabayı durdurmaya çalışır.", "Araba tam da başladığı yerde durup yine sorun çıkarır.", SceneKind.SHOP_CART)
     )
 
     fun generate(seed: Long): HumanScenario {
