@@ -88,3 +88,5 @@ jobs:
           body: "versionCode=${{ steps.app_version.outputs.code }}"
           make_latest: true
           files: MathMotorVideo.apk
+
+# Rebuild after release-signing secret was refreshed.
