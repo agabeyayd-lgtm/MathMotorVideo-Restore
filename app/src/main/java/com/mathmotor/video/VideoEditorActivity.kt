@@ -816,10 +816,255 @@ class VideoEditorActivity : Activity() {
         setContentView(root)
         updateUndoRedoButtons()
         updatePlayheadUi(0L)
+        refreshTextLayerList()
+        refreshTimelineTracks()
     }
 
     // Reference used only while constructing the tool sections.
     private var activePanelForHeading: LinearLayout? = null
+
+    private fun addTextLayer() {
+        if (clips.isEmpty()) {
+            status.text = "Önce video ekle; sonra metin katmanı oluştur."
+            return
+        }
+        recordUndoState()
+        val total = totalOutputDurationMs().coerceAtLeast(1L)
+        val layer = TextLayer(nextLayerId++, "", 0L, total, TextPosition.BOTTOM)
+        textLayers.add(layer)
+        selectedTextLayerId = layer.id
+        loadTextLayerControls(layer)
+        onOpenTextTool?.invoke()
+        status.text = "Yeni metin katmanı eklendi. Yazını yukarıya yaz."
+    }
+
+    private fun removeSelectedTextLayer() {
+        val layer = textLayers.firstOrNull { it.id == selectedTextLayerId }
+        if (layer == null) {
+            status.text = "Önce silinecek metin katmanını seç."
+            return
+        }
+        recordUndoState()
+        val index = textLayers.indexOf(layer)
+        textLayers.remove(layer)
+        selectedTextLayerId = textLayers.getOrNull((index - 1).coerceAtLeast(0))?.id
+        loadTextLayerControls(textLayers.firstOrNull { it.id == selectedTextLayerId })
+        refreshTextLayerList()
+        refreshTimelineTracks()
+        refreshPreviewOverlay()
+        status.text = "Metin katmanı silindi."
+    }
+
+    private fun selectTextLayer(layer: TextLayer) {
+        if (selectedTextLayerId == layer.id) {
+            onOpenTextTool?.invoke()
+            return
+        }
+        syncSelectedTextLayerFromControls()
+        selectedTextLayerId = layer.id
+        loadTextLayerControls(layer)
+        onOpenTextTool?.invoke()
+        status.text = "Düzenlenen metin: ${layer.text.ifBlank { "(boş metin)" }}"
+    }
+
+    private fun loadTextLayerControls(layer: TextLayer?) {
+        suppressLayerControlCallbacks = true
+        selectedTextLayerId = layer?.id
+        textInput.setText(layer?.text.orEmpty())
+        textStartMs = layer?.startMs ?: 0L
+        textEndMs = layer?.endMs ?: totalOutputDurationMs()
+        textPosition = layer?.position ?: TextPosition.BOTTOM
+        textTimingCustomized = layer != null
+        textPositionGroup.check(when (textPosition) {
+            TextPosition.TOP -> 1
+            TextPosition.CENTER -> 2
+            TextPosition.BOTTOM -> 3
+        })
+        updateTextControls()
+        suppressLayerControlCallbacks = false
+        refreshTextLayerList()
+        refreshTimelineTracks()
+        refreshPreviewOverlay()
+    }
+
+    private fun syncSelectedTextLayerFromControls() {
+        if (suppressLayerControlCallbacks || restoringHistory) return
+        val text = textInput.text?.toString().orEmpty()
+        var layer = textLayers.firstOrNull { it.id == selectedTextLayerId }
+        if (layer == null && text.isNotBlank()) {
+            layer = TextLayer(nextLayerId++, text, textStartMs, textEndMs.coerceAtLeast(1L), textPosition)
+            textLayers.add(layer)
+            selectedTextLayerId = layer.id
+        }
+        layer?.let {
+            it.text = text
+            it.startMs = textStartMs.coerceIn(0L, totalOutputDurationMs())
+            it.endMs = textEndMs.coerceIn(it.startMs, totalOutputDurationMs())
+            it.position = textPosition
+        }
+    }
+
+    private fun refreshTextLayerList() {
+        if (!::textLayerList.isInitialized) return
+        textLayerList.removeAllViews()
+        if (textLayers.isEmpty()) {
+            textLayerList.addView(label("Henüz metin yok. + Yeni metin ile katman ekle.", 11f, Color.rgb(165, 174, 190), false))
+            return
+        }
+        textLayers.forEachIndexed { index, layer ->
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            val selected = layer.id == selectedTextLayerId
+            val name = layer.text.trim().ifBlank { "Metin katmanı ${index + 1}" }.let {
+                if (it.length > 20) it.take(20) + "…" else it
+            }
+            val selectButton = Button(this).apply {
+                text = "T${index + 1}  $name  •  ${formatMs(layer.startMs)}–${formatMs(layer.endMs)}"
+                isAllCaps = false
+                isSingleLine = false
+                textSize = 10f
+                gravity = Gravity.CENTER_VERTICAL or Gravity.START
+                setTextColor(if (selected) Color.BLACK else Color.WHITE)
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(if (selected) Color.rgb(177, 139, 255) else Color.rgb(48, 54, 67))
+                    cornerRadius = dp(7).toFloat()
+                }
+                setOnClickListener { selectTextLayer(layer) }
+            }
+            row.addView(selectButton, LinearLayout.LayoutParams(0, dp(38), 1f).apply { marginEnd = dp(5) })
+            val delete = Button(this).apply {
+                text = "×"
+                contentDescription = "Metin katmanını sil"
+                isAllCaps = false
+                textSize = 18f
+                setTextColor(Color.WHITE)
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(Color.rgb(93, 48, 57))
+                    cornerRadius = dp(7).toFloat()
+                }
+                setOnClickListener {
+                    selectedTextLayerId = layer.id
+                    removeSelectedTextLayer()
+                }
+            }
+            row.addView(delete, LinearLayout.LayoutParams(dp(42), dp(38)))
+            textLayerList.addView(row, matchWrap())
+        }
+    }
+
+    private fun audioFadeListener(isMusic: Boolean, isFadeIn: Boolean): SeekBar.OnSeekBarChangeListener =
+        object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (!fromUser || suppressLayerControlCallbacks) return
+                val layers = if (isMusic) musicLayers else soundLayers
+                val selectedId = if (isMusic) selectedMusicLayerId else selectedSoundLayerId
+                val layer = layers.firstOrNull { it.id == selectedId }
+                if (layer != null) {
+                    if (isFadeIn) layer.fadeInMs = progress * 1000L else layer.fadeOutMs = progress * 1000L
+                }
+                if (isMusic) {
+                    musicFadeLabel.text = "Müziğin açılma / kısılma süresi: ${musicFadeInSeek.progress} sn / ${musicFadeOutSeek.progress} sn"
+                } else {
+                    soundFadeLabel.text = "Efektin açılma / kısılma süresi: ${soundFadeInSeek.progress} sn / ${soundFadeOutSeek.progress} sn"
+                }
+                refreshTimelineTracks()
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) { recordUndoState() }
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        }
+
+    private fun loadSelectedMusicLayer(layer: AudioLayer?) {
+        suppressLayerControlCallbacks = true
+        selectedMusicLayerId = layer?.id
+        musicUri = layer?.uri
+        musicTitle = layer?.title
+        musicVolume = layer?.volume ?: 45
+        musicLabel.text = layer?.let { "Müzik: ${it.title} • video boyunca" } ?: "Müzik seçilmedi."
+        musicVolumeSeek.progress = musicVolume
+        musicVolumeLabel.text = "Müzik ses seviyesi: $musicVolume%"
+        musicFadeInSeek.progress = (((layer?.fadeInMs ?: 0L) / 1000L).toInt()).coerceIn(0, 10)
+        musicFadeOutSeek.progress = (((layer?.fadeOutMs ?: 0L) / 1000L).toInt()).coerceIn(0, 10)
+        musicFadeLabel.text = "Müziğin açılma / kısılma süresi: ${musicFadeInSeek.progress} sn / ${musicFadeOutSeek.progress} sn"
+        suppressLayerControlCallbacks = false
+        refreshTimelineTracks()
+    }
+
+    private fun loadSelectedSoundLayer(layer: AudioLayer?) {
+        suppressLayerControlCallbacks = true
+        selectedSoundLayerId = layer?.id
+        soundUri = layer?.uri
+        soundTitle = layer?.title
+        soundDurationMs = layer?.durationMs ?: 0L
+        soundStartMs = layer?.startMs ?: 0L
+        soundVolume = layer?.volume ?: 100
+        soundLabel.text = layer?.let { "Ses efekti: ${it.title} • ${formatMs(it.durationMs)}" } ?: "Ses efekti seçilmedi."
+        soundVolumeSeek.progress = soundVolume
+        soundVolumeLabel.text = "Ses/efekt seviyesi: $soundVolume%"
+        soundFadeInSeek.progress = (((layer?.fadeInMs ?: 0L) / 1000L).toInt()).coerceIn(0, 10)
+        soundFadeOutSeek.progress = (((layer?.fadeOutMs ?: 0L) / 1000L).toInt()).coerceIn(0, 10)
+        soundFadeLabel.text = "Efektin açılma / kısılma süresi: ${soundFadeInSeek.progress} sn / ${soundFadeOutSeek.progress} sn"
+        suppressLayerControlCallbacks = false
+        updateSoundControls()
+    }
+
+    private fun removeSelectedAudioLayer(isMusic: Boolean) {
+        val layers = if (isMusic) musicLayers else soundLayers
+        val id = if (isMusic) selectedMusicLayerId else selectedSoundLayerId
+        val layer = layers.firstOrNull { it.id == id }
+        if (layer == null) {
+            status.text = if (isMusic) "Önce silinecek müzik katmanını seç." else "Önce silinecek ses katmanını seç."
+            return
+        }
+        recordUndoState()
+        layers.remove(layer)
+        audioPreviewPlayers.remove(layer.id)?.release()
+        audioPreviewSources.remove(layer.id)
+        if (isMusic) loadSelectedMusicLayer(layers.lastOrNull()) else loadSelectedSoundLayer(layers.lastOrNull())
+        refreshTimelineTracks()
+        status.text = if (isMusic) "Müzik katmanı silindi." else "Ses katmanı silindi."
+    }
+
+    private fun addAudioLayer(isMusic: Boolean, uri: Uri, title: String, durationMs: Long) {
+        recordUndoState()
+        val layer = AudioLayer(
+            id = nextLayerId++,
+            uri = uri,
+            title = title,
+            durationMs = durationMs.coerceAtLeast(1L),
+            startMs = 0L,
+            volume = if (isMusic) musicVolume else soundVolume
+        )
+        if (isMusic) {
+            musicLayers.add(layer)
+            loadSelectedMusicLayer(layer)
+        } else {
+            soundLayers.add(layer)
+            loadSelectedSoundLayer(layer)
+        }
+        refreshTimelineTracks()
+        status.text = if (isMusic) "Müzik katmanı zaman çizelgesine eklendi." else "Ses efekti zaman çizelgesine eklendi."
+    }
+
+    private fun selectAudioLayer(layer: AudioLayer, isMusic: Boolean) {
+        if (isMusic) loadSelectedMusicLayer(layer) else loadSelectedSoundLayer(layer)
+        onOpenAudioTool?.invoke()
+    }
+
+    private fun audioGain(volumePercent: Int, relativePositionMs: Long, trackDurationMs: Long, fadeInMs: Long, fadeOutMs: Long): Float {
+        val base = volumePercent.coerceIn(0, 100) / 100f
+        var fade = 1f
+        val duration = trackDurationMs.coerceAtLeast(0L)
+        if (fadeInMs > 0L && relativePositionMs < fadeInMs) {
+            fade = minOf(fade, (relativePositionMs.toFloat() / fadeInMs).coerceIn(0f, 1f))
+        }
+        val fadeStart = (duration - fadeOutMs).coerceAtLeast(0L)
+        if (fadeOutMs > 0L && relativePositionMs > fadeStart) {
+            fade = minOf(fade, ((duration - relativePositionMs).toFloat() / fadeOutMs).coerceIn(0f, 1f))
+        }
+        return base * fade
+    }
 
     private fun simpleSelectionListener(onSelected: (Int) -> Unit): AdapterView.OnItemSelectedListener =
         object : AdapterView.OnItemSelectedListener {
