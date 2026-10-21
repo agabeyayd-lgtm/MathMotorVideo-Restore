@@ -72,6 +72,7 @@ class VideoEditorActivity : Activity() {
     private var soundStartMs: Long = 0L
     private var textStartMs: Long = 0L
     private var textEndMs: Long = 0L
+    private var textTimingCustomized = false
     private var sourceAudioVolume = 100
     private var musicVolume = 45
     private var soundVolume = 100
@@ -295,6 +296,7 @@ class VideoEditorActivity : Activity() {
         textStartSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
+                textTimingCustomized = true
                 textStartMs = (progress * 1000L).coerceAtMost(totalOutputDurationMs())
                 if (textEndMs <= textStartMs) textEndMs = (textStartMs + 1000L).coerceAtMost(totalOutputDurationMs())
                 updateTextControls()
@@ -305,6 +307,7 @@ class VideoEditorActivity : Activity() {
         textEndSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
+                textTimingCustomized = true
                 textEndMs = (progress * 1000L).coerceAtMost(totalOutputDurationMs())
                 if (textEndMs <= textStartMs) textStartMs = (textEndMs - 1000L).coerceAtLeast(0L)
                 updateTextControls()
@@ -318,7 +321,7 @@ class VideoEditorActivity : Activity() {
         if (!::textStartSeek.isInitialized || !::textEndSeek.isInitialized) return
         val total = totalOutputDurationMs()
         val maxSeconds = ceil(total / 1000.0).toInt().coerceAtLeast(0)
-        if (textEndMs <= 0L || textEndMs > total) textEndMs = total
+        if (!textTimingCustomized || textEndMs <= 0L || textEndMs > total) textEndMs = total
         textStartMs = textStartMs.coerceAtMost((total - 1L).coerceAtLeast(0L))
         if (textEndMs <= textStartMs && total > 0L) {
             textStartMs = 0L
