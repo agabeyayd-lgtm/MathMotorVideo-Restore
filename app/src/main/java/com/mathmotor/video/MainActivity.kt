@@ -147,6 +147,7 @@ class MainActivity : Activity() {
             setMediaController(MediaController(this@MainActivity))
         }
         root.addView(homeVideoView, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(230)).apply { topMargin = dp(4); bottomMargin = dp(12) })
+        root.addView(actionButton("VİDEO EDİTÖRÜ • KES / YAZI / SES") { startActivity(Intent(this, VideoEditorActivity::class.java)) })
         root.addView(actionButton("10 SANİYELİK VİDEO OLUŞTUR") { createVideo() })
         root.addView(actionButton("TELEFONDAN VİDEO SEÇ / KARELERİ TEST ET") { chooseVideo() })
         root.addView(actionButton("GÜNCELLEMEYİ KONTROL ET") { checkForUpdates() })
