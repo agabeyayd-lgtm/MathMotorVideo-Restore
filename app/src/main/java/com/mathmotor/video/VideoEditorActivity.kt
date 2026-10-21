@@ -1092,7 +1092,7 @@ class VideoEditorActivity : Activity() {
         private var levels: FloatArray = FloatArray(0)
         private val wavePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.rgb(180, 194, 215)
-            strokeWidth = dp(1.25f).toFloat()
+            strokeWidth = dp(1).toFloat()
             strokeCap = Paint.Cap.ROUND
         }
         private val centerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
