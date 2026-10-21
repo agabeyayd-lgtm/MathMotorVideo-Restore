@@ -1304,7 +1304,7 @@ class VideoEditorActivity : Activity() {
                 val selected = index == selectedClipIndex
                 val durationMs = (clip.endMs - clip.startMs).coerceAtLeast(1L)
                 val widthDp = ((durationMs / 1000f) * scale).toInt().coerceIn(48, timelineContentWidthDp())
-                addTimedTimelineChip(
+                val chip = addTimedTimelineChip(
                     clipList,
                     (if (selected) "▶ " else "") + "${index + 1}. ${clip.title}\n${formatMs(durationMs)}",
                     if (selected) Color.rgb(0, 202, 170) else Color.rgb(45, 91, 111),
@@ -1323,9 +1323,60 @@ class VideoEditorActivity : Activity() {
                     player?.playWhenReady = true
                     status.text = "Seçili klip: ${clip.title}"
                 }
+                chip.tag = index
+                chip.setOnLongClickListener { view ->
+                    val payload = ClipData.newPlainText("MathMotorVideoClipIndex", index.toString())
+                    view.startDragAndDrop(payload, View.DragShadowBuilder(view), view, 0)
+                }
+                chip.setOnDragListener { view, event ->
+                    when (event.action) {
+                        DragEvent.ACTION_DRAG_STARTED -> true
+                        DragEvent.ACTION_DRAG_ENTERED -> {
+                            view.alpha = 0.68f
+                            true
+                        }
+                        DragEvent.ACTION_DRAG_EXITED -> {
+                            view.alpha = 1f
+                            true
+                        }
+                        DragEvent.ACTION_DROP -> {
+                            view.alpha = 1f
+                            val draggedView = event.localState as? View
+                            val from = draggedView?.tag as? Int
+                            val to = index
+                            if (from != null && from in clips.indices && to in clips.indices && from != to) {
+                                recordUndoState()
+                                val wasSelected = selectedClipIndex
+                                val moved = clips.removeAt(from)
+                                clips.add(to, moved)
+                                selectedClipIndex = when {
+                                    wasSelected == from -> to
+                                    from < to && wasSelected in (from + 1)..to -> wasSelected - 1
+                                    from > to && wasSelected in to until from -> wasSelected + 1
+                                    else -> wasSelected
+                                }.coerceIn(0, clips.lastIndex)
+                                previewingSequence = false
+                                previewTimelineOffsetMs = outputOffsetForClip(selectedClipIndex)
+                                refreshClipList()
+                                loadTrimControls()
+                                player?.setMediaItem(clippedMediaItem(clips[selectedClipIndex]))
+                                player?.prepare()
+                                player?.playWhenReady = false
+                                status.text = "Klipler zaman çizelgesinde yeniden sıralandı."
+                            }
+                            true
+                        }
+                        DragEvent.ACTION_DRAG_ENDED -> {
+                            view.alpha = 1f
+                            true
+                        }
+                        else -> true
+                    }
+                }
             }
         }
         refreshTimelineTracks()
+        updatePlayheadUi(currentTimelinePositionMs())
     }
 
     private fun addTimelineLane(
@@ -1412,7 +1463,7 @@ class VideoEditorActivity : Activity() {
         widthDp: Int,
         marginStartDp: Int,
         action: () -> Unit
-    ) {
+    ): Button {
         val chip = Button(this).apply {
             text = title
             isAllCaps = false
@@ -1432,6 +1483,7 @@ class VideoEditorActivity : Activity() {
             marginStart = dp(marginStartDp.coerceAtLeast(0))
             marginEnd = dp(2)
         })
+        return chip
     }
 
     private fun timelineContentWidthDp(): Int {
