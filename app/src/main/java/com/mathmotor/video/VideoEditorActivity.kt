@@ -1,6 +1,7 @@
 package com.mathmotor.video
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.ContentValues
 import android.content.ClipData
 import android.content.Intent
@@ -752,6 +753,7 @@ class VideoEditorActivity : Activity() {
         }
         projectPanel.addView(actionButton("Projeyi farklı kaydet (.JSON)") { requestSaveProject() })
         projectPanel.addView(actionButton("Kayıtlı projeyi aç") { requestOpenProject() })
+        projectPanel.addView(actionButton("Son otomatik yedeği geri yükle") { restoreAutoSave() })
         exportButton = actionButton("MP4 OLARAK DIŞA AKTAR") { exportEditedVideo() }.apply {
             textSize = 15f
             minHeight = dp(52)
@@ -1439,6 +1441,49 @@ class VideoEditorActivity : Activity() {
                 status.text = "${title} eklendi. Kesme aralığını seçebilirsin."
             }
         }.start()
+    }
+
+    private fun autoSaveFile(): File = File(filesDir, "mathmotor_editor_autosave.json")
+
+    private fun autoSaveProject() {
+        if (!::textInput.isInitialized || !::exportNameInput.isInitialized) return
+        val hasProject = clips.isNotEmpty() || textLayers.isNotEmpty() || musicLayers.isNotEmpty() || soundLayers.isNotEmpty()
+        if (!hasProject) return
+        runCatching {
+            val target = autoSaveFile()
+            val temp = File(filesDir, "mathmotor_editor_autosave.tmp")
+            temp.writeText(createProjectJson().toString(2), Charsets.UTF_8)
+            if (target.exists() && !target.delete()) error("Önceki yedek değiştirilemedi.")
+            if (!temp.renameTo(target)) {
+                target.writeText(temp.readText(Charsets.UTF_8), Charsets.UTF_8)
+                temp.delete()
+            }
+        }.onFailure {
+            status.text = "Otomatik yedek alınamadı: ${it.message}"
+        }
+    }
+
+    private fun restoreAutoSave() {
+        val file = autoSaveFile()
+        if (!file.exists()) {
+            status.text = "Henüz otomatik yedek bulunmuyor."
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Otomatik yedeği geri yükle?")
+            .setMessage("Açık düzenleme mevcut düzenin yerine geçecek. Önce mevcut projenin JSON yedeğini alabilirsin.")
+            .setNegativeButton("Vazgeç", null)
+            .setPositiveButton("Yedeği geri yükle") { _, _ ->
+                recordUndoState()
+                runCatching {
+                    applyProjectJson(JSONObject(file.readText(Charsets.UTF_8)), allowEmptyClips = true)
+                }.onSuccess {
+                    status.text = "Son otomatik yedek geri yüklendi."
+                }.onFailure {
+                    status.text = "Otomatik yedek açılamadı: ${it.message}"
+                }
+            }
+            .show()
     }
 
     private fun requestSaveProject() {
@@ -2758,6 +2803,7 @@ class VideoEditorActivity : Activity() {
     }
 
     override fun onStop() {
+        autoSaveProject()
         previewHandler.removeCallbacks(previewTicker)
         player?.pause()
         audioPreviewPlayers.values.forEach { it.pause() }
