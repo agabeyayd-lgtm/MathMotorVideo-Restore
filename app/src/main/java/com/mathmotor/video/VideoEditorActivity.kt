@@ -8,12 +8,17 @@ import android.content.Intent
 import android.database.Cursor
 import android.graphics.Color
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
 import java.nio.ByteBuffer
 import android.graphics.drawable.BitmapDrawable
 import androidx.media3.common.C
 import android.util.LruCache
 import android.graphics.Typeface
 import android.media.MediaMetadataRetriever
+import android.media.MediaCodec
+import android.media.MediaExtractor
+import android.media.MediaFormat
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -69,6 +74,7 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.util.Locale
+import java.nio.ByteOrder
 import kotlin.math.ceil
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
@@ -115,6 +121,8 @@ class VideoEditorActivity : Activity() {
     private val thumbnailCache = object : LruCache<String, Bitmap>(6 * 1024 * 1024) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
     }
+    private val audioWaveformCache = mutableMapOf<String, FloatArray>()
+    private val audioWaveformRequests = mutableSetOf<String>()
     private var selectedClipIndex = -1
     private var musicUri: Uri? = null
     private var musicTitle: String? = null
@@ -1914,6 +1922,7 @@ class VideoEditorActivity : Activity() {
                     status.text = "Seçili klip: ${clip.title}"
                 }
                 chip.tag = index
+                requestClipThumbnail(clip, index, chip)
                 chip.setOnLongClickListener { view ->
                     val payload = ClipData.newPlainText("MathMotorVideoClipIndex", index.toString())
                     view.startDragAndDrop(payload, View.DragShadowBuilder(view), view, 0)
@@ -2292,7 +2301,8 @@ class VideoEditorActivity : Activity() {
                     if (layer.id == selectedMusicLayerId) Color.rgb(90, 175, 255) else Color.rgb(37, 101, 149),
                     if (layer.id == selectedMusicLayerId) Color.BLACK else Color.WHITE,
                     0,
-                    (widthDp - 4).coerceAtLeast(38)
+                    (widthDp - 4).coerceAtLeast(38),
+                    layer.uri
                 ) { selectAudioLayer(layer, isMusic = true) }
             }
         }
@@ -2316,7 +2326,8 @@ class VideoEditorActivity : Activity() {
                     if (layer.id == selectedSoundLayerId) Color.rgb(255, 174, 84) else Color.rgb(154, 98, 46),
                     if (layer.id == selectedSoundLayerId) Color.BLACK else Color.WHITE,
                     startDp,
-                    layerWidth
+                    layerWidth,
+                    layer.uri
                 ) { selectAudioLayer(layer, isMusic = false) }
             }
         }
@@ -2329,18 +2340,30 @@ class VideoEditorActivity : Activity() {
         textColor: Int,
         startDp: Int,
         widthDp: Int,
+        waveformUri: Uri? = null,
         action: () -> Unit
     ) {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            minimumHeight = dp(33)
+            minimumHeight = dp(if (waveformUri == null) 34 else 48)
         }
         if (startDp > 0) {
-            row.addView(View(this), LinearLayout.LayoutParams(dp(startDp), dp(31)))
+            row.addView(View(this), LinearLayout.LayoutParams(dp(startDp), dp(if (waveformUri == null) 31 else 45)))
         }
-        addTimedTimelineChip(row, title, fill, textColor, widthDp, 0, action)
-        host.addView(row, LinearLayout.LayoutParams(dp(timelineContentWidthDp()), dp(34)).apply {
+        if (waveformUri == null) {
+            addTimedTimelineChip(row, title, fill, textColor, widthDp, 0, action)
+        } else {
+            val stack = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            addTimedTimelineChip(stack, title, fill, textColor, widthDp, 0, action)
+            val waveformKey = waveformUri.toString()
+            val waveform = WaveformView(this)
+            audioWaveformCache[waveformKey]?.let { waveform.setLevels(it) }
+            stack.addView(waveform, LinearLayout.LayoutParams(dp(widthDp), dp(14)))
+            row.addView(stack, LinearLayout.LayoutParams(dp(widthDp), dp(46)))
+            if (!audioWaveformCache.containsKey(waveformKey)) requestAudioWaveform(waveformUri)
+        }
+        host.addView(row, LinearLayout.LayoutParams(dp(timelineContentWidthDp()), dp(if (waveformUri == null) 34 else 48)).apply {
             bottomMargin = dp(1)
         })
     }
