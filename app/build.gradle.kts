@@ -22,8 +22,8 @@ android {
         applicationId = "com.mathmotor.video.next"
         minSdk = 26
         targetSdk = 35
-        versionCode = 369
-        versionName = "8.3-migration"
+        versionCode = 370
+        versionName = "8.4-auto-update"
         testInstrumentationRunner = "android.test.AndroidJUnitRunner"
     }
 
