@@ -24,7 +24,7 @@ android {
         targetSdk = 35
         versionCode = 369
         versionName = "8.3-stable-signing"
-        testInstrumentationRunner = "android.test.InstrumentationTestRunner"
+        testInstrumentationRunner = "android.test.AndroidJUnitRunner"
     }
 
     signingConfigs {
