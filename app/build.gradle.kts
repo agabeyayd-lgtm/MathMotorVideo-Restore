@@ -11,8 +11,8 @@ android {
         applicationId = "com.mathmotor.video"
         minSdk = 26
         targetSdk = 35
-        versionCode = 366
-        versionName = "8.0-restored"
+        versionCode = 367
+        versionName = "8.1-restored"
         testInstrumentationRunner = "android.test.runner.AndroidJUnitRunner"
     }
 
