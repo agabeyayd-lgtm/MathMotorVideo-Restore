@@ -1369,7 +1369,8 @@ class VideoEditorActivity : Activity() {
             output.flip()
         }
 
-        override fun onFlush(streamMetadata: AudioProcessor.StreamMetadata) {
+        @Suppress("DEPRECATION")
+        override fun onFlush() {
             processedFrames = 0L
         }
 
@@ -1967,7 +1968,7 @@ class VideoEditorActivity : Activity() {
         timelineScrollViews.add(laneScroll)
         row.addView(laneScroll, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         host.addView(row, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-            minHeight = dp(38)
+            minimumHeight = dp(38)
             bottomMargin = dp(2)
         })
     }
