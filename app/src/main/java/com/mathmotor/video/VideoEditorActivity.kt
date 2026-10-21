@@ -2199,6 +2199,7 @@ class VideoEditorActivity : Activity() {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = dp(38)
             background = android.graphics.drawable.GradientDrawable().apply {
                 setColor(Color.rgb(30, 35, 45))
                 cornerRadius = dp(7).toFloat()
@@ -2234,7 +2235,6 @@ class VideoEditorActivity : Activity() {
         timelineScrollViews.add(laneScroll)
         row.addView(laneScroll, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         host.addView(row, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-            minimumHeight = dp(38)
             bottomMargin = dp(2)
         })
     }
