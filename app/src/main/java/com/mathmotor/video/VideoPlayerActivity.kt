@@ -13,12 +13,16 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
-import android.widget.VideoView
-import android.widget.MediaController
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
 import android.widget.Toast
 
 class VideoPlayerActivity : Activity() {
-    private lateinit var videoView: VideoView
+    private lateinit var playerView: PlayerView
+    private var player: ExoPlayer? = null
     private lateinit var info: TextView
     private lateinit var historyContainer: LinearLayout
     private var activeUri: Uri? = null
@@ -45,11 +49,8 @@ class VideoPlayerActivity : Activity() {
             setTextColor(Color.rgb(173, 191, 204))
             setPadding(0, dp(5), 0, dp(12))
         })
-        videoView = VideoView(this).apply { setBackgroundColor(Color.BLACK) }
-        root.addView(videoView, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(300)))
-        val controller = MediaController(this)
-        controller.setAnchorView(videoView)
-        videoView.setMediaController(controller)
+        playerView = PlayerView(this).apply { setBackgroundColor(Color.BLACK); useController = true }
+        root.addView(playerView, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(300)))
         info = TextView(this).apply {
             text = "Bir video seç veya aşağıdaki geçmişten bir kayda dokun."
             textSize = 13f
@@ -62,9 +63,9 @@ class VideoPlayerActivity : Activity() {
             if (activeUri == null) {
                 val first = VideoRecordStore.list(this).firstOrNull()
                 if (first != null) play(Uri.parse(first.uri), first.title) else chooseVideo()
-            } else videoView.start()
+            } else player?.play()
         })
-        root.addView(actionButton("DURAKLAT") { if (videoView.isPlaying) videoView.pause() })
+        root.addView(actionButton("DURAKLAT") { player?.pause() })
         root.addView(actionButton("GERİ DÖN") { finish() })
         root.addView(TextView(this).apply {
             text = "VİDEO GEÇMİŞİ"
@@ -107,21 +108,50 @@ class VideoPlayerActivity : Activity() {
 
     private fun play(uri: Uri, title: String) {
         activeUri = uri
-        info.text = "Açılıyor: " + title
+        info.text = "Video açılıyor: " + title
         try {
-            videoView.setVideoURI(uri)
-            videoView.setOnPreparedListener { player ->
-                player.isLooping = false
-                info.text = title + "\n" + player.videoWidth + "×" + player.videoHeight + " • " + (player.duration / 1000) + " saniye"
-                videoView.start()
+            if (player == null) {
+                player = ExoPlayer.Builder(this).build().also { exo ->
+                    playerView.player = exo
+                    exo.addListener(object : Player.Listener {
+                        override fun onPlaybackStateChanged(playbackState: Int) {
+                            if (playbackState == Player.STATE_BUFFERING) info.text = "Video yükleniyor…"
+                            if (playbackState == Player.STATE_READY) {
+                                val format = exo.videoFormat
+                                info.text = if (format != null && format.width > 0 && format.height > 0) {
+                                    "Görüntü hazır: " + format.width + "×" + format.height
+                                } else "Ses hazır; bu dosyada görüntü akışı bulunamadı."
+                            }
+                        }
+                        override fun onRenderedFirstFrame() {
+                            info.text = "Görüntü oynatılıyor."
+                        }
+                        override fun onPlayerError(error: PlaybackException) {
+                            info.text = "Video oynatılamadı: " + error.errorCodeName + "\nBaşka bir video dosyası dene."
+                        }
+                    })
+                }
             }
-            videoView.setOnErrorListener { _, what, extra ->
-                info.text = "Video oynatılamadı (hata " + what + "/" + extra + "). Dosya taşınmış veya erişim izni sona ermiş olabilir."
-                true
+            player?.apply {
+                setMediaItem(MediaItem.fromUri(uri))
+                prepare()
+                playWhenReady = true
             }
         } catch (e: Exception) {
             info.text = "Video açılamadı: " + (e.message ?: e.javaClass.simpleName)
         }
+    }
+
+    override fun onStop() {
+        player?.pause()
+        super.onStop()
+    }
+
+    override fun onDestroy() {
+        playerView.player = null
+        player?.release()
+        player = null
+        super.onDestroy()
     }
 
     private fun chooseVideo() {
