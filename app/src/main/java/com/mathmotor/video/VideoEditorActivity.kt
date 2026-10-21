@@ -2010,78 +2010,70 @@ class VideoEditorActivity : Activity() {
 
     private fun syncAudioPreviews() {
         val main = player
-        if (main == null || clips.isEmpty() || selectedClipIndex !in clips.indices || !main.isPlaying) {
-            musicPreviewPlayer?.pause()
-            soundPreviewPlayer?.pause()
+        if (main == null || clips.isEmpty() || !main.isPlaying) {
+            audioPreviewPlayers.values.forEach { it.pause() }
             return
         }
 
         val timelineMs = currentTimelinePositionMs()
-
-        val music = musicPreviewPlayer
-        if (previewMusicSource != musicUri) {
-            previewMusicSource = musicUri
-            music?.playWhenReady = false
-            music?.stop()
-            music?.clearMediaItems()
-            if (musicUri != null) {
-                music?.repeatMode = Player.REPEAT_MODE_ONE
-                music?.setMediaItem(MediaItem.fromUri(musicUri!!))
-                music?.volume = musicVolume.coerceIn(0, 100) / 100f
-                music?.prepare()
-            }
-        }
-        if (musicUri == null) {
-            music?.pause()
-        } else if (music != null) {
-            music.volume = musicVolume.coerceIn(0, 100) / 100f
-            if (music.playbackState == Player.STATE_READY && music.duration > 0L) {
-                val target = timelineMs % music.duration
-                if (!music.isPlaying || kotlin.math.abs(music.currentPosition - target) > 900L) {
-                    music.seekTo(target)
-                }
-                music.playWhenReady = true
-            } else if (music.playbackState == Player.STATE_BUFFERING) {
-                music.playWhenReady = true
-            }
+        val outputLength = totalOutputDurationMs().coerceAtLeast(1L)
+        val allLayers = musicLayers + soundLayers
+        val liveIds = allLayers.map { it.id }.toSet()
+        val staleIds = audioPreviewPlayers.keys.filter { it !in liveIds }
+        staleIds.forEach { id ->
+            audioPreviewPlayers.remove(id)?.release()
+            audioPreviewSources.remove(id)
         }
 
-        val sound = soundPreviewPlayer
-        if (previewSoundSource != soundUri) {
-            previewSoundSource = soundUri
-            sound?.playWhenReady = false
-            sound?.stop()
-            sound?.clearMediaItems()
-            if (soundUri != null) {
-                sound?.repeatMode = Player.REPEAT_MODE_OFF
-                sound?.setMediaItem(MediaItem.fromUri(soundUri!!))
-                sound?.volume = soundVolume.coerceIn(0, 100) / 100f
-                sound?.prepare()
-            }
-        }
-        if (soundUri == null || sound == null) {
-            sound?.pause()
-            return
-        }
-        sound.volume = soundVolume.coerceIn(0, 100) / 100f
-        val expectedSoundDuration = soundDurationMs.coerceAtLeast(0L)
-        val soundEnd = soundStartMs + expectedSoundDuration
-        if (timelineMs < soundStartMs) {
-            sound.playWhenReady = false
-            if (sound.currentPosition > 0L) sound.seekTo(0L)
-        } else if (timelineMs < soundEnd && sound.playbackState == Player.STATE_READY) {
-            val target = (timelineMs - soundStartMs).coerceAtLeast(0L)
-            if (sound.duration <= 0L || target < sound.duration) {
-                if (!sound.isPlaying || kotlin.math.abs(sound.currentPosition - target) > 700L) {
-                    sound.seekTo(target)
+        allLayers.forEach { layer ->
+            val isMusic = musicLayers.any { it.id == layer.id }
+            val audio = audioPreviewPlayers.getOrPut(layer.id) {
+                ExoPlayer.Builder(this).build().also {
+                    it.repeatMode = if (isMusic) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
                 }
-                sound.playWhenReady = true
+            }
+            if (audioPreviewSources[layer.id] != layer.uri) {
+                audio.playWhenReady = false
+                audio.stop()
+                audio.clearMediaItems()
+                audio.setMediaItem(MediaItem.fromUri(layer.uri))
+                audioPreviewSources[layer.id] = layer.uri
+                audio.prepare()
+            }
+            if (audio.playbackState == Player.STATE_IDLE) {
+                audio.setMediaItem(MediaItem.fromUri(layer.uri))
+                audioPreviewSources[layer.id] = layer.uri
+                audio.prepare()
+            }
+
+            if (isMusic) {
+                if (timelineMs >= outputLength || audio.playbackState == Player.STATE_IDLE) {
+                    audio.pause()
+                    return@forEach
+                }
+                val mediaDuration = audio.duration.takeIf { it > 0L } ?: layer.durationMs.coerceAtLeast(1L)
+                val target = timelineMs % mediaDuration
+                if (!audio.isPlaying || kotlin.math.abs(audio.currentPosition - target) > 700L) {
+                    if (audio.playbackState == Player.STATE_READY) audio.seekTo(target)
+                }
+                audio.volume = audioGain(layer.volume, timelineMs, outputLength, layer.fadeInMs, layer.fadeOutMs)
+                audio.playWhenReady = true
             } else {
-                sound.playWhenReady = false
+                val visibleDuration = minOf(layer.durationMs.coerceAtLeast(1L), (outputLength - layer.startMs).coerceAtLeast(0L))
+                val localTime = timelineMs - layer.startMs
+                if (localTime < 0L || localTime >= visibleDuration || audio.playbackState == Player.STATE_IDLE) {
+                    audio.playWhenReady = false
+                    if (localTime < 0L && audio.currentPosition > 0L && audio.playbackState == Player.STATE_READY) audio.seekTo(0L)
+                    return@forEach
+                }
+                if (audio.playbackState == Player.STATE_READY) {
+                    if (!audio.isPlaying || kotlin.math.abs(audio.currentPosition - localTime) > 450L) audio.seekTo(localTime)
+                    audio.volume = audioGain(layer.volume, localTime, visibleDuration, layer.fadeInMs, layer.fadeOutMs)
+                    audio.playWhenReady = true
+                } else if (audio.playbackState == Player.STATE_BUFFERING) {
+                    audio.playWhenReady = true
+                }
             }
-        } else {
-            sound.playWhenReady = false
-            if (timelineMs < soundStartMs && sound.currentPosition > 0L) sound.seekTo(0L)
         }
     }
 
