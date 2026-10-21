@@ -727,12 +727,188 @@ class VideoEditorActivity : Activity() {
     // Reference used only while constructing the tool sections.
     private var activePanelForHeading: LinearLayout? = null
 
+    private fun simpleSelectionListener(onSelected: (Int) -> Unit): AdapterView.OnItemSelectedListener =
+        object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                onSelected(position)
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+    private fun updateUndoRedoButtons() {
+        if (::undoButton.isInitialized) {
+            undoButton.isEnabled = undoStates.isNotEmpty() && !exporting
+            undoButton.alpha = if (undoButton.isEnabled) 1f else 0.42f
+        }
+        if (::redoButton.isInitialized) {
+            redoButton.isEnabled = redoStates.isNotEmpty() && !exporting
+            redoButton.alpha = if (redoButton.isEnabled) 1f else 0.42f
+        }
+    }
+
+    private fun recordUndoState() {
+        if (restoringHistory || !::textInput.isInitialized || !::exportNameInput.isInitialized) return
+        val snapshot = runCatching { createProjectJson().toString() }.getOrNull() ?: return
+        if (undoStates.lastOrNull() != snapshot) {
+            undoStates.add(snapshot)
+            if (undoStates.size > 80) undoStates.removeAt(0)
+        }
+        redoStates.clear()
+        updateUndoRedoButtons()
+    }
+
+    private fun undoLastChange() {
+        if (undoStates.isEmpty() || restoringHistory) return
+        val current = runCatching { createProjectJson().toString() }.getOrNull() ?: return
+        val target = undoStates.removeAt(undoStates.lastIndex)
+        redoStates.add(current)
+        restoringHistory = true
+        runCatching { applyProjectJson(JSONObject(target), allowEmptyClips = true) }
+            .onFailure { status.text = "Geri alma yapılamadı: ${it.message}" }
+        restoringHistory = false
+        updateUndoRedoButtons()
+        status.text = "Son işlem geri alındı."
+    }
+
+    private fun redoLastChange() {
+        if (redoStates.isEmpty() || restoringHistory) return
+        val current = runCatching { createProjectJson().toString() }.getOrNull() ?: return
+        val target = redoStates.removeAt(redoStates.lastIndex)
+        undoStates.add(current)
+        restoringHistory = true
+        runCatching { applyProjectJson(JSONObject(target), allowEmptyClips = true) }
+            .onFailure { status.text = "Yineleme yapılamadı: ${it.message}" }
+        restoringHistory = false
+        updateUndoRedoButtons()
+        status.text = "İşlem yine uygulandı."
+    }
+
+    private fun updatePlayheadUi(positionMs: Long) {
+        if (!::playheadSeek.isInitialized || !::playheadLabel.isInitialized) return
+        val total = totalOutputDurationMs().coerceAtLeast(0L)
+        val bounded = positionMs.coerceIn(0L, total)
+        playheadLabel.text = "${formatPreciseMs(bounded)} / ${formatPreciseMs(total)}"
+        updatingPlayhead = true
+        playheadSeek.isEnabled = total > 0L
+        playheadSeek.progress = if (total <= 0L) 0 else (bounded * 10000L / total).toInt().coerceIn(0, 10000)
+        updatingPlayhead = false
+    }
+
+    private fun seekToTimelineTime(targetMs: Long, preservePlayback: Boolean) {
+        if (clips.isEmpty()) return
+        val total = totalOutputDurationMs()
+        val target = targetMs.coerceIn(0L, (total - 1L).coerceAtLeast(0L))
+        var remaining = target
+        var index = 0
+        while (index < clips.lastIndex) {
+            val duration = (clips[index].endMs - clips[index].startMs).coerceAtLeast(0L)
+            if (remaining < duration) break
+            remaining -= duration
+            index++
+        }
+        val exo = player ?: return
+        val wasPlaying = preservePlayback && (exo.isPlaying || exo.playWhenReady)
+        selectedClipIndex = index
+        previewingSequence = true
+        previewTimelineOffsetMs = outputOffsetForClip(index)
+        val duration = (clips[index].endMs - clips[index].startMs).coerceAtLeast(1L)
+        val localPosition = remaining.coerceIn(0L, (duration - 1L).coerceAtLeast(0L))
+        if (exo.mediaItemCount == clips.size) {
+            exo.seekTo(index, localPosition)
+        } else {
+            exo.setMediaItems(clips.map { clippedMediaItem(it) }, index, localPosition)
+            exo.prepare()
+        }
+        exo.volume = if (keepSourceAudio.isChecked) sourceAudioVolume / 100f else 0f
+        exo.playWhenReady = wasPlaying
+        refreshClipList()
+        loadTrimControls()
+        updatePlayheadUi(target)
+        refreshPreviewOverlay()
+    }
+
+    private fun framesFor(clip: Clip): Int =
+        ceil(clip.durationMs * clip.frameRate.coerceIn(1f, 120f) / 1000.0).toInt().coerceAtLeast(1)
+
+    private fun frameForMs(clip: Clip, timeMs: Long): Int =
+        (timeMs.coerceAtLeast(0L) * clip.frameRate.coerceIn(1f, 120f) / 1000f)
+            .roundToInt().coerceIn(0, framesFor(clip))
+
+    private fun msForFrame(clip: Clip, frame: Int): Long =
+        (frame.coerceAtLeast(0) * 1000.0 / clip.frameRate.coerceIn(1f, 120f))
+            .roundToLong().coerceIn(0L, clip.durationMs)
+
+    private fun readVideoMetadata(uri: Uri): Pair<Long, Float> {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(this, uri)
+            val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            val fps = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)
+                ?.toFloatOrNull()?.takeIf { it in 1f..120f } ?: 30f
+            duration to fps
+        } finally {
+            retriever.release()
+        }
+    }
+
+    private fun splitSelectedClipAtPlayhead() {
+        if (selectedClipIndex !in clips.indices) {
+            status.text = "Önce bölünecek klibi seç."
+            return
+        }
+        val index = if (previewingSequence) (player?.currentMediaItemIndex ?: selectedClipIndex).coerceIn(0, clips.lastIndex) else selectedClipIndex
+        val clip = clips[index]
+        val localOutputMs = (currentTimelinePositionMs() - outputOffsetForClip(index)).coerceAtLeast(0L)
+        val rawBoundary = clip.startMs + localOutputMs
+        val frame = frameForMs(clip, rawBoundary)
+        val boundary = msForFrame(clip, frame).coerceIn(clip.startMs, clip.endMs)
+        val minFrameMs = (1000f / clip.frameRate.coerceIn(1f, 120f)).roundToLong().coerceAtLeast(1L)
+        if (boundary - clip.startMs < minFrameMs || clip.endMs - boundary < minFrameMs) {
+            status.text = "Bölmek için oynatma noktasını klibin içine, iki uçtan en az bir kare uzağa getir."
+            return
+        }
+        recordUndoState()
+        val first = clip.copy(title = clip.title + " • A", endMs = boundary)
+        val second = clip.copy(title = clip.title + " • B", startMs = boundary)
+        clips[index] = first
+        clips.add(index + 1, second)
+        selectedClipIndex = index + 1
+        previewingSequence = false
+        refreshClipList()
+        loadTrimControls()
+        seekToTimelineTime(outputOffsetForClip(selectedClipIndex), preservePlayback = false)
+        status.text = "Klip oynatma noktasından iki parçaya bölündü."
+    }
+
+    private fun outputDimensions(): Pair<Int, Int> {
+        val shortSide = when (outputResolutionIndex.coerceIn(0, resolutionOptions.lastIndex)) {
+            0 -> 480
+            1 -> 720
+            else -> 1080
+        }
+        val ratio = when (outputAspectIndex.coerceIn(0, aspectOptions.lastIndex)) {
+            0 -> 9f / 16f
+            1 -> 16f / 9f
+            else -> 1f
+        }
+        val width: Int
+        val height: Int
+        if (ratio >= 1f) {
+            height = shortSide
+            width = (shortSide * ratio).roundToInt()
+        } else {
+            width = shortSide
+            height = (shortSide / ratio).roundToInt()
+        }
+        return (width / 2 * 2).coerceAtLeast(2) to (height / 2 * 2).coerceAtLeast(2)
+    }
+
     private fun volumeListener(onValue: (Int) -> Unit): SeekBar.OnSeekBarChangeListener =
         object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (fromUser) onValue(progress.coerceIn(0, 100))
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStartTrackingTouch(seekBar: SeekBar?) { recordUndoState() }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         }
 
