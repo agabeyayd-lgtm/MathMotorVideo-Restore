@@ -28,6 +28,8 @@ import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
+import org.json.JSONArray
+import org.json.JSONObject
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.audio.AudioProcessor
@@ -105,6 +107,7 @@ class VideoEditorActivity : Activity() {
     private lateinit var keepSourceAudio: CheckBox
     private lateinit var status: TextView
     private lateinit var exportButton: Button
+    private lateinit var exportNameInput: EditText
     private var exporting = false
 
     companion object {
@@ -112,6 +115,8 @@ class VideoEditorActivity : Activity() {
         private const val REQUEST_ADD_VIDEO = 5102
         private const val REQUEST_MUSIC = 5103
         private const val REQUEST_SOUND = 5104
+        private const val REQUEST_SAVE_PROJECT = 5105
+        private const val REQUEST_OPEN_PROJECT = 5106
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -275,9 +280,22 @@ class VideoEditorActivity : Activity() {
         })
         root.addView(sourceVolumeSeek, matchWrap())
 
-        exportButton = actionButton("DÜZENLENMİŞ MP4'Ü KAYDET") { exportEditedVideo() }
+        root.addView(label("DIŞA AKTARMA DOSYA ADI", 14f, Color.rgb(121, 202, 218), true))
+        exportNameInput = EditText(this).apply {
+            setText("MathMotor_Edit")
+            hint = "Örn. Tatil_videosu"
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.rgb(173, 191, 204))
+            setSingleLine(true)
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            setBackgroundColor(Color.rgb(27, 48, 64))
+        }
+        root.addView(exportNameInput, matchWrap())
+        root.addView(actionButton("PROJEYİ FARKLI KAYDET (.JSON)") { requestSaveProject() })
+        root.addView(actionButton("KAYITLI PROJEYİ AÇ") { requestOpenProject() })
+        exportButton = actionButton("MP4'Ü BU İSİMLE DIŞA AKTAR") { exportEditedVideo() }
         root.addView(exportButton)
-        status = label("Hazır. Video seç, başlangıç/bitişi ayarla; istersen klip, yazı ve ses ekle.", 13f, Color.rgb(225, 233, 237), false)
+        status = label("Hazır. Projeni kaydedebilir, sonra açıp düzenlemeye devam edebilirsin.", 13f, Color.rgb(225, 233, 237), false)
         status.setPadding(dp(12), dp(12), dp(12), dp(12))
         status.setBackgroundColor(Color.rgb(27, 48, 64))
         root.addView(status, matchWrap().apply { topMargin = dp(8) })
@@ -388,6 +406,133 @@ class VideoEditorActivity : Activity() {
         }.start()
     }
 
+    private fun requestSaveProject() {
+        if (clips.isEmpty()) {
+            status.text = "Projeyi kaydetmeden önce en az bir video ekle."
+            return
+        }
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "application/json"
+            putExtra(Intent.EXTRA_TITLE, "MathMotor_Proje.json")
+        }
+        try {
+            startActivityForResult(intent, REQUEST_SAVE_PROJECT)
+        } catch (e: Exception) {
+            status.text = "Proje kaydetme ekranı açılamadı: ${e.message}"
+        }
+    }
+
+    private fun requestOpenProject() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "application/json"
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+        try {
+            startActivityForResult(intent, REQUEST_OPEN_PROJECT)
+        } catch (e: Exception) {
+            status.text = "Proje açma ekranı açılamadı: ${e.message}"
+        }
+    }
+
+    private fun createProjectJson(): JSONObject {
+        val clipArray = JSONArray()
+        clips.forEach { clip ->
+            clipArray.put(JSONObject().apply {
+                put("uri", clip.uri.toString())
+                put("title", clip.title)
+                put("durationMs", clip.durationMs)
+                put("startMs", clip.startMs)
+                put("endMs", clip.endMs)
+            })
+        }
+        return JSONObject().apply {
+            put("format", "MathMotorVideoProject")
+            put("version", 1)
+            put("clips", clipArray)
+            put("selectedClipIndex", selectedClipIndex)
+            put("musicUri", musicUri?.toString() ?: JSONObject.NULL)
+            put("musicTitle", musicTitle ?: JSONObject.NULL)
+            put("soundUri", soundUri?.toString() ?: JSONObject.NULL)
+            put("soundTitle", soundTitle ?: JSONObject.NULL)
+            put("soundDurationMs", soundDurationMs)
+            put("soundStartMs", soundStartMs)
+            put("text", textInput.text?.toString().orEmpty())
+            put("textStartMs", textStartMs)
+            put("textEndMs", textEndMs)
+            put("textTimingCustomized", textTimingCustomized)
+            put("textPosition", textPosition.name)
+            put("sourceAudioVolume", sourceAudioVolume)
+            put("musicVolume", musicVolume)
+            put("soundVolume", soundVolume)
+            put("keepSourceAudio", keepSourceAudio.isChecked)
+            put("exportName", exportNameInput.text?.toString().orEmpty())
+        }
+    }
+
+    private fun applyProjectJson(json: JSONObject) {
+        require(json.optString("format") == "MathMotorVideoProject") { "Bu dosya MathMotorVideo proje dosyası değil." }
+        require(json.optInt("version", 0) == 1) { "Bu proje sürümü desteklenmiyor." }
+        val loadedClips = mutableListOf<Clip>()
+        val clipArray = json.optJSONArray("clips") ?: JSONArray()
+        for (i in 0 until clipArray.length()) {
+            val item = clipArray.getJSONObject(i)
+            val uri = Uri.parse(item.getString("uri"))
+            try {
+                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (_: Exception) { }
+            val duration = item.optLong("durationMs", 0L)
+            val start = item.optLong("startMs", 0L).coerceIn(0L, duration)
+            val end = item.optLong("endMs", duration).coerceIn(start, duration)
+            require(duration > 0L && end > start) { "Projede geçersiz klip aralığı var." }
+            loadedClips.add(Clip(uri, item.optString("title", "Video klibi"), duration, start, end))
+        }
+        require(loadedClips.isNotEmpty()) { "Projede video klibi bulunamadı." }
+
+        clips.clear()
+        clips.addAll(loadedClips)
+        selectedClipIndex = json.optInt("selectedClipIndex", 0).coerceIn(0, clips.lastIndex)
+        musicUri = json.optString("musicUri").takeIf { it.isNotBlank() && it != "null" }?.let(Uri::parse)
+        musicTitle = json.optString("musicTitle").takeIf { it.isNotBlank() && it != "null" }
+        soundUri = json.optString("soundUri").takeIf { it.isNotBlank() && it != "null" }?.let(Uri::parse)
+        soundTitle = json.optString("soundTitle").takeIf { it.isNotBlank() && it != "null" }
+        soundDurationMs = json.optLong("soundDurationMs", 0L).coerceAtLeast(0L)
+        soundStartMs = json.optLong("soundStartMs", 0L).coerceAtLeast(0L)
+        textStartMs = json.optLong("textStartMs", 0L).coerceAtLeast(0L)
+        textEndMs = json.optLong("textEndMs", totalOutputDurationMs()).coerceAtLeast(0L)
+        textTimingCustomized = json.optBoolean("textTimingCustomized", false)
+        textPosition = runCatching { TextPosition.valueOf(json.optString("textPosition", "BOTTOM")) }.getOrDefault(TextPosition.BOTTOM)
+        sourceAudioVolume = json.optInt("sourceAudioVolume", 100).coerceIn(0, 100)
+        musicVolume = json.optInt("musicVolume", 45).coerceIn(0, 100)
+        soundVolume = json.optInt("soundVolume", 100).coerceIn(0, 100)
+
+        textInput.setText(json.optString("text", ""))
+        textPositionGroup.check(when (textPosition) {
+            TextPosition.TOP -> 1
+            TextPosition.CENTER -> 2
+            TextPosition.BOTTOM -> 3
+        })
+        keepSourceAudio.isChecked = json.optBoolean("keepSourceAudio", true)
+        exportNameInput.setText(json.optString("exportName", "MathMotor_Edit"))
+        musicLabel.text = musicTitle?.let { "Müzik: $it • video boyunca döngü" } ?: "Müzik seçilmedi."
+        soundLabel.text = soundTitle?.let { "Ses/efekt: $it • ${formatMs(soundDurationMs)}" } ?: "Ses veya efekt seçilmedi."
+        musicVolumeSeek.progress = musicVolume
+        musicVolumeLabel.text = "Müzik ses seviyesi: $musicVolume%"
+        soundVolumeSeek.progress = soundVolume
+        soundVolumeLabel.text = "Ses/efekt seviyesi: $soundVolume%"
+        sourceVolumeSeek.progress = sourceAudioVolume
+        sourceVolumeLabel.text = "Orijinal video sesi: $sourceAudioVolume%"
+        refreshClipList()
+        loadTrimControls()
+        selectedClip()?.let { clip ->
+            player?.setMediaItem(clippedMediaItem(clip))
+            player?.prepare()
+            player?.playWhenReady = false
+        }
+        status.text = "PROJE AÇILDI. Klipler, kesmeler, yazı ve ses ayarları geri yüklendi."
+    }
+
     private fun chooseVideo(append: Boolean) {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
@@ -424,6 +569,22 @@ class VideoEditorActivity : Activity() {
         } catch (_: Exception) { }
 
         when (requestCode) {
+            REQUEST_SAVE_PROJECT -> {
+                runCatching {
+                    contentResolver.openOutputStream(uri)?.bufferedWriter(Charsets.UTF_8)?.use { it.write(createProjectJson().toString(2)) }
+                        ?: error("Proje dosyası açılamadı.")
+                }.onSuccess {
+                    status.text = "PROJE KAYDEDİLDİ. Daha sonra 'Kayıtlı projeyi aç' ile devam edebilirsin."
+                    Toast.makeText(this, "Düzenleme projesi kaydedildi.", Toast.LENGTH_LONG).show()
+                }.onFailure { status.text = "Proje kaydedilemedi: ${it.message}" }
+            }
+            REQUEST_OPEN_PROJECT -> {
+                runCatching {
+                    val json = contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+                        ?: error("Proje dosyası okunamadı.")
+                    applyProjectJson(JSONObject(json))
+                }.onFailure { status.text = "Proje açılamadı: ${it.message}" }
+            }
             REQUEST_MAIN_VIDEO, REQUEST_ADD_VIDEO -> {
                 status.text = "Video bilgileri okunuyor…"
                 Thread {
@@ -798,7 +959,7 @@ class VideoEditorActivity : Activity() {
                 .addListener(object : Transformer.Listener {
                     override fun onCompleted(composition: Composition, exportResult: ExportResult) {
                         Thread {
-                            val saved = runCatching { saveToMovies(tempOutput) }
+                            val saved = runCatching { saveToMovies(tempOutput, exportNameInput.text?.toString().orEmpty()) }
                             tempOutput.delete()
                             runOnUiThread {
                                 exporting = false
@@ -843,9 +1004,14 @@ class VideoEditorActivity : Activity() {
         }
     }
 
-    private fun saveToMovies(source: File): String {
-        val now = System.currentTimeMillis()
-        val name = "MathMotor_Edit_${now}.mp4"
+    private fun saveToMovies(source: File, requestedName: String): String {
+        val cleaned = requestedName.trim()
+            .replace(Regex("[^A-Za-z0-9_ -]"), "")
+            .replace(Regex("\\s+"), "_")
+            .trim('_', '-', ' ')
+            .take(80)
+        val baseName = cleaned.ifBlank { "MathMotor_Edit_${System.currentTimeMillis()}" }
+        val name = if (baseName.lowercase(Locale.US).endsWith(".mp4")) baseName else "$baseName.mp4"
         if (Build.VERSION.SDK_INT >= 29) {
             val values = ContentValues().apply {
                 put(MediaStore.Video.Media.DISPLAY_NAME, name)
