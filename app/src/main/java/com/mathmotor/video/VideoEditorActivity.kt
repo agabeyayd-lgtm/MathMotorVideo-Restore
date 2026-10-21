@@ -121,6 +121,7 @@ class VideoEditorActivity : Activity() {
         selectedClipLabel = label("Önce bir video seç.", 13f, Color.WHITE, true)
         root.addView(selectedClipLabel)
         root.addView(actionButton("SEÇİLİ KLİBİ ÖNİZLE") { previewSelectedClip() })
+        root.addView(actionButton("SEÇİLİ KLİBİ ZAMAN ÇİZELGESİNDEN KALDIR") { removeSelectedClip() })
 
         startLabel = label("Başlangıç: 00:00", 13f, Color.rgb(225, 233, 237), true)
         root.addView(startLabel)
@@ -322,6 +323,25 @@ class VideoEditorActivity : Activity() {
                 })
             }
         }
+    }
+
+    private fun removeSelectedClip() {
+        if (selectedClipIndex !in clips.indices) {
+            status.text = "Önce kaldırılacak klibi seç."
+            return
+        }
+        clips.removeAt(selectedClipIndex)
+        selectedClipIndex = if (clips.isEmpty()) -1 else selectedClipIndex.coerceAtMost(clips.lastIndex)
+        refreshClipList()
+        loadTrimControls()
+        val selected = selectedClip()
+        if (selected == null) {
+            player?.clearMediaItems()
+        } else {
+            player?.setMediaItem(MediaItem.fromUri(selected.uri))
+            player?.prepare()
+        }
+        status.text = if (clips.isEmpty()) "Zaman çizelgesi boş." else "Klip kaldırıldı. Kalan klipler yerinde duruyor."
     }
 
     private fun installTrimListeners() {
