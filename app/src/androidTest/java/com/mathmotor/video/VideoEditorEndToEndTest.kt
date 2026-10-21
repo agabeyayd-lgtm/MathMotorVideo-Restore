@@ -39,7 +39,7 @@ class VideoEditorEndToEndTest {
             }
 
             awaitUi(scenario, 10_000L, "the source video reaches a decoded playback state") { activity ->
-                val playerView = findView(activity.findViewById(android.R.id.content), PlayerView::class.java)
+                val playerView = find(activity.findViewById(android.R.id.content), PlayerView::class.java)
                 val player = playerView?.player ?: return@awaitUi false
                 player.videoSize.width > 0 &&
                     (player.playbackState == Player.STATE_READY || player.playbackState == Player.STATE_ENDED)
@@ -47,7 +47,7 @@ class VideoEditorEndToEndTest {
 
             scenario.onActivity { activity ->
                 val root = activity.findViewById<View>(android.R.id.content)
-                val playerView = findView(root, PlayerView::class.java)
+                val playerView = find(root, PlayerView::class.java)
                 assertNotNull("Editor should contain a Media3 preview player", playerView)
                 playerView?.player?.pause()
                 playerView?.player?.seekTo(800L)
