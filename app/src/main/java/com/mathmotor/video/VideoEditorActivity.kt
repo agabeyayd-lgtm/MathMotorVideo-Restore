@@ -606,6 +606,7 @@ class VideoEditorActivity : Activity() {
         startLabel.text = "Başlangıç: ${formatMs(clip?.startMs ?: 0L)}"
         endLabel.text = "Bitiş: ${formatMs(clip?.endMs ?: 0L)}"
         updateSoundControls()
+        updateTextControls()
     }
 
     private fun totalOutputDurationMs(): Long =
@@ -635,6 +636,49 @@ class VideoEditorActivity : Activity() {
         status.text = "Önizleme başladı. Kesme aralığı dışa aktarmada uygulanacak."
     }
 
+    private fun buildClipSegment(
+        clip: Clip,
+        localStartMs: Long,
+        localEndMs: Long,
+        overlayText: String?
+    ): EditedMediaItem {
+        require(localEndMs > localStartMs) { "Boş video parçası oluşturulamaz." }
+        val mediaItem = MediaItem.Builder()
+            .setUri(clip.uri)
+            .setClippingConfiguration(
+                MediaItem.ClippingConfiguration.Builder()
+                    .setStartPositionMs(clip.startMs + localStartMs)
+                    .setEndPositionMs(clip.startMs + localEndMs)
+                    .build()
+            )
+            .build()
+
+        val videoEffects = if (overlayText.isNullOrBlank()) {
+            emptyList()
+        } else {
+            val styled = SpannableString(overlayText).apply {
+                setSpan(ForegroundColorSpan(Color.WHITE), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                setSpan(BackgroundColorSpan(Color.argb(190, 0, 0, 0)), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                setSpan(StyleSpan(Typeface.BOLD), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+            val y = when (textPosition) {
+                TextPosition.TOP -> 0.78f
+                TextPosition.CENTER -> 0f
+                TextPosition.BOTTOM -> -0.78f
+            }
+            val settings = OverlaySettings.Builder()
+                .setBackgroundFrameAnchor(0f, y)
+                .setOverlayFrameAnchor(0f, 0f)
+                .build()
+            listOf(OverlayEffect(listOf(TextOverlay.createStaticTextOverlay(styled, settings))))
+        }
+        val audio = if (keepSourceAudio.isChecked) audioEffects(sourceAudioVolume) else emptyList()
+        return EditedMediaItem.Builder(mediaItem)
+            .setEffects(Effects(audio, videoEffects))
+            .apply { if (!keepSourceAudio.isChecked) setRemoveAudio(true) }
+            .build()
+    }
+
     private fun exportEditedVideo() {
         if (exporting) return
         if (clips.isEmpty()) {
@@ -649,31 +693,23 @@ class VideoEditorActivity : Activity() {
 
         val overlayText = textInput.text?.toString()?.trim().orEmpty()
         val videoItems = try {
-            clips.map { clip ->
-                val mediaItem = MediaItem.Builder()
-                    .setUri(clip.uri)
-                    .setClippingConfiguration(
-                        MediaItem.ClippingConfiguration.Builder()
-                            .setStartPositionMs(clip.startMs)
-                            .setEndPositionMs(clip.endMs)
-                            .build()
-                    )
-                    .build()
-                val videoEffects = if (overlayText.isBlank()) {
-                    emptyList()
+            val builtItems = mutableListOf<EditedMediaItem>()
+            var timelineOffsetMs = 0L
+            clips.forEach { clip ->
+                val duration = clip.endMs - clip.startMs
+                val localTextStart = (textStartMs - timelineOffsetMs).coerceAtLeast(0L)
+                val localTextEnd = (textEndMs - timelineOffsetMs).coerceAtMost(duration)
+                val showTextHere = overlayText.isNotBlank() && localTextEnd > localTextStart
+                if (!showTextHere) {
+                    builtItems.add(buildClipSegment(clip, 0L, duration, null))
                 } else {
-                    val styled = SpannableString(overlayText).apply {
-                        setSpan(ForegroundColorSpan(Color.WHITE), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                        setSpan(BackgroundColorSpan(Color.argb(190, 0, 0, 0)), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                        setSpan(StyleSpan(Typeface.BOLD), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                    }
-                    listOf(OverlayEffect(listOf(TextOverlay.createStaticTextOverlay(styled))))
+                    if (localTextStart > 0L) builtItems.add(buildClipSegment(clip, 0L, localTextStart, null))
+                    builtItems.add(buildClipSegment(clip, localTextStart, localTextEnd, overlayText))
+                    if (localTextEnd < duration) builtItems.add(buildClipSegment(clip, localTextEnd, duration, null))
                 }
-                EditedMediaItem.Builder(mediaItem)
-                    .setEffects(Effects(emptyList(), videoEffects))
-                    .apply { if (!keepSourceAudio.isChecked) setRemoveAudio(true) }
-                    .build()
+                timelineOffsetMs += duration
             }
+            builtItems
         } catch (e: Exception) {
             status.text = "Düzenleme hazırlanamadı: ${e.message ?: e.javaClass.simpleName}"
             return
@@ -688,6 +724,7 @@ class VideoEditorActivity : Activity() {
         musicUri?.let { uri ->
             val musicItem = EditedMediaItem.Builder(MediaItem.fromUri(uri))
                 .setRemoveVideo(true)
+                .setEffects(Effects(audioEffects(musicVolume), emptyList()))
                 .build()
             compositionSequences.add(
                 EditedMediaItemSequence.Builder(listOf(musicItem)).setIsLooping(true).build()
@@ -709,6 +746,7 @@ class VideoEditorActivity : Activity() {
                 .build()
             val soundItem = EditedMediaItem.Builder(soundMediaItem)
                 .setRemoveVideo(true)
+                .setEffects(Effects(audioEffects(soundVolume), emptyList()))
                 .build()
             val soundSequenceBuilder = EditedMediaItemSequence.Builder()
             if (offsetMs > 0L) soundSequenceBuilder.addGap(offsetMs * 1000L)
