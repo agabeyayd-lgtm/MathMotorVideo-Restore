@@ -33,3 +33,11 @@ jobs:
           name: MathMotorVideo-restored-debug
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+      - name: Run Android emulator editor smoke tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: gradle --no-daemon connectedDebugAndroidTest
