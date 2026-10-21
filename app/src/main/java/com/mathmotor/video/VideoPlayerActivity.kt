@@ -117,9 +117,9 @@ class VideoPlayerActivity : Activity() {
                         override fun onPlaybackStateChanged(playbackState: Int) {
                             if (playbackState == Player.STATE_BUFFERING) info.text = "Video yükleniyor…"
                             if (playbackState == Player.STATE_READY) {
-                                val format = exo.videoFormat
-                                info.text = if (format != null && format.width > 0 && format.height > 0) {
-                                    "Görüntü hazır: " + format.width + "×" + format.height
+                                val size = exo.videoSize
+                                info.text = if (size.width > 0 && size.height > 0) {
+                                    "Görüntü hazır: " + size.width + "×" + size.height
                                 } else "Ses hazır; bu dosyada görüntü akışı bulunamadı."
                             }
                         }
