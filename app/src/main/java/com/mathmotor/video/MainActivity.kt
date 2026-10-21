@@ -36,7 +36,6 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 class MainActivity : Activity() {
     private lateinit var status: TextView
-    private lateinit var scenarioText: TextView
     private var scenario: HumanScenario = ScenarioEngine.generate(System.currentTimeMillis())
     private var latestUri: String? = null
     private val rendering = AtomicBoolean(false)
@@ -138,15 +137,8 @@ class MainActivity : Activity() {
         root.addView(label("MATHMOTOR VIDEO", 25f, Color.WHITE, true))
         root.addView(label("YEREL STÜDYO  •  9:16  •  10 SANİYE", 12f, Color.rgb(173, 191, 204), true))
         root.addView(gap(18))
-        root.addView(label("MEVCUT SENARYO", 12f, Color.rgb(121, 202, 218), true))
-        scenarioText = label("", 18f, Color.WHITE, true)
-        root.addView(scenarioText)
-        root.addView(label("Önce fiziksel zaman çizelgesi oluşturulur. Görsel yönetmen, durumları değiştirmeden bunu kullanır.", 14f, Color.rgb(198, 211, 218), false))
-        root.addView(gap(18))
-        root.addView(actionButton("YENİ DÜNYA / YENİ SENARYO") { createNewScenario() })
         root.addView(actionButton("10 SANİYELİK VİDEO OLUŞTUR") { createVideo() })
-        root.addView(actionButton("FİZİK / KARE TESTİ  •  300 KARE") { runPhysicsTest() })
-        root.addView(actionButton("TELEFONDAN VİDEO SEÇ VE TEST ET") { chooseVideo() })
+        root.addView(actionButton("TELEFONDAN VİDEO SEÇ / KARELERİ TEST ET") { chooseVideo() })
         root.addView(actionButton("GÜNCELLEMEYİ KONTROL ET") { checkForUpdates() })
         root.addView(actionButton("VİDEO İZLEME EKRANI") { openVideoScreen() })
         root.addView(actionButton("SON VİDEOYU AÇ") { openLatest() })
@@ -157,26 +149,16 @@ class MainActivity : Activity() {
             setTextColor(Color.rgb(225, 233, 237)); textSize = 13f
             setPadding(dp(14), dp(14), dp(14), dp(14))
             setBackgroundColor(Color.rgb(27, 48, 64))
-            text = "Hazır. Senaryo oluştur, video üret veya telefondan bir video seçip kare testini çalıştır."
+            text = "Hazır. Video oluştur, telefondan video seç veya video izleme ekranını aç."
         }
         root.addView(status, matchWrap().apply { topMargin = dp(8) })
-        root.addView(gap(18))
-        root.addView(label("YENİDEN OLUŞTURULAN SÜRÜM", 12f, Color.rgb(121, 202, 218), true))
-        root.addView(label("Bu sürüm çevrimdışı üretim, video oluşturma, geçmiş ve kare testi altyapısını yeniden kurar. Orijinal V7 kaynak arşivi bulunamadı; V7'deki harici sosyal veri bağlantıları henüz eklenmedi.", 12f, Color.rgb(173, 191, 204), false))
         setContentView(scroll)
-        updateScenarioText()
-    }
-
-    private fun createNewScenario() {
-        scenario = ScenarioEngine.generate(System.currentTimeMillis())
-        updateScenarioText()
-        status.text = "DÜNYA OLUŞTURULDU\nseed=${scenario.seed}\nframes=${scenario.world.frameCount}\nkind=${scenario.kind.label}\nPHYSX=${if (MathEngine.validate(scenario.world).isEmpty()) "GEÇERLİ" else "GEÇERSİZ"}"
     }
 
     private fun createVideo() {
         if (rendering.get()) { status.text = "Video zaten oluşturuluyor."; return }
         val errors = MathEngine.validate(scenario.world)
-        if (errors.isNotEmpty()) { status.text = "DÜNYA DOĞRULAMADAN GEÇEMEDİ\n${errors.joinToString("\n")}"; return }
+        if (errors.isNotEmpty()) { status.text = "VİDEO KONTROLÜ BAŞARISIZ\n${errors.joinToString("\n")}"; return }
         if (!rendering.compareAndSet(false, true)) return
         status.text = "VİDEO OLUŞTURULUYOR\n${scenario.title}\n540×960 • 30 FPS • 300 kare"
         HumanVideoRenderer.render(this, scenario) { uri, error ->
@@ -187,18 +169,10 @@ class MainActivity : Activity() {
                     VideoRecordStore.add(this, VideoRecord(scenario.title, uri, scenario.seed, System.currentTimeMillis()))
                     status.text = "VİDEO KAYDEDİLDİ\n${scenario.title}\n${uri}\nÖnizlemek için Son Videoyu Aç'a dokun."
                 } else {
-                    status.text = "VİDEO OLUŞTURMA BAŞARISIZ\n${error?.message ?: "Bilinmeyen kodlayıcı hatası"}\nFizik / Kare Testi'ni çalıştır ve cihaz depolamasını kontrol et."
+                    status.text = "VİDEO OLUŞTURMA BAŞARISIZ\n${error?.message ?: "Bilinmeyen kodlayıcı hatası"}\nBaşka bir video dosyası dene ve telefon depolamasını kontrol et."
                 }
             }
         }
-    }
-
-    private fun runPhysicsTest() {
-        status.text = "ÜRETİLEN FİZİK DÜNYASI TEST EDİLİYOR…"
-        Thread {
-            val report = PhysXFrameTest.run()
-            runOnUiThread { status.text = "ÜRETİM DÜNYASI TESTİ\n" + report.toDisplayText() }
-        }.start()
     }
 
     private fun chooseVideo() {
@@ -393,10 +367,6 @@ class MainActivity : Activity() {
             appendLine("\nEn son kaydı açmak için Son Videoyu Aç'a dokun.")
         }
         latestUri = records.first().uri
-    }
-
-    private fun updateScenarioText() {
-        scenarioText.text = "${scenario.title}\n${scenario.kind.label}  •  seed ${scenario.seed}"
     }
 
     private fun label(value: String, size: Float, color: Int, bold: Boolean): TextView = TextView(this).apply {
