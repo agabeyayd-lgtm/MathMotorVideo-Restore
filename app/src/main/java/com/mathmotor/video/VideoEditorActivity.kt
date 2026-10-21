@@ -1207,26 +1207,20 @@ class VideoEditorActivity : Activity() {
             REQUEST_MAIN_VIDEO, REQUEST_ADD_VIDEO -> {
                 status.text = "Video bilgileri okunuyor…"
                 Thread {
-                    val details = runCatching {
-                        val retriever = MediaMetadataRetriever()
-                        try {
-                            retriever.setDataSource(this, uri)
-                            val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-                            duration
-                        } finally {
-                            retriever.release()
-                        }
-                    }.getOrElse { 0L }
+                    val metadata = runCatching { readVideoMetadata(uri) }.getOrDefault(0L to 30f)
+                    val details = metadata.first
+                    val frameRate = metadata.second
                     val title = queryDisplayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Video klibi"
                     runOnUiThread {
                         if (details <= 0L) {
                             status.text = "Bu videonun süresi okunamadı. Başka bir video dosyası seç."
                         } else {
+                            recordUndoState()
                             if (requestCode == REQUEST_MAIN_VIDEO) {
                                 clips.clear()
                                 selectedClipIndex = -1
                             }
-                            val clip = Clip(uri, title, details, 0L, details)
+                            val clip = Clip(uri, title, details, 0L, details, frameRate)
                             clips.add(clip)
                             selectedClipIndex = clips.lastIndex
                             previewingSequence = false
