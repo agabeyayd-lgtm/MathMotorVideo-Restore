@@ -211,7 +211,7 @@ class VideoEditorActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        clipScroll.addView(clipList, android.widget.HorizontalScrollView.LayoutParams(
+        clipScroll.addView(clipList, ViewGroup.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ))
         root.addView(clipScroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(54)))
