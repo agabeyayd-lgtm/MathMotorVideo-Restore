@@ -30,12 +30,15 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.VideoView
+import android.widget.MediaController
 import java.text.DateFormat
 import java.util.Date
 import java.util.concurrent.atomic.AtomicBoolean
 
 class MainActivity : Activity() {
     private lateinit var status: TextView
+    private lateinit var homeVideoView: VideoView
     private var scenario: HumanScenario = ScenarioEngine.generate(System.currentTimeMillis())
     private var latestUri: String? = null
     private val rendering = AtomicBoolean(false)
@@ -74,6 +77,7 @@ class MainActivity : Activity() {
         window.navigationBarColor = Color.rgb(15, 31, 45)
         buildUi()
         latestUri = VideoRecordStore.list(this).firstOrNull()?.uri
+        latestUri?.let { loadHomeVideo(it, false) }
         registerUpdateReceiver()
         requestRequiredPermissions()
         // Check for a published update automatically whenever the app opens.
@@ -136,13 +140,16 @@ class MainActivity : Activity() {
         scroll.addView(root)
         root.addView(label("MATHMOTOR VIDEO", 25f, Color.WHITE, true))
         root.addView(label("YEREL STÜDYO  •  9:16  •  10 SANİYE", 12f, Color.rgb(173, 191, 204), true))
-        root.addView(gap(18))
+        root.addView(gap(10))
+        root.addView(label("VİDEO OYNATICI", 13f, Color.rgb(121, 202, 218), true))
+        homeVideoView = VideoView(this).apply {
+            setBackgroundColor(Color.BLACK)
+            setMediaController(MediaController(this@MainActivity))
+        }
+        root.addView(homeVideoView, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(230)).apply { topMargin = dp(4); bottomMargin = dp(12) })
         root.addView(actionButton("10 SANİYELİK VİDEO OLUŞTUR") { createVideo() })
         root.addView(actionButton("TELEFONDAN VİDEO SEÇ / KARELERİ TEST ET") { chooseVideo() })
         root.addView(actionButton("GÜNCELLEMEYİ KONTROL ET") { checkForUpdates() })
-        root.addView(actionButton("VİDEO İZLEME EKRANI") { openVideoScreen() })
-        root.addView(actionButton("SON VİDEOYU AÇ") { openLatest() })
-        root.addView(actionButton("VİDEO GEÇMİŞİ") { showHistory() })
         root.addView(gap(18))
         root.addView(label("DURUM / TEST KAYDI", 12f, Color.rgb(121, 202, 218), true))
         status = TextView(this).apply {
@@ -153,6 +160,17 @@ class MainActivity : Activity() {
         }
         root.addView(status, matchWrap().apply { topMargin = dp(8) })
         setContentView(scroll)
+    }
+
+    private fun loadHomeVideo(uri: String, autoplay: Boolean) {
+        if (!::homeVideoView.isInitialized) return
+        runCatching {
+            homeVideoView.setVideoURI(Uri.parse(uri))
+            homeVideoView.setOnPreparedListener { player ->
+                player.isLooping = false
+                if (autoplay) homeVideoView.start()
+            }
+        }.onFailure { if (::status.isInitialized) status.text = "Video oynatıcı açılamadı: ${it.message}" }
     }
 
     private fun createVideo() {
@@ -167,7 +185,8 @@ class MainActivity : Activity() {
                 if (error == null && uri != null) {
                     latestUri = uri
                     VideoRecordStore.add(this, VideoRecord(scenario.title, uri, scenario.seed, System.currentTimeMillis()))
-                    status.text = "VİDEO KAYDEDİLDİ\n${scenario.title}\n${uri}\nÖnizlemek için Son Videoyu Aç'a dokun."
+                    loadHomeVideo(uri, true)
+                    status.text = "VİDEO KAYDEDİLDİ VE ANA EKRAN OYNATICISINA YÜKLENDİ\n${scenario.title}\n${uri}"
                 } else {
                     status.text = "VİDEO OLUŞTURMA BAŞARISIZ\n${error?.message ?: "Bilinmeyen kodlayıcı hatası"}\nBaşka bir video dosyası dene ve telefon depolamasını kontrol et."
                 }
