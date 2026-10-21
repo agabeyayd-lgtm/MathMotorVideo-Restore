@@ -102,6 +102,7 @@ class MainActivity : Activity() {
         root.addView(actionButton("FİZİK / KARE TESTİ  •  300 KARE") { runPhysicsTest() })
         root.addView(actionButton("TELEFONDAN VİDEO SEÇ VE TEST ET") { chooseVideo() })
         root.addView(actionButton("GÜNCELLEMEYİ KONTROL ET") { checkForUpdates() })
+        root.addView(actionButton("VİDEO İZLEME EKRANI") { openVideoScreen() })
         root.addView(actionButton("SON VİDEOYU AÇ") { openLatest() })
         root.addView(actionButton("VİDEO GEÇMİŞİ") { showHistory() })
         root.addView(gap(18))
@@ -311,6 +312,13 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         if (updateReceiverRegistered) { try { unregisterReceiver(updateReceiver) } catch (_: Exception) { }; updateReceiverRegistered = false }
         super.onDestroy()
+    }
+
+    private fun openVideoScreen() {
+        val uri = latestUri ?: VideoRecordStore.list(this).firstOrNull()?.uri
+        startActivity(Intent(this, VideoPlayerActivity::class.java).apply {
+            if (!uri.isNullOrBlank()) putExtra("video_uri", uri)
+        })
     }
 
     private fun openLatest() {
