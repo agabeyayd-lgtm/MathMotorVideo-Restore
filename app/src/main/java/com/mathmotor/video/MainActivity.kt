@@ -77,6 +77,8 @@ class MainActivity : Activity() {
         latestUri = VideoRecordStore.list(this).firstOrNull()?.uri
         registerUpdateReceiver()
         requestRequiredPermissions()
+        // Check for a published update automatically whenever the app opens.
+        checkForUpdates()
     }
 
     private fun requestRequiredPermissions() {
