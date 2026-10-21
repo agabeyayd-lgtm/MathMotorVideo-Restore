@@ -22,8 +22,8 @@ android {
         applicationId = "com.mathmotor.video.next"
         minSdk = 26
         targetSdk = 35
-        versionCode = 371
-        versionName = "8.5-auto-update"
+        versionCode = 372
+        versionName = "8.6-offline-editor"
         testInstrumentationRunner = "android.test.AndroidJUnitRunner"
     }
 
@@ -60,5 +60,7 @@ android {
 dependencies {
     implementation("androidx.media3:media3-exoplayer:1.5.1")
     implementation("androidx.media3:media3-ui:1.5.1")
+    implementation("androidx.media3:media3-transformer:1.5.1")
+    implementation("androidx.media3:media3-effect:1.5.1")
     testImplementation("junit:junit:4.13.2")
 }

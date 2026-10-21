@@ -34,14 +34,11 @@ import android.widget.VideoView
 import android.widget.MediaController
 import java.text.DateFormat
 import java.util.Date
-import java.util.concurrent.atomic.AtomicBoolean
 
 class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var homeVideoView: VideoView
-    private var scenario: HumanScenario = ScenarioEngine.generate(System.currentTimeMillis())
     private var latestUri: String? = null
-    private val rendering = AtomicBoolean(false)
     private val selectingVideoCode = 2002
     private val latestApkUrl = "https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/releases/latest/download/MathMotorVideo.apk"
     private val latestReleaseApi = "https://api.github.com/repos/agabeyayd-lgtm/MathMotorVideo-Restore/releases/latest"
@@ -84,6 +81,16 @@ class MainActivity : Activity() {
         checkForUpdates()
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (!::homeVideoView.isInitialized) return
+        val latest = VideoRecordStore.list(this).firstOrNull()?.uri
+        if (!latest.isNullOrBlank() && latest != latestUri) {
+            latestUri = latest
+            loadHomeVideo(latest, false)
+        }
+    }
+
     private fun requestRequiredPermissions() {
         val permissions = mutableListOf<String>()
         if (Build.VERSION.SDK_INT >= 33) {
@@ -123,7 +130,10 @@ class MainActivity : Activity() {
             val imported = runCatching { VideoRecordStore.importPublicMovies(this) }.getOrDefault(0)
             val latest = VideoRecordStore.list(this).firstOrNull()?.uri
             runOnUiThread {
-                if (!latest.isNullOrBlank()) latestUri = latest
+                if (!latest.isNullOrBlank()) {
+                    if (latest != latestUri) loadHomeVideo(latest, false)
+                    latestUri = latest
+                }
                 if (imported > 0) {
                     status.text = "ÖNCEKİ VİDEOLAR KURTARILDI\\n$imported video Movies/MathMotorVideo klasöründen geçmişe eklendi."
                 }
@@ -139,7 +149,7 @@ class MainActivity : Activity() {
         }
         scroll.addView(root)
         root.addView(label("MATHMOTOR VIDEO", 25f, Color.WHITE, true))
-        root.addView(label("YEREL STÜDYO  •  9:16  •  10 SANİYE", 12f, Color.rgb(173, 191, 204), true))
+        root.addView(label("YEREL VİDEO STÜDYOSU", 12f, Color.rgb(173, 191, 204), true))
         root.addView(gap(10))
         root.addView(label("VİDEO OYNATICI", 13f, Color.rgb(121, 202, 218), true))
         homeVideoView = VideoView(this).apply {
@@ -147,7 +157,7 @@ class MainActivity : Activity() {
             setMediaController(MediaController(this@MainActivity))
         }
         root.addView(homeVideoView, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(230)).apply { topMargin = dp(4); bottomMargin = dp(12) })
-        root.addView(actionButton("10 SANİYELİK VİDEO OLUŞTUR") { createVideo() })
+        root.addView(actionButton("VİDEO EDİTÖRÜ • KES / YAZI / SES") { startActivity(Intent(this, VideoEditorActivity::class.java)) })
         root.addView(actionButton("TELEFONDAN VİDEO SEÇ / KARELERİ TEST ET") { chooseVideo() })
         root.addView(actionButton("GÜNCELLEMEYİ KONTROL ET") { checkForUpdates() })
         root.addView(gap(18))
@@ -156,7 +166,7 @@ class MainActivity : Activity() {
             setTextColor(Color.rgb(225, 233, 237)); textSize = 13f
             setPadding(dp(14), dp(14), dp(14), dp(14))
             setBackgroundColor(Color.rgb(27, 48, 64))
-            text = "Hazır. Video oluştur, telefondan video seç veya video izleme ekranını aç."
+            text = "Hazır. Telefonda video seç veya video editöründe kes, birleştir, yazı ve ses ekle."
         }
         root.addView(status, matchWrap().apply { topMargin = dp(8) })
         setContentView(scroll)
@@ -171,27 +181,6 @@ class MainActivity : Activity() {
                 if (autoplay) homeVideoView.start()
             }
         }.onFailure { if (::status.isInitialized) status.text = "Video oynatıcı açılamadı: ${it.message}" }
-    }
-
-    private fun createVideo() {
-        if (rendering.get()) { status.text = "Video zaten oluşturuluyor."; return }
-        val errors = MathEngine.validate(scenario.world)
-        if (errors.isNotEmpty()) { status.text = "VİDEO KONTROLÜ BAŞARISIZ\n${errors.joinToString("\n")}"; return }
-        if (!rendering.compareAndSet(false, true)) return
-        status.text = "VİDEO OLUŞTURULUYOR\n${scenario.title}\n540×960 • 30 FPS • 300 kare"
-        HumanVideoRenderer.render(this, scenario) { uri, error ->
-            runOnUiThread {
-                rendering.set(false)
-                if (error == null && uri != null) {
-                    latestUri = uri
-                    VideoRecordStore.add(this, VideoRecord(scenario.title, uri, scenario.seed, System.currentTimeMillis()))
-                    loadHomeVideo(uri, true)
-                    status.text = "VİDEO KAYDEDİLDİ VE ANA EKRAN OYNATICISINA YÜKLENDİ\n${scenario.title}\n${uri}"
-                } else {
-                    status.text = "VİDEO OLUŞTURMA BAŞARISIZ\n${error?.message ?: "Bilinmeyen kodlayıcı hatası"}\nBaşka bir video dosyası dene ve telefon depolamasını kontrol et."
-                }
-            }
-        }
     }
 
     private fun chooseVideo() {
