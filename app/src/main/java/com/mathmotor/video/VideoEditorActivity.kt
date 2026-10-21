@@ -2381,7 +2381,7 @@ class VideoEditorActivity : Activity() {
         clip: Clip,
         localStartMs: Long,
         localEndMs: Long,
-        overlayText: String?
+        visibleTextLayers: List<TextLayer>
     ): EditedMediaItem {
         require(localEndMs > localStartMs) { "Boş video parçası oluşturulamaz." }
         val mediaItem = MediaItem.Builder()
@@ -2397,17 +2397,15 @@ class VideoEditorActivity : Activity() {
         val videoEffects = mutableListOf<androidx.media3.common.Effect>()
         val (outputWidth, outputHeight) = outputDimensions()
         videoEffects.add(Presentation.createForWidthAndHeight(
-            outputWidth,
-            outputHeight,
-            Presentation.LAYOUT_SCALE_TO_FIT
+            outputWidth, outputHeight, Presentation.LAYOUT_SCALE_TO_FIT
         ))
-        if (!overlayText.isNullOrBlank()) {
-            val styled = SpannableString(overlayText).apply {
+        val textOverlays = visibleTextLayers.filter { it.text.isNotBlank() }.map { layer ->
+            val styled = SpannableString(layer.text).apply {
                 setSpan(ForegroundColorSpan(Color.WHITE), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                 setSpan(BackgroundColorSpan(Color.argb(190, 0, 0, 0)), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                 setSpan(StyleSpan(Typeface.BOLD), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
-            val y = when (textPosition) {
+            val y = when (layer.position) {
                 TextPosition.TOP -> 0.78f
                 TextPosition.CENTER -> 0f
                 TextPosition.BOTTOM -> -0.78f
@@ -2416,8 +2414,9 @@ class VideoEditorActivity : Activity() {
                 .setBackgroundFrameAnchor(0f, y)
                 .setOverlayFrameAnchor(0f, 0f)
                 .build()
-            videoEffects.add(OverlayEffect(listOf(TextOverlay.createStaticTextOverlay(styled, settings))))
+            TextOverlay.createStaticTextOverlay(styled, settings)
         }
+        if (textOverlays.isNotEmpty()) videoEffects.add(OverlayEffect(textOverlays))
         val audio = if (keepSourceAudio.isChecked) audioEffects(sourceAudioVolume) else emptyList()
         return EditedMediaItem.Builder(mediaItem)
             .setEffects(Effects(audio, videoEffects))
@@ -2431,28 +2430,39 @@ class VideoEditorActivity : Activity() {
             status.text = "Önce bir video seç."
             return
         }
+        syncSelectedTextLayerFromControls()
+        syncSelectedAudioLayerFromControls()
         val invalid = clips.firstOrNull { it.startMs < 0 || it.endMs <= it.startMs || it.endMs > it.durationMs }
         if (invalid != null) {
             status.text = "Bir klibin kesme aralığı geçersiz. Başlangıç ve bitişi kontrol et."
             return
         }
 
-        val overlayText = textInput.text?.toString()?.trim().orEmpty()
         val requestedExportName = exportNameInput.text?.toString().orEmpty()
         val videoItems = try {
             val builtItems = mutableListOf<EditedMediaItem>()
             var timelineOffsetMs = 0L
             clips.forEach { clip ->
                 val duration = clip.endMs - clip.startMs
-                val localTextStart = (textStartMs - timelineOffsetMs).coerceAtLeast(0L)
-                val localTextEnd = (textEndMs - timelineOffsetMs).coerceAtMost(duration)
-                val showTextHere = overlayText.isNotBlank() && localTextEnd > localTextStart
-                if (!showTextHere) {
-                    builtItems.add(buildClipSegment(clip, 0L, duration, null))
-                } else {
-                    if (localTextStart > 0L) builtItems.add(buildClipSegment(clip, 0L, localTextStart, null))
-                    builtItems.add(buildClipSegment(clip, localTextStart, localTextEnd, overlayText))
-                    if (localTextEnd < duration) builtItems.add(buildClipSegment(clip, localTextEnd, duration, null))
+                val boundaries = sortedSetOf(0L, duration)
+                textLayers.forEach { layer ->
+                    if (layer.startMs > timelineOffsetMs && layer.startMs < timelineOffsetMs + duration) {
+                        boundaries.add(layer.startMs - timelineOffsetMs)
+                    }
+                    if (layer.endMs > timelineOffsetMs && layer.endMs < timelineOffsetMs + duration) {
+                        boundaries.add(layer.endMs - timelineOffsetMs)
+                    }
+                }
+                val points = boundaries.toList()
+                for (i in 0 until points.lastIndex) {
+                    val localStart = points[i]
+                    val localEnd = points[i + 1]
+                    if (localEnd <= localStart) continue
+                    val globalStart = timelineOffsetMs + localStart
+                    val activeText = textLayers.filter { layer ->
+                        layer.text.isNotBlank() && globalStart >= layer.startMs && globalStart < layer.endMs
+                    }
+                    builtItems.add(buildClipSegment(clip, localStart, localEnd, activeText))
                 }
                 timelineOffsetMs += duration
             }
@@ -2464,44 +2474,69 @@ class VideoEditorActivity : Activity() {
 
         exporting = true
         exportButton.isEnabled = false
-        status.text = "MP4 dışa aktarılıyor…\nKlipler, yazı, müzik ve ses katmanları uygulanıyor. Uygulamayı kapatma."
+        updateUndoRedoButtons()
+        status.text = "MP4 dışa aktarılıyor…\nKlipler, metin katmanları ve ses katmanları uygulanıyor. Uygulamayı kapatma."
         val tempOutput = File(cacheDir, "mm_editor_${System.currentTimeMillis()}.mp4")
         val videoSequence = EditedMediaItemSequence.Builder(videoItems).build()
         val compositionSequences = mutableListOf(videoSequence)
-        musicUri?.let { uri ->
-            val musicItem = EditedMediaItem.Builder(MediaItem.fromUri(uri))
-                .setRemoveVideo(true)
-                .setEffects(Effects(audioEffects(musicVolume), emptyList()))
-                .build()
-            compositionSequences.add(
-                EditedMediaItemSequence.Builder(listOf(musicItem)).setIsLooping(true).build()
-            )
+        val outputDurationMs = totalOutputDurationMs().coerceAtLeast(1L)
+
+        // Repeat music as a finite set of trimmed items: fade-in happens only at the start
+        // and fade-out only at the end of the entire output, not on every loop.
+        musicLayers.forEach { layer ->
+            val musicItems = mutableListOf<EditedMediaItem>()
+            var remainingMs = outputDurationMs
+            var elapsedMs = 0L
+            val sourceDurationMs = layer.durationMs.coerceAtLeast(1L)
+            while (remainingMs > 0L) {
+                val partDurationMs = minOf(sourceDurationMs, remainingMs)
+                val mediaItem = MediaItem.Builder()
+                    .setUri(layer.uri)
+                    .setClippingConfiguration(
+                        MediaItem.ClippingConfiguration.Builder()
+                            .setStartPositionMs(0L)
+                            .setEndPositionMs(partDurationMs)
+                            .build()
+                    )
+                    .build()
+                val fadeIn = if (elapsedMs == 0L) layer.fadeInMs else 0L
+                val fadeOut = if (remainingMs == partDurationMs) layer.fadeOutMs else 0L
+                musicItems.add(
+                    EditedMediaItem.Builder(mediaItem)
+                        .setRemoveVideo(true)
+                        .setEffects(Effects(audioEffects(layer.volume, fadeIn, fadeOut, partDurationMs), emptyList()))
+                        .build()
+                )
+                elapsedMs += partDurationMs
+                remainingMs -= partDurationMs
+            }
+            compositionSequences.add(EditedMediaItemSequence.Builder(musicItems).build())
         }
-        soundUri?.let { uri ->
-            val outputDurationMs = totalOutputDurationMs()
-            val offsetMs = soundStartMs.coerceAtMost((outputDurationMs - 1L).coerceAtLeast(0L))
-            val remainingMs = (outputDurationMs - offsetMs).coerceAtLeast(1L)
-            val soundLengthMs = soundDurationMs.coerceAtLeast(1L).coerceAtMost(remainingMs)
+
+        soundLayers.forEach { layer ->
+            val offsetMs = layer.startMs.coerceAtMost((outputDurationMs - 1L).coerceAtLeast(0L))
+            val visibleDurationMs = minOf(layer.durationMs.coerceAtLeast(1L), (outputDurationMs - offsetMs).coerceAtLeast(1L))
             val soundMediaItem = MediaItem.Builder()
-                .setUri(uri)
+                .setUri(layer.uri)
                 .setClippingConfiguration(
                     MediaItem.ClippingConfiguration.Builder()
                         .setStartPositionMs(0L)
-                        .setEndPositionMs(soundLengthMs)
+                        .setEndPositionMs(visibleDurationMs)
                         .build()
                 )
                 .build()
             val soundItem = EditedMediaItem.Builder(soundMediaItem)
                 .setRemoveVideo(true)
-                .setEffects(Effects(audioEffects(soundVolume), emptyList()))
+                .setEffects(Effects(audioEffects(layer.volume, layer.fadeInMs, layer.fadeOutMs, visibleDurationMs), emptyList()))
                 .build()
-            val soundSequenceBuilder = EditedMediaItemSequence.Builder()
-            if (offsetMs > 0L) soundSequenceBuilder.addGap(offsetMs * 1000L)
-            soundSequenceBuilder.addItem(soundItem)
-            compositionSequences.add(soundSequenceBuilder.build())
+            val sequence = EditedMediaItemSequence.Builder().apply {
+                if (offsetMs > 0L) addGap(offsetMs * 1000L)
+                addItem(soundItem)
+            }.build()
+            compositionSequences.add(sequence)
         }
-        val composition = Composition.Builder(compositionSequences).build()
 
+        val composition = Composition.Builder(compositionSequences).build()
         val transformer = try {
             Transformer.Builder(this)
                 .setVideoMimeType(MimeTypes.VIDEO_H264)
@@ -2514,6 +2549,7 @@ class VideoEditorActivity : Activity() {
                             runOnUiThread {
                                 exporting = false
                                 exportButton.isEnabled = true
+                                updateUndoRedoButtons()
                                 if (saved.isSuccess) {
                                     val resultUri = saved.getOrThrow()
                                     val now = System.currentTimeMillis()
@@ -2532,6 +2568,7 @@ class VideoEditorActivity : Activity() {
                         runOnUiThread {
                             exporting = false
                             exportButton.isEnabled = true
+                            updateUndoRedoButtons()
                             status.text = "DIŞA AKTARMA BAŞARISIZ\n${exportException.message ?: "Kod ${exportException.errorCode}"}"
                         }
                     }
@@ -2540,6 +2577,7 @@ class VideoEditorActivity : Activity() {
         } catch (e: Exception) {
             exporting = false
             exportButton.isEnabled = true
+            updateUndoRedoButtons()
             status.text = "Dışa aktarıcı başlatılamadı: ${e.message}"
             return
         }
@@ -2550,6 +2588,7 @@ class VideoEditorActivity : Activity() {
             tempOutput.delete()
             exporting = false
             exportButton.isEnabled = true
+            updateUndoRedoButtons()
             status.text = "Dışa aktarma başlatılamadı: ${e.message ?: e.javaClass.simpleName}"
         }
     }
