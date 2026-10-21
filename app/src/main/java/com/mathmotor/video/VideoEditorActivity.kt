@@ -542,7 +542,7 @@ class VideoEditorActivity : Activity() {
         textPanel.addView(textInput, matchWrap())
         textInput.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {
-                recordUndoState()
+                if (!suppressLayerControlCallbacks) recordUndoState()
             }
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                 if (!suppressLayerControlCallbacks && !restoringHistory) {
@@ -660,6 +660,7 @@ class VideoEditorActivity : Activity() {
                 if (!fromUser) return
                 val total = totalOutputDurationMs()
                 soundStartMs = (progress * 1000L).coerceAtMost((total - 1L).coerceAtLeast(0L))
+                soundLayers.firstOrNull { it.id == selectedSoundLayerId }?.startMs = soundStartMs
                 updateSoundControls()
             }
             override fun onStartTrackingTouch(seekBar: SeekBar?) { recordUndoState() }
@@ -1587,7 +1588,6 @@ class VideoEditorActivity : Activity() {
         suppressLayerControlCallbacks = false
         loadSelectedMusicLayer(fallbackMusicLayer)
         loadSelectedSoundLayer(fallbackSoundLayer)
-        musicPreviewPlayersCompatibilityRefresh()
         musicVolume = fallbackMusicLayer?.volume ?: json.optInt("musicVolume", 45).coerceIn(0, 100)
         soundVolume = fallbackSoundLayer?.volume ?: json.optInt("soundVolume", 100).coerceIn(0, 100)
         sourceVolumeSeek.progress = sourceAudioVolume
@@ -1700,15 +1700,9 @@ class VideoEditorActivity : Activity() {
                     }
                 }.start()
             }
-            REQUEST_MUSIC -> {
-                musicUri = uri
-                musicTitle = queryDisplayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Müzik"
-                musicLabel.text = "Müzik: ${musicTitle} • video boyunca döngü"
-                refreshTimelineTracks()
-                status.text = "Müzik eklendi. Önizlemede videoyla birlikte çalar."
-            }
-            REQUEST_SOUND -> {
-                status.text = "Ses dosyasının süresi okunuyor…"
+            REQUEST_MUSIC, REQUEST_SOUND -> {
+                val isMusic = requestCode == REQUEST_MUSIC
+                status.text = if (isMusic) "Müzik bilgileri okunuyor…" else "Ses efektinin süresi okunuyor…"
                 Thread {
                     val duration = runCatching {
                         val retriever = MediaMetadataRetriever()
@@ -1719,19 +1713,13 @@ class VideoEditorActivity : Activity() {
                             retriever.release()
                         }
                     }.getOrDefault(0L)
-                    val title = queryDisplayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Ses efekti"
+                    val title = queryDisplayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/')
+                        ?: if (isMusic) "Müzik" else "Ses efekti"
                     runOnUiThread {
                         if (duration <= 0L) {
-                            status.text = "Ses dosyasının süresi okunamadı. Başka bir ses dosyası seç."
+                            status.text = if (isMusic) "Müziğin süresi okunamadı." else "Ses dosyasının süresi okunamadı."
                         } else {
-                            soundUri = uri
-                            soundTitle = title
-                            soundDurationMs = duration
-                            soundStartMs = 0L
-                            soundLabel.text = "Ses/efekt: ${title} • ${formatMs(duration)}"
-                            updateSoundControls()
-                            refreshTimelineTracks()
-                            status.text = "Ses efekti eklendi. Önizlemede seçtiğin zamanda çalar."
+                            addAudioLayer(isMusic, uri, title, duration)
                         }
                     }
                 }.start()
