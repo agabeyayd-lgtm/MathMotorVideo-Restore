@@ -3,6 +3,12 @@ package com.mathmotor.video
 import android.Manifest
 import android.app.Activity
 import android.app.DownloadManager
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.IntentFilter
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
@@ -36,6 +42,32 @@ class MainActivity : Activity() {
     private val rendering = AtomicBoolean(false)
     private val selectingVideoCode = 2002
     private val latestApkUrl = "https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/releases/latest/download/MathMotorVideo.apk"
+    private val latestReleaseApi = "https://api.github.com/repos/agabeyayd-lgtm/MathMotorVideo-Restore/releases/latest"
+    private var pendingApkDownloadId = -1L
+    private var updateReceiverRegistered = false
+    private val updateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action != DownloadManager.ACTION_DOWNLOAD_COMPLETE) return
+            val id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L)
+            if (id != pendingApkDownloadId) return
+            val manager = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
+            val apkUri = manager.getUriForDownloadedFile(id)
+            if (apkUri == null) {
+                status.text = "GÜNCELLEME İNDİRİLEMEDİ\\nİndirme bildirimini ve internet bağlantısını kontrol et."
+                return
+            }
+            status.text = "İNDİRME TAMAMLANDI\\nAndroid kurulum ekranı açılıyor…"
+            try {
+                val install = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(apkUri, "application/vnd.android.package-archive")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(install)
+            } catch (e: Exception) {
+                status.text = "APK indirildi ama kurulum ekranı açılamadı. İndirilenler klasöründen MathMotorVideo.apk dosyasını aç.\\n${e.message}"
+            }
+        }
+    }
 
     override fun onCreate(kayıtInstanceState: Bundle?) {
         super.onCreate(kayıtInstanceState)
@@ -47,6 +79,7 @@ class MainActivity : Activity() {
         }
         buildUi()
         latestUri = VideoRecordStore.list(this).firstOrNull()?.uri
+        registerUpdateReceiver()
     }
 
     private fun buildUi() {
@@ -68,7 +101,7 @@ class MainActivity : Activity() {
         root.addView(actionButton("10 SANİYELİK VİDEO OLUŞTUR") { createVideo() })
         root.addView(actionButton("FİZİK / KARE TESTİ  •  300 KARE") { runPhysicsTest() })
         root.addView(actionButton("TELEFONDAN VİDEO SEÇ VE TEST ET") { chooseVideo() })
-        root.addView(actionButton("GÜNCEL APK'YI İNDİR") { downloadLatestApk() })
+        root.addView(actionButton("GÜNCELLEMEYİ KONTROL ET") { checkForUpdates() })
         root.addView(actionButton("SON VİDEOYU AÇ") { openLatest() })
         root.addView(actionButton("VİDEO GEÇMİŞİ") { showHistory() })
         root.addView(gap(18))
@@ -214,22 +247,70 @@ class MainActivity : Activity() {
         return hash
     }
 
+    private fun registerUpdateReceiver() {
+        if (updateReceiverRegistered) return
+        try {
+            val filter = IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
+            if (Build.VERSION.SDK_INT >= 33) registerReceiver(updateReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            else registerReceiver(updateReceiver, filter)
+            updateReceiverRegistered = true
+        } catch (_: Exception) { }
+    }
+
+    private fun checkForUpdates() {
+        status.text = "GÜNCELLEME KONTROL EDİLİYOR…\\nGitHub sürümü denetleniyor."
+        Thread {
+            try {
+                val connection = (URL(latestReleaseApi).openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 12000
+                    readTimeout = 12000
+                    setRequestProperty("Accept", "application/vnd.github+json")
+                    setRequestProperty("User-Agent", "MathMotorVideo-Updater")
+                }
+                val json = try { connection.inputStream.bufferedReader().use { it.readText() } } finally { connection.disconnect() }
+                val release = JSONObject(json)
+                val body = release.optString("body", "")
+                val match = Regex("(?i)versionCode\\s*[=:]\\s*(\\d+)").find(body)
+                val remoteCode = match?.groupValues?.getOrNull(1)?.toLongOrNull()
+                val currentCode = if (Build.VERSION.SDK_INT >= 28) packageManager.getPackageInfo(packageName, 0).longVersionCode else {
+                    @Suppress("DEPRECATION")
+                    packageManager.getPackageInfo(packageName, 0).versionCode.toLong()
+                }
+                val releaseName = release.optString("name", release.optString("tag_name", "Yeni sürüm"))
+                runOnUiThread {
+                    when {
+                        remoteCode == null -> status.text = "SÜRÜM BİLGİSİ BULUNAMADI\\nYayın kaydında versionCode bilgisi yok. Biraz sonra tekrar dene."
+                        remoteCode <= currentCode -> status.text = "UYGULAMA GÜNCEL\\nKurulu sürüm kodu: $currentCode\\nSon yayın: $releaseName"
+                        else -> { status.text = "YENİ SÜRÜM BULUNDU\\nKurulu: $currentCode • Yeni: $remoteCode\\nAPK indiriliyor…"; downloadLatestApk() }
+                    }
+                }
+            } catch (e: Exception) {
+                runOnUiThread { status.text = "GÜNCELLEME KONTROLÜ BAŞARISIZ\\nİnternet bağlantısını kontrol et.\\n${e.message ?: e.javaClass.simpleName}" }
+            }
+        }.start()
+    }
+
     private fun downloadLatestApk() {
         try {
             val request = DownloadManager.Request(Uri.parse(latestApkUrl))
-                .setTitle("MathMotor Video — Güncel APK")
-                .setDescription("Güncel uygulama sürümü indiriliyor")
+                .setTitle("MathMotor Video — Güncelleme")
+                .setDescription("Yeni sürüm indiriliyor")
                 .setMimeType("application/vnd.android.package-archive")
                 .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                 .setAllowedOverMetered(true)
                 .setAllowedOverRoaming(false)
                 .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "MathMotorVideo.apk")
             val manager = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
-            manager.enqueue(request)
-            status.text = "APK İNDİRME BAŞLATILDI\nİndirme tamamlanınca bildirimden veya Dosyalar > İndirilenler bölümünden MathMotorVideo.apk dosyasını aç. Android kurulum izni sorarsa izin vermen gerekebilir."
+            pendingApkDownloadId = manager.enqueue(request)
+            status.text = "APK ARKA PLANDA İNDİRİLİYOR\\nİndirme tamamlanınca Android kurulum ekranı açılacak. Kurulumu onaylaman gerekebilir."
         } catch (e: Exception) {
-            status.text = "APK indirilemedi: ${e.message}\nİnternet bağlantısını kontrol et."
+            status.text = "APK indirilemedi: ${e.message}\\nİnternet bağlantısını kontrol et."
         }
+    }
+
+    override fun onDestroy() {
+        if (updateReceiverRegistered) { try { unregisterReceiver(updateReceiver) } catch (_: Exception) { }; updateReceiverRegistered = false }
+        super.onDestroy()
     }
 
     private fun openLatest() {
