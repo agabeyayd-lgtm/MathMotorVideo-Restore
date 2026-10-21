@@ -84,6 +84,16 @@ class MainActivity : Activity() {
         checkForUpdates()
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (!::homeVideoView.isInitialized) return
+        val latest = VideoRecordStore.list(this).firstOrNull()?.uri
+        if (!latest.isNullOrBlank() && latest != latestUri) {
+            latestUri = latest
+            loadHomeVideo(latest, false)
+        }
+    }
+
     private fun requestRequiredPermissions() {
         val permissions = mutableListOf<String>()
         if (Build.VERSION.SDK_INT >= 33) {
@@ -123,7 +133,10 @@ class MainActivity : Activity() {
             val imported = runCatching { VideoRecordStore.importPublicMovies(this) }.getOrDefault(0)
             val latest = VideoRecordStore.list(this).firstOrNull()?.uri
             runOnUiThread {
-                if (!latest.isNullOrBlank()) latestUri = latest
+                if (!latest.isNullOrBlank()) {
+                    if (latest != latestUri) loadHomeVideo(latest, false)
+                    latestUri = latest
+                }
                 if (imported > 0) {
                     status.text = "ÖNCEKİ VİDEOLAR KURTARILDI\\n$imported video Movies/MathMotorVideo klasöründen geçmişe eklendi."
                 }
