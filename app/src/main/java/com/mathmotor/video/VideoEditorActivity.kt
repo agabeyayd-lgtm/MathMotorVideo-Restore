@@ -30,8 +30,12 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
+import androidx.media3.common.audio.AudioProcessor
+import androidx.media3.common.audio.ChannelMixingAudioProcessor
+import androidx.media3.common.audio.ChannelMixingMatrix
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.OverlayEffect
+import androidx.media3.effect.OverlaySettings
 import androidx.media3.effect.TextOverlay
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
@@ -66,6 +70,13 @@ class VideoEditorActivity : Activity() {
     private var soundTitle: String? = null
     private var soundDurationMs: Long = 0L
     private var soundStartMs: Long = 0L
+    private var textStartMs: Long = 0L
+    private var textEndMs: Long = 0L
+    private var sourceAudioVolume = 100
+    private var musicVolume = 45
+    private var soundVolume = 100
+    private var textPosition = TextPosition.BOTTOM
+    private enum class TextPosition { TOP, CENTER, BOTTOM }
     private var player: ExoPlayer? = null
     private lateinit var playerView: PlayerView
     private lateinit var clipList: LinearLayout
@@ -78,6 +89,17 @@ class VideoEditorActivity : Activity() {
     private lateinit var soundLabel: TextView
     private lateinit var soundStartLabel: TextView
     private lateinit var soundStartSeek: SeekBar
+    private lateinit var soundVolumeLabel: TextView
+    private lateinit var soundVolumeSeek: SeekBar
+    private lateinit var musicVolumeLabel: TextView
+    private lateinit var musicVolumeSeek: SeekBar
+    private lateinit var sourceVolumeLabel: TextView
+    private lateinit var sourceVolumeSeek: SeekBar
+    private lateinit var textStartLabel: TextView
+    private lateinit var textEndLabel: TextView
+    private lateinit var textStartSeek: SeekBar
+    private lateinit var textEndSeek: SeekBar
+    private lateinit var textPositionGroup: android.widget.RadioGroup
     private lateinit var textInput: EditText
     private lateinit var keepSourceAudio: CheckBox
     private lateinit var status: TextView
@@ -154,7 +176,32 @@ class VideoEditorActivity : Activity() {
             setBackgroundColor(Color.rgb(27, 48, 64))
         }
         root.addView(textInput, matchWrap())
-        root.addView(label("Yazı dışa aktarılan videoya uygulanır.", 12f, Color.rgb(173, 191, 204), false))
+        root.addView(label("Yazının videoda görüneceği aralık", 12f, Color.rgb(173, 191, 204), false))
+        textStartLabel = label("Yazı başlangıcı: 00:00", 12f, Color.rgb(225, 233, 237), true)
+        root.addView(textStartLabel)
+        textStartSeek = SeekBar(this).apply { max = 0; isEnabled = false }
+        root.addView(textStartSeek, matchWrap())
+        textEndLabel = label("Yazı bitişi: 00:00", 12f, Color.rgb(225, 233, 237), true)
+        root.addView(textEndLabel)
+        textEndSeek = SeekBar(this).apply { max = 0; isEnabled = false }
+        root.addView(textEndSeek, matchWrap())
+        installTextTimeListeners()
+        root.addView(label("Yazının konumu", 12f, Color.rgb(173, 191, 204), false))
+        textPositionGroup = android.widget.RadioGroup(this).apply {
+            orientation = android.widget.RadioGroup.HORIZONTAL
+            addView(android.widget.RadioButton(this@VideoEditorActivity).apply { id = 1; text = "Üst"; setTextColor(Color.WHITE) })
+            addView(android.widget.RadioButton(this@VideoEditorActivity).apply { id = 2; text = "Orta"; setTextColor(Color.WHITE) })
+            addView(android.widget.RadioButton(this@VideoEditorActivity).apply { id = 3; text = "Alt"; setTextColor(Color.WHITE) })
+            check(3)
+            setOnCheckedChangeListener { _, checkedId ->
+                textPosition = when (checkedId) {
+                    1 -> TextPosition.TOP
+                    2 -> TextPosition.CENTER
+                    else -> TextPosition.BOTTOM
+                }
+            }
+        }
+        root.addView(textPositionGroup, matchWrap())
 
         root.addView(gap(6))
         root.addView(label("MÜZİK KATMANI", 14f, Color.rgb(121, 202, 218), true))
@@ -166,6 +213,14 @@ class VideoEditorActivity : Activity() {
             musicTitle = null
             musicLabel.text = "Müzik seçilmedi."
         })
+        musicVolumeLabel = label("Müzik ses seviyesi: 45%", 12f, Color.rgb(225, 233, 237), true)
+        root.addView(musicVolumeLabel)
+        musicVolumeSeek = SeekBar(this).apply { max = 100; progress = musicVolume }
+        musicVolumeSeek.setOnSeekBarChangeListener(volumeListener { value ->
+            musicVolume = value
+            musicVolumeLabel.text = "Müzik ses seviyesi: " + value + "%"
+        })
+        root.addView(musicVolumeSeek, matchWrap())
 
         root.addView(gap(4))
         root.addView(label("SES / SES EFEKTİ KATMANI", 14f, Color.rgb(121, 202, 218), true))
@@ -186,6 +241,14 @@ class VideoEditorActivity : Activity() {
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         })
         root.addView(soundStartSeek, matchWrap())
+        soundVolumeLabel = label("Ses/efekt seviyesi: 100%", 12f, Color.rgb(225, 233, 237), true)
+        root.addView(soundVolumeLabel)
+        soundVolumeSeek = SeekBar(this).apply { max = 100; progress = soundVolume }
+        soundVolumeSeek.setOnSeekBarChangeListener(volumeListener { value ->
+            soundVolume = value
+            soundVolumeLabel.text = "Ses/efekt seviyesi: " + value + "%"
+        })
+        root.addView(soundVolumeSeek, matchWrap())
         root.addView(actionButton("SES / EFEKT KATMANINI KALDIR") {
             soundUri = null
             soundTitle = null
@@ -200,6 +263,14 @@ class VideoEditorActivity : Activity() {
             setTextColor(Color.WHITE)
         }
         root.addView(keepSourceAudio)
+        sourceVolumeLabel = label("Orijinal video sesi: 100%", 12f, Color.rgb(225, 233, 237), true)
+        root.addView(sourceVolumeLabel)
+        sourceVolumeSeek = SeekBar(this).apply { max = 100; progress = sourceAudioVolume }
+        sourceVolumeSeek.setOnSeekBarChangeListener(volumeListener { value ->
+            sourceAudioVolume = value
+            sourceVolumeLabel.text = "Orijinal video sesi: " + value + "%"
+        })
+        root.addView(sourceVolumeSeek, matchWrap())
 
         exportButton = actionButton("DÜZENLENMİŞ MP4'Ü KAYDET") { exportEditedVideo() }
         root.addView(exportButton)
@@ -209,6 +280,70 @@ class VideoEditorActivity : Activity() {
         root.addView(status, matchWrap().apply { topMargin = dp(8) })
         root.addView(actionButton("ANA EKRANA DÖN") { finish() })
         setContentView(scroll)
+    }
+
+    private fun volumeListener(onValue: (Int) -> Unit): SeekBar.OnSeekBarChangeListener =
+        object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (fromUser) onValue(progress.coerceIn(0, 100))
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        }
+
+    private fun installTextTimeListeners() {
+        textStartSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                textStartMs = (progress * 1000L).coerceAtMost(totalOutputDurationMs())
+                if (textEndMs <= textStartMs) textEndMs = (textStartMs + 1000L).coerceAtMost(totalOutputDurationMs())
+                updateTextControls()
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
+        textEndSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                textEndMs = (progress * 1000L).coerceAtMost(totalOutputDurationMs())
+                if (textEndMs <= textStartMs) textStartMs = (textEndMs - 1000L).coerceAtLeast(0L)
+                updateTextControls()
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
+    }
+
+    private fun updateTextControls() {
+        if (!::textStartSeek.isInitialized || !::textEndSeek.isInitialized) return
+        val total = totalOutputDurationMs()
+        val maxSeconds = ceil(total / 1000.0).toInt().coerceAtLeast(0)
+        if (textEndMs <= 0L || textEndMs > total) textEndMs = total
+        textStartMs = textStartMs.coerceAtMost((total - 1L).coerceAtLeast(0L))
+        if (textEndMs <= textStartMs && total > 0L) {
+            textStartMs = 0L
+            textEndMs = total
+        }
+        textStartSeek.max = maxSeconds
+        textEndSeek.max = maxSeconds
+        textStartSeek.progress = (textStartMs / 1000L).toInt().coerceAtMost(maxSeconds)
+        textEndSeek.progress = ceil(textEndMs / 1000.0).toInt().coerceAtMost(maxSeconds)
+        textStartSeek.isEnabled = total > 0L
+        textEndSeek.isEnabled = total > 0L
+        textStartLabel.text = "Yazı başlangıcı: " + formatMs(textStartMs)
+        textEndLabel.text = "Yazı bitişi: " + formatMs(textEndMs)
+    }
+
+    private fun audioEffects(volumePercent: Int): List<AudioProcessor> {
+        if (volumePercent >= 100) return emptyList()
+        val gain = volumePercent.coerceIn(0, 100) / 100f
+        val processor = ChannelMixingAudioProcessor()
+        for (channels in 1..8) {
+            val coefficients = FloatArray(channels * channels)
+            for (channel in 0 until channels) coefficients[channel * channels + channel] = gain
+            processor.putChannelMixingMatrix(ChannelMixingMatrix(channels, channels, coefficients))
+        }
+        return listOf(processor)
     }
 
     private fun addClip(uri: Uri, replaceExisting: Boolean) {
