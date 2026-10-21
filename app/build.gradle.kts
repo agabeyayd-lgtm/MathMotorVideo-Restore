@@ -19,11 +19,11 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.mathmotor.video"
+        applicationId = "com.mathmotor.video.next"
         minSdk = 26
         targetSdk = 35
         versionCode = 369
-        versionName = "8.3-stable-signing"
+        versionName = "8.3-migration"
         testInstrumentationRunner = "android.test.AndroidJUnitRunner"
     }
 
