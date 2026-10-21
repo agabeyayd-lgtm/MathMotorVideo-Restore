@@ -1088,6 +1088,212 @@ class VideoEditorActivity : Activity() {
         return base * fade
     }
 
+    private inner class WaveformView(context: android.content.Context) : View(context) {
+        private var levels: FloatArray = FloatArray(0)
+        private val wavePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(180, 194, 215)
+            strokeWidth = dp(1.25f).toFloat()
+            strokeCap = Paint.Cap.ROUND
+        }
+        private val centerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(70, 79, 95)
+            strokeWidth = dp(1).toFloat()
+        }
+
+        fun setLevels(values: FloatArray) {
+            levels = values
+            invalidate()
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            val centerY = height / 2f
+            if (levels.isEmpty()) {
+                canvas.drawLine(0f, centerY, width.toFloat(), centerY, centerPaint)
+                return
+            }
+            val step = width.toFloat() / levels.size.coerceAtLeast(1)
+            levels.forEachIndexed { index, value ->
+                val amplitude = (value.coerceIn(0f, 1f) * (height * 0.44f)).coerceAtLeast(dp(1).toFloat())
+                val x = index * step + step / 2f
+                canvas.drawLine(x, centerY - amplitude, x, centerY + amplitude, wavePaint)
+            }
+        }
+    }
+
+    private fun requestClipThumbnail(clip: Clip, index: Int, chip: Button) {
+        val key = "${clip.uri}:${clip.startMs}"
+        thumbnailCache.get(key)?.let { cached ->
+            attachClipThumbnail(chip, index, cached)
+            return
+        }
+        Thread {
+            val bitmap = runCatching {
+                val retriever = MediaMetadataRetriever()
+                try {
+                    retriever.setDataSource(this, clip.uri)
+                    val frame = retriever.getFrameAtTime(clip.startMs.coerceAtLeast(0L) * 1000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                        ?: return@runCatching null
+                    val targetW = dp(48).coerceAtLeast(1)
+                    val targetH = dp(30).coerceAtLeast(1)
+                    if (frame.width == targetW && frame.height == targetH) frame
+                    else Bitmap.createScaledBitmap(frame, targetW, targetH, true).also {
+                        if (it !== frame) frame.recycle()
+                    }
+                } finally {
+                    retriever.release()
+                }
+            }.getOrNull()
+            if (bitmap != null) thumbnailCache.put(key, bitmap)
+            runOnUiThread {
+                if (bitmap != null && chip.parent != null && (chip.tag as? Int) == index) {
+                    attachClipThumbnail(chip, index, bitmap)
+                }
+            }
+        }.start()
+    }
+
+    private fun attachClipThumbnail(chip: Button, index: Int, bitmap: Bitmap) {
+        if (chip.parent == null || (chip.tag as? Int) != index) return
+        val drawable = BitmapDrawable(resources, bitmap)
+        drawable.setBounds(0, 0, dp(48), dp(30))
+        chip.setCompoundDrawablesRelative(drawable, null, null, null)
+        chip.compoundDrawablePadding = dp(5)
+    }
+
+    private fun requestAudioWaveform(uri: Uri) {
+        val key = uri.toString()
+        if (audioWaveformCache.containsKey(key) || !audioWaveformRequests.add(key)) return
+        Thread {
+            val waveform = runCatching { extractAudioWaveform(uri, 84) }.getOrDefault(FloatArray(0))
+            runOnUiThread {
+                audioWaveformRequests.remove(key)
+                audioWaveformCache[key] = waveform
+                refreshTimelineTracks()
+            }
+        }.start()
+    }
+
+    private fun extractAudioWaveform(uri: Uri, pointCount: Int): FloatArray {
+        val extractor = MediaExtractor()
+        var codec: MediaCodec? = null
+        var codecStarted = false
+        try {
+            extractor.setDataSource(this, uri, null)
+            var trackIndex = -1
+            var inputFormat: MediaFormat? = null
+            for (i in 0 until extractor.trackCount) {
+                val format = extractor.getTrackFormat(i)
+                val mime = format.getString(MediaFormat.KEY_MIME) ?: continue
+                if (mime.startsWith("audio/")) {
+                    trackIndex = i
+                    inputFormat = format
+                    break
+                }
+            }
+            val format = inputFormat ?: return FloatArray(0)
+            val mime = format.getString(MediaFormat.KEY_MIME) ?: return FloatArray(0)
+            extractor.selectTrack(trackIndex)
+            var durationUs = if (format.containsKey(MediaFormat.KEY_DURATION)) format.getLong(MediaFormat.KEY_DURATION) else 0L
+            if (durationUs <= 0L) {
+                durationUs = runCatching {
+                    val retriever = MediaMetadataRetriever()
+                    try {
+                        retriever.setDataSource(this, uri)
+                        (retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L) * 1000L
+                    } finally {
+                        retriever.release()
+                    }
+                }.getOrDefault(0L)
+            }
+            if (durationUs <= 0L) return FloatArray(0)
+
+            codec = MediaCodec.createDecoderByType(mime)
+            codec.configure(format, null, null, 0)
+            codec.start()
+            codecStarted = true
+            var outputFormat = format
+            var inputDone = false
+            var outputDone = false
+            val info = MediaCodec.BufferInfo()
+            val sums = DoubleArray(pointCount)
+            val counts = LongArray(pointCount)
+            var guard = 0
+            while (!outputDone && guard < 200000) {
+                guard++
+                if (!inputDone) {
+                    val inputIndex = codec.dequeueInputBuffer(10_000L)
+                    if (inputIndex >= 0) {
+                        val input = codec.getInputBuffer(inputIndex)
+                        if (input == null) {
+                            codec.queueInputBuffer(inputIndex, 0, 0, 0L, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                            inputDone = true
+                        } else {
+                            input.clear()
+                            val size = extractor.readSampleData(input, 0)
+                            if (size < 0) {
+                                codec.queueInputBuffer(inputIndex, 0, 0, 0L, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                                inputDone = true
+                            } else {
+                                val pts = extractor.sampleTime.coerceAtLeast(0L)
+                                codec.queueInputBuffer(inputIndex, 0, size, pts, 0)
+                                extractor.advance()
+                            }
+                        }
+                    }
+                }
+                when (val outputIndex = codec.dequeueOutputBuffer(info, 10_000L)) {
+                    MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> outputFormat = codec.outputFormat
+                    MediaCodec.INFO_TRY_AGAIN_LATER -> Unit
+                    else -> if (outputIndex >= 0) {
+                        val eos = info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
+                        if (info.size > 0 && info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0) {
+                            val buffer = codec.getOutputBuffer(outputIndex)
+                            if (buffer != null) {
+                                buffer.position(info.offset)
+                                buffer.limit(info.offset + info.size)
+                                val pcm = buffer.slice().order(ByteOrder.nativeOrder())
+                                val sampleRate = if (outputFormat.containsKey(MediaFormat.KEY_SAMPLE_RATE)) outputFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE) else 44100
+                                val channels = if (outputFormat.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) outputFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT).coerceAtLeast(1) else 1
+                                val encoding = if (outputFormat.containsKey(MediaFormat.KEY_PCM_ENCODING)) outputFormat.getInteger(MediaFormat.KEY_PCM_ENCODING) else C.ENCODING_PCM_16BIT
+                                val bytesPerSample = if (encoding == C.ENCODING_PCM_FLOAT) 4 else 2
+                                val frameCount = pcm.remaining() / bytesPerSample / channels
+                                for (frame in 0 until frameCount) {
+                                    var frameAmplitude = 0f
+                                    for (channel in 0 until channels) {
+                                        val amplitude = when (encoding) {
+                                            C.ENCODING_PCM_FLOAT -> kotlin.math.abs(pcm.float).coerceIn(0f, 1f)
+                                            C.ENCODING_PCM_16BIT -> kotlin.math.abs(pcm.short.toInt() / 32768f).coerceIn(0f, 1f)
+                                            else -> 0f
+                                        }
+                                        frameAmplitude += amplitude
+                                    }
+                                    val averageAmplitude = frameAmplitude / channels
+                                    val pts = info.presentationTimeUs.coerceAtLeast(0L) + frame.toLong() * 1_000_000L / sampleRate.coerceAtLeast(1)
+                                    val bin = ((pts * pointCount) / durationUs).toInt().coerceIn(0, pointCount - 1)
+                                    sums[bin] += averageAmplitude
+                                    counts[bin]++
+                                }
+                            }
+                        }
+                        codec.releaseOutputBuffer(outputIndex, false)
+                        if (eos) outputDone = true
+                    }
+                }
+            }
+            val levels = FloatArray(pointCount) { index ->
+                if (counts[index] == 0L) 0f else (sums[index] / counts[index]).toFloat()
+            }
+            val peak = levels.maxOrNull() ?: 0f
+            if (peak > 0f) for (i in levels.indices) levels[i] = (levels[i] / peak).coerceIn(0f, 1f)
+            return levels
+        } finally {
+            if (codecStarted) runCatching { codec?.stop() }
+            runCatching { codec?.release() }
+            runCatching { extractor.release() }
+        }
+    }
+
     private fun simpleSelectionListener(onSelected: (Int) -> Unit): AdapterView.OnItemSelectedListener =
         object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
