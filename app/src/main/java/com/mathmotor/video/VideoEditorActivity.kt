@@ -174,6 +174,43 @@ class VideoEditorActivity : Activity() {
         setContentView(scroll)
     }
 
+    private fun addClip(uri: Uri, replaceExisting: Boolean) {
+        try {
+            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        } catch (_: Exception) { }
+        status.text = "Video bilgileri okunuyor…"
+        Thread {
+            val duration = runCatching {
+                val retriever = MediaMetadataRetriever()
+                try {
+                    retriever.setDataSource(this, uri)
+                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                } finally {
+                    retriever.release()
+                }
+            }.getOrDefault(0L)
+            val title = queryDisplayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Video klibi"
+            runOnUiThread {
+                if (duration <= 0L) {
+                    status.text = "Bu videonun süresi okunamadı. Başka bir video dosyası seç."
+                    return@runOnUiThread
+                }
+                if (replaceExisting) {
+                    clips.clear()
+                    selectedClipIndex = -1
+                }
+                clips.add(Clip(uri, title, duration, 0L, duration))
+                selectedClipIndex = clips.lastIndex
+                player?.setMediaItem(MediaItem.fromUri(uri))
+                player?.prepare()
+                player?.playWhenReady = true
+                refreshClipList()
+                loadTrimControls()
+                status.text = "${title} eklendi. Kesme aralığını seçebilirsin."
+            }
+        }.start()
+    }
+
     private fun chooseVideo(append: Boolean) {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
