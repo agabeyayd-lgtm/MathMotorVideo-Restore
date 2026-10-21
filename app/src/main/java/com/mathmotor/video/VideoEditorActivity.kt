@@ -889,6 +889,7 @@ class VideoEditorActivity : Activity() {
         }
 
         val overlayText = textInput.text?.toString()?.trim().orEmpty()
+        val requestedExportName = exportNameInput.text?.toString().orEmpty()
         val videoItems = try {
             val builtItems = mutableListOf<EditedMediaItem>()
             var timelineOffsetMs = 0L
@@ -959,7 +960,7 @@ class VideoEditorActivity : Activity() {
                 .addListener(object : Transformer.Listener {
                     override fun onCompleted(composition: Composition, exportResult: ExportResult) {
                         Thread {
-                            val saved = runCatching { saveToMovies(tempOutput, exportNameInput.text?.toString().orEmpty()) }
+                            val saved = runCatching { saveToMovies(tempOutput, requestedExportName) }
                             tempOutput.delete()
                             runOnUiThread {
                                 exporting = false
@@ -1005,7 +1006,7 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun saveToMovies(source: File, requestedName: String): String {
-        val cleaned = requestedName.trim()
+        val cleaned = requestedName.trim().removeSuffix(".mp4").removeSuffix(".MP4")
             .replace(Regex("[^A-Za-z0-9_ -]"), "")
             .replace(Regex("\\s+"), "_")
             .trim('_', '-', ' ')
