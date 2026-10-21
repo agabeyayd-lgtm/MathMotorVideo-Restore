@@ -138,8 +138,7 @@ class MainActivity : Activity() {
         root.addView(label("YEREL STÜDYO  •  9:16  •  10 SANİYE", 12f, Color.rgb(173, 191, 204), true))
         root.addView(gap(18))
         root.addView(actionButton("10 SANİYELİK VİDEO OLUŞTUR") { createVideo() })
-        root.addView(actionButton("FİZİK / KARE TESTİ  •  300 KARE") { runPhysicsTest() })
-        root.addView(actionButton("TELEFONDAN VİDEO SEÇ VE TEST ET") { chooseVideo() })
+        root.addView(actionButton("TELEFONDAN VİDEO SEÇ / KARELERİ TEST ET") { chooseVideo() })
         root.addView(actionButton("GÜNCELLEMEYİ KONTROL ET") { checkForUpdates() })
         root.addView(actionButton("VİDEO İZLEME EKRANI") { openVideoScreen() })
         root.addView(actionButton("SON VİDEOYU AÇ") { openLatest() })
@@ -150,7 +149,7 @@ class MainActivity : Activity() {
             setTextColor(Color.rgb(225, 233, 237)); textSize = 13f
             setPadding(dp(14), dp(14), dp(14), dp(14))
             setBackgroundColor(Color.rgb(27, 48, 64))
-            text = "Hazır. Senaryo oluştur, video üret veya telefondan bir video seçip kare testini çalıştır."
+            text = "Hazır. Video oluştur, telefondan video seç veya video izleme ekranını aç."
         }
         root.addView(status, matchWrap().apply { topMargin = dp(8) })
         setContentView(scroll)
