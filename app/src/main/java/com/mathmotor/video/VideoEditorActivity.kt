@@ -7,7 +7,9 @@ import android.content.Intent
 import android.database.Cursor
 import android.graphics.Color
 import android.graphics.Bitmap
+import java.nio.ByteBuffer
 import android.graphics.drawable.BitmapDrawable
+import androidx.media3.common.C
 import android.util.LruCache
 import android.graphics.Typeface
 import android.media.MediaMetadataRetriever
@@ -45,8 +47,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.audio.AudioProcessor
-import androidx.media3.common.audio.DefaultGainProvider
-import androidx.media3.common.audio.GainProcessor
+import androidx.media3.common.audio.BaseAudioProcessor
 import androidx.media3.common.audio.ChannelMixingAudioProcessor
 import androidx.media3.common.audio.ChannelMixingMatrix
 import androidx.media3.common.util.UnstableApi
@@ -1311,6 +1312,72 @@ class VideoEditorActivity : Activity() {
         refreshPreviewOverlay()
     }
 
+    private class FadeAudioProcessor(
+        private val trackDurationMs: Long,
+        private val fadeInMs: Long,
+        private val fadeOutMs: Long
+    ) : BaseAudioProcessor() {
+        private var processedFrames = 0L
+
+        override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat =
+            inputAudioFormat
+
+        private fun gainAtFrame(frame: Long, sampleRate: Int): Float {
+            val timeMs = frame * 1000L / sampleRate.coerceAtLeast(1)
+            val duration = trackDurationMs.coerceAtLeast(0L)
+            var gain = 1f
+            if (fadeInMs > 0L && timeMs < fadeInMs) {
+                gain *= (timeMs.toFloat() / fadeInMs).coerceIn(0f, 1f)
+            }
+            val fadeOutStart = (duration - fadeOutMs).coerceAtLeast(0L)
+            if (fadeOutMs > 0L && timeMs >= fadeOutStart) {
+                gain *= ((duration - timeMs).toFloat() / fadeOutMs).coerceIn(0f, 1f)
+            }
+            return gain
+        }
+
+        override fun queueInput(inputBuffer: ByteBuffer) {
+            val inputBytes = inputBuffer.remaining()
+            if (inputBytes <= 0) return
+            val output = replaceOutputBuffer(inputBytes)
+            val format = inputAudioFormat
+            val channels = format.channelCount.coerceAtLeast(1)
+            val sampleRate = format.sampleRate.coerceAtLeast(1)
+            var samplesProcessed = 0L
+            when (format.encoding) {
+                C.ENCODING_PCM_16BIT -> {
+                    while (inputBuffer.remaining() >= 2) {
+                        val sample = inputBuffer.short.toInt()
+                        val frame = processedFrames + samplesProcessed / channels
+                        val faded = (sample * gainAtFrame(frame, sampleRate)).roundToInt()
+                            .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+                        output.putShort(faded.toShort())
+                        samplesProcessed++
+                    }
+                }
+                C.ENCODING_PCM_FLOAT -> {
+                    while (inputBuffer.remaining() >= 4) {
+                        val sample = inputBuffer.float
+                        val frame = processedFrames + samplesProcessed / channels
+                        output.putFloat((sample * gainAtFrame(frame, sampleRate)).coerceIn(-1f, 1f))
+                        samplesProcessed++
+                    }
+                }
+                else -> output.put(inputBuffer)
+            }
+            processedFrames += samplesProcessed / channels
+            output.flip()
+        }
+
+        override fun onFlush(streamMetadata: AudioProcessor.StreamMetadata) {
+            processedFrames = 0L
+        }
+
+        override fun onReset() {
+            processedFrames = 0L
+        }
+    }
+
     private fun audioEffects(
         volumePercent: Int,
         fadeInMs: Long = 0L,
@@ -1329,17 +1396,11 @@ class VideoEditorActivity : Activity() {
             processors.add(processor)
         }
         if (trackDurationMs > 0L && (fadeInMs > 0L || fadeOutMs > 0L)) {
-            val fadeIn = fadeInMs.coerceAtLeast(0L).coerceAtMost(trackDurationMs)
-            val fadeOut = fadeOutMs.coerceAtLeast(0L).coerceAtMost(trackDurationMs)
-            val builder = DefaultGainProvider.Builder(1f)
-            if (fadeIn > 0L) {
-                builder.addFadeAt(0L, fadeIn * 1000L, DefaultGainProvider.FADE_IN_LINEAR)
-            }
-            if (fadeOut > 0L) {
-                builder.addFadeAt((trackDurationMs - fadeOut).coerceAtLeast(0L) * 1000L,
-                    fadeOut * 1000L, DefaultGainProvider.FADE_OUT_LINEAR)
-            }
-            processors.add(GainProcessor(builder.build()))
+            processors.add(FadeAudioProcessor(
+                trackDurationMs,
+                fadeInMs.coerceAtLeast(0L).coerceAtMost(trackDurationMs),
+                fadeOutMs.coerceAtLeast(0L).coerceAtMost(trackDurationMs)
+            ))
         }
         return processors
     }
