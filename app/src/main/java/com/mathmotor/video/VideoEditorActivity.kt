@@ -545,11 +545,41 @@ class VideoEditorActivity : Activity() {
                 recordUndoState()
             }
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                if (!suppressLayerControlCallbacks && !restoringHistory) {
+                    val active = textLayers.firstOrNull { it.id == selectedTextLayerId }
+                    if (active != null) {
+                        active.text = s?.toString().orEmpty()
+                    } else if (!s.isNullOrBlank()) {
+                        val layer = TextLayer(nextLayerId++, s.toString(), textStartMs, textEndMs.coerceAtLeast(totalOutputDurationMs()), textPosition)
+                        textLayers.add(layer)
+                        selectedTextLayerId = layer.id
+                    }
+                }
+                refreshTextLayerList()
                 refreshTimelineTracks()
                 refreshPreviewOverlay()
             }
             override fun afterTextChanged(s: android.text.Editable?) {}
         })
+        val textLayerHeader = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        textLayerHeader.addView(label("METİN KATMANLARI", 12f, muted, true),
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        textLayerHeader.addView(actionButton("+ Yeni metin") { addTextLayer() }.apply {
+            textSize = 11f
+            minHeight = dp(38)
+            layoutParams = LinearLayout.LayoutParams(dp(125), dp(38))
+        })
+        textPanel.addView(textLayerHeader)
+        textLayerList = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(4), dp(3), dp(4), dp(3))
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.rgb(31, 36, 46))
+                cornerRadius = dp(8).toFloat()
+            }
+        }
+        textPanel.addView(textLayerList, matchWrap())
+        textPanel.addView(actionButton("Seçili metin katmanını sil") { removeSelectedTextLayer() })
         textPanel.addView(label("Metnin ekranda kalacağı süre", 12f, muted, false))
         textStartLabel = label("Başlangıç: 00:00", 12f, Color.WHITE, true)
         textPanel.addView(textStartLabel)
@@ -573,6 +603,12 @@ class VideoEditorActivity : Activity() {
                     2 -> TextPosition.CENTER
                     else -> TextPosition.BOTTOM
                 }
+                if (!suppressLayerControlCallbacks) {
+                    recordUndoState()
+                    textLayers.firstOrNull { it.id == selectedTextLayerId }?.position = textPosition
+                    refreshTextLayerList()
+                    refreshTimelineTracks()
+                }
                 refreshPreviewOverlay()
             }
         }
@@ -585,11 +621,8 @@ class VideoEditorActivity : Activity() {
         musicLabel = label("Müzik seçilmedi.", 12f, muted, false)
         audioPanel.addView(musicLabel)
         audioPanel.addView(actionButton("+ Müzik ekle (video boyunca)") { chooseAudio(true) })
-        audioPanel.addView(actionButton("Müziği kaldır") {
-            musicUri = null
-            musicTitle = null
-            musicLabel.text = "Müzik seçilmedi."
-            refreshTimelineTracks()
+        audioPanel.addView(actionButton("Seçili müziği kaldır") {
+            removeSelectedAudioLayer(isMusic = true)
         })
         musicVolumeLabel = label("Müzik ses seviyesi: 45%", 12f, Color.WHITE, true)
         audioPanel.addView(musicVolumeLabel)
@@ -597,9 +630,21 @@ class VideoEditorActivity : Activity() {
         musicVolumeSeek.setOnSeekBarChangeListener(volumeListener { value ->
             musicVolume = value
             musicVolumeLabel.text = "Müzik ses seviyesi: " + value + "%"
-            musicPreviewPlayer?.volume = value / 100f
+            musicLayers.firstOrNull { it.id == selectedMusicLayerId }?.volume = value
+            audioPreviewPlayers.values.forEach { it.volume = value / 100f }
+            refreshTimelineTracks()
         })
         audioPanel.addView(musicVolumeSeek, matchWrap())
+        musicFadeLabel = label("Müziğin açılma / kısılma süresi: 0 sn / 0 sn", 11f, Color.WHITE, true)
+        audioPanel.addView(musicFadeLabel)
+        musicFadeInSeek = SeekBar(this).apply { max = 10; progress = 0 }
+        musicFadeOutSeek = SeekBar(this).apply { max = 10; progress = 0 }
+        musicFadeInSeek.setOnSeekBarChangeListener(audioFadeListener(true, true))
+        musicFadeOutSeek.setOnSeekBarChangeListener(audioFadeListener(true, false))
+        audioPanel.addView(label("Müzik açılma süresi (sn)", 11f, muted, false))
+        audioPanel.addView(musicFadeInSeek, matchWrap())
+        audioPanel.addView(label("Müzik kısılma süresi (sn)", 11f, muted, false))
+        audioPanel.addView(musicFadeOutSeek, matchWrap())
         audioPanel.addView(View(this).apply { setBackgroundColor(Color.rgb(55, 62, 76)) },
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)).apply {
                 topMargin = dp(10); bottomMargin = dp(8)
@@ -627,17 +672,23 @@ class VideoEditorActivity : Activity() {
         soundVolumeSeek.setOnSeekBarChangeListener(volumeListener { value ->
             soundVolume = value
             soundVolumeLabel.text = "Ses/efekt seviyesi: " + value + "%"
-            soundPreviewPlayer?.volume = value / 100f
+            soundLayers.firstOrNull { it.id == selectedSoundLayerId }?.volume = value
+            audioPreviewPlayers.values.forEach { it.volume = value / 100f }
+            refreshTimelineTracks()
         })
         audioPanel.addView(soundVolumeSeek, matchWrap())
-        audioPanel.addView(actionButton("Ses efektini kaldır") {
-            soundUri = null
-            soundTitle = null
-            soundDurationMs = 0L
-            soundStartMs = 0L
-            soundLabel.text = "Ses efekti seçilmedi."
-            updateSoundControls()
-            refreshTimelineTracks()
+        soundFadeLabel = label("Efektin açılma / kısılma süresi: 0 sn / 0 sn", 11f, Color.WHITE, true)
+        audioPanel.addView(soundFadeLabel)
+        soundFadeInSeek = SeekBar(this).apply { max = 10; progress = 0 }
+        soundFadeOutSeek = SeekBar(this).apply { max = 10; progress = 0 }
+        soundFadeInSeek.setOnSeekBarChangeListener(audioFadeListener(false, true))
+        soundFadeOutSeek.setOnSeekBarChangeListener(audioFadeListener(false, false))
+        audioPanel.addView(label("Efekt açılma süresi (sn)", 11f, muted, false))
+        audioPanel.addView(soundFadeInSeek, matchWrap())
+        audioPanel.addView(label("Efekt kısılma süresi (sn)", 11f, muted, false))
+        audioPanel.addView(soundFadeOutSeek, matchWrap())
+        audioPanel.addView(actionButton("Seçili ses efektini kaldır") {
+            removeSelectedAudioLayer(isMusic = false)
         })
         keepSourceAudio = CheckBox(this).apply {
             text = "Videonun kendi sesini koru"
