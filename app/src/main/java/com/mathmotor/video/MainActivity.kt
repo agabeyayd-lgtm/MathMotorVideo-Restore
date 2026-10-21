@@ -36,7 +36,6 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 class MainActivity : Activity() {
     private lateinit var status: TextView
-    private lateinit var scenarioText: TextView
     private var scenario: HumanScenario = ScenarioEngine.generate(System.currentTimeMillis())
     private var latestUri: String? = null
     private val rendering = AtomicBoolean(false)
@@ -138,12 +137,6 @@ class MainActivity : Activity() {
         root.addView(label("MATHMOTOR VIDEO", 25f, Color.WHITE, true))
         root.addView(label("YEREL STÜDYO  •  9:16  •  10 SANİYE", 12f, Color.rgb(173, 191, 204), true))
         root.addView(gap(18))
-        root.addView(label("MEVCUT SENARYO", 12f, Color.rgb(121, 202, 218), true))
-        scenarioText = label("", 18f, Color.WHITE, true)
-        root.addView(scenarioText)
-        root.addView(label("Önce fiziksel zaman çizelgesi oluşturulur. Görsel yönetmen, durumları değiştirmeden bunu kullanır.", 14f, Color.rgb(198, 211, 218), false))
-        root.addView(gap(18))
-        root.addView(actionButton("YENİ DÜNYA / YENİ SENARYO") { createNewScenario() })
         root.addView(actionButton("10 SANİYELİK VİDEO OLUŞTUR") { createVideo() })
         root.addView(actionButton("FİZİK / KARE TESTİ  •  300 KARE") { runPhysicsTest() })
         root.addView(actionButton("TELEFONDAN VİDEO SEÇ VE TEST ET") { chooseVideo() })
@@ -160,11 +153,7 @@ class MainActivity : Activity() {
             text = "Hazır. Senaryo oluştur, video üret veya telefondan bir video seçip kare testini çalıştır."
         }
         root.addView(status, matchWrap().apply { topMargin = dp(8) })
-        root.addView(gap(18))
-        root.addView(label("YENİDEN OLUŞTURULAN SÜRÜM", 12f, Color.rgb(121, 202, 218), true))
-        root.addView(label("Bu sürüm çevrimdışı üretim, video oluşturma, geçmiş ve kare testi altyapısını yeniden kurar. Orijinal V7 kaynak arşivi bulunamadı; V7'deki harici sosyal veri bağlantıları henüz eklenmedi.", 12f, Color.rgb(173, 191, 204), false))
         setContentView(scroll)
-        updateScenarioText()
     }
 
     private fun createNewScenario() {
@@ -393,10 +382,6 @@ class MainActivity : Activity() {
             appendLine("\nEn son kaydı açmak için Son Videoyu Aç'a dokun.")
         }
         latestUri = records.first().uri
-    }
-
-    private fun updateScenarioText() {
-        scenarioText.text = "${scenario.title}\n${scenario.kind.label}  •  seed ${scenario.seed}"
     }
 
     private fun label(value: String, size: Float, color: Int, bold: Boolean): TextView = TextView(this).apply {
