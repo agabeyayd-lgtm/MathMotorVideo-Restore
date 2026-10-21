@@ -6,6 +6,9 @@ import android.content.ClipData
 import android.content.Intent
 import android.database.Cursor
 import android.graphics.Color
+import android.graphics.Bitmap
+import android.graphics.drawable.BitmapDrawable
+import android.util.LruCache
 import android.graphics.Typeface
 import android.media.MediaMetadataRetriever
 import android.net.Uri
@@ -42,6 +45,8 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.audio.AudioProcessor
+import androidx.media3.common.audio.DefaultGainProvider
+import androidx.media3.common.audio.GainProcessor
 import androidx.media3.common.audio.ChannelMixingAudioProcessor
 import androidx.media3.common.audio.ChannelMixingMatrix
 import androidx.media3.common.util.UnstableApi
@@ -76,8 +81,38 @@ class VideoEditorActivity : Activity() {
         var endMs: Long = durationMs,
         val frameRate: Float = 30f
     )
+    private data class TextLayer(
+        val id: Long,
+        var text: String,
+        var startMs: Long,
+        var endMs: Long,
+        var position: TextPosition
+    )
+    private data class AudioLayer(
+        val id: Long,
+        val uri: Uri,
+        var title: String,
+        var durationMs: Long,
+        var startMs: Long,
+        var volume: Int,
+        var fadeInMs: Long = 0L,
+        var fadeOutMs: Long = 0L
+    )
 
     private val clips = mutableListOf<Clip>()
+    private val textLayers = mutableListOf<TextLayer>()
+    private val musicLayers = mutableListOf<AudioLayer>()
+    private val soundLayers = mutableListOf<AudioLayer>()
+    private var selectedTextLayerId: Long? = null
+    private var selectedMusicLayerId: Long? = null
+    private var selectedSoundLayerId: Long? = null
+    private var nextLayerId = 1L
+    private var suppressLayerControlCallbacks = false
+    private val audioPreviewPlayers = mutableMapOf<Long, ExoPlayer>()
+    private val audioPreviewSources = mutableMapOf<Long, Uri>()
+    private val thumbnailCache = object : LruCache<String, Bitmap>(6 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
+    }
     private var selectedClipIndex = -1
     private var musicUri: Uri? = null
     private var musicTitle: String? = null
@@ -146,6 +181,12 @@ class VideoEditorActivity : Activity() {
     private lateinit var soundStartSeek: SeekBar
     private lateinit var soundVolumeLabel: TextView
     private lateinit var soundVolumeSeek: SeekBar
+    private lateinit var musicFadeInSeek: SeekBar
+    private lateinit var musicFadeOutSeek: SeekBar
+    private lateinit var soundFadeInSeek: SeekBar
+    private lateinit var soundFadeOutSeek: SeekBar
+    private lateinit var musicFadeLabel: TextView
+    private lateinit var soundFadeLabel: TextView
     private lateinit var musicVolumeLabel: TextView
     private lateinit var musicVolumeSeek: SeekBar
     private lateinit var sourceVolumeLabel: TextView
@@ -156,6 +197,7 @@ class VideoEditorActivity : Activity() {
     private lateinit var textEndSeek: SeekBar
     private lateinit var textPositionGroup: android.widget.RadioGroup
     private lateinit var textInput: EditText
+    private lateinit var textLayerList: LinearLayout
     private lateinit var keepSourceAudio: CheckBox
     private lateinit var status: TextView
     private lateinit var exportButton: Button
@@ -177,8 +219,6 @@ class VideoEditorActivity : Activity() {
         window.navigationBarColor = Color.rgb(15, 31, 45)
         buildUi()
         player = ExoPlayer.Builder(this).build().also { playerView.player = it }
-        musicPreviewPlayer = ExoPlayer.Builder(this).build()
-        soundPreviewPlayer = ExoPlayer.Builder(this).build()
         previewHandler.post(previewTicker)
         val incoming = intent.getStringExtra("video_uri")
         if (!incoming.isNullOrBlank()) addClip(Uri.parse(incoming), false)
