@@ -84,6 +84,9 @@ class VideoEditorActivity : Activity() {
     private lateinit var playerView: PlayerView
     private lateinit var clipList: LinearLayout
     private lateinit var timelineTracks: LinearLayout
+    private lateinit var timelineRulerContent: LinearLayout
+    private val timelineScrollViews = mutableListOf<android.widget.HorizontalScrollView>()
+    private var syncingTimelineScroll = false
     private lateinit var textTrackContent: LinearLayout
     private lateinit var musicTrackContent: LinearLayout
     private lateinit var soundTrackContent: LinearLayout
@@ -239,26 +242,33 @@ class VideoEditorActivity : Activity() {
                 setStroke(dp(1), Color.rgb(46, 53, 66))
             }
         }
+        timelineRulerContent = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            minHeight = dp(34)
+        }
         clipList = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            minHeight = dp(40)
+            minHeight = dp(34)
         }
         textTrackContent = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            minHeight = dp(40)
+            minHeight = dp(34)
         }
         musicTrackContent = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            minHeight = dp(40)
+            minHeight = dp(34)
         }
         soundTrackContent = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            minHeight = dp(40)
+            minHeight = dp(34)
         }
+        timelineScrollViews.clear()
+        addTimelineLane(timelineTracks, "SÜRE", timelineRulerContent, Color.rgb(165, 174, 190))
         addTimelineLane(timelineTracks, "VIDEO", clipList, Color.rgb(0, 202, 170))
         addTimelineLane(timelineTracks, "METİN", textTrackContent, Color.rgb(177, 139, 255))
         addTimelineLane(timelineTracks, "MÜZİK", musicTrackContent, Color.rgb(90, 175, 255))
@@ -917,6 +927,7 @@ class VideoEditorActivity : Activity() {
 
     private fun refreshClipList() {
         clipList.removeAllViews()
+        val scale = timelineScaleDpPerSecond()
         if (clips.isEmpty()) {
             addTimelineChip(clipList, "+ Video ekle", Color.rgb(0, 202, 170), Color.BLACK) {
                 chooseVideo(false)
@@ -924,12 +935,15 @@ class VideoEditorActivity : Activity() {
         } else {
             clips.forEachIndexed { index, clip ->
                 val selected = index == selectedClipIndex
-                val duration = formatMs(clip.endMs - clip.startMs)
-                addTimelineChip(
+                val durationMs = (clip.endMs - clip.startMs).coerceAtLeast(1L)
+                val widthDp = ((durationMs / 1000f) * scale).toInt().coerceIn(48, timelineContentWidthDp())
+                addTimedTimelineChip(
                     clipList,
-                    (if (selected) "▶ " else "") + "${index + 1}. ${clip.title}\n$duration",
+                    (if (selected) "▶ " else "") + "${index + 1}. ${clip.title}\n${formatMs(durationMs)}",
                     if (selected) Color.rgb(0, 202, 170) else Color.rgb(45, 91, 111),
-                    if (selected) Color.BLACK else Color.WHITE
+                    if (selected) Color.BLACK else Color.WHITE,
+                    widthDp,
+                    0
                 ) {
                     selectedClipIndex = index
                     refreshClipList()
@@ -964,21 +978,31 @@ class VideoEditorActivity : Activity() {
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
             setTextColor(labelColor)
-            setPadding(dp(3), dp(3), dp(3), dp(3))
+            setPadding(dp(3), dp(2), dp(3), dp(2))
         }
-        row.addView(name, LinearLayout.LayoutParams(dp(57), dp(44)))
+        row.addView(name, LinearLayout.LayoutParams(dp(57), dp(38)))
         val laneScroll = android.widget.HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
             overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
-            setPadding(dp(3), dp(2), dp(3), dp(2))
+            setPadding(dp(2), dp(1), dp(2), dp(1))
             clipToPadding = false
         }
         laneScroll.addView(content, android.widget.HorizontalScrollView.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT
+            dp(timelineContentWidthDp()), ViewGroup.LayoutParams.MATCH_PARENT
         ))
-        row.addView(laneScroll, LinearLayout.LayoutParams(0, dp(44), 1f))
-        host.addView(row, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(44)).apply {
-            bottomMargin = dp(3)
+        laneScroll.setOnScrollChangeListener { view: View, scrollX: Int, _: Int, _: Int, _: Int ->
+            if (!syncingTimelineScroll) {
+                syncingTimelineScroll = true
+                timelineScrollViews.forEach { other ->
+                    if (other !== view && other.scrollX != scrollX) other.scrollTo(scrollX, 0)
+                }
+                syncingTimelineScroll = false
+            }
+        }
+        timelineScrollViews.add(laneScroll)
+        row.addView(laneScroll, LinearLayout.LayoutParams(0, dp(38), 1f))
+        host.addView(row, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(38)).apply {
+            bottomMargin = dp(2)
         })
     }
 
@@ -1010,56 +1034,153 @@ class VideoEditorActivity : Activity() {
         })
     }
 
+    private fun addTimedTimelineChip(
+        parent: LinearLayout,
+        title: String,
+        fill: Int,
+        textColor: Int,
+        widthDp: Int,
+        marginStartDp: Int,
+        action: () -> Unit
+    ) {
+        val chip = Button(this).apply {
+            text = title
+            isAllCaps = false
+            isSingleLine = false
+            textSize = 10f
+            gravity = Gravity.CENTER
+            setTextColor(textColor)
+            minHeight = dp(29)
+            setPadding(dp(4), 0, dp(4), 0)
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(fill)
+                cornerRadius = dp(6).toFloat()
+            }
+            setOnClickListener { action() }
+        }
+        parent.addView(chip, LinearLayout.LayoutParams(dp(widthDp.coerceAtLeast(38)), dp(31)).apply {
+            marginStart = dp(marginStartDp.coerceAtLeast(0))
+            marginEnd = dp(2)
+        })
+    }
+
+    private fun timelineContentWidthDp(): Int {
+        val seconds = (totalOutputDurationMs() / 1000f).coerceAtLeast(0.1f)
+        return (seconds * 28f).toInt().coerceIn(280, 2400)
+    }
+
+    private fun timelineScaleDpPerSecond(): Float {
+        val seconds = (totalOutputDurationMs() / 1000f).coerceAtLeast(0.1f)
+        return timelineContentWidthDp() / seconds
+    }
+
+    private fun setTimelineContentWidth(content: LinearLayout, widthDp: Int) {
+        val params = content.layoutParams ?: android.widget.HorizontalScrollView.LayoutParams(
+            dp(widthDp), ViewGroup.LayoutParams.MATCH_PARENT
+        )
+        params.width = dp(widthDp)
+        params.height = ViewGroup.LayoutParams.MATCH_PARENT
+        content.layoutParams = params
+    }
+
     private fun refreshTimelineTracks() {
-        if (!::textTrackContent.isInitialized ||
+        if (!::timelineRulerContent.isInitialized ||
+            !::textTrackContent.isInitialized ||
             !::musicTrackContent.isInitialized ||
             !::soundTrackContent.isInitialized
         ) return
 
+        val duration = totalOutputDurationMs()
+        val widthDp = timelineContentWidthDp()
+        val scale = timelineScaleDpPerSecond()
+        listOf(timelineRulerContent, clipList, textTrackContent, musicTrackContent, soundTrackContent)
+            .forEach { setTimelineContentWidth(it, widthDp) }
+
+        // Visible ruler ticks share the same time scale as all four tracks.
+        timelineRulerContent.removeAllViews()
+        val totalSeconds = (duration / 1000L).toInt()
+        if (duration <= 0L) {
+            addTimedTimelineChip(timelineRulerContent, "00:00", Color.rgb(38, 43, 53), Color.LTGRAY, 75, 0) {}
+        } else {
+            var tick = 0
+            while (tick <= totalSeconds) {
+                val labelView = TextView(this).apply {
+                    text = formatMs(tick * 1000L)
+                    textSize = 9f
+                    setTextColor(Color.rgb(165, 174, 190))
+                    gravity = Gravity.CENTER_VERTICAL or Gravity.START
+                    setPadding(dp(3), 0, 0, 0)
+                }
+                val intervalWidth = (scale * 5f).toInt().coerceAtLeast(32)
+                timelineRulerContent.addView(labelView, LinearLayout.LayoutParams(dp(intervalWidth), dp(31)))
+                tick += 5
+            }
+        }
+
+        // Text layer: its left offset and visible width reflect its actual timing.
         textTrackContent.removeAllViews()
         val overlayText = if (::textInput.isInitialized) textInput.text?.toString()?.trim().orEmpty() else ""
         if (overlayText.isBlank()) {
-            addTimelineChip(textTrackContent, "+ Metin ekle", Color.rgb(89, 82, 156)) {
+            addTimedTimelineChip(textTrackContent, "+ Metin ekle", Color.rgb(89, 82, 156), Color.WHITE, 92, 0) {
                 onOpenTextTool?.invoke()
             }
         } else {
-            val shownText = if (overlayText.length > 24) overlayText.take(24) + "…" else overlayText
-            addTimelineChip(
+            val shownText = if (overlayText.length > 18) overlayText.take(18) + "…" else overlayText
+            val startDp = (textStartMs.coerceAtLeast(0L) / 1000f * scale).toInt().coerceIn(0, widthDp - 38)
+            val textDuration = (textEndMs - textStartMs).coerceAtLeast(1000L)
+            val layerWidth = ((textDuration / 1000f) * scale).toInt().coerceAtLeast(54)
+                .coerceAtMost((widthDp - startDp).coerceAtLeast(38))
+            addTimedTimelineChip(
                 textTrackContent,
-                "T  $shownText  ·  ${formatMs(textStartMs)}–${formatMs(textEndMs)}",
-                Color.rgb(116, 87, 178)
+                "T  $shownText",
+                Color.rgb(116, 87, 178),
+                Color.WHITE,
+                layerWidth,
+                startDp
             ) {
                 onOpenTextTool?.invoke()
             }
         }
 
+        // Music spans the complete output timeline.
         musicTrackContent.removeAllViews()
         if (musicUri == null) {
-            addTimelineChip(musicTrackContent, "+ Müzik ekle", Color.rgb(42, 92, 132)) {
+            addTimedTimelineChip(musicTrackContent, "+ Müzik ekle", Color.rgb(42, 92, 132), Color.WHITE, 92, 0) {
                 chooseAudio(true)
             }
         } else {
-            val title = musicTitle?.take(20) ?: "Müzik"
-            addTimelineChip(
+            val title = musicTitle?.take(18) ?: "Müzik"
+            addTimedTimelineChip(
                 musicTrackContent,
-                "♪  $title  ·  00:00–${formatMs(totalOutputDurationMs())}",
-                Color.rgb(37, 101, 149)
+                "♪  $title",
+                Color.rgb(37, 101, 149),
+                Color.WHITE,
+                widthDp - 4,
+                0
             ) {
                 onOpenAudioTool?.invoke()
             }
         }
 
+        // Sound effects are placed at their chosen start time on the same axis.
         soundTrackContent.removeAllViews()
         if (soundUri == null) {
-            addTimelineChip(soundTrackContent, "+ Ses efekti ekle", Color.rgb(130, 82, 40)) {
+            addTimedTimelineChip(soundTrackContent, "+ Ses efekti ekle", Color.rgb(130, 82, 40), Color.WHITE, 112, 0) {
                 chooseAudio(false)
             }
         } else {
-            val title = soundTitle?.take(20) ?: "Ses efekti"
-            addTimelineChip(
+            val startDp = (soundStartMs.coerceAtLeast(0L) / 1000f * scale).toInt().coerceIn(0, widthDp - 38)
+            val visibleDuration = minOf(soundDurationMs, (duration - soundStartMs).coerceAtLeast(0L))
+            val layerWidth = ((visibleDuration / 1000f) * scale).toInt().coerceAtLeast(50)
+                .coerceAtMost((widthDp - startDp).coerceAtLeast(38))
+            val title = soundTitle?.take(16) ?: "Ses efekti"
+            addTimedTimelineChip(
                 soundTrackContent,
-                "♫  $title  ·  ${formatMs(soundStartMs)}",
-                Color.rgb(154, 98, 46)
+                "♫  $title",
+                Color.rgb(154, 98, 46),
+                Color.WHITE,
+                layerWidth,
+                startDp
             ) {
                 onOpenAudioTool?.invoke()
             }
