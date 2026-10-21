@@ -88,6 +88,7 @@ class VideoEditorActivity : Activity() {
     private var musicPreviewPlayer: ExoPlayer? = null
     private var soundPreviewPlayer: ExoPlayer? = null
     private var previewTimelineOffsetMs = 0L
+    private var previewingSequence = false
     private var previewMusicSource: Uri? = null
     private var previewSoundSource: Uri? = null
     private val previewHandler = Handler(Looper.getMainLooper())
@@ -379,7 +380,7 @@ class VideoEditorActivity : Activity() {
         selectedClipLabel = label("Önce + Video düğmesine dokun.", 13f, Color.WHITE, true)
         clipPanel.addView(selectedClipLabel)
         val clipActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        clipActions.addView(compactButton("▶ Önizle") { previewSelectedClip() })
+        clipActions.addView(compactButton("▶ Tümünü izle") { previewSelectedClip() })
         clipActions.addView(compactButton("Sil") { removeSelectedClip() })
         clipActions.addView(compactButton("← Öne al") { moveSelectedClip(-1) })
         clipActions.addView(compactButton("Sona →") { moveSelectedClip(1) })
@@ -710,6 +711,7 @@ class VideoEditorActivity : Activity() {
                 }
                 clips.add(Clip(uri, title, duration, 0L, duration))
                 selectedClipIndex = clips.lastIndex
+                previewingSequence = false
                 previewTimelineOffsetMs = outputOffsetForClip(selectedClipIndex)
                 player?.setMediaItem(clippedMediaItem(clips.last()))
                 player?.volume = if (keepSourceAudio.isChecked) sourceAudioVolume / 100f else 0f
@@ -843,6 +845,7 @@ class VideoEditorActivity : Activity() {
         refreshClipList()
         loadTrimControls()
         selectedClip()?.let { clip ->
+            previewingSequence = false
             previewTimelineOffsetMs = outputOffsetForClip(selectedClipIndex)
             player?.setMediaItem(clippedMediaItem(clip))
             player?.volume = if (keepSourceAudio.isChecked) sourceAudioVolume / 100f else 0f
@@ -931,6 +934,7 @@ class VideoEditorActivity : Activity() {
                             val clip = Clip(uri, title, details, 0L, details)
                             clips.add(clip)
                             selectedClipIndex = clips.lastIndex
+                            previewingSequence = false
                             previewTimelineOffsetMs = outputOffsetForClip(selectedClipIndex)
                             player?.setMediaItem(clippedMediaItem(clip))
                             player?.volume = if (keepSourceAudio.isChecked) sourceAudioVolume / 100f else 0f
@@ -1017,6 +1021,7 @@ class VideoEditorActivity : Activity() {
                     0
                 ) {
                     selectedClipIndex = index
+                    previewingSequence = false
                     previewTimelineOffsetMs = outputOffsetForClip(index)
                     refreshClipList()
                     loadTrimControls()
@@ -1162,12 +1167,26 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun currentTimelinePositionMs(): Long {
-        val playbackPosition = player?.currentPosition?.coerceAtLeast(0L) ?: 0L
+        val main = player
+        val playbackPosition = main?.currentPosition?.coerceAtLeast(0L) ?: 0L
+        if (previewingSequence && main != null) {
+            val activeIndex = main.currentMediaItemIndex
+            if (activeIndex in clips.indices) return outputOffsetForClip(activeIndex) + playbackPosition
+        }
         return previewTimelineOffsetMs + playbackPosition
     }
 
     private fun refreshPreviewOverlay() {
         if (!::previewTextOverlay.isInitialized) return
+        if (previewingSequence) {
+            val activeIndex = player?.currentMediaItemIndex ?: -1
+            if (activeIndex in clips.indices && activeIndex != selectedClipIndex) {
+                selectedClipIndex = activeIndex
+                previewTimelineOffsetMs = outputOffsetForClip(activeIndex)
+                refreshClipList()
+                loadTrimControls()
+            }
+        }
         val text = if (::textInput.isInitialized) textInput.text?.toString()?.trim().orEmpty() else ""
         if (text.isBlank() || selectedClip() == null) {
             previewTextOverlay.visibility = View.GONE
@@ -1388,6 +1407,7 @@ class VideoEditorActivity : Activity() {
         }
         clips.removeAt(selectedClipIndex)
         selectedClipIndex = if (clips.isEmpty()) -1 else selectedClipIndex.coerceAtMost(clips.lastIndex)
+        previewingSequence = false
         previewTimelineOffsetMs = outputOffsetForClip(selectedClipIndex)
         refreshClipList()
         loadTrimControls()
@@ -1414,6 +1434,7 @@ class VideoEditorActivity : Activity() {
         val clip = clips.removeAt(selectedClipIndex)
         clips.add(target, clip)
         selectedClipIndex = target
+        previewingSequence = false
         previewTimelineOffsetMs = outputOffsetForClip(selectedClipIndex)
         refreshClipList()
         loadTrimControls()
@@ -1517,18 +1538,21 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun previewSelectedClip() {
-        val clip = selectedClip()
-        if (clip == null) {
-            status.text = "Önizleme için önce video seç."
+        if (clips.isEmpty()) {
+            status.text = "Önizleme için önce video ekle."
             return
         }
+        selectedClipIndex = selectedClipIndex.coerceIn(0, clips.lastIndex)
+        previewingSequence = true
         previewTimelineOffsetMs = outputOffsetForClip(selectedClipIndex)
-        player?.setMediaItem(clippedMediaItem(clip))
         player?.volume = if (keepSourceAudio.isChecked) sourceAudioVolume / 100f else 0f
+        player?.setMediaItems(clips.map { clippedMediaItem(it) }, selectedClipIndex, 0L)
         player?.prepare()
         player?.playWhenReady = true
+        refreshClipList()
+        loadTrimControls()
         refreshPreviewOverlay()
-        status.text = "Seçili kesme aralığının önizlemesi başladı."
+        status.text = "Tüm zaman çizelgesi oynatılıyor. Yazı, müzik ve ses efektleri zamanlarına göre önizlenir."
     }
 
     private fun buildClipSegment(
