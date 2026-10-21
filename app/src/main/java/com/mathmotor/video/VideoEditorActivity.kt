@@ -152,6 +152,7 @@ class VideoEditorActivity : Activity() {
     }
     private lateinit var playerView: PlayerView
     private lateinit var previewTextOverlay: TextView
+    private val previewTextViews = mutableMapOf<Long, TextView>()
     private lateinit var clipList: LinearLayout
     private lateinit var timelineTracks: LinearLayout
     private lateinit var timelineRulerContent: LinearLayout
@@ -2337,31 +2338,67 @@ class VideoEditorActivity : Activity() {
                 loadTrimControls()
             }
         }
+        val validIds = textLayers.map { it.id }.toSet()
+        previewTextViews.keys.filter { it !in validIds }.toList().forEach { id ->
+            val view = previewTextViews.remove(id)
+            if (view != null) {
+                view.visibility = View.GONE
+                if (view !== previewTextOverlay) playerView.overlayFrameLayout?.removeView(view)
+            }
+        }
         if (selectedClip() == null) {
-            previewTextOverlay.visibility = View.GONE
+            previewTextViews.values.forEach { it.visibility = View.GONE }
             return
         }
         val timeMs = currentTimelinePositionMs()
         val activeLayers = textLayers.filter { it.text.isNotBlank() && timeMs >= it.startMs && timeMs < it.endMs }
+        val activeIds = activeLayers.map { it.id }.toSet()
+        previewTextViews.forEach { (id, view) -> if (id !in activeIds) view.visibility = View.GONE }
         if (activeLayers.isEmpty()) {
             previewTextOverlay.visibility = View.GONE
             return
         }
-        previewTextOverlay.text = activeLayers.joinToString("\n") { it.text }
-        val selectedPosition = activeLayers.firstOrNull { it.id == selectedTextLayerId }?.position ?: activeLayers.first().position
-        val layoutParams = (previewTextOverlay.layoutParams as? FrameLayout.LayoutParams)
-            ?: FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        layoutParams.gravity = when (selectedPosition) {
-            TextPosition.TOP -> Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            TextPosition.CENTER -> Gravity.CENTER
-            TextPosition.BOTTOM -> Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+
+        activeLayers.forEachIndexed { index, layer ->
+            val view = previewTextViews[layer.id] ?: run {
+                val created = if (previewTextViews.isEmpty()) previewTextOverlay else TextView(this).apply {
+                    setTextColor(Color.WHITE)
+                    textSize = 21f
+                    typeface = Typeface.DEFAULT_BOLD
+                    gravity = Gravity.CENTER
+                    textAlignment = View.TEXT_ALIGNMENT_CENTER
+                    maxLines = 3
+                    setPadding(dp(12), dp(7), dp(12), dp(7))
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        setColor(Color.argb(205, 0, 0, 0))
+                        cornerRadius = dp(7).toFloat()
+                    }
+                    visibility = View.GONE
+                }
+                if (created !== previewTextOverlay) {
+                    playerView.overlayFrameLayout?.addView(
+                        created,
+                        FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                    )
+                }
+                previewTextViews[layer.id] = created
+                created
+            }
+            view.text = layer.text
+            val layoutParams = (view.layoutParams as? FrameLayout.LayoutParams)
+                ?: FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            layoutParams.gravity = when (layer.position) {
+                TextPosition.TOP -> Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                TextPosition.CENTER -> Gravity.CENTER
+                TextPosition.BOTTOM -> Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            }
+            layoutParams.leftMargin = dp(12)
+            layoutParams.rightMargin = dp(12)
+            layoutParams.topMargin = dp(14 + index * 4)
+            layoutParams.bottomMargin = dp(14 + index * 4)
+            view.layoutParams = layoutParams
+            view.visibility = View.VISIBLE
         }
-        layoutParams.leftMargin = dp(12)
-        layoutParams.rightMargin = dp(12)
-        layoutParams.topMargin = dp(14)
-        layoutParams.bottomMargin = dp(14)
-        previewTextOverlay.layoutParams = layoutParams
-        previewTextOverlay.visibility = View.VISIBLE
     }
 
     private fun syncAudioPreviews() {
