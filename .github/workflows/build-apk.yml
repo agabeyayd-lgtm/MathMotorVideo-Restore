@@ -57,7 +57,7 @@ jobs:
               PACKAGE_STATE="$(adb shell service check package 2>&1 | tr -d '\r')"
               ACTIVITY_STATE="$(adb shell service check activity 2>&1 | tr -d '\r')"
               echo "check $i: package=$PACKAGE_STATE; activity=$ACTIVITY_STATE" | tee -a app/build/diagnostics/emulator-readiness.txt
-              if echo "$PACKAGE_STATE" | grep -qi "found" && echo "$ACTIVITY_STATE" | grep -qi "found"; then
+              if echo "$PACKAGE_STATE" | grep -Eqi ": found[[:space:]]*$" && echo "$ACTIVITY_STATE" | grep -Eqi ": found[[:space:]]*$"; then
                 SERVICE_READY=1
                 break
               fi
