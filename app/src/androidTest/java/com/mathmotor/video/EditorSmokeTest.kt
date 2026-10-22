@@ -11,6 +11,10 @@ import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.rule.GrantPermissionRule
 import android.Manifest
 import android.os.Build
+import android.view.View
+import android.view.ViewGroup
+import android.widget.TextView
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -56,13 +60,43 @@ class EditorSmokeTest {
     fun editorOpensWithoutASelectedSourceVideo() {
         val scenario = ActivityScenario.launch(VideoEditorActivity::class.java)
         try {
-            onView(withText("MathMotor Studio")).check(matches(isDisplayed()))
-            onView(withText("ZAMAN ÇİZELGESİ")).check(matches(isDisplayed()))
-            onView(withText("METİN")).check(matches(isDisplayed()))
-            onView(withText("MÜZİK")).check(matches(isDisplayed()))
-            onView(withText("SES")).check(matches(isDisplayed()))
+            assertVisibleText(scenario, "MathMotor Studio")
+            assertVisibleText(scenario, "ZAMAN ÇİZELGESİ")
+            // Several editor panels intentionally reuse these labels. Assert presence
+            // in the visible view tree instead of requiring a unique Espresso match.
+            assertVisibleText(scenario, "METİN")
+            assertVisibleText(scenario, "MÜZİK")
+            assertVisibleText(scenario, "SES")
         } finally {
             scenario.close()
         }
+    }
+
+    private fun assertVisibleText(
+        scenario: ActivityScenario<VideoEditorActivity>,
+        expected: String
+    ) {
+        scenario.onActivity { activity ->
+            val root = activity.findViewById<View>(android.R.id.content)
+            assertTrue(
+                "Expected visible text '$expected' in editor.",
+                containsVisibleText(root, expected)
+            )
+        }
+    }
+
+    private fun containsVisibleText(view: View, expected: String): Boolean {
+        if (view.visibility == View.VISIBLE &&
+            view is TextView &&
+            view.text?.toString() == expected &&
+            view.width > 0 && view.height > 0
+        ) return true
+
+        if (view is ViewGroup) {
+            for (index in 0 until view.childCount) {
+                if (containsVisibleText(view.getChildAt(index), expected)) return true
+            }
+        }
+        return false
     }
 }
