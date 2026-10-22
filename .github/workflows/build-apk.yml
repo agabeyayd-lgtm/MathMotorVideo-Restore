@@ -26,15 +26,6 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10'
-      - name: Generate valid MP4 fixture for editor test
-        run: |
-          if ! command -v ffmpeg >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install -y ffmpeg
-          fi
-          mkdir -p app/src/androidTest/assets
-          ffmpeg -hide_banner -loglevel error -f lavfi -i "color=c=red:s=90x160:r=10:d=2" -an -c:v libx264 -profile:v baseline -level 3.0 -preset ultrafast -crf 40 -pix_fmt yuv420p -movflags +faststart -g 10 -video_track_timescale 90000 -y app/src/androidTest/assets/editor-e2e-source.mp4
-          ffprobe -v error -show_entries format=duration:stream=codec_name,width,height -of compact app/src/androidTest/assets/editor-e2e-source.mp4
       - name: Run unit tests and build APK
         run: gradle --no-daemon testDebugUnitTest assembleDebug
       - name: Run Android editor end-to-end test on emulator
