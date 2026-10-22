@@ -2,7 +2,12 @@ package com.mathmotor.video
 
 import android.content.Context
 import android.content.Intent
+import android.media.MediaCodec
+import android.media.MediaCodecInfo
+import android.media.MediaCodecList
+import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
+import android.media.MediaMuxer
 import android.net.Uri
 import android.os.SystemClock
 import android.view.View
@@ -13,7 +18,6 @@ import androidx.media3.ui.PlayerView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -26,9 +30,7 @@ class VideoEditorEndToEndTest {
     fun mp4LoadsSplitsAndExportsPlayableMp4() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val source = File(context.cacheDir, "editor-e2e-source.mp4")
-        InstrumentationRegistry.getInstrumentation().context.assets.open("editor-e2e-source.mp4").use { input ->
-            source.outputStream().use { output -> input.copyTo(output) }
-        }
+        createTestVideo(source)
 
         val intent = Intent(context, VideoEditorActivity::class.java).apply {
             putExtra("video_uri", Uri.fromFile(source).toString())
@@ -118,6 +120,149 @@ class VideoEditorEndToEndTest {
         } finally {
             scenario.close()
             source.delete()
+        }
+    }
+
+    private fun createTestVideo(output: File) {
+        val width = 96
+        val height = 160
+        val frameRate = 10
+        val frameCount = 20
+        val mime = MediaFormat.MIMETYPE_VIDEO_AVC
+        val codecInfo = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.firstOrNull { info ->
+            info.isEncoder && info.supportedTypes.any { it.equals(mime, ignoreCase = true) }
+        } ?: throw AssertionError("No AVC encoder is available in the Android test emulator.")
+        val supportedFormats = codecInfo.getCapabilitiesForType(mime).colorFormats
+        val colorFormat = listOf(
+            MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible,
+            MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Planar,
+            MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar
+        ).firstOrNull { it in supportedFormats }
+            ?: throw AssertionError("The emulator AVC encoder has no supported YUV 4:2:0 input format.")
+
+        output.parentFile?.mkdirs()
+        output.delete()
+        val encoder = MediaCodec.createByCodecName(codecInfo.name)
+        val muxer = MediaMuxer(output.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        var encoderStarted = false
+        var muxerStarted = false
+        val bufferInfo = MediaCodec.BufferInfo()
+        try {
+            val format = MediaFormat.createVideoFormat(mime, width, height).apply {
+                setInteger(MediaFormat.KEY_COLOR_FORMAT, colorFormat)
+                setInteger(MediaFormat.KEY_BIT_RATE, 160_000)
+                setInteger(MediaFormat.KEY_FRAME_RATE, frameRate)
+                setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
+            }
+            encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            encoder.start()
+            encoderStarted = true
+
+            var frameIndex = 0
+            var inputEosQueued = false
+            var outputEosReached = false
+            var trackIndex = -1
+            val deadline = SystemClock.elapsedRealtime() + 20_000L
+            while (!outputEosReached && SystemClock.elapsedRealtime() < deadline) {
+                if (frameIndex < frameCount) {
+                    val inputIndex = encoder.dequeueInputBuffer(10_000L)
+                    if (inputIndex >= 0) {
+                        val inputSize = fillInputFrame(encoder, inputIndex, width, height, colorFormat)
+                        val presentationTimeUs = frameIndex * 1_000_000L / frameRate
+                        encoder.queueInputBuffer(inputIndex, 0, inputSize, presentationTimeUs, 0)
+                        frameIndex++
+                    }
+                } else if (!inputEosQueued) {
+                    val inputIndex = encoder.dequeueInputBuffer(10_000L)
+                    if (inputIndex >= 0) {
+                        val endTimeUs = frameCount * 1_000_000L / frameRate
+                        encoder.queueInputBuffer(
+                            inputIndex, 0, 0, endTimeUs, MediaCodec.BUFFER_FLAG_END_OF_STREAM
+                        )
+                        inputEosQueued = true
+                    }
+                }
+
+                val outputIndex = encoder.dequeueOutputBuffer(bufferInfo, 10_000L)
+                when {
+                    outputIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                        trackIndex = muxer.addTrack(encoder.outputFormat)
+                        muxer.start()
+                        muxerStarted = true
+                    }
+                    outputIndex >= 0 -> {
+                        val encoded = encoder.getOutputBuffer(outputIndex)
+                        if (
+                            bufferInfo.size > 0 && encoded != null && muxerStarted &&
+                            bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0
+                        ) {
+                            encoded.position(bufferInfo.offset)
+                            encoded.limit(bufferInfo.offset + bufferInfo.size)
+                            muxer.writeSampleData(trackIndex, encoded, bufferInfo)
+                        }
+                        outputEosReached =
+                            bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
+                        encoder.releaseOutputBuffer(outputIndex, false)
+                    }
+                }
+            }
+            check(outputEosReached) { "Timed out while creating the MP4 source video." }
+            check(muxerStarted && output.length() > 0L) { "The source MP4 was not written." }
+        } finally {
+            if (encoderStarted) runCatching { encoder.stop() }
+            runCatching { encoder.release() }
+            if (muxerStarted) runCatching { muxer.stop() }
+            runCatching { muxer.release() }
+        }
+    }
+
+    private fun fillInputFrame(
+        encoder: MediaCodec,
+        inputIndex: Int,
+        width: Int,
+        height: Int,
+        colorFormat: Int
+    ): Int {
+        val ySize = width * height
+        val frameSize = ySize * 3 / 2
+        if (colorFormat == MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible) {
+            val image = encoder.getInputImage(inputIndex)
+                ?: throw AssertionError("The AVC encoder did not expose a flexible YUV input image.")
+            try {
+                fillPlane(image.planes[0], width, height, 96.toByte())
+                fillPlane(image.planes[1], width / 2, height / 2, 128.toByte())
+                fillPlane(image.planes[2], width / 2, height / 2, 128.toByte())
+            } finally {
+                image.close()
+            }
+            return frameSize
+        }
+
+        val input = encoder.getInputBuffer(inputIndex)
+            ?: throw AssertionError("The AVC encoder returned no input buffer.")
+        input.clear()
+        check(input.capacity() >= frameSize) { "The AVC encoder input buffer is too small." }
+        for (index in 0 until ySize) input.put(index, 96.toByte())
+        if (colorFormat == MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Planar) {
+            for (index in ySize until frameSize) input.put(index, 128.toByte())
+        } else {
+            for (index in ySize until frameSize) input.put(index, 128.toByte())
+        }
+        return frameSize
+    }
+
+    private fun fillPlane(
+        plane: android.media.Image.Plane,
+        width: Int,
+        height: Int,
+        value: Byte
+    ) {
+        val buffer = plane.buffer
+        val start = buffer.position()
+        for (row in 0 until height) {
+            for (column in 0 until width) {
+                buffer.put(start + row * plane.rowStride + column * plane.pixelStride, value)
+            }
         }
     }
 
