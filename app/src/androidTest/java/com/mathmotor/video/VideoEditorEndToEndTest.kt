@@ -143,9 +143,15 @@ class VideoEditorEndToEndTest {
                 scenario.onActivity { activity ->
                     val texts = allText(activity)
                     uiState = texts.joinToString(" | ")
-                    rendered = texts.any { it.startsWith("Görüntü oynatılıyor:") }
+                    rendered = texts.any {
+                        it.startsWith("Görüntü oynatılıyor:") ||
+                            it.contains("Video tamamlandı • ilk kare görüntülendi", ignoreCase = true)
+                    }
                 }
-                if (uiState.contains("Video oynatılamadı:", ignoreCase = true)) break
+                if (
+                    uiState.contains("Video oynatılamadı:", ignoreCase = true) ||
+                    uiState.contains("Video tamamlandı fakat ilk görüntü karesi ekranda doğrulanamadı.", ignoreCase = true)
+                ) break
                 SystemClock.sleep(100L)
             }
             assertTrue(

@@ -1,10 +1,8 @@
 name: Build and publish APK
 
 on:
-  push:
-    branches: [main]
+  # A merge must not publish a public APK automatically. Run only for an approved release.
   workflow_dispatch:
-
 permissions:
   contents: write
 
@@ -115,16 +113,25 @@ jobs:
       - name: Read app version
         if: steps.signing.outputs.configured == 'true'
         id: app_version
-        run: echo "code=$(grep -E 'versionCode[[:space:]]*=' app/build.gradle.kts | head -1 | grep -oE '[0-9]+')" >> "$GITHUB_OUTPUT"
+        run: |
+          code="$(grep -E 'versionCode[[:space:]]*=' app/build.gradle.kts | head -1 | grep -oE '[0-9]+')"
+          name="$(sed -nE 's/.*versionName[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' app/build.gradle.kts | head -1)"
+          test -n "$code"
+          test -n "$name"
+          {
+            echo "code=$code"
+            echo "name=$name"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Publish latest signed APK
         if: steps.signing.outputs.configured == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: app-v8.3-${{ github.run_number }}
-          name: MathMotor Video signed APK build ${{ github.run_number }}
-          body: "versionCode=${{ steps.app_version.outputs.code }}"
+          tag_name: app-${{ steps.app_version.outputs.name }}-${{ github.run_number }}
+          name: MathMotor Video ${{ steps.app_version.outputs.name }} signed APK build ${{ github.run_number }}
+          body: |
+            versionCode=${{ steps.app_version.outputs.code }}
+            versionName=${{ steps.app_version.outputs.name }}
           make_latest: true
           files: MathMotorVideo.apk
 
-# Rebuild after release-signing secret was refreshed.
