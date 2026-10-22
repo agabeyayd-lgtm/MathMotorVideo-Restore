@@ -1825,6 +1825,7 @@ class VideoEditorActivity : Activity() {
             val frameRate = item.optDouble("frameRate", 30.0).toFloat().takeIf { it in 1f..120f } ?: 30f
             loadedClips.add(Clip(uri, item.optString("title", "Video klibi"), duration, start, end, frameRate))
         }
+        val loadedOutputDurationMs = loadedClips.sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
         require(loadedClips.isNotEmpty() || allowEmptyClips) { "Projede video klibi bulunamadı." }
 
         val loadedTextLayers = mutableListOf<TextLayer>()
@@ -1834,7 +1835,7 @@ class VideoEditorActivity : Activity() {
                 val item = textArray.getJSONObject(i)
                 val id = item.optLong("id", 0L).takeIf { it > 0L } ?: (i + 1L)
                 val start = item.optLong("startMs", 0L).coerceAtLeast(0L)
-                val end = item.optLong("endMs", totalOutputDurationMs()).coerceAtLeast(start)
+                val end = item.optLong("endMs", loadedOutputDurationMs).coerceAtLeast(start)
                 val position = runCatching { TextPosition.valueOf(item.optString("position", "BOTTOM")) }.getOrDefault(TextPosition.BOTTOM)
                 loadedTextLayers.add(TextLayer(id, item.optString("text", ""), start, end, position))
             }
@@ -1844,7 +1845,7 @@ class VideoEditorActivity : Activity() {
                 val id = 1L
                 loadedTextLayers.add(TextLayer(
                     id, oldText, json.optLong("textStartMs", 0L).coerceAtLeast(0L),
-                    json.optLong("textEndMs", totalOutputDurationMs()).coerceAtLeast(0L),
+                    json.optLong("textEndMs", loadedOutputDurationMs).coerceAtLeast(0L),
                     runCatching { TextPosition.valueOf(json.optString("textPosition", "BOTTOM")) }.getOrDefault(TextPosition.BOTTOM)
                 ))
             }
@@ -1865,7 +1866,7 @@ class VideoEditorActivity : Activity() {
                         item.optLong("id", 0L).takeIf { it > 0L } ?: (1000L + i),
                         uri,
                         item.optString("title", if (isMusic) "Müzik" else "Ses efekti"),
-                        item.optLong("durationMs", if (isMusic) totalOutputDurationMs() else 0L).coerceAtLeast(1L),
+                        item.optLong("durationMs", if (isMusic) loadedOutputDurationMs else 0L).coerceAtLeast(1L),
                         item.optLong("startMs", 0L).coerceAtLeast(0L),
                         item.optInt("volume", if (isMusic) 45 else 100).coerceIn(0, 100),
                         item.optLong("fadeInMs", 0L).coerceAtLeast(0L),
@@ -1884,7 +1885,7 @@ class VideoEditorActivity : Activity() {
                         if (isMusic) 1000L else 2000L,
                         uri,
                         json.optString(if (isMusic) "musicTitle" else "soundTitle", if (isMusic) "Müzik" else "Ses efekti"),
-                        json.optLong(if (isMusic) "musicDurationMs" else "soundDurationMs", if (isMusic) totalOutputDurationMs() else 1L).coerceAtLeast(1L),
+                        json.optLong(if (isMusic) "musicDurationMs" else "soundDurationMs", if (isMusic) loadedOutputDurationMs else 1L).coerceAtLeast(1L),
                         if (isMusic) 0L else json.optLong("soundStartMs", 0L).coerceAtLeast(0L),
                         json.optInt(if (isMusic) "musicVolume" else "soundVolume", if (isMusic) 45 else 100).coerceIn(0, 100)
                     ))
@@ -1913,11 +1914,11 @@ class VideoEditorActivity : Activity() {
             ?: soundLayers.lastOrNull()?.id
         nextLayerId = maxOf(
             json.optLong("nextLayerId", 1L),
-            (textLayers.map { it.id } + musicLayers.map { it.id } + soundLayers.map { it.id }).maxOrNull()?.plus(1L) ?: 1L
+            (loadedTextLayers.map { it.id } + musicLayers.map { it.id } + soundLayers.map { it.id }).maxOrNull()?.plus(1L) ?: 1L
         )
 
         textStartMs = json.optLong("textStartMs", 0L).coerceAtLeast(0L)
-        textEndMs = json.optLong("textEndMs", totalOutputDurationMs()).coerceAtLeast(0L)
+        textEndMs = json.optLong("textEndMs", loadedOutputDurationMs).coerceAtLeast(0L)
         textTimingCustomized = json.optBoolean("textTimingCustomized", false)
         textPosition = runCatching { TextPosition.valueOf(json.optString("textPosition", "BOTTOM")) }.getOrDefault(TextPosition.BOTTOM)
         sourceAudioVolume = json.optInt("sourceAudioVolume", 100).coerceIn(0, 100)
@@ -1937,7 +1938,7 @@ class VideoEditorActivity : Activity() {
         textPosition = fallbackTextLayer?.position
             ?: runCatching { TextPosition.valueOf(json.optString("textPosition", "BOTTOM")) }.getOrDefault(TextPosition.BOTTOM)
         textStartMs = fallbackTextLayer?.startMs ?: json.optLong("textStartMs", 0L).coerceAtLeast(0L)
-        textEndMs = fallbackTextLayer?.endMs ?: json.optLong("textEndMs", totalOutputDurationMs()).coerceAtLeast(0L)
+        textEndMs = fallbackTextLayer?.endMs ?: json.optLong("textEndMs", loadedOutputDurationMs).coerceAtLeast(0L)
         textTimingCustomized = fallbackTextLayer != null || json.optBoolean("textTimingCustomized", false)
         textPositionGroup.check(when (textPosition) {
             TextPosition.TOP -> 1
