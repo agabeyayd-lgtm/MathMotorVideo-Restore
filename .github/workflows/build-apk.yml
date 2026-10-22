@@ -35,8 +35,27 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_2
-          script: gradle --no-daemon connectedDebugAndroidTest
+          script: |
+            mkdir -p app/build/diagnostics
+            set +e
+            gradle --no-daemon connectedDebugAndroidTest
+            TEST_EXIT=$?
+            adb logcat -d -v threadtime > app/build/diagnostics/emulator-logcat.txt
+            adb shell getprop > app/build/diagnostics/emulator-properties.txt
+            adb shell dumpsys activity > app/build/diagnostics/activity-dump.txt
+            exit $TEST_EXIT
+      - name: Upload Android test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MathMotorVideo-android-test-diagnostics
+          path: |
+            app/build/diagnostics/**
+            app/build/reports/androidTests/connected/debug/**
+            app/build/outputs/androidTest-results/connected/debug/**
+          if-no-files-found: warn
       - name: Upload debug APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: MathMotorVideo-restored-debug
