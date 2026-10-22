@@ -13,7 +13,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -40,44 +40,38 @@ jobs:
       - name: Run Android editor end-to-end test on emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 30
-          target: default
+          api-level: 34
+          target: google_apis
           arch: x86_64
           profile: pixel_2
-          force-avd-creation: true
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
-          emulator-boot-timeout: 600
+          emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -camera-back none -camera-front none
           script: |
             mkdir -p app/build/diagnostics
-            set -eu
-            # The emulator action can report boot completion while core Android
-            # services are still unavailable. Verify package/activity services
-            # before Gradle tries to install the application APK.
-            ready=0
-            for attempt in $(seq 1 60); do
-              if adb shell service check package 2>&1 | grep -q "found" &&
-                 adb shell service check activity 2>&1 | grep -q "found"; then
-                ready=1
+            set +e
+            echo "Waiting for Android package and activity services" | tee app/build/diagnostics/emulator-readiness.txt
+            SERVICE_READY=0
+            for i in $(seq 1 60); do
+              PACKAGE_STATE="$(adb shell service check package 2>&1 | tr -d '\r')"
+              ACTIVITY_STATE="$(adb shell service check activity 2>&1 | tr -d '\r')"
+              echo "check $i: package=$PACKAGE_STATE; activity=$ACTIVITY_STATE" | tee -a app/build/diagnostics/emulator-readiness.txt
+              if echo "$PACKAGE_STATE" | grep -qi "found" && echo "$ACTIVITY_STATE" | grep -qi "found"; then
+                SERVICE_READY=1
                 break
               fi
               sleep 5
             done
-            adb shell getprop > app/build/diagnostics/emulator-properties.txt
-            adb logcat -d -v threadtime > app/build/diagnostics/emulator-logcat-before-test.txt
-            if [ "$ready" -ne 1 ]; then
-              echo "Android package/activity services did not become available." >&2
-              adb shell service list > app/build/diagnostics/emulator-services.txt || true
+            if [ "$SERVICE_READY" -ne 1 ]; then
+              echo "Android system services never became ready; skipping test installation." | tee -a app/build/diagnostics/emulator-readiness.txt
+              adb logcat -b all -d -v threadtime > app/build/diagnostics/emulator-logcat.txt 2>&1
+              adb shell getprop > app/build/diagnostics/emulator-properties.txt 2>&1
               exit 1
             fi
-            adb shell service list > app/build/diagnostics/emulator-services.txt
-            set +e
             gradle --no-daemon connectedDebugAndroidTest
             TEST_EXIT=$?
-            set -e
-            adb logcat -d -v threadtime > app/build/diagnostics/emulator-logcat.txt
-            adb shell dumpsys activity > app/build/diagnostics/activity-dump.txt || true
-            adb shell dumpsys package > app/build/diagnostics/package-dump.txt || true
+            adb logcat -b all -d -v threadtime > app/build/diagnostics/emulator-logcat.txt 2>&1
+            adb shell getprop > app/build/diagnostics/emulator-properties.txt 2>&1
+            adb shell dumpsys activity > app/build/diagnostics/activity-dump.txt 2>&1
             exit $TEST_EXIT
       - name: Upload Android test diagnostics
         if: always()
