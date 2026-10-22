@@ -1,5 +1,6 @@
 package com.mathmotor.video
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.media.MediaCodec
@@ -117,6 +118,40 @@ class VideoEditorEndToEndTest {
             } finally {
                 retriever.release()
             }
+        } finally {
+            scenario.close()
+            source.delete()
+        }
+    }
+
+    @Test
+    fun videoPlayerRendersFirstFrameFromLocalMp4() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val source = File(context.cacheDir, "mathmotor-player-e2e-source.mp4")
+        createTestVideo(source)
+
+        val intent = Intent(context, VideoPlayerActivity::class.java).apply {
+            putExtra("video_uri", Uri.fromFile(source).toString())
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        val scenario = ActivityScenario.launch<VideoPlayerActivity>(intent)
+        try {
+            val deadline = SystemClock.elapsedRealtime() + 15_000L
+            var rendered = false
+            var uiState = ""
+            while (!rendered && SystemClock.elapsedRealtime() < deadline) {
+                scenario.onActivity { activity ->
+                    val texts = allText(activity)
+                    uiState = texts.joinToString(" | ")
+                    rendered = texts.any { it.startsWith("Görüntü oynatılıyor:") }
+                }
+                if (uiState.contains("Video oynatılamadı:", ignoreCase = true)) break
+                SystemClock.sleep(100L)
+            }
+            assertTrue(
+                "Video player never reported a rendered first frame. UI: $uiState",
+                rendered
+            )
         } finally {
             scenario.close()
             source.delete()
@@ -284,7 +319,7 @@ class VideoEditorEndToEndTest {
         assertTrue("Timed out waiting for $description. Editor UI: $state", matched)
     }
 
-    private fun allText(activity: VideoEditorActivity): List<String> =
+    private fun allText(activity: Activity): List<String> =
         allTextFrom(activity.findViewById(android.R.id.content))
 
     private fun allTextFrom(view: View): List<String> {
