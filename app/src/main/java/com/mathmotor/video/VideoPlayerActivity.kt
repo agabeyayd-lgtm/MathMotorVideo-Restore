@@ -129,8 +129,8 @@ class VideoPlayerActivity : Activity() {
                         }
                         override fun onVideoSizeChanged(videoSize: VideoSize) {
                             if (videoSize.width > 0 && videoSize.height > 0) {
-                                info.text = "Görüntü oynatılıyor: " +
-                                    videoSize.width + "×" + videoSize.height
+                                info.text = "Görüntü boyutu algılandı: " +
+                                    videoSize.width + "×" + videoSize.height + " • ilk kare bekleniyor."
                             }
                         }
                         override fun onRenderedFirstFrame() {
