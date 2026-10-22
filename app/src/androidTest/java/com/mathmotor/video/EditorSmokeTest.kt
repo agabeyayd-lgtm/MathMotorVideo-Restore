@@ -10,6 +10,7 @@ import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.rule.GrantPermissionRule
 import android.Manifest
+import android.os.Build
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -21,9 +22,15 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class EditorSmokeTest {
 
+    private val videoReadPermission = if (Build.VERSION.SDK_INT >= 33) {
+        Manifest.permission.READ_MEDIA_VIDEO
+    } else {
+        Manifest.permission.READ_EXTERNAL_STORAGE
+    }
+
     @get:Rule
     val videoPermissionRule: GrantPermissionRule =
-        GrantPermissionRule.grant(Manifest.permission.READ_MEDIA_VIDEO)
+        GrantPermissionRule.grant(videoReadPermission)
 
     @Test
     fun mainScreenOpensEditorAndShowsTimelineTracks() {
