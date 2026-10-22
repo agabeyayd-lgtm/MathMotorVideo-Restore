@@ -130,7 +130,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           CURRENT_CODE: ${{ steps.app_version.outputs.code }}
         run: |
-          latest_code="$(curl -fsSL             -H "Authorization: Bearer $GH_TOKEN"             -H "Accept: application/vnd.github+json"             "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/latest"             | python3 -c 'import json,re,sys; body=json.load(sys.stdin).get("body",""); match=re.search(r"versionCode\\s*=\\s*(\\d+)", body, re.I); print(match.group(1) if match else "")')"
+          latest_body="$(curl -fsSL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/latest")"
+          latest_code="$(printf '%s\n' "$latest_body" | grep -iEo 'versionCode[[:space:]]*=[[:space:]]*[0-9]+' | head -1 | grep -oE '[0-9]+$')"
           if [ -z "$latest_code" ]; then
             echo "::error::Could not read versionCode from the latest release; refusing to publish."
             exit 1
