@@ -2465,12 +2465,21 @@ class VideoEditorActivity : Activity() {
                     if (localTime < 0L && audio.currentPosition > 0L && audio.playbackState == Player.STATE_READY) audio.seekTo(0L)
                     return@forEach
                 }
-                if (audio.playbackState == Player.STATE_READY) {
-                    if (!audio.isPlaying || kotlin.math.abs(audio.currentPosition - localTime) > 450L) audio.seekTo(localTime)
-                    audio.volume = audioGain(layer.volume, localTime, visibleDuration, layer.fadeInMs, layer.fadeOutMs)
-                    audio.playWhenReady = true
-                } else if (audio.playbackState == Player.STATE_BUFFERING) {
-                    audio.playWhenReady = true
+                val boundedLocalTime = localTime.coerceIn(0L, (visibleDuration - 1L).coerceAtLeast(0L))
+                when (audio.playbackState) {
+                    Player.STATE_READY -> {
+                        if (!audio.isPlaying || kotlin.math.abs(audio.currentPosition - boundedLocalTime) > 450L) {
+                            audio.seekTo(boundedLocalTime)
+                        }
+                        audio.volume = audioGain(layer.volume, localTime, visibleDuration, layer.fadeInMs, layer.fadeOutMs)
+                        audio.playWhenReady = true
+                    }
+                    Player.STATE_BUFFERING -> audio.playWhenReady = true
+                    Player.STATE_ENDED -> {
+                        audio.seekTo(boundedLocalTime)
+                        audio.volume = audioGain(layer.volume, localTime, visibleDuration, layer.fadeInMs, layer.fadeOutMs)
+                        audio.playWhenReady = true
+                    }
                 }
             }
         }
@@ -2633,8 +2642,10 @@ class VideoEditorActivity : Activity() {
         if (selected == null) {
             player?.clearMediaItems()
         } else {
-            player?.setMediaItem(MediaItem.fromUri(selected.uri))
+            player?.setMediaItem(clippedMediaItem(selected))
+            player?.volume = if (keepSourceAudio.isChecked) sourceAudioVolume / 100f else 0f
             player?.prepare()
+            player?.playWhenReady = false
         }
         status.text = if (clips.isEmpty()) "Zaman çizelgesi boş." else "Klip kaldırıldı. Kalan klipler yerinde duruyor."
     }

@@ -13,7 +13,7 @@ This repository is a clean reconstruction of the recoverable MathMotorVideo proj
 
 ## Build and validation
 
-The GitHub Actions build workflow runs JVM unit tests, builds a debug APK, and runs Android-emulator checks for the editor UI, video-player first-frame status, clip splitting, and MP4 export. A successful run uploads the debug APK artifact.
+The GitHub Actions build workflow runs JVM unit tests, builds a debug APK, and runs Android-emulator checks for the local H.264 renderer, video-player first-frame status, editor UI, clip splitting, and MP4 export. A successful run uploads the debug APK artifact.
 
 Emulator checks are useful regression evidence, but **they do not replace a test on a physical Android phone**. The original V7 source tree was not recovered, so this is not a byte-for-byte restoration of the old app.
 

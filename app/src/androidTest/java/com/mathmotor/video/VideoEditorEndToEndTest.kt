@@ -3,6 +3,7 @@ package com.mathmotor.video
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.graphics.Color
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaCodecList
@@ -24,6 +25,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 @RunWith(AndroidJUnit4::class)
 class VideoEditorEndToEndTest {
@@ -121,6 +125,53 @@ class VideoEditorEndToEndTest {
         } finally {
             scenario.close()
             source.delete()
+        }
+    }
+
+    @Test
+    fun localRendererWritesVisibleH264FramesToMediaStore() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val finished = CountDownLatch(1)
+        val outputUri = AtomicReference<Uri?>()
+        val renderFailure = AtomicReference<Throwable?>()
+
+        HumanVideoRenderer.render(context, ScenarioEngine.generate(9182L)) { uri, error ->
+            outputUri.set(uri?.let { Uri.parse(it) })
+            renderFailure.set(error)
+            finished.countDown()
+        }
+
+        assertTrue(
+            "The local video renderer did not finish within 45 seconds.",
+            finished.await(45, TimeUnit.SECONDS)
+        )
+        renderFailure.get()?.let { throw AssertionError("Local H.264 rendering failed.", it) }
+        val uri = outputUri.get() ?: throw AssertionError("The renderer returned no output URI.")
+
+        val retriever = MediaMetadataRetriever()
+        var frame: android.graphics.Bitmap? = null
+        try {
+            retriever.setDataSource(context, uri)
+            val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                ?.toLongOrNull() ?: 0L
+            val width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
+                ?.toIntOrNull() ?: 0
+            val height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
+                ?.toIntOrNull() ?: 0
+            assertTrue("Generated video duration should be about 10 seconds, got $duration ms.", duration in 8_000L..12_000L)
+            assertTrue("Generated video should be 540x960, got ${width}x${height}.", width == 540 && height == 960)
+
+            frame = retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                ?: throw AssertionError("The generated MP4 has no decodable video frame.")
+            val pixel = frame.getPixel(10, 10)
+            assertTrue(
+                "The generated MP4 first frame is unexpectedly dark: R=${Color.red(pixel)}, G=${Color.green(pixel)}, B=${Color.blue(pixel)}.",
+                Color.red(pixel) > 150 && Color.green(pixel) > 150 && Color.blue(pixel) > 150
+            )
+        } finally {
+            frame?.recycle()
+            retriever.release()
+            context.contentResolver.delete(uri, null, null)
         }
     }
 

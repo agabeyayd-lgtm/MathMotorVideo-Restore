@@ -8,6 +8,7 @@ permissions:
 
 jobs:
   build-and-release:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
@@ -122,6 +123,22 @@ jobs:
             echo "code=$code"
             echo "name=$name"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Verify versionCode is newer than latest release
+        if: steps.signing.outputs.configured == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CURRENT_CODE: ${{ steps.app_version.outputs.code }}
+        run: |
+          latest_code="$(curl -fsSL             -H "Authorization: Bearer $GH_TOKEN"             -H "Accept: application/vnd.github+json"             "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/latest"             | python3 -c 'import json,re,sys; body=json.load(sys.stdin).get("body",""); match=re.search(r"versionCode\\s*=\\s*(\\d+)", body, re.I); print(match.group(1) if match else "")')"
+          if [ -z "$latest_code" ]; then
+            echo "::error::Could not read versionCode from the latest release; refusing to publish."
+            exit 1
+          fi
+          if [ "$CURRENT_CODE" -le "$latest_code" ]; then
+            echo "::error::Current versionCode $CURRENT_CODE must be higher than latest release versionCode $latest_code."
+            exit 1
+          fi
 
       - name: Publish latest signed APK
         if: steps.signing.outputs.configured == 'true'
