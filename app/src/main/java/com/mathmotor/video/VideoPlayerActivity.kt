@@ -27,6 +27,7 @@ class VideoPlayerActivity : Activity() {
     private lateinit var info: TextView
     private lateinit var historyContainer: LinearLayout
     private var activeUri: Uri? = null
+    private var renderedFirstFrame = false
     private val pickVideoRequest = 4107
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -109,6 +110,7 @@ class VideoPlayerActivity : Activity() {
 
     private fun play(uri: Uri, title: String) {
         activeUri = uri
+        renderedFirstFrame = false
         info.text = "Video açılıyor: " + title
         try {
             if (player == null) {
@@ -124,16 +126,28 @@ class VideoPlayerActivity : Activity() {
                                         "Görüntü hazır: " + size.width + "×" + size.height
                                     } else "Oynatma hazır; görüntü akışı bekleniyor."
                                 }
-                                Player.STATE_ENDED -> info.text = "Video tamamlandı."
+                                Player.STATE_ENDED -> {
+                                    val size = exo.videoSize
+                                    info.text = if (renderedFirstFrame) {
+                                        if (size.width > 0 && size.height > 0) {
+                                            "Video tamamlandı • ilk kare görüntülendi: ${size.width}×${size.height}"
+                                        } else {
+                                            "Video tamamlandı • ilk kare görüntülendi."
+                                        }
+                                    } else {
+                                        "Video tamamlandı fakat ilk görüntü karesi ekranda doğrulanamadı."
+                                    }
+                                }
                             }
                         }
                         override fun onVideoSizeChanged(videoSize: VideoSize) {
                             if (videoSize.width > 0 && videoSize.height > 0) {
-                                info.text = "Görüntü oynatılıyor: " +
-                                    videoSize.width + "×" + videoSize.height
+                                info.text = "Görüntü boyutu algılandı: " +
+                                    videoSize.width + "×" + videoSize.height + " • ilk kare bekleniyor."
                             }
                         }
                         override fun onRenderedFirstFrame() {
+                            renderedFirstFrame = true
                             val size = exo.videoSize
                             info.text = if (size.width > 0 && size.height > 0) {
                                 "Görüntü oynatılıyor: " + size.width + "×" + size.height

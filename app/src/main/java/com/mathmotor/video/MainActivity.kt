@@ -52,10 +52,10 @@ class MainActivity : Activity() {
             val manager = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
             val apkUri = manager.getUriForDownloadedFile(id)
             if (apkUri == null) {
-                status.text = "GÜNCELLEME İNDİRİLEMEDİ\\nİndirme bildirimini ve internet bağlantısını kontrol et."
+                status.text = "GÜNCELLEME İNDİRİLEMEDİ\nİndirme bildirimini ve internet bağlantısını kontrol et."
                 return
             }
-            status.text = "İNDİRME TAMAMLANDI\\nAndroid kurulum ekranı açılıyor…"
+            status.text = "İNDİRME TAMAMLANDI\nAndroid kurulum ekranı açılıyor…"
             try {
                 val install = Intent(Intent.ACTION_VIEW).apply {
                     setDataAndType(apkUri, "application/vnd.android.package-archive")
@@ -63,7 +63,7 @@ class MainActivity : Activity() {
                 }
                 startActivity(install)
             } catch (e: Exception) {
-                status.text = "APK indirildi ama kurulum ekranı açılamadı. İndirilenler klasöründen MathMotorVideo.apk dosyasını aç.\\n${e.message}"
+                status.text = "APK indirildi ama kurulum ekranı açılamadı. İndirilenler klasöründen MathMotorVideo.apk dosyasını aç.\n${e.message}"
             }
         }
     }
@@ -135,7 +135,7 @@ class MainActivity : Activity() {
                     latestUri = latest
                 }
                 if (imported > 0) {
-                    status.text = "ÖNCEKİ VİDEOLAR KURTARILDI\\n$imported video Movies/MathMotorVideo klasöründen geçmişe eklendi."
+                    status.text = "ÖNCEKİ VİDEOLAR KURTARILDI\n$imported video Movies/MathMotorVideo klasöründen geçmişe eklendi."
                 }
             }
         }.start()
@@ -287,7 +287,7 @@ class MainActivity : Activity() {
     }
 
     private fun checkForUpdates() {
-        status.text = "GÜNCELLEME KONTROL EDİLİYOR…\\nGitHub sürümü denetleniyor."
+        status.text = "GÜNCELLEME KONTROL EDİLİYOR…\nGitHub sürümü denetleniyor."
         Thread {
             try {
                 val connection = (URL(latestReleaseApi).openConnection() as HttpURLConnection).apply {
@@ -308,13 +308,13 @@ class MainActivity : Activity() {
                 val releaseName = release.optString("name", release.optString("tag_name", "Yeni sürüm"))
                 runOnUiThread {
                     when {
-                        remoteCode == null -> status.text = "SÜRÜM BİLGİSİ BULUNAMADI\\nYayın kaydında versionCode bilgisi yok. Biraz sonra tekrar dene."
-                        remoteCode <= currentCode -> status.text = "UYGULAMA GÜNCEL\\nKurulu sürüm kodu: $currentCode\\nSon yayın: $releaseName"
-                        else -> { status.text = "YENİ SÜRÜM BULUNDU\\nKurulu: $currentCode • Yeni: $remoteCode\\nAPK indiriliyor…"; downloadLatestApk() }
+                        remoteCode == null -> status.text = "SÜRÜM BİLGİSİ BULUNAMADI\nYayın kaydında versionCode bilgisi yok. Biraz sonra tekrar dene."
+                        remoteCode <= currentCode -> status.text = "UYGULAMA GÜNCEL\nKurulu sürüm kodu: $currentCode\nSon yayın: $releaseName"
+                        else -> { status.text = "YENİ SÜRÜM BULUNDU\nKurulu: $currentCode • Yeni: $remoteCode\nAPK indiriliyor…"; downloadLatestApk() }
                     }
                 }
             } catch (e: Exception) {
-                runOnUiThread { status.text = "GÜNCELLEME KONTROLÜ BAŞARISIZ\\nİnternet bağlantısını kontrol et.\\n${e.message ?: e.javaClass.simpleName}" }
+                runOnUiThread { status.text = "GÜNCELLEME KONTROLÜ BAŞARISIZ\nİnternet bağlantısını kontrol et.\n${e.message ?: e.javaClass.simpleName}" }
             }
         }.start()
     }
@@ -331,9 +331,9 @@ class MainActivity : Activity() {
                 .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "MathMotorVideo.apk")
             val manager = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
             pendingApkDownloadId = manager.enqueue(request)
-            status.text = "APK ARKA PLANDA İNDİRİLİYOR\\nİndirme tamamlanınca Android kurulum ekranı açılacak. Kurulumu onaylaman gerekebilir."
+            status.text = "APK ARKA PLANDA İNDİRİLİYOR\nİndirme tamamlanınca Android kurulum ekranı açılacak. Kurulumu onaylaman gerekebilir."
         } catch (e: Exception) {
-            status.text = "APK indirilemedi: ${e.message}\\nİnternet bağlantısını kontrol et."
+            status.text = "APK indirilemedi: ${e.message}\nİnternet bağlantısını kontrol et."
         }
     }
 
