@@ -846,11 +846,14 @@ class VideoEditorActivity : Activity() {
         if (stageWidth <= 0 || stageHeight <= 0) return
 
         val videoSize = player?.videoSize
-        val ratio = if (videoSize != null && videoSize.width > 0 && videoSize.height > 0) {
-            videoSize.width.toFloat() / videoSize.height.toFloat()
+        val ratio = (if (videoSize != null && videoSize.width > 0 && videoSize.height > 0) {
+            val rotated = videoSize.unappliedRotationDegrees % 180 != 0
+            val width = if (rotated) videoSize.height else videoSize.width
+            val height = if (rotated) videoSize.width else videoSize.height
+            width.toFloat() / height.toFloat()
         } else {
             9f / 16f
-        }.coerceIn(0.25f, 4f)
+        }).coerceIn(0.25f, 4f)
 
         val targetWidth = minOf(stageWidth.toFloat(), stageHeight * ratio).toInt().coerceAtLeast(1)
         val targetHeight = minOf(stageHeight.toFloat(), targetWidth / ratio).toInt().coerceAtLeast(1)
