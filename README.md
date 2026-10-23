@@ -8,7 +8,7 @@ MathMotor Video is a local-first Android video editor. The current project is fo
 2. Use the timeline to add clips, select/reorder them, trim their start/end, split clips, and move clips earlier or later.
 3. Add an optional text layer with timing and position controls.
 4. Add background music and/or a sound effect; adjust volume and effect start time.
-5. Preview the result and export an MP4 to Movies/MathMotorVideo.
+5. Preview the result, choose source resolution, 720p, or 1080p, and export an MP4 to Movies/MathMotorVideo.
 6. Save and reopen an editable project as a JSON file.
 
 The editor uses Android's document picker for user-selected media and AndroidX Media3 for playback and export. Video files are processed on-device; no AI service, paid API, account, or cloud upload is required for ordinary editing.
