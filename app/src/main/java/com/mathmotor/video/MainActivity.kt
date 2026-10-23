@@ -59,7 +59,7 @@ class MainActivity : Activity() {
         window.statusBarColor = bg
         window.navigationBarColor = bg
         buildUi()
-        refreshRecentProjects()
+        syncGalleryRecords()
         registerUpdateReceiver()
         // Preserve the previous behavior: check for a newer published version on launch.
         checkForUpdates()
@@ -67,7 +67,7 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        if (::recentList.isInitialized) refreshRecentProjects()
+        if (::recentList.isInitialized) syncGalleryRecords()
     }
 
     override fun onDestroy() {
@@ -330,6 +330,10 @@ class MainActivity : Activity() {
             addView(label("Telefonunda oluşturduğun videolar", 11f, muted, false))
         }
         recentHeader.addView(recentTitle, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        recentHeader.addView(secondaryButton("↻ Galeriyi yenile") {
+            syncGalleryRecords()
+            Toast.makeText(this, "Telefon galerisindeki videolar kontrol edildi.", Toast.LENGTH_SHORT).show()
+        }.apply { minHeight = dp(40); textSize = 11f })
         recentHeader.addView(secondaryButton("Tümünü aç") {
             startActivity(Intent(this, VideoPlayerActivity::class.java))
         }.apply { minHeight = dp(40); textSize = 11f })
@@ -349,6 +353,15 @@ class MainActivity : Activity() {
         }
         root.addView(footer)
         setContentView(scroll)
+    }
+
+    /**
+     * Rebuild the app's recent-video list from files already saved to the phone's
+     * Movies/MathMotorVideo gallery. Duplicate URIs are ignored by VideoRecordStore.
+     */
+    private fun syncGalleryRecords() {
+        runCatching { VideoRecordStore.importPublicMovies(this) }
+        if (::recentList.isInitialized) refreshRecentProjects()
     }
 
     private fun refreshRecentProjects() {
