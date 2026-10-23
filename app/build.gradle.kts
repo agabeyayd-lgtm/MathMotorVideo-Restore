@@ -22,8 +22,8 @@ android {
         applicationId = "com.mathmotor.video.next"
         minSdk = 26
         targetSdk = 35
-        versionCode = 389
-        versionName = "8.23-real-filmstrip"
+        versionCode = 390
+        versionName = "8.24-interactive-text-timeline"
         testInstrumentationRunner = "android.test.AndroidJUnitRunner"
     }
 
