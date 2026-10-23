@@ -100,6 +100,7 @@ class VideoEditorActivity : Activity() {
     private lateinit var playerView: PlayerView
     private lateinit var previewFrame: FrameLayout
     private lateinit var previewTextOverlay: TextView
+    private lateinit var previewEmptyState: LinearLayout
     private lateinit var clipList: LinearLayout
     private lateinit var timelineTracks: LinearLayout
     private lateinit var timelineTracksFrame: FrameLayout
@@ -283,6 +284,45 @@ class VideoEditorActivity : Activity() {
                 rightMargin = dp(8)
                 bottomMargin = dp(8)
             }
+        )
+        previewEmptyState = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(18), dp(16), dp(18), dp(16))
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.rgb(17, 28, 41))
+                cornerRadius = dp(16).toFloat()
+                setStroke(dp(1), Color.rgb(53, 87, 102))
+            }
+            isClickable = true
+            isFocusable = true
+            contentDescription = "Galeriden video ekle"
+            setOnClickListener { chooseVideo(true) }
+            addView(TextView(this@VideoEditorActivity).apply {
+                text = "＋"
+                textSize = 31f
+                gravity = Gravity.CENTER
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(Color.rgb(57, 220, 190))
+            }, LinearLayout.LayoutParams(dp(62), dp(52)))
+            addView(TextView(this@VideoEditorActivity).apply {
+                text = "Videonu ekle"
+                textSize = 15f
+                gravity = Gravity.CENTER
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(Color.WHITE)
+            })
+            addView(TextView(this@VideoEditorActivity).apply {
+                text = "Başlamak için dokun"
+                textSize = 11f
+                gravity = Gravity.CENTER
+                setTextColor(Color.rgb(154, 174, 195))
+                setPadding(0, dp(3), 0, 0)
+            })
+        }
+        previewFrame.addView(
+            previewEmptyState,
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER)
         )
         root.addView(previewFrame, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(290)
@@ -1782,6 +1822,9 @@ class VideoEditorActivity : Activity() {
     private fun refreshClipList() {
         timelinePreviewLoaded = false
         clipList.removeAllViews()
+        if (::previewEmptyState.isInitialized) {
+            previewEmptyState.visibility = if (clips.isEmpty()) View.VISIBLE else View.GONE
+        }
         if (clips.isEmpty()) {
             clipList.addView(TextView(this).apply {
                 text = "＋ Video ekle"
