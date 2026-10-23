@@ -735,6 +735,7 @@ class VideoEditorActivity : Activity() {
                 val localMs = (targetMs - offsetMs).coerceIn(0L, (durationMs - 1L).coerceAtLeast(0L))
                 player?.seekTo(index, localMs)
                 timelinePlayheadMs = targetMs
+                timelinePlayheadSeek.progress = (targetMs / 1000L).toInt()
                 updateTimelinePlayheadLabel()
                 return
             }
@@ -1149,6 +1150,7 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun refreshClipList() {
+        timelinePreviewLoaded = false
         clipList.removeAllViews()
         if (clips.isEmpty()) {
             clipList.addView(TextView(this).apply {
