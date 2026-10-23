@@ -84,8 +84,8 @@ class MainActivity : Activity() {
             addView(label("MOBİL VİDEO STÜDYOSU", 10f, muted, true))
         }
         topBar.addView(brand, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        topBar.addView(iconButton("▶") { openEditor(null) }.apply {
-            contentDescription = "Düzenleyiciyi aç"
+        topBar.addView(iconButton("＋") { openEditor(null) }.apply {
+            contentDescription = "Yeni düzenleme başlat"
             layoutParams = LinearLayout.LayoutParams(dp(46), dp(46))
         })
         root.addView(topBar)
