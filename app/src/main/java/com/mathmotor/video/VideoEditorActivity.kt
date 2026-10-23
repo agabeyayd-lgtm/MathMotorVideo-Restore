@@ -202,11 +202,12 @@ class VideoEditorActivity : Activity() {
             minHeight = dp(44)
             setPadding(dp(8), 0, dp(8), 0)
             val buttonShape = android.graphics.drawable.GradientDrawable().apply {
-                setColor(Color.rgb(35, 95, 117))
+                setColor(Color.rgb(27, 43, 59))
                 cornerRadius = dp(9).toFloat()
+                setStroke(dp(1), Color.rgb(47, 66, 84))
             }
             background = android.graphics.drawable.RippleDrawable(
-                android.content.res.ColorStateList.valueOf(Color.rgb(83, 171, 190)),
+                android.content.res.ColorStateList.valueOf(Color.rgb(71, 111, 132)),
                 buttonShape,
                 null
             )
@@ -227,7 +228,7 @@ class VideoEditorActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(10), 0, dp(4), 0)
             addView(label("Düzenle", 18f, Color.WHITE, true))
-            addView(label("MOBILE VIDEO STUDIO", 10f, Color.rgb(154, 171, 190), false))
+            addView(label("YEREL VİDEO DÜZENLEME", 10f, Color.rgb(154, 171, 190), false))
         }
         topBar.addView(heading, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         topBar.addView(miniButton("Dışa aktar ›") { showEditorPanel("export") },
@@ -238,17 +239,20 @@ class VideoEditorActivity : Activity() {
         playerView = PlayerView(this).apply {
             setBackgroundColor(Color.BLACK)
             useController = true
+            contentDescription = "Video önizlemesi"
         }
-        val previewFrame = FrameLayout(this)
+        val previewFrame = FrameLayout(this).apply {
+            setBackgroundColor(Color.rgb(5, 9, 15))
+        }
         previewFrame.addView(
             playerView,
-            FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            FrameLayout.LayoutParams(dp(180), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER)
         )
         previewTextOverlay = TextView(this).apply {
             textSize = textSizeSp.toFloat()
             gravity = Gravity.CENTER
             maxLines = 2
-            maxWidth = dp(290)
+            maxWidth = dp(170)
             setTextColor(Color.WHITE)
             setTypeface(Typeface.DEFAULT, Typeface.BOLD)
             setPadding(dp(10), dp(6), dp(10), dp(6))
@@ -272,8 +276,17 @@ class VideoEditorActivity : Activity() {
             }
         )
         root.addView(previewFrame, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(190)
-        ).apply { bottomMargin = dp(6) })
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(290)
+        ).apply { bottomMargin = dp(8) })
+        previewFrame.addOnLayoutChangeListener { view, _, _, _, _, _, _, _, _ ->
+            val desiredWidth = (view.height * 9f / 16f).toInt().coerceAtLeast(dp(120))
+            val params = playerView.layoutParams as? FrameLayout.LayoutParams
+            if (params != null && params.width != desiredWidth) {
+                params.width = desiredWidth
+                params.gravity = Gravity.CENTER
+                playerView.layoutParams = params
+            }
+        }
 
         val timelineCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -720,7 +733,7 @@ class VideoEditorActivity : Activity() {
                 previewParams.height = if (imeVisible) {
                     (availableHeight * 0.21f).toInt().coerceIn(dp(82), dp(112))
                 } else {
-                    (contentWidth * 9f / 16f).toInt().coerceIn(dp(120), dp(210))
+                    (availableHeight * 0.35f).toInt().coerceIn(dp(210), dp(300))
                 }
                 previewFrame.layoutParams = previewParams
 
@@ -790,8 +803,7 @@ class VideoEditorActivity : Activity() {
             if (imeVisible != keyboardLayoutActive) {
                 applyKeyboardMode(imeVisible, viewportHeight)
             } else if (!imeVisible) {
-                val contentWidth = (view.width - view.paddingLeft - view.paddingRight).coerceAtLeast(dp(200))
-                val normalHeight = (contentWidth * 9f / 16f).toInt().coerceIn(dp(120), dp(210))
+                val normalHeight = (viewportHeight * 0.35f).toInt().coerceIn(dp(210), dp(300))
                 val params = previewFrame.layoutParams as? LinearLayout.LayoutParams
                 if (params != null && params.height != normalHeight) {
                     applyingResponsiveLayout = true
@@ -829,10 +841,13 @@ class VideoEditorActivity : Activity() {
             panel.visibility = if (key == name) View.VISIBLE else View.GONE
         }
         editorTabButtons.forEach { (key, button) ->
+            val selected = key == name
             button.background = android.graphics.drawable.GradientDrawable().apply {
-                setColor(if (key == name) Color.rgb(0, 145, 125) else Color.rgb(35, 95, 117))
-                cornerRadius = dp(9).toFloat()
+                setColor(if (selected) Color.rgb(34, 184, 158) else Color.rgb(20, 31, 45))
+                cornerRadius = dp(12).toFloat()
+                setStroke(dp(1), if (selected) Color.rgb(100, 245, 218) else Color.rgb(42, 59, 77))
             }
+            button.setTextColor(if (selected) Color.rgb(5, 25, 29) else Color.rgb(220, 231, 240))
         }
         if (name == "export") status.text = "Projeyi kaydedebilir veya MP4 olarak dışa aktarabilirsin."
     }
