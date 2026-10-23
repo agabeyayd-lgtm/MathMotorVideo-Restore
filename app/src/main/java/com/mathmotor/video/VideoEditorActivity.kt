@@ -579,7 +579,7 @@ class VideoEditorActivity : Activity() {
 
         val textPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         textPanel.addView(label("METİN KATMANLARI", 13f, Color.rgb(121, 202, 218), true))
-        textPanel.addView(label("Her yazının süresini, konumunu ve boyutunu ayrı ayarla.", 11f, Color.rgb(154, 171, 190), false))
+        textPanel.addView(label("Yazıyı videonun üstünde sürükle; iki parmakla büyüt veya küçült.", 11f, Color.rgb(154, 171, 190), false))
         val textLayerActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         textLayerActions.addView(miniButton("＋ Yeni") { addTextLayer() },
             LinearLayout.LayoutParams(0, dp(42), 1f))
