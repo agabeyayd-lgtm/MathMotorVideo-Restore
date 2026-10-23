@@ -94,11 +94,15 @@ class VideoEditorActivity : Activity() {
     private lateinit var timelinePlayheadLine: View
     private val timelineScrollViews = mutableListOf<android.widget.HorizontalScrollView>()
     private var syncingTimelineScroll = false
+    private var timelineHorizontalScrollX = 0
     private lateinit var timelinePlayheadSeek: SeekBar
     private lateinit var timelinePlayheadLabel: TextView
     private var timelinePlayheadMs = 0L
     private var timelinePreviewLoaded = false
     private val timelineHandler = Handler(Looper.getMainLooper())
+    private val textTimelineRefreshTask = object : Runnable {
+        override fun run() { refreshTimelineTracks() }
+    }
     private val timelineSyncTask = object : Runnable {
         override fun run() {
             if (timelinePreviewLoaded) syncTimelinePlayheadFromPlayer()
@@ -388,7 +392,8 @@ class VideoEditorActivity : Activity() {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                 updatePreviewTextOverlay()
-                refreshTimelineTracks()
+                timelineHandler.removeCallbacks(textTimelineRefreshTask)
+                timelineHandler.postDelayed(textTimelineRefreshTask, 120L)
             }
             override fun afterTextChanged(s: android.text.Editable?) {}
         })
@@ -577,8 +582,31 @@ class VideoEditorActivity : Activity() {
         topBar: LinearLayout,
         rulerAwareTimelineRefresh: () -> Unit
     ) {
+        var insetLeft = 0
+        var insetTop = 0
+        var insetRight = 0
+        var insetBottom = 0
+        var imeInsetBottom = 0
+
+        fun applySafeRootPadding(imeVisible: Boolean, viewportHeight: Int) {
+            // On some devices adjustResize already excludes the IME. On edge-to-edge
+            // devices that keep the full viewport, reserve the keyboard inset ourselves.
+            val resizedForIme = imeVisible &&
+                maxEditorViewportHeightPx - viewportHeight > dp(150)
+            val keyboardBottom = if (imeVisible && !resizedForIme) imeInsetBottom else 0
+            root.setPadding(
+                dp(if (imeVisible) 4 else 8) + insetLeft,
+                dp(if (imeVisible) 2 else 4) + insetTop,
+                dp(if (imeVisible) 4 else 8) + insetRight,
+                dp(if (imeVisible) 2 else 4) + maxOf(insetBottom, keyboardBottom)
+            )
+        }
+
         fun applyKeyboardMode(imeVisible: Boolean, viewportHeight: Int) {
-            if (imeVisible == keyboardLayoutActive) return
+            if (imeVisible == keyboardLayoutActive) {
+                applySafeRootPadding(imeVisible, viewportHeight)
+                return
+            }
             val availableHeight = viewportHeight.takeIf { it > 0 } ?: maxEditorViewportHeightPx
             keyboardLayoutActive = imeVisible
             applyingResponsiveLayout = true
@@ -591,7 +619,8 @@ class VideoEditorActivity : Activity() {
                 }
                 previewFrame.layoutParams = previewParams
 
-                // Give text/audio tools the space the keyboard takes away.
+                // Hide decorative strips and fixed docks so the active tool gets
+                // the visible space left by the keyboard.
                 clipScroll.visibility = if (imeVisible) View.GONE else View.VISIBLE
                 bottomDock.visibility = if (imeVisible) View.GONE else View.VISIBLE
                 statusView.visibility = if (imeVisible) View.GONE else View.VISIBLE
@@ -599,15 +628,14 @@ class VideoEditorActivity : Activity() {
                     topBar.getChildAt(2).visibility = if (imeVisible) View.GONE else View.VISIBLE
                 }
 
+                applySafeRootPadding(imeVisible, availableHeight)
                 if (imeVisible) {
-                    root.setPadding(dp(4), dp(2), dp(4), dp(2))
                     timelineCard.setPadding(dp(5), dp(2), dp(5), dp(2))
                     timelinePlayheadSeek.layoutParams?.let {
                         it.height = dp(24)
                         timelinePlayheadSeek.layoutParams = it
                     }
                 } else {
-                    root.setPadding(dp(8), dp(4), dp(8), dp(4))
                     timelineCard.setPadding(dp(8), dp(5), dp(8), dp(5))
                     timelinePlayheadSeek.layoutParams?.let {
                         it.height = dp(34)
@@ -622,8 +650,6 @@ class VideoEditorActivity : Activity() {
             }
         }
 
-        // Legacy Android versions usually resize the app window when the
-        // keyboard opens. Android 11+ also provides a reliable IME inset.
         root.addOnLayoutChangeListener { view, _, _, _, _, _, _, _, _ ->
             if (applyingResponsiveLayout) return@addOnLayoutChangeListener
             val viewportHeight = view.height
@@ -655,9 +681,19 @@ class VideoEditorActivity : Activity() {
 
         if (Build.VERSION.SDK_INT >= 30) {
             root.setOnApplyWindowInsetsListener { view, insets ->
+                val bars = insets.getInsets(WindowInsets.Type.systemBars())
+                val ime = insets.getInsets(WindowInsets.Type.ime())
+                insetLeft = bars.left
+                insetTop = bars.top
+                insetRight = bars.right
+                insetBottom = bars.bottom
+                imeInsetBottom = ime.bottom
                 val imeVisible = insets.isVisible(WindowInsets.Type.ime())
-                if (imeVisible != keyboardLayoutActive) {
-                    view.post { applyKeyboardMode(imeVisible, view.height) }
+                view.post {
+                    if (imeVisible != keyboardLayoutActive) {
+                        applyKeyboardMode(imeVisible, view.height)
+                    }
+                    applySafeRootPadding(imeVisible, view.height)
                 }
                 insets
             }
@@ -680,6 +716,8 @@ class VideoEditorActivity : Activity() {
 
     private fun refreshTimelineTracks() {
         if (!::timelineTracks.isInitialized) return
+        val preservedScrollX = timelineScrollViews.firstOrNull()?.scrollX ?: timelineHorizontalScrollX
+        timelineHorizontalScrollX = preservedScrollX
         timelineTracks.removeAllViews()
         timelineScrollViews.clear()
         if (::timelinePlayheadSeek.isInitialized) updateTimelinePlayheadControls()
@@ -713,7 +751,8 @@ class VideoEditorActivity : Activity() {
                 if (!syncingTimelineScroll) {
                     syncingTimelineScroll = true
                     try {
-                        timelineScrollViews.forEach { other ->
+                        timelineHorizontalScrollX = scrollX
+                    timelineScrollViews.forEach { other ->
                             if (other !== view && other.scrollX != scrollX) other.scrollTo(scrollX, 0)
                         }
                     } finally {
@@ -763,7 +802,8 @@ class VideoEditorActivity : Activity() {
                     setOnClickListener { onClick() }
                 }
             }
-            track.addView(block, LinearLayout.LayoutParams(width, dp(24)).apply {
+            val blockHeight = dp(if (keyboardLayoutActive) 18 else 24)
+            track.addView(block, LinearLayout.LayoutParams(width, blockHeight).apply {
                 rightMargin = dp(3)
             })
         }
@@ -771,7 +811,7 @@ class VideoEditorActivity : Activity() {
         fun addSpacer(track: LinearLayout, durationMs: Long) {
             val width = exactWidth(durationMs)
             if (width <= 0) return
-            track.addView(View(this), LinearLayout.LayoutParams(width, dp(24)))
+            track.addView(View(this), LinearLayout.LayoutParams(width, dp(if (keyboardLayoutActive) 18 else 24)))
         }
 
         if (!keyboardLayoutActive) {
@@ -841,6 +881,10 @@ class VideoEditorActivity : Activity() {
         } else {
             addBlock(effectTrack, "+ Ses efekti ekle", totalMs.coerceAtLeast(5000L), Color.rgb(96, 68, 41),
                 onClick = { chooseAudio(false) }, minimumWidthDp = 115)
+        }
+        val restoreScrollX = timelineHorizontalScrollX
+        timelineScrollViews.toList().forEach { laneScroll ->
+            laneScroll.post { laneScroll.scrollTo(restoreScrollX, 0) }
         }
         updateTimelinePlayheadLine()
     }
@@ -1577,10 +1621,10 @@ class VideoEditorActivity : Activity() {
                 if (!fromUser) return
                 val clip = selectedClip() ?: return
                 val maxStart = (clip.durationMs - 250L).coerceAtLeast(0L)
-                clip.startMs = (progress * 1000L).coerceAtMost(maxStart)
+                clip.startMs = (progress * 100L).coerceAtMost(maxStart)
                 if (clip.endMs - clip.startMs < 500L) {
                     clip.endMs = (clip.startMs + 1000L).coerceAtMost(clip.durationMs)
-                    endSeek.progress = ceil(clip.endMs / 1000.0).toInt()
+                    endSeek.progress = ceil(clip.endMs / 100.0).toInt()
                 }
                 updateTrimLabels()
                 refreshClipList()
@@ -1592,10 +1636,10 @@ class VideoEditorActivity : Activity() {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
                 val clip = selectedClip() ?: return
-                clip.endMs = (progress * 1000L).coerceAtMost(clip.durationMs)
+                clip.endMs = (progress * 100L).coerceAtMost(clip.durationMs)
                 if (clip.endMs - clip.startMs < 500L) {
                     clip.startMs = (clip.endMs - 1000L).coerceAtLeast(0L)
-                    startSeek.progress = (clip.startMs / 1000L).toInt()
+                    startSeek.progress = (clip.startMs / 100L).toInt()
                 }
                 updateTrimLabels()
                 refreshClipList()
@@ -1620,19 +1664,19 @@ class VideoEditorActivity : Activity() {
         }
         startSeek.isEnabled = true
         endSeek.isEnabled = true
-        val durationSeconds = ceil(clip.durationMs / 1000.0).toInt().coerceAtLeast(1)
-        startSeek.max = durationSeconds
-        endSeek.max = durationSeconds
-        startSeek.progress = (clip.startMs / 1000L).toInt()
-        endSeek.progress = ceil(clip.endMs / 1000.0).toInt().coerceAtMost(durationSeconds)
+        val durationTenths = ceil(clip.durationMs / 100.0).toInt().coerceAtLeast(1)
+        startSeek.max = durationTenths
+        endSeek.max = durationTenths
+        startSeek.progress = (clip.startMs / 100L).toInt()
+        endSeek.progress = ceil(clip.endMs / 100.0).toInt().coerceAtMost(durationTenths)
         selectedClipLabel.text = "Seçili klip: ${clip.title} • ${formatMs(clip.durationMs)}"
         updateTrimLabels()
     }
 
     private fun updateTrimLabels() {
         val clip = selectedClip()
-        startLabel.text = "Başlangıç: ${formatMs(clip?.startMs ?: 0L)}"
-        endLabel.text = "Bitiş: ${formatMs(clip?.endMs ?: 0L)}"
+        startLabel.text = "Başlangıç: ${formatTimelineMs(clip?.startMs ?: 0L)}"
+        endLabel.text = "Bitiş: ${formatTimelineMs(clip?.endMs ?: 0L)}"
         updateSoundControls()
         updateTextControls()
     }
@@ -1932,6 +1976,7 @@ class VideoEditorActivity : Activity() {
 
     override fun onDestroy() {
         timelineHandler.removeCallbacks(timelineSyncTask)
+        timelineHandler.removeCallbacks(textTimelineRefreshTask)
         playerView.player = null
         player?.release()
         player = null
