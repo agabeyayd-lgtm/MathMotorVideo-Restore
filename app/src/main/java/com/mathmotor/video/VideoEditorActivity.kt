@@ -755,7 +755,20 @@ class VideoEditorActivity : Activity() {
         updateTimelinePlayheadLabel()
     }
 
-    private fun selectTimelineClip(index: Int) {    private fun updatePreviewTextOverlay() {
+    private fun selectTimelineClip(index: Int) {
+        if (index !in clips.indices) return
+        timelinePreviewLoaded = false
+        selectedClipIndex = index
+        val clip = clips[index]
+        refreshClipList()
+        loadTrimControls()
+        player?.setMediaItem(clippedMediaItem(clip))
+        player?.prepare()
+        player?.playWhenReady = false
+        status.text = "Seçili klip: ${clip.title}. Klipler dışa aktarılırken bu sırayla tek MP4'e birleştirilir."
+    }
+
+    private fun updatePreviewTextOverlay() {
         if (!::previewTextOverlay.isInitialized || !::textInput.isInitialized) return
         val value = textInput.text?.toString()?.trim().orEmpty()
         if (value.isBlank()) {
