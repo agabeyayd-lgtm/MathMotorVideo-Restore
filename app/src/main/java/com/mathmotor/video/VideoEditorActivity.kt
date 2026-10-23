@@ -635,7 +635,24 @@ class VideoEditorActivity : Activity() {
                 bottomDock.visibility = if (imeVisible) View.GONE else View.VISIBLE
                 statusView.visibility = if (imeVisible) View.GONE else View.VISIBLE
                 if (topBar.childCount > 2) {
-                    topBar.getChildAt(2).visibility = if (imeVisible) View.GONE else View.VISIBLE
+                    val topAction = topBar.getChildAt(2) as? Button
+                    if (topAction != null) {
+                        topAction.visibility = View.VISIBLE
+                        if (imeVisible) {
+                            topAction.text = "Bitti ✓"
+                            topAction.setOnClickListener {
+                                val focusedView = currentFocus
+                                val token = focusedView?.windowToken ?: root.windowToken
+                                val keyboard = getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
+                                    as? android.view.inputmethod.InputMethodManager
+                                keyboard?.hideSoftInputFromWindow(token, 0)
+                                focusedView?.clearFocus()
+                            }
+                        } else {
+                            topAction.text = "Dışa aktar ›"
+                            topAction.setOnClickListener { showEditorPanel("export") }
+                        }
+                    }
                 }
 
                 applySafeRootPadding(imeVisible, availableHeight)
