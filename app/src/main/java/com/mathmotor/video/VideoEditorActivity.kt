@@ -1106,27 +1106,21 @@ class VideoEditorActivity : Activity() {
     private fun seekTimelinePreview(requestedMs: Long) {
         if (clips.isEmpty()) return
         ensureTimelinePreviewLoaded()
-        val totalMs = totalOutputDurationMs()
-        if (totalMs <= 0L) return
-        val targetMs = requestedMs.coerceIn(0L, (totalMs - 1L).coerceAtLeast(0L))
-        var offsetMs = 0L
-        clips.forEachIndexed { index, clip ->
-            val durationMs = (clip.endMs - clip.startMs).coerceAtLeast(0L)
-            if (targetMs < offsetMs + durationMs || index == clips.lastIndex) {
-                val localMs = (targetMs - offsetMs).coerceIn(0L, (durationMs - 1L).coerceAtLeast(0L))
-                player?.seekTo(index, localMs)
-                timelinePlayheadMs = targetMs
-                if (selectedClipIndex != index) {
-                    selectedClipIndex = index
-                    refreshClipList()
-                    loadTrimControls()
-                }
-                timelinePlayheadSeek.progress = targetMs.coerceAtMost(timelinePlayheadSeek.max.toLong()).toInt()
-                updateTimelinePlayheadLabel()
-                return
-            }
-            offsetMs += durationMs
+        if (totalOutputDurationMs() <= 0L) return
+        val position = TimelinePositionMath.locate(
+            clips.map { (it.endMs - it.startMs).coerceAtLeast(0L) },
+            requestedMs
+        ) ?: return
+        val targetMs = position.clipStartMs + position.localPositionMs
+        player?.seekTo(position.clipIndex, position.localPositionMs)
+        timelinePlayheadMs = targetMs
+        if (selectedClipIndex != position.clipIndex) {
+            selectedClipIndex = position.clipIndex
+            refreshClipList()
+            loadTrimControls()
         }
+        timelinePlayheadSeek.progress = targetMs.coerceAtMost(timelinePlayheadSeek.max.toLong()).toInt()
+        updateTimelinePlayheadLabel()
     }
 
     private fun syncTimelinePlayheadFromPlayer() {
@@ -1879,38 +1873,31 @@ class VideoEditorActivity : Activity() {
             if (timelinePreviewLoaded) seekTimelinePreview(playheadMs)
         }
 
-        var clipTimelineStartMs = 0L
-        var playheadClipIndex = -1
-        clips.forEachIndexed { index, clip ->
-            val durationMs = (clip.endMs - clip.startMs).coerceAtLeast(0L)
-            if (playheadClipIndex < 0 &&
-                (playheadMs < clipTimelineStartMs + durationMs || index == clips.lastIndex)) {
-                playheadClipIndex = index
-            } else if (playheadClipIndex < 0) {
-                clipTimelineStartMs += durationMs
-            }
-        }
-        if (playheadClipIndex !in clips.indices) {
+        val position = TimelinePositionMath.locate(
+            clips.map { (it.endMs - it.startMs).coerceAtLeast(0L) },
+            playheadMs
+        )
+        if (position == null) {
             status.text = "Oynatma noktası bir kliple eşleştirilemedi."
             return
         }
-        if (expectedClipIndex != null && expectedClipIndex != playheadClipIndex) {
+        if (expectedClipIndex != null && expectedClipIndex != position.clipIndex) {
             status.text = "Bölmek istediğin klibi seçtikten sonra kırmızı çizgiyi o klibin içine getir."
             return
         }
 
-        selectedClipIndex = playheadClipIndex
-        val clip = clips[playheadClipIndex]
+        selectedClipIndex = position.clipIndex
+        val clip = clips[position.clipIndex]
         val duration = (clip.endMs - clip.startMs).coerceAtLeast(0L)
-        val localPosition = (playheadMs - clipTimelineStartMs).coerceIn(0L, duration)
+        val localPosition = position.localPositionMs
         val splitAt = clip.startMs + localPosition
         if (localPosition < 350L || duration - localPosition < 350L) {
             status.text = "Bölmek için oynatma noktasını klibin ortalarına getir; iki tarafta da en az 0,35 saniye olmalı."
             return
         }
-        clips[playheadClipIndex] = clip.copy(title = "${clip.title} • A", endMs = splitAt)
-        clips.add(playheadClipIndex + 1, clip.copy(title = "${clip.title} • B", startMs = splitAt))
-        selectedClipIndex = playheadClipIndex + 1
+        clips[position.clipIndex] = clip.copy(title = "${clip.title} • A", endMs = splitAt)
+        clips.add(position.clipIndex + 1, clip.copy(title = "${clip.title} • B", startMs = splitAt))
+        selectedClipIndex = position.clipIndex + 1
         timelinePreviewLoaded = false
         previewSingleClip = true
         timelinePlayheadMs = clips.take(selectedClipIndex).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
