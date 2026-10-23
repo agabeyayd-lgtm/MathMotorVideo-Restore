@@ -541,10 +541,12 @@ class VideoEditorActivity : Activity() {
         textPanel.addView(label("METİN KATMANLARI", 13f, Color.rgb(121, 202, 218), true))
         textPanel.addView(label("Her yazının süresini, konumunu ve boyutunu ayrı ayarla.", 11f, Color.rgb(154, 171, 190), false))
         val textLayerActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        textLayerActions.addView(miniButton("＋ Yeni yazı") { addTextLayer() },
+        textLayerActions.addView(miniButton("＋ Yeni") { addTextLayer() },
             LinearLayout.LayoutParams(0, dp(42), 1f))
-        textLayerActions.addView(miniButton("Seçiliyi sil") { removeSelectedTextLayer() },
-            LinearLayout.LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(5) })
+        textLayerActions.addView(miniButton("Kopyala") { duplicateSelectedTextLayer() },
+            LinearLayout.LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(4) })
+        textLayerActions.addView(miniButton("Sil") { removeSelectedTextLayer() },
+            LinearLayout.LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(4) })
         textPanel.addView(textLayerActions)
         val textLayerScroll = android.widget.HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
@@ -633,7 +635,16 @@ class VideoEditorActivity : Activity() {
                 updatePreviewTextOverlay()
             }
         }
-        textPanel.addView(textColorGroup, matchWrap())
+        val textColorScroll = android.widget.HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+        }
+        textColorScroll.addView(textColorGroup, android.widget.HorizontalScrollView.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+        textPanel.addView(textColorScroll, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(44)
+        ))
         textSizeLabel = label("Yazı boyutu: $textSizeSp", 12f, Color.WHITE, true)
         textPanel.addView(textSizeLabel)
         textSizeSeek = SeekBar(this).apply {
@@ -1634,6 +1645,28 @@ class VideoEditorActivity : Activity() {
         showEditorPanel("text")
         textInput.requestFocus()
         status.text = "Yeni yazı katmanı eklendi. Metnini yazıp süresini ve konumunu ayarla."
+    }
+
+    private fun duplicateSelectedTextLayer() {
+        if (textLayers.size >= 12) {
+            status.text = "En fazla 12 metin katmanı ekleyebilirsin."
+            return
+        }
+        syncSelectedTextLayerFromControls()
+        val source = selectedTextLayer()
+        if (source == null) {
+            status.text = "Kopyalamak için önce bir yazı katmanı seç."
+            return
+        }
+        val copy = source.copy(id = nextTextLayerId++, text = source.text)
+        textLayers.add(textLayers.indexOf(source) + 1, copy)
+        selectedTextLayerId = copy.id
+        loadTextLayerIntoControls(copy)
+        refreshTextLayerList()
+        updatePreviewTextOverlay()
+        refreshTimelineTracks()
+        textInput.requestFocus()
+        status.text = "Yazı katmanı kopyalandı. Metni ve ayarları bağımsız değiştirebilirsin."
     }
 
     private fun removeSelectedTextLayer() {
