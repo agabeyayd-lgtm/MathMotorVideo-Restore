@@ -22,8 +22,8 @@ android {
         applicationId = "com.mathmotor.video.next"
         minSdk = 26
         targetSdk = 35
-        versionCode = 378
-        versionName = "8.12-capcut-editor"
+        versionCode = 379
+        versionName = "8.13-responsive-editor"
         testInstrumentationRunner = "android.test.AndroidJUnitRunner"
     }
 
