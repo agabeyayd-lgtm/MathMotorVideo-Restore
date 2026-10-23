@@ -198,12 +198,14 @@ class MainActivity : Activity() {
             setPadding(0, dp(8), 0, dp(2))
         })
         root.addView(previewCard, matchWrap())
-        previewCard.post {
-            val previewWidth = (previewCard.width - dp(20)).coerceAtLeast(dp(180))
-            homeVideoView.layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                (previewWidth * 9f / 16f).toInt().coerceAtLeast(dp(120))
-            )
+        previewCard.addOnLayoutChangeListener { view, left, _, right, _, _, _, _, _ ->
+            val previewWidth = (right - left - dp(20)).coerceAtLeast(dp(1))
+            val desiredHeight = (previewWidth * 9f / 16f).toInt().coerceAtLeast(dp(120))
+            val params = homeVideoView.layoutParams as? LinearLayout.LayoutParams
+            if (params != null && params.height != desiredHeight) {
+                params.height = desiredHeight
+                homeVideoView.layoutParams = params
+            }
         }
 
         root.addView(gap(18))
