@@ -1609,6 +1609,7 @@ class VideoEditorActivity : Activity() {
         player?.prepare()
         player?.playWhenReady = false
         status.text = "Seçili klip: ${clip.title}. Klipler dışa aktarılırken bu sırayla tek MP4'e birleştirilir."
+        refreshTimelineTracks()
     }
 
     private fun captureClipEditSnapshot(): ClipEditSnapshot = ClipEditSnapshot(
@@ -3129,7 +3130,6 @@ class VideoEditorActivity : Activity() {
                                 refreshClipList()
                                 loadTrimControls()
                                 selectTimelineClip(index)
-                                refreshTimelineTracks()
                                 status.text = if (isStart) {
                                     "✓ Başlangıç ayarlandı: ${formatTimelineMs(clip.startMs)}"
                                 } else {
