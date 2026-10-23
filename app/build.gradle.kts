@@ -22,8 +22,8 @@ android {
         applicationId = "com.mathmotor.video.next"
         minSdk = 26
         targetSdk = 35
-        versionCode = 388
-        versionName = "8.22-direct-editing"
+        versionCode = 389
+        versionName = "8.23-real-filmstrip"
         testInstrumentationRunner = "android.test.AndroidJUnitRunner"
     }
 
