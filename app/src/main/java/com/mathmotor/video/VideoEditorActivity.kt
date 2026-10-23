@@ -24,6 +24,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.os.Environment
 import android.provider.MediaStore
 import android.text.SpannableString
@@ -1224,7 +1225,8 @@ class VideoEditorActivity : Activity() {
             val sums = DoubleArray(pointCount)
             val counts = LongArray(pointCount)
             var guard = 0
-            while (!outputDone && guard < 200000) {
+            val waveformDeadline = SystemClock.elapsedRealtime() + 30_000L
+            while (!outputDone && guard < 200000 && SystemClock.elapsedRealtime() < waveformDeadline) {
                 guard++
                 if (!inputDone) {
                     val inputIndex = codec.dequeueInputBuffer(10_000L)
@@ -1286,6 +1288,7 @@ class VideoEditorActivity : Activity() {
                     }
                 }
             }
+            check(outputDone) { "Audio waveform decoding exceeded its 30-second safety limit." }
             val levels = FloatArray(pointCount) { index ->
                 if (counts[index] == 0L) 0f else (sums[index] / counts[index]).toFloat()
             }
@@ -2880,66 +2883,75 @@ class VideoEditorActivity : Activity() {
         updateUndoRedoButtons()
         status.text = "MP4 dışa aktarılıyor…\nKlipler, metin katmanları ve ses katmanları uygulanıyor. Uygulamayı kapatma."
         val tempOutput = File(cacheDir, "mm_editor_${System.currentTimeMillis()}.mp4")
-        val videoSequence = EditedMediaItemSequence.Builder(videoItems).build()
-        val compositionSequences = mutableListOf(videoSequence)
-        val outputDurationMs = totalOutputDurationMs().coerceAtLeast(1L)
-
-        // Repeat music as a finite set of trimmed items: fade-in happens only at the start
-        // and fade-out only at the end of the entire output, not on every loop.
-        musicLayers.forEach { layer ->
-            val musicItems = mutableListOf<EditedMediaItem>()
-            var remainingMs = outputDurationMs
-            var elapsedMs = 0L
-            val sourceDurationMs = layer.durationMs.coerceAtLeast(1L)
-            while (remainingMs > 0L) {
-                val partDurationMs = minOf(sourceDurationMs, remainingMs)
-                val mediaItem = MediaItem.Builder()
+        val composition = try {
+            val videoSequence = EditedMediaItemSequence.Builder(videoItems).build()
+            val compositionSequences = mutableListOf(videoSequence)
+            val outputDurationMs = totalOutputDurationMs().coerceAtLeast(1L)
+    
+            // Repeat music as a finite set of trimmed items: fade-in happens only at the start
+            // and fade-out only at the end of the entire output, not on every loop.
+            musicLayers.forEach { layer ->
+                val musicItems = mutableListOf<EditedMediaItem>()
+                var remainingMs = outputDurationMs
+                var elapsedMs = 0L
+                val sourceDurationMs = layer.durationMs.coerceAtLeast(1L)
+                while (remainingMs > 0L) {
+                    val partDurationMs = minOf(sourceDurationMs, remainingMs)
+                    val mediaItem = MediaItem.Builder()
+                        .setUri(layer.uri)
+                        .setClippingConfiguration(
+                            MediaItem.ClippingConfiguration.Builder()
+                                .setStartPositionMs(0L)
+                                .setEndPositionMs(partDurationMs)
+                                .build()
+                        )
+                        .build()
+                    val fadeIn = if (elapsedMs == 0L) layer.fadeInMs else 0L
+                    val fadeOut = if (remainingMs == partDurationMs) layer.fadeOutMs else 0L
+                    musicItems.add(
+                        EditedMediaItem.Builder(mediaItem)
+                            .setRemoveVideo(true)
+                            .setEffects(Effects(audioEffects(layer.volume, fadeIn, fadeOut, partDurationMs), emptyList()))
+                            .build()
+                    )
+                    elapsedMs += partDurationMs
+                    remainingMs -= partDurationMs
+                }
+                compositionSequences.add(EditedMediaItemSequence.Builder(musicItems).build())
+            }
+    
+            soundLayers.forEach { layer ->
+                if (layer.startMs >= outputDurationMs) return@forEach
+                val offsetMs = layer.startMs
+                val visibleDurationMs = minOf(layer.durationMs.coerceAtLeast(1L), (outputDurationMs - offsetMs).coerceAtLeast(1L))
+                val soundMediaItem = MediaItem.Builder()
                     .setUri(layer.uri)
                     .setClippingConfiguration(
                         MediaItem.ClippingConfiguration.Builder()
                             .setStartPositionMs(0L)
-                            .setEndPositionMs(partDurationMs)
+                            .setEndPositionMs(visibleDurationMs)
                             .build()
                     )
                     .build()
-                val fadeIn = if (elapsedMs == 0L) layer.fadeInMs else 0L
-                val fadeOut = if (remainingMs == partDurationMs) layer.fadeOutMs else 0L
-                musicItems.add(
-                    EditedMediaItem.Builder(mediaItem)
-                        .setRemoveVideo(true)
-                        .setEffects(Effects(audioEffects(layer.volume, fadeIn, fadeOut, partDurationMs), emptyList()))
-                        .build()
-                )
-                elapsedMs += partDurationMs
-                remainingMs -= partDurationMs
+                val soundItem = EditedMediaItem.Builder(soundMediaItem)
+                    .setRemoveVideo(true)
+                    .setEffects(Effects(audioEffects(layer.volume, layer.fadeInMs, layer.fadeOutMs, visibleDurationMs), emptyList()))
+                    .build()
+                val sequence = EditedMediaItemSequence.Builder().apply {
+                    if (offsetMs > 0L) addGap(offsetMs * 1000L)
+                    addItem(soundItem)
+                }.build()
+                compositionSequences.add(sequence)
             }
-            compositionSequences.add(EditedMediaItemSequence.Builder(musicItems).build())
+            Composition.Builder(compositionSequences).build()
+        } catch (e: Exception) {
+            tempOutput.delete()
+            exporting = false
+            exportButton.isEnabled = true
+            updateUndoRedoButtons()
+            status.text = "Düzenleme hazırlanamadı: ${e.message ?: e.javaClass.simpleName}"
+            return
         }
-
-        soundLayers.forEach { layer ->
-            val offsetMs = layer.startMs.coerceAtMost((outputDurationMs - 1L).coerceAtLeast(0L))
-            val visibleDurationMs = minOf(layer.durationMs.coerceAtLeast(1L), (outputDurationMs - offsetMs).coerceAtLeast(1L))
-            val soundMediaItem = MediaItem.Builder()
-                .setUri(layer.uri)
-                .setClippingConfiguration(
-                    MediaItem.ClippingConfiguration.Builder()
-                        .setStartPositionMs(0L)
-                        .setEndPositionMs(visibleDurationMs)
-                        .build()
-                )
-                .build()
-            val soundItem = EditedMediaItem.Builder(soundMediaItem)
-                .setRemoveVideo(true)
-                .setEffects(Effects(audioEffects(layer.volume, layer.fadeInMs, layer.fadeOutMs, visibleDurationMs), emptyList()))
-                .build()
-            val sequence = EditedMediaItemSequence.Builder().apply {
-                if (offsetMs > 0L) addGap(offsetMs * 1000L)
-                addItem(soundItem)
-            }.build()
-            compositionSequences.add(sequence)
-        }
-
-        val composition = Composition.Builder(compositionSequences).build()
         val transformer = try {
             Transformer.Builder(this)
                 .setVideoMimeType(MimeTypes.VIDEO_H264)
@@ -3017,7 +3029,10 @@ class VideoEditorActivity : Activity() {
                 contentResolver.openOutputStream(uri)?.use { output ->
                     FileInputStream(source).use { input -> input.copyTo(output) }
                 } ?: error("Kayıt dosyası açılamadı.")
-                contentResolver.update(uri, ContentValues().apply { put(MediaStore.Video.Media.IS_PENDING, 0) }, null, null)
+                val publishedRows = contentResolver.update(
+                    uri, ContentValues().apply { put(MediaStore.Video.Media.IS_PENDING, 0) }, null, null
+                )
+                check(publishedRows > 0) { "Video saved but could not be published in MediaStore." }
                 return uri.toString()
             } catch (t: Throwable) {
                 contentResolver.delete(uri, null, null)

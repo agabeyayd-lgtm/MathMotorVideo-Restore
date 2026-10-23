@@ -12,6 +12,7 @@ import android.media.MediaFormat
 import android.media.MediaMuxer
 import android.net.Uri
 import android.os.Build
+import android.os.SystemClock
 import android.os.Environment
 import android.provider.MediaStore
 import android.view.Surface
@@ -58,7 +59,11 @@ object HumanVideoRenderer {
                 inputSurface.release()
                 inputSurface = null
                 codec.signalEndOfInputStream()
-                while (!state.eos) drain(codec, muxer, info, state, waitForEnd = true)
+                val eosDeadline = SystemClock.elapsedRealtime() + 15_000L
+                while (!state.eos && SystemClock.elapsedRealtime() < eosDeadline) {
+                    drain(codec, muxer, info, state, waitForEnd = true)
+                }
+                check(state.eos) { "H.264 encoder timed out while finalizing the MP4." }
                 if (!state.started) error("Encoder did not produce a video track")
                 muxer.stop()
                 muxer.release(); muxer = null
@@ -81,7 +86,7 @@ object HumanVideoRenderer {
     private data class DrainState(var trackIndex: Int = -1, var started: Boolean = false, var eos: Boolean = false)
 
     private fun drain(codec: MediaCodec, muxer: MediaMuxer, info: MediaCodec.BufferInfo, state: DrainState, waitForEnd: Boolean) {
-        val timeout = if (waitForEnd) 10_000L else 0L
+        val timeout = if (waitForEnd) 1_000L else 0L
         while (true) {
             when (val index = codec.dequeueOutputBuffer(info, timeout)) {
                 MediaCodec.INFO_TRY_AGAIN_LATER -> return
@@ -121,7 +126,10 @@ object HumanVideoRenderer {
             try {
                 context.contentResolver.openOutputStream(uri)?.use { out -> source.inputStream().use { it.copyTo(out) } }
                     ?: error("Could not open output stream")
-                context.contentResolver.update(uri, ContentValues().apply { put(MediaStore.Video.Media.IS_PENDING, 0) }, null, null)
+                val publishedRows = context.contentResolver.update(
+                    uri, ContentValues().apply { put(MediaStore.Video.Media.IS_PENDING, 0) }, null, null
+                )
+                check(publishedRows > 0) { "Could not publish the generated video in MediaStore." }
                 return uri
             } catch (t: Throwable) {
                 context.contentResolver.delete(uri, null, null)
