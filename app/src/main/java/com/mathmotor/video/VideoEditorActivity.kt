@@ -47,6 +47,7 @@ import androidx.media3.common.audio.ChannelMixingAudioProcessor
 import androidx.media3.common.audio.ChannelMixingMatrix
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.OverlayEffect
+import androidx.media3.effect.Presentation
 import androidx.media3.effect.OverlaySettings
 import androidx.media3.effect.TextOverlay
 import androidx.media3.exoplayer.ExoPlayer
@@ -161,6 +162,8 @@ class VideoEditorActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var exportButton: Button
     private lateinit var exportNameInput: EditText
+    private lateinit var exportResolutionGroup: android.widget.RadioGroup
+    private var exportResolutionShortSide = 0
     private var exporting = false
     private var keyboardLayoutActive = false
     private var maxEditorViewportHeightPx = 0
@@ -644,6 +647,38 @@ class VideoEditorActivity : Activity() {
             setBackgroundColor(Color.rgb(27, 39, 54))
         }
         exportPanel.addView(exportNameInput, matchWrap())
+        exportPanel.addView(label("Çıkış çözünürlüğü", 11f, Color.rgb(154, 171, 190), false))
+        exportResolutionGroup = android.widget.RadioGroup(this).apply {
+            orientation = android.widget.RadioGroup.HORIZONTAL
+            listOf(301 to "Kaynak", 302 to "720p", 303 to "1080p").forEach { (optionId, title) ->
+                addView(android.widget.RadioButton(this@VideoEditorActivity).apply {
+                    id = optionId
+                    text = title
+                    textSize = 12f
+                    setTextColor(Color.WHITE)
+                    buttonTintList = android.content.res.ColorStateList.valueOf(Color.rgb(57, 220, 190))
+                    minHeight = dp(42)
+                    setPadding(dp(4), 0, dp(9), 0)
+                }, android.widget.RadioGroup.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                ))
+            }
+            check(301)
+            setOnCheckedChangeListener { _, checkedId ->
+                exportResolutionShortSide = when (checkedId) {
+                    302 -> 720
+                    303 -> 1080
+                    else -> 0
+                }
+                status.text = when (exportResolutionShortSide) {
+                    720 -> "Dışa aktarma çözünürlüğü 720p olarak seçildi."
+                    1080 -> "Dışa aktarma çözünürlüğü 1080p olarak seçildi."
+                    else -> "Kaynak video çözünürlüğü korunacak."
+                }
+            }
+        }
+        exportPanel.addView(exportResolutionGroup, matchWrap())
+        exportPanel.addView(label("Kaynak: orijinal boyut • 720p / 1080p: ölçeklenmiş MP4", 10f, Color.rgb(132, 153, 173), false))
         exportPanel.addView(actionButton("Projeyi farklı kaydet (.JSON)") { requestSaveProject() })
         exportPanel.addView(actionButton("Kayıtlı projeyi aç") { requestOpenProject() })
         exportButton = actionButton("MP4 DIŞA AKTAR") { exportEditedVideo() }
@@ -1556,6 +1591,7 @@ class VideoEditorActivity : Activity() {
             put("soundVolume", soundVolume)
             put("keepSourceAudio", keepSourceAudio.isChecked)
             put("exportName", exportNameInput.text?.toString().orEmpty())
+            put("exportResolutionShortSide", exportResolutionShortSide)
         }
     }
 
@@ -1610,6 +1646,16 @@ class VideoEditorActivity : Activity() {
         })
         keepSourceAudio.isChecked = json.optBoolean("keepSourceAudio", true)
         exportNameInput.setText(json.optString("exportName", "MathMotor_Edit"))
+        exportResolutionShortSide = when (json.optInt("exportResolutionShortSide", 0)) {
+            720 -> 720
+            1080 -> 1080
+            else -> 0
+        }
+        exportResolutionGroup.check(when (exportResolutionShortSide) {
+            720 -> 302
+            1080 -> 303
+            else -> 301
+        })
         musicLabel.text = musicTitle?.let { "Müzik: $it • video boyunca döngü" } ?: "Müzik seçilmedi."
         soundLabel.text = soundTitle?.let { "Ses/efekt: $it • ${formatMs(soundDurationMs)}" } ?: "Ses veya efekt seçilmedi."
         musicVolumeSeek.progress = musicVolume
@@ -2654,13 +2700,16 @@ class VideoEditorActivity : Activity() {
             compositionSequences.add(soundSequenceBuilder.build())
         }
         val compositionBuilder = Composition.Builder(compositionSequences)
+        val outputVideoEffects = mutableListOf<androidx.media3.common.Effect>()
+        when (exportResolutionShortSide) {
+            720 -> outputVideoEffects.add(Presentation.createForShortSide(720))
+            1080 -> outputVideoEffects.add(Presentation.createForShortSide(1080))
+        }
         if (overlayText.isNotBlank() && textEndMs > textStartMs) {
-            compositionBuilder.setEffects(
-                Effects(
-                    emptyList(),
-                    listOf(OverlayEffect(listOf(buildTimedTextOverlay(overlayText, textStartMs, textEndMs))))
-                )
-            )
+            outputVideoEffects.add(OverlayEffect(listOf(buildTimedTextOverlay(overlayText, textStartMs, textEndMs))))
+        }
+        if (outputVideoEffects.isNotEmpty()) {
+            compositionBuilder.setEffects(Effects(emptyList(), outputVideoEffects))
         }
         val composition = compositionBuilder.build()
 
