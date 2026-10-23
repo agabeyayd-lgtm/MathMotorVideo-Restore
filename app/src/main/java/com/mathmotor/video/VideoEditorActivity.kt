@@ -88,6 +88,10 @@ class VideoEditorActivity : Activity() {
     private lateinit var previewTextOverlay: TextView
     private lateinit var clipList: LinearLayout
     private lateinit var timelineTracks: LinearLayout
+    private lateinit var timelineTracksFrame: FrameLayout
+    private lateinit var timelinePlayheadLine: View
+    private val timelineScrollViews = mutableListOf<android.widget.HorizontalScrollView>()
+    private var syncingTimelineScroll = false
     private lateinit var timelinePlayheadSeek: SeekBar
     private lateinit var timelinePlayheadLabel: TextView
     private var timelinePlayheadMs = 0L
@@ -153,7 +157,7 @@ class VideoEditorActivity : Activity() {
         editorTabButtons.clear()
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(10), dp(4), dp(10), dp(26))
+            setPadding(dp(8), dp(4), dp(8), dp(4))
             setBackgroundColor(Color.rgb(12, 18, 28))
         }
 
@@ -181,7 +185,7 @@ class VideoEditorActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(10), 0, dp(4), 0)
             addView(label("Düzenle", 18f, Color.WHITE, true))
-            addView(label("MathMotor Studio", 10f, Color.rgb(154, 171, 190), false))
+            addView(label("MOBILE VIDEO STUDIO", 10f, Color.rgb(154, 171, 190), false))
         }
         topBar.addView(heading, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         topBar.addView(miniButton("Dışa aktar ›") { showEditorPanel("export") },
@@ -226,8 +230,8 @@ class VideoEditorActivity : Activity() {
             }
         )
         root.addView(previewFrame, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(160)
-        ).apply { bottomMargin = dp(8) })
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(205)
+        ).apply { bottomMargin = dp(6) })
 
         val timelineCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -264,8 +268,22 @@ class VideoEditorActivity : Activity() {
         timelineCard.addView(clipScroll, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(58)
         ))
+        timelineTracksFrame = FrameLayout(this)
         timelineTracks = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        timelineCard.addView(timelineTracks, matchWrap())
+        timelineTracksFrame.addView(
+            timelineTracks,
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        )
+        timelinePlayheadLine = View(this).apply {
+            setBackgroundColor(Color.rgb(255, 78, 92))
+            elevation = dp(4).toFloat()
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }
+        timelineTracksFrame.addView(
+            timelinePlayheadLine,
+            FrameLayout.LayoutParams(dp(2), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.TOP or Gravity.START)
+        )
+        timelineCard.addView(timelineTracksFrame, matchWrap())
 
         val playheadRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -297,10 +315,12 @@ class VideoEditorActivity : Activity() {
             LinearLayout.LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(5) })
         clipPanel.addView(clipActions1)
         val clipActions2 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        clipActions2.addView(miniButton("← Öne al") { moveSelectedClip(-1) },
+        clipActions2.addView(miniButton("Böl ✂") { splitSelectedClipAtPlayhead() },
             LinearLayout.LayoutParams(0, dp(42), 1f))
+        clipActions2.addView(miniButton("← Öne al") { moveSelectedClip(-1) },
+            LinearLayout.LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(4) })
         clipActions2.addView(miniButton("Sona al →") { moveSelectedClip(1) },
-            LinearLayout.LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(5) })
+            LinearLayout.LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(4) })
         clipPanel.addView(clipActions2)
         startLabel = label("Başlangıç: 00:00", 12f, Color.rgb(225, 233, 237), true)
         clipPanel.addView(startLabel)
@@ -531,6 +551,7 @@ class VideoEditorActivity : Activity() {
     private fun refreshTimelineTracks() {
         if (!::timelineTracks.isInitialized) return
         timelineTracks.removeAllViews()
+        timelineScrollViews.clear()
         if (::timelinePlayheadSeek.isInitialized) updateTimelinePlayheadControls()
 
         val totalMs = totalOutputDurationMs()
@@ -551,11 +572,25 @@ class VideoEditorActivity : Activity() {
                 setTextColor(Color.rgb(166, 184, 201))
                 typeface = Typeface.DEFAULT_BOLD
                 gravity = Gravity.CENTER_VERTICAL
-            }, LinearLayout.LayoutParams(dp(58), ViewGroup.LayoutParams.MATCH_PARENT))
+            }, LinearLayout.LayoutParams(dp(54), ViewGroup.LayoutParams.MATCH_PARENT))
 
             val scroll = android.widget.HorizontalScrollView(this).apply {
                 isHorizontalScrollBarEnabled = false
                 overScrollMode = View.OVER_SCROLL_NEVER
+            }
+            timelineScrollViews.add(scroll)
+            scroll.setOnScrollChangeListener { view, scrollX, _, _, _ ->
+                if (!syncingTimelineScroll) {
+                    syncingTimelineScroll = true
+                    try {
+                        timelineScrollViews.forEach { other ->
+                            if (other !== view && other.scrollX != scrollX) other.scrollTo(scrollX, 0)
+                        }
+                    } finally {
+                        syncingTimelineScroll = false
+                    }
+                    updateTimelinePlayheadLine()
+                }
             }
             val track = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -608,7 +643,7 @@ class VideoEditorActivity : Activity() {
             track.addView(View(this), LinearLayout.LayoutParams(width, dp(24)))
         }
 
-        val ruler = makeLane("SÜRE", 27)
+        val ruler = makeLane("SÜRE", 22)
         val rulerEndMs = (((totalMs + 4999L) / 5000L).coerceAtLeast(1L)) * 5000L
         var rulerTimeMs = 0L
         while (rulerTimeMs < rulerEndMs) {
@@ -624,7 +659,7 @@ class VideoEditorActivity : Activity() {
             rulerTimeMs += spanMs
         }
 
-        val videoTrack = makeLane("VIDEO", 31)
+        val videoTrack = makeLane("VIDEO", 24)
         if (clips.isEmpty()) {
             addBlock(videoTrack, "+ Video ekle", 5000L, Color.rgb(38, 105, 123), onClick = { chooseVideo(true) }, minimumWidthDp = 115)
         } else {
@@ -637,12 +672,12 @@ class VideoEditorActivity : Activity() {
                     if (index == selectedClipIndex) Color.rgb(0, 120, 125) else Color.rgb(38, 105, 123),
                     selected = index == selectedClipIndex,
                     onClick = { selectTimelineClip(index) },
-                    minimumWidthDp = 56
+                    minimumWidthDp = 10
                 )
             }
         }
 
-        val textTrack = makeLane("METİN", 31)
+        val textTrack = makeLane("METİN", 24)
         val overlayText = if (::textInput.isInitialized) textInput.text?.toString()?.trim().orEmpty() else ""
         if (overlayText.isNotBlank() && totalMs > 0L) {
             val startMs = textStartMs.coerceIn(0L, totalMs)
@@ -655,7 +690,7 @@ class VideoEditorActivity : Activity() {
                 onClick = { showEditorPanel("text") }, minimumWidthDp = 115)
         }
 
-        val musicTrack = makeLane("MÜZİK", 31)
+        val musicTrack = makeLane("MÜZİK", 24)
         if (musicUri != null) {
             addBlock(musicTrack, "♫ ${musicTitle ?: "Müzik"}", totalMs, Color.rgb(46, 125, 85), minimumWidthDp = 56)
         } else {
@@ -663,7 +698,7 @@ class VideoEditorActivity : Activity() {
                 onClick = { chooseAudio(true) }, minimumWidthDp = 115)
         }
 
-        val effectTrack = makeLane("EFEKT", 31)
+        val effectTrack = makeLane("EFEKT", 24)
         if (soundUri != null && totalMs > 0L) {
             val startMs = soundStartMs.coerceIn(0L, totalMs)
             val duration = soundDurationMs.coerceAtMost((totalMs - startMs).coerceAtLeast(0L))
@@ -674,6 +709,19 @@ class VideoEditorActivity : Activity() {
             addBlock(effectTrack, "+ Ses efekti ekle", totalMs.coerceAtLeast(5000L), Color.rgb(96, 68, 41),
                 onClick = { chooseAudio(false) }, minimumWidthDp = 115)
         }
+        updateTimelinePlayheadLine()
+    }
+
+    private fun updateTimelinePlayheadLine() {
+        if (!::timelinePlayheadLine.isInitialized || !::timelineTracksFrame.isInitialized) return
+        val scrollX = timelineScrollViews.firstOrNull()?.scrollX ?: 0
+        val pixelsPerSecond = dp(22).toFloat()
+        val timelineX = dp(54 + 3) + (timelinePlayheadMs / 1000f * pixelsPerSecond).toInt() - scrollX
+        val params = timelinePlayheadLine.layoutParams as? FrameLayout.LayoutParams ?: return
+        params.width = dp(2)
+        params.leftMargin = timelineX.coerceAtLeast(dp(0))
+        timelinePlayheadLine.layoutParams = params
+        timelinePlayheadLine.bringToFront()
     }
 
     private fun installTimelinePlayheadListeners() {
@@ -706,6 +754,7 @@ class VideoEditorActivity : Activity() {
         timelinePlayheadMs = timelinePlayheadMs.coerceIn(0L, totalMs)
         timelinePlayheadSeek.progress = timelinePlayheadMs.coerceAtMost(maxMs.toLong()).toInt()
         updateTimelinePlayheadLabel()
+        updateTimelinePlayheadLine()
     }
 
     private fun updateTimelinePlayheadLabel() {
@@ -1026,6 +1075,7 @@ class VideoEditorActivity : Activity() {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "video/*"
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, append)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
         }
         try {
@@ -1052,6 +1102,21 @@ class VideoEditorActivity : Activity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (resultCode != RESULT_OK) return
+        if (requestCode == REQUEST_MAIN_VIDEO || requestCode == REQUEST_ADD_VIDEO) {
+            val selectedUris = mutableListOf<Uri>()
+            val picked = data?.clipData
+            if (picked != null) {
+                for (i in 0 until picked.itemCount) selectedUris.add(picked.getItemAt(i).uri)
+            } else {
+                data?.data?.let { selectedUris.add(it) }
+            }
+            if (selectedUris.isEmpty()) {
+                status.text = "Video seçilmedi."
+                return
+            }
+            addClipsInOrder(selectedUris, requestCode == REQUEST_MAIN_VIDEO)
+            return
+        }
         val uri = data?.data ?: return
         try {
             contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -1073,41 +1138,6 @@ class VideoEditorActivity : Activity() {
                         ?: error("Proje dosyası okunamadı.")
                     applyProjectJson(JSONObject(json))
                 }.onFailure { status.text = "Proje açılamadı: ${it.message}" }
-            }
-            REQUEST_MAIN_VIDEO, REQUEST_ADD_VIDEO -> {
-                status.text = "Video bilgileri okunuyor…"
-                Thread {
-                    val details = runCatching {
-                        val retriever = MediaMetadataRetriever()
-                        try {
-                            retriever.setDataSource(this, uri)
-                            val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-                            duration
-                        } finally {
-                            retriever.release()
-                        }
-                    }.getOrElse { 0L }
-                    val title = queryDisplayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Video klibi"
-                    runOnUiThread {
-                        if (details <= 0L) {
-                            status.text = "Bu videonun süresi okunamadı. Başka bir video dosyası seç."
-                        } else {
-                            if (requestCode == REQUEST_MAIN_VIDEO) {
-                                clips.clear()
-                                selectedClipIndex = -1
-                            }
-                            val clip = Clip(uri, title, details, 0L, details)
-                            clips.add(clip)
-                            selectedClipIndex = clips.lastIndex
-                            player?.setMediaItem(MediaItem.fromUri(uri))
-                            player?.prepare()
-                            player?.playWhenReady = true
-                            refreshClipList()
-                            loadTrimControls()
-                            status.text = "${title} eklendi. Kesme aralığını seçebilirsin."
-                        }
-                    }
-                }.start()
             }
             REQUEST_MUSIC -> {
                 musicUri = uri
@@ -1146,6 +1176,62 @@ class VideoEditorActivity : Activity() {
                 }.start()
             }
         }
+    }
+
+    private fun addClipsInOrder(uris: List<Uri>, replaceExisting: Boolean) {
+        if (uris.isEmpty()) return
+        status.text = "Seçilen ${uris.size} video sırayla hazırlanıyor…"
+        Thread {
+            val ready = uris.mapNotNull { uri ->
+                try {
+                    contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                } catch (_: Exception) { }
+                runCatching {
+                    val retriever = MediaMetadataRetriever()
+                    val duration = try {
+                        retriever.setDataSource(this, uri)
+                        retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                    } finally {
+                        retriever.release()
+                    }
+                    if (duration <= 0L) null else Clip(
+                        uri = uri,
+                        title = queryDisplayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Video klibi",
+                        durationMs = duration,
+                        startMs = 0L,
+                        endMs = duration
+                    )
+                }.getOrNull()
+            }
+            runOnUiThread {
+                if (replaceExisting) {
+                    clips.clear()
+                    selectedClipIndex = -1
+                }
+                clips.addAll(ready)
+                if (ready.isEmpty()) {
+                    status.text = "Videolar okunamadı. Başka bir MP4/video dosyası seç."
+                    refreshClipList()
+                    return@runOnUiThread
+                }
+                selectedClipIndex = clips.lastIndex
+                timelinePreviewLoaded = false
+                refreshClipList()
+                loadTrimControls()
+                val selected = selectedClip()
+                if (selected != null) {
+                    player?.setMediaItem(clippedMediaItem(selected))
+                    player?.prepare()
+                    player?.playWhenReady = false
+                }
+                val skipped = uris.size - ready.size
+                status.text = buildString {
+                    append("${ready.size} video zaman çizelgesine eklendi. Klibe dokun: seç; basılı tutup sürükle: sırala.")
+                    if (skipped > 0) append(" $skipped dosya okunamadığı için atlandı.")
+                    append(" İstediğin sırada tek MP4 olarak dışa aktarabilirsin.")
+                }
+            }
+        }.start()
     }
 
     private fun queryDisplayName(uri: Uri): String? {
@@ -1221,6 +1307,27 @@ class VideoEditorActivity : Activity() {
                     textSize = 10f
                     setTextColor(Color.rgb(205, 218, 231))
                 })
+                tile.setOnLongClickListener {
+                    val dragData = android.content.ClipData.newPlainText("video_clip_index", index.toString())
+                    tile.startDragAndDrop(dragData, View.DragShadowBuilder(tile), index, 0)
+                    status.text = "Klibi basılı tutup sürükleyerek sırasını değiştir."
+                    true
+                }
+                tile.setOnDragListener { _, event ->
+                    when (event.action) {
+                        View.DragEvent.ACTION_DRAG_STARTED -> event.clipDescription?.hasMimeType("text/plain") == true
+                        View.DragEvent.ACTION_DRAG_ENTERED,
+                        View.DragEvent.ACTION_DRAG_LOCATION,
+                        View.DragEvent.ACTION_DRAG_EXITED -> true
+                        View.DragEvent.ACTION_DROP -> {
+                            val from = event.localState as? Int
+                            if (from != null && from in clips.indices) reorderClip(from, index)
+                            true
+                        }
+                        View.DragEvent.ACTION_DRAG_ENDED -> true
+                        else -> false
+                    }
+                }
                 clipList.addView(tile, LinearLayout.LayoutParams(dp(145), dp(68)).apply {
                     rightMargin = dp(6)
                 })
@@ -1247,6 +1354,54 @@ class VideoEditorActivity : Activity() {
             player?.prepare()
         }
         status.text = if (clips.isEmpty()) "Zaman çizelgesi boş." else "Klip kaldırıldı. Kalan klipler yerinde duruyor."
+    }
+
+    private fun reorderClip(from: Int, to: Int) {
+        if (from !in clips.indices || to !in clips.indices || from == to) return
+        val previouslySelected = selectedClip()
+        val moved = clips.removeAt(from)
+        clips.add(to, moved)
+        selectedClipIndex = clips.indexOfFirst { it === previouslySelected }.takeIf { it >= 0 } ?: to
+        timelinePreviewLoaded = false
+        refreshClipList()
+        loadTrimControls()
+        val selected = selectedClip()
+        if (selected != null) {
+            player?.setMediaItem(clippedMediaItem(selected))
+            player?.prepare()
+            player?.playWhenReady = false
+        }
+        status.text = "Klip sırası değişti. Dışa aktarma bu yeni sırayı kullanacak."
+    }
+
+    private fun splitSelectedClipAtPlayhead() {
+        val clip = selectedClip()
+        if (clip == null) {
+            status.text = "Önce bölmek istediğin klibi seç."
+            return
+        }
+        val duration = (clip.endMs - clip.startMs).coerceAtLeast(0L)
+        val localPosition = if (timelinePreviewLoaded) {
+            val clipTimelineStart = clips.take(selectedClipIndex).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
+            (timelinePlayheadMs - clipTimelineStart).coerceIn(0L, duration)
+        } else {
+            (player?.currentPosition ?: 0L).coerceIn(0L, duration)
+        }
+        val splitAt = clip.startMs + localPosition
+        if (localPosition < 350L || duration - localPosition < 350L) {
+            status.text = "Bölmek için oynatma noktasını klibin ortalarına getir; iki tarafta da en az 0,35 saniye olmalı."
+            return
+        }
+        clips[selectedClipIndex] = clip.copy(title = "${clip.title} • A", endMs = splitAt)
+        clips.add(selectedClipIndex + 1, clip.copy(title = "${clip.title} • B", startMs = splitAt))
+        selectedClipIndex += 1
+        timelinePreviewLoaded = false
+        refreshClipList()
+        loadTrimControls()
+        player?.setMediaItem(clippedMediaItem(clips[selectedClipIndex]))
+        player?.prepare()
+        player?.playWhenReady = false
+        status.text = "Klip iki parçaya bölündü. Parçalar zaman çizelgesinde ayrı ayrı taşınabilir ve tek MP4 olarak dışa aktarılır."
     }
 
     private fun moveSelectedClip(delta: Int) {
