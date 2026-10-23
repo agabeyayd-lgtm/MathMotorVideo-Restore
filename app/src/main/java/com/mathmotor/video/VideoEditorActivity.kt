@@ -137,7 +137,7 @@ class VideoEditorActivity : Activity() {
         editorTabButtons.clear()
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(12), dp(8), dp(12), dp(8))
+            setPadding(dp(10), dp(4), dp(10), dp(26))
             setBackgroundColor(Color.rgb(12, 18, 28))
         }
 
@@ -178,12 +178,12 @@ class VideoEditorActivity : Activity() {
             useController = true
         }
         root.addView(playerView, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(218)
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(160)
         ).apply { bottomMargin = dp(8) })
 
         val timelineCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(10), dp(8), dp(10), dp(8))
+            setPadding(dp(8), dp(5), dp(8), dp(5))
             background = android.graphics.drawable.GradientDrawable().apply {
                 setColor(Color.rgb(23, 32, 45))
                 cornerRadius = dp(12).toFloat()
@@ -214,7 +214,7 @@ class VideoEditorActivity : Activity() {
         }
         clipScroll.addView(clipList)
         timelineCard.addView(clipScroll, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(80)
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(58)
         ))
         timelineTracks = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         timelineCard.addView(timelineTracks, matchWrap())
@@ -435,7 +435,7 @@ class VideoEditorActivity : Activity() {
         ).forEach { (key, title, symbol) ->
             val tab = miniButton("$symbol  $title") { showEditorPanel(key) }
             editorTabButtons[key] = tab
-            dock.addView(tab, LinearLayout.LayoutParams(0, dp(44), 1f).apply {
+            dock.addView(tab, LinearLayout.LayoutParams(0, dp(48), 1f).apply {
                 if (key != "clip") leftMargin = dp(4)
             })
         }
