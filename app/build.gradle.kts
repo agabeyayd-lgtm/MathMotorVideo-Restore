@@ -24,7 +24,7 @@ android {
         targetSdk = 35
         versionCode = 377
         versionName = "8.11-mobile-editor"
-        testInstrumentationRunner = "android.test.InstrumentationTestRunner"
+        testInstrumentationRunner = "android.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
