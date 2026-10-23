@@ -680,7 +680,7 @@ class VideoEditorActivity : Activity() {
         timelinePlayheadSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
-                timelinePlayheadMs = progress * 1000L
+                timelinePlayheadMs = progress.toLong()
                 updateTimelinePlayheadLabel()
                 seekTimelinePreview(timelinePlayheadMs)
             }
@@ -700,17 +700,17 @@ class VideoEditorActivity : Activity() {
     private fun updateTimelinePlayheadControls() {
         if (!::timelinePlayheadSeek.isInitialized || !::timelinePlayheadLabel.isInitialized) return
         val totalMs = totalOutputDurationMs()
-        val maxSeconds = ceil(totalMs / 1000.0).toInt().coerceAtLeast(0)
-        timelinePlayheadSeek.max = maxSeconds
+        val maxMs = totalMs.coerceAtMost(Int.MAX_VALUE.toLong()).toInt().coerceAtLeast(0)
+        timelinePlayheadSeek.max = maxMs
         timelinePlayheadSeek.isEnabled = clips.isNotEmpty() && totalMs > 0L
         timelinePlayheadMs = timelinePlayheadMs.coerceIn(0L, totalMs)
-        timelinePlayheadSeek.progress = (timelinePlayheadMs / 1000L).toInt().coerceAtMost(maxSeconds)
+        timelinePlayheadSeek.progress = timelinePlayheadMs.coerceAtMost(maxMs.toLong()).toInt()
         updateTimelinePlayheadLabel()
     }
 
     private fun updateTimelinePlayheadLabel() {
         if (!::timelinePlayheadLabel.isInitialized) return
-        timelinePlayheadLabel.text = "${formatMs(timelinePlayheadMs)} / ${formatMs(totalOutputDurationMs())}"
+        timelinePlayheadLabel.text = "${formatTimelineMs(timelinePlayheadMs)} / ${formatTimelineMs(totalOutputDurationMs())}"
     }
 
     private fun ensureTimelinePreviewLoaded() {
@@ -735,7 +735,7 @@ class VideoEditorActivity : Activity() {
                 val localMs = (targetMs - offsetMs).coerceIn(0L, (durationMs - 1L).coerceAtLeast(0L))
                 player?.seekTo(index, localMs)
                 timelinePlayheadMs = targetMs
-                timelinePlayheadSeek.progress = (targetMs / 1000L).toInt()
+                timelinePlayheadSeek.progress = targetMs.coerceAtMost(timelinePlayheadSeek.max.toLong()).toInt()
                 updateTimelinePlayheadLabel()
                 return
             }
@@ -750,8 +750,8 @@ class VideoEditorActivity : Activity() {
         if (index !in clips.indices) return
         val offsetMs = clips.take(index).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
         timelinePlayheadMs = (offsetMs + currentPlayer.currentPosition).coerceIn(0L, totalOutputDurationMs())
-        val seconds = (timelinePlayheadMs / 1000L).toInt()
-        if (timelinePlayheadSeek.progress != seconds) timelinePlayheadSeek.progress = seconds
+        val progress = timelinePlayheadMs.coerceAtMost(timelinePlayheadSeek.max.toLong()).toInt()
+        if (timelinePlayheadSeek.progress != progress) timelinePlayheadSeek.progress = progress
         updateTimelinePlayheadLabel()
     }
 
@@ -1576,6 +1576,13 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun selectedClip(): Clip? = clips.getOrNull(selectedClipIndex)
+
+    private fun formatTimelineMs(ms: Long): String {
+        val safeMs = ms.coerceAtLeast(0L)
+        val totalSeconds = safeMs / 1000L
+        val tenths = (safeMs % 1000L) / 100L
+        return String.format(Locale.US, "%02d:%02d.%d", totalSeconds / 60L, totalSeconds % 60L, tenths)
+    }
 
     private fun formatMs(ms: Long): String {
         val total = (ms.coerceAtLeast(0L) / 1000L).toInt()
