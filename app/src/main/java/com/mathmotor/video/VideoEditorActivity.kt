@@ -3183,8 +3183,9 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun requestTimelineThumbnail(uri: Uri, timeMs: Long, target: ImageView) {
-        val bucket = timeMs.coerceAtLeast(0L) / 250L
-        val key = "${uri}#${bucket}"
+        // Keep every requested timestamp distinct so close filmstrip frames are not deduplicated.
+        val timestampMs = timeMs.coerceAtLeast(0L)
+        val key = "${uri}#${timestampMs}"
         target.tag = key
         val cached = timelineThumbnailCache.get(key)
         if (cached != null) {
@@ -3209,14 +3210,14 @@ class VideoEditorActivity : Activity() {
                     val original = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                         retriever.getScaledFrameAtTime(
                             frameTimeUs,
-                            MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                            MediaMetadataRetriever.OPTION_CLOSEST,
                             96,
                             54
                         )
                     } else {
                         retriever.getFrameAtTime(
                             frameTimeUs,
-                            MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+                            MediaMetadataRetriever.OPTION_CLOSEST
                         )
                     }
                     if (original != null) {
