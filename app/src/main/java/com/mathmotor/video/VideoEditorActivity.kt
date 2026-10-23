@@ -11,6 +11,8 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.provider.MediaStore
 import android.text.SpannableString
 import android.text.Spanned
@@ -86,6 +88,17 @@ class VideoEditorActivity : Activity() {
     private lateinit var previewTextOverlay: TextView
     private lateinit var clipList: LinearLayout
     private lateinit var timelineTracks: LinearLayout
+    private lateinit var timelinePlayheadSeek: SeekBar
+    private lateinit var timelinePlayheadLabel: TextView
+    private var timelinePlayheadMs = 0L
+    private var timelinePreviewLoaded = false
+    private val timelineHandler = Handler(Looper.getMainLooper())
+    private val timelineSyncTask = object : Runnable {
+        override fun run() {
+            if (timelinePreviewLoaded) syncTimelinePlayheadFromPlayer()
+            timelineHandler.postDelayed(this, 250L)
+        }
+    }
     private val editorPanels = linkedMapOf<String, LinearLayout>()
     private val editorTabButtons = linkedMapOf<String, Button>()
     private lateinit var selectedClipLabel: TextView
@@ -130,6 +143,7 @@ class VideoEditorActivity : Activity() {
         window.navigationBarColor = Color.rgb(15, 31, 45)
         buildUi()
         player = ExoPlayer.Builder(this).build().also { playerView.player = it }
+        timelineHandler.post(timelineSyncTask)
         val incoming = intent.getStringExtra("video_uri")
         if (!incoming.isNullOrBlank()) addClip(Uri.parse(incoming), false)
     }
@@ -252,6 +266,23 @@ class VideoEditorActivity : Activity() {
         ))
         timelineTracks = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         timelineCard.addView(timelineTracks, matchWrap())
+
+        val playheadRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(3), dp(3), dp(3), 0)
+        }
+        timelinePlayheadLabel = label("00:00 / 00:00", 10f, Color.rgb(225, 233, 237), true)
+        playheadRow.addView(timelinePlayheadLabel, LinearLayout.LayoutParams(dp(82), ViewGroup.LayoutParams.WRAP_CONTENT))
+        timelinePlayheadSeek = SeekBar(this).apply {
+            max = 0
+            progress = 0
+            isEnabled = false
+            contentDescription = "Zaman çizelgesinde oynatma noktası"
+        }
+        playheadRow.addView(timelinePlayheadSeek, LinearLayout.LayoutParams(0, dp(34), 1f))
+        timelineCard.addView(playheadRow, matchWrap())
+        installTimelinePlayheadListeners()
         root.addView(timelineCard, matchWrap())
         root.addView(gap(8))
 
@@ -500,6 +531,7 @@ class VideoEditorActivity : Activity() {
     private fun refreshTimelineTracks() {
         if (!::timelineTracks.isInitialized) return
         timelineTracks.removeAllViews()
+        if (::timelinePlayheadSeek.isInitialized) updateTimelinePlayheadControls()
 
         val totalMs = totalOutputDurationMs()
         val pxPerSecond = dp(22).toFloat()
@@ -644,19 +676,85 @@ class VideoEditorActivity : Activity() {
         }
     }
 
-    private fun selectTimelineClip(index: Int) {
-        if (index !in clips.indices) return
-        selectedClipIndex = index
-        val clip = clips[index]
-        refreshClipList()
-        loadTrimControls()
-        player?.setMediaItem(clippedMediaItem(clip))
-        player?.prepare()
-        player?.playWhenReady = false
-        status.text = "Seçili klip: ${clip.title}. Klipler dışa aktarılırken bu sırayla tek MP4'e birleştirilir."
+    private fun installTimelinePlayheadListeners() {
+        timelinePlayheadSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                timelinePlayheadMs = progress * 1000L
+                updateTimelinePlayheadLabel()
+                seekTimelinePreview(timelinePlayheadMs)
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                if (clips.isEmpty()) return
+                ensureTimelinePreviewLoaded()
+                player?.playWhenReady = false
+            }
+
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                updateTimelinePlayheadLabel()
+            }
+        })
     }
 
-    private fun updatePreviewTextOverlay() {
+    private fun updateTimelinePlayheadControls() {
+        if (!::timelinePlayheadSeek.isInitialized || !::timelinePlayheadLabel.isInitialized) return
+        val totalMs = totalOutputDurationMs()
+        val maxSeconds = ceil(totalMs / 1000.0).toInt().coerceAtLeast(0)
+        timelinePlayheadSeek.max = maxSeconds
+        timelinePlayheadSeek.isEnabled = clips.isNotEmpty() && totalMs > 0L
+        timelinePlayheadMs = timelinePlayheadMs.coerceIn(0L, totalMs)
+        timelinePlayheadSeek.progress = (timelinePlayheadMs / 1000L).toInt().coerceAtMost(maxSeconds)
+        updateTimelinePlayheadLabel()
+    }
+
+    private fun updateTimelinePlayheadLabel() {
+        if (!::timelinePlayheadLabel.isInitialized) return
+        timelinePlayheadLabel.text = "${formatMs(timelinePlayheadMs)} / ${formatMs(totalOutputDurationMs())}"
+    }
+
+    private fun ensureTimelinePreviewLoaded() {
+        if (timelinePreviewLoaded || clips.isEmpty()) return
+        val items = clips.map { clip -> clippedMediaItem(clip) }
+        player?.setMediaItems(items, 0, 0L)
+        player?.prepare()
+        player?.playWhenReady = false
+        timelinePreviewLoaded = true
+    }
+
+    private fun seekTimelinePreview(requestedMs: Long) {
+        if (clips.isEmpty()) return
+        ensureTimelinePreviewLoaded()
+        val totalMs = totalOutputDurationMs()
+        if (totalMs <= 0L) return
+        val targetMs = requestedMs.coerceIn(0L, (totalMs - 1L).coerceAtLeast(0L))
+        var offsetMs = 0L
+        clips.forEachIndexed { index, clip ->
+            val durationMs = (clip.endMs - clip.startMs).coerceAtLeast(0L)
+            if (targetMs < offsetMs + durationMs || index == clips.lastIndex) {
+                val localMs = (targetMs - offsetMs).coerceIn(0L, (durationMs - 1L).coerceAtLeast(0L))
+                player?.seekTo(index, localMs)
+                timelinePlayheadMs = targetMs
+                updateTimelinePlayheadLabel()
+                return
+            }
+            offsetMs += durationMs
+        }
+    }
+
+    private fun syncTimelinePlayheadFromPlayer() {
+        val currentPlayer = player ?: return
+        if (!timelinePreviewLoaded || clips.isEmpty()) return
+        val index = currentPlayer.currentMediaItemIndex
+        if (index !in clips.indices) return
+        val offsetMs = clips.take(index).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
+        timelinePlayheadMs = (offsetMs + currentPlayer.currentPosition).coerceIn(0L, totalOutputDurationMs())
+        val seconds = (timelinePlayheadMs / 1000L).toInt()
+        if (timelinePlayheadSeek.progress != seconds) timelinePlayheadSeek.progress = seconds
+        updateTimelinePlayheadLabel()
+    }
+
+    private fun selectTimelineClip(index: Int) {    private fun updatePreviewTextOverlay() {
         if (!::previewTextOverlay.isInitialized || !::textInput.isInitialized) return
         val value = textInput.text?.toString()?.trim().orEmpty()
         if (value.isBlank()) {
@@ -770,6 +868,7 @@ class VideoEditorActivity : Activity() {
                     clips.clear()
                     selectedClipIndex = -1
                 }
+                timelinePreviewLoaded = false
                 clips.add(Clip(uri, title, duration, 0L, duration))
                 selectedClipIndex = clips.lastIndex
                 player?.setMediaItem(MediaItem.fromUri(uri))
@@ -1121,6 +1220,7 @@ class VideoEditorActivity : Activity() {
             return
         }
         clips.removeAt(selectedClipIndex)
+        timelinePreviewLoaded = false
         selectedClipIndex = if (clips.isEmpty()) -1 else selectedClipIndex.coerceAtMost(clips.lastIndex)
         refreshClipList()
         loadTrimControls()
@@ -1146,6 +1246,7 @@ class VideoEditorActivity : Activity() {
         }
         val clip = clips.removeAt(selectedClipIndex)
         clips.add(target, clip)
+        timelinePreviewLoaded = false
         selectedClipIndex = target
         refreshClipList()
         loadTrimControls()
@@ -1247,6 +1348,7 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun previewSelectedClip() {
+        timelinePreviewLoaded = false
         val clip = selectedClip()
         if (clip == null) {
             status.text = "Önizleme için önce video seç."
@@ -1518,6 +1620,7 @@ class VideoEditorActivity : Activity() {
     }
 
     override fun onDestroy() {
+        timelineHandler.removeCallbacks(timelineSyncTask)
         playerView.player = null
         player?.release()
         player = null
