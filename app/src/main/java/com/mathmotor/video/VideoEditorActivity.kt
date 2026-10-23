@@ -199,13 +199,22 @@ class VideoEditorActivity : Activity() {
             isAllCaps = false
             textSize = 12f
             setTextColor(Color.WHITE)
-            minHeight = dp(38)
+            minHeight = dp(44)
             setPadding(dp(8), 0, dp(8), 0)
-            background = android.graphics.drawable.GradientDrawable().apply {
+            val buttonShape = android.graphics.drawable.GradientDrawable().apply {
                 setColor(Color.rgb(35, 95, 117))
                 cornerRadius = dp(9).toFloat()
             }
-            setOnClickListener { onClick() }
+            background = android.graphics.drawable.RippleDrawable(
+                android.content.res.ColorStateList.valueOf(Color.rgb(83, 171, 190)),
+                buttonShape,
+                null
+            )
+            isHapticFeedbackEnabled = true
+            setOnClickListener {
+                performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+                onClick()
+            }
         }
 
         val topBar = LinearLayout(this).apply {
@@ -213,7 +222,7 @@ class VideoEditorActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
         }
         topBar.addView(miniButton("‹ Geri") { finish() },
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(42)))
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(44)))
         val heading = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(10), 0, dp(4), 0)
@@ -283,7 +292,7 @@ class VideoEditorActivity : Activity() {
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         timelineHeader.addView(miniButton("＋ Ekle") { chooseVideo(true) })
         timelineHeader.addView(miniButton("↻ Değiştir") { chooseVideo(false) },
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(38)).apply {
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(44)).apply {
                 leftMargin = dp(5)
             })
         timelineCard.addView(timelineHeader, matchWrap())
@@ -368,9 +377,9 @@ class VideoEditorActivity : Activity() {
         }
         playheadRow.addView(timelinePlayheadSeek, LinearLayout.LayoutParams(0, dp(34), 1f))
         playheadRow.addView(miniButton("−") { adjustTimelineZoom(0.75f) },
-            LinearLayout.LayoutParams(dp(34), dp(34)).apply { leftMargin = dp(3) })
+            LinearLayout.LayoutParams(dp(42), dp(42)).apply { leftMargin = dp(3) })
         playheadRow.addView(miniButton("+") { adjustTimelineZoom(1.35f) },
-            LinearLayout.LayoutParams(dp(34), dp(34)).apply { leftMargin = dp(2) })
+            LinearLayout.LayoutParams(dp(42), dp(42)).apply { leftMargin = dp(2) })
         timelineCard.addView(playheadRow, matchWrap())
         installTimelinePlayheadListeners()
         root.addView(timelineCard, matchWrap())
@@ -382,9 +391,9 @@ class VideoEditorActivity : Activity() {
         clipPanel.addView(selectedClipLabel)
         val clipActions1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         clipActions1.addView(miniButton("Önizle") { previewSelectedClip() },
-            LinearLayout.LayoutParams(0, dp(42), 1f))
+            LinearLayout.LayoutParams(0, dp(46), 1f))
         clipActions1.addView(miniButton("Klibi kaldır") { removeSelectedClip() },
-            LinearLayout.LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(5) })
+            LinearLayout.LayoutParams(0, dp(46), 1f).apply { leftMargin = dp(5) })
         clipPanel.addView(clipActions1)
         val clipActions2 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         clipActions2.addView(miniButton("Böl ✂") { splitSelectedClipAtPlayhead() },
@@ -637,9 +646,14 @@ class VideoEditorActivity : Activity() {
             Triple("audio", "Ses", "♫"),
             Triple("export", "Dışa aktar", "⇧")
         ).forEach { (key, title, symbol) ->
-            val tab = miniButton("$symbol  $title") { showEditorPanel(key) }
+            val tab = miniButton("$symbol\n$title") { showEditorPanel(key) }.apply {
+                textSize = 10f
+                minHeight = dp(52)
+                setPadding(dp(1), dp(2), dp(1), dp(2))
+                maxLines = 2
+            }
             editorTabButtons[key] = tab
-            dock.addView(tab, LinearLayout.LayoutParams(0, dp(48), 1f).apply {
+            dock.addView(tab, LinearLayout.LayoutParams(0, dp(52), 1f).apply {
                 if (key != "clip") leftMargin = dp(4)
             })
         }
@@ -702,10 +716,11 @@ class VideoEditorActivity : Activity() {
             applyingResponsiveLayout = true
             try {
                 val previewParams = previewFrame.layoutParams as LinearLayout.LayoutParams
+                val contentWidth = (root.width - root.paddingLeft - root.paddingRight).coerceAtLeast(dp(200))
                 previewParams.height = if (imeVisible) {
                     (availableHeight * 0.21f).toInt().coerceIn(dp(82), dp(112))
                 } else {
-                    (availableHeight * 0.26f).toInt().coerceIn(dp(145), dp(220))
+                    (contentWidth * 9f / 16f).toInt().coerceIn(dp(120), dp(210))
                 }
                 previewFrame.layoutParams = previewParams
 
@@ -775,7 +790,8 @@ class VideoEditorActivity : Activity() {
             if (imeVisible != keyboardLayoutActive) {
                 applyKeyboardMode(imeVisible, viewportHeight)
             } else if (!imeVisible) {
-                val normalHeight = (viewportHeight * 0.26f).toInt().coerceIn(dp(145), dp(220))
+                val contentWidth = (view.width - view.paddingLeft - view.paddingRight).coerceAtLeast(dp(200))
+                val normalHeight = (contentWidth * 9f / 16f).toInt().coerceIn(dp(120), dp(210))
                 val params = previewFrame.layoutParams as? LinearLayout.LayoutParams
                 if (params != null && params.height != normalHeight) {
                     applyingResponsiveLayout = true
