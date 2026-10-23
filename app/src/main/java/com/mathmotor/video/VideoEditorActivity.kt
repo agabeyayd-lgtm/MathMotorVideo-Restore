@@ -822,6 +822,7 @@ class VideoEditorActivity : Activity() {
                 musicUri = uri
                 musicTitle = queryDisplayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Müzik"
                 musicLabel.text = "Müzik: ${musicTitle} • video boyunca döngü"
+                refreshTimelineTracks()
                 status.text = "Müzik katmanı eklendi. Video süresi boyunca çalar."
             }
             REQUEST_SOUND -> {
@@ -847,6 +848,7 @@ class VideoEditorActivity : Activity() {
                             soundStartMs = 0L
                             soundLabel.text = "Ses/efekt: ${title} • ${formatMs(duration)}"
                             updateSoundControls()
+                            refreshTimelineTracks()
                             status.text = "Ses katmanı eklendi. Başlama saniyesini aşağıdaki kaydırıcıdan ayarla."
                         }
                     }
