@@ -347,6 +347,11 @@ class VideoEditorActivity : Activity() {
             setSingleLine(false)
             minLines = 1
             maxLines = 2
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or
+                android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE or
+                android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI
             setPadding(dp(12), dp(8), dp(12), dp(8))
             setBackgroundColor(Color.rgb(27, 39, 54))
         }
