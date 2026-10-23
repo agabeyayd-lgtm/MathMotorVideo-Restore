@@ -142,35 +142,113 @@ class MainActivity : Activity() {
     }
 
     private fun buildUi() {
-        val scroll = ScrollView(this).apply { setBackgroundColor(Color.rgb(15, 31, 45)) }
+        val bg = Color.rgb(10, 18, 30)
+        val surface = Color.rgb(22, 34, 51)
+        val accent = Color.rgb(48, 190, 176)
+        window.statusBarColor = bg
+        window.navigationBarColor = bg
+
+        val scroll = ScrollView(this).apply {
+            setBackgroundColor(bg)
+            clipToPadding = false
+            isFillViewport = true
+        }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(20), dp(18), dp(28))
+            setPadding(dp(18), dp(14), dp(18), dp(24))
         }
         scroll.addView(root)
-        root.addView(label("MATHMOTOR VIDEO", 25f, Color.WHITE, true))
-        root.addView(label("YEREL VİDEO STÜDYOSU", 12f, Color.rgb(173, 191, 204), true))
-        root.addView(gap(10))
-        root.addView(label("VİDEO OYNATICI", 13f, Color.rgb(121, 202, 218), true))
+
+        val top = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val heading = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        heading.addView(label("MathMotor", 27f, Color.WHITE, true))
+        heading.addView(label("VIDEO STÜDYOSU", 11f, Color.rgb(151, 174, 196), true))
+        top.addView(heading, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        top.addView(actionButton("↻") { checkForUpdates() }.apply {
+            textSize = 23f
+            minWidth = dp(48)
+            minHeight = dp(48)
+            layoutParams = LinearLayout.LayoutParams(dp(52), dp(48))
+        })
+        root.addView(top)
+        root.addView(gap(16))
+
+        root.addView(label("SON VİDEO", 12f, accent, true))
+        val previewCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10), dp(10), dp(10), dp(10))
+            background = rounded(surface, 18)
+        }
         homeVideoView = VideoView(this).apply {
             setBackgroundColor(Color.BLACK)
             setMediaController(MediaController(this@MainActivity))
         }
-        root.addView(homeVideoView, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(230)).apply { topMargin = dp(4); bottomMargin = dp(12) })
-        root.addView(actionButton("VİDEO EDİTÖRÜ • KES / YAZI / SES") { startActivity(Intent(this, VideoEditorActivity::class.java)) })
-        root.addView(actionButton("TELEFONDAN VİDEO SEÇ / KARELERİ TEST ET") { chooseVideo() })
-        root.addView(actionButton("GÜNCELLEMEYİ KONTROL ET") { checkForUpdates() })
+        // Keep the preview proportional to its actual width on narrow and large phones.
+        previewCard.addView(homeVideoView, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(190)
+        ))
+        previewCard.addView(TextView(this).apply {
+            text = "Kayıtlı son videon burada görünür"
+            textSize = 12f
+            setTextColor(Color.rgb(165, 183, 201))
+            gravity = Gravity.CENTER
+            setPadding(0, dp(8), 0, dp(2))
+        })
+        root.addView(previewCard, matchWrap())
+
         root.addView(gap(18))
-        root.addView(label("DURUM / TEST KAYDI", 12f, Color.rgb(121, 202, 218), true))
-        status = TextView(this).apply {
-            setTextColor(Color.rgb(225, 233, 237)); textSize = 13f
-            setPadding(dp(14), dp(14), dp(14), dp(14))
-            setBackgroundColor(Color.rgb(27, 48, 64))
-            text = "Hazır. Telefonda video seç veya video editöründe kes, birleştir, yazı ve ses ekle."
+        root.addView(label("NE YAPMAK İSTİYORSUN?", 12f, Color.rgb(151, 174, 196), true))
+
+        val editorButton = actionButton("✂   Video düzenle") {
+            startActivity(Intent(this, VideoEditorActivity::class.java))
+        }.apply {
+            textSize = 17f
+            minHeight = dp(62)
+            background = RippleDrawable(
+                ColorStateList.valueOf(Color.rgb(105, 236, 218)),
+                rounded(accent, 14),
+                null
+            )
+            setTextColor(Color.rgb(8, 25, 36))
         }
-        root.addView(status, matchWrap().apply { topMargin = dp(8) })
+        root.addView(editorButton, matchWrap())
+
+        val chooseButton = actionButton("＋   Telefondan video seç  •  Kare testi") { chooseVideo() }.apply {
+            minHeight = dp(56)
+            background = RippleDrawable(
+                ColorStateList.valueOf(Color.rgb(73, 125, 160)),
+                rounded(Color.rgb(35, 54, 77), 14),
+                null
+            )
+        }
+        root.addView(chooseButton, matchWrap())
+
+        root.addView(gap(14))
+        val statusCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = rounded(surface, 14)
+        }
+        statusCard.addView(label("DURUM", 11f, accent, true))
+        status = TextView(this).apply {
+            setTextColor(Color.rgb(220, 231, 240))
+            textSize = 13f
+            setLineSpacing(dp(2).toFloat(), 1f)
+            text = "Hazır. Düzenlemek için üstteki ana düğmeye dokun."
+        }
+        statusCard.addView(status, matchWrap())
+        root.addView(statusCard, matchWrap())
         setContentView(scroll)
     }
+
+    private fun rounded(color: Int, radiusDp: Int): GradientDrawable =
+        GradientDrawable().apply {
+            setColor(color)
+            cornerRadius = dp(radiusDp).toFloat()
+        }
 
     private fun loadHomeVideo(uri: String, autoplay: Boolean) {
         if (!::homeVideoView.isInitialized) return
