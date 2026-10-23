@@ -832,9 +832,6 @@ class VideoEditorActivity : Activity() {
         val totalMs = totalOutputDurationMs()
         val pxPerSecond = timelinePixelsPerSecond()
 
-        fun exactWidth(durationMs: Long): Int =
-            TimelineScaleMath.widthBetween(0L, durationMs.coerceAtLeast(0L), pxPerSecond)
-
         fun widthBetween(startMs: Long, endMs: Long): Int =
             TimelineScaleMath.widthBetween(startMs, endMs, pxPerSecond)
 
@@ -1021,9 +1018,16 @@ class VideoEditorActivity : Activity() {
         val scrollX = timelineScrollViews.firstOrNull()?.scrollX ?: 0
         val pixelsPerSecond = timelinePixelsPerSecond()
         val timelineX = dp(57) + TimelineScaleMath.pixelsForTime(timelinePlayheadMs, pixelsPerSecond) - scrollX
+        val frameWidth = timelineTracksFrame.width
+        if (frameWidth > 0 && (timelineX < 0 || timelineX > frameWidth)) {
+            timelinePlayheadLine.visibility = View.INVISIBLE
+            return
+        }
+        timelinePlayheadLine.visibility = View.VISIBLE
         val params = timelinePlayheadLine.layoutParams as? FrameLayout.LayoutParams ?: return
         params.width = dp(28)
-        params.leftMargin = (timelineX - dp(14)).coerceAtLeast(dp(0))
+        // Do not pin an out-of-range playhead to the left edge: preserve the exact x coordinate.
+        params.leftMargin = timelineX - dp(14)
         timelinePlayheadLine.layoutParams = params
         timelinePlayheadLine.bringToFront()
     }
