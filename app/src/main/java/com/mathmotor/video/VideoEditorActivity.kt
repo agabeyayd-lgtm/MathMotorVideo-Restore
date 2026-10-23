@@ -100,7 +100,7 @@ class VideoEditorActivity : Activity() {
     private var timelineHorizontalScrollX = 0
     private var timelineZoom = 1.0f
     private var deferTimelineRefresh = false
-    private val timelineThumbnailCache = object : android.util.LruCache<String, Bitmap>(96) {}
+    private val timelineThumbnailCache = object : android.util.LruCache<String, Bitmap>(256) {}
     private val pendingTimelineThumbnails = mutableMapOf<String, MutableList<WeakReference<ImageView>>>()
     private val timelineThumbnailExecutor = java.util.concurrent.Executors.newFixedThreadPool(2)
     private lateinit var timelinePlayheadSeek: SeekBar
@@ -1812,7 +1812,7 @@ class VideoEditorActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(Color.rgb(26, 37, 51))
         }
-        val thumbnailCount = (width / dp(42)).coerceIn(1, 8)
+        val thumbnailCount = (width / dp(14)).coerceIn(2, 48)
         repeat(thumbnailCount) { slot ->
             val image = ImageView(this).apply {
                 scaleType = ImageView.ScaleType.CENTER_CROP
@@ -1828,6 +1828,84 @@ class VideoEditorActivity : Activity() {
         container.addView(filmstrip, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
         ))
+
+        // Visible, touch-friendly trim handles at both clip edges.
+        fun addTrimHandle(isStart: Boolean) {
+            val handleWidth = dp(18)
+            val handle = FrameLayout(this).apply {
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(Color.argb(235, 15, 174, 158))
+                    cornerRadius = dp(3).toFloat()
+                    setStroke(dp(1), Color.WHITE)
+                }
+                elevation = dp(5).toFloat()
+                contentDescription = if (isStart) "Klip başlangıcını sürükleyerek ayarla" else "Klip bitişini sürükleyerek ayarla"
+                val grip = View(this@VideoEditorActivity).apply {
+                    setBackgroundColor(Color.WHITE)
+                }
+                addView(grip, FrameLayout.LayoutParams(dp(2), dp(12), Gravity.CENTER))
+                var downRawX = 0f
+                var initialStartMs = clip.startMs
+                var initialEndMs = clip.endMs
+                setOnTouchListener { view, event ->
+                    when (event.actionMasked) {
+                        android.view.MotionEvent.ACTION_DOWN -> {
+                            downRawX = event.rawX
+                            initialStartMs = clip.startMs
+                            initialEndMs = clip.endMs
+                            view.translationX = 0f
+                            player?.playWhenReady = false
+                            true
+                        }
+                        android.view.MotionEvent.ACTION_MOVE -> {
+                            val delta = event.rawX - downRawX
+                            view.translationX = delta.coerceIn(-width.toFloat(), width.toFloat())
+                            true
+                        }
+                        android.view.MotionEvent.ACTION_UP -> {
+                            val deltaPx = event.rawX - downRawX
+                            val deltaMs = (deltaPx / timelinePixelsPerSecond() * 1000f).toLong()
+                            view.translationX = 0f
+                            if (kotlin.math.abs(deltaPx) >= dp(2)) {
+                                if (isStart) {
+                                    clip.startMs = (initialStartMs + deltaMs)
+                                        .coerceIn(0L, (initialEndMs - 500L).coerceAtLeast(0L))
+                                } else {
+                                    clip.endMs = (initialEndMs + deltaMs)
+                                        .coerceIn((initialStartMs + 500L).coerceAtMost(clip.durationMs), clip.durationMs)
+                                }
+                                selectedClipIndex = index
+                                selectTimelineClip(index)
+                                status.text = if (isStart) {
+                                    "Klip başlangıcı: ${formatTimelineMs(clip.startMs)}"
+                                } else {
+                                    "Klip bitişi: ${formatTimelineMs(clip.endMs)}"
+                                }
+                            }
+                            view.performClick()
+                            true
+                        }
+                        android.view.MotionEvent.ACTION_CANCEL -> {
+                            view.translationX = 0f
+                            true
+                        }
+                        else -> true
+                    }
+                }
+                setOnClickListener { /* The handle is primarily a drag control. */ }
+            }
+            container.addView(
+                handle,
+                FrameLayout.LayoutParams(
+                    handleWidth,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    if (isStart) Gravity.START else Gravity.END
+                )
+            )
+        }
+        addTrimHandle(isStart = true)
+        addTrimHandle(isStart = false)
+
         val durationBadge = TextView(this).apply {
             text = formatTimelineMs(durationMs)
             textSize = if (height <= dp(18)) 7f else 8f
