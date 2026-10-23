@@ -22,8 +22,8 @@ android {
         applicationId = "com.mathmotor.video.next"
         minSdk = 26
         targetSdk = 35
-        versionCode = 382
-        versionName = "8.16-timeline-trim-handles"
+        versionCode = 383
+        versionName = "8.17-clip-actions"
         testInstrumentationRunner = "android.test.AndroidJUnitRunner"
     }
 
