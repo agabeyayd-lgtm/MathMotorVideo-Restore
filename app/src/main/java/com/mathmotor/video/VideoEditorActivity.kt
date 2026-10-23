@@ -1640,6 +1640,10 @@ class VideoEditorActivity : Activity() {
             background = android.graphics.drawable.GradientDrawable().apply {
                 setColor(Color.rgb(27, 39, 54))
                 cornerRadius = dp(4).toFloat()
+            }
+            foreground = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.TRANSPARENT)
+                cornerRadius = dp(4).toFloat()
                 setStroke(dp(if (selected) 2 else 1),
                     if (selected) Color.rgb(117, 240, 221) else Color.rgb(61, 79, 99))
             }
