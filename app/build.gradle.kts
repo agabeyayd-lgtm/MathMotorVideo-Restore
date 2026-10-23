@@ -23,7 +23,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = 385
-        versionName = "8.19-responsive-studio"
+        versionName = "8.19-update-restored"
         testInstrumentationRunner = "android.test.AndroidJUnitRunner"
     }
 
