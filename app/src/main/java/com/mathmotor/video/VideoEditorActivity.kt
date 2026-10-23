@@ -3394,19 +3394,38 @@ class VideoEditorActivity : Activity() {
                     val frameTimeUs = timeMs.coerceAtLeast(0L) * 1000L
                     // Decode thumbnails at timeline resolution on Android 8.1+ to avoid
                     // allocating a full 4K frame for each tiny filmstrip cell.
+                    // Some Android decoders fail to produce a scaled frame for certain
+                    // phone-recorded/container formats. Fall back to a regular decoded frame
+                    // instead of leaving a black placeholder in the filmstrip.
                     val original = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                        retriever.getScaledFrameAtTime(
-                            frameTimeUs,
-                            MediaMetadataRetriever.OPTION_CLOSEST,
-                            96,
-                            54
-                        )
+                        runCatching {
+                            retriever.getScaledFrameAtTime(
+                                frameTimeUs,
+                                MediaMetadataRetriever.OPTION_CLOSEST,
+                                96,
+                                54
+                            )
+                        }.getOrNull()
+                            ?: runCatching {
+                                retriever.getFrameAtTime(
+                                    frameTimeUs,
+                                    MediaMetadataRetriever.OPTION_CLOSEST
+                                )
+                            }.getOrNull()
                     } else {
+                        runCatching {
+                            retriever.getFrameAtTime(
+                                frameTimeUs,
+                                MediaMetadataRetriever.OPTION_CLOSEST
+                            )
+                        }.getOrNull()
+                    } ?: runCatching {
+                        // Last fallback for devices that cannot seek to a non-sync frame.
                         retriever.getFrameAtTime(
                             frameTimeUs,
-                            MediaMetadataRetriever.OPTION_CLOSEST
+                            MediaMetadataRetriever.OPTION_CLOSEST_SYNC
                         )
-                    }
+                    }.getOrNull()
                     if (original != null) {
                         val scale = maxOf(96f / original.width, 54f / original.height)
                         val scaledWidth = (original.width * scale).toInt().coerceAtLeast(96)
