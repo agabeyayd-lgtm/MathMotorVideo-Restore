@@ -39,8 +39,7 @@ object VideoRecordStore {
 
     /**
      * Rebuild the local list from exported MathMotorVideo files.
-     * This is used by the one-time migration build because SharedPreferences
-     * belong to the old Android application ID and cannot be shared directly.
+     * Safe to call whenever the app opens: already-listed URIs are skipped.
      */
     fun importPublicMovies(context: Context): Int {
         val existing = list(context).mapTo(mutableSetOf()) { it.uri }
