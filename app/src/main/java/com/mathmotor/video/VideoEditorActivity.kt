@@ -22,6 +22,7 @@ import android.text.style.StyleSpan
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
@@ -131,6 +132,9 @@ class VideoEditorActivity : Activity() {
     private lateinit var exportButton: Button
     private lateinit var exportNameInput: EditText
     private var exporting = false
+    private var keyboardLayoutActive = false
+    private var maxEditorViewportHeightPx = 0
+    private var applyingResponsiveLayout = false
 
     companion object {
         private const val REQUEST_MAIN_VIDEO = 5101
@@ -145,6 +149,7 @@ class VideoEditorActivity : Activity() {
         super.onCreate(savedInstanceState)
         window.statusBarColor = Color.rgb(15, 31, 45)
         window.navigationBarColor = Color.rgb(15, 31, 45)
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         buildUi()
         player = ExoPlayer.Builder(this).build().also { playerView.player = it }
         timelineHandler.post(timelineSyncTask)
@@ -230,7 +235,7 @@ class VideoEditorActivity : Activity() {
             }
         )
         root.addView(previewFrame, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(230)
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(190)
         ).apply { bottomMargin = dp(6) })
 
         val timelineCard = LinearLayout(this).apply {
@@ -495,6 +500,15 @@ class VideoEditorActivity : Activity() {
             panelHolder.addView(panel, matchWrap())
         }
         panelScroll.addView(panelHolder)
+        textInput.setOnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) {
+                textInput.post {
+                    textInput.requestRectangleOnScreen(
+                        android.graphics.Rect(0, 0, textInput.width, textInput.height), true
+                    )
+                }
+            }
+        }
         root.addView(panelScroll, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
         ))
@@ -533,6 +547,97 @@ class VideoEditorActivity : Activity() {
         setContentView(root)
         showEditorPanel("clip")
         refreshTimelineTracks()
+        installResponsiveEditorLayout(
+            root = root,
+            previewFrame = previewFrame,
+            timelineCard = timelineCard,
+            clipScroll = clipScroll,
+            panelScroll = panelScroll,
+            statusView = status,
+            bottomDock = dock,
+            topBar = topBar,
+            rulerAwareTimelineRefresh = { refreshTimelineTracks() }
+        )
+    }
+
+    private fun installResponsiveEditorLayout(
+        root: LinearLayout,
+        previewFrame: FrameLayout,
+        timelineCard: LinearLayout,
+        clipScroll: android.widget.HorizontalScrollView,
+        panelScroll: ScrollView,
+        statusView: TextView,
+        bottomDock: LinearLayout,
+        topBar: LinearLayout,
+        rulerAwareTimelineRefresh: () -> Unit
+    ) {
+        // Record the unobstructed viewport. With ADJUST_RESIZE, the root shrinks
+        // when the IME opens, letting the editor reclaim the newly lost space.
+        root.addOnLayoutChangeListener { view, _, _, _, _, _, _, _, _ ->
+            if (applyingResponsiveLayout) return@addOnLayoutChangeListener
+            val viewportHeight = view.height
+            if (viewportHeight <= 0) return@addOnLayoutChangeListener
+
+            if (!keyboardLayoutActive && viewportHeight > maxEditorViewportHeightPx) {
+                maxEditorViewportHeightPx = viewportHeight
+            }
+            if (maxEditorViewportHeightPx == 0) maxEditorViewportHeightPx = viewportHeight
+
+            val imeVisible = maxEditorViewportHeightPx - viewportHeight > dp(150)
+            if (imeVisible == keyboardLayoutActive) {
+                // Even without the keyboard, match preview height to the device's
+                // current usable height instead of imposing one rigid dimension.
+                val normalHeight = (viewportHeight * 0.26f).toInt().coerceIn(dp(145), dp(220))
+                val params = previewFrame.layoutParams as? LinearLayout.LayoutParams
+                if (!keyboardLayoutActive && params != null && params.height != normalHeight) {
+                    applyingResponsiveLayout = true
+                    params.height = normalHeight
+                    previewFrame.layoutParams = params
+                    applyingResponsiveLayout = false
+                }
+                return@addOnLayoutChangeListener
+            }
+
+            keyboardLayoutActive = imeVisible
+            applyingResponsiveLayout = true
+            try {
+                val previewParams = previewFrame.layoutParams as LinearLayout.LayoutParams
+                previewParams.height = if (imeVisible) {
+                    (viewportHeight * 0.21f).toInt().coerceIn(dp(82), dp(112))
+                } else {
+                    (viewportHeight * 0.26f).toInt().coerceIn(dp(145), dp(220))
+                }
+                previewFrame.layoutParams = previewParams
+
+                clipScroll.visibility = if (imeVisible) View.GONE else View.VISIBLE
+                bottomDock.visibility = if (imeVisible) View.GONE else View.VISIBLE
+                statusView.visibility = if (imeVisible) View.GONE else View.VISIBLE
+                if (topBar.childCount > 2) {
+                    topBar.getChildAt(2).visibility = if (imeVisible) View.GONE else View.VISIBLE
+                }
+
+                if (imeVisible) {
+                    root.setPadding(dp(4), dp(2), dp(4), dp(2))
+                    timelineCard.setPadding(dp(5), dp(2), dp(5), dp(2))
+                    timelinePlayheadSeek.layoutParams?.let {
+                        it.height = dp(24)
+                        timelinePlayheadSeek.layoutParams = it
+                    }
+                } else {
+                    root.setPadding(dp(8), dp(4), dp(8), dp(4))
+                    timelineCard.setPadding(dp(8), dp(5), dp(8), dp(5))
+                    timelinePlayheadSeek.layoutParams?.let {
+                        it.height = dp(34)
+                        timelinePlayheadSeek.layoutParams = it
+                    }
+                }
+                rulerAwareTimelineRefresh()
+                panelScroll.requestLayout()
+                root.requestLayout()
+            } finally {
+                applyingResponsiveLayout = false
+            }
+        }
     }
 
     private fun showEditorPanel(name: String) {
@@ -598,7 +703,8 @@ class VideoEditorActivity : Activity() {
                 setPadding(dp(2), dp(1), dp(2), dp(1))
             }
             scroll.addView(track)
-            row.addView(scroll, LinearLayout.LayoutParams(0, dp(heightDp), 1f))
+            val responsiveLaneHeight = if (keyboardLayoutActive) 18 else heightDp
+            row.addView(scroll, LinearLayout.LayoutParams(0, dp(responsiveLaneHeight), 1f))
             timelineTracks.addView(row, matchWrap())
             return track
         }
@@ -643,20 +749,22 @@ class VideoEditorActivity : Activity() {
             track.addView(View(this), LinearLayout.LayoutParams(width, dp(24)))
         }
 
-        val ruler = makeLane("SÜRE", 22)
-        val rulerEndMs = (((totalMs + 4999L) / 5000L).coerceAtLeast(1L)) * 5000L
-        var rulerTimeMs = 0L
-        while (rulerTimeMs < rulerEndMs) {
-            val spanMs = minOf(5000L, rulerEndMs - rulerTimeMs)
-            val tick = TextView(this).apply {
-                text = formatMs(rulerTimeMs) + " ┆"
-                textSize = 9f
-                setTextColor(Color.rgb(166, 184, 201))
-                gravity = Gravity.CENTER_VERTICAL or Gravity.START
-                setPadding(dp(2), 0, 0, 0)
+        if (!keyboardLayoutActive) {
+            val ruler = makeLane("SÜRE", 22)
+            val rulerEndMs = (((totalMs + 4999L) / 5000L).coerceAtLeast(1L)) * 5000L
+            var rulerTimeMs = 0L
+            while (rulerTimeMs < rulerEndMs) {
+                val spanMs = minOf(5000L, rulerEndMs - rulerTimeMs)
+                val tick = TextView(this).apply {
+                    text = formatMs(rulerTimeMs) + " ┆"
+                    textSize = 9f
+                    setTextColor(Color.rgb(166, 184, 201))
+                    gravity = Gravity.CENTER_VERTICAL or Gravity.START
+                    setPadding(dp(2), 0, 0, 0)
+                }
+                ruler.addView(tick, LinearLayout.LayoutParams(maxOf(dp(26), exactWidth(spanMs)), dp(22)))
+                rulerTimeMs += spanMs
             }
-            ruler.addView(tick, LinearLayout.LayoutParams(maxOf(dp(26), exactWidth(spanMs)), dp(22)))
-            rulerTimeMs += spanMs
         }
 
         val videoTrack = makeLane("VIDEO", 24)
