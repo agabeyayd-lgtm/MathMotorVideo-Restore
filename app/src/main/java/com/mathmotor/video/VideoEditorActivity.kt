@@ -48,7 +48,8 @@ import androidx.media3.common.audio.ChannelMixingMatrix
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.OverlayEffect
 import androidx.media3.effect.Presentation
-import androidx.media3.effect.OverlaySettings
+import androidx.media3.common.OverlaySettings
+import androidx.media3.effect.StaticOverlaySettings
 import androidx.media3.effect.TextOverlay
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
@@ -2614,7 +2615,7 @@ class VideoEditorActivity : Activity() {
             TextPosition.CENTER -> 0f
             TextPosition.BOTTOM -> -0.78f
         }
-        val settings = OverlaySettings.Builder()
+        val settings = StaticOverlaySettings.Builder()
             .setBackgroundFrameAnchor(0f, y)
             .setOverlayFrameAnchor(0f, 0f)
             .build()
