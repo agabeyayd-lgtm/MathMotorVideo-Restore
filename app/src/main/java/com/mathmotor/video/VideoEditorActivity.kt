@@ -1,6 +1,8 @@
 package com.mathmotor.video
 
+import android.Manifest
 import android.app.Activity
+import android.content.pm.PackageManager
 import android.content.ContentValues
 import android.content.Intent
 import android.database.Cursor
@@ -169,6 +171,7 @@ class VideoEditorActivity : Activity() {
         private const val REQUEST_SOUND = 5104
         private const val REQUEST_SAVE_PROJECT = 5105
         private const val REQUEST_OPEN_PROJECT = 5106
+        private const val REQUEST_LEGACY_STORAGE = 5107
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -1610,6 +1613,20 @@ class VideoEditorActivity : Activity() {
         }
     }
 
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQUEST_LEGACY_STORAGE) return
+        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+            exportEditedVideo()
+        } else {
+            status.text = "Depolama izni verilmedi. Video kaydedilemedi."
+        }
+    }
+
     @Deprecated("Use Activity Result API")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
@@ -2522,6 +2539,12 @@ class VideoEditorActivity : Activity() {
 
     private fun exportEditedVideo() {
         if (exporting) return
+        if (Build.VERSION.SDK_INT in 26..28 &&
+            checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), REQUEST_LEGACY_STORAGE)
+            status.text = "Android'ın eski sürümlerinde MP4 kaydetmek için depolama izni gerekiyor."
+            return
+        }
         if (clips.isEmpty()) {
             status.text = "Önce bir video seç."
             return
