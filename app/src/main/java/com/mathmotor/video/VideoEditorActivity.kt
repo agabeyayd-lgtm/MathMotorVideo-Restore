@@ -98,6 +98,7 @@ class VideoEditorActivity : Activity() {
     private val timelineScrollViews = mutableListOf<android.widget.HorizontalScrollView>()
     private var syncingTimelineScroll = false
     private var timelineHorizontalScrollX = 0
+    private var deferTimelineRefresh = false
     private val timelineThumbnailCache = object : android.util.LruCache<String, Bitmap>(96) {}
     private val pendingTimelineThumbnails = mutableMapOf<String, MutableList<WeakReference<ImageView>>>()
     private val timelineThumbnailExecutor = java.util.concurrent.Executors.newFixedThreadPool(2)
@@ -452,10 +453,13 @@ class VideoEditorActivity : Activity() {
                 val total = totalOutputDurationMs()
                 soundStartMs = (progress * 1000L).coerceAtMost((total - 1L).coerceAtLeast(0L))
                 updateSoundControls()
+                if (!deferTimelineRefresh) refreshTimelineTracks()
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) { deferTimelineRefresh = true }
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                deferTimelineRefresh = false
                 refreshTimelineTracks()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         })
         audioPanel.addView(soundStartSeek, matchWrap())
         soundVolumeLabel = label("Efekt sesi: 100%", 12f, Color.WHITE, true)
@@ -1038,8 +1042,11 @@ class VideoEditorActivity : Activity() {
                 if (textEndMs <= textStartMs) textEndMs = (textStartMs + 1000L).coerceAtMost(totalOutputDurationMs())
                 updateTextControls()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStartTrackingTouch(seekBar: SeekBar?) { deferTimelineRefresh = true }
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                deferTimelineRefresh = false
+                refreshTimelineTracks()
+            }
         })
         textEndSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
@@ -1049,8 +1056,11 @@ class VideoEditorActivity : Activity() {
                 if (textEndMs <= textStartMs) textStartMs = (textEndMs - 1000L).coerceAtLeast(0L)
                 updateTextControls()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStartTrackingTouch(seekBar: SeekBar?) { deferTimelineRefresh = true }
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                deferTimelineRefresh = false
+                refreshTimelineTracks()
+            }
         })
     }
 
@@ -1072,7 +1082,7 @@ class VideoEditorActivity : Activity() {
         textEndSeek.isEnabled = total > 0L
         textStartLabel.text = "Yazı başlangıcı: " + formatMs(textStartMs)
         textEndLabel.text = "Yazı bitişi: " + formatMs(textEndMs)
-        refreshTimelineTracks()
+        if (!deferTimelineRefresh) refreshTimelineTracks()
     }
 
     private fun audioEffects(volumePercent: Int): List<AudioProcessor> {
@@ -1773,10 +1783,12 @@ class VideoEditorActivity : Activity() {
                     endSeek.progress = ceil(clip.endMs / 100.0).toInt()
                 }
                 updateTrimLabels()
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) { deferTimelineRefresh = true }
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                deferTimelineRefresh = false
                 refreshClipList()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         })
         endSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
@@ -1794,10 +1806,12 @@ class VideoEditorActivity : Activity() {
                     endSeek.progress = ceil(clip.endMs / 100.0).toInt()
                 }
                 updateTrimLabels()
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) { deferTimelineRefresh = true }
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                deferTimelineRefresh = false
                 refreshClipList()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         })
     }
 
