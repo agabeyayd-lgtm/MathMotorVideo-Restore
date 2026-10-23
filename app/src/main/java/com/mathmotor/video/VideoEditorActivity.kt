@@ -17,6 +17,7 @@ import android.os.Looper
 import android.provider.MediaStore
 import android.text.SpannableString
 import android.text.Spanned
+import android.text.style.AbsoluteSizeSpan
 import android.text.style.BackgroundColorSpan
 import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
@@ -87,6 +88,7 @@ class VideoEditorActivity : Activity() {
     private var musicVolume = 45
     private var soundVolume = 100
     private var textPosition = TextPosition.BOTTOM
+    private var textSizeSp = 24
     private enum class TextPosition { TOP, CENTER, BOTTOM }
     private var player: ExoPlayer? = null
     private lateinit var playerView: PlayerView
@@ -139,6 +141,8 @@ class VideoEditorActivity : Activity() {
     private lateinit var textStartSeek: SeekBar
     private lateinit var textEndSeek: SeekBar
     private lateinit var textPositionGroup: android.widget.RadioGroup
+    private lateinit var textSizeLabel: TextView
+    private lateinit var textSizeSeek: SeekBar
     private lateinit var textInput: EditText
     private lateinit var keepSourceAudio: CheckBox
     private lateinit var status: TextView
@@ -221,7 +225,7 @@ class VideoEditorActivity : Activity() {
             FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         )
         previewTextOverlay = TextView(this).apply {
-            textSize = 17f
+            textSize = textSizeSp.toFloat()
             gravity = Gravity.CENTER
             maxLines = 2
             maxWidth = dp(290)
@@ -429,6 +433,25 @@ class VideoEditorActivity : Activity() {
             }
         }
         textPanel.addView(textPositionGroup, matchWrap())
+        textSizeLabel = label("Yazı boyutu: $textSizeSp", 12f, Color.WHITE, true)
+        textPanel.addView(textSizeLabel)
+        textSizeSeek = SeekBar(this).apply {
+            max = 36
+            progress = textSizeSp - 12
+            contentDescription = "Yazı boyutu"
+        }
+        textSizeSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                textSizeSp = (progress + 12).coerceIn(12, 48)
+                textSizeLabel.text = "Yazı boyutu: $textSizeSp"
+                previewTextOverlay.setTextSize(textSizeSp.toFloat())
+                previewTextOverlay.requestLayout()
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
+        textPanel.addView(textSizeSeek, matchWrap())
         textInput.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
@@ -914,7 +937,10 @@ class VideoEditorActivity : Activity() {
             val startMs = textStartMs.coerceIn(0L, totalMs)
             val endMs = textEndMs.coerceIn(startMs, totalMs)
             addSpacer(textTrack, startMs)
-            addBlock(textTrack, overlayText, (endMs - startMs).coerceAtLeast(0L), Color.rgb(110, 74, 154), minimumWidthDp = 42)
+            addBlock(
+                textTrack, overlayText, (endMs - startMs).coerceAtLeast(0L),
+                Color.rgb(110, 74, 154), onClick = { showEditorPanel("text") }, minimumWidthDp = 42
+            )
             addSpacer(textTrack, (totalMs - endMs).coerceAtLeast(0L))
         } else {
             addBlock(textTrack, "+ Metin ekle", totalMs.coerceAtLeast(5000L), Color.rgb(70, 54, 93),
@@ -923,7 +949,10 @@ class VideoEditorActivity : Activity() {
 
         val musicTrack = makeLane("MÜZİK", 24)
         if (musicUri != null) {
-            addBlock(musicTrack, "♫ ${musicTitle ?: "Müzik"}", totalMs, Color.rgb(46, 125, 85), minimumWidthDp = 56)
+            addBlock(
+                musicTrack, "♫ ${musicTitle ?: "Müzik"}", totalMs, Color.rgb(46, 125, 85),
+                onClick = { showEditorPanel("audio") }, minimumWidthDp = 56
+            )
         } else {
             addBlock(musicTrack, "+ Müzik ekle", totalMs.coerceAtLeast(5000L), Color.rgb(42, 78, 63),
                 onClick = { chooseAudio(true) }, minimumWidthDp = 115)
@@ -934,7 +963,10 @@ class VideoEditorActivity : Activity() {
             val startMs = soundStartMs.coerceIn(0L, totalMs)
             val duration = soundDurationMs.coerceAtMost((totalMs - startMs).coerceAtLeast(0L))
             addSpacer(effectTrack, startMs)
-            addBlock(effectTrack, "♪ ${soundTitle ?: "Ses efekti"}", duration, Color.rgb(166, 102, 40), minimumWidthDp = 44)
+            addBlock(
+                effectTrack, "♪ ${soundTitle ?: "Ses efekti"}", duration, Color.rgb(166, 102, 40),
+                onClick = { showEditorPanel("audio") }, minimumWidthDp = 44
+            )
             addSpacer(effectTrack, (totalMs - startMs - duration).coerceAtLeast(0L))
         } else {
             addBlock(effectTrack, "+ Ses efekti ekle", totalMs.coerceAtLeast(5000L), Color.rgb(96, 68, 41),
@@ -1264,6 +1296,7 @@ class VideoEditorActivity : Activity() {
             put("textEndMs", textEndMs)
             put("textTimingCustomized", textTimingCustomized)
             put("textPosition", textPosition.name)
+            put("textSizeSp", textSizeSp)
             put("sourceAudioVolume", sourceAudioVolume)
             put("musicVolume", musicVolume)
             put("soundVolume", soundVolume)
@@ -1304,6 +1337,10 @@ class VideoEditorActivity : Activity() {
         textEndMs = json.optLong("textEndMs", totalOutputDurationMs()).coerceAtLeast(0L)
         textTimingCustomized = json.optBoolean("textTimingCustomized", false)
         textPosition = runCatching { TextPosition.valueOf(json.optString("textPosition", "BOTTOM")) }.getOrDefault(TextPosition.BOTTOM)
+        textSizeSp = json.optInt("textSizeSp", 24).coerceIn(12, 48)
+        textSizeLabel.text = "Yazı boyutu: $textSizeSp"
+        textSizeSeek.progress = textSizeSp - 12
+        previewTextOverlay.setTextSize(textSizeSp.toFloat())
         sourceAudioVolume = json.optInt("sourceAudioVolume", 100).coerceIn(0, 100)
         musicVolume = json.optInt("musicVolume", 45).coerceIn(0, 100)
         soundVolume = json.optInt("soundVolume", 100).coerceIn(0, 100)
@@ -2136,6 +2173,12 @@ class VideoEditorActivity : Activity() {
             setSpan(ForegroundColorSpan(Color.WHITE), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             setSpan(BackgroundColorSpan(Color.argb(190, 0, 0, 0)), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             setSpan(StyleSpan(Typeface.BOLD), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            setSpan(
+                AbsoluteSizeSpan((textSizeSp * resources.displayMetrics.scaledDensity).toInt(), false),
+                0,
+                length,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
         }
         val y = when (textPosition) {
             TextPosition.TOP -> 0.78f
