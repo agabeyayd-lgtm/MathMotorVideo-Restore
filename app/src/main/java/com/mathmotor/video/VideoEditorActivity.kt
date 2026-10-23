@@ -96,6 +96,7 @@ class VideoEditorActivity : Activity() {
     private var musicPreviewUri: Uri? = null
     private var soundPreviewUri: Uri? = null
     private lateinit var playerView: PlayerView
+    private lateinit var previewFrame: FrameLayout
     private lateinit var previewTextOverlay: TextView
     private lateinit var clipList: LinearLayout
     private lateinit var timelineTracks: LinearLayout
@@ -176,9 +177,14 @@ class VideoEditorActivity : Activity() {
         window.navigationBarColor = Color.rgb(15, 31, 45)
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         buildUi()
-        player = ExoPlayer.Builder(this).build().also {
-            it.volume = if (keepSourceAudio.isChecked) sourceAudioVolume / 100f else 0f
-            playerView.player = it
+        player = ExoPlayer.Builder(this).build().also { exo ->
+            exo.volume = if (keepSourceAudio.isChecked) sourceAudioVolume / 100f else 0f
+            playerView.player = exo
+            exo.addListener(object : androidx.media3.common.Player.Listener {
+                override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
+                    playerView.post { updatePreviewCanvasSize() }
+                }
+            })
         }
         timelineHandler.post(timelineSyncTask)
         val incoming = intent.getStringExtra("video_uri")
@@ -241,7 +247,7 @@ class VideoEditorActivity : Activity() {
             useController = true
             contentDescription = "Video önizlemesi"
         }
-        val previewFrame = FrameLayout(this).apply {
+        previewFrame = FrameLayout(this).apply {
             setBackgroundColor(Color.rgb(5, 9, 15))
         }
         previewFrame.addView(
@@ -279,13 +285,7 @@ class VideoEditorActivity : Activity() {
             ViewGroup.LayoutParams.MATCH_PARENT, dp(290)
         ).apply { bottomMargin = dp(8) })
         previewFrame.addOnLayoutChangeListener { view, _, _, _, _, _, _, _, _ ->
-            val desiredWidth = (view.height * 9f / 16f).toInt().coerceAtLeast(dp(120))
-            val params = playerView.layoutParams as? FrameLayout.LayoutParams
-            if (params != null && params.width != desiredWidth) {
-                params.width = desiredWidth
-                params.gravity = Gravity.CENTER
-                playerView.layoutParams = params
-            }
+            updatePreviewCanvasSize()
         }
 
         val timelineCard = LinearLayout(this).apply {
@@ -729,7 +729,6 @@ class VideoEditorActivity : Activity() {
             applyingResponsiveLayout = true
             try {
                 val previewParams = previewFrame.layoutParams as LinearLayout.LayoutParams
-                val contentWidth = (root.width - root.paddingLeft - root.paddingRight).coerceAtLeast(dp(200))
                 previewParams.height = if (imeVisible) {
                     (availableHeight * 0.21f).toInt().coerceIn(dp(82), dp(112))
                 } else {
@@ -833,6 +832,45 @@ class VideoEditorActivity : Activity() {
                 insets
             }
             root.requestApplyInsets()
+        }
+    }
+
+    /**
+     * Fits the preview to the source video's aspect ratio inside a dark stage.
+     * Portrait clips get a true 9:16 canvas; landscape clips remain fully visible.
+     */
+    private fun updatePreviewCanvasSize() {
+        if (!::previewFrame.isInitialized || !::playerView.isInitialized) return
+        val stageWidth = previewFrame.width
+        val stageHeight = previewFrame.height
+        if (stageWidth <= 0 || stageHeight <= 0) return
+
+        val videoSize = player?.videoSize
+        val ratio = if (videoSize != null && videoSize.width > 0 && videoSize.height > 0) {
+            videoSize.width.toFloat() / videoSize.height.toFloat()
+        } else {
+            9f / 16f
+        }.coerceIn(0.25f, 4f)
+
+        val targetWidth = minOf(stageWidth.toFloat(), stageHeight * ratio).toInt().coerceAtLeast(1)
+        val targetHeight = minOf(stageHeight.toFloat(), targetWidth / ratio).toInt().coerceAtLeast(1)
+        val params = playerView.layoutParams as? FrameLayout.LayoutParams ?: return
+        if (params.width != targetWidth || params.height != targetHeight || params.gravity != Gravity.CENTER) {
+            params.width = targetWidth
+            params.height = targetHeight
+            params.gravity = Gravity.CENTER
+            playerView.layoutParams = params
+        }
+        if (::previewTextOverlay.isInitialized) {
+            previewTextOverlay.maxWidth = (targetWidth - dp(16)).coerceAtLeast(dp(100))
+            val overlayParams = previewTextOverlay.layoutParams as? FrameLayout.LayoutParams
+            if (overlayParams != null) {
+                val bottomGap = ((stageHeight - targetHeight) / 2 + dp(8)).coerceAtLeast(dp(8))
+                if (overlayParams.bottomMargin != bottomGap) {
+                    overlayParams.bottomMargin = bottomGap
+                    previewTextOverlay.layoutParams = overlayParams
+                }
+            }
         }
     }
 
