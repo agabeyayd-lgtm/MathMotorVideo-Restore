@@ -600,7 +600,7 @@ class VideoEditorActivity : Activity() {
                 val duration = (clip.endMs - clip.startMs).coerceAtLeast(0L)
                 addBlock(
                     videoTrack,
-                    "${{index + 1}. ${{clip.title}  ${{formatMs(duration)}",
+                    "${index + 1}. ${clip.title}  ${formatMs(duration)}",
                     duration,
                     if (index == selectedClipIndex) Color.rgb(0, 120, 125) else Color.rgb(38, 105, 123),
                     selected = index == selectedClipIndex,
@@ -625,7 +625,7 @@ class VideoEditorActivity : Activity() {
 
         val musicTrack = makeLane("MÜZİK", 31)
         if (musicUri != null) {
-            addBlock(musicTrack, "♫ ${{musicTitle ?: "Müzik"}", totalMs, Color.rgb(46, 125, 85), minimumWidthDp = 56)
+            addBlock(musicTrack, "♫ ${musicTitle ?: "Müzik"}", totalMs, Color.rgb(46, 125, 85), minimumWidthDp = 56)
         } else {
             addBlock(musicTrack, "+ Müzik ekle", totalMs.coerceAtLeast(5000L), Color.rgb(42, 78, 63),
                 onClick = { chooseAudio(true) }, minimumWidthDp = 115)
@@ -636,7 +636,7 @@ class VideoEditorActivity : Activity() {
             val startMs = soundStartMs.coerceIn(0L, totalMs)
             val duration = soundDurationMs.coerceAtMost((totalMs - startMs).coerceAtLeast(0L))
             addSpacer(effectTrack, startMs)
-            addBlock(effectTrack, "♪ ${{soundTitle ?: "Ses efekti"}", duration, Color.rgb(166, 102, 40), minimumWidthDp = 44)
+            addBlock(effectTrack, "♪ ${soundTitle ?: "Ses efekti"}", duration, Color.rgb(166, 102, 40), minimumWidthDp = 44)
             addSpacer(effectTrack, (totalMs - startMs - duration).coerceAtLeast(0L))
         } else {
             addBlock(effectTrack, "+ Ses efekti ekle", totalMs.coerceAtLeast(5000L), Color.rgb(96, 68, 41),
@@ -653,7 +653,7 @@ class VideoEditorActivity : Activity() {
         player?.setMediaItem(clippedMediaItem(clip))
         player?.prepare()
         player?.playWhenReady = false
-        status.text = "Seçili klip: ${{clip.title}. Klipler dışa aktarılırken bu sırayla tek MP4'e birleştirilir."
+        status.text = "Seçili klip: ${clip.title}. Klipler dışa aktarılırken bu sırayla tek MP4'e birleştirilir."
     }
 
     private fun updatePreviewTextOverlay() {
@@ -1330,7 +1330,7 @@ class VideoEditorActivity : Activity() {
                 buildClipSegment(clip, 0L, duration)
             }
         } catch (e: Exception) {
-            status.text = "Düzenleme hazırlanamadı: ${{e.message ?: e.javaClass.simpleName}"
+            status.text = "Düzenleme hazırlanamadı: ${e.message ?: e.javaClass.simpleName}"
             return
         }
 
