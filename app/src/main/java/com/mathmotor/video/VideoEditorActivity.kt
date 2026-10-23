@@ -23,6 +23,7 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
@@ -82,6 +83,7 @@ class VideoEditorActivity : Activity() {
     private enum class TextPosition { TOP, CENTER, BOTTOM }
     private var player: ExoPlayer? = null
     private lateinit var playerView: PlayerView
+    private lateinit var previewTextOverlay: TextView
     private lateinit var clipList: LinearLayout
     private lateinit var timelineTracks: LinearLayout
     private val editorPanels = linkedMapOf<String, LinearLayout>()
@@ -177,7 +179,39 @@ class VideoEditorActivity : Activity() {
             setBackgroundColor(Color.BLACK)
             useController = true
         }
-        root.addView(playerView, LinearLayout.LayoutParams(
+        val previewFrame = FrameLayout(this)
+        previewFrame.addView(
+            playerView,
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        )
+        previewTextOverlay = TextView(this).apply {
+            textSize = 17f
+            gravity = Gravity.CENTER
+            maxLines = 2
+            maxWidth = dp(290)
+            setTextColor(Color.WHITE)
+            setTypeface(Typeface.DEFAULT, Typeface.BOLD)
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+            setShadowLayer(2f, 1f, 1f, Color.BLACK)
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.argb(210, 0, 0, 0))
+                cornerRadius = dp(8).toFloat()
+            }
+            visibility = View.GONE
+        }
+        previewFrame.addView(
+            previewTextOverlay,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            ).apply {
+                leftMargin = dp(8)
+                rightMargin = dp(8)
+                bottomMargin = dp(8)
+            }
+        )
+        root.addView(previewFrame, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(160)
         ).apply { bottomMargin = dp(8) })
 
@@ -197,7 +231,7 @@ class VideoEditorActivity : Activity() {
         timelineHeader.addView(label("ZAMAN ÇİZELGESİ", 12f, Color.rgb(121, 202, 218), true),
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         timelineHeader.addView(miniButton("+ Klip") { chooseVideo(true) })
-        timelineHeader.addView(miniButton("Video seç") { chooseVideo(false) },
+        timelineHeader.addView(miniButton("Değiştir") { chooseVideo(false) },
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(38)).apply {
                 leftMargin = dp(5)
             })
@@ -283,13 +317,17 @@ class VideoEditorActivity : Activity() {
                     2 -> TextPosition.CENTER
                     else -> TextPosition.BOTTOM
                 }
+                updatePreviewTextOverlay()
                 refreshTimelineTracks()
             }
         }
         textPanel.addView(textPositionGroup, matchWrap())
         textInput.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { refreshTimelineTracks() }
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                updatePreviewTextOverlay()
+                refreshTimelineTracks()
+            }
             override fun afterTextChanged(s: android.text.Editable?) {}
         })
 
@@ -462,43 +500,182 @@ class VideoEditorActivity : Activity() {
     private fun refreshTimelineTracks() {
         if (!::timelineTracks.isInitialized) return
         timelineTracks.removeAllViews()
-        fun addLane(tag: String, detail: String, fill: Int) {
+
+        val totalMs = totalOutputDurationMs()
+        val pxPerSecond = dp(22).toFloat()
+
+        fun exactWidth(durationMs: Long): Int =
+            ((durationMs.coerceAtLeast(0L) / 1000f) * pxPerSecond).toInt().coerceAtLeast(0)
+
+        fun makeLane(tag: String, heightDp: Int = 30): LinearLayout {
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(4), dp(2), dp(4), dp(2))
+                setPadding(dp(3), dp(1), dp(3), dp(1))
             }
             row.addView(TextView(this).apply {
                 text = tag
                 textSize = 9f
                 setTextColor(Color.rgb(166, 184, 201))
                 typeface = Typeface.DEFAULT_BOLD
-            }, LinearLayout.LayoutParams(dp(58), ViewGroup.LayoutParams.WRAP_CONTENT))
-            val pill = TextView(this).apply {
-                text = detail
-                textSize = 10f
+                gravity = Gravity.CENTER_VERTICAL
+            }, LinearLayout.LayoutParams(dp(58), ViewGroup.LayoutParams.MATCH_PARENT))
+
+            val scroll = android.widget.HorizontalScrollView(this).apply {
+                isHorizontalScrollBarEnabled = false
+                overScrollMode = View.OVER_SCROLL_NEVER
+            }
+            val track = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(2), dp(1), dp(2), dp(1))
+            }
+            scroll.addView(track)
+            row.addView(scroll, LinearLayout.LayoutParams(0, dp(heightDp), 1f))
+            timelineTracks.addView(row, matchWrap())
+            return track
+        }
+
+        fun addBlock(
+            track: LinearLayout,
+            title: String,
+            durationMs: Long,
+            fill: Int,
+            selected: Boolean = false,
+            onClick: (() -> Unit)? = null,
+            minimumWidthDp: Int = 36
+        ) {
+            val width = maxOf(dp(minimumWidthDp), exactWidth(durationMs))
+            val block = TextView(this).apply {
+                text = title
+                textSize = 9f
                 setTextColor(Color.WHITE)
+                gravity = Gravity.CENTER_VERTICAL
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
-                setPadding(dp(8), dp(3), dp(8), dp(3))
+                setPadding(dp(6), 0, dp(6), 0)
                 background = android.graphics.drawable.GradientDrawable().apply {
                     setColor(fill)
                     cornerRadius = dp(5).toFloat()
+                    setStroke(dp(if (selected) 2 else 1), if (selected) Color.rgb(117, 240, 221) else Color.rgb(61, 79, 99))
+                }
+                if (onClick != null) {
+                    isClickable = true
+                    isFocusable = true
+                    setOnClickListener { onClick() }
                 }
             }
-            row.addView(pill, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            timelineTracks.addView(row, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(25)
-            ))
+            track.addView(block, LinearLayout.LayoutParams(width, dp(24)).apply {
+                rightMargin = dp(3)
+            })
         }
-        val videoDetail = if (clips.isEmpty()) "＋ Video ekle" else
-            "${clips.size} klip  •  ${formatMs(totalOutputDurationMs())}"
-        addLane("VIDEO", videoDetail, Color.rgb(38, 105, 123))
-        val text = if (!::textInput.isInitialized || textInput.text.isNullOrBlank()) "Metin eklenmedi" else
-            "T: ${textInput.text.toString().trim()}"
-        addLane("METİN", text, Color.rgb(110, 74, 154))
-        addLane("MÜZİK", musicTitle ?: "Müzik ekle", Color.rgb(46, 125, 85))
-        addLane("EFEKT", soundTitle ?: "Ses efekti ekle", Color.rgb(166, 102, 40))
+
+        fun addSpacer(track: LinearLayout, durationMs: Long) {
+            val width = exactWidth(durationMs)
+            if (width <= 0) return
+            track.addView(View(this), LinearLayout.LayoutParams(width, dp(24)))
+        }
+
+        val ruler = makeLane("SÜRE", 27)
+        val rulerEndMs = (((totalMs + 4999L) / 5000L).coerceAtLeast(1L)) * 5000L
+        var rulerTimeMs = 0L
+        while (rulerTimeMs < rulerEndMs) {
+            val spanMs = minOf(5000L, rulerEndMs - rulerTimeMs)
+            val tick = TextView(this).apply {
+                text = formatMs(rulerTimeMs) + " ┆"
+                textSize = 9f
+                setTextColor(Color.rgb(166, 184, 201))
+                gravity = Gravity.CENTER_VERTICAL or Gravity.START
+                setPadding(dp(2), 0, 0, 0)
+            }
+            ruler.addView(tick, LinearLayout.LayoutParams(maxOf(dp(26), exactWidth(spanMs)), dp(22)))
+            rulerTimeMs += spanMs
+        }
+
+        val videoTrack = makeLane("VIDEO", 31)
+        if (clips.isEmpty()) {
+            addBlock(videoTrack, "+ Video ekle", 5000L, Color.rgb(38, 105, 123), onClick = { chooseVideo(true) }, minimumWidthDp = 115)
+        } else {
+            clips.forEachIndexed { index, clip ->
+                val duration = (clip.endMs - clip.startMs).coerceAtLeast(0L)
+                addBlock(
+                    videoTrack,
+                    "${{index + 1}. ${{clip.title}  ${{formatMs(duration)}",
+                    duration,
+                    if (index == selectedClipIndex) Color.rgb(0, 120, 125) else Color.rgb(38, 105, 123),
+                    selected = index == selectedClipIndex,
+                    onClick = { selectTimelineClip(index) },
+                    minimumWidthDp = 56
+                )
+            }
+        }
+
+        val textTrack = makeLane("METİN", 31)
+        val overlayText = if (::textInput.isInitialized) textInput.text?.toString()?.trim().orEmpty() else ""
+        if (overlayText.isNotBlank() && totalMs > 0L) {
+            val startMs = textStartMs.coerceIn(0L, totalMs)
+            val endMs = textEndMs.coerceIn(startMs, totalMs)
+            addSpacer(textTrack, startMs)
+            addBlock(textTrack, overlayText, (endMs - startMs).coerceAtLeast(0L), Color.rgb(110, 74, 154), minimumWidthDp = 42)
+            addSpacer(textTrack, (totalMs - endMs).coerceAtLeast(0L))
+        } else {
+            addBlock(textTrack, "+ Metin ekle", totalMs.coerceAtLeast(5000L), Color.rgb(70, 54, 93),
+                onClick = { showEditorPanel("text") }, minimumWidthDp = 115)
+        }
+
+        val musicTrack = makeLane("MÜZİK", 31)
+        if (musicUri != null) {
+            addBlock(musicTrack, "♫ ${{musicTitle ?: "Müzik"}", totalMs, Color.rgb(46, 125, 85), minimumWidthDp = 56)
+        } else {
+            addBlock(musicTrack, "+ Müzik ekle", totalMs.coerceAtLeast(5000L), Color.rgb(42, 78, 63),
+                onClick = { chooseAudio(true) }, minimumWidthDp = 115)
+        }
+
+        val effectTrack = makeLane("EFEKT", 31)
+        if (soundUri != null && totalMs > 0L) {
+            val startMs = soundStartMs.coerceIn(0L, totalMs)
+            val duration = soundDurationMs.coerceAtMost((totalMs - startMs).coerceAtLeast(0L))
+            addSpacer(effectTrack, startMs)
+            addBlock(effectTrack, "♪ ${{soundTitle ?: "Ses efekti"}", duration, Color.rgb(166, 102, 40), minimumWidthDp = 44)
+            addSpacer(effectTrack, (totalMs - startMs - duration).coerceAtLeast(0L))
+        } else {
+            addBlock(effectTrack, "+ Ses efekti ekle", totalMs.coerceAtLeast(5000L), Color.rgb(96, 68, 41),
+                onClick = { chooseAudio(false) }, minimumWidthDp = 115)
+        }
+    }
+
+    private fun selectTimelineClip(index: Int) {
+        if (index !in clips.indices) return
+        selectedClipIndex = index
+        val clip = clips[index]
+        refreshClipList()
+        loadTrimControls()
+        player?.setMediaItem(clippedMediaItem(clip))
+        player?.prepare()
+        player?.playWhenReady = false
+        status.text = "Seçili klip: ${{clip.title}. Klipler dışa aktarılırken bu sırayla tek MP4'e birleştirilir."
+    }
+
+    private fun updatePreviewTextOverlay() {
+        if (!::previewTextOverlay.isInitialized || !::textInput.isInitialized) return
+        val value = textInput.text?.toString()?.trim().orEmpty()
+        if (value.isBlank()) {
+            previewTextOverlay.visibility = View.GONE
+            return
+        }
+        previewTextOverlay.text = value
+        previewTextOverlay.visibility = View.VISIBLE
+        val params = previewTextOverlay.layoutParams as? FrameLayout.LayoutParams ?: return
+        params.gravity = when (textPosition) {
+            TextPosition.TOP -> Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            TextPosition.CENTER -> Gravity.CENTER
+            TextPosition.BOTTOM -> Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+        }
+        params.topMargin = if (textPosition == TextPosition.TOP) dp(8) else 0
+        params.bottomMargin = if (textPosition == TextPosition.BOTTOM) dp(8) else 0
+        params.leftMargin = dp(8)
+        params.rightMargin = dp(8)
+        previewTextOverlay.layoutParams = params
     }
 
     private fun volumeListener(onValue: (Int) -> Unit): SeekBar.OnSeekBarChangeListener =
@@ -553,6 +730,7 @@ class VideoEditorActivity : Activity() {
         textEndSeek.isEnabled = total > 0L
         textStartLabel.text = "Yazı başlangıcı: " + formatMs(textStartMs)
         textEndLabel.text = "Yazı bitişi: " + formatMs(textEndMs)
+        refreshTimelineTracks()
     }
 
     private fun audioEffects(volumePercent: Int): List<AudioProcessor> {
@@ -1083,8 +1261,7 @@ class VideoEditorActivity : Activity() {
     private fun buildClipSegment(
         clip: Clip,
         localStartMs: Long,
-        localEndMs: Long,
-        overlayText: String?
+        localEndMs: Long
     ): EditedMediaItem {
         require(localEndMs > localStartMs) { "Boş video parçası oluşturulamaz." }
         val mediaItem = MediaItem.Builder()
@@ -1097,30 +1274,40 @@ class VideoEditorActivity : Activity() {
             )
             .build()
 
-        val videoEffects = if (overlayText.isNullOrBlank()) {
-            emptyList()
-        } else {
-            val styled = SpannableString(overlayText).apply {
-                setSpan(ForegroundColorSpan(Color.WHITE), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                setSpan(BackgroundColorSpan(Color.argb(190, 0, 0, 0)), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                setSpan(StyleSpan(Typeface.BOLD), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            }
-            val y = when (textPosition) {
-                TextPosition.TOP -> 0.78f
-                TextPosition.CENTER -> 0f
-                TextPosition.BOTTOM -> -0.78f
-            }
-            val settings = OverlaySettings.Builder()
-                .setBackgroundFrameAnchor(0f, y)
-                .setOverlayFrameAnchor(0f, 0f)
-                .build()
-            listOf(OverlayEffect(listOf(TextOverlay.createStaticTextOverlay(styled, settings))))
-        }
         val audio = if (keepSourceAudio.isChecked) audioEffects(sourceAudioVolume) else emptyList()
         return EditedMediaItem.Builder(mediaItem)
-            .setEffects(Effects(audio, videoEffects))
+            .setEffects(Effects(audio, emptyList()))
             .apply { if (!keepSourceAudio.isChecked) setRemoveAudio(true) }
             .build()
+    }
+
+    private fun buildTimedTextOverlay(
+        overlayText: String,
+        startMs: Long,
+        endMs: Long
+    ): TextOverlay {
+        val styled = SpannableString(overlayText).apply {
+            setSpan(ForegroundColorSpan(Color.WHITE), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            setSpan(BackgroundColorSpan(Color.argb(190, 0, 0, 0)), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            setSpan(StyleSpan(Typeface.BOLD), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        val y = when (textPosition) {
+            TextPosition.TOP -> 0.78f
+            TextPosition.CENTER -> 0f
+            TextPosition.BOTTOM -> -0.78f
+        }
+        val settings = OverlaySettings.Builder()
+            .setBackgroundFrameAnchor(0f, y)
+            .setOverlayFrameAnchor(0f, 0f)
+            .build()
+        return object : TextOverlay() {
+            override fun getText(presentationTimeUs: Long): SpannableString {
+                val timeMs = presentationTimeUs / 1000L
+                return if (timeMs >= startMs && timeMs < endMs) SpannableString(styled) else SpannableString("")
+            }
+
+            override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings = settings
+        }
     }
 
     private fun exportEditedVideo() {
@@ -1138,31 +1325,18 @@ class VideoEditorActivity : Activity() {
         val overlayText = textInput.text?.toString()?.trim().orEmpty()
         val requestedExportName = exportNameInput.text?.toString().orEmpty()
         val videoItems = try {
-            val builtItems = mutableListOf<EditedMediaItem>()
-            var timelineOffsetMs = 0L
-            clips.forEach { clip ->
+            clips.map { clip ->
                 val duration = clip.endMs - clip.startMs
-                val localTextStart = (textStartMs - timelineOffsetMs).coerceAtLeast(0L)
-                val localTextEnd = (textEndMs - timelineOffsetMs).coerceAtMost(duration)
-                val showTextHere = overlayText.isNotBlank() && localTextEnd > localTextStart
-                if (!showTextHere) {
-                    builtItems.add(buildClipSegment(clip, 0L, duration, null))
-                } else {
-                    if (localTextStart > 0L) builtItems.add(buildClipSegment(clip, 0L, localTextStart, null))
-                    builtItems.add(buildClipSegment(clip, localTextStart, localTextEnd, overlayText))
-                    if (localTextEnd < duration) builtItems.add(buildClipSegment(clip, localTextEnd, duration, null))
-                }
-                timelineOffsetMs += duration
+                buildClipSegment(clip, 0L, duration)
             }
-            builtItems
         } catch (e: Exception) {
-            status.text = "Düzenleme hazırlanamadı: ${e.message ?: e.javaClass.simpleName}"
+            status.text = "Düzenleme hazırlanamadı: ${{e.message ?: e.javaClass.simpleName}"
             return
         }
 
         exporting = true
         exportButton.isEnabled = false
-        status.text = "MP4 dışa aktarılıyor…\nKlipler, yazı, müzik ve ses katmanları uygulanıyor. Uygulamayı kapatma."
+        status.text = "MP4 dışa aktarılıyor…\nKlipler seçtiğin sırayla birleştiriliyor; yazı, müzik ve ses katmanları uygulanıyor. Uygulamayı kapatma."
         val tempOutput = File(cacheDir, "mm_editor_${System.currentTimeMillis()}.mp4")
         val videoSequence = EditedMediaItemSequence.Builder(videoItems).build()
         val compositionSequences = mutableListOf(videoSequence)
@@ -1198,7 +1372,16 @@ class VideoEditorActivity : Activity() {
             soundSequenceBuilder.addItem(soundItem)
             compositionSequences.add(soundSequenceBuilder.build())
         }
-        val composition = Composition.Builder(compositionSequences).build()
+        val compositionBuilder = Composition.Builder(compositionSequences)
+        if (overlayText.isNotBlank() && textEndMs > textStartMs) {
+            compositionBuilder.setEffects(
+                Effects(
+                    emptyList(),
+                    listOf(OverlayEffect(listOf(buildTimedTextOverlay(overlayText, textStartMs, textEndMs))))
+                )
+            )
+        }
+        val composition = compositionBuilder.build()
 
         val transformer = try {
             Transformer.Builder(this)
