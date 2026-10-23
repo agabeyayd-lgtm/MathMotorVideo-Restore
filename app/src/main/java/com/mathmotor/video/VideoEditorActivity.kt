@@ -1699,6 +1699,8 @@ class VideoEditorActivity : Activity() {
         clips.add(to, moved)
         selectedClipIndex = clips.indexOfFirst { it === previouslySelected }.takeIf { it >= 0 } ?: to
         timelinePreviewLoaded = false
+        previewSingleClip = selectedClipIndex in clips.indices
+        timelinePlayheadMs = clips.take(selectedClipIndex.coerceAtLeast(0)).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
         refreshClipList()
         loadTrimControls()
         val selected = selectedClip()
@@ -1707,6 +1709,7 @@ class VideoEditorActivity : Activity() {
             player?.prepare()
             player?.playWhenReady = false
         }
+        updateTimelinePlayheadLabel()
         status.text = "Klip sırası değişti. Dışa aktarma bu yeni sırayı kullanacak."
     }
 
@@ -1732,8 +1735,11 @@ class VideoEditorActivity : Activity() {
         clips.add(selectedClipIndex + 1, clip.copy(title = "${clip.title} • B", startMs = splitAt))
         selectedClipIndex += 1
         timelinePreviewLoaded = false
+        previewSingleClip = true
+        timelinePlayheadMs = clips.take(selectedClipIndex).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
         refreshClipList()
         loadTrimControls()
+        updateTimelinePlayheadLabel()
         player?.setMediaItem(clippedMediaItem(clips[selectedClipIndex]))
         player?.prepare()
         player?.playWhenReady = false
@@ -1754,8 +1760,11 @@ class VideoEditorActivity : Activity() {
         clips.add(target, clip)
         timelinePreviewLoaded = false
         selectedClipIndex = target
+        previewSingleClip = true
+        timelinePlayheadMs = clips.take(selectedClipIndex).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
         refreshClipList()
         loadTrimControls()
+        updateTimelinePlayheadLabel()
         player?.setMediaItem(clippedMediaItem(clip))
         player?.prepare()
         player?.playWhenReady = true
