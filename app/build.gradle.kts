@@ -22,8 +22,8 @@ android {
         applicationId = "com.mathmotor.video.next"
         minSdk = 26
         targetSdk = 35
-        versionCode = 383
-        versionName = "8.17-clip-actions"
+        versionCode = 384
+        versionName = "8.18-responsive-studio"
         testInstrumentationRunner = "android.test.AndroidJUnitRunner"
     }
 
