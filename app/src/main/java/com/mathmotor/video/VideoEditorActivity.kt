@@ -1860,27 +1860,57 @@ class VideoEditorActivity : Activity() {
         status.text = "Klip sırası değişti. Dışa aktarma bu yeni sırayı kullanacak."
     }
 
-    private fun splitSelectedClipAtPlayhead() {
-        val clip = selectedClip()
-        if (clip == null) {
+    private fun splitSelectedClipAtPlayhead(expectedClipIndex: Int? = null) {
+        if (clips.isEmpty()) {
             status.text = "Önce bölmek istediğin klibi seç."
             return
         }
-        val duration = (clip.endMs - clip.startMs).coerceAtLeast(0L)
-        val localPosition = if (timelinePreviewLoaded) {
-            val clipTimelineStart = clips.take(selectedClipIndex).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
-            (timelinePlayheadMs - clipTimelineStart).coerceIn(0L, duration)
-        } else {
-            (player?.currentPosition ?: 0L).coerceIn(0L, duration)
+        val totalMs = totalOutputDurationMs()
+        if (totalMs <= 0L) {
+            status.text = "Bölünecek bir video süresi yok."
+            return
         }
+        val playheadMs = timelinePlayheadMs.coerceIn(0L, (totalMs - 1L).coerceAtLeast(0L))
+
+        // Normalize single-clip preview into the full sequence so a split always uses
+        // the same global timeline time regardless of which preview mode was active.
+        if (!timelinePreviewLoaded) {
+            ensureTimelinePreviewLoaded()
+            if (timelinePreviewLoaded) seekTimelinePreview(playheadMs)
+        }
+
+        var clipTimelineStartMs = 0L
+        var playheadClipIndex = -1
+        clips.forEachIndexed { index, clip ->
+            val durationMs = (clip.endMs - clip.startMs).coerceAtLeast(0L)
+            if (playheadClipIndex < 0 &&
+                (playheadMs < clipTimelineStartMs + durationMs || index == clips.lastIndex)) {
+                playheadClipIndex = index
+            } else if (playheadClipIndex < 0) {
+                clipTimelineStartMs += durationMs
+            }
+        }
+        if (playheadClipIndex !in clips.indices) {
+            status.text = "Oynatma noktası bir kliple eşleştirilemedi."
+            return
+        }
+        if (expectedClipIndex != null && expectedClipIndex != playheadClipIndex) {
+            status.text = "Bölmek istediğin klibi seçtikten sonra kırmızı çizgiyi o klibin içine getir."
+            return
+        }
+
+        selectedClipIndex = playheadClipIndex
+        val clip = clips[playheadClipIndex]
+        val duration = (clip.endMs - clip.startMs).coerceAtLeast(0L)
+        val localPosition = (playheadMs - clipTimelineStartMs).coerceIn(0L, duration)
         val splitAt = clip.startMs + localPosition
         if (localPosition < 350L || duration - localPosition < 350L) {
             status.text = "Bölmek için oynatma noktasını klibin ortalarına getir; iki tarafta da en az 0,35 saniye olmalı."
             return
         }
-        clips[selectedClipIndex] = clip.copy(title = "${clip.title} • A", endMs = splitAt)
-        clips.add(selectedClipIndex + 1, clip.copy(title = "${clip.title} • B", startMs = splitAt))
-        selectedClipIndex += 1
+        clips[playheadClipIndex] = clip.copy(title = "${clip.title} • A", endMs = splitAt)
+        clips.add(playheadClipIndex + 1, clip.copy(title = "${clip.title} • B", startMs = splitAt))
+        selectedClipIndex = playheadClipIndex + 1
         timelinePreviewLoaded = false
         previewSingleClip = true
         timelinePlayheadMs = clips.take(selectedClipIndex).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
@@ -1914,7 +1944,7 @@ class VideoEditorActivity : Activity() {
         updateTimelinePlayheadLabel()
         player?.setMediaItem(clippedMediaItem(clip))
         player?.prepare()
-        player?.playWhenReady = true
+        player?.playWhenReady = false
         status.text = "Klip sırası değiştirildi. Dışa aktarma bu sırayı kullanacak."
     }
 
@@ -2014,7 +2044,6 @@ class VideoEditorActivity : Activity() {
                 }
             }
             setOnLongClickListener {
-                selectedClipIndex = index
                 val menu = android.widget.PopupMenu(this@VideoEditorActivity, this)
                 menu.menu.add(0, 1, 0, "Kopyala")
                 menu.menu.add(0, 2, 1, "Sil")
@@ -2025,10 +2054,7 @@ class VideoEditorActivity : Activity() {
                     when (item.itemId) {
                         1 -> duplicateClipAt(index)
                         2 -> removeClipAt(index)
-                        3 -> {
-                            selectTimelineClip(index)
-                            splitSelectedClipAtPlayhead()
-                        }
+                        3 -> splitSelectedClipAtPlayhead(expectedClipIndex = index)
                         4 -> { selectTimelineClip(index); moveSelectedClip(-1) }
                         5 -> { selectTimelineClip(index); moveSelectedClip(1) }
                     }
