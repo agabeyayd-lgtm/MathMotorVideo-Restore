@@ -1315,16 +1315,16 @@ class VideoEditorActivity : Activity() {
                 }
                 tile.setOnDragListener { _, event ->
                     when (event.action) {
-                        View.DragEvent.ACTION_DRAG_STARTED -> event.clipDescription?.hasMimeType("text/plain") == true
-                        View.DragEvent.ACTION_DRAG_ENTERED,
-                        View.DragEvent.ACTION_DRAG_LOCATION,
-                        View.DragEvent.ACTION_DRAG_EXITED -> true
-                        View.DragEvent.ACTION_DROP -> {
+                        android.view.DragEvent.ACTION_DRAG_STARTED -> event.clipDescription?.hasMimeType("text/plain") == true
+                        android.view.DragEvent.ACTION_DRAG_ENTERED,
+                        android.view.DragEvent.ACTION_DRAG_LOCATION,
+                        android.view.DragEvent.ACTION_DRAG_EXITED -> true
+                        android.view.DragEvent.ACTION_DROP -> {
                             val from = event.localState as? Int
                             if (from != null && from in clips.indices) reorderClip(from, index)
                             true
                         }
-                        View.DragEvent.ACTION_DRAG_ENDED -> true
+                        android.view.DragEvent.ACTION_DRAG_ENDED -> true
                         else -> false
                     }
                 }
