@@ -1,8 +1,7 @@
 name: Build and publish APK
 
+# APK publishing is manual-only: code changes must not release an update.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
