@@ -22,8 +22,8 @@ android {
         applicationId = "com.mathmotor.video.next"
         minSdk = 26
         targetSdk = 35
-        versionCode = 386
-        versionName = "8.20-gallery-sync"
+        versionCode = 387
+        versionName = "8.21-editor-controls"
         testInstrumentationRunner = "android.test.AndroidJUnitRunner"
     }
 
