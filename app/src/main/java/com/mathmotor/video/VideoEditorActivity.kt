@@ -132,6 +132,7 @@ class VideoEditorActivity : Activity() {
         }
     }
     private val editorPanels = linkedMapOf<String, LinearLayout>()
+    private lateinit var editorPanelScroll: ScrollView
     private val editorTabButtons = linkedMapOf<String, Button>()
     private lateinit var selectedClipLabel: TextView
     private lateinit var startLabel: TextView
@@ -653,7 +654,7 @@ class VideoEditorActivity : Activity() {
         editorPanels["audio"] = audioPanel
         editorPanels["export"] = exportPanel
 
-        val panelScroll = ScrollView(this).apply {
+        editorPanelScroll = ScrollView(this).apply {
             isFillViewport = true
             overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
         }
@@ -665,7 +666,7 @@ class VideoEditorActivity : Activity() {
             panel.visibility = if (index == 0) View.VISIBLE else View.GONE
             panelHolder.addView(panel, matchWrap())
         }
-        panelScroll.addView(panelHolder)
+        editorPanelScroll.addView(panelHolder)
         textInput.setOnFocusChangeListener { _, hasFocus ->
             if (hasFocus) {
                 textInput.post {
@@ -675,7 +676,7 @@ class VideoEditorActivity : Activity() {
                 }
             }
         }
-        root.addView(panelScroll, LinearLayout.LayoutParams(
+        root.addView(editorPanelScroll, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
         ))
 
@@ -723,7 +724,7 @@ class VideoEditorActivity : Activity() {
             previewFrame = previewFrame,
             timelineCard = timelineCard,
             clipScroll = clipScroll,
-            panelScroll = panelScroll,
+            panelScroll = editorPanelScroll,
             statusView = status,
             bottomDock = dock,
             topBar = topBar,
@@ -921,6 +922,7 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun showEditorPanel(name: String) {
+        if (::editorPanelScroll.isInitialized) editorPanelScroll.scrollTo(0, 0)
         editorPanels.forEach { (key, panel) ->
             panel.visibility = if (key == name) View.VISIBLE else View.GONE
         }
