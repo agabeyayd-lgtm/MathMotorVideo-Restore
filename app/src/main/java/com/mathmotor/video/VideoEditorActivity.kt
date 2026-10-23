@@ -83,6 +83,9 @@ class VideoEditorActivity : Activity() {
     private var player: ExoPlayer? = null
     private lateinit var playerView: PlayerView
     private lateinit var clipList: LinearLayout
+    private lateinit var timelineTracks: LinearLayout
+    private val editorPanels = linkedMapOf<String, LinearLayout>()
+    private val editorTabButtons = linkedMapOf<String, Button>()
     private lateinit var selectedClipLabel: TextView
     private lateinit var startLabel: TextView
     private lateinit var endLabel: TextView
@@ -130,102 +133,144 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun buildUi() {
-        val scroll = ScrollView(this).apply { setBackgroundColor(Color.rgb(15, 31, 45)) }
+        editorPanels.clear()
+        editorTabButtons.clear()
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(16), dp(16), dp(24))
-            setBackgroundColor(Color.rgb(15, 31, 45))
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            setBackgroundColor(Color.rgb(12, 18, 28))
         }
-        scroll.addView(root)
-        root.addView(label("VİDEO EDİTÖRÜ", 25f, Color.WHITE, true))
-        root.addView(label("Telefonunda düzenle • yapay zekâ gerekmez", 13f, Color.rgb(173, 191, 204), false))
-        root.addView(gap(10))
+
+        fun miniButton(title: String, onClick: () -> Unit): Button = Button(this).apply {
+            text = title
+            isAllCaps = false
+            textSize = 12f
+            setTextColor(Color.WHITE)
+            minHeight = dp(38)
+            setPadding(dp(8), 0, dp(8), 0)
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.rgb(35, 95, 117))
+                cornerRadius = dp(9).toFloat()
+            }
+            setOnClickListener { onClick() }
+        }
+
+        val topBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        topBar.addView(miniButton("‹ Geri") { finish() },
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(42)))
+        val heading = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10), 0, dp(4), 0)
+            addView(label("Düzenle", 18f, Color.WHITE, true))
+            addView(label("MathMotor Studio", 10f, Color.rgb(154, 171, 190), false))
+        }
+        topBar.addView(heading, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        topBar.addView(miniButton("Dışa aktar ›") { showEditorPanel("export") },
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(42)))
+        root.addView(topBar, matchWrap())
+        root.addView(gap(6))
 
         playerView = PlayerView(this).apply {
             setBackgroundColor(Color.BLACK)
             useController = true
         }
-        root.addView(playerView, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(230)).apply {
-            bottomMargin = dp(10)
-        })
+        root.addView(playerView, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(218)
+        ).apply { bottomMargin = dp(8) })
 
-        // Quick section navigation: jumps directly to the editor tools.
-        val quickNavScroll = android.widget.HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false
-        }
-        val quickNav = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(2), 0, dp(8))
-        }
-        quickNavScroll.addView(quickNav)
-        fun addQuickTab(title: String, target: View) {
-            val tab = Button(this).apply {
-                text = title
-                isAllCaps = false
-                textSize = 12f
-                setTextColor(Color.WHITE)
-                background = android.graphics.drawable.GradientDrawable().apply {
-                    setColor(Color.rgb(35, 95, 117))
-                    cornerRadius = dp(10).toFloat()
-                }
-                setPadding(dp(12), dp(4), dp(12), dp(4))
-                setOnClickListener { scroll.post { scroll.smoothScrollTo(0, target.top) } }
+        val timelineCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.rgb(23, 32, 45))
+                cornerRadius = dp(12).toFloat()
+                setStroke(dp(1), Color.rgb(48, 66, 85))
             }
-            quickNav.addView(tab, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, dp(44)
-            ).apply { rightMargin = dp(6) })
         }
-        root.addView(label("HIZLI ERİŞİM", 12f, Color.rgb(173, 191, 204), true))
-        root.addView(quickNavScroll, matchWrap())
-        root.addView(actionButton("ANA VİDEO SEÇ") { chooseVideo(false) })
-        root.addView(actionButton("KLİP EKLE / SONUNA BİRLEŞTİR") { chooseVideo(true) })
-        root.addView(label("ZAMAN ÇİZELGESİ • KLİPLER", 14f, Color.rgb(121, 202, 218), true))
-        clipList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        root.addView(clipList, matchWrap())
-        addQuickTab("Klip / Kes", clipList)
+        val timelineHeader = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        timelineHeader.addView(label("ZAMAN ÇİZELGESİ", 12f, Color.rgb(121, 202, 218), true),
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        timelineHeader.addView(miniButton("+ Klip") { chooseVideo(true) })
+        timelineHeader.addView(miniButton("Video seç") { chooseVideo(false) },
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(38)).apply {
+                leftMargin = dp(5)
+            })
+        timelineCard.addView(timelineHeader, matchWrap())
 
-        selectedClipLabel = label("Önce bir video seç.", 13f, Color.WHITE, true)
-        root.addView(selectedClipLabel)
-        root.addView(actionButton("SEÇİLİ KLİBİ ÖNİZLE") { previewSelectedClip() })
-        root.addView(actionButton("SEÇİLİ KLİBİ ZAMAN ÇİZELGESİNDEN KALDIR") { removeSelectedClip() })
-        root.addView(actionButton("SEÇİLİ KLİBİ ÖNE AL") { moveSelectedClip(-1) })
-        root.addView(actionButton("SEÇİLİ KLİBİ SONA KAYDIR") { moveSelectedClip(1) })
+        val clipScroll = android.widget.HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+        }
+        clipList = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(6), 0, dp(5))
+        }
+        clipScroll.addView(clipList)
+        timelineCard.addView(clipScroll, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(80)
+        ))
+        timelineTracks = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        timelineCard.addView(timelineTracks, matchWrap())
+        root.addView(timelineCard, matchWrap())
+        root.addView(gap(8))
 
-        startLabel = label("Başlangıç: 00:00", 13f, Color.rgb(225, 233, 237), true)
-        root.addView(startLabel)
+        val clipPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        clipPanel.addView(label("KLİP DÜZENLEME", 13f, Color.rgb(121, 202, 218), true))
+        selectedClipLabel = label("Önce bir video seç.", 12f, Color.WHITE, true)
+        clipPanel.addView(selectedClipLabel)
+        val clipActions1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        clipActions1.addView(miniButton("Önizle") { previewSelectedClip() },
+            LinearLayout.LayoutParams(0, dp(42), 1f))
+        clipActions1.addView(miniButton("Klibi kaldır") { removeSelectedClip() },
+            LinearLayout.LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(5) })
+        clipPanel.addView(clipActions1)
+        val clipActions2 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        clipActions2.addView(miniButton("← Öne al") { moveSelectedClip(-1) },
+            LinearLayout.LayoutParams(0, dp(42), 1f))
+        clipActions2.addView(miniButton("Sona al →") { moveSelectedClip(1) },
+            LinearLayout.LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(5) })
+        clipPanel.addView(clipActions2)
+        startLabel = label("Başlangıç: 00:00", 12f, Color.rgb(225, 233, 237), true)
+        clipPanel.addView(startLabel)
         startSeek = SeekBar(this)
-        root.addView(startSeek, matchWrap())
-        endLabel = label("Bitiş: 00:00", 13f, Color.rgb(225, 233, 237), true)
-        root.addView(endLabel)
+        clipPanel.addView(startSeek, matchWrap())
+        endLabel = label("Bitiş: 00:00", 12f, Color.rgb(225, 233, 237), true)
+        clipPanel.addView(endLabel)
         endSeek = SeekBar(this)
-        root.addView(endSeek, matchWrap())
+        clipPanel.addView(endSeek, matchWrap())
         installTrimListeners()
 
-        root.addView(gap(6))
-        root.addView(label("YAZI KATMANI", 14f, Color.rgb(121, 202, 218), true))
+        val textPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        textPanel.addView(label("METİN KATMANI", 13f, Color.rgb(121, 202, 218), true))
         textInput = EditText(this).apply {
-            hint = "Videoda görünecek yazıyı buraya yaz"
+            hint = "Videoda görünecek yazı"
             setTextColor(Color.WHITE)
-            setHintTextColor(Color.rgb(173, 191, 204))
+            setHintTextColor(Color.rgb(154, 171, 190))
             setSingleLine(false)
             minLines = 1
-            maxLines = 3
+            maxLines = 2
             setPadding(dp(12), dp(8), dp(12), dp(8))
-            setBackgroundColor(Color.rgb(27, 48, 64))
+            setBackgroundColor(Color.rgb(27, 39, 54))
         }
-        root.addView(textInput, matchWrap())
-        addQuickTab("Metin", textInput)
-        root.addView(label("Yazının videoda görüneceği aralık", 12f, Color.rgb(173, 191, 204), false))
-        textStartLabel = label("Yazı başlangıcı: 00:00", 12f, Color.rgb(225, 233, 237), true)
-        root.addView(textStartLabel)
+        textPanel.addView(textInput, matchWrap())
+        textPanel.addView(label("Yazının görünme aralığı", 11f, Color.rgb(154, 171, 190), false))
+        textStartLabel = label("Yazı başlangıcı: 00:00", 12f, Color.WHITE, true)
+        textPanel.addView(textStartLabel)
         textStartSeek = SeekBar(this).apply { max = 0; isEnabled = false }
-        root.addView(textStartSeek, matchWrap())
-        textEndLabel = label("Yazı bitişi: 00:00", 12f, Color.rgb(225, 233, 237), true)
-        root.addView(textEndLabel)
+        textPanel.addView(textStartSeek, matchWrap())
+        textEndLabel = label("Yazı bitişi: 00:00", 12f, Color.WHITE, true)
+        textPanel.addView(textEndLabel)
         textEndSeek = SeekBar(this).apply { max = 0; isEnabled = false }
-        root.addView(textEndSeek, matchWrap())
+        textPanel.addView(textEndSeek, matchWrap())
         installTextTimeListeners()
-        root.addView(label("Yazının konumu", 12f, Color.rgb(173, 191, 204), false))
+        textPanel.addView(label("Yazı konumu", 11f, Color.rgb(154, 171, 190), false))
         textPositionGroup = android.widget.RadioGroup(this).apply {
             orientation = android.widget.RadioGroup.HORIZONTAL
             addView(android.widget.RadioButton(this@VideoEditorActivity).apply { id = 1; text = "Üst"; setTextColor(Color.WHITE) })
@@ -238,37 +283,57 @@ class VideoEditorActivity : Activity() {
                     2 -> TextPosition.CENTER
                     else -> TextPosition.BOTTOM
                 }
+                refreshTimelineTracks()
             }
         }
-        root.addView(textPositionGroup, matchWrap())
+        textPanel.addView(textPositionGroup, matchWrap())
+        textInput.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { refreshTimelineTracks() }
+            override fun afterTextChanged(s: android.text.Editable?) {}
+        })
 
-        root.addView(gap(6))
-        root.addView(label("MÜZİK KATMANI", 14f, Color.rgb(121, 202, 218), true))
-        musicLabel = label("Müzik seçilmedi.", 12f, Color.rgb(225, 233, 237), false)
-        root.addView(musicLabel)
-        addQuickTab("Ses", musicLabel)
-        root.addView(actionButton("TELEFONDAN MÜZİK EKLE • VİDEO BOYUNCA") { chooseAudio(true) })
-        root.addView(actionButton("MÜZİĞİ KALDIR") {
+        val audioPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        audioPanel.addView(label("SES KATMANLARI", 13f, Color.rgb(121, 202, 218), true))
+        musicLabel = label("Müzik seçilmedi.", 12f, Color.WHITE, false)
+        audioPanel.addView(musicLabel)
+        val musicActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        musicActions.addView(miniButton("Müzik ekle") { chooseAudio(true) },
+            LinearLayout.LayoutParams(0, dp(42), 1f))
+        musicActions.addView(miniButton("Müziği kaldır") {
             musicUri = null
             musicTitle = null
             musicLabel.text = "Müzik seçilmedi."
-        })
-        musicVolumeLabel = label("Müzik ses seviyesi: 45%", 12f, Color.rgb(225, 233, 237), true)
-        root.addView(musicVolumeLabel)
+            refreshTimelineTracks()
+        }, LinearLayout.LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(5) })
+        audioPanel.addView(musicActions)
+        musicVolumeLabel = label("Müzik sesi: 45%", 12f, Color.WHITE, true)
+        audioPanel.addView(musicVolumeLabel)
         musicVolumeSeek = SeekBar(this).apply { max = 100; progress = musicVolume }
         musicVolumeSeek.setOnSeekBarChangeListener(volumeListener { value ->
             musicVolume = value
-            musicVolumeLabel.text = "Müzik ses seviyesi: " + value + "%"
+            musicVolumeLabel.text = "Müzik sesi: " + value + "%"
         })
-        root.addView(musicVolumeSeek, matchWrap())
+        audioPanel.addView(musicVolumeSeek, matchWrap())
 
-        root.addView(gap(4))
-        root.addView(label("SES / SES EFEKTİ KATMANI", 14f, Color.rgb(121, 202, 218), true))
-        soundLabel = label("Ses veya efekt seçilmedi.", 12f, Color.rgb(225, 233, 237), false)
-        root.addView(soundLabel)
-        root.addView(actionButton("TELEFONDAN SES / EFEKT EKLE") { chooseAudio(false) })
-        soundStartLabel = label("Ses başlangıcı: 00:00", 12f, Color.rgb(225, 233, 237), true)
-        root.addView(soundStartLabel)
+        audioPanel.addView(gap(4))
+        soundLabel = label("Ses efekti seçilmedi.", 12f, Color.WHITE, false)
+        audioPanel.addView(soundLabel)
+        val soundActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        soundActions.addView(miniButton("Efekt ekle") { chooseAudio(false) },
+            LinearLayout.LayoutParams(0, dp(42), 1f))
+        soundActions.addView(miniButton("Efekti kaldır") {
+            soundUri = null
+            soundTitle = null
+            soundDurationMs = 0L
+            soundStartMs = 0L
+            soundLabel.text = "Ses efekti seçilmedi."
+            updateSoundControls()
+            refreshTimelineTracks()
+        }, LinearLayout.LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(5) })
+        audioPanel.addView(soundActions)
+        soundStartLabel = label("Efekt başlangıcı: 00:00", 12f, Color.WHITE, true)
+        audioPanel.addView(soundStartLabel)
         soundStartSeek = SeekBar(this).apply { max = 0; isEnabled = false }
         soundStartSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
@@ -276,64 +341,164 @@ class VideoEditorActivity : Activity() {
                 val total = totalOutputDurationMs()
                 soundStartMs = (progress * 1000L).coerceAtMost((total - 1L).coerceAtLeast(0L))
                 updateSoundControls()
+                refreshTimelineTracks()
             }
             override fun onStartTrackingTouch(seekBar: SeekBar?) {}
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         })
-        root.addView(soundStartSeek, matchWrap())
-        soundVolumeLabel = label("Ses/efekt seviyesi: 100%", 12f, Color.rgb(225, 233, 237), true)
-        root.addView(soundVolumeLabel)
+        audioPanel.addView(soundStartSeek, matchWrap())
+        soundVolumeLabel = label("Efekt sesi: 100%", 12f, Color.WHITE, true)
+        audioPanel.addView(soundVolumeLabel)
         soundVolumeSeek = SeekBar(this).apply { max = 100; progress = soundVolume }
         soundVolumeSeek.setOnSeekBarChangeListener(volumeListener { value ->
             soundVolume = value
-            soundVolumeLabel.text = "Ses/efekt seviyesi: " + value + "%"
+            soundVolumeLabel.text = "Efekt sesi: " + value + "%"
         })
-        root.addView(soundVolumeSeek, matchWrap())
-        root.addView(actionButton("SES / EFEKT KATMANINI KALDIR") {
-            soundUri = null
-            soundTitle = null
-            soundDurationMs = 0L
-            soundStartMs = 0L
-            soundLabel.text = "Ses veya efekt seçilmedi."
-            updateSoundControls()
-        })
+        audioPanel.addView(soundVolumeSeek, matchWrap())
         keepSourceAudio = CheckBox(this).apply {
             text = "Videonun kendi sesini koru"
             isChecked = true
             setTextColor(Color.WHITE)
         }
-        root.addView(keepSourceAudio)
-        sourceVolumeLabel = label("Orijinal video sesi: 100%", 12f, Color.rgb(225, 233, 237), true)
-        root.addView(sourceVolumeLabel)
+        audioPanel.addView(keepSourceAudio)
+        sourceVolumeLabel = label("Orijinal video sesi: 100%", 12f, Color.WHITE, true)
+        audioPanel.addView(sourceVolumeLabel)
         sourceVolumeSeek = SeekBar(this).apply { max = 100; progress = sourceAudioVolume }
         sourceVolumeSeek.setOnSeekBarChangeListener(volumeListener { value ->
             sourceAudioVolume = value
             sourceVolumeLabel.text = "Orijinal video sesi: " + value + "%"
         })
-        root.addView(sourceVolumeSeek, matchWrap())
+        audioPanel.addView(sourceVolumeSeek, matchWrap())
 
-        root.addView(label("DIŞA AKTARMA DOSYA ADI", 14f, Color.rgb(121, 202, 218), true))
+        val exportPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        exportPanel.addView(label("PROJE / DIŞA AKTARMA", 13f, Color.rgb(121, 202, 218), true))
+        exportPanel.addView(label("Dosya adı", 11f, Color.rgb(154, 171, 190), false))
         exportNameInput = EditText(this).apply {
             setText("MathMotor_Edit")
             hint = "Örn. Tatil_videosu"
             setTextColor(Color.WHITE)
-            setHintTextColor(Color.rgb(173, 191, 204))
+            setHintTextColor(Color.rgb(154, 171, 190))
             setSingleLine(true)
             setPadding(dp(12), dp(8), dp(12), dp(8))
-            setBackgroundColor(Color.rgb(27, 48, 64))
+            setBackgroundColor(Color.rgb(27, 39, 54))
         }
-        root.addView(exportNameInput, matchWrap())
-        addQuickTab("Kaydet / MP4", exportNameInput)
-        root.addView(actionButton("PROJEYİ FARKLI KAYDET (.JSON)") { requestSaveProject() })
-        root.addView(actionButton("KAYITLI PROJEYİ AÇ") { requestOpenProject() })
-        exportButton = actionButton("MP4'Ü BU İSİMLE DIŞA AKTAR") { exportEditedVideo() }
-        root.addView(exportButton)
-        status = label("Hazır. Projeni kaydedebilir, sonra açıp düzenlemeye devam edebilirsin.", 13f, Color.rgb(225, 233, 237), false)
-        status.setPadding(dp(12), dp(12), dp(12), dp(12))
-        status.setBackgroundColor(Color.rgb(27, 48, 64))
-        root.addView(status, matchWrap().apply { topMargin = dp(8) })
-        root.addView(actionButton("ANA EKRANA DÖN") { finish() })
-        setContentView(scroll)
+        exportPanel.addView(exportNameInput, matchWrap())
+        exportPanel.addView(actionButton("Projeyi farklı kaydet (.JSON)") { requestSaveProject() })
+        exportPanel.addView(actionButton("Kayıtlı projeyi aç") { requestOpenProject() })
+        exportButton = actionButton("MP4 DIŞA AKTAR") { exportEditedVideo() }
+        exportPanel.addView(exportButton)
+
+        editorPanels["clip"] = clipPanel
+        editorPanels["text"] = textPanel
+        editorPanels["audio"] = audioPanel
+        editorPanels["export"] = exportPanel
+
+        val panelScroll = ScrollView(this).apply {
+            isFillViewport = true
+            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+        }
+        val panelHolder = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(4), dp(2), dp(4), dp(4))
+        }
+        editorPanels.values.forEachIndexed { index, panel ->
+            panel.visibility = if (index == 0) View.VISIBLE else View.GONE
+            panelHolder.addView(panel, matchWrap())
+        }
+        panelScroll.addView(panelHolder)
+        root.addView(panelScroll, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
+
+        status = TextView(this).apply {
+            text = "Hazır. Zaman çizelgesine video ekleyebilirsin."
+            setTextColor(Color.rgb(205, 218, 231))
+            textSize = 11f
+            maxLines = 2
+            setPadding(dp(8), dp(5), dp(8), dp(5))
+            setBackgroundColor(Color.rgb(23, 32, 45))
+        }
+        root.addView(status, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = dp(4) })
+
+        val dock = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(0, dp(5), 0, 0)
+        }
+        listOf(
+            Triple("clip", "Klip", "✂"),
+            Triple("text", "Metin", "T"),
+            Triple("audio", "Ses", "♫"),
+            Triple("export", "Dışa aktar", "⇧")
+        ).forEach { (key, title, symbol) ->
+            val tab = miniButton("$symbol  $title") { showEditorPanel(key) }
+            editorTabButtons[key] = tab
+            dock.addView(tab, LinearLayout.LayoutParams(0, dp(44), 1f).apply {
+                if (key != "clip") leftMargin = dp(4)
+            })
+        }
+        root.addView(dock, matchWrap())
+
+        setContentView(root)
+        showEditorPanel("clip")
+        refreshTimelineTracks()
+    }
+
+    private fun showEditorPanel(name: String) {
+        editorPanels.forEach { (key, panel) ->
+            panel.visibility = if (key == name) View.VISIBLE else View.GONE
+        }
+        editorTabButtons.forEach { (key, button) ->
+            button.background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(if (key == name) Color.rgb(0, 145, 125) else Color.rgb(35, 95, 117))
+                cornerRadius = dp(9).toFloat()
+            }
+        }
+        if (name == "export") status.text = "Projeyi kaydedebilir veya MP4 olarak dışa aktarabilirsin."
+    }
+
+    private fun refreshTimelineTracks() {
+        if (!::timelineTracks.isInitialized) return
+        timelineTracks.removeAllViews()
+        fun addLane(tag: String, detail: String, fill: Int) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(4), dp(2), dp(4), dp(2))
+            }
+            row.addView(TextView(this).apply {
+                text = tag
+                textSize = 9f
+                setTextColor(Color.rgb(166, 184, 201))
+                typeface = Typeface.DEFAULT_BOLD
+            }, LinearLayout.LayoutParams(dp(58), ViewGroup.LayoutParams.WRAP_CONTENT))
+            val pill = TextView(this).apply {
+                text = detail
+                textSize = 10f
+                setTextColor(Color.WHITE)
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setPadding(dp(8), dp(3), dp(8), dp(3))
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(fill)
+                    cornerRadius = dp(5).toFloat()
+                }
+            }
+            row.addView(pill, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            timelineTracks.addView(row, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(25)
+            ))
+        }
+        val videoDetail = if (clips.isEmpty()) "＋ Video ekle" else
+            "${clips.size} klip  •  ${formatMs(totalOutputDurationMs())}"
+        addLane("VIDEO", videoDetail, Color.rgb(38, 105, 123))
+        val text = if (!::textInput.isInitialized || textInput.text.isNullOrBlank()) "Metin eklenmedi" else
+            "T: ${textInput.text.toString().trim()}"
+        addLane("METİN", text, Color.rgb(110, 74, 154))
+        addLane("MÜZİK", musicTitle ?: "Müzik ekle", Color.rgb(46, 125, 85))
+        addLane("EFEKT", soundTitle ?: "Ses efekti ekle", Color.rgb(166, 102, 40))
     }
 
     private fun volumeListener(onValue: (Int) -> Unit): SeekBar.OnSeekBarChangeListener =
@@ -707,20 +872,67 @@ class VideoEditorActivity : Activity() {
     private fun refreshClipList() {
         clipList.removeAllViews()
         if (clips.isEmpty()) {
-            clipList.addView(label("Henüz klip eklenmedi.", 12f, Color.rgb(173, 191, 204), false))
+            clipList.addView(TextView(this).apply {
+                text = "＋ Video ekle"
+                textSize = 12f
+                setTextColor(Color.rgb(173, 191, 204))
+                gravity = Gravity.CENTER
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(Color.rgb(27, 39, 54))
+                    cornerRadius = dp(8).toFloat()
+                    setStroke(dp(1), Color.rgb(48, 66, 85))
+                }
+                setPadding(dp(16), 0, dp(16), 0)
+            }, LinearLayout.LayoutParams(dp(135), dp(64)))
         } else {
             clips.forEachIndexed { index, clip ->
-                val prefix = if (index == selectedClipIndex) "▶ " else ""
-                clipList.addView(actionButton("${prefix}${index + 1}. ${clip.title}  •  ${formatMs(clip.endMs - clip.startMs)}") {
-                    selectedClipIndex = index
-                    refreshClipList()
-                    loadTrimControls()
-                    player?.setMediaItem(clippedMediaItem(clip))
-                    player?.prepare()
-                    player?.playWhenReady = true
+                val selected = index == selectedClipIndex
+                val tile = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(9), dp(5), dp(7), dp(5))
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        setColor(if (selected) Color.rgb(24, 93, 104) else Color.rgb(27, 39, 54))
+                        cornerRadius = dp(8).toFloat()
+                        setStroke(dp(if (selected) 2 else 1),
+                            if (selected) Color.rgb(91, 224, 210) else Color.rgb(48, 66, 85))
+                    }
+                    isClickable = true
+                    isFocusable = true
+                    setOnClickListener {
+                        selectedClipIndex = index
+                        refreshClipList()
+                        loadTrimControls()
+                        player?.setMediaItem(clippedMediaItem(clip))
+                        player?.prepare()
+                        player?.playWhenReady = true
+                        status.text = "Klip ${index + 1} seçildi: ${clip.title}"
+                    }
+                }
+                tile.addView(TextView(this).apply {
+                    text = "${if (selected) "▶ " else ""}KLİP ${index + 1}"
+                    textSize = 10f
+                    setTextColor(if (selected) Color.rgb(117, 240, 221) else Color.rgb(154, 171, 190))
+                    typeface = Typeface.DEFAULT_BOLD
+                })
+                tile.addView(TextView(this).apply {
+                    text = clip.title
+                    textSize = 11f
+                    setTextColor(Color.WHITE)
+                    maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                })
+                tile.addView(TextView(this).apply {
+                    text = formatMs(clip.endMs - clip.startMs)
+                    textSize = 10f
+                    setTextColor(Color.rgb(205, 218, 231))
+                })
+                clipList.addView(tile, LinearLayout.LayoutParams(dp(145), dp(68)).apply {
+                    rightMargin = dp(6)
                 })
             }
         }
+        refreshTimelineTracks()
     }
 
     private fun removeSelectedClip() {
