@@ -419,7 +419,7 @@ class VideoEditorActivity : Activity() {
             FrameLayout.LayoutParams(dp(28), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.TOP or Gravity.START)
         )
         timelineCard.addView(timelineTracksFrame, matchWrap())
-        timelineCard.addView(label("KLİP KENARLARI: Turkuaz tutamaçları sağa-sola sürükleyerek kes. Klipler aralıksız birleşir.", 10f, Color.rgb(180, 202, 216), false).apply {
+        timelineCard.addView(label("İPUCU: Klip kopyalamak, silmek veya sıralamak için klibe uzun bas. Turkuaz kenarları sürükleyerek kes.", 10f, Color.rgb(180, 202, 216), false).apply {
             setPadding(dp(3), dp(3), dp(3), dp(1))
         }, matchWrap())
 
@@ -453,8 +453,15 @@ class VideoEditorActivity : Activity() {
         val clipActions1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         clipActions1.addView(miniButton("Önizle") { previewSelectedClip() },
             LinearLayout.LayoutParams(0, dp(46), 1f))
+        clipActions1.addView(miniButton("Kopyala") {
+            if (selectedClipIndex in clips.indices) {
+                duplicateClipAt(selectedClipIndex)
+            } else {
+                status.text = "Kopyalamak için önce zaman çizelgesinden bir klip seç."
+            }
+        }, LinearLayout.LayoutParams(0, dp(46), 1f).apply { leftMargin = dp(4) })
         clipActions1.addView(miniButton("Klibi kaldır") { removeSelectedClip() },
-            LinearLayout.LayoutParams(0, dp(46), 1f).apply { leftMargin = dp(5) })
+            LinearLayout.LayoutParams(0, dp(46), 1f).apply { leftMargin = dp(4) })
         clipPanel.addView(clipActions1)
         val clipActions2 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         clipActions2.addView(miniButton("Böl ✂") { splitSelectedClipAtPlayhead() },
