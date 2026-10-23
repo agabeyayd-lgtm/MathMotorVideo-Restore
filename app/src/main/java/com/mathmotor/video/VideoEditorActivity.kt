@@ -1467,16 +1467,16 @@ class VideoEditorActivity : Activity() {
                 }.getOrNull()
             }
             runOnUiThread {
+                if (ready.isEmpty()) {
+                    // Keep the existing timeline untouched if every selected file failed to load.
+                    status.text = "Videolar okunamadı. Mevcut kliplerin korunması için zaman çizelgesi değiştirilmedi. Başka bir MP4/video dosyası seç."
+                    return@runOnUiThread
+                }
                 if (replaceExisting) {
                     clips.clear()
                     selectedClipIndex = -1
                 }
                 clips.addAll(ready)
-                if (ready.isEmpty()) {
-                    status.text = "Videolar okunamadı. Başka bir MP4/video dosyası seç."
-                    refreshClipList()
-                    return@runOnUiThread
-                }
                 selectedClipIndex = clips.lastIndex
                 timelinePreviewLoaded = false
                 refreshClipList()
@@ -1868,11 +1868,13 @@ class VideoEditorActivity : Activity() {
                             view.translationX = 0f
                             if (kotlin.math.abs(deltaPx) >= dp(2)) {
                                 if (isStart) {
-                                    clip.startMs = (initialStartMs + deltaMs)
-                                        .coerceIn(0L, (initialEndMs - 500L).coerceAtLeast(0L))
+                                    clip.startMs = TimelineTrimMath.clampStart(
+                                        initialStartMs + deltaMs, initialEndMs, clip.durationMs
+                                    )
                                 } else {
-                                    clip.endMs = (initialEndMs + deltaMs)
-                                        .coerceIn((initialStartMs + 500L).coerceAtMost(clip.durationMs), clip.durationMs)
+                                    clip.endMs = TimelineTrimMath.clampEnd(
+                                        initialEndMs + deltaMs, initialStartMs, clip.durationMs
+                                    )
                                 }
                                 selectedClipIndex = index
                                 selectTimelineClip(index)
@@ -1947,10 +1949,22 @@ class VideoEditorActivity : Activity() {
                 val retriever = MediaMetadataRetriever()
                 try {
                     retriever.setDataSource(this, uri)
-                    val original = retriever.getFrameAtTime(
-                        timeMs.coerceAtLeast(0L) * 1000L,
-                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC
-                    )
+                    val frameTimeUs = timeMs.coerceAtLeast(0L) * 1000L
+                    // Decode thumbnails at timeline resolution on Android 8.1+ to avoid
+                    // allocating a full 4K frame for each tiny filmstrip cell.
+                    val original = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                        retriever.getScaledFrameAtTime(
+                            frameTimeUs,
+                            MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                            96,
+                            54
+                        )
+                    } else {
+                        retriever.getFrameAtTime(
+                            frameTimeUs,
+                            MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+                        )
+                    }
                     if (original != null) {
                         val scale = maxOf(96f / original.width, 54f / original.height)
                         val scaledWidth = (original.width * scale).toInt().coerceAtLeast(96)
