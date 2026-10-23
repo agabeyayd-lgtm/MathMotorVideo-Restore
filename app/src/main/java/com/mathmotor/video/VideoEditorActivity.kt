@@ -280,8 +280,8 @@ class VideoEditorActivity : Activity() {
         }
         timelineHeader.addView(label("ZAMAN ÇİZELGESİ", 12f, Color.rgb(121, 202, 218), true),
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        timelineHeader.addView(miniButton("+ Klip") { chooseVideo(true) })
-        timelineHeader.addView(miniButton("Değiştir") { chooseVideo(false) },
+        timelineHeader.addView(miniButton("＋ Ekle") { chooseVideo(true) })
+        timelineHeader.addView(miniButton("↻ Değiştir") { chooseVideo(false) },
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(38)).apply {
                 leftMargin = dp(5)
             })
@@ -345,6 +345,9 @@ class VideoEditorActivity : Activity() {
             FrameLayout.LayoutParams(dp(28), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.TOP or Gravity.START)
         )
         timelineCard.addView(timelineTracksFrame, matchWrap())
+        timelineCard.addView(label("KLİP KENARLARI: Turkuaz tutamaçları sağa-sola sürükleyerek kes. Klipler aralıksız birleşir.", 10f, Color.rgb(180, 202, 216), false).apply {
+            setPadding(dp(3), dp(3), dp(3), dp(1))
+        }, matchWrap())
 
         val playheadRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -942,7 +945,7 @@ class VideoEditorActivity : Activity() {
                 val height = dp(if (keyboardLayoutActive) 18 else 24)
                 val block = buildVideoClipFilmstrip(clip, index, width, height, index == selectedClipIndex)
                 videoTrack.addView(block, LinearLayout.LayoutParams(width, height).apply {
-                    rightMargin = dp(3)
+                    rightMargin = dp(7)
                 })
             }
         }
@@ -1994,44 +1997,55 @@ class VideoEditorActivity : Activity() {
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
         ))
 
-        // Visible, touch-friendly trim handles at both clip edges.
+        // Larger, high-contrast touch targets make the trim edges easy to find and drag.
         fun addTrimHandle(isStart: Boolean) {
-            val handleWidth = dp(18)
+            val handleWidth = dp(30)
             val handle = FrameLayout(this).apply {
                 background = android.graphics.drawable.GradientDrawable().apply {
-                    setColor(Color.argb(235, 15, 174, 158))
-                    cornerRadius = dp(3).toFloat()
-                    setStroke(dp(1), Color.WHITE)
+                    setColor(Color.rgb(0, 205, 177))
+                    cornerRadius = dp(4).toFloat()
+                    setStroke(dp(2), Color.WHITE)
                 }
-                elevation = dp(5).toFloat()
-                contentDescription = if (isStart) "Klip başlangıcını sürükleyerek ayarla" else "Klip bitişini sürükleyerek ayarla"
-                val grip = View(this@VideoEditorActivity).apply {
-                    setBackgroundColor(Color.WHITE)
+                elevation = dp(8).toFloat()
+                contentDescription = if (isStart) "Sol tutamaç: klibin başlangıcını sürükleyerek kısalt veya uzat" else "Sağ tutamaç: klibin bitişini sürükleyerek kısalt veya uzat"
+                val grip = TextView(this@VideoEditorActivity).apply {
+                    text = if (isStart) "❮" else "❯"
+                    textSize = 13f
+                    typeface = Typeface.DEFAULT_BOLD
+                    setTextColor(Color.WHITE)
+                    gravity = Gravity.CENTER
+                    isClickable = false
                 }
-                addView(grip, FrameLayout.LayoutParams(dp(2), dp(12), Gravity.CENTER))
+                addView(grip, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
                 var downRawX = 0f
                 var initialStartMs = clip.startMs
                 var initialEndMs = clip.endMs
+                var moved = false
                 setOnTouchListener { view, event ->
                     when (event.actionMasked) {
                         android.view.MotionEvent.ACTION_DOWN -> {
                             downRawX = event.rawX
                             initialStartMs = clip.startMs
                             initialEndMs = clip.endMs
-                            view.translationX = 0f
+                            moved = false
                             player?.playWhenReady = false
+                            view.parent?.requestDisallowInterceptTouchEvent(true)
                             true
                         }
                         android.view.MotionEvent.ACTION_MOVE -> {
                             val delta = event.rawX - downRawX
-                            view.translationX = delta.coerceIn(-width.toFloat(), width.toFloat())
+                            if (kotlin.math.abs(delta) > dp(2)) moved = true
+                            val travel = (width - handleWidth).coerceAtLeast(0).toFloat()
+                            view.translationX = if (isStart) delta.coerceIn(0f, travel) else delta.coerceIn(-travel, 0f)
                             true
                         }
                         android.view.MotionEvent.ACTION_UP -> {
                             val deltaPx = event.rawX - downRawX
-                            val deltaMs = (deltaPx / timelinePixelsPerSecond() * 1000f).toLong()
+                            val usableWidth = (width - dp(1)).coerceAtLeast(1).toFloat()
+                            val deltaMs = (deltaPx / usableWidth * (initialEndMs - initialStartMs).toFloat()).toLong()
                             view.translationX = 0f
-                            if (kotlin.math.abs(deltaPx) >= dp(2)) {
+                            view.parent?.requestDisallowInterceptTouchEvent(false)
+                            if (moved) {
                                 if (isStart) {
                                     clip.startMs = TimelineTrimMath.clampStart(
                                         initialStartMs + deltaMs, initialEndMs, clip.durationMs
@@ -2042,11 +2056,13 @@ class VideoEditorActivity : Activity() {
                                     )
                                 }
                                 selectedClipIndex = index
+                                refreshClipList()
+                                loadTrimControls()
                                 selectTimelineClip(index)
                                 status.text = if (isStart) {
-                                    "Klip başlangıcı: ${formatTimelineMs(clip.startMs)}"
+                                    "✓ Başlangıç ayarlandı: ${formatTimelineMs(clip.startMs)}"
                                 } else {
-                                    "Klip bitişi: ${formatTimelineMs(clip.endMs)}"
+                                    "✓ Bitiş ayarlandı: ${formatTimelineMs(clip.endMs)}"
                                 }
                             }
                             view.performClick()
@@ -2054,6 +2070,7 @@ class VideoEditorActivity : Activity() {
                         }
                         android.view.MotionEvent.ACTION_CANCEL -> {
                             view.translationX = 0f
+                            view.parent?.requestDisallowInterceptTouchEvent(false)
                             true
                         }
                         else -> true
