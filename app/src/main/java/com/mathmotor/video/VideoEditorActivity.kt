@@ -230,7 +230,7 @@ class VideoEditorActivity : Activity() {
             }
         )
         root.addView(previewFrame, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(205)
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(230)
         ).apply { bottomMargin = dp(6) })
 
         val timelineCard = LinearLayout(this).apply {
@@ -760,6 +760,7 @@ class VideoEditorActivity : Activity() {
     private fun updateTimelinePlayheadLabel() {
         if (!::timelinePlayheadLabel.isInitialized) return
         timelinePlayheadLabel.text = "${formatTimelineMs(timelinePlayheadMs)} / ${formatTimelineMs(totalOutputDurationMs())}"
+        updateTimelinePlayheadLine()
     }
 
     private fun ensureTimelinePreviewLoaded() {
