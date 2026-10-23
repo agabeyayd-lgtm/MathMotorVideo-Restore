@@ -1756,6 +1756,48 @@ class VideoEditorActivity : Activity() {
         refreshTimelineTracks()
     }
 
+    private fun duplicateClipAt(index: Int) {
+        val source = clips.getOrNull(index) ?: return
+        clips.add(index + 1, source.copy(title = "${source.title} • Kopya"))
+        selectedClipIndex = index + 1
+        timelinePreviewLoaded = false
+        previewSingleClip = true
+        timelinePlayheadMs = clips.take(selectedClipIndex).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
+        refreshClipList()
+        loadTrimControls()
+        updateTimelinePlayheadLabel()
+        player?.setMediaItem(clippedMediaItem(clips[selectedClipIndex]))
+        player?.prepare()
+        player?.playWhenReady = false
+        status.text = "Klip kopyalandı ve hemen arkasına eklendi."
+    }
+
+    private fun removeClipAt(index: Int) {
+        if (index !in clips.indices) return
+        clips.removeAt(index)
+        timelinePreviewLoaded = false
+        selectedClipIndex = when {
+            clips.isEmpty() -> -1
+            index < clips.size -> index
+            else -> clips.lastIndex
+        }
+        refreshClipList()
+        loadTrimControls()
+        val selected = selectedClip()
+        if (selected == null) {
+            previewSingleClip = false
+            player?.clearMediaItems()
+        } else {
+            previewSingleClip = true
+            player?.setMediaItem(clippedMediaItem(selected))
+            player?.prepare()
+            player?.playWhenReady = false
+        }
+        timelinePlayheadMs = clips.take(selectedClipIndex.coerceAtLeast(0)).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
+        updateTimelinePlayheadLabel()
+        status.text = if (clips.isEmpty()) "Zaman çizelgesi boş." else "Klip silindi."
+    }
+
     private fun removeSelectedClip() {
         if (selectedClipIndex !in clips.indices) {
             status.text = "Önce kaldırılacak klibi seç."
@@ -1953,9 +1995,27 @@ class VideoEditorActivity : Activity() {
                 }
             }
             setOnLongClickListener {
-                val dragData = android.content.ClipData.newPlainText("video_clip_index", index.toString())
-                startDragAndDrop(dragData, View.DragShadowBuilder(this), index, 0)
-                status.text = "Klibi basılı tutup sürükleyerek sırala."
+                selectedClipIndex = index
+                val menu = android.widget.PopupMenu(this@VideoEditorActivity, this)
+                menu.menu.add(0, 1, 0, "Kopyala")
+                menu.menu.add(0, 2, 1, "Sil")
+                menu.menu.add(0, 3, 2, "Böl")
+                menu.menu.add(0, 4, 3, "Bir önceye al")
+                menu.menu.add(0, 5, 4, "Bir sonraya al")
+                menu.setOnMenuItemClickListener { item ->
+                    when (item.itemId) {
+                        1 -> duplicateClipAt(index)
+                        2 -> removeClipAt(index)
+                        3 -> {
+                            selectTimelineClip(index)
+                            splitSelectedClipAtPlayhead()
+                        }
+                        4 -> { selectTimelineClip(index); moveSelectedClip(-1) }
+                        5 -> { selectTimelineClip(index); moveSelectedClip(1) }
+                    }
+                    true
+                }
+                menu.show()
                 true
             }
             setOnDragListener { _, event ->
