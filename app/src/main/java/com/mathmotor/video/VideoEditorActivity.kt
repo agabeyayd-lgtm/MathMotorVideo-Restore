@@ -22,6 +22,7 @@ import android.text.style.StyleSpan
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowInsets
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.CheckBox
@@ -571,44 +572,21 @@ class VideoEditorActivity : Activity() {
         topBar: LinearLayout,
         rulerAwareTimelineRefresh: () -> Unit
     ) {
-        // Record the unobstructed viewport. With ADJUST_RESIZE, the root shrinks
-        // when the IME opens, letting the editor reclaim the newly lost space.
-        root.addOnLayoutChangeListener { view, _, _, _, _, _, _, _, _ ->
-            if (applyingResponsiveLayout) return@addOnLayoutChangeListener
-            val viewportHeight = view.height
-            if (viewportHeight <= 0) return@addOnLayoutChangeListener
-
-            if (!keyboardLayoutActive && viewportHeight > maxEditorViewportHeightPx) {
-                maxEditorViewportHeightPx = viewportHeight
-            }
-            if (maxEditorViewportHeightPx == 0) maxEditorViewportHeightPx = viewportHeight
-
-            val imeVisible = maxEditorViewportHeightPx - viewportHeight > dp(150)
-            if (imeVisible == keyboardLayoutActive) {
-                // Even without the keyboard, match preview height to the device's
-                // current usable height instead of imposing one rigid dimension.
-                val normalHeight = (viewportHeight * 0.26f).toInt().coerceIn(dp(145), dp(220))
-                val params = previewFrame.layoutParams as? LinearLayout.LayoutParams
-                if (!keyboardLayoutActive && params != null && params.height != normalHeight) {
-                    applyingResponsiveLayout = true
-                    params.height = normalHeight
-                    previewFrame.layoutParams = params
-                    applyingResponsiveLayout = false
-                }
-                return@addOnLayoutChangeListener
-            }
-
+        fun applyKeyboardMode(imeVisible: Boolean, viewportHeight: Int) {
+            if (imeVisible == keyboardLayoutActive) return
+            val availableHeight = viewportHeight.takeIf { it > 0 } ?: maxEditorViewportHeightPx
             keyboardLayoutActive = imeVisible
             applyingResponsiveLayout = true
             try {
                 val previewParams = previewFrame.layoutParams as LinearLayout.LayoutParams
                 previewParams.height = if (imeVisible) {
-                    (viewportHeight * 0.21f).toInt().coerceIn(dp(82), dp(112))
+                    (availableHeight * 0.21f).toInt().coerceIn(dp(82), dp(112))
                 } else {
-                    (viewportHeight * 0.26f).toInt().coerceIn(dp(145), dp(220))
+                    (availableHeight * 0.26f).toInt().coerceIn(dp(145), dp(220))
                 }
                 previewFrame.layoutParams = previewParams
 
+                // Give text/audio tools the space the keyboard takes away.
                 clipScroll.visibility = if (imeVisible) View.GONE else View.VISIBLE
                 bottomDock.visibility = if (imeVisible) View.GONE else View.VISIBLE
                 statusView.visibility = if (imeVisible) View.GONE else View.VISIBLE
@@ -637,6 +615,48 @@ class VideoEditorActivity : Activity() {
             } finally {
                 applyingResponsiveLayout = false
             }
+        }
+
+        // Legacy Android versions usually resize the app window when the
+        // keyboard opens. Android 11+ also provides a reliable IME inset.
+        root.addOnLayoutChangeListener { view, _, _, _, _, _, _, _, _ ->
+            if (applyingResponsiveLayout) return@addOnLayoutChangeListener
+            val viewportHeight = view.height
+            if (viewportHeight <= 0) return@addOnLayoutChangeListener
+            if (!keyboardLayoutActive && viewportHeight > maxEditorViewportHeightPx) {
+                maxEditorViewportHeightPx = viewportHeight
+            }
+            if (maxEditorViewportHeightPx == 0) maxEditorViewportHeightPx = viewportHeight
+
+            val rootInsets = view.rootWindowInsets
+            val imeVisible = if (Build.VERSION.SDK_INT >= 30 && rootInsets != null) {
+                rootInsets.isVisible(WindowInsets.Type.ime())
+            } else {
+                maxEditorViewportHeightPx - viewportHeight > dp(150)
+            }
+            if (imeVisible != keyboardLayoutActive) {
+                applyKeyboardMode(imeVisible, viewportHeight)
+            } else if (!imeVisible) {
+                val normalHeight = (viewportHeight * 0.26f).toInt().coerceIn(dp(145), dp(220))
+                val params = previewFrame.layoutParams as? LinearLayout.LayoutParams
+                if (params != null && params.height != normalHeight) {
+                    applyingResponsiveLayout = true
+                    params.height = normalHeight
+                    previewFrame.layoutParams = params
+                    applyingResponsiveLayout = false
+                }
+            }
+        }
+
+        if (Build.VERSION.SDK_INT >= 30) {
+            root.setOnApplyWindowInsetsListener { view, insets ->
+                val imeVisible = insets.isVisible(WindowInsets.Type.ime())
+                if (imeVisible != keyboardLayoutActive) {
+                    view.post { applyKeyboardMode(imeVisible, view.height) }
+                }
+                insets
+            }
+            root.requestApplyInsets()
         }
     }
 
