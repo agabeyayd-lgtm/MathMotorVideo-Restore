@@ -91,6 +91,10 @@ class VideoEditorActivity : Activity() {
     private var textSizeSp = 24
     private enum class TextPosition { TOP, CENTER, BOTTOM }
     private var player: ExoPlayer? = null
+    private var musicPreviewPlayer: ExoPlayer? = null
+    private var soundPreviewPlayer: ExoPlayer? = null
+    private var musicPreviewUri: Uri? = null
+    private var soundPreviewUri: Uri? = null
     private lateinit var playerView: PlayerView
     private lateinit var previewTextOverlay: TextView
     private lateinit var clipList: LinearLayout
@@ -118,6 +122,7 @@ class VideoEditorActivity : Activity() {
         override fun run() {
             if (timelinePreviewLoaded) syncTimelinePlayheadFromPlayer()
             else if (previewSingleClip) syncSingleClipPlayheadFromPlayer()
+            syncPreviewAudio()
             timelineHandler.postDelayed(this, 250L)
         }
     }
@@ -170,7 +175,10 @@ class VideoEditorActivity : Activity() {
         window.navigationBarColor = Color.rgb(15, 31, 45)
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         buildUi()
-        player = ExoPlayer.Builder(this).build().also { playerView.player = it }
+        player = ExoPlayer.Builder(this).build().also {
+            it.volume = if (keepSourceAudio.isChecked) sourceAudioVolume / 100f else 0f
+            playerView.player = it
+        }
         timelineHandler.post(timelineSyncTask)
         val incoming = intent.getStringExtra("video_uri")
         if (!incoming.isNullOrBlank()) addClip(Uri.parse(incoming), false)
@@ -484,6 +492,7 @@ class VideoEditorActivity : Activity() {
         musicVolumeSeek.setOnSeekBarChangeListener(volumeListener { value ->
             musicVolume = value
             musicVolumeLabel.text = "Müzik sesi: " + value + "%"
+            musicPreviewPlayer?.volume = value / 100f
         })
         audioPanel.addView(musicVolumeSeek, matchWrap())
 
@@ -527,12 +536,16 @@ class VideoEditorActivity : Activity() {
         soundVolumeSeek.setOnSeekBarChangeListener(volumeListener { value ->
             soundVolume = value
             soundVolumeLabel.text = "Efekt sesi: " + value + "%"
+            soundPreviewPlayer?.volume = value / 100f
         })
         audioPanel.addView(soundVolumeSeek, matchWrap())
         keepSourceAudio = CheckBox(this).apply {
             text = "Videonun kendi sesini koru"
             isChecked = true
             setTextColor(Color.WHITE)
+            setOnCheckedChangeListener { _, checked ->
+                player?.volume = if (checked) sourceAudioVolume / 100f else 0f
+            }
         }
         audioPanel.addView(keepSourceAudio)
         sourceVolumeLabel = label("Orijinal video sesi: 100%", 12f, Color.WHITE, true)
@@ -541,6 +554,7 @@ class VideoEditorActivity : Activity() {
         sourceVolumeSeek.setOnSeekBarChangeListener(volumeListener { value ->
             sourceAudioVolume = value
             sourceVolumeLabel.text = "Orijinal video sesi: " + value + "%"
+            player?.volume = if (keepSourceAudio.isChecked) value / 100f else 0f
         })
         audioPanel.addView(sourceVolumeSeek, matchWrap())
 
@@ -1211,6 +1225,75 @@ class VideoEditorActivity : Activity() {
         textStartLabel.text = "Yazı başlangıcı: " + formatMs(textStartMs)
         textEndLabel.text = "Yazı bitişi: " + formatMs(textEndMs)
         if (!deferTimelineRefresh) refreshTimelineTracks()
+    }
+
+    /**
+     * Plays selected music and sound effects alongside the video preview. Both are
+     * driven by the output timeline, so scrubbing and clip changes keep them aligned.
+     */
+    private fun syncPreviewAudio() {
+        if (isFinishing || isDestroyed) return
+
+        if (musicPreviewUri != musicUri) {
+            musicPreviewPlayer?.release()
+            musicPreviewPlayer = null
+            musicPreviewUri = musicUri
+            musicUri?.let { uri ->
+                musicPreviewPlayer = ExoPlayer.Builder(this).build().apply {
+                    setMediaItem(MediaItem.fromUri(uri))
+                    repeatMode = androidx.media3.common.Player.REPEAT_MODE_ONE
+                    volume = musicVolume / 100f
+                    prepare()
+                }
+            }
+        }
+        if (soundPreviewUri != soundUri) {
+            soundPreviewPlayer?.release()
+            soundPreviewPlayer = null
+            soundPreviewUri = soundUri
+            soundUri?.let { uri ->
+                soundPreviewPlayer = ExoPlayer.Builder(this).build().apply {
+                    setMediaItem(MediaItem.fromUri(uri))
+                    volume = soundVolume / 100f
+                    prepare()
+                }
+            }
+        }
+
+        val videoIsPlaying = player?.isPlaying == true &&
+            (timelinePreviewLoaded || previewSingleClip) && !exporting
+        val outputTimeMs = timelinePlayheadMs.coerceAtLeast(0L)
+
+        musicPreviewPlayer?.let { music ->
+            music.volume = musicVolume / 100f
+            if (!videoIsPlaying) {
+                music.playWhenReady = false
+            } else {
+                val duration = music.duration
+                if (duration > 0L && duration != androidx.media3.common.C.TIME_UNSET) {
+                    val target = outputTimeMs % duration
+                    if (kotlin.math.abs(music.currentPosition - target) > 400L) music.seekTo(target)
+                }
+                music.playWhenReady = true
+            }
+        }
+
+        soundPreviewPlayer?.let { sound ->
+            sound.volume = soundVolume / 100f
+            val outputDurationMs = totalOutputDurationMs()
+            val effectStart = soundStartMs.coerceIn(0L, outputDurationMs)
+            val effectEnd = (effectStart + soundDurationMs.coerceAtMost((outputDurationMs - effectStart).coerceAtLeast(0L)))
+                .coerceAtLeast(effectStart)
+            val insideEffect = videoIsPlaying && outputTimeMs >= effectStart &&
+                outputTimeMs < effectEnd && soundDurationMs > 0L
+            if (insideEffect) {
+                val target = (outputTimeMs - effectStart).coerceAtLeast(0L)
+                if (kotlin.math.abs(sound.currentPosition - target) > 400L) sound.seekTo(target)
+                sound.playWhenReady = true
+            } else {
+                sound.playWhenReady = false
+            }
+        }
     }
 
     private fun audioEffects(volumePercent: Int): List<AudioProcessor> {
@@ -2458,6 +2541,8 @@ class VideoEditorActivity : Activity() {
 
     override fun onStop() {
         player?.pause()
+        musicPreviewPlayer?.pause()
+        soundPreviewPlayer?.pause()
         super.onStop()
     }
 
@@ -2470,6 +2555,10 @@ class VideoEditorActivity : Activity() {
         playerView.player = null
         player?.release()
         player = null
+        musicPreviewPlayer?.release()
+        musicPreviewPlayer = null
+        soundPreviewPlayer?.release()
+        soundPreviewPlayer = null
         super.onDestroy()
     }
 }
