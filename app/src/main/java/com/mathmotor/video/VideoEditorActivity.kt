@@ -1359,6 +1359,201 @@ class VideoEditorActivity : Activity() {
             track.addView(View(this), LinearLayout.LayoutParams(width, dp(if (keyboardLayoutActive) 18 else 24)))
         }
 
+        fun addTextLayerBlock(track: LinearLayout, layer: TextLayer, layerIndex: Int) {
+            val startMs = layer.startMs.coerceIn(0L, totalMs)
+            val endMs = layer.endMs.coerceIn(startMs, totalMs)
+            if (startMs > 0L) addSpacer(track, 0L, startMs)
+
+            val blockWidth = widthBetween(startMs, endMs).coerceAtLeast(1)
+            val blockHeight = dp(if (keyboardLayoutActive) 18 else 24)
+            val frame = FrameLayout(this).apply {
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(Color.rgb(110, 74, 154))
+                    cornerRadius = dp(5).toFloat()
+                    setStroke(
+                        dp(if (layer.id == selectedTextLayerId) 2 else 1),
+                        if (layer.id == selectedTextLayerId) Color.rgb(117, 240, 221)
+                        else Color.rgb(61, 79, 99)
+                    )
+                }
+                clipToOutline = true
+                contentDescription = "Yazı katmanı \${layerIndex + 1}: ortasından sürükleyerek taşı, kenarlarından sürükleyerek süresini değiştir"
+            }
+            val body = TextView(this).apply {
+                text = layer.text.trim().ifBlank { "Yazı \${layerIndex + 1}" }
+                textSize = 9f
+                setTextColor(Color.WHITE)
+                gravity = Gravity.CENTER_VERTICAL
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setPadding(dp(7), 0, dp(7), 0)
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { selectTextLayer(layer.id) }
+            }
+            frame.addView(body, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            ))
+
+            // Dragging the middle of a text clip moves its whole time range.
+            var bodyDownRawX = 0f
+            var bodyInitialStartMs = startMs
+            var bodyInitialEndMs = endMs
+            var bodyMoved = false
+            body.setOnTouchListener { view, event ->
+                when (event.actionMasked) {
+                    android.view.MotionEvent.ACTION_DOWN -> {
+                        bodyDownRawX = event.rawX
+                        bodyInitialStartMs = layer.startMs
+                        bodyInitialEndMs = layer.endMs
+                        bodyMoved = false
+                        player?.playWhenReady = false
+                        true
+                    }
+                    android.view.MotionEvent.ACTION_MOVE -> {
+                        val deltaPx = event.rawX - bodyDownRawX
+                        if (kotlin.math.abs(deltaPx) > android.view.ViewConfiguration.get(this).scaledTouchSlop) {
+                            bodyMoved = true
+                            view.parent?.requestDisallowInterceptTouchEvent(true)
+                            val pps = timelinePixelsPerSecond()
+                            val leftLimitPx = bodyInitialStartMs / 1000f * pps
+                            val rightLimitPx = (totalMs - bodyInitialEndMs).coerceAtLeast(0L) / 1000f * pps
+                            frame.translationX = deltaPx.coerceIn(-leftLimitPx, rightLimitPx)
+                        }
+                        true
+                    }
+                    android.view.MotionEvent.ACTION_UP -> {
+                        val deltaPx = event.rawX - bodyDownRawX
+                        frame.translationX = 0f
+                        view.parent?.requestDisallowInterceptTouchEvent(false)
+                        if (bodyMoved) {
+                            val deltaMs = TimelineScaleMath.millisecondsForPixels(
+                                deltaPx, timelinePixelsPerSecond()
+                            )
+                            val spanMs = (bodyInitialEndMs - bodyInitialStartMs).coerceAtLeast(0L)
+                            val newStart = (bodyInitialStartMs + deltaMs).coerceIn(
+                                0L, (totalMs - spanMs).coerceAtLeast(0L)
+                            )
+                            layer.startMs = newStart
+                            layer.endMs = newStart + spanMs
+                            layer.timingCustomized = true
+                            selectedTextLayerId = layer.id
+                            loadTextLayerIntoControls(layer)
+                            status.text = "Yazı katmanı zaman çizelgesinde taşındı."
+                        } else {
+                            selectTextLayer(layer.id)
+                        }
+                        view.performClick()
+                        true
+                    }
+                    android.view.MotionEvent.ACTION_CANCEL -> {
+                        frame.translationX = 0f
+                        view.parent?.requestDisallowInterceptTouchEvent(false)
+                        true
+                    }
+                    else -> true
+                }
+            }
+
+            fun addTextTrimHandle(isStart: Boolean) {
+                if (totalMs <= 0L) return
+                val handleWidth = minOf(dp(20), (blockWidth / 2).coerceAtLeast(1))
+                val handle = TextView(this).apply {
+                    text = if (isStart) "‹" else "›"
+                    textSize = 13f
+                    typeface = Typeface.DEFAULT_BOLD
+                    setTextColor(Color.WHITE)
+                    gravity = Gravity.CENTER
+                    setBackgroundColor(Color.rgb(0, 164, 146))
+                    elevation = dp(3).toFloat()
+                    contentDescription = if (isStart) "Yazı başlangıcını sürükle" else "Yazı bitişini sürükle"
+                }
+                var downRawX = 0f
+                var initialStartMs = startMs
+                var initialEndMs = endMs
+                var moved = false
+                handle.setOnTouchListener { view, event ->
+                    when (event.actionMasked) {
+                        android.view.MotionEvent.ACTION_DOWN -> {
+                            downRawX = event.rawX
+                            initialStartMs = layer.startMs
+                            initialEndMs = layer.endMs
+                            moved = false
+                            player?.playWhenReady = false
+                            view.parent?.requestDisallowInterceptTouchEvent(true)
+                            true
+                        }
+                        android.view.MotionEvent.ACTION_MOVE -> {
+                            val deltaPx = event.rawX - downRawX
+                            if (kotlin.math.abs(deltaPx) > dp(2)) moved = true
+                            val pps = timelinePixelsPerSecond()
+                            val minimumSpanMs = minOf(500L, totalMs)
+                            val maximumShiftPx = ((initialEndMs - initialStartMs - minimumSpanMs)
+                                .coerceAtLeast(0L) / 1000f * pps)
+                            val sourceBeforePx = initialStartMs / 1000f * pps
+                            val sourceAfterPx = (totalMs - initialEndMs).coerceAtLeast(0L) / 1000f * pps
+                            view.translationX = if (isStart) {
+                                deltaPx.coerceIn(-sourceBeforePx, maximumShiftPx)
+                            } else {
+                                deltaPx.coerceIn(-maximumShiftPx, sourceAfterPx)
+                            }
+                            true
+                        }
+                        android.view.MotionEvent.ACTION_UP -> {
+                            val deltaPx = event.rawX - downRawX
+                            view.translationX = 0f
+                            view.parent?.requestDisallowInterceptTouchEvent(false)
+                            if (moved) {
+                                val deltaMs = TimelineScaleMath.millisecondsForPixels(
+                                    deltaPx, timelinePixelsPerSecond()
+                                )
+                                val minimumSpanMs = minOf(500L, totalMs)
+                                if (isStart) {
+                                    layer.startMs = (initialStartMs + deltaMs).coerceIn(
+                                        0L, (initialEndMs - minimumSpanMs).coerceAtLeast(0L)
+                                    )
+                                } else {
+                                    layer.endMs = (initialEndMs + deltaMs).coerceIn(
+                                        (initialStartMs + minimumSpanMs).coerceAtMost(totalMs),
+                                        totalMs
+                                    )
+                                }
+                                layer.timingCustomized = true
+                                selectedTextLayerId = layer.id
+                                loadTextLayerIntoControls(layer)
+                                status.text = if (isStart) {
+                                    "Yazı başlangıcı: \${formatTimelineMs(layer.startMs)}"
+                                } else {
+                                    "Yazı bitişi: \${formatTimelineMs(layer.endMs)}"
+                                }
+                            } else {
+                                selectTextLayer(layer.id)
+                            }
+                            view.performClick()
+                            true
+                        }
+                        android.view.MotionEvent.ACTION_CANCEL -> {
+                            view.translationX = 0f
+                            view.parent?.requestDisallowInterceptTouchEvent(false)
+                            true
+                        }
+                        else -> true
+                    }
+                }
+                frame.addView(handle, FrameLayout.LayoutParams(
+                    handleWidth,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    if (isStart) Gravity.START else Gravity.END
+                ))
+            }
+
+            addTextTrimHandle(isStart = true)
+            addTextTrimHandle(isStart = false)
+            track.addView(frame, LinearLayout.LayoutParams(blockWidth, blockHeight))
+            if (endMs < totalMs) addSpacer(track, endMs, totalMs)
+        }
+
         if (!keyboardLayoutActive) {
             val ruler = makeLane("SÜRE", 22)
             val rulerEndMs = (((totalMs + 4999L) / 5000L).coerceAtLeast(1L)) * 5000L
@@ -1409,16 +1604,7 @@ class VideoEditorActivity : Activity() {
         } else {
             textLayers.forEachIndexed { index, layer ->
                 val textTrack = makeLane("YAZI ${index + 1}", 24)
-                val startMs = layer.startMs.coerceIn(0L, totalMs)
-                val endMs = layer.endMs.coerceIn(startMs, totalMs)
-                if (startMs > 0L) addSpacer(textTrack, 0L, startMs)
-                val title = layer.text.trim().ifBlank { "Yazı ${index + 1}" }
-                addBlock(
-                    textTrack, title, (endMs - startMs).coerceAtLeast(0L),
-                    Color.rgb(110, 74, 154), selected = layer.id == selectedTextLayerId,
-                    onClick = { selectTextLayer(layer.id) }, startMs = startMs
-                )
-                if (endMs < totalMs) addSpacer(textTrack, endMs, totalMs)
+                addTextLayerBlock(textTrack, layer, index)
             }
         }
 
