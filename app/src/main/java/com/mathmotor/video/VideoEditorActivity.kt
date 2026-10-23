@@ -1377,10 +1377,10 @@ class VideoEditorActivity : Activity() {
                     )
                 }
                 clipToOutline = true
-                contentDescription = "Yazı katmanı \${layerIndex + 1}: ortasından sürükleyerek taşı, kenarlarından sürükleyerek süresini değiştir"
+                contentDescription = "Yazı katmanı ${layerIndex + 1}: ortasından sürükleyerek taşı, kenarlarından sürükleyerek süresini değiştir"
             }
             val body = TextView(this).apply {
-                text = layer.text.trim().ifBlank { "Yazı \${layerIndex + 1}" }
+                text = layer.text.trim().ifBlank { "Yazı ${layerIndex + 1}" }
                 textSize = 9f
                 setTextColor(Color.WHITE)
                 gravity = Gravity.CENTER_VERTICAL
@@ -1523,9 +1523,9 @@ class VideoEditorActivity : Activity() {
                                 selectedTextLayerId = layer.id
                                 loadTextLayerIntoControls(layer)
                                 status.text = if (isStart) {
-                                    "Yazı başlangıcı: \${formatTimelineMs(layer.startMs)}"
+                                    "Yazı başlangıcı: ${formatTimelineMs(layer.startMs)}"
                                 } else {
-                                    "Yazı bitişi: \${formatTimelineMs(layer.endMs)}"
+                                    "Yazı bitişi: ${formatTimelineMs(layer.endMs)}"
                                 }
                             } else {
                                 selectTextLayer(layer.id)
