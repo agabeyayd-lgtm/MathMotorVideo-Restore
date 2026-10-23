@@ -22,8 +22,8 @@ android {
         applicationId = "com.mathmotor.video.next"
         minSdk = 26
         targetSdk = 35
-        versionCode = 373
-        versionName = "8.7-editor-fixes"
+        versionCode = 374
+        versionName = "8.8-editor-navigation"
         testInstrumentationRunner = "android.test.AndroidJUnitRunner"
     }
 
