@@ -642,7 +642,7 @@ class VideoEditorActivity : Activity() {
             isHorizontalScrollBarEnabled = false
             overScrollMode = View.OVER_SCROLL_NEVER
         }
-        textColorScroll.addView(textColorGroup, android.widget.HorizontalScrollView.LayoutParams(
+        textColorScroll.addView(textColorGroup, ViewGroup.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ))
         textPanel.addView(textColorScroll, LinearLayout.LayoutParams(
