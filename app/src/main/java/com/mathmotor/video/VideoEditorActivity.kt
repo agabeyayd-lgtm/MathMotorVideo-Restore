@@ -106,6 +106,24 @@ class VideoEditorActivity : Activity() {
     private var textPosition = TextPosition.BOTTOM
     private var textSizeSp = 24
     private enum class TextPosition { TOP, CENTER, BOTTOM }
+
+    private data class TextLayer(
+        val id: Long,
+        var text: String,
+        var startMs: Long,
+        var endMs: Long,
+        var timingCustomized: Boolean,
+        var position: TextPosition,
+        var sizeSp: Int
+    )
+
+    private val textLayers = mutableListOf<TextLayer>()
+    private var selectedTextLayerId: Long? = null
+    private var nextTextLayerId = 1L
+    private var loadingTextLayerControls = false
+    private var activePreviewTextLayers: List<TextLayer> = emptyList()
+    private val previewTextOverlays = mutableListOf<TextView>()
+    private lateinit var textLayerList: LinearLayout
     private var player: ExoPlayer? = null
     private var musicPreviewPlayer: ExoPlayer? = null
     private var soundPreviewPlayer: ExoPlayer? = null
@@ -302,6 +320,7 @@ class VideoEditorActivity : Activity() {
                 bottomMargin = dp(8)
             }
         )
+        previewTextOverlays.add(previewTextOverlay)
         previewEmptyState = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
@@ -509,7 +528,27 @@ class VideoEditorActivity : Activity() {
         installTrimListeners()
 
         val textPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        textPanel.addView(label("METİN KATMANI", 13f, Color.rgb(121, 202, 218), true))
+        textPanel.addView(label("METİN KATMANLARI", 13f, Color.rgb(121, 202, 218), true))
+        textPanel.addView(label("Her yazının süresini, konumunu ve boyutunu ayrı ayarla.", 11f, Color.rgb(154, 171, 190), false))
+        val textLayerActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        textLayerActions.addView(miniButton("＋ Yeni yazı") { addTextLayer() },
+            LinearLayout.LayoutParams(0, dp(42), 1f))
+        textLayerActions.addView(miniButton("Seçiliyi sil") { removeSelectedTextLayer() },
+            LinearLayout.LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(5) })
+        textPanel.addView(textLayerActions)
+        val textLayerScroll = android.widget.HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+        }
+        textLayerList = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(4), 0, dp(4))
+        }
+        textLayerScroll.addView(textLayerList)
+        textPanel.addView(textLayerScroll, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(48)
+        ))
         textInput = EditText(this).apply {
             hint = "Videoda görünecek yazı"
             setTextColor(Color.WHITE)
@@ -549,6 +588,7 @@ class VideoEditorActivity : Activity() {
                     2 -> TextPosition.CENTER
                     else -> TextPosition.BOTTOM
                 }
+                if (!loadingTextLayerControls) syncSelectedTextLayerFromControls()
                 updatePreviewTextOverlay()
                 refreshTimelineTracks()
             }
@@ -566,7 +606,8 @@ class VideoEditorActivity : Activity() {
                 if (!fromUser) return
                 textSizeSp = (progress + 12).coerceIn(12, 48)
                 textSizeLabel.text = "Yazı boyutu: $textSizeSp"
-                previewTextOverlay.setTextSize(textSizeSp.toFloat())
+                if (!loadingTextLayerControls) syncSelectedTextLayerFromControls()
+                updatePreviewTextOverlay()
                 previewTextOverlay.requestLayout()
             }
             override fun onStartTrackingTouch(seekBar: SeekBar?) {}
@@ -576,12 +617,30 @@ class VideoEditorActivity : Activity() {
         textInput.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                if (loadingTextLayerControls) return
+                if (selectedTextLayer() == null && !s.isNullOrBlank()) {
+                    val total = totalOutputDurationMs()
+                    val layer = TextLayer(
+                        id = nextTextLayerId++,
+                        text = "",
+                        startMs = 0L,
+                        endMs = total,
+                        timingCustomized = false,
+                        position = textPosition,
+                        sizeSp = textSizeSp
+                    )
+                    textLayers.add(layer)
+                    selectedTextLayerId = layer.id
+                }
+                syncSelectedTextLayerFromControls()
+                refreshTextLayerList()
                 updatePreviewTextOverlay()
                 timelineHandler.removeCallbacks(textTimelineRefreshTask)
                 timelineHandler.postDelayed(textTimelineRefreshTask, 120L)
             }
             override fun afterTextChanged(s: android.text.Editable?) {}
         })
+        refreshTextLayerList()
 
         val audioPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         audioPanel.addView(label("SES KATMANLARI", 13f, Color.rgb(121, 202, 218), true))
@@ -788,6 +847,7 @@ class VideoEditorActivity : Activity() {
 
         setContentView(root)
         showEditorPanel("clip")
+        refreshTextLayerList()
         refreshTimelineTracks()
         installResponsiveEditorLayout(
             root = root,
@@ -979,15 +1039,10 @@ class VideoEditorActivity : Activity() {
             playerView.layoutParams = params
         }
         if (::previewTextOverlay.isInitialized) {
-            previewTextOverlay.maxWidth = (targetWidth - dp(16)).coerceAtLeast(dp(100))
-            val overlayParams = previewTextOverlay.layoutParams as? FrameLayout.LayoutParams
-            if (overlayParams != null) {
-                val bottomGap = ((stageHeight - targetHeight) / 2 + dp(8)).coerceAtLeast(dp(8))
-                if (overlayParams.bottomMargin != bottomGap) {
-                    overlayParams.bottomMargin = bottomGap
-                    previewTextOverlay.layoutParams = overlayParams
-                }
+            previewTextOverlays.forEach { overlay ->
+                overlay.maxWidth = (targetWidth - dp(16)).coerceAtLeast(dp(100))
             }
+            updatePreviewTextOverlay()
         }
     }
 
@@ -1016,7 +1071,21 @@ class VideoEditorActivity : Activity() {
         timelineScrollViews.clear()
         if (::timelinePlayheadSeek.isInitialized) updateTimelinePlayheadControls()
 
+        if (!loadingTextLayerControls) syncSelectedTextLayerFromControls()
         val totalMs = totalOutputDurationMs()
+        textLayers.forEach { layer ->
+            if (!layer.timingCustomized) {
+                layer.startMs = layer.startMs.coerceAtMost(totalMs)
+                layer.endMs = totalMs
+            } else {
+                layer.startMs = layer.startMs.coerceAtMost(totalMs)
+                layer.endMs = layer.endMs.coerceAtMost(totalMs)
+                if (totalMs > 0L && layer.endMs <= layer.startMs) {
+                    layer.startMs = 0L
+                    layer.endMs = totalMs
+                }
+            }
+        }
         val pxPerSecond = timelinePixelsPerSecond()
 
         fun widthBetween(startMs: Long, endMs: Long): Int =
@@ -1151,20 +1220,26 @@ class VideoEditorActivity : Activity() {
             }
         }
 
-        val textTrack = makeLane("METİN", 24)
-        val overlayText = if (::textInput.isInitialized) textInput.text?.toString()?.trim().orEmpty() else ""
-        if (overlayText.isNotBlank() && totalMs > 0L) {
-            val startMs = textStartMs.coerceIn(0L, totalMs)
-            val endMs = textEndMs.coerceIn(startMs, totalMs)
-            addSpacer(textTrack, 0L, startMs)
+        if (textLayers.isEmpty()) {
+            val textTrack = makeLane("METİN", 24)
             addBlock(
-                textTrack, overlayText, (endMs - startMs).coerceAtLeast(0L),
-                Color.rgb(110, 74, 154), onClick = { showEditorPanel("text") }, startMs = startMs
+                textTrack, "+ Metin ekle", totalMs.coerceAtLeast(5000L), Color.rgb(70, 54, 93),
+                onClick = { showEditorPanel("text"); addTextLayer() }, minimumWidthDp = 115
             )
-            addSpacer(textTrack, endMs, totalMs)
         } else {
-            addBlock(textTrack, "+ Metin ekle", totalMs.coerceAtLeast(5000L), Color.rgb(70, 54, 93),
-                onClick = { showEditorPanel("text") }, minimumWidthDp = 115)
+            textLayers.forEachIndexed { index, layer ->
+                val textTrack = makeLane("YAZI ${index + 1}", 24)
+                val startMs = layer.startMs.coerceIn(0L, totalMs)
+                val endMs = layer.endMs.coerceIn(startMs, totalMs)
+                if (startMs > 0L) addSpacer(textTrack, 0L, startMs)
+                val title = layer.text.trim().ifBlank { "Yazı ${index + 1}" }
+                addBlock(
+                    textTrack, title, (endMs - startMs).coerceAtLeast(0L),
+                    Color.rgb(110, 74, 154), selected = layer.id == selectedTextLayerId,
+                    onClick = { selectTextLayer(layer.id) }, startMs = startMs
+                )
+                if (endMs < totalMs) addSpacer(textTrack, endMs, totalMs)
+            }
         }
 
         val musicTrack = makeLane("MÜZİK", 24)
@@ -1447,29 +1522,190 @@ class VideoEditorActivity : Activity() {
         updateClipHistoryButtons()
     }
 
-    private fun updatePreviewTextOverlay() {
-        if (!::previewTextOverlay.isInitialized || !::textInput.isInitialized) return
-        val value = textInput.text?.toString()?.trim().orEmpty()
-        val totalMs = totalOutputDurationMs()
-        val inVisibleTimeRange = totalMs > 0L &&
-            timelinePlayheadMs >= textStartMs && timelinePlayheadMs < textEndMs
-        if (value.isBlank() || !inVisibleTimeRange) {
-            previewTextOverlay.visibility = View.GONE
+    private fun selectedTextLayer(): TextLayer? =
+        selectedTextLayerId?.let { id -> textLayers.firstOrNull { it.id == id } }
+
+    private fun syncSelectedTextLayerFromControls() {
+        if (loadingTextLayerControls || !::textInput.isInitialized) return
+        val layer = selectedTextLayer() ?: return
+        layer.text = textInput.text?.toString()?.trim().orEmpty()
+        layer.startMs = textStartMs.coerceAtLeast(0L)
+        layer.endMs = textEndMs.coerceAtLeast(layer.startMs)
+        layer.timingCustomized = textTimingCustomized
+        layer.position = textPosition
+        layer.sizeSp = textSizeSp.coerceIn(12, 48)
+    }
+
+    private fun refreshTextLayerList() {
+        if (!::textLayerList.isInitialized) return
+        textLayerList.removeAllViews()
+        if (textLayers.isEmpty()) {
+            textLayerList.addView(label("Henüz yazı katmanı yok. Yeni yazı ile ekle.", 11f, Color.rgb(154, 171, 190), false))
             return
         }
-        previewTextOverlay.text = value
-        previewTextOverlay.visibility = View.VISIBLE
-        val params = previewTextOverlay.layoutParams as? FrameLayout.LayoutParams ?: return
-        params.gravity = when (textPosition) {
-            TextPosition.TOP -> Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            TextPosition.CENTER -> Gravity.CENTER
-            TextPosition.BOTTOM -> Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+        textLayers.forEachIndexed { index, layer ->
+            val selected = layer.id == selectedTextLayerId
+            val title = layer.text.trim().ifBlank { "Yazı ${index + 1}" }.take(14)
+            val button = Button(this).apply {
+                text = "${if (selected) "✓ " else ""}${index + 1}. $title"
+                isAllCaps = false
+                textSize = 11f
+                minHeight = dp(38)
+                setPadding(dp(8), 0, dp(8), 0)
+                setTextColor(if (selected) Color.rgb(5, 25, 29) else Color.WHITE)
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(if (selected) Color.rgb(57, 220, 190) else Color.rgb(27, 43, 59))
+                    cornerRadius = dp(9).toFloat()
+                    setStroke(dp(1), if (selected) Color.rgb(100, 245, 218) else Color.rgb(47, 66, 84))
+                }
+                setOnClickListener { selectTextLayer(layer.id) }
+            }
+            textLayerList.addView(button, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(38)
+            ).apply { rightMargin = dp(5) })
         }
-        params.topMargin = if (textPosition == TextPosition.TOP) dp(8) else 0
-        params.bottomMargin = if (textPosition == TextPosition.BOTTOM) dp(8) else 0
-        params.leftMargin = dp(8)
-        params.rightMargin = dp(8)
-        previewTextOverlay.layoutParams = params
+    }
+
+    private fun addTextLayer() {
+        if (textLayers.size >= 12) {
+            status.text = "En fazla 12 metin katmanı ekleyebilirsin."
+            return
+        }
+        syncSelectedTextLayerFromControls()
+        val total = totalOutputDurationMs()
+        val layer = TextLayer(
+            id = nextTextLayerId++,
+            text = "",
+            startMs = 0L,
+            endMs = total,
+            timingCustomized = false,
+            position = TextPosition.BOTTOM,
+            sizeSp = 24
+        )
+        textLayers.add(layer)
+        selectedTextLayerId = layer.id
+        loadTextLayerIntoControls(layer)
+        refreshTextLayerList()
+        updatePreviewTextOverlay()
+        refreshTimelineTracks()
+        showEditorPanel("text")
+        textInput.requestFocus()
+        status.text = "Yeni yazı katmanı eklendi. Metnini yazıp süresini ve konumunu ayarla."
+    }
+
+    private fun removeSelectedTextLayer() {
+        val index = textLayers.indexOfFirst { it.id == selectedTextLayerId }
+        if (index < 0) {
+            status.text = "Silmek için önce bir yazı katmanı seç."
+            return
+        }
+        textLayers.removeAt(index)
+        val next = textLayers.getOrNull(index.coerceAtMost(textLayers.lastIndex))
+        selectedTextLayerId = next?.id
+        loadTextLayerIntoControls(next)
+        refreshTextLayerList()
+        updatePreviewTextOverlay()
+        refreshTimelineTracks()
+        status.text = "Metin katmanı kaldırıldı."
+    }
+
+    private fun selectTextLayer(id: Long) {
+        if (textLayers.none { it.id == id }) return
+        syncSelectedTextLayerFromControls()
+        selectedTextLayerId = id
+        loadTextLayerIntoControls(selectedTextLayer())
+        refreshTextLayerList()
+        updatePreviewTextOverlay()
+        refreshTimelineTracks()
+        status.text = "Yazı katmanı seçildi."
+    }
+
+    private fun loadTextLayerIntoControls(layer: TextLayer?) {
+        loadingTextLayerControls = true
+        try {
+            textStartMs = layer?.startMs?.coerceAtLeast(0L) ?: 0L
+            textEndMs = layer?.endMs?.coerceAtLeast(textStartMs) ?: totalOutputDurationMs()
+            textTimingCustomized = layer?.timingCustomized ?: false
+            textPosition = layer?.position ?: TextPosition.BOTTOM
+            textSizeSp = layer?.sizeSp?.coerceIn(12, 48) ?: 24
+            textInput.setText(layer?.text.orEmpty())
+            textSizeLabel.text = "Yazı boyutu: $textSizeSp"
+            textSizeSeek.progress = textSizeSp - 12
+            textPositionGroup.check(when (textPosition) {
+                TextPosition.TOP -> 1
+                TextPosition.CENTER -> 2
+                TextPosition.BOTTOM -> 3
+            })
+            updateTextControls()
+        } finally {
+            loadingTextLayerControls = false
+        }
+        syncSelectedTextLayerFromControls()
+        refreshTextLayerList()
+        updatePreviewTextOverlay()
+        refreshTimelineTracks()
+    }
+
+    private fun updatePreviewTextOverlay() {
+        if (!::previewTextOverlay.isInitialized || !::textInput.isInitialized) return
+        val totalMs = totalOutputDurationMs()
+        val active = textLayers.filter { layer ->
+            layer.text.isNotBlank() && totalMs > 0L &&
+                timelinePlayheadMs >= layer.startMs && timelinePlayheadMs < layer.endMs
+        }
+        activePreviewTextLayers = active
+        while (previewTextOverlays.size < active.size) {
+            val overlay = createPreviewTextOverlayView()
+            previewTextOverlays.add(overlay)
+            previewFrame.addView(overlay, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            ))
+        }
+        val visiblePositionCounts = mutableMapOf<TextPosition, Int>()
+        previewTextOverlays.forEachIndexed { index, overlay ->
+            val layer = active.getOrNull(index)
+            if (layer == null) {
+                overlay.visibility = View.GONE
+                return@forEachIndexed
+            }
+            val positionIndex = visiblePositionCounts[layer.position] ?: 0
+            visiblePositionCounts[layer.position] = positionIndex + 1
+            overlay.text = layer.text.trim()
+            overlay.setTextSize(layer.sizeSp.toFloat())
+            overlay.visibility = View.VISIBLE
+            val params = overlay.layoutParams as? FrameLayout.LayoutParams ?: return@forEachIndexed
+            params.gravity = when (layer.position) {
+                TextPosition.TOP -> Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                TextPosition.CENTER -> Gravity.CENTER
+                TextPosition.BOTTOM -> Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            }
+            val videoTopGap = ((previewFrame.height - playerView.height) / 2 + dp(8)).coerceAtLeast(dp(8))
+            params.topMargin = if (layer.position == TextPosition.TOP) videoTopGap + positionIndex * dp(42) else 0
+            params.bottomMargin = if (layer.position == TextPosition.BOTTOM) videoTopGap + positionIndex * dp(42) else 0
+            params.leftMargin = dp(8)
+            params.rightMargin = dp(8)
+            overlay.translationY = if (layer.position == TextPosition.CENTER) positionIndex * dp(42).toFloat() else 0f
+            overlay.layoutParams = params
+            overlay.bringToFront()
+        }
+    }
+
+    private fun createPreviewTextOverlayView(): TextView = TextView(this).apply {
+        textSize = 24f
+        gravity = Gravity.CENTER
+        maxLines = 2
+        maxWidth = dp(170)
+        setTextColor(Color.WHITE)
+        setTypeface(Typeface.DEFAULT, Typeface.BOLD)
+        setPadding(dp(10), dp(6), dp(10), dp(6))
+        setShadowLayer(2f, 1f, 1f, Color.BLACK)
+        background = android.graphics.drawable.GradientDrawable().apply {
+            setColor(Color.argb(210, 0, 0, 0))
+            cornerRadius = dp(8).toFloat()
+        }
+        visibility = View.GONE
     }
 
     private fun volumeListener(onValue: (Int) -> Unit): SeekBar.OnSeekBarChangeListener =
@@ -1530,6 +1766,8 @@ class VideoEditorActivity : Activity() {
         textEndSeek.isEnabled = total > 0L
         textStartLabel.text = "Yazı başlangıcı: " + formatMs(textStartMs)
         textEndLabel.text = "Yazı bitişi: " + formatMs(textEndMs)
+        syncSelectedTextLayerFromControls()
+        updatePreviewTextOverlay()
         if (!deferTimelineRefresh) refreshTimelineTracks()
     }
 
@@ -1685,7 +1923,20 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun createProjectJson(): JSONObject {
+        syncSelectedTextLayerFromControls()
         val clipArray = JSONArray()
+        val textLayerArray = JSONArray()
+        textLayers.forEach { layer ->
+            textLayerArray.put(JSONObject().apply {
+                put("id", layer.id)
+                put("text", layer.text)
+                put("startMs", layer.startMs)
+                put("endMs", layer.endMs)
+                put("timingCustomized", layer.timingCustomized)
+                put("position", layer.position.name)
+                put("sizeSp", layer.sizeSp)
+            })
+        }
         clips.forEach { clip ->
             clipArray.put(JSONObject().apply {
                 put("uri", clip.uri.toString())
@@ -1707,6 +1958,8 @@ class VideoEditorActivity : Activity() {
             put("soundDurationMs", soundDurationMs)
             put("soundStartMs", soundStartMs)
             put("text", textInput.text?.toString().orEmpty())
+            put("textLayers", textLayerArray)
+            put("selectedTextLayerId", selectedTextLayerId ?: JSONObject.NULL)
             put("textStartMs", textStartMs)
             put("textEndMs", textEndMs)
             put("textTimingCustomized", textTimingCustomized)
@@ -1758,19 +2011,50 @@ class VideoEditorActivity : Activity() {
         textTimingCustomized = json.optBoolean("textTimingCustomized", false)
         textPosition = runCatching { TextPosition.valueOf(json.optString("textPosition", "BOTTOM")) }.getOrDefault(TextPosition.BOTTOM)
         textSizeSp = json.optInt("textSizeSp", 24).coerceIn(12, 48)
-        textSizeLabel.text = "Yazı boyutu: $textSizeSp"
-        textSizeSeek.progress = textSizeSp - 12
-        previewTextOverlay.setTextSize(textSizeSp.toFloat())
+        textLayers.clear()
+        val savedTextLayers = json.optJSONArray("textLayers")
+        if (savedTextLayers != null) {
+            for (i in 0 until savedTextLayers.length()) {
+                val item = savedTextLayers.optJSONObject(i) ?: continue
+                val id = item.optLong("id", i + 1L).coerceAtLeast(1L)
+                val start = item.optLong("startMs", 0L).coerceAtLeast(0L)
+                val end = item.optLong("endMs", totalOutputDurationMs()).coerceAtLeast(start)
+                val position = runCatching {
+                    TextPosition.valueOf(item.optString("position", "BOTTOM"))
+                }.getOrDefault(TextPosition.BOTTOM)
+                textLayers.add(TextLayer(
+                    id = id,
+                    text = item.optString("text", ""),
+                    startMs = start,
+                    endMs = end,
+                    timingCustomized = item.optBoolean("timingCustomized", false),
+                    position = position,
+                    sizeSp = item.optInt("sizeSp", 24).coerceIn(12, 48)
+                ))
+            }
+        } else {
+            val legacyText = json.optString("text", "")
+            if (legacyText.isNotBlank()) {
+                textLayers.add(TextLayer(
+                    id = 1L,
+                    text = legacyText,
+                    startMs = textStartMs,
+                    endMs = textEndMs,
+                    timingCustomized = textTimingCustomized,
+                    position = textPosition,
+                    sizeSp = textSizeSp
+                ))
+            }
+        }
+        nextTextLayerId = (textLayers.maxOfOrNull { it.id } ?: 0L) + 1L
+        val savedSelectedTextId = json.optLong("selectedTextLayerId", textLayers.firstOrNull()?.id ?: -1L)
+        selectedTextLayerId = savedSelectedTextId.takeIf { id -> textLayers.any { it.id == id } }
         sourceAudioVolume = json.optInt("sourceAudioVolume", 100).coerceIn(0, 100)
         musicVolume = json.optInt("musicVolume", 45).coerceIn(0, 100)
         soundVolume = json.optInt("soundVolume", 100).coerceIn(0, 100)
 
-        textInput.setText(json.optString("text", ""))
-        textPositionGroup.check(when (textPosition) {
-            TextPosition.TOP -> 1
-            TextPosition.CENTER -> 2
-            TextPosition.BOTTOM -> 3
-        })
+        loadTextLayerIntoControls(selectedTextLayer())
+        refreshTextLayerList()
         keepSourceAudio.isChecked = json.optBoolean("keepSourceAudio", true)
         exportNameInput.setText(json.optString("exportName", "MathMotor_Edit"))
         exportResolutionShortSide = when (json.optInt("exportResolutionShortSide", 0)) {
@@ -2735,26 +3019,30 @@ class VideoEditorActivity : Activity() {
             .build()
     }
 
-    private fun buildTimedTextOverlay(
-        overlayText: String,
-        startMs: Long,
-        endMs: Long
-    ): TextOverlay {
+    private fun buildTimedTextOverlay(layer: TextLayer, samePositionIndex: Int): TextOverlay {
+        val overlayText = layer.text
+        val startMs = layer.startMs
+        val endMs = layer.endMs
         val styled = SpannableString(overlayText).apply {
             setSpan(ForegroundColorSpan(Color.WHITE), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             setSpan(BackgroundColorSpan(Color.argb(190, 0, 0, 0)), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             setSpan(StyleSpan(Typeface.BOLD), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             setSpan(
-                AbsoluteSizeSpan((textSizeSp * resources.displayMetrics.scaledDensity).toInt(), false),
+                AbsoluteSizeSpan((layer.sizeSp * resources.displayMetrics.scaledDensity).toInt(), false),
                 0,
                 length,
                 Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
             )
         }
-        val y = when (textPosition) {
-            TextPosition.TOP -> 0.78f
-            TextPosition.CENTER -> 0f
-            TextPosition.BOTTOM -> -0.78f
+        val stackOffset = samePositionIndex * 0.18f
+        val y = when (layer.position) {
+            TextPosition.TOP -> (0.78f - stackOffset).coerceIn(-0.85f, 0.85f)
+            TextPosition.CENTER -> when (samePositionIndex) {
+                0 -> 0f
+                else -> (if (samePositionIndex % 2 == 1) 1f else -1f) *
+                    ((samePositionIndex + 1) / 2) * 0.18f
+            }.coerceIn(-0.85f, 0.85f)
+            TextPosition.BOTTOM -> (-0.78f + stackOffset).coerceIn(-0.85f, 0.85f)
         }
         val settings = StaticOverlaySettings.Builder()
             .setBackgroundFrameAnchor(0f, y)
@@ -2788,7 +3076,7 @@ class VideoEditorActivity : Activity() {
             return
         }
 
-        val overlayText = textInput.text?.toString()?.trim().orEmpty()
+        syncSelectedTextLayerFromControls()
         val requestedExportName = exportNameInput.text?.toString().orEmpty()
         val videoItems = try {
             clips.map { clip ->
@@ -2847,8 +3135,15 @@ class VideoEditorActivity : Activity() {
             720 -> outputVideoEffects.add(Presentation.createForShortSide(720))
             1080 -> outputVideoEffects.add(Presentation.createForShortSide(1080))
         }
-        if (overlayText.isNotBlank() && textEndMs > textStartMs) {
-            outputVideoEffects.add(OverlayEffect(listOf(buildTimedTextOverlay(overlayText, textStartMs, textEndMs))))
+        val exportTextLayers = textLayers.filter { it.text.isNotBlank() && it.endMs > it.startMs }
+        if (exportTextLayers.isNotEmpty()) {
+            val positionCounts = mutableMapOf<TextPosition, Int>()
+            val overlays = exportTextLayers.map { layer ->
+                val samePositionIndex = positionCounts[layer.position] ?: 0
+                positionCounts[layer.position] = samePositionIndex + 1
+                buildTimedTextOverlay(layer, samePositionIndex)
+            }
+            outputVideoEffects.add(OverlayEffect(overlays))
         }
         if (outputVideoEffects.isNotEmpty()) {
             compositionBuilder.setEffects(Effects(emptyList(), outputVideoEffects))
