@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.ContentValues
 import android.content.Intent
 import android.database.Cursor
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Typeface
 import android.media.MediaMetadataRetriever
@@ -28,6 +29,7 @@ import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
@@ -56,6 +58,7 @@ import androidx.media3.transformer.Transformer
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.lang.ref.WeakReference
 import java.util.Locale
 import kotlin.math.ceil
 
@@ -95,6 +98,9 @@ class VideoEditorActivity : Activity() {
     private val timelineScrollViews = mutableListOf<android.widget.HorizontalScrollView>()
     private var syncingTimelineScroll = false
     private var timelineHorizontalScrollX = 0
+    private val timelineThumbnailCache = object : android.util.LruCache<String, Bitmap>(96) {}
+    private val pendingTimelineThumbnails = mutableMapOf<String, MutableList<WeakReference<ImageView>>>()
+    private val timelineThumbnailExecutor = java.util.concurrent.Executors.newFixedThreadPool(2)
     private lateinit var timelinePlayheadSeek: SeekBar
     private lateinit var timelinePlayheadLabel: TextView
     private var timelinePlayheadMs = 0L
@@ -838,15 +844,12 @@ class VideoEditorActivity : Activity() {
         } else {
             clips.forEachIndexed { index, clip ->
                 val duration = (clip.endMs - clip.startMs).coerceAtLeast(0L)
-                addBlock(
-                    videoTrack,
-                    "${index + 1}. ${clip.title}  ${formatMs(duration)}",
-                    duration,
-                    if (index == selectedClipIndex) Color.rgb(0, 120, 125) else Color.rgb(38, 105, 123),
-                    selected = index == selectedClipIndex,
-                    onClick = { selectTimelineClip(index) },
-                    minimumWidthDp = 10
-                )
+                val width = maxOf(dp(10), exactWidth(duration))
+                val height = dp(if (keyboardLayoutActive) 18 else 24)
+                val block = buildVideoClipFilmstrip(clip, index, width, height, index == selectedClipIndex)
+                videoTrack.addView(block, LinearLayout.LayoutParams(width, height).apply {
+                    rightMargin = dp(3)
+                })
             }
         }
 
@@ -1615,6 +1618,149 @@ class VideoEditorActivity : Activity() {
             )
             .build()
 
+    private fun buildVideoClipFilmstrip(
+        clip: Clip,
+        index: Int,
+        width: Int,
+        height: Int,
+        selected: Boolean
+    ): FrameLayout {
+        val durationMs = (clip.endMs - clip.startMs).coerceAtLeast(0L)
+        val container = FrameLayout(this).apply {
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.rgb(27, 39, 54))
+                cornerRadius = dp(4).toFloat()
+                setStroke(dp(if (selected) 2 else 1),
+                    if (selected) Color.rgb(117, 240, 221) else Color.rgb(61, 79, 99))
+            }
+            clipToOutline = true
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { selectTimelineClip(index) }
+            setOnLongClickListener {
+                val dragData = android.content.ClipData.newPlainText("video_clip_index", index.toString())
+                startDragAndDrop(dragData, View.DragShadowBuilder(this), index, 0)
+                status.text = "Klibi basılı tutup sürükleyerek sırala."
+                true
+            }
+            setOnDragListener { _, event ->
+                when (event.action) {
+                    android.view.DragEvent.ACTION_DRAG_STARTED ->
+                        event.clipDescription?.hasMimeType("text/plain") == true
+                    android.view.DragEvent.ACTION_DRAG_ENTERED,
+                    android.view.DragEvent.ACTION_DRAG_LOCATION,
+                    android.view.DragEvent.ACTION_DRAG_EXITED -> true
+                    android.view.DragEvent.ACTION_DROP -> {
+                        val from = event.localState as? Int
+                        if (from != null && from in clips.indices) reorderClip(from, index)
+                        true
+                    }
+                    android.view.DragEvent.ACTION_DRAG_ENDED -> true
+                    else -> false
+                }
+            }
+            contentDescription = "Klip ${index + 1}: ${clip.title}, ${formatMs(durationMs)}"
+        }
+        val filmstrip = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setBackgroundColor(Color.rgb(26, 37, 51))
+        }
+        val thumbnailCount = (width / dp(42)).coerceIn(1, 8)
+        repeat(thumbnailCount) { slot ->
+            val image = ImageView(this).apply {
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                setBackgroundColor(Color.rgb(31, 46, 59))
+                contentDescription = "Klip karesi"
+            }
+            filmstrip.addView(image, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply {
+                if (slot < thumbnailCount - 1) rightMargin = dp(1)
+            })
+            val frameTime = clip.startMs + (durationMs * (slot + 1L) / (thumbnailCount + 1L))
+            requestTimelineThumbnail(clip.uri, frameTime, image)
+        }
+        container.addView(filmstrip, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+        val durationBadge = TextView(this).apply {
+            text = formatTimelineMs(durationMs)
+            textSize = if (height <= dp(18)) 7f else 8f
+            setTextColor(Color.WHITE)
+            setPadding(dp(3), 0, dp(3), 0)
+            maxLines = 1
+            gravity = Gravity.CENTER_VERTICAL
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.argb(190, 8, 13, 20))
+                cornerRadius = dp(3).toFloat()
+            }
+        }
+        container.addView(durationBadge, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            dp(if (height <= dp(18)) 12 else 14),
+            Gravity.BOTTOM or Gravity.END
+        ).apply { rightMargin = dp(2); bottomMargin = dp(2) })
+        return container
+    }
+
+    private fun requestTimelineThumbnail(uri: Uri, timeMs: Long, target: ImageView) {
+        val bucket = timeMs.coerceAtLeast(0L) / 250L
+        val key = "${uri}#${bucket}"
+        target.tag = key
+        val cached = timelineThumbnailCache.get(key)
+        if (cached != null) {
+            target.setImageBitmap(cached)
+            return
+        }
+        val waiting = pendingTimelineThumbnails[key]
+        if (waiting != null) {
+            waiting.add(WeakReference(target))
+            return
+        }
+        pendingTimelineThumbnails[key] = mutableListOf(WeakReference(target))
+        try {
+            timelineThumbnailExecutor.execute {
+                var result: Bitmap? = null
+                val retriever = MediaMetadataRetriever()
+                try {
+                    retriever.setDataSource(this, uri)
+                    val original = retriever.getFrameAtTime(
+                        timeMs.coerceAtLeast(0L) * 1000L,
+                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+                    )
+                    if (original != null) {
+                        val scale = maxOf(96f / original.width, 54f / original.height)
+                        val scaledWidth = (original.width * scale).toInt().coerceAtLeast(96)
+                        val scaledHeight = (original.height * scale).toInt().coerceAtLeast(54)
+                        val scaled = Bitmap.createScaledBitmap(original, scaledWidth, scaledHeight, true)
+                        if (scaled !== original) original.recycle()
+                        val left = ((scaled.width - 96) / 2).coerceAtLeast(0)
+                        val top = ((scaled.height - 54) / 2).coerceAtLeast(0)
+                        result = Bitmap.createBitmap(scaled, left, top, 96, 54)
+                        if (result !== scaled) scaled.recycle()
+                    }
+                } catch (_: Exception) {
+                    // Keep the neutral placeholder visible if a frame cannot be decoded.
+                } finally {
+                    runCatching { retriever.release() }
+                }
+                val decoded = result
+                runOnUiThread {
+                    val targets = pendingTimelineThumbnails.remove(key).orEmpty()
+                    if (decoded != null && !isFinishing && !isDestroyed) {
+                        timelineThumbnailCache.put(key, decoded)
+                        targets.forEach { ref ->
+                            val image = ref.get()
+                            if (image != null && image.tag == key) image.setImageBitmap(decoded)
+                        }
+                    } else {
+                        decoded?.recycle()
+                    }
+                }
+            }
+        } catch (_: java.util.concurrent.RejectedExecutionException) {
+            pendingTimelineThumbnails.remove(key)
+        }
+    }
+
     private fun installTrimListeners() {
         startSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
@@ -1984,6 +2130,9 @@ class VideoEditorActivity : Activity() {
     override fun onDestroy() {
         timelineHandler.removeCallbacks(timelineSyncTask)
         timelineHandler.removeCallbacks(textTimelineRefreshTask)
+        timelineThumbnailExecutor.shutdownNow()
+        pendingTimelineThumbnails.clear()
+        timelineThumbnailCache.evictAll()
         playerView.player = null
         player?.release()
         player = null
