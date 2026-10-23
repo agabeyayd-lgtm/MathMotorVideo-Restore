@@ -22,8 +22,8 @@ android {
         applicationId = "com.mathmotor.video.next"
         minSdk = 26
         targetSdk = 35
-        versionCode = 381
-        versionName = "8.15-timeline-trim-test"
+        versionCode = 382
+        versionName = "8.16-timeline-trim-handles"
         testInstrumentationRunner = "android.test.AndroidJUnitRunner"
     }
 
