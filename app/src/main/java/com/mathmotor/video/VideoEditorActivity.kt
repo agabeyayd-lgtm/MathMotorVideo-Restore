@@ -1755,7 +1755,7 @@ class VideoEditorActivity : Activity() {
                     ellipsize = android.text.TextUtils.TruncateAt.END
                 })
                 tile.addView(TextView(this).apply {
-                    text = formatMs(clip.endMs - clip.startMs)
+                    text = formatTimelineMs(clip.endMs - clip.startMs)
                     textSize = 10f
                     setTextColor(Color.rgb(205, 218, 231))
                 })
@@ -2079,7 +2079,7 @@ class VideoEditorActivity : Activity() {
                     else -> false
                 }
             }
-            contentDescription = "Klip ${index + 1}: ${clip.title}, ${formatMs(durationMs)}"
+            contentDescription = "Klip ${index + 1}: ${clip.title}, ${formatTimelineMs(durationMs)}"
         }
         val filmstrip = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -2360,7 +2360,7 @@ class VideoEditorActivity : Activity() {
         endSeek.max = durationTenths
         startSeek.progress = (clip.startMs / 100L).toInt().coerceAtMost(maxStartTenths)
         endSeek.progress = ceil(clip.endMs / 100.0).toInt().coerceAtMost(durationTenths)
-        selectedClipLabel.text = "Seçili klip: ${clip.title} • Kesit ${formatMs((clip.endMs - clip.startMs).coerceAtLeast(0L))} / Kaynak ${formatMs(clip.durationMs)}"
+        selectedClipLabel.text = "Seçili klip: ${clip.title} • Kesit ${formatTimelineMs((clip.endMs - clip.startMs).coerceAtLeast(0L))} / Kaynak ${formatTimelineMs(clip.durationMs)}"
         updateTrimLabels()
     }
 
