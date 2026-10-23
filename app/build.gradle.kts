@@ -22,8 +22,8 @@ android {
         applicationId = "com.mathmotor.video.next"
         minSdk = 26
         targetSdk = 35
-        versionCode = 390
-        versionName = "8.24-interactive-text-timeline"
+        versionCode = 391
+        versionName = "8.25-thumbnail-fallbacks"
         testInstrumentationRunner = "android.test.AndroidJUnitRunner"
     }
 
