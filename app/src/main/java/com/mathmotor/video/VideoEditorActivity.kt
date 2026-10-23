@@ -640,7 +640,10 @@ class VideoEditorActivity : Activity() {
                     2 -> TextPosition.CENTER
                     else -> TextPosition.BOTTOM
                 }
-                if (!loadingTextLayerControls) syncSelectedTextLayerFromControls()
+                if (!loadingTextLayerControls) {
+                    selectedTextLayer()?.let { it.yFraction = defaultTextYFraction(textPosition) }
+                    syncSelectedTextLayerFromControls()
+                }
                 updatePreviewTextOverlay()
                 refreshTimelineTracks()
             }
@@ -700,16 +703,23 @@ class VideoEditorActivity : Activity() {
         }
         textPanel.addView(textBoldCheck, matchWrap())
         textSizeLabel = label("Yazı boyutu: $textSizeSp", 12f, Color.WHITE, true)
-        textPanel.addView(textSizeLabel)
+        val textSizeRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(textSizeLabel, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            addView(miniButton("A−") { adjustSelectedTextSize(-4) }, LinearLayout.LayoutParams(dp(52), dp(42)))
+            addView(miniButton("A+") { adjustSelectedTextSize(4) }, LinearLayout.LayoutParams(dp(52), dp(42)).apply { leftMargin = dp(4) })
+        }
+        textPanel.addView(textSizeRow, matchWrap())
         textSizeSeek = SeekBar(this).apply {
-            max = 36
+            max = 84
             progress = textSizeSp - 12
             contentDescription = "Yazı boyutu"
         }
         textSizeSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
-                textSizeSp = (progress + 12).coerceIn(12, 48)
+                textSizeSp = (progress + 12).coerceIn(12, 96)
                 textSizeLabel.text = "Yazı boyutu: $textSizeSp"
                 if (!loadingTextLayerControls) syncSelectedTextLayerFromControls()
                 updatePreviewTextOverlay()
@@ -734,7 +744,9 @@ class VideoEditorActivity : Activity() {
                         position = textPosition,
                         sizeSp = textSizeSp,
                         colorPreset = textColorPreset,
-                        isBold = textBold
+                        isBold = textBold,
+                        xFraction = 0.5f,
+                        yFraction = defaultTextYFraction(textPosition)
                     )
                     textLayers.add(layer)
                     selectedTextLayerId = layer.id
@@ -1370,7 +1382,7 @@ class VideoEditorActivity : Activity() {
             }
         }
 
-        val videoTrack = makeLane("VIDEO", 24)
+        val videoTrack = makeLane("VIDEO", if (keyboardLayoutActive) 22 else 44)
         if (clips.isEmpty()) {
             addBlock(videoTrack, "+ Video ekle", 5000L, Color.rgb(38, 105, 123), onClick = { chooseVideo(true) }, minimumWidthDp = 115)
         } else {
@@ -1379,7 +1391,7 @@ class VideoEditorActivity : Activity() {
                 val duration = (clip.endMs - clip.startMs).coerceAtLeast(0L)
                 val nextVideoOffsetMs = videoOffsetMs + duration
                 val width = widthBetween(videoOffsetMs, nextVideoOffsetMs).coerceAtLeast(1)
-                val height = dp(if (keyboardLayoutActive) 18 else 24)
+                val height = dp(if (keyboardLayoutActive) 22 else 42)
                 val block = buildVideoClipFilmstrip(clip, index, width, height, index == selectedClipIndex)
                 // Widths use absolute boundaries, so fractional-pixel rounding cannot accumulate.
                 videoTrack.addView(block, LinearLayout.LayoutParams(width, height))
@@ -1701,7 +1713,7 @@ class VideoEditorActivity : Activity() {
         layer.endMs = textEndMs.coerceAtLeast(layer.startMs)
         layer.timingCustomized = textTimingCustomized
         layer.position = textPosition
-        layer.sizeSp = textSizeSp.coerceIn(12, 48)
+        layer.sizeSp = textSizeSp.coerceIn(12, 96)
         layer.colorPreset = textColorPreset
         layer.isBold = textBold
     }
@@ -1752,7 +1764,9 @@ class VideoEditorActivity : Activity() {
             position = TextPosition.BOTTOM,
             sizeSp = 24,
             colorPreset = textColorPreset,
-            isBold = textBold
+            isBold = textBold,
+            xFraction = 0.5f,
+            yFraction = defaultTextYFraction(TextPosition.BOTTOM)
         )
         textLayers.add(layer)
         selectedTextLayerId = layer.id
@@ -1831,7 +1845,7 @@ class VideoEditorActivity : Activity() {
             textEndMs = layer?.endMs?.coerceAtLeast(textStartMs) ?: totalOutputDurationMs()
             textTimingCustomized = layer?.timingCustomized ?: false
             textPosition = layer?.position ?: TextPosition.BOTTOM
-            textSizeSp = layer?.sizeSp?.coerceIn(12, 48) ?: 24
+            textSizeSp = layer?.sizeSp?.coerceIn(12, 96) ?: 24
             textColorPreset = layer?.colorPreset ?: TextColorPreset.WHITE
             textBold = layer?.isBold ?: true
             textInput.setText(layer?.text.orEmpty())
@@ -1880,6 +1894,7 @@ class VideoEditorActivity : Activity() {
             }
             val positionIndex = visiblePositionCounts[layer.position] ?: 0
             visiblePositionCounts[layer.position] = positionIndex + 1
+            overlay.tag = layer.id
             overlay.text = layer.text.trim()
             overlay.setTextSize(layer.sizeSp.toFloat())
             overlay.setTextColor(layer.colorPreset.colorInt)
@@ -2097,6 +2112,7 @@ class VideoEditorActivity : Activity() {
                 player?.playWhenReady = true
                 refreshClipList()
                 loadTrimControls()
+                refreshTimelineTracks()
                 status.text = "${title} eklendi. Kesme aralığını seçebilirsin."
             }
         }.start()
@@ -2145,6 +2161,8 @@ class VideoEditorActivity : Activity() {
                 put("timingCustomized", layer.timingCustomized)
                 put("position", layer.position.name)
                 put("sizeSp", layer.sizeSp)
+                put("xFraction", layer.xFraction)
+                put("yFraction", layer.yFraction)
                 put("colorPreset", layer.colorPreset.name)
                 put("isBold", layer.isBold)
             })
@@ -2224,7 +2242,7 @@ class VideoEditorActivity : Activity() {
         textEndMs = json.optLong("textEndMs", totalOutputDurationMs()).coerceAtLeast(0L)
         textTimingCustomized = json.optBoolean("textTimingCustomized", false)
         textPosition = runCatching { TextPosition.valueOf(json.optString("textPosition", "BOTTOM")) }.getOrDefault(TextPosition.BOTTOM)
-        textSizeSp = json.optInt("textSizeSp", 24).coerceIn(12, 48)
+        textSizeSp = json.optInt("textSizeSp", 24).coerceIn(12, 96)
         textLayers.clear()
         val savedTextLayers = json.optJSONArray("textLayers")
         if (savedTextLayers != null) {
@@ -2243,11 +2261,13 @@ class VideoEditorActivity : Activity() {
                     endMs = end,
                     timingCustomized = item.optBoolean("timingCustomized", false),
                     position = position,
-                    sizeSp = item.optInt("sizeSp", 24).coerceIn(12, 48),
+                    sizeSp = item.optInt("sizeSp", 24).coerceIn(12, 96),
                     colorPreset = runCatching {
                         TextColorPreset.valueOf(item.optString("colorPreset", "WHITE"))
                     }.getOrDefault(TextColorPreset.WHITE),
-                    isBold = item.optBoolean("isBold", true)
+                    isBold = item.optBoolean("isBold", true),
+                    xFraction = item.optDouble("xFraction", 0.5).toFloat().coerceIn(0f, 1f),
+                    yFraction = item.optDouble("yFraction", defaultTextYFraction(position).toDouble()).toFloat().coerceIn(0f, 1f)
                 ))
             }
         } else {
@@ -2264,7 +2284,9 @@ class VideoEditorActivity : Activity() {
                     colorPreset = runCatching {
                         TextColorPreset.valueOf(json.optString("textColorPreset", "WHITE"))
                     }.getOrDefault(TextColorPreset.WHITE),
-                    isBold = json.optBoolean("textBold", true)
+                    isBold = json.optBoolean("textBold", true),
+                    xFraction = 0.5f,
+                    yFraction = defaultTextYFraction(textPosition)
                 ))
             }
         }
@@ -2471,6 +2493,7 @@ class VideoEditorActivity : Activity() {
                 timelinePlayheadMs = clips.take(selectedClipIndex).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
                 refreshClipList()
                 loadTrimControls()
+                refreshTimelineTracks()
                 val selected = selectedClip()
                 if (selected != null) {
                     player?.setMediaItem(clippedMediaItem(selected))
@@ -2911,7 +2934,7 @@ class VideoEditorActivity : Activity() {
         // Larger, high-contrast touch targets make the trim edges easy to find and drag.
         fun addTrimHandle(isStart: Boolean) {
             // Keep start/end handles distinct on short clips; users can zoom in for a larger touch target.
-            val handleWidth = minOf(dp(30), (width / 2).coerceAtLeast(1))
+            val handleWidth = minOf(dp(40), (width / 2).coerceAtLeast(1))
             val handle = FrameLayout(this).apply {
                 background = android.graphics.drawable.GradientDrawable().apply {
                     setColor(Color.rgb(0, 205, 177))
@@ -2980,6 +3003,7 @@ class VideoEditorActivity : Activity() {
                                 refreshClipList()
                                 loadTrimControls()
                                 selectTimelineClip(index)
+                                refreshTimelineTracks()
                                 status.text = if (isStart) {
                                     "✓ Başlangıç ayarlandı: ${formatTimelineMs(clip.startMs)}"
                                 } else {
