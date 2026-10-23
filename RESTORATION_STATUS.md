@@ -19,7 +19,7 @@ MathMotor Video is now a **local Android video editor** with an easy, CapCut-ins
 - Thumbnail filmstrips for clips.
 - Text overlay with adjustable visibility interval, position and size.
 - Audio controls for original audio, looping music, and a timed sound effect.
-- MP4 export using AndroidX Media3 Transformer.
+- MP4 export using AndroidX Media3 Transformer with source / 720p / 1080p output-size options.
 - JSON project save/load and a local list of exported videos.
 - Home screen redesigned around creating an edit, selecting a video directly, and reopening recent exports.
 - Preview canvas adapts to the source video's aspect ratio, including rotated sources.
