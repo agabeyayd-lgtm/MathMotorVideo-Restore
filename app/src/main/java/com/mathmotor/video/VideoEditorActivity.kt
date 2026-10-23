@@ -2634,8 +2634,11 @@ class VideoEditorActivity : Activity() {
                                 if (saved.isSuccess) {
                                     val resultUri = saved.getOrThrow()
                                     val now = System.currentTimeMillis()
-                                    VideoRecordStore.add(this@VideoEditorActivity, VideoRecord("Düzenlenmiş video", resultUri, now, now))
-                                    status.text = "BAŞARILI • Düzenlenmiş MP4 kaydedildi.\n$resultUri"
+                                    val savedTitle = requestedExportName.trim()
+                                        .removeSuffix(".mp4").removeSuffix(".MP4")
+                                        .ifBlank { "Düzenlenmiş video" }
+                                    VideoRecordStore.add(this@VideoEditorActivity, VideoRecord(savedTitle, resultUri, now, now))
+                                    status.text = "BAŞARILI • " + savedTitle + " kaydedildi.\n" + resultUri
                                     Toast.makeText(this@VideoEditorActivity, "Video kaydedildi.", Toast.LENGTH_LONG).show()
                                 } else {
                                     status.text = "Video işlendi ancak kaydedilemedi: ${saved.exceptionOrNull()?.message}"
