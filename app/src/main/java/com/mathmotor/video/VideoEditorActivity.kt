@@ -1116,6 +1116,11 @@ class VideoEditorActivity : Activity() {
                 val localMs = (targetMs - offsetMs).coerceIn(0L, (durationMs - 1L).coerceAtLeast(0L))
                 player?.seekTo(index, localMs)
                 timelinePlayheadMs = targetMs
+                if (selectedClipIndex != index) {
+                    selectedClipIndex = index
+                    refreshClipList()
+                    loadTrimControls()
+                }
                 timelinePlayheadSeek.progress = targetMs.coerceAtMost(timelinePlayheadSeek.max.toLong()).toInt()
                 updateTimelinePlayheadLabel()
                 return
@@ -1131,6 +1136,11 @@ class VideoEditorActivity : Activity() {
         if (index !in clips.indices) return
         val offsetMs = clips.take(index).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
         timelinePlayheadMs = (offsetMs + currentPlayer.currentPosition).coerceIn(0L, totalOutputDurationMs())
+        if (selectedClipIndex != index) {
+            selectedClipIndex = index
+            refreshClipList()
+            loadTrimControls()
+        }
         val progress = timelinePlayheadMs.coerceAtMost(timelinePlayheadSeek.max.toLong()).toInt()
         if (timelinePlayheadSeek.progress != progress) timelinePlayheadSeek.progress = progress
         updateTimelinePlayheadLabel()
