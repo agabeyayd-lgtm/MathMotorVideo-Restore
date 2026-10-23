@@ -3,12 +3,6 @@ name: Build and publish APK
 # APK publishing is manual-only: code changes must not release an update.
 on:
   workflow_dispatch:
-  # Allow a release build when the app version configuration changes.
-  push:
-    branches:
-      - main
-    paths:
-      - "app/build.gradle.kts"
 
 permissions:
   contents: write
