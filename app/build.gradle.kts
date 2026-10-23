@@ -22,8 +22,8 @@ android {
         applicationId = "com.mathmotor.video.next"
         minSdk = 26
         targetSdk = 35
-        versionCode = 379
-        versionName = "8.13-responsive-editor"
+        versionCode = 380
+        versionName = "8.14-timeline-scrubbing"
         testInstrumentationRunner = "android.test.AndroidJUnitRunner"
     }
 
