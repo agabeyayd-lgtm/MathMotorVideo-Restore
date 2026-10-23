@@ -8,6 +8,11 @@ on:
 permissions:
   contents: write
 
+# Prevent overlapping releases from publishing an older APK as latest.
+concurrency:
+  group: publish-apk-main
+  cancel-in-progress: false
+
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
