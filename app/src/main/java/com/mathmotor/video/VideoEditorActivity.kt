@@ -110,6 +110,11 @@ class VideoEditorActivity : Activity() {
     private lateinit var textColorGroup: android.widget.RadioGroup
     private lateinit var textBoldCheck: CheckBox
     private enum class TextPosition { TOP, CENTER, BOTTOM }
+    private fun defaultTextYFraction(position: TextPosition): Float = when (position) {
+        TextPosition.TOP -> 0.16f
+        TextPosition.CENTER -> 0.50f
+        TextPosition.BOTTOM -> 0.84f
+    }
     private enum class TextColorPreset(val colorInt: Int) {
         WHITE(Color.WHITE),
         YELLOW(Color.rgb(255, 221, 74)),
@@ -127,7 +132,9 @@ class VideoEditorActivity : Activity() {
         var position: TextPosition,
         var sizeSp: Int,
         var colorPreset: TextColorPreset,
-        var isBold: Boolean
+        var isBold: Boolean,
+        var xFraction: Float = 0.5f,
+        var yFraction: Float = 0.84f
     )
 
     private val textLayers = mutableListOf<TextLayer>()
@@ -144,7 +151,10 @@ class VideoEditorActivity : Activity() {
     private var soundPreviewUri: Uri? = null
     private lateinit var playerView: PlayerView
     private lateinit var previewFrame: FrameLayout
-    private var previewStageHeightDp = 290
+    private lateinit var previewFocusButton: Button
+    private var previewStageHeightDp = 340
+    private var previewFocusMode = false
+    private val previewFocusOriginalVisibility = linkedMapOf<View, Int>()
     private lateinit var previewTextOverlay: TextView
     private lateinit var previewEmptyState: LinearLayout
     private lateinit var clipList: LinearLayout
@@ -335,6 +345,7 @@ class VideoEditorActivity : Activity() {
             }
         )
         previewTextOverlays.add(previewTextOverlay)
+        installPreviewTextTouch(previewTextOverlay)
         previewEmptyState = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
@@ -391,13 +402,16 @@ class VideoEditorActivity : Activity() {
                 LinearLayout.LayoutParams(dp(42), dp(40)))
             addView(miniButton("+") { adjustPreviewStageHeight(30) },
                 LinearLayout.LayoutParams(dp(38), dp(40)))
+            previewFocusButton = miniButton("⛶") { togglePreviewFocusMode() }
+            previewFocusButton.contentDescription = "Videoyu geniş ekranda aç"
+            addView(previewFocusButton, LinearLayout.LayoutParams(dp(42), dp(40)))
             contentDescription = "Video önizlemesini küçült, varsayılana döndür veya büyüt"
         }
         previewFrame.addView(previewSizeControls, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, dp(44), Gravity.TOP or Gravity.END
         ).apply { topMargin = dp(6); rightMargin = dp(6) })
         root.addView(previewFrame, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(290)
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(previewStageHeightDp)
         ).apply { bottomMargin = dp(8) })
         previewFrame.addOnLayoutChangeListener { view, _, _, _, _, _, _, _, _ ->
             updatePreviewCanvasSize()
@@ -996,10 +1010,16 @@ class VideoEditorActivity : Activity() {
             applyingResponsiveLayout = true
             try {
                 val previewParams = previewFrame.layoutParams as LinearLayout.LayoutParams
-                previewParams.height = if (imeVisible) {
-                    (availableHeight * 0.21f).toInt().coerceIn(dp(82), dp(112))
+                if (previewFocusMode) {
+                    previewParams.height = 0
+                    previewParams.weight = 1f
                 } else {
-                    dp(previewStageHeightDp).coerceIn(dp(210), dp(360))
+                    previewParams.height = if (imeVisible) {
+                        (availableHeight * 0.21f).toInt().coerceIn(dp(82), dp(112))
+                    } else {
+                        dp(previewStageHeightDp).coerceIn(dp(250), dp(460))
+                    }
+                    previewParams.weight = 0f
                 }
                 previewFrame.layoutParams = previewParams
 
@@ -1068,12 +1088,13 @@ class VideoEditorActivity : Activity() {
             }
             if (imeVisible != keyboardLayoutActive) {
                 applyKeyboardMode(imeVisible, viewportHeight)
-            } else if (!imeVisible) {
-                val normalHeight = (viewportHeight * 0.35f).toInt().coerceIn(dp(210), dp(300))
+            } else if (!imeVisible && !previewFocusMode) {
+                val normalHeight = dp(previewStageHeightDp).coerceIn(dp(250), dp(460))
                 val params = previewFrame.layoutParams as? LinearLayout.LayoutParams
-                if (params != null && params.height != normalHeight) {
+                if (params != null && (params.height != normalHeight || params.weight != 0f)) {
                     applyingResponsiveLayout = true
                     params.height = normalHeight
+                    params.weight = 0f
                     previewFrame.layoutParams = params
                     applyingResponsiveLayout = false
                 }
@@ -1140,12 +1161,13 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun setPreviewStageHeight(heightDp: Int) {
-        previewStageHeightDp = heightDp.coerceIn(210, 360)
+        previewStageHeightDp = heightDp.coerceIn(250, 460)
         if (!::previewFrame.isInitialized) return
-        if (!keyboardLayoutActive) {
+        if (!keyboardLayoutActive && !previewFocusMode) {
             val params = previewFrame.layoutParams as? LinearLayout.LayoutParams
-            if (params != null && params.height != dp(previewStageHeightDp)) {
+            if (params != null && (params.height != dp(previewStageHeightDp) || params.weight != 0f)) {
                 params.height = dp(previewStageHeightDp)
+                params.weight = 0f
                 previewFrame.layoutParams = params
             }
         }
@@ -1155,6 +1177,40 @@ class VideoEditorActivity : Activity() {
 
     private fun adjustPreviewStageHeight(deltaDp: Int) {
         setPreviewStageHeight(previewStageHeightDp + deltaDp)
+    }
+
+    private fun togglePreviewFocusMode() {
+        val root = previewFrame.parent as? LinearLayout ?: return
+        previewFocusMode = !previewFocusMode
+        if (previewFocusMode) {
+            previewFocusOriginalVisibility.clear()
+            for (index in 0 until root.childCount) {
+                val child = root.getChildAt(index)
+                if (child !== previewFrame) {
+                    previewFocusOriginalVisibility[child] = child.visibility
+                    child.visibility = View.GONE
+                }
+            }
+            root.setPadding(dp(4), dp(4), dp(4), dp(4))
+            val params = previewFrame.layoutParams as LinearLayout.LayoutParams
+            params.height = 0
+            params.weight = 1f
+            previewFrame.layoutParams = params
+            previewFocusButton.text = "↙"
+            previewFocusButton.contentDescription = "Düzenleme ekranına dön"
+        } else {
+            previewFocusOriginalVisibility.forEach { (view, visibility) -> view.visibility = visibility }
+            previewFocusOriginalVisibility.clear()
+            root.setPadding(dp(8), dp(4), dp(8), dp(4))
+            val params = previewFrame.layoutParams as LinearLayout.LayoutParams
+            params.height = dp(previewStageHeightDp)
+            params.weight = 0f
+            previewFrame.layoutParams = params
+            previewFocusButton.text = "⛶"
+            previewFocusButton.contentDescription = "Videoyu geniş ekranda aç"
+        }
+        previewFrame.requestLayout()
+        updatePreviewCanvasSize()
     }
 
     private fun showEditorPanel(name: String) {
