@@ -1622,7 +1622,8 @@ class VideoEditorActivity : Activity() {
             endMs = total,
             timingCustomized = false,
             position = TextPosition.BOTTOM,
-            sizeSp = 24
+            sizeSp = 24,
+            colorPreset = textColorPreset
         )
         textLayers.add(layer)
         selectedTextLayerId = layer.id
