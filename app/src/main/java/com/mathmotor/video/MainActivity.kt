@@ -266,6 +266,11 @@ class MainActivity : Activity() {
             Toast.makeText(this, "Video seçilmedi.", Toast.LENGTH_SHORT).show()
             return
         }
+        try {
+            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        } catch (_: Exception) {
+            // Some document providers grant temporary access only; the editor can still open it now.
+        }
         openEditor(uri.toString())
     }
 
