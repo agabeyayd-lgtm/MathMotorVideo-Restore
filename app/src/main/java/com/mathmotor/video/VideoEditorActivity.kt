@@ -109,6 +109,7 @@ class VideoEditorActivity : Activity() {
     private lateinit var timelinePlayheadLabel: TextView
     private var timelinePlayheadMs = 0L
     private var timelinePreviewLoaded = false
+    private var previewSingleClip = false
     private val timelineHandler = Handler(Looper.getMainLooper())
     private val textTimelineRefreshTask = object : Runnable {
         override fun run() { refreshTimelineTracks() }
@@ -116,6 +117,7 @@ class VideoEditorActivity : Activity() {
     private val timelineSyncTask = object : Runnable {
         override fun run() {
             if (timelinePreviewLoaded) syncTimelinePlayheadFromPlayer()
+            else if (previewSingleClip) syncSingleClipPlayheadFromPlayer()
             timelineHandler.postDelayed(this, 250L)
         }
     }
@@ -1048,10 +1050,12 @@ class VideoEditorActivity : Activity() {
         if (!::timelinePlayheadLabel.isInitialized) return
         timelinePlayheadLabel.text = "${formatTimelineMs(timelinePlayheadMs)} / ${formatTimelineMs(totalOutputDurationMs())}"
         updateTimelinePlayheadLine()
+        updatePreviewTextOverlay()
     }
 
     private fun ensureTimelinePreviewLoaded() {
         if (timelinePreviewLoaded || clips.isEmpty()) return
+        previewSingleClip = false
         val items = clips.map { clip -> clippedMediaItem(clip) }
         player?.setMediaItems(items, 0, 0L)
         player?.setSeekParameters(androidx.media3.exoplayer.SeekParameters.EXACT)
@@ -1093,10 +1097,27 @@ class VideoEditorActivity : Activity() {
         updateTimelinePlayheadLabel()
     }
 
+    private fun syncSingleClipPlayheadFromPlayer() {
+        val currentPlayer = player ?: return
+        val index = selectedClipIndex
+        val clip = clips.getOrNull(index) ?: return
+        val beforeMs = clips.take(index).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
+        val clipDuration = (clip.endMs - clip.startMs).coerceAtLeast(0L)
+        timelinePlayheadMs = (beforeMs + currentPlayer.currentPosition.coerceIn(0L, clipDuration))
+            .coerceIn(0L, totalOutputDurationMs())
+        if (::timelinePlayheadSeek.isInitialized) {
+            timelinePlayheadSeek.progress = timelinePlayheadMs.coerceAtMost(timelinePlayheadSeek.max.toLong()).toInt()
+        }
+        updateTimelinePlayheadLabel()
+    }
+
     private fun selectTimelineClip(index: Int) {
         if (index !in clips.indices) return
         timelinePreviewLoaded = false
+        previewSingleClip = true
         selectedClipIndex = index
+        timelinePlayheadMs = clips.take(index).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
+        updateTimelinePlayheadLabel()
         val clip = clips[index]
         refreshClipList()
         loadTrimControls()
@@ -1109,7 +1130,10 @@ class VideoEditorActivity : Activity() {
     private fun updatePreviewTextOverlay() {
         if (!::previewTextOverlay.isInitialized || !::textInput.isInitialized) return
         val value = textInput.text?.toString()?.trim().orEmpty()
-        if (value.isBlank()) {
+        val totalMs = totalOutputDurationMs()
+        val inVisibleTimeRange = totalMs > 0L &&
+            timelinePlayheadMs >= textStartMs && timelinePlayheadMs < textEndMs
+        if (value.isBlank() || !inVisibleTimeRange) {
             previewTextOverlay.visibility = View.GONE
             return
         }
@@ -1227,6 +1251,7 @@ class VideoEditorActivity : Activity() {
                     selectedClipIndex = -1
                 }
                 timelinePreviewLoaded = false
+                previewSingleClip = true
                 clips.add(Clip(uri, title, duration, 0L, duration))
                 selectedClipIndex = clips.lastIndex
                 player?.setMediaItem(MediaItem.fromUri(uri))
@@ -1327,6 +1352,9 @@ class VideoEditorActivity : Activity() {
         clips.clear()
         clips.addAll(loadedClips)
         selectedClipIndex = json.optInt("selectedClipIndex", 0).coerceIn(0, clips.lastIndex)
+        timelinePreviewLoaded = false
+        previewSingleClip = true
+        timelinePlayheadMs = clips.take(selectedClipIndex).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
         musicUri = json.optString("musicUri").takeIf { it.isNotBlank() && it != "null" }?.let(Uri::parse)
         musicTitle = json.optString("musicTitle").takeIf { it.isNotBlank() && it != "null" }
         soundUri = json.optString("soundUri").takeIf { it.isNotBlank() && it != "null" }?.let(Uri::parse)
@@ -1516,6 +1544,8 @@ class VideoEditorActivity : Activity() {
                 clips.addAll(ready)
                 selectedClipIndex = clips.lastIndex
                 timelinePreviewLoaded = false
+                previewSingleClip = true
+                timelinePlayheadMs = clips.take(selectedClipIndex).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
                 refreshClipList()
                 loadTrimControls()
                 val selected = selectedClip()
@@ -1581,8 +1611,12 @@ class VideoEditorActivity : Activity() {
                     isFocusable = true
                     setOnClickListener {
                         selectedClipIndex = index
+                        timelinePreviewLoaded = false
+                        previewSingleClip = true
+                        timelinePlayheadMs = clips.take(index).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
                         refreshClipList()
                         loadTrimControls()
+                        updateTimelinePlayheadLabel()
                         player?.setMediaItem(clippedMediaItem(clip))
                         player?.prepare()
                         player?.playWhenReady = true
@@ -1648,9 +1682,11 @@ class VideoEditorActivity : Activity() {
         loadTrimControls()
         val selected = selectedClip()
         if (selected == null) {
+            previewSingleClip = false
             player?.clearMediaItems()
         } else {
-            player?.setMediaItem(MediaItem.fromUri(selected.uri))
+            previewSingleClip = true
+            player?.setMediaItem(clippedMediaItem(selected))
             player?.prepare()
         }
         status.text = if (clips.isEmpty()) "Zaman çizelgesi boş." else "Klip kaldırıldı. Kalan klipler yerinde duruyor."
@@ -2130,11 +2166,14 @@ class VideoEditorActivity : Activity() {
 
     private fun previewSelectedClip() {
         timelinePreviewLoaded = false
+        previewSingleClip = true
         val clip = selectedClip()
         if (clip == null) {
             status.text = "Önizleme için önce video seç."
             return
         }
+        timelinePlayheadMs = clips.take(selectedClipIndex).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
+        updateTimelinePlayheadLabel()
         player?.setMediaItem(clippedMediaItem(clip))
         player?.prepare()
         player?.playWhenReady = true
