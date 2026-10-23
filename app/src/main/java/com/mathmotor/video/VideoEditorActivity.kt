@@ -388,6 +388,7 @@ class VideoEditorActivity : Activity() {
         val previewSizeControls = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            elevation = dp(12).toFloat()
             setPadding(dp(4), 0, dp(4), 0)
             background = android.graphics.drawable.GradientDrawable().apply {
                 setColor(Color.argb(205, 8, 15, 22))
@@ -398,7 +399,7 @@ class VideoEditorActivity : Activity() {
             ).apply { leftMargin = dp(4); rightMargin = dp(2) })
             addView(miniButton("−") { adjustPreviewStageHeight(-30) },
                 LinearLayout.LayoutParams(dp(38), dp(40)))
-            addView(miniButton("↺") { setPreviewStageHeight(290) },
+            addView(miniButton("↺") { setPreviewStageHeight(340) },
                 LinearLayout.LayoutParams(dp(42), dp(40)))
             addView(miniButton("+") { adjustPreviewStageHeight(30) },
                 LinearLayout.LayoutParams(dp(38), dp(40)))
