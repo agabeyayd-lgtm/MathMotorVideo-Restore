@@ -833,7 +833,10 @@ class VideoEditorActivity : Activity() {
         val pxPerSecond = timelinePixelsPerSecond()
 
         fun exactWidth(durationMs: Long): Int =
-            ((durationMs.coerceAtLeast(0L) / 1000f) * pxPerSecond).toInt().coerceAtLeast(0)
+            TimelineScaleMath.widthBetween(0L, durationMs.coerceAtLeast(0L), pxPerSecond)
+
+        fun widthBetween(startMs: Long, endMs: Long): Int =
+            TimelineScaleMath.widthBetween(startMs, endMs, pxPerSecond)
 
         fun makeLane(tag: String, heightDp: Int = 30): LinearLayout {
             val row = LinearLayout(this).apply {
@@ -888,9 +891,12 @@ class VideoEditorActivity : Activity() {
             fill: Int,
             selected: Boolean = false,
             onClick: (() -> Unit)? = null,
-            minimumWidthDp: Int = 0
+            minimumWidthDp: Int = 0,
+            startMs: Long = 0L
         ) {
-            val width = maxOf(dp(minimumWidthDp), exactWidth(durationMs).coerceAtLeast(1))
+            val safeStartMs = startMs.coerceAtLeast(0L)
+            val safeEndMs = safeStartMs + durationMs.coerceAtLeast(0L)
+            val width = maxOf(dp(minimumWidthDp), widthBetween(safeStartMs, safeEndMs).coerceAtLeast(1))
             val block = TextView(this).apply {
                 text = title
                 textSize = 9f
@@ -911,13 +917,11 @@ class VideoEditorActivity : Activity() {
                 }
             }
             val blockHeight = dp(if (keyboardLayoutActive) 18 else 24)
-            track.addView(block, LinearLayout.LayoutParams(width, blockHeight).apply {
-                rightMargin = dp(3)
-            })
+            track.addView(block, LinearLayout.LayoutParams(width, blockHeight))
         }
 
-        fun addSpacer(track: LinearLayout, durationMs: Long) {
-            val width = exactWidth(durationMs)
+        fun addSpacer(track: LinearLayout, startMs: Long, endMs: Long) {
+            val width = widthBetween(startMs, endMs)
             if (width <= 0) return
             track.addView(View(this), LinearLayout.LayoutParams(width, dp(if (keyboardLayoutActive) 18 else 24)))
         }
@@ -926,8 +930,11 @@ class VideoEditorActivity : Activity() {
             val ruler = makeLane("SÜRE", 22)
             val rulerEndMs = (((totalMs + 4999L) / 5000L).coerceAtLeast(1L)) * 5000L
             var rulerTimeMs = 0L
+            var rulerPositionPx = 0
             while (rulerTimeMs < rulerEndMs) {
                 val spanMs = minOf(5000L, rulerEndMs - rulerTimeMs)
+                val nextTimeMs = rulerTimeMs + spanMs
+                val nextPositionPx = TimelineScaleMath.pixelsForTime(nextTimeMs, pxPerSecond)
                 val tick = TextView(this).apply {
                     text = formatMs(rulerTimeMs) + " ┆"
                     textSize = 9f
@@ -935,8 +942,11 @@ class VideoEditorActivity : Activity() {
                     gravity = Gravity.CENTER_VERTICAL or Gravity.START
                     setPadding(dp(2), 0, 0, 0)
                 }
-                ruler.addView(tick, LinearLayout.LayoutParams(maxOf(dp(26), exactWidth(spanMs)), dp(22)))
-                rulerTimeMs += spanMs
+                ruler.addView(tick, LinearLayout.LayoutParams(
+                    maxOf(dp(26), (nextPositionPx - rulerPositionPx).coerceAtLeast(1)), dp(22)
+                ))
+                rulerTimeMs = nextTimeMs
+                rulerPositionPx = nextPositionPx
             }
         }
 
@@ -944,14 +954,16 @@ class VideoEditorActivity : Activity() {
         if (clips.isEmpty()) {
             addBlock(videoTrack, "+ Video ekle", 5000L, Color.rgb(38, 105, 123), onClick = { chooseVideo(true) }, minimumWidthDp = 115)
         } else {
+            var videoOffsetMs = 0L
             clips.forEachIndexed { index, clip ->
                 val duration = (clip.endMs - clip.startMs).coerceAtLeast(0L)
-                val width = exactWidth(duration).coerceAtLeast(1)
+                val nextVideoOffsetMs = videoOffsetMs + duration
+                val width = widthBetween(videoOffsetMs, nextVideoOffsetMs).coerceAtLeast(1)
                 val height = dp(if (keyboardLayoutActive) 18 else 24)
                 val block = buildVideoClipFilmstrip(clip, index, width, height, index == selectedClipIndex)
-                // Clip widths already encode their exact timeline duration; extra margins
-                // accumulate between clips and make the ruler/playhead drift out of sync.
+                // Widths use absolute boundaries, so fractional-pixel rounding cannot accumulate.
                 videoTrack.addView(block, LinearLayout.LayoutParams(width, height))
+                videoOffsetMs = nextVideoOffsetMs
             }
         }
 
@@ -960,12 +972,12 @@ class VideoEditorActivity : Activity() {
         if (overlayText.isNotBlank() && totalMs > 0L) {
             val startMs = textStartMs.coerceIn(0L, totalMs)
             val endMs = textEndMs.coerceIn(startMs, totalMs)
-            addSpacer(textTrack, startMs)
+            addSpacer(textTrack, 0L, startMs)
             addBlock(
                 textTrack, overlayText, (endMs - startMs).coerceAtLeast(0L),
-                Color.rgb(110, 74, 154), onClick = { showEditorPanel("text") }
+                Color.rgb(110, 74, 154), onClick = { showEditorPanel("text") }, startMs = startMs
             )
-            addSpacer(textTrack, (totalMs - endMs).coerceAtLeast(0L))
+            addSpacer(textTrack, endMs, totalMs)
         } else {
             addBlock(textTrack, "+ Metin ekle", totalMs.coerceAtLeast(5000L), Color.rgb(70, 54, 93),
                 onClick = { showEditorPanel("text") }, minimumWidthDp = 115)
@@ -986,12 +998,13 @@ class VideoEditorActivity : Activity() {
         if (soundUri != null && totalMs > 0L) {
             val startMs = soundStartMs.coerceIn(0L, totalMs)
             val duration = soundDurationMs.coerceAtMost((totalMs - startMs).coerceAtLeast(0L))
-            addSpacer(effectTrack, startMs)
+            val endMs = (startMs + duration).coerceAtMost(totalMs)
+            addSpacer(effectTrack, 0L, startMs)
             addBlock(
                 effectTrack, "♪ ${soundTitle ?: "Ses efekti"}", duration, Color.rgb(166, 102, 40),
-                onClick = { showEditorPanel("audio") }
+                onClick = { showEditorPanel("audio") }, startMs = startMs
             )
-            addSpacer(effectTrack, (totalMs - startMs - duration).coerceAtLeast(0L))
+            addSpacer(effectTrack, endMs, totalMs)
         } else {
             addBlock(effectTrack, "+ Ses efekti ekle", totalMs.coerceAtLeast(5000L), Color.rgb(96, 68, 41),
                 onClick = { chooseAudio(false) }, minimumWidthDp = 115)
@@ -1007,7 +1020,7 @@ class VideoEditorActivity : Activity() {
         if (!::timelinePlayheadLine.isInitialized || !::timelineTracksFrame.isInitialized) return
         val scrollX = timelineScrollViews.firstOrNull()?.scrollX ?: 0
         val pixelsPerSecond = timelinePixelsPerSecond()
-        val timelineX = dp(57) + (timelinePlayheadMs / 1000f * pixelsPerSecond).toInt() - scrollX
+        val timelineX = dp(57) + TimelineScaleMath.pixelsForTime(timelinePlayheadMs, pixelsPerSecond) - scrollX
         val params = timelinePlayheadLine.layoutParams as? FrameLayout.LayoutParams ?: return
         params.width = dp(28)
         params.leftMargin = (timelineX - dp(14)).coerceAtLeast(dp(0))
@@ -1031,7 +1044,7 @@ class VideoEditorActivity : Activity() {
         val timelineContentX = frameX + scrollX
         val videoStartX = dp(57).toFloat()
         val offsetPixels = (timelineContentX - videoStartX).coerceAtLeast(0f)
-        val requestedMs = (offsetPixels / timelinePixelsPerSecond() * 1000f).toLong()
+        val requestedMs = TimelineScaleMath.millisecondsForPixels(offsetPixels, timelinePixelsPerSecond())
         seekTimelinePreview(requestedMs.coerceIn(0L, totalOutputDurationMs()))
     }
 
@@ -2102,7 +2115,7 @@ class VideoEditorActivity : Activity() {
                             val deltaPx = event.rawX - downRawX
                             // The trim gesture uses the same px-per-second scale as the ruler.
                             // This permits extending a cut back into the original source as well as shortening it.
-                            val deltaMs = (deltaPx / timelinePixelsPerSecond() * 1000f).toLong()
+                            val deltaMs = TimelineScaleMath.millisecondsForPixels(deltaPx, timelinePixelsPerSecond())
                             view.translationX = 0f
                             view.parent?.requestDisallowInterceptTouchEvent(false)
                             if (moved) {
