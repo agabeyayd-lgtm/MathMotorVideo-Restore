@@ -1,28 +1,33 @@
-# MathMotorVideo restoration status
+# MathMotor Video — project status
 
-## What was found
+## Current product direction
 
-- `MathMotorVideo-V7-Build365.apk` (2,938,357 bytes): actual Android APK, not source code.
-- `MathMotorVideo-V7-Build365.zip`: ZIP contains only `app-debug.apk`.
-- `MathMotorVideo_android_prototype.zip`: early Android Studio prototype with `MainActivity.kt`, `World.kt`, `VideoRenderer.kt`, Gradle files and an Actions workflow.
-- The public `MathMotorVideo-Dev.` repository currently exposes only a minimal README and has no usable application source tree.
+MathMotor Video is now a **local Android video editor** with an easy, CapCut-inspired workflow. AI generation, AI scoring, social-media data learning, and paid API integration are outside the current scope. Normal editing should work on-device without a cloud account or AI service.
 
-The V7 APK's embedded class and string inventory indicates that it had more modules than the early prototype, including a scenario/director pipeline, a human-oriented video renderer, video history, viewer/judge logic, social public-data connectors and `PHYSX / FRAME TEST`. The original Kotlin source files were not found in the saved library or accessible repository.
+## Published baseline and release policy
 
-## This restoration project
+- Current baseline: versionCode = 384.
+- Existing published release: app-v8.3-44 — MathMotor Video signed APK build 44.
+- The source is being improved incrementally on the main branch.
+- The debug-build workflow and signed-release workflow are manual-only. Pushing source changes must not automatically produce an APK artifact or release.
+- Do not change the version code or publish a replacement APK until explicitly requested.
 
-This is a clean source reconstruction, not a decompiled or byte-for-byte V7 recovery. It provides:
+## What the current source contains
 
-- Seeded, deterministic motion-world generation.
-- A separate scene-director layer that reads but does not rewrite generated motion.
-- A 300-frame physics/timeline self-test and JVM unit tests.
-- A local 9:16 H.264 MP4 renderer and Android MediaStore output.
-- A local video history and latest-video opening action.
-- GitHub Actions workflow to run tests and build a debug APK.
+- Android video editor screen with preview, a multi-lane timeline, seek/playhead controls and timeline zoom.
+- Import and order multiple clips; select, trim, split, move and remove clips.
+- Thumbnail filmstrips for clips.
+- Text overlay with adjustable visibility interval, position and size.
+- Audio controls for original audio, looping music, and a timed sound effect.
+- MP4 export using AndroidX Media3 Transformer.
+- JSON project save/load and a local list of exported videos.
+- Home screen redesigned around creating an edit, selecting a video directly, and reopening recent exports.
+- Preview canvas adapts to the source video's aspect ratio, including rotated sources.
+- File access through Android's document picker; automatic network update checking and APK installation flow have been removed.
 
-## Not yet restored / verified
+## Important limitations
 
-- The original V7 learning/connector modules for YouTube, TikTok and Instagram.
-- Exact V7 UI, event-selection algorithms and original media/audio pipeline.
-- Compilation and execution on a physical Android device; the included CI workflow must succeed before treating the APK as verified.
-- This debug build is not signed with the old release key. To install over an existing release build, the same signing identity is required; otherwise uninstalling the old app may be necessary and can remove local app data.
+- The old V7 APK and prototype archives were recoverable, but the original complete V7 source tree was not. The old app's social-data learning connectors and the exact old UI cannot be reconstructed from these files alone, and are not part of the present product goal.
+- Some older internal source files and physics-related tests remain in the repository as reconstruction leftovers; they are not part of the home-screen editing workflow.
+- The newly updated source has **not** been compiled or exercised on a physical Android device in this turn. The most recent published APK remains versionCode 384 and does not include these new source changes until a later, explicitly requested build.
+- APK build and release are manual-only. Do not infer a new APK exists just because source commits were made.
