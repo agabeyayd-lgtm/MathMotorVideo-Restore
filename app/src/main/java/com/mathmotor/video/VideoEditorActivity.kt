@@ -106,7 +106,9 @@ class VideoEditorActivity : Activity() {
     private var textPosition = TextPosition.BOTTOM
     private var textSizeSp = 24
     private var textColorPreset = TextColorPreset.WHITE
+    private var textBold = true
     private lateinit var textColorGroup: android.widget.RadioGroup
+    private lateinit var textBoldCheck: CheckBox
     private enum class TextPosition { TOP, CENTER, BOTTOM }
     private enum class TextColorPreset(val colorInt: Int) {
         WHITE(Color.WHITE),
@@ -124,7 +126,8 @@ class VideoEditorActivity : Activity() {
         var timingCustomized: Boolean,
         var position: TextPosition,
         var sizeSp: Int,
-        var colorPreset: TextColorPreset
+        var colorPreset: TextColorPreset,
+        var isBold: Boolean
     )
 
     private val textLayers = mutableListOf<TextLayer>()
@@ -645,6 +648,20 @@ class VideoEditorActivity : Activity() {
         textPanel.addView(textColorScroll, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(44)
         ))
+        textBoldCheck = CheckBox(this).apply {
+            text = "Kalın yazı"
+            textSize = 12f
+            setTextColor(Color.WHITE)
+            buttonTintList = android.content.res.ColorStateList.valueOf(Color.rgb(57, 220, 190))
+            isChecked = true
+            setOnCheckedChangeListener { _, checked ->
+                if (loadingTextLayerControls) return@setOnCheckedChangeListener
+                textBold = checked
+                syncSelectedTextLayerFromControls()
+                updatePreviewTextOverlay()
+            }
+        }
+        textPanel.addView(textBoldCheck, matchWrap())
         textSizeLabel = label("Yazı boyutu: $textSizeSp", 12f, Color.WHITE, true)
         textPanel.addView(textSizeLabel)
         textSizeSeek = SeekBar(this).apply {
@@ -679,7 +696,8 @@ class VideoEditorActivity : Activity() {
                         timingCustomized = false,
                         position = textPosition,
                         sizeSp = textSizeSp,
-                        colorPreset = textColorPreset
+                        colorPreset = textColorPreset,
+                        isBold = textBold
                     )
                     textLayers.add(layer)
                     selectedTextLayerId = layer.id
@@ -1587,6 +1605,7 @@ class VideoEditorActivity : Activity() {
         layer.position = textPosition
         layer.sizeSp = textSizeSp.coerceIn(12, 48)
         layer.colorPreset = textColorPreset
+        layer.isBold = textBold
     }
 
     private fun refreshTextLayerList() {
@@ -1634,7 +1653,8 @@ class VideoEditorActivity : Activity() {
             timingCustomized = false,
             position = TextPosition.BOTTOM,
             sizeSp = 24,
-            colorPreset = textColorPreset
+            colorPreset = textColorPreset,
+            isBold = textBold
         )
         textLayers.add(layer)
         selectedTextLayerId = layer.id
@@ -1705,6 +1725,7 @@ class VideoEditorActivity : Activity() {
             textPosition = layer?.position ?: TextPosition.BOTTOM
             textSizeSp = layer?.sizeSp?.coerceIn(12, 48) ?: 24
             textColorPreset = layer?.colorPreset ?: TextColorPreset.WHITE
+            textBold = layer?.isBold ?: true
             textInput.setText(layer?.text.orEmpty())
             textSizeLabel.text = "Yazı boyutu: $textSizeSp"
             textSizeSeek.progress = textSizeSp - 12
@@ -1714,6 +1735,7 @@ class VideoEditorActivity : Activity() {
                 TextPosition.BOTTOM -> 3
             })
             textColorGroup.check(11 + TextColorPreset.values().indexOf(textColorPreset).coerceAtLeast(0))
+            textBoldCheck.isChecked = textBold
             updateTextControls()
         } finally {
             loadingTextLayerControls = false
@@ -1753,6 +1775,7 @@ class VideoEditorActivity : Activity() {
             overlay.text = layer.text.trim()
             overlay.setTextSize(layer.sizeSp.toFloat())
             overlay.setTextColor(layer.colorPreset.colorInt)
+            overlay.setTypeface(Typeface.DEFAULT, if (layer.isBold) Typeface.BOLD else Typeface.NORMAL)
             overlay.visibility = View.VISIBLE
             val params = overlay.layoutParams as? FrameLayout.LayoutParams ?: return@forEachIndexed
             params.gravity = when (layer.position) {
@@ -2015,6 +2038,7 @@ class VideoEditorActivity : Activity() {
                 put("position", layer.position.name)
                 put("sizeSp", layer.sizeSp)
                 put("colorPreset", layer.colorPreset.name)
+                put("isBold", layer.isBold)
             })
         }
         clips.forEach { clip ->
@@ -2039,6 +2063,7 @@ class VideoEditorActivity : Activity() {
             put("soundStartMs", soundStartMs)
             put("text", textInput.text?.toString().orEmpty())
             put("textColorPreset", textColorPreset.name)
+            put("textBold", textBold)
             put("textLayers", textLayerArray)
             put("selectedTextLayerId", selectedTextLayerId ?: JSONObject.NULL)
             put("textStartMs", textStartMs)
@@ -2113,7 +2138,8 @@ class VideoEditorActivity : Activity() {
                     sizeSp = item.optInt("sizeSp", 24).coerceIn(12, 48),
                     colorPreset = runCatching {
                         TextColorPreset.valueOf(item.optString("colorPreset", "WHITE"))
-                    }.getOrDefault(TextColorPreset.WHITE)
+                    }.getOrDefault(TextColorPreset.WHITE),
+                    isBold = item.optBoolean("isBold", true)
                 ))
             }
         } else {
@@ -2129,7 +2155,8 @@ class VideoEditorActivity : Activity() {
                     sizeSp = textSizeSp,
                     colorPreset = runCatching {
                         TextColorPreset.valueOf(json.optString("textColorPreset", "WHITE"))
-                    }.getOrDefault(TextColorPreset.WHITE)
+                    }.getOrDefault(TextColorPreset.WHITE),
+                    isBold = json.optBoolean("textBold", true)
                 ))
             }
         }
@@ -3113,7 +3140,9 @@ class VideoEditorActivity : Activity() {
         val styled = SpannableString(overlayText).apply {
             setSpan(ForegroundColorSpan(layer.colorPreset.colorInt), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             setSpan(BackgroundColorSpan(Color.argb(190, 0, 0, 0)), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            setSpan(StyleSpan(Typeface.BOLD), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            if (layer.isBold) {
+                setSpan(StyleSpan(Typeface.BOLD), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
             setSpan(
                 AbsoluteSizeSpan((layer.sizeSp * resources.displayMetrics.scaledDensity).toInt(), false),
                 0,
