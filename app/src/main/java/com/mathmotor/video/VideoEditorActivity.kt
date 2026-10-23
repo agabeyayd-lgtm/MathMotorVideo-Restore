@@ -1409,6 +1409,8 @@ class VideoEditorActivity : Activity() {
                         bodyInitialEndMs = layer.endMs
                         bodyMoved = false
                         player?.playWhenReady = false
+                        // Own this gesture from the start so the horizontal timeline does not steal it.
+                        view.parent?.requestDisallowInterceptTouchEvent(true)
                         true
                     }
                     android.view.MotionEvent.ACTION_MOVE -> {
@@ -1442,9 +1444,8 @@ class VideoEditorActivity : Activity() {
                             loadTextLayerIntoControls(layer)
                             status.text = "Yazı katmanı zaman çizelgesinde taşındı."
                         } else {
-                            selectTextLayer(layer.id)
+                            view.performClick()
                         }
-                        view.performClick()
                         true
                     }
                     android.view.MotionEvent.ACTION_CANCEL -> {
