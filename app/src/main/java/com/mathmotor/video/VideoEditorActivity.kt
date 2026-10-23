@@ -2091,7 +2091,8 @@ class VideoEditorActivity : Activity() {
 
         // Larger, high-contrast touch targets make the trim edges easy to find and drag.
         fun addTrimHandle(isStart: Boolean) {
-            val handleWidth = dp(30)
+            // Keep start/end handles distinct on short clips; users can zoom in for a larger touch target.
+            val handleWidth = minOf(dp(30), (width / 2).coerceAtLeast(1))
             val handle = FrameLayout(this).apply {
                 background = android.graphics.drawable.GradientDrawable().apply {
                     setColor(Color.rgb(0, 205, 177))
