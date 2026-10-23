@@ -13,7 +13,6 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
-import android.net.Uri
 import android.os.Bundle
 import android.os.Build
 import android.os.Handler
@@ -44,6 +43,8 @@ class MainActivity : Activity() {
     private var updateReceiverRegistered = false
     private val mainHandler = Handler(Looper.getMainLooper())
     private val pickVideoRequest = 2002
+    private val latestApkUrl = "https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/releases/latest/download/MathMotorVideo.apk"
+    private val latestReleaseApi = "https://api.github.com/repos/agabeyayd-lgtm/MathMotorVideo-Restore/releases/latest"
 
     private val bg = Color.rgb(9, 15, 25)
     private val panel = Color.rgb(19, 29, 43)
@@ -59,6 +60,9 @@ class MainActivity : Activity() {
         window.navigationBarColor = bg
         buildUi()
         refreshRecentProjects()
+        registerUpdateReceiver()
+        // Preserve the previous behavior: check for a newer published version on launch.
+        checkForUpdates()
     }
 
     override fun onResume() {
@@ -107,56 +111,93 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun checkForAppUpdate() {
-        updateStatus.text = "Güncelleme kontrol ediliyor…"
+    private fun registerUpdateReceiver() {
+        if (updateReceiverRegistered) return
+        try {
+            val filter = IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
+            if (Build.VERSION.SDK_INT >= 33) {
+                registerReceiver(updateReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                @Suppress("DEPRECATION")
+                registerReceiver(updateReceiver, filter)
+            }
+            updateReceiverRegistered = true
+        } catch (_: Exception) {
+            updateStatus.text = "Güncelleme bildirimi hazırlanamadı."
+        }
+    }
+
+    /**
+     * Keep the original updater behavior: compare the published versionCode
+     * before downloading anything. This avoids redownloading the same APK.
+     */
+    private fun checkForUpdates() {
+        updateStatus.text = "Güncelleme kontrol ediliyor… GitHub sürümü denetleniyor."
         Thread {
             var connection: HttpURLConnection? = null
             try {
-                connection = (URL("https://api.github.com/repos/agabeyayd-lgtm/MathMotorVideo-Restore/releases/latest").openConnection() as HttpURLConnection).apply {
+                connection = (URL(latestReleaseApi).openConnection() as HttpURLConnection).apply {
                     requestMethod = "GET"
                     connectTimeout = 12000
                     readTimeout = 12000
                     setRequestProperty("Accept", "application/vnd.github+json")
+                    setRequestProperty("User-Agent", "MathMotorVideo-Updater")
                     setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
                 }
-                if (connection.responseCode !in 200..299) throw IllegalStateException("Sunucu " + connection.responseCode + " döndürdü")
-                val release = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
-                val assets = release.optJSONArray("assets") ?: throw IllegalStateException("Sürüm dosyası bulunamadı")
-                var apkUrl: String? = null
-                for (i in 0 until assets.length()) {
-                    val asset = assets.optJSONObject(i) ?: continue
-                    if (asset.optString("name").equals("MathMotorVideo.apk", ignoreCase = true)) {
-                        apkUrl = asset.optString("browser_download_url").takeIf { it.startsWith("https://") }
-                        break
-                    }
+                if (connection.responseCode !in 200..299) {
+                    throw IllegalStateException("GitHub sunucusu ${connection.responseCode} döndürdü")
                 }
-                if (apkUrl == null) throw IllegalStateException("Yayımlanmış APK bulunamadı")
-                val finalUrl = apkUrl
+                val release = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+                val body = release.optString("body", "")
+                val match = Regex("(?i)versionCode\\s*[=:]\\s*(\\d+)").find(body)
+                val remoteCode = match?.groupValues?.getOrNull(1)?.toLongOrNull()
+                val currentCode = if (Build.VERSION.SDK_INT >= 28) {
+                    packageManager.getPackageInfo(packageName, 0).longVersionCode
+                } else {
+                    @Suppress("DEPRECATION")
+                    packageManager.getPackageInfo(packageName, 0).versionCode.toLong()
+                }
+                val releaseName = release.optString("name", release.optString("tag_name", "Yeni sürüm"))
                 mainHandler.post {
-                    try {
-                        val filter = IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
-                        if (Build.VERSION.SDK_INT >= 33) registerReceiver(updateReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-                        else {
-                            @Suppress("DEPRECATION")
-                            registerReceiver(updateReceiver, filter)
+                    when {
+                        remoteCode == null -> {
+                            updateStatus.text = "Sürüm bilgisi bulunamadı. Yayın kaydında versionCode yok."
                         }
-                        updateReceiverRegistered = true
-                        val request = DownloadManager.Request(Uri.parse(finalUrl))
-                            .setTitle("MathMotor Video güncellemesi")
-                            .setDescription("En son yayımlanan APK indiriliyor")
-                            .setMimeType("application/vnd.android.package-archive")
-                            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                            .setDestinationInExternalFilesDir(this, Environment.DIRECTORY_DOWNLOADS, "MathMotorVideo-update.apk")
-                        updateDownloadId = (getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
-                        updateStatus.text = "Güncelleme indiriliyor. Bildirimlerden ilerlemeyi görebilirsin."
-                    } catch (e: Exception) {
-                        updateStatus.text = "İndirme başlatılamadı: " + (e.message ?: "bilinmeyen hata")
+                        remoteCode <= currentCode -> {
+                            updateStatus.text = "Uygulama güncel. Kurulu sürüm: $currentCode • Son yayın: $releaseName"
+                        }
+                        else -> {
+                            updateStatus.text = "Yeni sürüm bulundu. Kurulu: $currentCode • Yeni: $remoteCode. APK indiriliyor…"
+                            downloadLatestApk()
+                        }
                     }
                 }
             } catch (e: Exception) {
-                mainHandler.post { updateStatus.text = "Kontrol edilemedi: " + (e.message ?: "bağlantını kontrol et") }
-            } finally { connection?.disconnect() }
+                mainHandler.post {
+                    updateStatus.text = "Güncelleme kontrol edilemedi: ${e.message ?: e.javaClass.simpleName}"
+                }
+            } finally {
+                connection?.disconnect()
+            }
         }.start()
+    }
+
+    private fun downloadLatestApk() {
+        try {
+            registerUpdateReceiver()
+            val request = DownloadManager.Request(Uri.parse(latestApkUrl))
+                .setTitle("MathMotor Video — Güncelleme")
+                .setDescription("Yeni sürüm indiriliyor")
+                .setMimeType("application/vnd.android.package-archive")
+                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                .setAllowedOverMetered(true)
+                .setAllowedOverRoaming(false)
+                .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "MathMotorVideo.apk")
+            updateDownloadId = (getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
+            updateStatus.text = "APK indiriliyor. Bildirimlerden ilerlemeyi görebilirsin; bitince kurulum ekranı açılır."
+        } catch (e: Exception) {
+            updateStatus.text = "APK indirilemedi: ${e.message ?: e.javaClass.simpleName}"
+        }
     }
 
     private fun buildUi() {
@@ -207,7 +248,7 @@ class MainActivity : Activity() {
             addView(label("UYGULAMA GÜNCELLEMESİ", 11f, accent, true))
             addView(label("Yeni sürümü uygulamanın içinden kontrol et.", 12f, muted, false))
             addView(gap(7))
-            addView(secondaryButton("↻   Güncellemeleri kontrol et") { checkForAppUpdate() }, matchWrap())
+            addView(secondaryButton("↻   Güncellemeleri kontrol et") { checkForUpdates() }, matchWrap())
             updateStatus = label("Güncelleme kontrol edilmedi.", 11f, muted, false)
             updateStatus.setPadding(0, dp(6), 0, 0)
             addView(updateStatus)
