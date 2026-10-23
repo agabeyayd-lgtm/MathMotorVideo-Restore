@@ -5,7 +5,7 @@ on:
   pull_request:
     branches: [ main ]
   push:
-    branches: [ main, fix/video-playback-clean-ui, feature/real-timeline-text-export ]
+    branches: [ main, fix/video-playback-clean-ui, feature/real-timeline-text-export, feature/capcut-style-editor ]
 
 permissions:
   contents: read

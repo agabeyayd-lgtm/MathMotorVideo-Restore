@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.ContentValues
 import android.content.Intent
 import android.database.Cursor
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Typeface
 import android.media.MediaMetadataRetriever
@@ -22,10 +23,13 @@ import android.text.style.StyleSpan
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowInsets
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
@@ -54,6 +58,7 @@ import androidx.media3.transformer.Transformer
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.lang.ref.WeakReference
 import java.util.Locale
 import kotlin.math.ceil
 
@@ -88,11 +93,23 @@ class VideoEditorActivity : Activity() {
     private lateinit var previewTextOverlay: TextView
     private lateinit var clipList: LinearLayout
     private lateinit var timelineTracks: LinearLayout
+    private lateinit var timelineTracksFrame: FrameLayout
+    private lateinit var timelinePlayheadLine: View
+    private val timelineScrollViews = mutableListOf<android.widget.HorizontalScrollView>()
+    private var syncingTimelineScroll = false
+    private var timelineHorizontalScrollX = 0
+    private var deferTimelineRefresh = false
+    private val timelineThumbnailCache = object : android.util.LruCache<String, Bitmap>(96) {}
+    private val pendingTimelineThumbnails = mutableMapOf<String, MutableList<WeakReference<ImageView>>>()
+    private val timelineThumbnailExecutor = java.util.concurrent.Executors.newFixedThreadPool(2)
     private lateinit var timelinePlayheadSeek: SeekBar
     private lateinit var timelinePlayheadLabel: TextView
     private var timelinePlayheadMs = 0L
     private var timelinePreviewLoaded = false
     private val timelineHandler = Handler(Looper.getMainLooper())
+    private val textTimelineRefreshTask = object : Runnable {
+        override fun run() { refreshTimelineTracks() }
+    }
     private val timelineSyncTask = object : Runnable {
         override fun run() {
             if (timelinePreviewLoaded) syncTimelinePlayheadFromPlayer()
@@ -127,6 +144,9 @@ class VideoEditorActivity : Activity() {
     private lateinit var exportButton: Button
     private lateinit var exportNameInput: EditText
     private var exporting = false
+    private var keyboardLayoutActive = false
+    private var maxEditorViewportHeightPx = 0
+    private var applyingResponsiveLayout = false
 
     companion object {
         private const val REQUEST_MAIN_VIDEO = 5101
@@ -141,6 +161,7 @@ class VideoEditorActivity : Activity() {
         super.onCreate(savedInstanceState)
         window.statusBarColor = Color.rgb(15, 31, 45)
         window.navigationBarColor = Color.rgb(15, 31, 45)
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         buildUi()
         player = ExoPlayer.Builder(this).build().also { playerView.player = it }
         timelineHandler.post(timelineSyncTask)
@@ -153,7 +174,7 @@ class VideoEditorActivity : Activity() {
         editorTabButtons.clear()
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(10), dp(4), dp(10), dp(26))
+            setPadding(dp(8), dp(4), dp(8), dp(4))
             setBackgroundColor(Color.rgb(12, 18, 28))
         }
 
@@ -181,7 +202,7 @@ class VideoEditorActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(10), 0, dp(4), 0)
             addView(label("Düzenle", 18f, Color.WHITE, true))
-            addView(label("MathMotor Studio", 10f, Color.rgb(154, 171, 190), false))
+            addView(label("MOBILE VIDEO STUDIO", 10f, Color.rgb(154, 171, 190), false))
         }
         topBar.addView(heading, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         topBar.addView(miniButton("Dışa aktar ›") { showEditorPanel("export") },
@@ -226,8 +247,8 @@ class VideoEditorActivity : Activity() {
             }
         )
         root.addView(previewFrame, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(160)
-        ).apply { bottomMargin = dp(8) })
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(190)
+        ).apply { bottomMargin = dp(6) })
 
         val timelineCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -264,8 +285,22 @@ class VideoEditorActivity : Activity() {
         timelineCard.addView(clipScroll, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(58)
         ))
+        timelineTracksFrame = FrameLayout(this)
         timelineTracks = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        timelineCard.addView(timelineTracks, matchWrap())
+        timelineTracksFrame.addView(
+            timelineTracks,
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        )
+        timelinePlayheadLine = View(this).apply {
+            setBackgroundColor(Color.rgb(255, 78, 92))
+            elevation = dp(4).toFloat()
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }
+        timelineTracksFrame.addView(
+            timelinePlayheadLine,
+            FrameLayout.LayoutParams(dp(2), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.TOP or Gravity.START)
+        )
+        timelineCard.addView(timelineTracksFrame, matchWrap())
 
         val playheadRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -297,10 +332,12 @@ class VideoEditorActivity : Activity() {
             LinearLayout.LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(5) })
         clipPanel.addView(clipActions1)
         val clipActions2 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        clipActions2.addView(miniButton("← Öne al") { moveSelectedClip(-1) },
+        clipActions2.addView(miniButton("Böl ✂") { splitSelectedClipAtPlayhead() },
             LinearLayout.LayoutParams(0, dp(42), 1f))
+        clipActions2.addView(miniButton("← Öne al") { moveSelectedClip(-1) },
+            LinearLayout.LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(4) })
         clipActions2.addView(miniButton("Sona al →") { moveSelectedClip(1) },
-            LinearLayout.LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(5) })
+            LinearLayout.LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(4) })
         clipPanel.addView(clipActions2)
         startLabel = label("Başlangıç: 00:00", 12f, Color.rgb(225, 233, 237), true)
         clipPanel.addView(startLabel)
@@ -321,6 +358,11 @@ class VideoEditorActivity : Activity() {
             setSingleLine(false)
             minLines = 1
             maxLines = 2
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or
+                android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE or
+                android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI
             setPadding(dp(12), dp(8), dp(12), dp(8))
             setBackgroundColor(Color.rgb(27, 39, 54))
         }
@@ -357,7 +399,8 @@ class VideoEditorActivity : Activity() {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                 updatePreviewTextOverlay()
-                refreshTimelineTracks()
+                timelineHandler.removeCallbacks(textTimelineRefreshTask)
+                timelineHandler.postDelayed(textTimelineRefreshTask, 120L)
             }
             override fun afterTextChanged(s: android.text.Editable?) {}
         })
@@ -410,10 +453,13 @@ class VideoEditorActivity : Activity() {
                 val total = totalOutputDurationMs()
                 soundStartMs = (progress * 1000L).coerceAtMost((total - 1L).coerceAtLeast(0L))
                 updateSoundControls()
+                if (!deferTimelineRefresh) refreshTimelineTracks()
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) { deferTimelineRefresh = true }
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                deferTimelineRefresh = false
                 refreshTimelineTracks()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         })
         audioPanel.addView(soundStartSeek, matchWrap())
         soundVolumeLabel = label("Efekt sesi: 100%", 12f, Color.WHITE, true)
@@ -475,6 +521,15 @@ class VideoEditorActivity : Activity() {
             panelHolder.addView(panel, matchWrap())
         }
         panelScroll.addView(panelHolder)
+        textInput.setOnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) {
+                textInput.post {
+                    textInput.requestRectangleOnScreen(
+                        android.graphics.Rect(0, 0, textInput.width, textInput.height), true
+                    )
+                }
+            }
+        }
         root.addView(panelScroll, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
         ))
@@ -513,6 +568,164 @@ class VideoEditorActivity : Activity() {
         setContentView(root)
         showEditorPanel("clip")
         refreshTimelineTracks()
+        installResponsiveEditorLayout(
+            root = root,
+            previewFrame = previewFrame,
+            timelineCard = timelineCard,
+            clipScroll = clipScroll,
+            panelScroll = panelScroll,
+            statusView = status,
+            bottomDock = dock,
+            topBar = topBar,
+            rulerAwareTimelineRefresh = { refreshTimelineTracks() }
+        )
+    }
+
+    private fun installResponsiveEditorLayout(
+        root: LinearLayout,
+        previewFrame: FrameLayout,
+        timelineCard: LinearLayout,
+        clipScroll: android.widget.HorizontalScrollView,
+        panelScroll: ScrollView,
+        statusView: TextView,
+        bottomDock: LinearLayout,
+        topBar: LinearLayout,
+        rulerAwareTimelineRefresh: () -> Unit
+    ) {
+        var insetLeft = 0
+        var insetTop = 0
+        var insetRight = 0
+        var insetBottom = 0
+        var imeInsetBottom = 0
+
+        fun applySafeRootPadding(imeVisible: Boolean, viewportHeight: Int) {
+            // On some devices adjustResize already excludes the IME. On edge-to-edge
+            // devices that keep the full viewport, reserve the keyboard inset ourselves.
+            val resizedForIme = imeVisible &&
+                maxEditorViewportHeightPx - viewportHeight > dp(150)
+            val keyboardBottom = if (imeVisible && !resizedForIme) imeInsetBottom else 0
+            root.setPadding(
+                dp(if (imeVisible) 4 else 8) + insetLeft,
+                dp(if (imeVisible) 2 else 4) + insetTop,
+                dp(if (imeVisible) 4 else 8) + insetRight,
+                dp(if (imeVisible) 2 else 4) + maxOf(insetBottom, keyboardBottom)
+            )
+        }
+
+        fun applyKeyboardMode(imeVisible: Boolean, viewportHeight: Int) {
+            if (imeVisible == keyboardLayoutActive) {
+                applySafeRootPadding(imeVisible, viewportHeight)
+                return
+            }
+            val availableHeight = viewportHeight.takeIf { it > 0 } ?: maxEditorViewportHeightPx
+            keyboardLayoutActive = imeVisible
+            applyingResponsiveLayout = true
+            try {
+                val previewParams = previewFrame.layoutParams as LinearLayout.LayoutParams
+                previewParams.height = if (imeVisible) {
+                    (availableHeight * 0.21f).toInt().coerceIn(dp(82), dp(112))
+                } else {
+                    (availableHeight * 0.26f).toInt().coerceIn(dp(145), dp(220))
+                }
+                previewFrame.layoutParams = previewParams
+
+                // Hide decorative strips and fixed docks so the active tool gets
+                // the visible space left by the keyboard.
+                clipScroll.visibility = if (imeVisible) View.GONE else View.VISIBLE
+                bottomDock.visibility = if (imeVisible) View.GONE else View.VISIBLE
+                statusView.visibility = if (imeVisible) View.GONE else View.VISIBLE
+                if (topBar.childCount > 2) {
+                    val topAction = topBar.getChildAt(2) as? Button
+                    if (topAction != null) {
+                        topAction.visibility = View.VISIBLE
+                        if (imeVisible) {
+                            topAction.text = "Bitti ✓"
+                            topAction.setOnClickListener {
+                                val focusedView = currentFocus
+                                val token = focusedView?.windowToken ?: root.windowToken
+                                val keyboard = getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
+                                    as? android.view.inputmethod.InputMethodManager
+                                keyboard?.hideSoftInputFromWindow(token, 0)
+                                focusedView?.clearFocus()
+                            }
+                        } else {
+                            topAction.text = "Dışa aktar ›"
+                            topAction.setOnClickListener { showEditorPanel("export") }
+                        }
+                    }
+                }
+
+                applySafeRootPadding(imeVisible, availableHeight)
+                if (imeVisible) {
+                    timelineCard.setPadding(dp(5), dp(2), dp(5), dp(2))
+                    timelinePlayheadSeek.layoutParams?.let {
+                        it.height = dp(24)
+                        timelinePlayheadSeek.layoutParams = it
+                    }
+                } else {
+                    timelineCard.setPadding(dp(8), dp(5), dp(8), dp(5))
+                    timelinePlayheadSeek.layoutParams?.let {
+                        it.height = dp(34)
+                        timelinePlayheadSeek.layoutParams = it
+                    }
+                }
+                rulerAwareTimelineRefresh()
+                panelScroll.requestLayout()
+                root.requestLayout()
+            } finally {
+                applyingResponsiveLayout = false
+            }
+        }
+
+        root.addOnLayoutChangeListener { view, _, _, _, _, _, _, _, _ ->
+            if (applyingResponsiveLayout) return@addOnLayoutChangeListener
+            val viewportHeight = view.height
+            if (viewportHeight <= 0) return@addOnLayoutChangeListener
+            if (!keyboardLayoutActive && viewportHeight > maxEditorViewportHeightPx) {
+                maxEditorViewportHeightPx = viewportHeight
+            }
+            if (maxEditorViewportHeightPx == 0) maxEditorViewportHeightPx = viewportHeight
+
+            val rootInsets = view.rootWindowInsets
+            val imeVisible = if (Build.VERSION.SDK_INT >= 30 && rootInsets != null) {
+                rootInsets.isVisible(WindowInsets.Type.ime())
+            } else {
+                maxEditorViewportHeightPx - viewportHeight > dp(150)
+            }
+            if (imeVisible != keyboardLayoutActive) {
+                applyKeyboardMode(imeVisible, viewportHeight)
+            } else if (!imeVisible) {
+                val normalHeight = (viewportHeight * 0.26f).toInt().coerceIn(dp(145), dp(220))
+                val params = previewFrame.layoutParams as? LinearLayout.LayoutParams
+                if (params != null && params.height != normalHeight) {
+                    applyingResponsiveLayout = true
+                    params.height = normalHeight
+                    previewFrame.layoutParams = params
+                    applyingResponsiveLayout = false
+                }
+            }
+        }
+
+        if (Build.VERSION.SDK_INT >= 30) {
+            root.setOnApplyWindowInsetsListener { view, insets ->
+                val bars = insets.getInsets(WindowInsets.Type.systemBars())
+                val ime = insets.getInsets(WindowInsets.Type.ime())
+                insetLeft = bars.left
+                insetTop = bars.top
+                insetRight = bars.right
+                insetBottom = bars.bottom
+                imeInsetBottom = ime.bottom
+                val imeVisible = insets.isVisible(WindowInsets.Type.ime())
+                view.post {
+                    if (imeVisible != keyboardLayoutActive) {
+                        applyKeyboardMode(imeVisible, view.height)
+                    }
+                    applySafeRootPadding(imeVisible, view.height)
+                }
+                insets
+            }
+            root.requestApplyInsets()
+        }
     }
 
     private fun showEditorPanel(name: String) {
@@ -530,7 +743,10 @@ class VideoEditorActivity : Activity() {
 
     private fun refreshTimelineTracks() {
         if (!::timelineTracks.isInitialized) return
+        val preservedScrollX = timelineScrollViews.firstOrNull()?.scrollX ?: timelineHorizontalScrollX
+        timelineHorizontalScrollX = preservedScrollX
         timelineTracks.removeAllViews()
+        timelineScrollViews.clear()
         if (::timelinePlayheadSeek.isInitialized) updateTimelinePlayheadControls()
 
         val totalMs = totalOutputDurationMs()
@@ -551,11 +767,26 @@ class VideoEditorActivity : Activity() {
                 setTextColor(Color.rgb(166, 184, 201))
                 typeface = Typeface.DEFAULT_BOLD
                 gravity = Gravity.CENTER_VERTICAL
-            }, LinearLayout.LayoutParams(dp(58), ViewGroup.LayoutParams.MATCH_PARENT))
+            }, LinearLayout.LayoutParams(dp(54), ViewGroup.LayoutParams.MATCH_PARENT))
 
             val scroll = android.widget.HorizontalScrollView(this).apply {
                 isHorizontalScrollBarEnabled = false
                 overScrollMode = View.OVER_SCROLL_NEVER
+            }
+            timelineScrollViews.add(scroll)
+            scroll.setOnScrollChangeListener { view, scrollX, _, _, _ ->
+                if (!syncingTimelineScroll) {
+                    syncingTimelineScroll = true
+                    try {
+                        timelineHorizontalScrollX = scrollX
+                    timelineScrollViews.forEach { other ->
+                            if (other !== view && other.scrollX != scrollX) other.scrollTo(scrollX, 0)
+                        }
+                    } finally {
+                        syncingTimelineScroll = false
+                    }
+                    updateTimelinePlayheadLine()
+                }
             }
             val track = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -563,7 +794,8 @@ class VideoEditorActivity : Activity() {
                 setPadding(dp(2), dp(1), dp(2), dp(1))
             }
             scroll.addView(track)
-            row.addView(scroll, LinearLayout.LayoutParams(0, dp(heightDp), 1f))
+            val responsiveLaneHeight = if (keyboardLayoutActive) 18 else heightDp
+            row.addView(scroll, LinearLayout.LayoutParams(0, dp(responsiveLaneHeight), 1f))
             timelineTracks.addView(row, matchWrap())
             return track
         }
@@ -597,7 +829,8 @@ class VideoEditorActivity : Activity() {
                     setOnClickListener { onClick() }
                 }
             }
-            track.addView(block, LinearLayout.LayoutParams(width, dp(24)).apply {
+            val blockHeight = dp(if (keyboardLayoutActive) 18 else 24)
+            track.addView(block, LinearLayout.LayoutParams(width, blockHeight).apply {
                 rightMargin = dp(3)
             })
         }
@@ -605,44 +838,43 @@ class VideoEditorActivity : Activity() {
         fun addSpacer(track: LinearLayout, durationMs: Long) {
             val width = exactWidth(durationMs)
             if (width <= 0) return
-            track.addView(View(this), LinearLayout.LayoutParams(width, dp(24)))
+            track.addView(View(this), LinearLayout.LayoutParams(width, dp(if (keyboardLayoutActive) 18 else 24)))
         }
 
-        val ruler = makeLane("SÜRE", 27)
-        val rulerEndMs = (((totalMs + 4999L) / 5000L).coerceAtLeast(1L)) * 5000L
-        var rulerTimeMs = 0L
-        while (rulerTimeMs < rulerEndMs) {
-            val spanMs = minOf(5000L, rulerEndMs - rulerTimeMs)
-            val tick = TextView(this).apply {
-                text = formatMs(rulerTimeMs) + " ┆"
-                textSize = 9f
-                setTextColor(Color.rgb(166, 184, 201))
-                gravity = Gravity.CENTER_VERTICAL or Gravity.START
-                setPadding(dp(2), 0, 0, 0)
+        if (!keyboardLayoutActive) {
+            val ruler = makeLane("SÜRE", 22)
+            val rulerEndMs = (((totalMs + 4999L) / 5000L).coerceAtLeast(1L)) * 5000L
+            var rulerTimeMs = 0L
+            while (rulerTimeMs < rulerEndMs) {
+                val spanMs = minOf(5000L, rulerEndMs - rulerTimeMs)
+                val tick = TextView(this).apply {
+                    text = formatMs(rulerTimeMs) + " ┆"
+                    textSize = 9f
+                    setTextColor(Color.rgb(166, 184, 201))
+                    gravity = Gravity.CENTER_VERTICAL or Gravity.START
+                    setPadding(dp(2), 0, 0, 0)
+                }
+                ruler.addView(tick, LinearLayout.LayoutParams(maxOf(dp(26), exactWidth(spanMs)), dp(22)))
+                rulerTimeMs += spanMs
             }
-            ruler.addView(tick, LinearLayout.LayoutParams(maxOf(dp(26), exactWidth(spanMs)), dp(22)))
-            rulerTimeMs += spanMs
         }
 
-        val videoTrack = makeLane("VIDEO", 31)
+        val videoTrack = makeLane("VIDEO", 24)
         if (clips.isEmpty()) {
             addBlock(videoTrack, "+ Video ekle", 5000L, Color.rgb(38, 105, 123), onClick = { chooseVideo(true) }, minimumWidthDp = 115)
         } else {
             clips.forEachIndexed { index, clip ->
                 val duration = (clip.endMs - clip.startMs).coerceAtLeast(0L)
-                addBlock(
-                    videoTrack,
-                    "${index + 1}. ${clip.title}  ${formatMs(duration)}",
-                    duration,
-                    if (index == selectedClipIndex) Color.rgb(0, 120, 125) else Color.rgb(38, 105, 123),
-                    selected = index == selectedClipIndex,
-                    onClick = { selectTimelineClip(index) },
-                    minimumWidthDp = 56
-                )
+                val width = maxOf(dp(10), exactWidth(duration))
+                val height = dp(if (keyboardLayoutActive) 18 else 24)
+                val block = buildVideoClipFilmstrip(clip, index, width, height, index == selectedClipIndex)
+                videoTrack.addView(block, LinearLayout.LayoutParams(width, height).apply {
+                    rightMargin = dp(3)
+                })
             }
         }
 
-        val textTrack = makeLane("METİN", 31)
+        val textTrack = makeLane("METİN", 24)
         val overlayText = if (::textInput.isInitialized) textInput.text?.toString()?.trim().orEmpty() else ""
         if (overlayText.isNotBlank() && totalMs > 0L) {
             val startMs = textStartMs.coerceIn(0L, totalMs)
@@ -655,7 +887,7 @@ class VideoEditorActivity : Activity() {
                 onClick = { showEditorPanel("text") }, minimumWidthDp = 115)
         }
 
-        val musicTrack = makeLane("MÜZİK", 31)
+        val musicTrack = makeLane("MÜZİK", 24)
         if (musicUri != null) {
             addBlock(musicTrack, "♫ ${musicTitle ?: "Müzik"}", totalMs, Color.rgb(46, 125, 85), minimumWidthDp = 56)
         } else {
@@ -663,7 +895,7 @@ class VideoEditorActivity : Activity() {
                 onClick = { chooseAudio(true) }, minimumWidthDp = 115)
         }
 
-        val effectTrack = makeLane("EFEKT", 31)
+        val effectTrack = makeLane("EFEKT", 24)
         if (soundUri != null && totalMs > 0L) {
             val startMs = soundStartMs.coerceIn(0L, totalMs)
             val duration = soundDurationMs.coerceAtMost((totalMs - startMs).coerceAtLeast(0L))
@@ -674,6 +906,23 @@ class VideoEditorActivity : Activity() {
             addBlock(effectTrack, "+ Ses efekti ekle", totalMs.coerceAtLeast(5000L), Color.rgb(96, 68, 41),
                 onClick = { chooseAudio(false) }, minimumWidthDp = 115)
         }
+        val restoreScrollX = timelineHorizontalScrollX
+        timelineScrollViews.toList().forEach { laneScroll ->
+            laneScroll.post { laneScroll.scrollTo(restoreScrollX, 0) }
+        }
+        updateTimelinePlayheadLine()
+    }
+
+    private fun updateTimelinePlayheadLine() {
+        if (!::timelinePlayheadLine.isInitialized || !::timelineTracksFrame.isInitialized) return
+        val scrollX = timelineScrollViews.firstOrNull()?.scrollX ?: 0
+        val pixelsPerSecond = dp(22).toFloat()
+        val timelineX = dp(54 + 3) + (timelinePlayheadMs / 1000f * pixelsPerSecond).toInt() - scrollX
+        val params = timelinePlayheadLine.layoutParams as? FrameLayout.LayoutParams ?: return
+        params.width = dp(2)
+        params.leftMargin = timelineX.coerceAtLeast(dp(0))
+        timelinePlayheadLine.layoutParams = params
+        timelinePlayheadLine.bringToFront()
     }
 
     private fun installTimelinePlayheadListeners() {
@@ -706,11 +955,13 @@ class VideoEditorActivity : Activity() {
         timelinePlayheadMs = timelinePlayheadMs.coerceIn(0L, totalMs)
         timelinePlayheadSeek.progress = timelinePlayheadMs.coerceAtMost(maxMs.toLong()).toInt()
         updateTimelinePlayheadLabel()
+        updateTimelinePlayheadLine()
     }
 
     private fun updateTimelinePlayheadLabel() {
         if (!::timelinePlayheadLabel.isInitialized) return
         timelinePlayheadLabel.text = "${formatTimelineMs(timelinePlayheadMs)} / ${formatTimelineMs(totalOutputDurationMs())}"
+        updateTimelinePlayheadLine()
     }
 
     private fun ensureTimelinePreviewLoaded() {
@@ -808,8 +1059,11 @@ class VideoEditorActivity : Activity() {
                 if (textEndMs <= textStartMs) textEndMs = (textStartMs + 1000L).coerceAtMost(totalOutputDurationMs())
                 updateTextControls()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStartTrackingTouch(seekBar: SeekBar?) { deferTimelineRefresh = true }
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                deferTimelineRefresh = false
+                refreshTimelineTracks()
+            }
         })
         textEndSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
@@ -819,8 +1073,11 @@ class VideoEditorActivity : Activity() {
                 if (textEndMs <= textStartMs) textStartMs = (textEndMs - 1000L).coerceAtLeast(0L)
                 updateTextControls()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStartTrackingTouch(seekBar: SeekBar?) { deferTimelineRefresh = true }
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                deferTimelineRefresh = false
+                refreshTimelineTracks()
+            }
         })
     }
 
@@ -842,7 +1099,7 @@ class VideoEditorActivity : Activity() {
         textEndSeek.isEnabled = total > 0L
         textStartLabel.text = "Yazı başlangıcı: " + formatMs(textStartMs)
         textEndLabel.text = "Yazı bitişi: " + formatMs(textEndMs)
-        refreshTimelineTracks()
+        if (!deferTimelineRefresh) refreshTimelineTracks()
     }
 
     private fun audioEffects(volumePercent: Int): List<AudioProcessor> {
@@ -1026,6 +1283,7 @@ class VideoEditorActivity : Activity() {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "video/*"
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, append)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
         }
         try {
@@ -1052,6 +1310,21 @@ class VideoEditorActivity : Activity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (resultCode != RESULT_OK) return
+        if (requestCode == REQUEST_MAIN_VIDEO || requestCode == REQUEST_ADD_VIDEO) {
+            val selectedUris = mutableListOf<Uri>()
+            val picked = data?.clipData
+            if (picked != null) {
+                for (i in 0 until picked.itemCount) selectedUris.add(picked.getItemAt(i).uri)
+            } else {
+                data?.data?.let { selectedUris.add(it) }
+            }
+            if (selectedUris.isEmpty()) {
+                status.text = "Video seçilmedi."
+                return
+            }
+            addClipsInOrder(selectedUris, requestCode == REQUEST_MAIN_VIDEO)
+            return
+        }
         val uri = data?.data ?: return
         try {
             contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -1073,41 +1346,6 @@ class VideoEditorActivity : Activity() {
                         ?: error("Proje dosyası okunamadı.")
                     applyProjectJson(JSONObject(json))
                 }.onFailure { status.text = "Proje açılamadı: ${it.message}" }
-            }
-            REQUEST_MAIN_VIDEO, REQUEST_ADD_VIDEO -> {
-                status.text = "Video bilgileri okunuyor…"
-                Thread {
-                    val details = runCatching {
-                        val retriever = MediaMetadataRetriever()
-                        try {
-                            retriever.setDataSource(this, uri)
-                            val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-                            duration
-                        } finally {
-                            retriever.release()
-                        }
-                    }.getOrElse { 0L }
-                    val title = queryDisplayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Video klibi"
-                    runOnUiThread {
-                        if (details <= 0L) {
-                            status.text = "Bu videonun süresi okunamadı. Başka bir video dosyası seç."
-                        } else {
-                            if (requestCode == REQUEST_MAIN_VIDEO) {
-                                clips.clear()
-                                selectedClipIndex = -1
-                            }
-                            val clip = Clip(uri, title, details, 0L, details)
-                            clips.add(clip)
-                            selectedClipIndex = clips.lastIndex
-                            player?.setMediaItem(MediaItem.fromUri(uri))
-                            player?.prepare()
-                            player?.playWhenReady = true
-                            refreshClipList()
-                            loadTrimControls()
-                            status.text = "${title} eklendi. Kesme aralığını seçebilirsin."
-                        }
-                    }
-                }.start()
             }
             REQUEST_MUSIC -> {
                 musicUri = uri
@@ -1146,6 +1384,62 @@ class VideoEditorActivity : Activity() {
                 }.start()
             }
         }
+    }
+
+    private fun addClipsInOrder(uris: List<Uri>, replaceExisting: Boolean) {
+        if (uris.isEmpty()) return
+        status.text = "Seçilen ${uris.size} video sırayla hazırlanıyor…"
+        Thread {
+            val ready = uris.mapNotNull { uri ->
+                try {
+                    contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                } catch (_: Exception) { }
+                runCatching {
+                    val retriever = MediaMetadataRetriever()
+                    val duration = try {
+                        retriever.setDataSource(this, uri)
+                        retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                    } finally {
+                        retriever.release()
+                    }
+                    if (duration <= 0L) null else Clip(
+                        uri = uri,
+                        title = queryDisplayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Video klibi",
+                        durationMs = duration,
+                        startMs = 0L,
+                        endMs = duration
+                    )
+                }.getOrNull()
+            }
+            runOnUiThread {
+                if (replaceExisting) {
+                    clips.clear()
+                    selectedClipIndex = -1
+                }
+                clips.addAll(ready)
+                if (ready.isEmpty()) {
+                    status.text = "Videolar okunamadı. Başka bir MP4/video dosyası seç."
+                    refreshClipList()
+                    return@runOnUiThread
+                }
+                selectedClipIndex = clips.lastIndex
+                timelinePreviewLoaded = false
+                refreshClipList()
+                loadTrimControls()
+                val selected = selectedClip()
+                if (selected != null) {
+                    player?.setMediaItem(clippedMediaItem(selected))
+                    player?.prepare()
+                    player?.playWhenReady = false
+                }
+                val skipped = uris.size - ready.size
+                status.text = buildString {
+                    append("${ready.size} video zaman çizelgesine eklendi. Klibe dokun: seç; basılı tutup sürükle: sırala.")
+                    if (skipped > 0) append(" $skipped dosya okunamadığı için atlandı.")
+                    append(" İstediğin sırada tek MP4 olarak dışa aktarabilirsin.")
+                }
+            }
+        }.start()
     }
 
     private fun queryDisplayName(uri: Uri): String? {
@@ -1221,6 +1515,27 @@ class VideoEditorActivity : Activity() {
                     textSize = 10f
                     setTextColor(Color.rgb(205, 218, 231))
                 })
+                tile.setOnLongClickListener {
+                    val dragData = android.content.ClipData.newPlainText("video_clip_index", index.toString())
+                    tile.startDragAndDrop(dragData, View.DragShadowBuilder(tile), index, 0)
+                    status.text = "Klibi basılı tutup sürükleyerek sırasını değiştir."
+                    true
+                }
+                tile.setOnDragListener { _, event ->
+                    when (event.action) {
+                        android.view.DragEvent.ACTION_DRAG_STARTED -> event.clipDescription?.hasMimeType("text/plain") == true
+                        android.view.DragEvent.ACTION_DRAG_ENTERED,
+                        android.view.DragEvent.ACTION_DRAG_LOCATION,
+                        android.view.DragEvent.ACTION_DRAG_EXITED -> true
+                        android.view.DragEvent.ACTION_DROP -> {
+                            val from = event.localState as? Int
+                            if (from != null && from in clips.indices) reorderClip(from, index)
+                            true
+                        }
+                        android.view.DragEvent.ACTION_DRAG_ENDED -> true
+                        else -> false
+                    }
+                }
                 clipList.addView(tile, LinearLayout.LayoutParams(dp(145), dp(68)).apply {
                     rightMargin = dp(6)
                 })
@@ -1247,6 +1562,54 @@ class VideoEditorActivity : Activity() {
             player?.prepare()
         }
         status.text = if (clips.isEmpty()) "Zaman çizelgesi boş." else "Klip kaldırıldı. Kalan klipler yerinde duruyor."
+    }
+
+    private fun reorderClip(from: Int, to: Int) {
+        if (from !in clips.indices || to !in clips.indices || from == to) return
+        val previouslySelected = selectedClip()
+        val moved = clips.removeAt(from)
+        clips.add(to, moved)
+        selectedClipIndex = clips.indexOfFirst { it === previouslySelected }.takeIf { it >= 0 } ?: to
+        timelinePreviewLoaded = false
+        refreshClipList()
+        loadTrimControls()
+        val selected = selectedClip()
+        if (selected != null) {
+            player?.setMediaItem(clippedMediaItem(selected))
+            player?.prepare()
+            player?.playWhenReady = false
+        }
+        status.text = "Klip sırası değişti. Dışa aktarma bu yeni sırayı kullanacak."
+    }
+
+    private fun splitSelectedClipAtPlayhead() {
+        val clip = selectedClip()
+        if (clip == null) {
+            status.text = "Önce bölmek istediğin klibi seç."
+            return
+        }
+        val duration = (clip.endMs - clip.startMs).coerceAtLeast(0L)
+        val localPosition = if (timelinePreviewLoaded) {
+            val clipTimelineStart = clips.take(selectedClipIndex).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
+            (timelinePlayheadMs - clipTimelineStart).coerceIn(0L, duration)
+        } else {
+            (player?.currentPosition ?: 0L).coerceIn(0L, duration)
+        }
+        val splitAt = clip.startMs + localPosition
+        if (localPosition < 350L || duration - localPosition < 350L) {
+            status.text = "Bölmek için oynatma noktasını klibin ortalarına getir; iki tarafta da en az 0,35 saniye olmalı."
+            return
+        }
+        clips[selectedClipIndex] = clip.copy(title = "${clip.title} • A", endMs = splitAt)
+        clips.add(selectedClipIndex + 1, clip.copy(title = "${clip.title} • B", startMs = splitAt))
+        selectedClipIndex += 1
+        timelinePreviewLoaded = false
+        refreshClipList()
+        loadTrimControls()
+        player?.setMediaItem(clippedMediaItem(clips[selectedClipIndex]))
+        player?.prepare()
+        player?.playWhenReady = false
+        status.text = "Klip iki parçaya bölündü. Parçalar zaman çizelgesinde ayrı ayrı taşınabilir ve tek MP4 olarak dışa aktarılır."
     }
 
     private fun moveSelectedClip(delta: Int) {
@@ -1282,37 +1645,194 @@ class VideoEditorActivity : Activity() {
             )
             .build()
 
+    private fun buildVideoClipFilmstrip(
+        clip: Clip,
+        index: Int,
+        width: Int,
+        height: Int,
+        selected: Boolean
+    ): FrameLayout {
+        val durationMs = (clip.endMs - clip.startMs).coerceAtLeast(0L)
+        val container = FrameLayout(this).apply {
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.rgb(27, 39, 54))
+                cornerRadius = dp(4).toFloat()
+            }
+            foreground = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.TRANSPARENT)
+                cornerRadius = dp(4).toFloat()
+                setStroke(dp(if (selected) 2 else 1),
+                    if (selected) Color.rgb(117, 240, 221) else Color.rgb(61, 79, 99))
+            }
+            clipToOutline = true
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { selectTimelineClip(index) }
+            setOnLongClickListener {
+                val dragData = android.content.ClipData.newPlainText("video_clip_index", index.toString())
+                startDragAndDrop(dragData, View.DragShadowBuilder(this), index, 0)
+                status.text = "Klibi basılı tutup sürükleyerek sırala."
+                true
+            }
+            setOnDragListener { _, event ->
+                when (event.action) {
+                    android.view.DragEvent.ACTION_DRAG_STARTED ->
+                        event.clipDescription?.hasMimeType("text/plain") == true
+                    android.view.DragEvent.ACTION_DRAG_ENTERED,
+                    android.view.DragEvent.ACTION_DRAG_LOCATION,
+                    android.view.DragEvent.ACTION_DRAG_EXITED -> true
+                    android.view.DragEvent.ACTION_DROP -> {
+                        val from = event.localState as? Int
+                        if (from != null && from in clips.indices) reorderClip(from, index)
+                        true
+                    }
+                    android.view.DragEvent.ACTION_DRAG_ENDED -> true
+                    else -> false
+                }
+            }
+            contentDescription = "Klip ${index + 1}: ${clip.title}, ${formatMs(durationMs)}"
+        }
+        val filmstrip = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setBackgroundColor(Color.rgb(26, 37, 51))
+        }
+        val thumbnailCount = (width / dp(42)).coerceIn(1, 8)
+        repeat(thumbnailCount) { slot ->
+            val image = ImageView(this).apply {
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                setBackgroundColor(Color.rgb(31, 46, 59))
+                contentDescription = "Klip karesi"
+            }
+            filmstrip.addView(image, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply {
+                if (slot < thumbnailCount - 1) rightMargin = dp(1)
+            })
+            val frameTime = clip.startMs + (durationMs * (slot + 1L) / (thumbnailCount + 1L))
+            requestTimelineThumbnail(clip.uri, frameTime, image)
+        }
+        container.addView(filmstrip, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+        val durationBadge = TextView(this).apply {
+            text = formatTimelineMs(durationMs)
+            textSize = if (height <= dp(18)) 7f else 8f
+            setTextColor(Color.WHITE)
+            setPadding(dp(3), 0, dp(3), 0)
+            maxLines = 1
+            gravity = Gravity.CENTER_VERTICAL
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.argb(190, 8, 13, 20))
+                cornerRadius = dp(3).toFloat()
+            }
+        }
+        container.addView(durationBadge, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            dp(if (height <= dp(18)) 12 else 14),
+            Gravity.BOTTOM or Gravity.END
+        ).apply { rightMargin = dp(2); bottomMargin = dp(2) })
+        return container
+    }
+
+    private fun requestTimelineThumbnail(uri: Uri, timeMs: Long, target: ImageView) {
+        val bucket = timeMs.coerceAtLeast(0L) / 250L
+        val key = "${uri}#${bucket}"
+        target.tag = key
+        val cached = timelineThumbnailCache.get(key)
+        if (cached != null) {
+            target.setImageBitmap(cached)
+            return
+        }
+        val waiting = pendingTimelineThumbnails[key]
+        if (waiting != null) {
+            waiting.add(WeakReference(target))
+            return
+        }
+        pendingTimelineThumbnails[key] = mutableListOf(WeakReference(target))
+        try {
+            timelineThumbnailExecutor.execute {
+                var result: Bitmap? = null
+                val retriever = MediaMetadataRetriever()
+                try {
+                    retriever.setDataSource(this, uri)
+                    val original = retriever.getFrameAtTime(
+                        timeMs.coerceAtLeast(0L) * 1000L,
+                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+                    )
+                    if (original != null) {
+                        val scale = maxOf(96f / original.width, 54f / original.height)
+                        val scaledWidth = (original.width * scale).toInt().coerceAtLeast(96)
+                        val scaledHeight = (original.height * scale).toInt().coerceAtLeast(54)
+                        val scaled = Bitmap.createScaledBitmap(original, scaledWidth, scaledHeight, true)
+                        if (scaled !== original) original.recycle()
+                        val left = ((scaled.width - 96) / 2).coerceAtLeast(0)
+                        val top = ((scaled.height - 54) / 2).coerceAtLeast(0)
+                        result = Bitmap.createBitmap(scaled, left, top, 96, 54)
+                        if (result !== scaled) scaled.recycle()
+                    }
+                } catch (_: Exception) {
+                    // Keep the neutral placeholder visible if a frame cannot be decoded.
+                } finally {
+                    runCatching { retriever.release() }
+                }
+                val decoded = result
+                runOnUiThread {
+                    val targets = pendingTimelineThumbnails.remove(key).orEmpty()
+                    if (decoded != null && !isFinishing && !isDestroyed) {
+                        timelineThumbnailCache.put(key, decoded)
+                        targets.forEach { ref ->
+                            val image = ref.get()
+                            if (image != null && image.tag == key) image.setImageBitmap(decoded)
+                        }
+                    } else {
+                        decoded?.recycle()
+                    }
+                }
+            }
+        } catch (_: java.util.concurrent.RejectedExecutionException) {
+            pendingTimelineThumbnails.remove(key)
+        }
+    }
+
     private fun installTrimListeners() {
         startSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
                 val clip = selectedClip() ?: return
-                val maxStart = (clip.durationMs - 250L).coerceAtLeast(0L)
-                clip.startMs = (progress * 1000L).coerceAtMost(maxStart)
+                val maxStart = (clip.durationMs - 500L).coerceAtLeast(0L)
+                clip.startMs = (progress * 100L).coerceAtMost(maxStart)
                 if (clip.endMs - clip.startMs < 500L) {
-                    clip.endMs = (clip.startMs + 1000L).coerceAtMost(clip.durationMs)
-                    endSeek.progress = ceil(clip.endMs / 1000.0).toInt()
+                    clip.endMs = (clip.startMs + 500L).coerceAtMost(clip.durationMs)
+                    endSeek.progress = ceil(clip.endMs / 100.0).toInt()
                 }
                 updateTrimLabels()
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) { deferTimelineRefresh = true }
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                deferTimelineRefresh = false
                 refreshClipList()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         })
         endSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
                 val clip = selectedClip() ?: return
-                clip.endMs = (progress * 1000L).coerceAtMost(clip.durationMs)
+                clip.endMs = (progress * 100L).coerceAtMost(clip.durationMs)
                 if (clip.endMs - clip.startMs < 500L) {
-                    clip.startMs = (clip.endMs - 1000L).coerceAtLeast(0L)
-                    startSeek.progress = (clip.startMs / 1000L).toInt()
+                    if (clip.endMs >= 500L) {
+                        clip.startMs = (clip.endMs - 500L).coerceAtLeast(0L)
+                    } else {
+                        clip.startMs = 0L
+                        clip.endMs = minOf(clip.durationMs, 500L)
+                    }
+                    startSeek.progress = (clip.startMs / 100L).toInt()
+                    endSeek.progress = ceil(clip.endMs / 100.0).toInt()
                 }
                 updateTrimLabels()
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) { deferTimelineRefresh = true }
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                deferTimelineRefresh = false
                 refreshClipList()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         })
     }
 
@@ -1331,19 +1851,20 @@ class VideoEditorActivity : Activity() {
         }
         startSeek.isEnabled = true
         endSeek.isEnabled = true
-        val durationSeconds = ceil(clip.durationMs / 1000.0).toInt().coerceAtLeast(1)
-        startSeek.max = durationSeconds
-        endSeek.max = durationSeconds
-        startSeek.progress = (clip.startMs / 1000L).toInt()
-        endSeek.progress = ceil(clip.endMs / 1000.0).toInt().coerceAtMost(durationSeconds)
+        val durationTenths = ceil(clip.durationMs / 100.0).toInt().coerceAtLeast(1)
+        val maxStartTenths = ((clip.durationMs - 500L).coerceAtLeast(0L) / 100L).toInt()
+        startSeek.max = maxStartTenths
+        endSeek.max = durationTenths
+        startSeek.progress = (clip.startMs / 100L).toInt().coerceAtMost(maxStartTenths)
+        endSeek.progress = ceil(clip.endMs / 100.0).toInt().coerceAtMost(durationTenths)
         selectedClipLabel.text = "Seçili klip: ${clip.title} • ${formatMs(clip.durationMs)}"
         updateTrimLabels()
     }
 
     private fun updateTrimLabels() {
         val clip = selectedClip()
-        startLabel.text = "Başlangıç: ${formatMs(clip?.startMs ?: 0L)}"
-        endLabel.text = "Bitiş: ${formatMs(clip?.endMs ?: 0L)}"
+        startLabel.text = "Başlangıç: ${formatTimelineMs(clip?.startMs ?: 0L)}"
+        endLabel.text = "Bitiş: ${formatTimelineMs(clip?.endMs ?: 0L)}"
         updateSoundControls()
         updateTextControls()
     }
@@ -1643,6 +2164,10 @@ class VideoEditorActivity : Activity() {
 
     override fun onDestroy() {
         timelineHandler.removeCallbacks(timelineSyncTask)
+        timelineHandler.removeCallbacks(textTimelineRefreshTask)
+        timelineThumbnailExecutor.shutdownNow()
+        pendingTimelineThumbnails.clear()
+        timelineThumbnailCache.evictAll()
         playerView.player = null
         player?.release()
         player = null
