@@ -1,7 +1,13 @@
 package com.mathmotor.video
 
 import android.app.Activity
+import android.app.DownloadManager
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.net.Uri
+import android.os.Environment
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
@@ -9,6 +15,12 @@ import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
 import android.net.Uri
 import android.os.Bundle
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.View
@@ -27,6 +39,10 @@ import java.util.Date
  */
 class MainActivity : Activity() {
     private lateinit var recentList: LinearLayout
+    private lateinit var updateStatus: TextView
+    private var updateDownloadId = -1L
+    private var updateReceiverRegistered = false
+    private val mainHandler = Handler(Looper.getMainLooper())
     private val pickVideoRequest = 2002
 
     private val bg = Color.rgb(9, 15, 25)
@@ -48,6 +64,99 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         if (::recentList.isInitialized) refreshRecentProjects()
+    }
+
+    override fun onDestroy() {
+        if (updateReceiverRegistered) {
+            try { unregisterReceiver(updateReceiver) } catch (_: Exception) { }
+            updateReceiverRegistered = false
+        }
+        super.onDestroy()
+    }
+
+    private val updateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != DownloadManager.ACTION_DOWNLOAD_COMPLETE) return
+            val id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L)
+            if (id != updateDownloadId) return
+            val manager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+            manager.query(DownloadManager.Query().setFilterById(id)).use { cursor ->
+                if (!cursor.moveToFirst()) return
+                val statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
+                if (statusIndex < 0) return
+                when (cursor.getInt(statusIndex)) {
+                    DownloadManager.STATUS_SUCCESSFUL -> {
+                        updateStatus.text = "İndirme tamamlandı. Kurulum ekranı açılıyor…"
+                        val apkUri = manager.getUriForDownloadedFile(id)
+                        if (apkUri != null) {
+                            val install = Intent(Intent.ACTION_VIEW).apply {
+                                setDataAndType(apkUri, "application/vnd.android.package-archive")
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            try { startActivity(install) }
+                            catch (_: Exception) { updateStatus.text = "APK indirildi. İndirilenler bölümünden açıp kurulumu başlat." }
+                        } else updateStatus.text = "APK indirildi ama dosya açılamadı."
+                    }
+                    DownloadManager.STATUS_FAILED -> {
+                        val reasonIndex = cursor.getColumnIndex(DownloadManager.COLUMN_REASON)
+                        val reason = if (reasonIndex >= 0) cursor.getInt(reasonIndex) else -1
+                        updateStatus.text = "İndirme başarısız (kod " + reason + "). İnternet bağlantını kontrol et."
+                    }
+                }
+            }
+        }
+    }
+
+    private fun checkForAppUpdate() {
+        updateStatus.text = "Güncelleme kontrol ediliyor…"
+        Thread {
+            var connection: HttpURLConnection? = null
+            try {
+                connection = (URL("https://api.github.com/repos/agabeyayd-lgtm/MathMotorVideo-Restore/releases/latest").openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = 12000
+                    readTimeout = 12000
+                    setRequestProperty("Accept", "application/vnd.github+json")
+                    setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
+                }
+                if (connection.responseCode !in 200..299) throw IllegalStateException("Sunucu " + connection.responseCode + " döndürdü")
+                val release = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+                val assets = release.optJSONArray("assets") ?: throw IllegalStateException("Sürüm dosyası bulunamadı")
+                var apkUrl: String? = null
+                for (i in 0 until assets.length()) {
+                    val asset = assets.optJSONObject(i) ?: continue
+                    if (asset.optString("name").equals("MathMotorVideo.apk", ignoreCase = true)) {
+                        apkUrl = asset.optString("browser_download_url").takeIf { it.startsWith("https://") }
+                        break
+                    }
+                }
+                if (apkUrl == null) throw IllegalStateException("Yayımlanmış APK bulunamadı")
+                val finalUrl = apkUrl
+                mainHandler.post {
+                    try {
+                        val filter = IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
+                        if (Build.VERSION.SDK_INT >= 33) registerReceiver(updateReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+                        else {
+                            @Suppress("DEPRECATION")
+                            registerReceiver(updateReceiver, filter)
+                        }
+                        updateReceiverRegistered = true
+                        val request = DownloadManager.Request(Uri.parse(finalUrl))
+                            .setTitle("MathMotor Video güncellemesi")
+                            .setDescription("En son yayımlanan APK indiriliyor")
+                            .setMimeType("application/vnd.android.package-archive")
+                            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                            .setDestinationInExternalFilesDir(this, Environment.DIRECTORY_DOWNLOADS, "MathMotorVideo-update.apk")
+                        updateDownloadId = (getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
+                        updateStatus.text = "Güncelleme indiriliyor. Bildirimlerden ilerlemeyi görebilirsin."
+                    } catch (e: Exception) {
+                        updateStatus.text = "İndirme başlatılamadı: " + (e.message ?: "bilinmeyen hata")
+                    }
+                }
+            } catch (e: Exception) {
+                mainHandler.post { updateStatus.text = "Kontrol edilemedi: " + (e.message ?: "bağlantını kontrol et") }
+            } finally { connection?.disconnect() }
+        }.start()
     }
 
     private fun buildUi() {
@@ -89,6 +198,22 @@ class MainActivity : Activity() {
             layoutParams = LinearLayout.LayoutParams(dp(46), dp(46))
         })
         root.addView(topBar)
+        root.addView(gap(14))
+
+        val updateCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = rounded(panel, 15).apply { setStroke(dp(1), line) }
+            addView(label("UYGULAMA GÜNCELLEMESİ", 11f, accent, true))
+            addView(label("Yeni sürümü uygulamanın içinden kontrol et.", 12f, muted, false))
+            addView(gap(7))
+            addView(secondaryButton("↻   Güncellemeleri kontrol et") { checkForAppUpdate() }, matchWrap())
+            updateStatus = label("Güncelleme kontrol edilmedi.", 11f, muted, false)
+            updateStatus.setPadding(0, dp(6), 0, 0)
+            addView(updateStatus)
+        }
+        root.addView(updateCard, matchWrap())
+        root.addView(gap(18))
         root.addView(gap(26))
 
         root.addView(label("KURGU MASASI", 11f, accent, true))
