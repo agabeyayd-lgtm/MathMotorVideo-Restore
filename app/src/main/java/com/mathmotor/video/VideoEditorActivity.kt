@@ -148,11 +148,41 @@ class VideoEditorActivity : Activity() {
         root.addView(playerView, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(230)).apply {
             bottomMargin = dp(10)
         })
+
+        // Quick section navigation: jumps directly to the editor tools.
+        val quickNavScroll = android.widget.HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+        }
+        val quickNav = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(2), 0, dp(8))
+        }
+        quickNavScroll.addView(quickNav)
+        fun addQuickTab(title: String, target: View) {
+            val tab = Button(this).apply {
+                text = title
+                isAllCaps = false
+                textSize = 12f
+                setTextColor(Color.WHITE)
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(Color.rgb(35, 95, 117))
+                    cornerRadius = dp(10).toFloat()
+                }
+                setPadding(dp(12), dp(4), dp(12), dp(4))
+                setOnClickListener { scroll.post { scroll.smoothScrollTo(0, target.top) } }
+            }
+            quickNav.addView(tab, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(44)
+            ).apply { rightMargin = dp(6) })
+        }
+        root.addView(label("HIZLI ERİŞİM", 12f, Color.rgb(173, 191, 204), true))
+        root.addView(quickNavScroll, matchWrap())
         root.addView(actionButton("ANA VİDEO SEÇ") { chooseVideo(false) })
         root.addView(actionButton("KLİP EKLE / SONUNA BİRLEŞTİR") { chooseVideo(true) })
         root.addView(label("ZAMAN ÇİZELGESİ • KLİPLER", 14f, Color.rgb(121, 202, 218), true))
         clipList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(clipList, matchWrap())
+        addQuickTab("Klip / Kes", clipList)
 
         selectedClipLabel = label("Önce bir video seç.", 13f, Color.WHITE, true)
         root.addView(selectedClipLabel)
@@ -184,6 +214,7 @@ class VideoEditorActivity : Activity() {
             setBackgroundColor(Color.rgb(27, 48, 64))
         }
         root.addView(textInput, matchWrap())
+        addQuickTab("Metin", textInput)
         root.addView(label("Yazının videoda görüneceği aralık", 12f, Color.rgb(173, 191, 204), false))
         textStartLabel = label("Yazı başlangıcı: 00:00", 12f, Color.rgb(225, 233, 237), true)
         root.addView(textStartLabel)
@@ -215,6 +246,7 @@ class VideoEditorActivity : Activity() {
         root.addView(label("MÜZİK KATMANI", 14f, Color.rgb(121, 202, 218), true))
         musicLabel = label("Müzik seçilmedi.", 12f, Color.rgb(225, 233, 237), false)
         root.addView(musicLabel)
+        addQuickTab("Ses", musicLabel)
         root.addView(actionButton("TELEFONDAN MÜZİK EKLE • VİDEO BOYUNCA") { chooseAudio(true) })
         root.addView(actionButton("MÜZİĞİ KALDIR") {
             musicUri = null
@@ -291,6 +323,7 @@ class VideoEditorActivity : Activity() {
             setBackgroundColor(Color.rgb(27, 48, 64))
         }
         root.addView(exportNameInput, matchWrap())
+        addQuickTab("Kaydet / MP4", exportNameInput)
         root.addView(actionButton("PROJEYİ FARKLI KAYDET (.JSON)") { requestSaveProject() })
         root.addView(actionButton("KAYITLI PROJEYİ AÇ") { requestOpenProject() })
         exportButton = actionButton("MP4'Ü BU İSİMLE DIŞA AKTAR") { exportEditedVideo() }
