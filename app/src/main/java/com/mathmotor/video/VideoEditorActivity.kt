@@ -867,7 +867,8 @@ class VideoEditorActivity : Activity() {
             val track = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(2), dp(1), dp(2), dp(1))
+                // Keep the content origin identical to the ruler and playhead coordinate system.
+                setPadding(0, dp(1), 0, dp(1))
             }
             scroll.addView(track)
             val responsiveLaneHeight = if (keyboardLayoutActive) 18 else heightDp
@@ -944,9 +945,9 @@ class VideoEditorActivity : Activity() {
                 val width = maxOf(dp(10), exactWidth(duration))
                 val height = dp(if (keyboardLayoutActive) 18 else 24)
                 val block = buildVideoClipFilmstrip(clip, index, width, height, index == selectedClipIndex)
-                videoTrack.addView(block, LinearLayout.LayoutParams(width, height).apply {
-                    rightMargin = dp(7)
-                })
+                // Clip widths already encode their exact timeline duration; extra margins
+                // accumulate between clips and make the ruler/playhead drift out of sync.
+                videoTrack.addView(block, LinearLayout.LayoutParams(width, height))
             }
         }
 
