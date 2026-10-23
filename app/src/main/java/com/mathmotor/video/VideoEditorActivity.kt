@@ -884,9 +884,9 @@ class VideoEditorActivity : Activity() {
             fill: Int,
             selected: Boolean = false,
             onClick: (() -> Unit)? = null,
-            minimumWidthDp: Int = 36
+            minimumWidthDp: Int = 0
         ) {
-            val width = maxOf(dp(minimumWidthDp), exactWidth(durationMs))
+            val width = maxOf(dp(minimumWidthDp), exactWidth(durationMs).coerceAtLeast(1))
             val block = TextView(this).apply {
                 text = title
                 textSize = 9f
@@ -942,7 +942,7 @@ class VideoEditorActivity : Activity() {
         } else {
             clips.forEachIndexed { index, clip ->
                 val duration = (clip.endMs - clip.startMs).coerceAtLeast(0L)
-                val width = maxOf(dp(10), exactWidth(duration))
+                val width = exactWidth(duration).coerceAtLeast(1)
                 val height = dp(if (keyboardLayoutActive) 18 else 24)
                 val block = buildVideoClipFilmstrip(clip, index, width, height, index == selectedClipIndex)
                 // Clip widths already encode their exact timeline duration; extra margins
@@ -959,7 +959,7 @@ class VideoEditorActivity : Activity() {
             addSpacer(textTrack, startMs)
             addBlock(
                 textTrack, overlayText, (endMs - startMs).coerceAtLeast(0L),
-                Color.rgb(110, 74, 154), onClick = { showEditorPanel("text") }, minimumWidthDp = 42
+                Color.rgb(110, 74, 154), onClick = { showEditorPanel("text") }
             )
             addSpacer(textTrack, (totalMs - endMs).coerceAtLeast(0L))
         } else {
@@ -971,7 +971,7 @@ class VideoEditorActivity : Activity() {
         if (musicUri != null) {
             addBlock(
                 musicTrack, "♫ ${musicTitle ?: "Müzik"}", totalMs, Color.rgb(46, 125, 85),
-                onClick = { showEditorPanel("audio") }, minimumWidthDp = 56
+                onClick = { showEditorPanel("audio") }
             )
         } else {
             addBlock(musicTrack, "+ Müzik ekle", totalMs.coerceAtLeast(5000L), Color.rgb(42, 78, 63),
@@ -985,7 +985,7 @@ class VideoEditorActivity : Activity() {
             addSpacer(effectTrack, startMs)
             addBlock(
                 effectTrack, "♪ ${soundTitle ?: "Ses efekti"}", duration, Color.rgb(166, 102, 40),
-                onClick = { showEditorPanel("audio") }, minimumWidthDp = 44
+                onClick = { showEditorPanel("audio") }
             )
             addSpacer(effectTrack, (totalMs - startMs - duration).coerceAtLeast(0L))
         } else {
@@ -1003,7 +1003,7 @@ class VideoEditorActivity : Activity() {
         if (!::timelinePlayheadLine.isInitialized || !::timelineTracksFrame.isInitialized) return
         val scrollX = timelineScrollViews.firstOrNull()?.scrollX ?: 0
         val pixelsPerSecond = timelinePixelsPerSecond()
-        val timelineX = dp(54) + (timelinePlayheadMs / 1000f * pixelsPerSecond).toInt() - scrollX
+        val timelineX = dp(57) + (timelinePlayheadMs / 1000f * pixelsPerSecond).toInt() - scrollX
         val params = timelinePlayheadLine.layoutParams as? FrameLayout.LayoutParams ?: return
         params.width = dp(28)
         params.leftMargin = (timelineX - dp(14)).coerceAtLeast(dp(0))
@@ -1025,7 +1025,7 @@ class VideoEditorActivity : Activity() {
         if (clips.isEmpty()) return
         val scrollX = timelineScrollViews.firstOrNull()?.scrollX ?: 0
         val timelineContentX = frameX + scrollX
-        val videoStartX = dp(54).toFloat()
+        val videoStartX = dp(57).toFloat()
         val offsetPixels = (timelineContentX - videoStartX).coerceAtLeast(0f)
         val requestedMs = (offsetPixels / timelinePixelsPerSecond() * 1000f).toLong()
         seekTimelinePreview(requestedMs.coerceIn(0L, totalOutputDurationMs()))
@@ -2308,7 +2308,7 @@ class VideoEditorActivity : Activity() {
         endSeek.max = durationTenths
         startSeek.progress = (clip.startMs / 100L).toInt().coerceAtMost(maxStartTenths)
         endSeek.progress = ceil(clip.endMs / 100.0).toInt().coerceAtMost(durationTenths)
-        selectedClipLabel.text = "Seçili klip: ${clip.title} • ${formatMs(clip.durationMs)}"
+        selectedClipLabel.text = "Seçili klip: ${clip.title} • Kesit ${formatMs((clip.endMs - clip.startMs).coerceAtLeast(0L))} / Kaynak ${formatMs(clip.durationMs)}"
         updateTrimLabels()
     }
 
