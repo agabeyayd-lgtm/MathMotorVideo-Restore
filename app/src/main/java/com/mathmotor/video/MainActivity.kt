@@ -198,6 +198,13 @@ class MainActivity : Activity() {
             setPadding(0, dp(8), 0, dp(2))
         })
         root.addView(previewCard, matchWrap())
+        previewCard.post {
+            val previewWidth = (previewCard.width - dp(20)).coerceAtLeast(dp(180))
+            homeVideoView.layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                (previewWidth * 9f / 16f).toInt().coerceAtLeast(dp(120))
+            )
+        }
 
         root.addView(gap(18))
         root.addView(label("NE YAPMAK İSTİYORSUN?", 12f, Color.rgb(151, 174, 196), true))
