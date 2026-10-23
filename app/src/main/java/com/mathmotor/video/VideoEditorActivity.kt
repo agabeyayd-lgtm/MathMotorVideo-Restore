@@ -1620,10 +1620,10 @@ class VideoEditorActivity : Activity() {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
                 val clip = selectedClip() ?: return
-                val maxStart = (clip.durationMs - 250L).coerceAtLeast(0L)
+                val maxStart = (clip.durationMs - 500L).coerceAtLeast(0L)
                 clip.startMs = (progress * 100L).coerceAtMost(maxStart)
                 if (clip.endMs - clip.startMs < 500L) {
-                    clip.endMs = (clip.startMs + 1000L).coerceAtMost(clip.durationMs)
+                    clip.endMs = (clip.startMs + 500L).coerceAtMost(clip.durationMs)
                     endSeek.progress = ceil(clip.endMs / 100.0).toInt()
                 }
                 updateTrimLabels()
@@ -1638,8 +1638,14 @@ class VideoEditorActivity : Activity() {
                 val clip = selectedClip() ?: return
                 clip.endMs = (progress * 100L).coerceAtMost(clip.durationMs)
                 if (clip.endMs - clip.startMs < 500L) {
-                    clip.startMs = (clip.endMs - 1000L).coerceAtLeast(0L)
+                    if (clip.endMs >= 500L) {
+                        clip.startMs = (clip.endMs - 500L).coerceAtLeast(0L)
+                    } else {
+                        clip.startMs = 0L
+                        clip.endMs = minOf(clip.durationMs, 500L)
+                    }
                     startSeek.progress = (clip.startMs / 100L).toInt()
+                    endSeek.progress = ceil(clip.endMs / 100.0).toInt()
                 }
                 updateTrimLabels()
                 refreshClipList()
@@ -1665,9 +1671,10 @@ class VideoEditorActivity : Activity() {
         startSeek.isEnabled = true
         endSeek.isEnabled = true
         val durationTenths = ceil(clip.durationMs / 100.0).toInt().coerceAtLeast(1)
-        startSeek.max = durationTenths
+        val maxStartTenths = ((clip.durationMs - 500L).coerceAtLeast(0L) / 100L).toInt()
+        startSeek.max = maxStartTenths
         endSeek.max = durationTenths
-        startSeek.progress = (clip.startMs / 100L).toInt()
+        startSeek.progress = (clip.startMs / 100L).toInt().coerceAtMost(maxStartTenths)
         endSeek.progress = ceil(clip.endMs / 100.0).toInt().coerceAtMost(durationTenths)
         selectedClipLabel.text = "Seçili klip: ${clip.title} • ${formatMs(clip.durationMs)}"
         updateTrimLabels()
