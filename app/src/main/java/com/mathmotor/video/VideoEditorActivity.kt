@@ -308,15 +308,15 @@ class VideoEditorActivity : Activity() {
                         if (clips.isEmpty()) return@setOnTouchListener false
                         ensureTimelinePreviewLoaded()
                         player?.playWhenReady = false
-                        seekFromTimelineFrameX(view.x + event.x + (timelineScrollViews.firstOrNull()?.scrollX ?: 0))
+                        seekFromTimelineFrameX(view.x + event.x)
                         true
                     }
                     android.view.MotionEvent.ACTION_MOVE -> {
-                        seekFromTimelineFrameX(view.x + event.x + (timelineScrollViews.firstOrNull()?.scrollX ?: 0))
+                        seekFromTimelineFrameX(view.x + event.x)
                         true
                     }
                     android.view.MotionEvent.ACTION_UP -> {
-                        seekFromTimelineFrameX(view.x + event.x + (timelineScrollViews.firstOrNull()?.scrollX ?: 0))
+                        seekFromTimelineFrameX(view.x + event.x)
                         view.performClick()
                         true
                     }
@@ -1773,7 +1773,6 @@ class VideoEditorActivity : Activity() {
                                 .coerceIn(0L, totalOutputDurationMs().coerceAtLeast(1L) - 1L)
                             if (!filmstripMoved) selectTimelineClip(index)
                             seekTimelinePreview(targetMs)
-                            view.performClick()
                         }
                         true
                     }
