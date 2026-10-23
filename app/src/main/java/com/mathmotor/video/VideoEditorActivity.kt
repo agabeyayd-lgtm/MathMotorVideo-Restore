@@ -1804,21 +1804,8 @@ class VideoEditorActivity : Activity() {
             status.text = "Önce kaldırılacak klibi seç."
             return
         }
-        clips.removeAt(selectedClipIndex)
-        timelinePreviewLoaded = false
-        selectedClipIndex = if (clips.isEmpty()) -1 else selectedClipIndex.coerceAtMost(clips.lastIndex)
-        refreshClipList()
-        loadTrimControls()
-        val selected = selectedClip()
-        if (selected == null) {
-            previewSingleClip = false
-            player?.clearMediaItems()
-        } else {
-            previewSingleClip = true
-            player?.setMediaItem(clippedMediaItem(selected))
-            player?.prepare()
-        }
-        status.text = if (clips.isEmpty()) "Zaman çizelgesi boş." else "Klip kaldırıldı. Kalan klipler yerinde duruyor."
+        // Keep the button and long-press menu on the same, fully-synchronised removal path.
+        removeClipAt(selectedClipIndex)
     }
 
     private fun reorderClip(from: Int, to: Int) {
@@ -2097,13 +2084,21 @@ class VideoEditorActivity : Activity() {
                             val delta = event.rawX - downRawX
                             if (kotlin.math.abs(delta) > dp(2)) moved = true
                             val travel = (width - handleWidth).coerceAtLeast(0).toFloat()
-                            view.translationX = if (isStart) delta.coerceIn(0f, travel) else delta.coerceIn(-travel, 0f)
+                            val sourceBeforePx = (initialStartMs / 1000f * timelinePixelsPerSecond())
+                            val sourceAfterPx = ((clip.durationMs - initialEndMs).coerceAtLeast(0L) / 1000f *
+                                timelinePixelsPerSecond())
+                            view.translationX = if (isStart) {
+                                delta.coerceIn(-sourceBeforePx, travel)
+                            } else {
+                                delta.coerceIn(-travel, sourceAfterPx)
+                            }
                             true
                         }
                         android.view.MotionEvent.ACTION_UP -> {
                             val deltaPx = event.rawX - downRawX
-                            val usableWidth = (width - dp(1)).coerceAtLeast(1).toFloat()
-                            val deltaMs = (deltaPx / usableWidth * (initialEndMs - initialStartMs).toFloat()).toLong()
+                            // The trim gesture uses the same px-per-second scale as the ruler.
+                            // This permits extending a cut back into the original source as well as shortening it.
+                            val deltaMs = (deltaPx / timelinePixelsPerSecond() * 1000f).toLong()
                             view.translationX = 0f
                             view.parent?.requestDisallowInterceptTouchEvent(false)
                             if (moved) {
