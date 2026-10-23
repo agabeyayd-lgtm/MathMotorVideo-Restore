@@ -112,6 +112,7 @@ class VideoEditorActivity : Activity() {
     private lateinit var timelinePlayheadSeek: SeekBar
     private lateinit var timelinePlayheadLabel: TextView
     private var timelinePlayheadMs = 0L
+    private var timelineScrubGrabOffsetPx = 0f
     private var timelinePreviewLoaded = false
     private var previewSingleClip = false
     private val timelineHandler = Handler(Looper.getMainLooper())
@@ -322,15 +323,18 @@ class VideoEditorActivity : Activity() {
                         if (clips.isEmpty()) return@setOnTouchListener false
                         ensureTimelinePreviewLoaded()
                         player?.playWhenReady = false
-                        seekFromTimelineFrameX(view.x + event.x)
+                        // Preserve where the finger grabbed the handle so touching an edge
+                        // does not jump the playhead by half the handle width.
+                        timelineScrubGrabOffsetPx = event.x - view.width / 2f
+                        seekFromTimelineFrameX(view.x + event.x - timelineScrubGrabOffsetPx)
                         true
                     }
                     android.view.MotionEvent.ACTION_MOVE -> {
-                        seekFromTimelineFrameX(view.x + event.x)
+                        seekFromTimelineFrameX(view.x + event.x - timelineScrubGrabOffsetPx)
                         true
                     }
                     android.view.MotionEvent.ACTION_UP -> {
-                        seekFromTimelineFrameX(view.x + event.x)
+                        seekFromTimelineFrameX(view.x + event.x - timelineScrubGrabOffsetPx)
                         view.performClick()
                         true
                     }
