@@ -2355,6 +2355,9 @@ class VideoEditorActivity : Activity() {
         }
 
         exporting = true
+        player?.pause()
+        musicPreviewPlayer?.pause()
+        soundPreviewPlayer?.pause()
         exportButton.isEnabled = false
         status.text = "MP4 dışa aktarılıyor…\nKlipler seçtiğin sırayla birleştiriliyor; yazı, müzik ve ses katmanları uygulanıyor. Uygulamayı kapatma."
         val tempOutput = File(cacheDir, "mm_editor_${System.currentTimeMillis()}.mp4")
