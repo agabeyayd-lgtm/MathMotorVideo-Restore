@@ -1003,7 +1003,7 @@ class VideoEditorActivity : Activity() {
         if (!::timelinePlayheadLine.isInitialized || !::timelineTracksFrame.isInitialized) return
         val scrollX = timelineScrollViews.firstOrNull()?.scrollX ?: 0
         val pixelsPerSecond = timelinePixelsPerSecond()
-        val timelineX = dp(54 + 3) + (timelinePlayheadMs / 1000f * pixelsPerSecond).toInt() - scrollX
+        val timelineX = dp(54) + (timelinePlayheadMs / 1000f * pixelsPerSecond).toInt() - scrollX
         val params = timelinePlayheadLine.layoutParams as? FrameLayout.LayoutParams ?: return
         params.width = dp(28)
         params.leftMargin = (timelineX - dp(14)).coerceAtLeast(dp(0))
@@ -1025,7 +1025,7 @@ class VideoEditorActivity : Activity() {
         if (clips.isEmpty()) return
         val scrollX = timelineScrollViews.firstOrNull()?.scrollX ?: 0
         val timelineContentX = frameX + scrollX
-        val videoStartX = dp(57).toFloat()
+        val videoStartX = dp(54).toFloat()
         val offsetPixels = (timelineContentX - videoStartX).coerceAtLeast(0f)
         val requestedMs = (offsetPixels / timelinePixelsPerSecond() * 1000f).toLong()
         seekTimelinePreview(requestedMs.coerceIn(0L, totalOutputDurationMs()))
