@@ -144,6 +144,7 @@ class VideoEditorActivity : Activity() {
     private var soundPreviewUri: Uri? = null
     private lateinit var playerView: PlayerView
     private lateinit var previewFrame: FrameLayout
+    private var previewStageHeightDp = 290
     private lateinit var previewTextOverlay: TextView
     private lateinit var previewEmptyState: LinearLayout
     private lateinit var clipList: LinearLayout
@@ -373,6 +374,28 @@ class VideoEditorActivity : Activity() {
             previewEmptyState,
             FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER)
         )
+        val previewSizeControls = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), 0, dp(4), 0)
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.argb(205, 8, 15, 22))
+                cornerRadius = dp(9).toFloat()
+            }
+            addView(label("VİDEO", 9f, Color.WHITE, true), LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { leftMargin = dp(4); rightMargin = dp(2) })
+            addView(miniButton("−") { adjustPreviewStageHeight(-30) },
+                LinearLayout.LayoutParams(dp(38), dp(40)))
+            addView(miniButton("↺") { setPreviewStageHeight(290) },
+                LinearLayout.LayoutParams(dp(42), dp(40)))
+            addView(miniButton("+") { adjustPreviewStageHeight(30) },
+                LinearLayout.LayoutParams(dp(38), dp(40)))
+            contentDescription = "Video önizlemesini küçült, varsayılana döndür veya büyüt"
+        }
+        previewFrame.addView(previewSizeControls, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, dp(44), Gravity.TOP or Gravity.END
+        ).apply { topMargin = dp(6); rightMargin = dp(6) })
         root.addView(previewFrame, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(290)
         ).apply { bottomMargin = dp(8) })
@@ -976,7 +999,7 @@ class VideoEditorActivity : Activity() {
                 previewParams.height = if (imeVisible) {
                     (availableHeight * 0.21f).toInt().coerceIn(dp(82), dp(112))
                 } else {
-                    (availableHeight * 0.35f).toInt().coerceIn(dp(210), dp(300))
+                    dp(previewStageHeightDp).coerceIn(dp(210), dp(360))
                 }
                 previewFrame.layoutParams = previewParams
 
@@ -1114,6 +1137,24 @@ class VideoEditorActivity : Activity() {
             }
             updatePreviewTextOverlay()
         }
+    }
+
+    private fun setPreviewStageHeight(heightDp: Int) {
+        previewStageHeightDp = heightDp.coerceIn(210, 360)
+        if (!::previewFrame.isInitialized) return
+        if (!keyboardLayoutActive) {
+            val params = previewFrame.layoutParams as? LinearLayout.LayoutParams
+            if (params != null && params.height != dp(previewStageHeightDp)) {
+                params.height = dp(previewStageHeightDp)
+                previewFrame.layoutParams = params
+            }
+        }
+        updatePreviewCanvasSize()
+        if (::status.isInitialized) status.text = "Video önizleme alanı: ${previewStageHeightDp} dp."
+    }
+
+    private fun adjustPreviewStageHeight(deltaDp: Int) {
+        setPreviewStageHeight(previewStageHeightDp + deltaDp)
     }
 
     private fun showEditorPanel(name: String) {
@@ -1598,7 +1639,8 @@ class VideoEditorActivity : Activity() {
     private fun syncSelectedTextLayerFromControls() {
         if (loadingTextLayerControls || !::textInput.isInitialized) return
         val layer = selectedTextLayer() ?: return
-        layer.text = textInput.text?.toString()?.trim().orEmpty()
+        // Preserve trailing spaces while typing; trim only when rendering/exporting.
+        layer.text = textInput.text?.toString().orEmpty()
         layer.startMs = textStartMs.coerceAtLeast(0L)
         layer.endMs = textEndMs.coerceAtLeast(layer.startMs)
         layer.timingCustomized = textTimingCustomized
@@ -1663,8 +1705,18 @@ class VideoEditorActivity : Activity() {
         updatePreviewTextOverlay()
         refreshTimelineTracks()
         showEditorPanel("text")
-        textInput.requestFocus()
+        focusTextInputAndShowKeyboard()
         status.text = "Yeni yazı katmanı eklendi. Metnini yazıp süresini ve konumunu ayarla."
+    }
+
+    private fun focusTextInputAndShowKeyboard() {
+        if (!::textInput.isInitialized) return
+        textInput.post {
+            textInput.requestFocus()
+            val keyboard = getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
+                as? android.view.inputmethod.InputMethodManager
+            keyboard?.showSoftInput(textInput, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+        }
     }
 
     private fun duplicateSelectedTextLayer() {
@@ -1685,7 +1737,7 @@ class VideoEditorActivity : Activity() {
         refreshTextLayerList()
         updatePreviewTextOverlay()
         refreshTimelineTracks()
-        textInput.requestFocus()
+        focusTextInputAndShowKeyboard()
         status.text = "Yazı katmanı kopyalandı. Metni ve ayarları bağımsız değiştirebilirsin."
     }
 
