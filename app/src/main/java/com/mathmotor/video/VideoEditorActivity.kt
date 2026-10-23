@@ -1789,6 +1789,22 @@ class VideoEditorActivity : Activity() {
         }
     }
 
+    private fun adjustSelectedTextSize(delta: Int) {
+        val layer = selectedTextLayer()
+        if (layer == null) {
+            status.text = "Önce bir yazı ekle veya mevcut yazıyı seç."
+            return
+        }
+        syncSelectedTextLayerFromControls()
+        val next = (layer.sizeSp + delta).coerceIn(12, 96)
+        layer.sizeSp = next
+        textSizeSp = next
+        textSizeLabel.text = "Yazı boyutu: " + next
+        textSizeSeek.progress = next - 12
+        updatePreviewTextOverlay()
+        status.text = "Yazı boyutu: " + next + " sp. Videonun üzerinde iki parmakla da boyutlandırabilirsin."
+    }
+
     private fun duplicateSelectedTextLayer() {
         if (textLayers.size >= 12) {
             status.text = "En fazla 12 metin katmanı ekleyebilirsin."
@@ -1901,18 +1917,23 @@ class VideoEditorActivity : Activity() {
             overlay.setTypeface(Typeface.DEFAULT, if (layer.isBold) Typeface.BOLD else Typeface.NORMAL)
             overlay.visibility = View.VISIBLE
             val params = overlay.layoutParams as? FrameLayout.LayoutParams ?: return@forEachIndexed
-            params.gravity = when (layer.position) {
-                TextPosition.TOP -> Gravity.TOP or Gravity.CENTER_HORIZONTAL
-                TextPosition.CENTER -> Gravity.CENTER
-                TextPosition.BOTTOM -> Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-            }
-            val videoTopGap = ((previewFrame.height - playerView.height) / 2 + dp(8)).coerceAtLeast(dp(8))
-            params.topMargin = if (layer.position == TextPosition.TOP) videoTopGap + positionIndex * dp(42) else 0
-            params.bottomMargin = if (layer.position == TextPosition.BOTTOM) videoTopGap + positionIndex * dp(42) else 0
-            params.leftMargin = dp(8)
-            params.rightMargin = dp(8)
-            overlay.translationY = if (layer.position == TextPosition.CENTER) positionIndex * dp(42).toFloat() else 0f
+            params.gravity = Gravity.CENTER
+            params.topMargin = 0
+            params.bottomMargin = 0
+            params.leftMargin = 0
+            params.rightMargin = 0
             overlay.layoutParams = params
+            val videoWidth = playerView.width.coerceAtLeast(dp(100))
+            val videoHeight = playerView.height.coerceAtLeast(dp(100))
+            overlay.maxWidth = (videoWidth - dp(16)).coerceAtLeast(dp(80))
+            overlay.measure(
+                View.MeasureSpec.makeMeasureSpec(videoWidth, View.MeasureSpec.AT_MOST),
+                View.MeasureSpec.makeMeasureSpec(videoHeight, View.MeasureSpec.AT_MOST)
+            )
+            val maxX = ((videoWidth - overlay.measuredWidth).coerceAtLeast(0) / 2f)
+            val maxY = ((videoHeight - overlay.measuredHeight).coerceAtLeast(0) / 2f)
+            overlay.translationX = (layer.xFraction.coerceIn(0f, 1f) - 0.5f) * 2f * maxX
+            overlay.translationY = (layer.yFraction.coerceIn(0f, 1f) - 0.5f) * 2f * maxY
             overlay.bringToFront()
         }
     }
@@ -1931,6 +1952,111 @@ class VideoEditorActivity : Activity() {
             cornerRadius = dp(8).toFloat()
         }
         visibility = View.GONE
+        installPreviewTextTouch(this)
+    }
+
+    private fun installPreviewTextTouch(overlay: TextView) {
+        var downRawX = 0f
+        var downRawY = 0f
+        var startX = 0.5f
+        var startY = 0.84f
+        var startDistance = 0f
+        var startSize = 24
+        overlay.isClickable = true
+        overlay.setOnTouchListener { view, event ->
+            val layerId = view.tag as? Long ?: return@setOnTouchListener false
+            val layer = textLayers.firstOrNull { it.id == layerId } ?: return@setOnTouchListener false
+            when (event.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    if (selectedTextLayerId != layer.id) {
+                        syncSelectedTextLayerFromControls()
+                        selectedTextLayerId = layer.id
+                        loadTextLayerIntoControls(layer)
+                    }
+                    downRawX = event.rawX
+                    downRawY = event.rawY
+                    startX = layer.xFraction
+                    startY = layer.yFraction
+                    startSize = layer.sizeSp
+                    startDistance = 0f
+                    player?.playWhenReady = false
+                    true
+                }
+                android.view.MotionEvent.ACTION_POINTER_DOWN -> {
+                    if (event.pointerCount >= 2) {
+                        val dx = (event.getX(0) - event.getX(1)).toDouble()
+                        val dy = (event.getY(0) - event.getY(1)).toDouble()
+                        startDistance = kotlin.math.sqrt(dx * dx + dy * dy).toFloat().coerceAtLeast(1f)
+                        startSize = layer.sizeSp
+                    }
+                    true
+                }
+                android.view.MotionEvent.ACTION_MOVE -> {
+                    if (event.pointerCount >= 2 && startDistance > 0f) {
+                        val dx = (event.getX(0) - event.getX(1)).toDouble()
+                        val dy = (event.getY(0) - event.getY(1)).toDouble()
+                        val distance = kotlin.math.sqrt(dx * dx + dy * dy).toFloat()
+                        layer.sizeSp = (startSize * distance / startDistance).toInt().coerceIn(12, 96)
+                        textSizeSp = layer.sizeSp
+                        if (selectedTextLayerId == layer.id) {
+                            loadingTextLayerControls = true
+                            try {
+                                textSizeLabel.text = "Yazı boyutu: " + layer.sizeSp
+                                textSizeSeek.progress = layer.sizeSp - 12
+                            } finally {
+                                loadingTextLayerControls = false
+                            }
+                        }
+                    } else if (event.pointerCount == 1) {
+                        val videoWidth = playerView.width.coerceAtLeast(1).toFloat()
+                        val videoHeight = playerView.height.coerceAtLeast(1).toFloat()
+                        layer.xFraction = (startX + (event.rawX - downRawX) / videoWidth).coerceIn(0.03f, 0.97f)
+                        layer.yFraction = (startY + (event.rawY - downRawY) / videoHeight).coerceIn(0.04f, 0.96f)
+                        layer.position = when {
+                            layer.yFraction < 0.34f -> TextPosition.TOP
+                            layer.yFraction > 0.66f -> TextPosition.BOTTOM
+                            else -> TextPosition.CENTER
+                        }
+                        if (selectedTextLayerId == layer.id) {
+                            textPosition = layer.position
+                            loadingTextLayerControls = true
+                            try {
+                                textPositionGroup.check(when (layer.position) {
+                                    TextPosition.TOP -> 1
+                                    TextPosition.CENTER -> 2
+                                    TextPosition.BOTTOM -> 3
+                                })
+                            } finally {
+                                loadingTextLayerControls = false
+                            }
+                        }
+                    }
+                    updatePreviewTextOverlay()
+                    true
+                }
+                android.view.MotionEvent.ACTION_POINTER_UP -> {
+                    downRawX = event.rawX
+                    downRawY = event.rawY
+                    startX = layer.xFraction
+                    startY = layer.yFraction
+                    startDistance = 0f
+                    true
+                }
+                android.view.MotionEvent.ACTION_UP -> {
+                    if (selectedTextLayerId == layer.id) syncSelectedTextLayerFromControls()
+                    refreshTextLayerList()
+                    refreshTimelineTracks()
+                    status.text = "Yazı konumu güncellendi. Sürükle veya iki parmağınla boyutlandır."
+                    view.performClick()
+                    true
+                }
+                android.view.MotionEvent.ACTION_CANCEL -> {
+                    startDistance = 0f
+                    true
+                }
+                else -> true
+            }
+        }
     }
 
     private fun volumeListener(onValue: (Int) -> Unit): SeekBar.OnSeekBarChangeListener =
@@ -3282,18 +3408,10 @@ class VideoEditorActivity : Activity() {
                 Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
             )
         }
-        val stackOffset = samePositionIndex * 0.18f
-        val y = when (layer.position) {
-            TextPosition.TOP -> (0.78f - stackOffset).coerceIn(-0.85f, 0.85f)
-            TextPosition.CENTER -> when (samePositionIndex) {
-                0 -> 0f
-                else -> (if (samePositionIndex % 2 == 1) 1f else -1f) *
-                    ((samePositionIndex + 1) / 2) * 0.18f
-            }.coerceIn(-0.85f, 0.85f)
-            TextPosition.BOTTOM -> (-0.78f + stackOffset).coerceIn(-0.85f, 0.85f)
-        }
+        val x = (layer.xFraction.coerceIn(0f, 1f) * 2f - 1f).coerceIn(-0.92f, 0.92f)
+        val y = ((0.5f - layer.yFraction.coerceIn(0f, 1f)) * 2f).coerceIn(-0.85f, 0.85f)
         val settings = StaticOverlaySettings.Builder()
-            .setBackgroundFrameAnchor(0f, y)
+            .setBackgroundFrameAnchor(x, y)
             .setOverlayFrameAnchor(0f, 0f)
             .build()
         return object : TextOverlay() {
