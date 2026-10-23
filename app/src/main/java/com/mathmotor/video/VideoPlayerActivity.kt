@@ -93,7 +93,7 @@ class VideoPlayerActivity : Activity() {
         val records = VideoRecordStore.list(this)
         if (records.isEmpty()) {
             historyContainer.addView(TextView(this).apply {
-                text = "Henüz oluşturulmuş video yok. Ana ekrandan video oluşturabilir veya telefondan video seçebilirsin."
+                text = "Henüz dışa aktarılmış video yok. Ana ekrandan yeni bir düzenleme başlatabilirsin."
                 setTextColor(Color.rgb(173, 191, 204))
                 textSize = 13f
                 setPadding(0, dp(6), 0, dp(10))
