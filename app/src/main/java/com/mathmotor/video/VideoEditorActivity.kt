@@ -531,8 +531,8 @@ class VideoEditorActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(3), dp(3), dp(3), 0)
         }
-        timelinePlayheadLabel = label("00:00.0 / 00:00.0", 10f, Color.rgb(225, 233, 237), true).apply { maxLines = 1; isSingleLine = true }
-        playheadRow.addView(timelinePlayheadLabel, LinearLayout.LayoutParams(dp(112), ViewGroup.LayoutParams.WRAP_CONTENT))
+        timelinePlayheadLabel = label("00:00.0 / 00:00.0", 9f, Color.rgb(225, 233, 237), true).apply { maxLines = 2; setLineSpacing(-dp(2).toFloat(), 1f) }
+        playheadRow.addView(timelinePlayheadLabel, LinearLayout.LayoutParams(dp(128), ViewGroup.LayoutParams.WRAP_CONTENT))
         timelinePlayheadSeek = SeekBar(this).apply {
             max = 0
             progress = 0
@@ -1771,7 +1771,20 @@ class VideoEditorActivity : Activity() {
 
     private fun updateTimelinePlayheadLabel() {
         if (!::timelinePlayheadLabel.isInitialized) return
-        timelinePlayheadLabel.text = "${formatTimelineMs(timelinePlayheadMs)} / ${formatTimelineMs(totalOutputDurationMs())}"
+        val totalMs = totalOutputDurationMs()
+        val projectPositionMs = timelinePlayheadMs.coerceIn(0L, totalMs)
+        val projectText = "Proje ${formatTimelineMs(projectPositionMs)} / ${formatTimelineMs(totalMs)}"
+        val clip = selectedClip()
+        timelinePlayheadLabel.text = if (previewSingleClip && clip != null) {
+            val projectOffsetMs = clips.take(selectedClipIndex).sumOf {
+                (it.endMs - it.startMs).coerceAtLeast(0L)
+            }
+            val clipDurationMs = (clip.endMs - clip.startMs).coerceAtLeast(0L)
+            val clipPositionMs = (projectPositionMs - projectOffsetMs).coerceIn(0L, clipDurationMs)
+            "Klip ${formatTimelineMs(clipPositionMs)} / ${formatTimelineMs(clipDurationMs)}\n$projectText"
+        } else {
+            projectText
+        }
         updateTimelinePlayheadLine()
         updatePreviewTextOverlay()
     }
@@ -1999,6 +2012,10 @@ class VideoEditorActivity : Activity() {
         }
         syncSelectedTextLayerFromControls()
         val total = totalOutputDurationMs()
+        if (total > 0L && timelinePlayheadMs >= total) {
+            player?.playWhenReady = false
+            seekTimelinePreview(0L)
+        }
         val layer = TextLayer(
             id = nextTextLayerId++,
             text = "",
@@ -2091,7 +2108,15 @@ class VideoEditorActivity : Activity() {
         if (textLayers.none { it.id == id }) return
         syncSelectedTextLayerFromControls()
         selectedTextLayerId = id
-        loadTextLayerIntoControls(selectedTextLayer())
+        val layer = selectedTextLayer()
+        loadTextLayerIntoControls(layer)
+        val total = totalOutputDurationMs()
+        if (layer != null && total > 0L &&
+            (timelinePlayheadMs < layer.startMs || timelinePlayheadMs >= layer.endMs)) {
+            player?.playWhenReady = false
+            val targetMs = layer.startMs.coerceIn(0L, (total - 1L).coerceAtLeast(0L))
+            seekTimelinePreview(targetMs)
+        }
         refreshTextLayerList()
         updatePreviewTextOverlay()
         refreshTimelineTracks()
@@ -2964,10 +2989,16 @@ class VideoEditorActivity : Activity() {
                     setTextColor(Color.rgb(205, 218, 231))
                 })
                 tile.setOnLongClickListener {
+                    tile.parent?.requestDisallowInterceptTouchEvent(true)
                     val dragData = android.content.ClipData.newPlainText("video_clip_index", index.toString())
-                    tile.startDragAndDrop(dragData, View.DragShadowBuilder(tile), index, 0)
-                    status.text = "Klibi basılı tutup sürükleyerek sırasını değiştir."
-                    true
+                    val started = tile.startDragAndDrop(dragData, View.DragShadowBuilder(tile), index, 0)
+                    status.text = if (started) {
+                        "Klibi sürükleyip istediğin sıraya bırak."
+                    } else {
+                        tile.parent?.requestDisallowInterceptTouchEvent(false)
+                        "Klip sürükleme başlatılamadı. Tekrar basılı tut."
+                    }
+                    started
                 }
                 tile.setOnDragListener { _, event ->
                     when (event.action) {
@@ -2980,7 +3011,7 @@ class VideoEditorActivity : Activity() {
                             if (from != null && from in clips.indices) reorderClip(from, index)
                             true
                         }
-                        android.view.DragEvent.ACTION_DRAG_ENDED -> true
+                        android.view.DragEvent.ACTION_DRAG_ENDED -> { tile.parent?.requestDisallowInterceptTouchEvent(false); true }
                         else -> false
                     }
                 }
