@@ -2804,7 +2804,9 @@ class VideoEditorActivity : Activity() {
             put("selectedClipIndex", selectedClipIndex)
             put("timelinePlayheadMs", timelinePlayheadMs.coerceIn(0L, totalOutputDurationMs()))
             put("timelineZoom", timelineZoom)
-            val currentScrollX = timelineScrollViews.firstOrNull()?.scrollX ?: timelineHorizontalScrollX
+            // The cached value is authoritative during the short interval between
+            // scheduling a scroll restore and the ScrollView applying it.
+            val currentScrollX = pendingTimelineScrollX ?: timelineHorizontalScrollX
             put("timelineHorizontalScrollX", currentScrollX)
             put("timelineHorizontalScrollMs", TimelineScaleMath.millisecondsForPixels(
                 currentScrollX.toFloat(), timelinePixelsPerSecond()
