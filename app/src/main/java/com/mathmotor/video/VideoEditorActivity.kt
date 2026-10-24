@@ -1876,18 +1876,21 @@ class VideoEditorActivity : Activity() {
         // Keep a touch target for both trim edges, even after a clip is shortened to 0.5 s.
         val basePixelsPerSecond = dp(22).toFloat().coerceAtLeast(1f)
         val requiredZoom = (dp(80).toDouble() * 1000.0 /
-            (durationMs.toDouble() * basePixelsPerSecond.toDouble())).toFloat()
-        val targetZoom = requiredZoom.coerceIn(0.5f, 8.0f)
-        if (targetZoom <= timelineZoom) return false
-
+            (durationMs.toDouble() * basePixelsPerSecond.toDouble())).toFloat().coerceIn(0.5f, 8.0f)
+        val targetZoom = maxOf(timelineZoom, requiredZoom).coerceIn(0.5f, 8.0f)
+        val zoomChanged = targetZoom != timelineZoom
         timelineZoom = targetZoom
+
+        // Always bring the selected clip into view, even when the current zoom already
+        // provides sufficient handle width. This avoids selection on a far-right clip
+        // leaving both edges outside the viewport.
         val projectOffsetMs = clips.take(index).sumOf {
             (it.endMs - it.startMs).coerceAtLeast(0L)
         }
         val clipStartPx = TimelineScaleMath.pixelsForTime(projectOffsetMs, timelinePixelsPerSecond())
         pendingTimelineScrollX = (clipStartPx - dp(8)).coerceAtLeast(0)
         timelineHorizontalScrollX = pendingTimelineScrollX ?: 0
-        return true
+        return zoomChanged || pendingTimelineScrollX != null
     }
 
     private fun adjustTimelineZoom(factor: Float) {
@@ -2800,6 +2803,9 @@ class VideoEditorActivity : Activity() {
             put("version", 1)
             put("clips", clipArray)
             put("selectedClipIndex", selectedClipIndex)
+            put("timelinePlayheadMs", timelinePlayheadMs.coerceIn(0L, totalOutputDurationMs()))
+            put("timelineZoom", timelineZoom)
+            put("timelineHorizontalScrollX", timelineScrollViews.firstOrNull()?.scrollX ?: timelineHorizontalScrollX)
             put("musicUri", musicUri?.toString() ?: JSONObject.NULL)
             put("musicTitle", musicTitle ?: JSONObject.NULL)
             put("soundUri", soundUri?.toString() ?: JSONObject.NULL)
@@ -2850,7 +2856,30 @@ class VideoEditorActivity : Activity() {
         selectedClipIndex = json.optInt("selectedClipIndex", 0).coerceIn(0, clips.lastIndex)
         timelinePreviewLoaded = false
         previewSingleClip = true
-        timelinePlayheadMs = clips.take(selectedClipIndex).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
+        timelineZoom = json.optDouble("timelineZoom", timelineZoom.toDouble())
+            .toFloat().takeIf { it.isFinite() }?.coerceIn(0.5f, 8.0f) ?: 1.0f
+        timelineHorizontalScrollX = json.optInt("timelineHorizontalScrollX", 0).coerceAtLeast(0)
+        pendingTimelineScrollX = timelineHorizontalScrollX
+
+        val defaultPlayheadMs = clips.take(selectedClipIndex).sumOf {
+            (it.endMs - it.startMs).coerceAtLeast(0L)
+        }
+        timelinePlayheadMs = if (json.has("timelinePlayheadMs")) {
+            json.optLong("timelinePlayheadMs", defaultPlayheadMs)
+                .coerceIn(0L, totalOutputDurationMs())
+        } else {
+            defaultPlayheadMs
+        }
+        val restoredPosition = TimelinePositionMath.locate(
+            clips.map { (it.endMs - it.startMs).coerceAtLeast(0L) },
+            timelinePlayheadMs
+        )
+        if (restoredPosition != null) {
+            selectedClipIndex = restoredPosition.clipIndex
+            timelinePlayheadMs = restoredPosition.clipStartMs + restoredPosition.localPositionMs
+        } else {
+            selectedClipIndex = json.optInt("selectedClipIndex", 0).coerceIn(0, clips.lastIndex)
+        }
         musicUri = json.optString("musicUri").takeIf { it.isNotBlank() && it != "null" }?.let(Uri::parse)
         musicTitle = json.optString("musicTitle").takeIf { it.isNotBlank() && it != "null" }
         soundUri = json.optString("soundUri").takeIf { it.isNotBlank() && it != "null" }?.let(Uri::parse)
@@ -2944,9 +2973,17 @@ class VideoEditorActivity : Activity() {
             player?.setMediaItem(clippedMediaItem(clip))
             player?.prepare()
             player?.playWhenReady = false
+            val clipOffsetMs = clips.take(selectedClipIndex).sumOf {
+                (it.endMs - it.startMs).coerceAtLeast(0L)
+            }
+            val localPositionMs = (timelinePlayheadMs - clipOffsetMs)
+                .coerceIn(0L, (clip.endMs - clip.startMs).coerceAtLeast(0L))
+            player?.seekTo(localPositionMs)
         }
+        ensureTrimHandlesReachable(selectedClipIndex)
+        updateTimelinePlayheadControls()
         refreshTimelineTracks()
-        status.text = "PROJE AÇILDI. Klipler, kesmeler, yazı ve ses ayarları geri yüklendi."
+        status.text = "PROJE AÇILDI. Klipler, kesmeler, oynatma noktası, yazı ve ses ayarları geri yüklendi."
     }
 
     private fun chooseVideo(append: Boolean) {
