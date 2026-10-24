@@ -155,7 +155,7 @@ class VideoEditorActivity : Activity() {
     private lateinit var playerView: PlayerView
     private lateinit var previewFrame: FrameLayout
     private lateinit var previewFocusButton: Button
-    private var previewStageHeightDp = 340
+    private var previewStageHeightDp = 260
     private var previewFocusMode = false
     private val previewFocusOriginalVisibility = linkedMapOf<View, Int>()
     private lateinit var previewTextOverlay: TextView
@@ -473,7 +473,7 @@ class VideoEditorActivity : Activity() {
         }
         clipScroll.addView(clipList)
         timelineCard.addView(clipScroll, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(58)
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(54)
         ))
         timelineTracksFrame = FrameLayout(this)
         timelineTracks = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -1656,7 +1656,7 @@ class VideoEditorActivity : Activity() {
         }
 
         if (!keyboardLayoutActive) {
-            val ruler = makeLane("SÜRE", 22)
+            val ruler = makeLane("SÜRE", 18)
             val rulerEndMs = (((totalMs + 4999L) / 5000L).coerceAtLeast(1L)) * 5000L
             var rulerTimeMs = 0L
             var rulerPositionPx = 0
@@ -1679,7 +1679,7 @@ class VideoEditorActivity : Activity() {
             }
         }
 
-        val videoTrack = makeLane("VIDEO", if (keyboardLayoutActive) 22 else 44)
+        val videoTrack = makeLane("VIDEO", if (keyboardLayoutActive) 18 else 32)
         if (clips.isEmpty()) {
             addBlock(videoTrack, "+ Video ekle", 5000L, Color.rgb(38, 105, 123), onClick = { chooseVideo(true) }, minimumWidthDp = 115)
         } else {
@@ -1697,19 +1697,19 @@ class VideoEditorActivity : Activity() {
         }
 
         if (textLayers.isEmpty()) {
-            val textTrack = makeLane("METİN", 24)
+            val textTrack = makeLane("METİN", 20)
             addBlock(
                 textTrack, "+ Metin ekle", totalMs.coerceAtLeast(5000L), Color.rgb(70, 54, 93),
                 onClick = { showEditorPanel("text"); addTextLayer() }, minimumWidthDp = 115
             )
         } else {
             textLayers.forEachIndexed { index, layer ->
-                val textTrack = makeLane("YAZI ${index + 1}", 24)
+                val textTrack = makeLane("YAZI ${index + 1}", 20)
                 addTextLayerBlock(textTrack, layer, index)
             }
         }
 
-        val musicTrack = makeLane("MÜZİK", 24)
+        val musicTrack = makeLane("MÜZİK", 20)
         if (musicUri != null) {
             addBlock(
                 musicTrack, "♫ ${musicTitle ?: "Müzik"}", totalMs, Color.rgb(46, 125, 85),
@@ -1720,7 +1720,7 @@ class VideoEditorActivity : Activity() {
                 onClick = { chooseAudio(true) }, minimumWidthDp = 115)
         }
 
-        val effectTrack = makeLane("EFEKT", 24)
+        val effectTrack = makeLane("EFEKT", 20)
         if (soundUri != null && totalMs > 0L) {
             val startMs = soundStartMs.coerceIn(0L, totalMs)
             val duration = soundDurationMs.coerceAtMost((totalMs - startMs).coerceAtLeast(0L))
@@ -3017,7 +3017,7 @@ class VideoEditorActivity : Activity() {
                     setStroke(dp(1), Color.rgb(48, 66, 85))
                 }
                 setPadding(dp(16), 0, dp(16), 0)
-            }, LinearLayout.LayoutParams(dp(135), dp(64)))
+            }, LinearLayout.LayoutParams(dp(135), dp(54)))
         } else {
             clips.forEachIndexed { index, clip ->
                 val selected = index == selectedClipIndex
@@ -3092,7 +3092,7 @@ class VideoEditorActivity : Activity() {
                         else -> false
                     }
                 }
-                clipList.addView(tile, LinearLayout.LayoutParams(dp(145), dp(68)).apply {
+                clipList.addView(tile, LinearLayout.LayoutParams(dp(145), dp(54)).apply {
                     rightMargin = dp(6)
                 })
             }
