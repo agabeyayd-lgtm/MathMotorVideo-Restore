@@ -295,7 +295,7 @@ app_internal_video="/data/user/0/com.mathmotor.video.next/files/editor-test-vide
 # own sandbox. This avoids both scoped-storage restrictions and SELinux
 # denying the app UID access to shell-owned /data/local/tmp files.
 if ! timeout -k 2s 30s adb -s emulator-5554 shell -T \
-  "run-as com.mathmotor.video.next sh -c 'cat > files/editor-test-video.mp4'" \
+  "run-as com.mathmotor.video.next sh -c 'cd /data/user/0/com.mathmotor.video.next/files && cat > editor-test-video.mp4'" \
   < "$fixture" 2>&1 | tee emulator-screenshots/video-fixture-private-copy.txt; then
   echo "Streaming the test fixture into the app sandbox failed; preserving diagnostics"
   timeout -k 2s 8s adb -s emulator-5554 shell run-as com.mathmotor.video.next id > emulator-screenshots/run-as-preflight.txt 2>&1 || true
