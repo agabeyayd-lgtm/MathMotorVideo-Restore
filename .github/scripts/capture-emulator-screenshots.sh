@@ -83,6 +83,22 @@ if [ "$home_ready" != "yes" ]; then
 fi
 sleep 2
 
+# The emulator occasionally drops its ADB transport while the UI is recovering.
+# Reconnect before issuing more shell commands, and preserve diagnostics if it stays offline.
+wait_for_adb_device() {
+  local state=""
+  for attempt in $(seq 1 10); do
+    state="$(timeout -k 1s 4s adb -s emulator-5554 get-state 2>/dev/null || true)"
+    if [ "$state" = "device" ]; then return 0; fi
+    echo "ADB transport not ready (attempt $attempt/10; state='$state'); reconnecting"
+    timeout -k 1s 4s adb reconnect offline >/dev/null 2>&1 || true
+    timeout -k 1s 4s adb start-server >/dev/null 2>&1 || true
+    sleep 2
+  done
+  timeout -k 1s 4s adb devices -l > emulator-screenshots/adb-devices-after-reconnect.txt 2>&1 || true
+  return 1
+}
+
 take_screen() {
   local destination="$1"
   local remote="/sdcard/$(basename "$destination")"
@@ -96,7 +112,8 @@ take_screen() {
     return 0
   fi
 
-  echo "Device-file screenshot failed; trying exec-out fallback for $destination"
+  echo "Device-file screenshot failed; trying to recover ADB before exec-out fallback for $destination"
+  wait_for_adb_device || true
   rm -f "$destination"
   if timeout -k 2s 15s adb -s emulator-5554 exec-out screencap -p > "$destination" \
       && [ -s "$destination" ]; then
@@ -172,7 +189,16 @@ else
   echo "Accessibility hierarchy unavailable; fallback tap at $coords"
 fi
 [ -n "$coords" ] || { echo "Could not determine editor tap position"; exit 2; }
-timeout -k 2s 8s adb -s emulator-5554 shell input tap $coords
+if ! wait_for_adb_device; then
+  echo "ADB did not recover after home capture; collect diagnostics and stop before the editor tap"
+  collect_capture_diagnostics home-tap-adb-offline
+  exit 7
+fi
+if ! timeout -k 2s 8s adb -s emulator-5554 shell input tap $coords; then
+  echo "Editor-launch tap failed; preserving logs instead of letting set -e discard context"
+  collect_capture_diagnostics home-tap-failure
+  exit 7
+fi
 sleep 4
 if ! take_screen emulator-screenshots/editor-empty.png; then
   collect_capture_diagnostics empty-editor-capture-failure
