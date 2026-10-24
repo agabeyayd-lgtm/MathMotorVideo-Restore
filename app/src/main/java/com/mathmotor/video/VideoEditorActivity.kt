@@ -2285,6 +2285,8 @@ class VideoEditorActivity : Activity() {
             val layer = textLayers.firstOrNull { it.id == layerId } ?: return@setOnTouchListener false
             when (event.actionMasked) {
                 android.view.MotionEvent.ACTION_DOWN -> {
+                    // The parent editor ScrollView must not intercept vertical text drags.
+                    view.parent?.requestDisallowInterceptTouchEvent(true)
                     if (selectedTextLayerId != layer.id) {
                         syncSelectedTextLayerFromControls()
                         selectedTextLayerId = layer.id
@@ -2372,6 +2374,7 @@ class VideoEditorActivity : Activity() {
                     true
                 }
                 android.view.MotionEvent.ACTION_UP -> {
+                    view.parent?.requestDisallowInterceptTouchEvent(false)
                     if (selectedTextLayerId == layer.id) syncSelectedTextLayerFromControls()
                     refreshTextLayerList()
                     refreshTimelineTracks()
@@ -2380,6 +2383,7 @@ class VideoEditorActivity : Activity() {
                     true
                 }
                 android.view.MotionEvent.ACTION_CANCEL -> {
+                    view.parent?.requestDisallowInterceptTouchEvent(false)
                     startDistance = 0f
                     true
                 }
