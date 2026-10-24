@@ -3679,7 +3679,16 @@ class VideoEditorActivity : Activity() {
                             val delta = event.rawX - downRawX
                             if (kotlin.math.abs(delta) > dp(2)) moved = true
                             val (minimumDeltaPx, maximumDeltaPx) = allowedDeltaPx(initialStartMs, initialEndMs)
-                            view.translationX = delta.coerceIn(minimumDeltaPx, maximumDeltaPx)
+                            // Keep the handle visible while the gesture crosses beyond the
+                            // current cut edge to restore trimmed-away source footage.
+                            // The committed time still uses the full raw pointer delta on ACTION_UP.
+                            val visibleMinDelta = if (isStart) -handleWidth * 0.25f
+                                else -(width - handleWidth).coerceAtLeast(0).toFloat()
+                            val visibleMaxDelta = if (isStart) (width - handleWidth).coerceAtLeast(0).toFloat()
+                                else handleWidth * 0.25f
+                            val visualMin = maxOf(minimumDeltaPx, visibleMinDelta)
+                            val visualMax = minOf(maximumDeltaPx, visibleMaxDelta)
+                            view.translationX = delta.coerceIn(visualMin, maxOf(visualMin, visualMax))
                             true
                         }
                         android.view.MotionEvent.ACTION_UP -> {
