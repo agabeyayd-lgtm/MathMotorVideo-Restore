@@ -35,8 +35,8 @@ class EmulatorScreenshotTest {
         takeScreenshot(device, "home.png")
 
         val openEditor = device.findObject(
-            By.clazz("android.widget.Button").textContains("Galeriden video seç")
-        ) ?: throw AssertionError("Could not find the Galeriden video seç button")
+            By.clazz("android.widget.Button").textContains("Boş proje oluştur")
+        ) ?: throw AssertionError("Could not find the Boş proje oluştur button")
         openEditor.click()
 
         assertTrue(
