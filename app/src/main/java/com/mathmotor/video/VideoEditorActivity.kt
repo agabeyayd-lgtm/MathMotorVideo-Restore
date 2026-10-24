@@ -171,6 +171,7 @@ class VideoEditorActivity : Activity() {
     private val timelineScrollViews = mutableListOf<android.widget.HorizontalScrollView>()
     private var syncingTimelineScroll = false
     private var timelineHorizontalScrollX = 0
+    private var pendingTimelineScrollX: Int? = null
     private var timelineZoom = 1.0f
     private var deferTimelineRefresh = false
     private val timelineThumbnailCache = object : android.util.LruCache<String, Bitmap>(256) {}
@@ -1420,7 +1421,10 @@ class VideoEditorActivity : Activity() {
 
     private fun refreshTimelineTracks() {
         if (!::timelineTracks.isInitialized) return
-        val preservedScrollX = timelineScrollViews.firstOrNull()?.scrollX ?: timelineHorizontalScrollX
+        val preservedScrollX = pendingTimelineScrollX
+            ?: timelineScrollViews.firstOrNull()?.scrollX
+            ?: timelineHorizontalScrollX
+        pendingTimelineScrollX = null
         timelineHorizontalScrollX = preservedScrollX
         timelineTracks.removeAllViews()
         timelineScrollViews.clear()
@@ -1864,8 +1868,30 @@ class VideoEditorActivity : Activity() {
 
     private fun timelinePixelsPerSecond(): Float = dp(22).toFloat() * timelineZoom
 
+    private fun ensureTrimHandlesReachable(index: Int): Boolean {
+        val clip = clips.getOrNull(index) ?: return false
+        val durationMs = (clip.endMs - clip.startMs).coerceAtLeast(0L)
+        if (durationMs <= 0L) return false
+
+        // Keep a touch target for both trim edges, even after a clip is shortened to 0.5 s.
+        val basePixelsPerSecond = dp(22).toFloat().coerceAtLeast(1f)
+        val requiredZoom = (dp(80).toDouble() * 1000.0 /
+            (durationMs.toDouble() * basePixelsPerSecond.toDouble())).toFloat()
+        val targetZoom = requiredZoom.coerceIn(0.5f, 8.0f)
+        if (targetZoom <= timelineZoom) return false
+
+        timelineZoom = targetZoom
+        val projectOffsetMs = clips.take(index).sumOf {
+            (it.endMs - it.startMs).coerceAtLeast(0L)
+        }
+        val clipStartPx = TimelineScaleMath.pixelsForTime(projectOffsetMs, timelinePixelsPerSecond())
+        pendingTimelineScrollX = (clipStartPx - dp(8)).coerceAtLeast(0)
+        timelineHorizontalScrollX = pendingTimelineScrollX ?: 0
+        return true
+    }
+
     private fun adjustTimelineZoom(factor: Float) {
-        val newZoom = (timelineZoom * factor).coerceIn(0.5f, 5.0f)
+        val newZoom = (timelineZoom * factor).coerceIn(0.5f, 8.0f)
         if (newZoom == timelineZoom) return
         timelineZoom = newZoom
         refreshTimelineTracks()
@@ -2005,6 +2031,7 @@ class VideoEditorActivity : Activity() {
         previewSingleClip = true
         selectedClipIndex = index
         timelinePlayheadMs = clips.take(index).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
+        ensureTrimHandlesReachable(index)
         updateTimelinePlayheadLabel()
         val clip = clips[index]
         refreshClipList()
@@ -3156,6 +3183,7 @@ class VideoEditorActivity : Activity() {
                         timelinePreviewLoaded = false
                         previewSingleClip = true
                         timelinePlayheadMs = clips.take(index).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
+                        ensureTrimHandlesReachable(index)
                         refreshClipList()
                         loadTrimControls()
                         updateTimelinePlayheadLabel()
@@ -3779,6 +3807,7 @@ class VideoEditorActivity : Activity() {
             timelinePlayheadMs = clips.take(selectedClipIndex).sumOf {
                 (it.endMs - it.startMs).coerceAtLeast(0L)
             }
+            ensureTrimHandlesReachable(selectedClipIndex)
             player?.setMediaItem(clippedMediaItem(clip))
             player?.prepare()
             player?.seekTo(0L)
