@@ -1826,7 +1826,9 @@ class VideoEditorActivity : Activity() {
             }
             val clipDurationMs = (clip.endMs - clip.startMs).coerceAtLeast(0L)
             val clipPositionMs = (projectPositionMs - projectOffsetMs).coerceIn(0L, clipDurationMs)
-            "Klip ${formatTimelineMs(clipPositionMs)} / ${formatTimelineMs(clipDurationMs)}\n$projectText"
+            // Lead with the combined project/output duration. The selected clip's
+            // local time is useful, but must not look like the final video duration.
+            "$projectText\nKlip ${formatTimelineMs(clipPositionMs)} / ${formatTimelineMs(clipDurationMs)}"
         } else {
             projectText
         }
