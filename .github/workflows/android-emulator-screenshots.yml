@@ -75,7 +75,7 @@ jobs:
                 root = ET.parse(sys.argv[1]).getroot()
                 for node in root.iter("node"):
                     if node.attrib.get("text", "").strip().lower() == "wait" and node.attrib.get("clickable") == "true":
-                        match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+                        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
                         if match:
                             x1, y1, x2, y2 = map(int, match.groups())
                             print(f"{(x1 + x2) // 2} {(y1 + y2) // 2}")
@@ -118,7 +118,7 @@ jobs:
             nodes = []
             for node in root.iter("node"):
                 label = " ".join((node.attrib.get("text", ""), node.attrib.get("content-desc", ""))).strip()
-                match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+                match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
                 if match:
                     x1, y1, x2, y2 = map(int, match.groups())
                     nodes.append((label, (x1 + x2) // 2, (y1 + y2) // 2))
