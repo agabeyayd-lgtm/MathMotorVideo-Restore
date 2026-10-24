@@ -51,10 +51,10 @@ jobs:
           script: |
             set -e
             mkdir -p emulator-screenshots
-            adb wait-for-device
-            adb install -r app/build/outputs/apk/debug/app-debug.apk
-            adb shell am force-stop com.mathmotor.video.next || true
-            adb shell monkey -p com.mathmotor.video.next 1
+            timeout 60s adb wait-for-device
+            timeout 120s adb install -r app/build/outputs/apk/debug/app-debug.apk
+            timeout 10s adb shell am force-stop com.mathmotor.video.next || true
+            timeout 20s adb shell monkey -p com.mathmotor.video.next 1
             sleep 10
 
             # Cold Android 11 emulators may show a System UI ANR prompt on first boot.
@@ -67,7 +67,12 @@ jobs:
                 rm -f "$hierarchy_path"
                 adb shell rm -f "/sdcard/$hierarchy" >/dev/null 2>&1 || true
                 timeout 12s adb shell uiautomator dump "/sdcard/$hierarchy" >/dev/null 2>&1 || true
-                adb pull "/sdcard/$hierarchy" "$hierarchy_path" >/dev/null 2>&1 || true
+                timeout 12s adb pull "/sdcard/$hierarchy" "$hierarchy_path" >/dev/null 2>&1 || true
+                if [ ! -s "$hierarchy_path" ]; then
+                  echo "Could not read the Android UI hierarchy (attempt $attempt/4)."
+                  sleep 2
+                  continue
+                fi
                 if grep -q "isn't responding" "$hierarchy_path" 2>/dev/null; then
                   wait_node="$(grep -o '<node[^>]*text="Wait"[^>]*bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' "$hierarchy_path" | head -n 1 || true)"
                   wait_coords="$(printf '%s\n' "$wait_node" | sed -n 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/p' | awk '{print int(($1+$3)/2), int(($2+$4)/2)}')"
@@ -80,7 +85,7 @@ jobs:
                   sleep 4
                   continue
                 fi
-                adb exec-out screencap -p > "$destination"
+                timeout 15s adb exec-out screencap -p > "$destination"
                 test -s "$destination"
                 return 0
               done
@@ -105,10 +110,10 @@ jobs:
             fi
             coords="$(printf '%s\n' "$node" | sed -n 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/p' | awk '{print int(($1+$3)/2), int(($2+$4)/2)}')"
             echo "Opening editor at $coords"
-            adb shell input tap $coords
+            timeout 10s adb shell input tap $coords
             sleep 5
             capture_clear_screen emulator-screenshots/editor.png editor-window.xml
-            adb logcat -d > emulator-screenshots/logcat.txt
+            timeout 15s adb logcat -d > emulator-screenshots/logcat.txt
             test -s emulator-screenshots/home.png
             test -s emulator-screenshots/editor.png
 
