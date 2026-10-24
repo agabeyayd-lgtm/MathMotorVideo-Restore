@@ -93,7 +93,7 @@ if [ -s emulator-screenshots/window.xml ] && grep -q "isn't responding" emulator
   fi
 fi
 
-echo "Step 6/7: open editor"
+echo "Step 6/8: capture the empty editor for layout comparison"
 node=""
 if [ -s emulator-screenshots/window.xml ]; then
   for target in "Boş proje oluştur" "Boş düzenleyiciyi aç" "Yeni düzenleme başlat"; do
@@ -117,11 +117,39 @@ fi
 [ -n "$coords" ] || { echo "Could not determine editor tap position"; exit 2; }
 timeout -k 2s 8s adb -s emulator-5554 shell input tap $coords
 sleep 4
+take_screen emulator-screenshots/editor-empty.png
+dump_hierarchy editor-empty-window.xml emulator-screenshots/editor-empty-window.xml || true
+
+echo "Step 7/8: load a real sample video into the editor"
+fixture="app/build/test-fixtures/editor-test-video.mp4"
+if [ ! -s "$fixture" ]; then
+  echo "Missing generated test fixture: $fixture"
+  exit 3
+fi
+remote_dir="/sdcard/Android/data/com.mathmotor.video.next/files"
+remote_video="$remote_dir/editor-test-video.mp4"
+timeout -k 2s 8s adb -s emulator-5554 shell mkdir -p "$remote_dir"
+timeout -k 2s 20s adb -s emulator-5554 push "$fixture" "$remote_video" | tee emulator-screenshots/video-fixture-push.txt
+
+timeout -k 2s 8s adb -s emulator-5554 shell am force-stop com.mathmotor.video.next || true
+timeout -k 2s 15s adb -s emulator-5554 shell am start -W \
+  -n com.mathmotor.video.next/com.mathmotor.video.VideoEditorActivity \
+  --es video_uri "file://$remote_video" | tee emulator-screenshots/editor-video-launch.txt
+sleep 8
 take_screen emulator-screenshots/editor.png
 dump_hierarchy editor-window.xml emulator-screenshots/editor-window.xml || true
 
-echo "Step 7/7: save diagnostics"
+# A green screenshot run must prove the sample reached the actual timeline,
+# not merely that a black empty editor launched.
+if ! grep -q "editor-test-video.mp4" emulator-screenshots/editor-window.xml; then
+  echo "Sample video was not visible in the editor hierarchy; collect diagnostics and fail."
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d > emulator-screenshots/video-load-logcat.txt || true
+  exit 4
+fi
+
+echo "Step 8/8: save diagnostics"
 timeout -k 2s 8s adb -s emulator-5554 logcat -d > emulator-screenshots/logcat.txt || true
 test -s emulator-screenshots/home.png
+test -s emulator-screenshots/editor-empty.png
 test -s emulator-screenshots/editor.png
-echo "Both home and editor screenshots captured."
+echo "Home, empty-editor, and sample-video editor screenshots captured. Sample-video presence verified."
