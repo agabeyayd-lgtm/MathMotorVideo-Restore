@@ -64,6 +64,7 @@ jobs:
               hierarchy="$2"
               hierarchy_path="emulator-screenshots/$hierarchy"
               for attempt in 1 2 3 4; do
+                rm -f "$hierarchy_path"
                 adb shell rm -f "/sdcard/$hierarchy" >/dev/null 2>&1 || true
                 timeout 12s adb shell uiautomator dump "/sdcard/$hierarchy" >/dev/null 2>&1 || true
                 adb pull "/sdcard/$hierarchy" "$hierarchy_path" >/dev/null 2>&1 || true
