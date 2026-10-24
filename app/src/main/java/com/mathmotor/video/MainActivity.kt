@@ -38,6 +38,9 @@ import java.util.Date
  */
 class MainActivity : Activity() {
     private lateinit var recentList: LinearLayout
+    private lateinit var draftSection: LinearLayout
+    private lateinit var draftList: LinearLayout
+    private lateinit var draftSectionGap: View
     private lateinit var updateStatus: TextView
     private var updateDownloadId = -1L
     private var updateReceiverRegistered = false
@@ -67,6 +70,7 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         if (::recentList.isInitialized) syncGalleryRecords()
+        if (::draftList.isInitialized) refreshDraftProjects()
     }
 
     override fun onDestroy() {
@@ -288,6 +292,24 @@ class MainActivity : Activity() {
         }, matchWrap())
         root.addView(startCard, matchWrap())
 
+        draftSectionGap = gap(14)
+        root.addView(draftSectionGap)
+        draftSection = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+        }
+        val draftsHeader = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(label("TASLAKLAR", 12f, white, true))
+            addView(label("Kaldığın yerden devam et", 10f, muted, false))
+        }
+        draftSection.addView(draftsHeader)
+        draftList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        draftSection.addView(gap(6))
+        draftSection.addView(draftList, matchWrap())
+        root.addView(draftSection, matchWrap())
+        refreshDraftProjects()
+
         root.addView(gap(20))
 
         // Compact gallery heading: refresh is an icon action instead of two crowded buttons.
@@ -384,6 +406,57 @@ class MainActivity : Activity() {
         }.start()
     }
 
+    private fun refreshDraftProjects() {
+        if (!::draftSection.isInitialized || !::draftList.isInitialized) return
+        val drafts = VideoProjectDraftStore.list(this).take(5)
+        draftList.removeAllViews()
+        draftSection.visibility = if (drafts.isEmpty()) View.GONE else View.VISIBLE
+        draftSectionGap.visibility = if (drafts.isEmpty()) View.GONE else View.VISIBLE
+        drafts.forEachIndexed { index, draft ->
+            val item = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(12), dp(9), dp(10), dp(9))
+                background = ripple(panel, line, 14)
+                isClickable = true
+                isFocusable = true
+                contentDescription = "Taslağa devam et: ${draft.title}"
+                setOnClickListener { openDraftEditor(draft.id) }
+            }
+            val mark = TextView(this).apply {
+                text = "✂"
+                textSize = 18f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(accent)
+                gravity = Gravity.CENTER
+                background = rounded(Color.rgb(18, 49, 58), 10)
+                layoutParams = LinearLayout.LayoutParams(dp(42), dp(42))
+            }
+            item.addView(mark)
+            val info = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(10), 0, dp(6), 0)
+                addView(label(draft.title.ifBlank { "Video taslağı" }, 12f, white, true).apply {
+                    maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                })
+                addView(label(
+                    "${draft.clipCount} klip • ${DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(draft.savedAt))}",
+                    10f, muted, false
+                ).apply { maxLines = 1 })
+            }
+            item.addView(info, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            item.addView(secondaryButton("Devam et") { openDraftEditor(draft.id) }.apply {
+                minHeight = dp(38)
+                minWidth = dp(74)
+                textSize = 10f
+                setPadding(dp(7), dp(3), dp(7), dp(3))
+            })
+            draftList.addView(item, matchWrap())
+            if (index != drafts.lastIndex) draftList.addView(gap(6))
+        }
+    }
+
     private fun refreshRecentProjects() {
         recentList.removeAllViews()
         val records = VideoRecordStore.list(this).take(5)
@@ -475,10 +548,18 @@ class MainActivity : Activity() {
 
     private fun openEditor(uri: String?) {
         startActivity(Intent(this, VideoEditorActivity::class.java).apply {
+            putExtra("draft_id", VideoProjectDraftStore.newId())
             if (!uri.isNullOrBlank()) {
                 putExtra("video_uri", uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
+        })
+    }
+
+    private fun openDraftEditor(id: String) {
+        if (!VideoProjectDraftStore.isValidId(id)) return
+        startActivity(Intent(this, VideoEditorActivity::class.java).apply {
+            putExtra("draft_id", id)
         })
     }
 

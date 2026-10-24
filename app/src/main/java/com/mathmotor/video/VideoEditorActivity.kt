@@ -87,6 +87,7 @@ class VideoEditorActivity : Activity() {
     )
 
     private val clips = mutableListOf<Clip>()
+    private var draftId: String? = null
     private val undoClipHistory = mutableListOf<ClipEditSnapshot>()
     private val redoClipHistory = mutableListOf<ClipEditSnapshot>()
     private var activeTrimHistorySnapshot: ClipEditSnapshot? = null
@@ -247,6 +248,9 @@ class VideoEditorActivity : Activity() {
         window.statusBarColor = Color.rgb(15, 31, 45)
         window.navigationBarColor = Color.rgb(15, 31, 45)
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        val requestedDraftId = intent.getStringExtra("draft_id")
+            ?.takeIf { VideoProjectDraftStore.isValidId(it) }
+        draftId = requestedDraftId ?: VideoProjectDraftStore.newId()
         buildUi()
         player = ExoPlayer.Builder(this).build().also { exo ->
             exo.volume = if (keepSourceAudio.isChecked) sourceAudioVolume / 100f else 0f
@@ -262,8 +266,17 @@ class VideoEditorActivity : Activity() {
         if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
             android.util.Log.i("EditorSmokeTest", "EDITOR_SMOKE_EDITOR_STARTED uri=$incoming")
         }
-        if (!incoming.isNullOrBlank()) addClip(Uri.parse(incoming), false)
-        else if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+        val savedDraft = requestedDraftId?.let { VideoProjectDraftStore.load(this, it) }
+        if (savedDraft != null) {
+            runCatching { applyProjectJson(savedDraft) }
+                .onSuccess { status.text = "Taslak açıldı. Düzenlemeye kaldığın yerden devam edebilirsin." }
+                .onFailure {
+                    status.text = "Taslak açılamadı: ${it.message ?: "proje verisi okunamadı"}"
+                    if (!incoming.isNullOrBlank()) addClip(Uri.parse(incoming), false)
+                }
+        } else if (!incoming.isNullOrBlank()) {
+            addClip(Uri.parse(incoming), false)
+        } else if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
             android.util.Log.e("EditorSmokeTest", "EDITOR_SMOKE_MISSING_VIDEO_URI")
         }
     }
@@ -2887,6 +2900,7 @@ class VideoEditorActivity : Activity() {
             player?.prepare()
             player?.playWhenReady = false
         }
+        refreshTimelineTracks()
         status.text = "PROJE AÇILDI. Klipler, kesmeler, yazı ve ses ayarları geri yüklendi."
     }
 
@@ -4159,10 +4173,27 @@ class VideoEditorActivity : Activity() {
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
     override fun onStop() {
+        saveLocalDraftIfNeeded()
         player?.pause()
         musicPreviewPlayer?.pause()
         soundPreviewPlayer?.pause()
         super.onStop()
+    }
+
+    private fun saveLocalDraftIfNeeded() {
+        if (clips.isEmpty()) return
+        val id = draftId ?: return
+        runCatching {
+            val typedTitle = if (::exportNameInput.isInitialized) exportNameInput.text?.toString()?.trim().orEmpty() else ""
+            val title = typedTitle.takeIf { it.isNotBlank() && it != "MathMotor_Edit" }
+                ?: clips.firstOrNull()?.title
+                ?: "Video taslağı"
+            check(VideoProjectDraftStore.save(this, id, title, createProjectJson())) {
+                "Yerel taslak dosyası kaydedilemedi."
+            }
+        }.onFailure {
+            android.util.Log.w("MathMotorDraft", "Local draft autosave failed", it)
+        }
     }
 
     override fun onDestroy() {
