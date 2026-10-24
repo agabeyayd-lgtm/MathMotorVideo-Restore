@@ -1,8 +1,13 @@
 name: Build and publish APK
 
-# APK publishing is manual-only: code changes must not release an update.
+# Publish manually from Actions, or by changing the explicit release marker file.
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/release-trigger.txt"
 
 permissions:
   contents: write
