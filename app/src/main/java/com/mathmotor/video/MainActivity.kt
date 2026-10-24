@@ -46,13 +46,13 @@ class MainActivity : Activity() {
     private val latestApkUrl = "https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/releases/latest/download/MathMotorVideo.apk"
     private val latestReleaseApi = "https://api.github.com/repos/agabeyayd-lgtm/MathMotorVideo-Restore/releases/latest"
 
-    private val bg = Color.rgb(9, 15, 25)
-    private val panel = Color.rgb(19, 29, 43)
-    private val panelRaised = Color.rgb(25, 38, 54)
-    private val line = Color.rgb(42, 59, 77)
-    private val accent = Color.rgb(57, 220, 190)
-    private val muted = Color.rgb(154, 174, 195)
-    private val white = Color.rgb(242, 247, 252)
+    private val bg = Color.rgb(8, 13, 22)
+    private val panel = Color.rgb(16, 25, 38)
+    private val panelRaised = Color.rgb(23, 36, 53)
+    private val line = Color.rgb(43, 61, 80)
+    private val accent = Color.rgb(64, 232, 198)
+    private val muted = Color.rgb(174, 190, 207)
+    private val white = Color.rgb(245, 248, 252)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -231,23 +231,23 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(11), 0, 0, 0)
             addView(label("MathMotor Video", 17f, white, true))
-            addView(label("MOBİL VİDEO STÜDYOSU", 9f, muted, true))
+            addView(label("VİDEO DÜZENLEYİCİ", 9f, muted, true))
         }
         topBar.addView(brand, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        val localTag = label("YEREL", 9f, accent, true).apply {
+        val localTag = label("TELEFONDA", 9f, accent, true).apply {
             background = rounded(Color.rgb(15, 48, 48), 9)
             setPadding(dp(10), dp(6), dp(10), dp(6))
         }
         topBar.addView(localTag)
         root.addView(topBar)
-        root.addView(gap(20))
+        root.addView(gap(16))
 
-        root.addView(label("KURGU MASASI", 10f, accent, true))
-        root.addView(label("Videonu düzenle.", 27f, white, true))
-        root.addView(label("Kes, birleştir; yazı ve ses ekle.", 13f, muted, false).apply {
+        root.addView(label("VİDEO STÜDYOSU", 10f, accent, true))
+        root.addView(label("Videonu hazırla.", 26f, white, true))
+        root.addView(label("Kes, birleştir, yazı ve ses ekle.", 13f, muted, false).apply {
             setLineSpacing(dp(2).toFloat(), 1f)
         })
-        root.addView(gap(16))
+        root.addView(gap(13))
 
         // One clear primary action, with the empty-project option kept secondary.
         val startCard = LinearLayout(this).apply {
@@ -271,8 +271,8 @@ class MainActivity : Activity() {
         val cardCopy = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(11), 0, 0, 0)
-            addView(label("Yeni kurgu oluştur", 16f, white, true))
-            addView(label("Bir video seçerek başla.", 11f, muted, false))
+            addView(label("Yeni düzenleme", 16f, white, true))
+            addView(label("Bir videoyla hemen başla.", 11f, muted, false))
         }
         cardHeader.addView(cardCopy, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         startCard.addView(cardHeader)
@@ -297,8 +297,8 @@ class MainActivity : Activity() {
         }
         val recentTitle = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            addView(label("SON VİDEOLAR", 12f, white, true))
-            addView(label("Düzenlediklerin burada", 10f, muted, false))
+            addView(label("SON ÇALIŞMALAR", 12f, white, true))
+            addView(label("Dışa aktardığın videolar", 10f, muted, false))
         }
         recentHeader.addView(recentTitle, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         val refresh = secondaryButton("↻") {
@@ -340,7 +340,7 @@ class MainActivity : Activity() {
         val updateCopy = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             addView(label("UYGULAMA GÜNCELLEMESİ", 10f, accent, true))
-            addView(label("Yeni sürüm varsa buradan kontrol et.", 10f, muted, false))
+            addView(label("Yeni sürüm varsa buradan yükleyebilirsin.", 10f, muted, false))
         }
         updateHeader.addView(updateCopy, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         updateHeader.addView(secondaryButton("Kontrol et") { checkForUpdates() }.apply {
@@ -355,7 +355,7 @@ class MainActivity : Activity() {
         root.addView(updateStatus)
 
         root.addView(gap(12))
-        root.addView(label("Projelerin ve videoların telefonunda kalır.", 10f, Color.rgb(112, 137, 159), false).apply {
+        root.addView(label("Videoların telefonunda kalır.", 10f, Color.rgb(130, 153, 174), false).apply {
             gravity = Gravity.CENTER
             setPadding(0, dp(5), 0, dp(4))
         })
@@ -398,8 +398,8 @@ class MainActivity : Activity() {
             empty.addView(icon, LinearLayout.LayoutParams(dp(42), ViewGroup.LayoutParams.WRAP_CONTENT))
             val copy = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
-                addView(label("Henüz dışa aktarılan video yok", 13f, white, true))
-                addView(label("İlk kurgunu oluşturduğunda burada görünecek.", 11f, muted, false))
+                addView(label("Henüz video yok", 13f, white, true))
+                addView(label("Dışa aktardığın videolar burada görünecek.", 11f, muted, false))
             }
             empty.addView(copy, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             recentList.addView(empty, matchWrap())
