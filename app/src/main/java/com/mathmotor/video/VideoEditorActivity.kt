@@ -1915,7 +1915,7 @@ class VideoEditorActivity : Activity() {
         timelinePlayheadSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
-                timelinePlayheadMs = progress.toLong()
+                timelinePlayheadMs = TimelineTrimMath.timeForProgress(progress, totalOutputDurationMs())
                 updateTimelinePlayheadLabel()
                 seekTimelinePreview(timelinePlayheadMs)
             }
@@ -1935,11 +1935,10 @@ class VideoEditorActivity : Activity() {
     private fun updateTimelinePlayheadControls() {
         if (!::timelinePlayheadSeek.isInitialized || !::timelinePlayheadLabel.isInitialized) return
         val totalMs = totalOutputDurationMs()
-        val maxMs = totalMs.coerceAtMost(Int.MAX_VALUE.toLong()).toInt().coerceAtLeast(0)
-        timelinePlayheadSeek.max = maxMs
+        timelinePlayheadSeek.max = TimelineTrimMath.progressMax(totalMs)
         timelinePlayheadSeek.isEnabled = clips.isNotEmpty() && totalMs > 0L
         timelinePlayheadMs = timelinePlayheadMs.coerceIn(0L, totalMs)
-        timelinePlayheadSeek.progress = timelinePlayheadMs.coerceAtMost(maxMs.toLong()).toInt()
+        timelinePlayheadSeek.progress = TimelineTrimMath.progressForTime(timelinePlayheadMs, totalMs)
         updateTimelinePlayheadLabel()
         updateTimelinePlayheadLine()
     }
@@ -1993,7 +1992,7 @@ class VideoEditorActivity : Activity() {
             refreshClipList()
             loadTrimControls()
         }
-        timelinePlayheadSeek.progress = targetMs.coerceAtMost(timelinePlayheadSeek.max.toLong()).toInt()
+        timelinePlayheadSeek.progress = TimelineTrimMath.progressForTime(targetMs, totalOutputDurationMs())
         updateTimelinePlayheadLabel()
     }
 
@@ -2009,7 +2008,7 @@ class VideoEditorActivity : Activity() {
             refreshClipList()
             loadTrimControls()
         }
-        val progress = timelinePlayheadMs.coerceAtMost(timelinePlayheadSeek.max.toLong()).toInt()
+        val progress = TimelineTrimMath.progressForTime(timelinePlayheadMs, totalOutputDurationMs())
         if (timelinePlayheadSeek.progress != progress) timelinePlayheadSeek.progress = progress
         updateTimelinePlayheadLabel()
     }
@@ -2023,7 +2022,7 @@ class VideoEditorActivity : Activity() {
         timelinePlayheadMs = (beforeMs + currentPlayer.currentPosition.coerceIn(0L, clipDuration))
             .coerceIn(0L, totalOutputDurationMs())
         if (::timelinePlayheadSeek.isInitialized) {
-            timelinePlayheadSeek.progress = timelinePlayheadMs.coerceAtMost(timelinePlayheadSeek.max.toLong()).toInt()
+            timelinePlayheadSeek.progress = TimelineTrimMath.progressForTime(timelinePlayheadMs, totalOutputDurationMs())
         }
         updateTimelinePlayheadLabel()
     }
@@ -2870,6 +2869,8 @@ class VideoEditorActivity : Activity() {
         } else {
             defaultPlayheadMs
         }
+        val hasSavedTimelineScroll = json.has("timelineHorizontalScrollX")
+        val savedTimelineScrollX = timelineHorizontalScrollX
         val restoredPosition = TimelinePositionMath.locate(
             clips.map { (it.endMs - it.startMs).coerceAtLeast(0L) },
             timelinePlayheadMs
@@ -2981,6 +2982,10 @@ class VideoEditorActivity : Activity() {
             player?.seekTo(localPositionMs)
         }
         ensureTrimHandlesReachable(selectedClipIndex)
+        if (hasSavedTimelineScroll) {
+            pendingTimelineScrollX = savedTimelineScrollX
+            timelineHorizontalScrollX = savedTimelineScrollX
+        }
         updateTimelinePlayheadControls()
         refreshTimelineTracks()
         status.text = "PROJE AÇILDI. Klipler, kesmeler, oynatma noktası, yazı ve ses ayarları geri yüklendi."
