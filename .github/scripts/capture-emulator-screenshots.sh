@@ -149,13 +149,21 @@ dump_hierarchy window.xml emulator-screenshots/window.xml || true
 
 # Emulator system dialogs can appear between a hierarchy dump and a screenshot.
 # Parse XML attributes instead of relying on grep's attribute order.
+SYSTEM_ANR_RECOVERED=false
 recover_system_anr() {
   local xml="$1"
   local remote_name
+  SYSTEM_ANR_RECOVERED=false
   remote_name="$(basename "$xml")"
   for attempt in 1 2 3; do
     if [ ! -s "$xml" ] || ! grep -Eiq "isn.t responding|not responding" "$xml"; then
       return 0
+    fi
+    # Recover Android's own system-server/System UI dialog, but do not hide
+    # an ANR raised by MathMotor itself: that must fail the smoke test.
+    if ! grep -Eiq "(Process system|System UI).*isn.t responding" "$xml"; then
+      echo "Application-level ANR detected in $xml; refusing to dismiss it as emulator noise"
+      return 1
     fi
 
     local wait_coords
@@ -185,11 +193,12 @@ PY
 
     echo "System ANR dialog detected (attempt $attempt/3); tapping Wait at $wait_coords"
     timeout -k 2s 8s adb -s emulator-5554 shell input tap $wait_coords || true
+    SYSTEM_ANR_RECOVERED=true
     sleep 5
     dump_hierarchy "$remote_name" "$xml" || true
   done
 
-  if [ -s "$xml" ] && grep -Eiq "isn.t responding|not responding" "$xml"; then
+  if [ -s "$xml" ] && grep -Eiq "(Process system|System UI).*isn.t responding" "$xml"; then
     echo "System ANR dialog is still present after recovery attempts"
     return 1
   fi
@@ -209,6 +218,15 @@ dump_hierarchy window.xml emulator-screenshots/window.xml || true
 if ! recover_system_anr emulator-screenshots/window.xml; then
   collect_capture_diagnostics home-system-anr-after-screenshot
   exit 8
+fi
+if [ "$SYSTEM_ANR_RECOVERED" = true ]; then
+  echo "Re-capturing home after recovering the emulator system dialog"
+  if ! take_screen emulator-screenshots/home.png; then collect_capture_diagnostics home-recapture-failure; exit 6; fi
+  dump_hierarchy window.xml emulator-screenshots/window.xml || true
+  if [ -s emulator-screenshots/window.xml ] && grep -Eiq "isn.t responding|not responding" emulator-screenshots/window.xml; then
+    collect_capture_diagnostics home-anr-after-recapture
+    exit 8
+  fi
 fi
 
 echo "Step 6/8: capture the empty editor for layout comparison"
@@ -253,6 +271,15 @@ if ! recover_system_anr emulator-screenshots/editor-empty-window.xml; then
   collect_capture_diagnostics empty-editor-system-anr
   exit 8
 fi
+if [ "$SYSTEM_ANR_RECOVERED" = true ]; then
+  echo "Re-capturing empty editor after recovering the emulator system dialog"
+  if ! take_screen emulator-screenshots/editor-empty.png; then collect_capture_diagnostics empty-editor-recapture-failure; exit 6; fi
+  dump_hierarchy editor-empty-window.xml emulator-screenshots/editor-empty-window.xml || true
+  if [ -s emulator-screenshots/editor-empty-window.xml ] && grep -Eiq "isn.t responding|not responding" emulator-screenshots/editor-empty-window.xml; then
+    collect_capture_diagnostics empty-editor-anr-after-recapture
+    exit 8
+  fi
+fi
 
 echo "Step 7/8: load a real sample video into the editor"
 fixture="app/build/test-fixtures/editor-test-video.mp4"
@@ -283,6 +310,15 @@ dump_hierarchy editor-window.xml emulator-screenshots/editor-window.xml || true
 if ! recover_system_anr emulator-screenshots/editor-window.xml; then
   collect_capture_diagnostics video-editor-system-anr
   exit 8
+fi
+if [ "$SYSTEM_ANR_RECOVERED" = true ]; then
+  echo "Re-capturing video editor after recovering the emulator system dialog"
+  if ! take_screen emulator-screenshots/editor.png; then collect_capture_diagnostics video-editor-recapture-failure; exit 6; fi
+  dump_hierarchy editor-window.xml emulator-screenshots/editor-window.xml || true
+  if [ -s emulator-screenshots/editor-window.xml ] && grep -Eiq "isn.t responding|not responding" emulator-screenshots/editor-window.xml; then
+    collect_capture_diagnostics video-editor-anr-after-recapture
+    exit 8
+  fi
 fi
 
 # A green screenshot run must prove the sample reached the actual timeline,
