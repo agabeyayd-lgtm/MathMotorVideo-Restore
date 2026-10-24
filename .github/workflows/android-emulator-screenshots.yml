@@ -57,7 +57,7 @@ jobs:
             adb shell monkey -p com.mathmotor.video.next 1
             sleep 10
             adb exec-out screencap -p > emulator-screenshots/home.png
-            adb shell uiautomator dump /sdcard/window.xml || true
+            timeout 12s adb shell uiautomator dump /sdcard/window.xml || true
             adb pull /sdcard/window.xml emulator-screenshots/window.xml || true
             test -s emulator-screenshots/home.png
             python3 - <<'PY'
@@ -66,33 +66,43 @@ jobs:
             import sys
             import xml.etree.ElementTree as ET
 
-            xml_path = "emulator-screenshots/window.xml"
             try:
-                root = ET.parse(xml_path).getroot()
+                root = ET.parse("emulator-screenshots/window.xml").getroot()
             except Exception as exc:
-                print(f"Could not parse UI hierarchy: {exc}")
+                print(f"Could not parse home UI hierarchy: {exc}")
                 sys.exit(1)
 
-            targets = ("Galeriden video seç", "Boş proje oluştur", "Yeni düzenleme başlat")
+            nodes = []
             for node in root.iter("node"):
                 label = " ".join((node.attrib.get("text", ""), node.attrib.get("content-desc", ""))).strip()
-                if not any(target in label for target in targets):
-                    continue
                 match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
-                if not match:
-                    continue
-                x1, y1, x2, y2 = map(int, match.groups())
-                x, y = (x1 + x2) // 2, (y1 + y2) // 2
-                print(f"Opening editor from home button: {label} at {x},{y}")
-                subprocess.run(["adb", "shell", "input", "tap", str(x), str(y)], check=True)
-                break
-            else:
-                print("No video action button found in UI hierarchy.")
+                if match:
+                    x1, y1, x2, y2 = map(int, match.groups())
+                    nodes.append((label, (x1 + x2) // 2, (y1 + y2) // 2))
+
+            # Prefer the button that opens the editor without asking the emulator
+            # to open Android's media picker.
+            preferred = ("Boş proje oluştur", "Boş düzenleyiciyi aç", "Yeni düzenleme başlat")
+            chosen = None
+            for target in preferred:
+                chosen = next((item for item in nodes if target in item[0]), None)
+                if chosen:
+                    break
+
+            # Older app versions may only expose the gallery picker action.
+            if chosen is None:
+                chosen = next((item for item in nodes if "Galeriden video seç" in item[0]), None)
+            if chosen is None:
+                print("No usable home action button found in UI hierarchy.")
                 sys.exit(2)
+
+            label, x, y = chosen
+            print(f"Opening editor from home button: {label} at {x},{y}")
+            subprocess.run(["adb", "shell", "input", "tap", str(x), str(y)], check=True)
             PY
             sleep 5
             adb exec-out screencap -p > emulator-screenshots/editor.png
-            adb shell uiautomator dump /sdcard/editor-window.xml || true
+            timeout 12s adb shell uiautomator dump /sdcard/editor-window.xml || true
             adb pull /sdcard/editor-window.xml emulator-screenshots/editor-window.xml || true
             adb logcat -d > emulator-screenshots/logcat.txt
             test -s emulator-screenshots/editor.png
