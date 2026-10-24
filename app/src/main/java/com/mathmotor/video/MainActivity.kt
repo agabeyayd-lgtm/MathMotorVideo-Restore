@@ -241,25 +241,11 @@ class MainActivity : Activity() {
         root.addView(topBar)
         root.addView(gap(14))
 
-        val updateCard = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(12), dp(14), dp(12))
-            background = rounded(panel, 15).apply { setStroke(dp(1), line) }
-            addView(label("UYGULAMA GÜNCELLEMESİ", 11f, accent, true))
-            addView(label("Yeni sürümü uygulamanın içinden kontrol et.", 12f, muted, false))
-            addView(gap(7))
-            addView(secondaryButton("↻   Güncellemeleri kontrol et") { checkForUpdates() }, matchWrap())
-            updateStatus = label("Güncelleme kontrol edilmedi.", 11f, muted, false)
-            updateStatus.setPadding(0, dp(6), 0, 0)
-            addView(updateStatus)
-        }
-        root.addView(updateCard, matchWrap())
-        root.addView(gap(18))
-        root.addView(gap(26))
+        root.addView(gap(20))
 
         root.addView(label("KURGU MASASI", 11f, accent, true))
-        root.addView(label("Videonu düzenlemeye başla.", 27f, white, true))
-        root.addView(label("Kes, birleştir, ses ve yazı ekle. Sonucu MP4 olarak kaydet.", 14f, muted, false).apply {
+        root.addView(label("Videonu düzenle.", 29f, white, true))
+        root.addView(label("Videonu seç; kes, birleştir, yazı ve ses ekle.", 14f, muted, false).apply {
             setLineSpacing(dp(3).toFloat(), 1f)
         })
         root.addView(gap(18))
@@ -288,7 +274,7 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), 0, 0, 0)
             addView(label("YENİ DÜZENLEME", 15f, white, true))
-            addView(label("Bir video seç ve doğrudan editöre geç.", 12f, muted, false))
+            addView(label("Galeriden seç ve hemen düzenlemeye başla.", 12f, muted, false))
         }
         startTop.addView(startCopy, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         startCard.addView(startTop)
@@ -341,6 +327,20 @@ class MainActivity : Activity() {
         root.addView(gap(10))
         recentList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(recentList, matchWrap())
+
+        root.addView(gap(18))
+        val updateCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(13), dp(10), dp(13), dp(10))
+            background = rounded(panel, 13).apply { setStroke(dp(1), line) }
+            addView(label("UYGULAMA GÜNCELLEMESİ", 10f, accent, true))
+            addView(label("Yeni sürüm kontrolünü buradan yapabilirsin.", 11f, muted, false))
+            addView(gap(5))
+            addView(secondaryButton("↻  Güncellemeleri kontrol et") { checkForUpdates() }, matchWrap())
+            updateStatus = label("Güncelleme kontrol edilmedi.", 10f, muted, false)
+            updateStatus.setPadding(0, dp(5), 0, 0)
+        }
+        root.addView(updateCard, matchWrap())
 
         root.addView(gap(22))
         val footer = TextView(this).apply {
