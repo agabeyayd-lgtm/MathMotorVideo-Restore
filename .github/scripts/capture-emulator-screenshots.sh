@@ -85,8 +85,37 @@ sleep 2
 
 take_screen() {
   local destination="$1"
-  timeout -k 2s 12s adb -s emulator-5554 exec-out screencap -p > "$destination"
-  test -s "$destination"
+  local remote="/sdcard/$(basename "$destination")"
+  rm -f "$destination"
+
+  # Prefer saving on-device and pulling the completed PNG. Streaming raw PNG
+  # bytes over exec-out can stall on a slow emulator's shell/transport.
+  if timeout -k 2s 15s adb -s emulator-5554 shell screencap -p "$remote" \
+      && timeout -k 2s 10s adb -s emulator-5554 pull "$remote" "$destination" \
+      && [ -s "$destination" ]; then
+    return 0
+  fi
+
+  echo "Device-file screenshot failed; trying exec-out fallback for $destination"
+  rm -f "$destination"
+  if timeout -k 2s 15s adb -s emulator-5554 exec-out screencap -p > "$destination" \
+      && [ -s "$destination" ]; then
+    return 0
+  fi
+
+  rm -f "$destination"
+  echo "Both screenshot paths failed for $destination"
+  return 1
+}
+
+collect_capture_diagnostics() {
+  local label="$1"
+  echo "Collecting diagnostics after screenshot failure ($label)"
+  timeout -k 2s 10s adb -s emulator-5554 logcat -d -b all -v threadtime > "emulator-screenshots/$label-logcat.txt" 2>&1 || true
+  timeout -k 2s 8s adb -s emulator-5554 shell dumpsys activity activities > "emulator-screenshots/$label-activities.txt" 2>&1 || true
+  timeout -k 2s 8s adb -s emulator-5554 shell dumpsys window > "emulator-screenshots/$label-window.txt" 2>&1 || true
+  timeout -k 2s 8s adb -s emulator-5554 shell dumpsys SurfaceFlinger > "emulator-screenshots/$label-surfaceflinger.txt" 2>&1 || true
+  timeout -k 2s 8s adb -s emulator-5554 shell ls -la /data/anr > "emulator-screenshots/$label-anr-files.txt" 2>&1 || true
 }
 dump_hierarchy() {
   local remote="$1" local_file="$2"
@@ -96,21 +125,30 @@ dump_hierarchy() {
   [ -s "$local_file" ]
 }
 
-echo "Step 5/7: capture home screen"
-take_screen emulator-screenshots/home.png
+echo "Step 5/7: inspect the home screen and capture it"
+# Inspect accessibility before screencap so an Android ANR dialog cannot make
+# the screenshot call the first point of failure without any diagnostics.
 dump_hierarchy window.xml emulator-screenshots/window.xml || true
 
-# If the platform raises its System UI ANR prompt, choose "Wait" and recapture.
-if [ -s emulator-screenshots/window.xml ] && grep -q "isn't responding" emulator-screenshots/window.xml; then
-  wait_node="$(grep -o '<node[^>]*text="Wait"[^>]*bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' emulator-screenshots/window.xml | head -n 1 || true)"
+# A system-level ANR dialog can cover the app while the app remains the
+# focused activity. Select Wait once, give the emulator time to recover, and
+# re-check before treating a black/empty screenshot as an app failure.
+if [ -s emulator-screenshots/window.xml ] && grep -Eiq "isn.t responding|not responding" emulator-screenshots/window.xml; then
+  wait_node="$(grep -oi '<node[^>]*text="Wait"[^>]*bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' emulator-screenshots/window.xml | head -n 1 || true)"
   wait_coords="$(printf '%s\n' "$wait_node" | sed -n 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/p' | awk '{print int(($1+$3)/2),int(($2+$4)/2)}')"
   if [ -n "$wait_coords" ]; then
+    echo "Detected Android not-responding dialog; tapping Wait at $wait_coords"
     timeout -k 2s 8s adb -s emulator-5554 shell input tap $wait_coords || true
-    sleep 2
-    take_screen emulator-screenshots/home.png
+    sleep 5
     dump_hierarchy window.xml emulator-screenshots/window.xml || true
   fi
 fi
+
+if ! take_screen emulator-screenshots/home.png; then
+  collect_capture_diagnostics home-capture-failure
+  exit 6
+fi
+dump_hierarchy window.xml emulator-screenshots/window.xml || true
 
 echo "Step 6/8: capture the empty editor for layout comparison"
 node=""
@@ -136,7 +174,10 @@ fi
 [ -n "$coords" ] || { echo "Could not determine editor tap position"; exit 2; }
 timeout -k 2s 8s adb -s emulator-5554 shell input tap $coords
 sleep 4
-take_screen emulator-screenshots/editor-empty.png
+if ! take_screen emulator-screenshots/editor-empty.png; then
+  collect_capture_diagnostics empty-editor-capture-failure
+  exit 6
+fi
 dump_hierarchy editor-empty-window.xml emulator-screenshots/editor-empty-window.xml || true
 
 echo "Step 7/8: load a real sample video into the editor"
@@ -155,7 +196,10 @@ timeout -k 2s 15s adb -s emulator-5554 shell am start -W \
   -n com.mathmotor.video.next/com.mathmotor.video.EditorTestEntryActivity \
   --es video_uri "file://$remote_video" | tee emulator-screenshots/editor-video-launch.txt
 sleep 8
-take_screen emulator-screenshots/editor.png
+if ! take_screen emulator-screenshots/editor.png; then
+  collect_capture_diagnostics video-editor-capture-failure
+  exit 6
+fi
 dump_hierarchy editor-window.xml emulator-screenshots/editor-window.xml || true
 
 # A green screenshot run must prove the sample reached the actual timeline,
