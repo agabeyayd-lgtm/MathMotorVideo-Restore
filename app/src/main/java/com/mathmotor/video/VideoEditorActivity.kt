@@ -2804,7 +2804,11 @@ class VideoEditorActivity : Activity() {
             put("selectedClipIndex", selectedClipIndex)
             put("timelinePlayheadMs", timelinePlayheadMs.coerceIn(0L, totalOutputDurationMs()))
             put("timelineZoom", timelineZoom)
-            put("timelineHorizontalScrollX", timelineScrollViews.firstOrNull()?.scrollX ?: timelineHorizontalScrollX)
+            val currentScrollX = timelineScrollViews.firstOrNull()?.scrollX ?: timelineHorizontalScrollX
+            put("timelineHorizontalScrollX", currentScrollX)
+            put("timelineHorizontalScrollMs", TimelineScaleMath.millisecondsForPixels(
+                currentScrollX.toFloat(), timelinePixelsPerSecond()
+            ).coerceAtLeast(0L))
             put("musicUri", musicUri?.toString() ?: JSONObject.NULL)
             put("musicTitle", musicTitle ?: JSONObject.NULL)
             put("soundUri", soundUri?.toString() ?: JSONObject.NULL)
@@ -2857,8 +2861,22 @@ class VideoEditorActivity : Activity() {
         previewSingleClip = true
         timelineZoom = json.optDouble("timelineZoom", timelineZoom.toDouble())
             .toFloat().takeIf { it.isFinite() }?.coerceIn(0.5f, 8.0f) ?: 1.0f
-        timelineHorizontalScrollX = json.optInt("timelineHorizontalScrollX", 0).coerceAtLeast(0)
-        pendingTimelineScrollX = timelineHorizontalScrollX
+        val savedTimelineScrollMs: Long? = when {
+            json.has("timelineHorizontalScrollMs") ->
+                json.optLong("timelineHorizontalScrollMs", 0L).coerceAtLeast(0L)
+            json.has("timelineHorizontalScrollX") ->
+                TimelineScaleMath.millisecondsForPixels(
+                    json.optInt("timelineHorizontalScrollX", 0).coerceAtLeast(0).toFloat(),
+                    timelinePixelsPerSecond()
+                ).coerceAtLeast(0L)
+            else -> null
+        }
+        timelineHorizontalScrollX = savedTimelineScrollMs?.let {
+            TimelineScaleMath.pixelsForTime(it, timelinePixelsPerSecond())
+        } ?: 0
+        pendingTimelineScrollX = savedTimelineScrollMs?.let {
+            TimelineScaleMath.pixelsForTime(it, timelinePixelsPerSecond())
+        }
 
         val defaultPlayheadMs = clips.take(selectedClipIndex).sumOf {
             (it.endMs - it.startMs).coerceAtLeast(0L)
@@ -2869,8 +2887,7 @@ class VideoEditorActivity : Activity() {
         } else {
             defaultPlayheadMs
         }
-        val hasSavedTimelineScroll = json.has("timelineHorizontalScrollX")
-        val savedTimelineScrollX = timelineHorizontalScrollX
+        val hasSavedTimelineScroll = savedTimelineScrollMs != null
         val restoredPosition = TimelinePositionMath.locate(
             clips.map { (it.endMs - it.startMs).coerceAtLeast(0L) },
             timelinePlayheadMs
@@ -2983,8 +3000,12 @@ class VideoEditorActivity : Activity() {
         }
         ensureTrimHandlesReachable(selectedClipIndex)
         if (hasSavedTimelineScroll) {
-            pendingTimelineScrollX = savedTimelineScrollX
-            timelineHorizontalScrollX = savedTimelineScrollX
+            val restoredScrollX = TimelineScaleMath.pixelsForTime(
+                savedTimelineScrollMs ?: 0L,
+                timelinePixelsPerSecond()
+            )
+            pendingTimelineScrollX = restoredScrollX
+            timelineHorizontalScrollX = restoredScrollX
         }
         updateTimelinePlayheadControls()
         refreshTimelineTracks()
