@@ -61,8 +61,7 @@ class MainActivity : Activity() {
         buildUi()
         syncGalleryRecords()
         registerUpdateReceiver()
-        // Preserve the previous behavior: check for a newer published version on launch.
-        checkForUpdates()
+        // Update checks stay manual so the home screen opens without a network request.
     }
 
     override fun onResume() {
@@ -209,127 +208,157 @@ class MainActivity : Activity() {
         }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(14), dp(18), dp(28))
+            setPadding(dp(16), dp(12), dp(16), dp(22))
         }
         scroll.addView(root)
 
+        // Compact brand row: the primary task now appears much higher on screen.
         val topBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
         val mark = TextView(this).apply {
             text = "MM"
-            textSize = 14f
+            textSize = 13f
             setTextColor(Color.rgb(7, 25, 31))
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
             background = rounded(accent, 13)
-            layoutParams = LinearLayout.LayoutParams(dp(48), dp(48))
+            layoutParams = LinearLayout.LayoutParams(dp(42), dp(42))
         }
         topBar.addView(mark)
         val brand = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(11), 0, 0, 0)
-            addView(label("MathMotor Video", 19f, white, true))
-            addView(label("MOBİL VİDEO STÜDYOSU", 10f, muted, true))
+            addView(label("MathMotor Video", 17f, white, true))
+            addView(label("MOBİL VİDEO STÜDYOSU", 9f, muted, true))
         }
         topBar.addView(brand, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        val localTag = label("YEREL", 9f, accent, true).apply {
+            background = rounded(Color.rgb(15, 48, 48), 9)
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+        }
+        topBar.addView(localTag)
         root.addView(topBar)
-        root.addView(gap(18))
+        root.addView(gap(20))
 
-        root.addView(label("KURGU MASASI", 11f, accent, true))
-        root.addView(label("Videonu düzenle.", 29f, white, true))
-        root.addView(label("Videonu seç; kes, birleştir, yazı ve ses ekle.", 14f, muted, false).apply {
-            setLineSpacing(dp(3).toFloat(), 1f)
+        root.addView(label("KURGU MASASI", 10f, accent, true))
+        root.addView(label("Videonu düzenle.", 27f, white, true))
+        root.addView(label("Kes, birleştir; yazı ve ses ekle.", 13f, muted, false).apply {
+            setLineSpacing(dp(2).toFloat(), 1f)
         })
-        root.addView(gap(18))
+        root.addView(gap(16))
 
+        // One clear primary action, with the empty-project option kept secondary.
         val startCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(17), dp(17), dp(17), dp(17))
-            background = rounded(panelRaised, 20).apply {
-                setStroke(dp(1), line)
-            }
+            setPadding(dp(15), dp(15), dp(15), dp(15))
+            background = rounded(panelRaised, 18).apply { setStroke(dp(1), line) }
         }
-        val startTop = LinearLayout(this).apply {
+        val cardHeader = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        val startIcon = TextView(this).apply {
+        val cardIcon = TextView(this).apply {
             text = "✂"
-            textSize = 27f
+            textSize = 22f
             setTextColor(accent)
             gravity = Gravity.CENTER
-            background = rounded(Color.rgb(19, 65, 65), 14)
-            layoutParams = LinearLayout.LayoutParams(dp(54), dp(54))
+            background = rounded(Color.rgb(16, 57, 57), 12)
+            layoutParams = LinearLayout.LayoutParams(dp(46), dp(46))
         }
-        startTop.addView(startIcon)
-        val startCopy = LinearLayout(this).apply {
+        cardHeader.addView(cardIcon)
+        val cardCopy = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(12), 0, 0, 0)
-            addView(label("YENİ PROJE", 15f, white, true))
-            addView(label("Bir video seçerek düzenlemeye başla.", 12f, muted, false))
+            setPadding(dp(11), 0, 0, 0)
+            addView(label("Yeni kurgu oluştur", 16f, white, true))
+            addView(label("Bir video seçerek başla.", 11f, muted, false))
         }
-        startTop.addView(startCopy, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        startCard.addView(startTop)
-        startCard.addView(gap(16))
-        val choose = primaryButton("＋   Galeriden video seç") { chooseVideo() }.apply {
-            minHeight = dp(58)
-            textSize = 16f
-        }
-        startCard.addView(choose, matchWrap())
-        startCard.addView(gap(8))
-        startCard.addView(secondaryButton("Boş proje oluştur   ›") { openEditor(null) }, matchWrap())
+        cardHeader.addView(cardCopy, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        startCard.addView(cardHeader)
+        startCard.addView(gap(13))
+        startCard.addView(primaryButton("＋   Galeriden video seç") { chooseVideo() }.apply {
+            minHeight = dp(54)
+            textSize = 15f
+        }, matchWrap())
+        startCard.addView(gap(7))
+        startCard.addView(secondaryButton("Boş proje oluştur   ›") { openEditor(null) }.apply {
+            minHeight = dp(44)
+            textSize = 13f
+        }, matchWrap())
         root.addView(startCard, matchWrap())
 
-        root.addView(gap(22))
+        root.addView(gap(20))
 
+        // Compact gallery heading: refresh is an icon action instead of two crowded buttons.
         val recentHeader = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
         val recentTitle = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            addView(label("SON DIŞA AKTARILANLAR", 12f, white, true))
-            addView(label("Telefonunda oluşturduğun videolar", 11f, muted, false))
+            addView(label("SON VİDEOLAR", 12f, white, true))
+            addView(label("Düzenlediklerin burada", 10f, muted, false))
         }
         recentHeader.addView(recentTitle, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        recentHeader.addView(secondaryButton("↻ Galeriyi yenile") {
+        val refresh = secondaryButton("↻") {
             syncGalleryRecords()
-            Toast.makeText(this, "Telefon galerisindeki videolar kontrol edildi.", Toast.LENGTH_SHORT).show()
-        }.apply { minHeight = dp(40); textSize = 11f })
-        recentHeader.addView(secondaryButton("Tümünü aç") {
+            Toast.makeText(this, "Video galerisi yenileniyor.", Toast.LENGTH_SHORT).show()
+        }.apply {
+            contentDescription = "Galeriyi yenile"
+            minWidth = dp(38)
+            minHeight = dp(38)
+            textSize = 18f
+            setPadding(dp(4), 0, dp(4), 0)
+        }
+        recentHeader.addView(refresh)
+        recentHeader.addView(secondaryButton("Tümünü gör  ›") {
             startActivity(Intent(this, VideoPlayerActivity::class.java))
-        }.apply { minHeight = dp(40); textSize = 11f })
+        }.apply {
+            minHeight = dp(38)
+            textSize = 10f
+            setPadding(dp(8), dp(5), dp(8), dp(5))
+        })
         root.addView(recentHeader)
-        root.addView(gap(10))
+        root.addView(gap(9))
         recentList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(recentList, matchWrap())
+        refreshRecentProjects()
 
-        root.addView(gap(18))
-        val updateCard = LinearLayout(this).apply {
+        // Updates remain available inside the app, but no longer dominate the home screen.
+        root.addView(gap(17))
+        val divider = View(this).apply {
+            setBackgroundColor(line)
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1))
+        }
+        root.addView(divider)
+        root.addView(gap(13))
+        val updateHeader = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val updateCopy = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(13), dp(10), dp(13), dp(10))
-            background = rounded(panel, 13).apply { setStroke(dp(1), line) }
             addView(label("UYGULAMA GÜNCELLEMESİ", 10f, accent, true))
-            addView(label("Yeni sürüm kontrolünü buradan yapabilirsin.", 11f, muted, false))
-            addView(gap(5))
-            addView(secondaryButton("↻  Güncellemeleri kontrol et") { checkForUpdates() }, matchWrap())
-            updateStatus = label("Güncelleme kontrol edilmedi.", 10f, muted, false)
-            updateStatus.setPadding(0, dp(5), 0, 0)
+            addView(label("Yeni sürüm varsa buradan kontrol et.", 10f, muted, false))
         }
-        root.addView(updateCard, matchWrap())
+        updateHeader.addView(updateCopy, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        updateHeader.addView(secondaryButton("Kontrol et") { checkForUpdates() }.apply {
+            minHeight = dp(38)
+            textSize = 11f
+            setPadding(dp(10), dp(5), dp(10), dp(5))
+        })
+        root.addView(updateHeader)
+        updateStatus = label("Son sürümü kontrol etmek için aşağıdaki düğmeye dokun.", 10f, muted, false).apply {
+            setPadding(0, dp(6), 0, dp(2))
+        }
+        root.addView(updateStatus)
 
-        root.addView(gap(22))
-        val footer = TextView(this).apply {
-            text = "YEREL DÜZENLEME   •   YAPAY ZEKÂ YOK   •   ÜCRETLİ API YOK"
-            textSize = 10f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.rgb(112, 137, 159))
+        root.addView(gap(12))
+        root.addView(label("Projelerin ve videoların telefonunda kalır.", 10f, Color.rgb(112, 137, 159), false).apply {
             gravity = Gravity.CENTER
-            setPadding(0, dp(12), 0, dp(8))
-        }
-        root.addView(footer)
+            setPadding(0, dp(5), 0, dp(4))
+        })
         setContentView(scroll)
     }
 
@@ -337,9 +366,22 @@ class MainActivity : Activity() {
      * Rebuild the app's recent-video list from files already saved to the phone's
      * Movies/MathMotorVideo gallery. Duplicate URIs are ignored by VideoRecordStore.
      */
+    private var gallerySyncRunning = false
+
+    /**
+     * MediaStore can be slow on a cold start. Import in the background so the
+     * home screen stays responsive, then update the gallery on the UI thread.
+     */
     private fun syncGalleryRecords() {
-        runCatching { VideoRecordStore.importPublicMovies(this) }
-        if (::recentList.isInitialized) refreshRecentProjects()
+        if (gallerySyncRunning) return
+        gallerySyncRunning = true
+        Thread {
+            runCatching { VideoRecordStore.importPublicMovies(applicationContext) }
+            mainHandler.post {
+                gallerySyncRunning = false
+                if (!isFinishing && ::recentList.isInitialized) refreshRecentProjects()
+            }
+        }.start()
     }
 
     private fun refreshRecentProjects() {
