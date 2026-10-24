@@ -309,8 +309,10 @@ class VideoEditorActivity : Activity() {
 
         playerView = PlayerView(this).apply {
             setBackgroundColor(Color.BLACK)
-            useController = true
-            contentDescription = "Video önizlemesi"
+            // Native controls show the source clip duration, not the combined project duration.
+            // Keep playback aligned with the edited timeline controls below.
+            useController = false
+            contentDescription = "Düzenlenmiş video önizlemesi"
         }
         previewFrame = FrameLayout(this).apply {
             setBackgroundColor(Color.rgb(5, 9, 15))
@@ -435,7 +437,22 @@ class VideoEditorActivity : Activity() {
         }
         timelineHeader.addView(label("ZAMAN ÇİZELGESİ", 12f, Color.rgb(121, 202, 218), true),
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        timelineHeader.addView(miniButton("＋ Ekle") { chooseVideo(true) })
+        timelineHeader.addView(miniButton("▶ / ⏸") {
+            if (clips.isEmpty()) {
+                chooseVideo(true)
+            } else {
+                ensureTimelinePreviewLoaded()
+                val currentPlayer = player
+                if (currentPlayer != null && currentPlayer.isPlaying) {
+                    currentPlayer.pause()
+                    status.text = "Önizleme duraklatıldı."
+                } else {
+                    currentPlayer?.playWhenReady = true
+                    status.text = "Proje önizlemesi oynatılıyor."
+                }
+            }
+        })
+        timelineHeader.addView(miniButton("＋ Ekle") { chooseVideo(true) }
         timelineHeader.addView(miniButton("↻ Değiştir") { chooseVideo(false) },
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(44)).apply {
                 leftMargin = dp(5)
@@ -723,10 +740,14 @@ class VideoEditorActivity : Activity() {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
                 textSizeSp = (progress + 12).coerceIn(12, 96)
-                textSizeLabel.text = "Yazı boyutu: $textSizeSp"
-                if (!loadingTextLayerControls) syncSelectedTextLayerFromControls()
+                textSizeLabel.text = "Yazı boyutu: $textSizeSp sp"
+                if (!loadingTextLayerControls) {
+                    syncSelectedTextLayerFromControls()
+                    selectedTextLayer()?.sizeSp = textSizeSp
+                }
                 updatePreviewTextOverlay()
-                previewTextOverlay.requestLayout()
+                previewTextOverlays.forEach { it.requestLayout() }
+                refreshTextLayerList()
             }
             override fun onStartTrackingTouch(seekBar: SeekBar?) {}
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}
@@ -1721,7 +1742,7 @@ class VideoEditorActivity : Activity() {
 
     private fun updateTimelinePlayheadLabel() {
         if (!::timelinePlayheadLabel.isInitialized) return
-        timelinePlayheadLabel.text = "${formatTimelineMs(timelinePlayheadMs)} / ${formatTimelineMs(totalOutputDurationMs())}"
+        timelinePlayheadLabel.text = "Proje ${formatTimelineMs(timelinePlayheadMs)} / ${formatTimelineMs(totalOutputDurationMs())}"
         updateTimelinePlayheadLine()
         updatePreviewTextOverlay()
     }
@@ -2267,8 +2288,8 @@ class VideoEditorActivity : Activity() {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
                 textTimingCustomized = true
-                textStartMs = (progress * 1000L).coerceAtMost(totalOutputDurationMs())
-                if (textEndMs <= textStartMs) textEndMs = (textStartMs + 1000L).coerceAtMost(totalOutputDurationMs())
+                textStartMs = (progress * 100L).coerceAtMost(totalOutputDurationMs())
+                if (textEndMs <= textStartMs) textEndMs = (textStartMs + 100L).coerceAtMost(totalOutputDurationMs())
                 updateTextControls()
             }
             override fun onStartTrackingTouch(seekBar: SeekBar?) { deferTimelineRefresh = true }
@@ -2281,8 +2302,8 @@ class VideoEditorActivity : Activity() {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
                 textTimingCustomized = true
-                textEndMs = (progress * 1000L).coerceAtMost(totalOutputDurationMs())
-                if (textEndMs <= textStartMs) textStartMs = (textEndMs - 1000L).coerceAtLeast(0L)
+                textEndMs = (progress * 100L).coerceAtMost(totalOutputDurationMs())
+                if (textEndMs <= textStartMs) textStartMs = (textEndMs - 100L).coerceAtLeast(0L)
                 updateTextControls()
             }
             override fun onStartTrackingTouch(seekBar: SeekBar?) { deferTimelineRefresh = true }
@@ -2296,21 +2317,22 @@ class VideoEditorActivity : Activity() {
     private fun updateTextControls() {
         if (!::textStartSeek.isInitialized || !::textEndSeek.isInitialized) return
         val total = totalOutputDurationMs()
-        val maxSeconds = ceil(total / 1000.0).toInt().coerceAtLeast(0)
+        // Use tenths of a second so short clips can be timed precisely.
+        val maxTenths = ceil(total / 100.0).toInt().coerceAtLeast(0)
         if (!textTimingCustomized || textEndMs <= 0L || textEndMs > total) textEndMs = total
         textStartMs = textStartMs.coerceAtMost((total - 1L).coerceAtLeast(0L))
         if (textEndMs <= textStartMs && total > 0L) {
             textStartMs = 0L
             textEndMs = total
         }
-        textStartSeek.max = maxSeconds
-        textEndSeek.max = maxSeconds
-        textStartSeek.progress = (textStartMs / 1000L).toInt().coerceAtMost(maxSeconds)
-        textEndSeek.progress = ceil(textEndMs / 1000.0).toInt().coerceAtMost(maxSeconds)
+        textStartSeek.max = maxTenths
+        textEndSeek.max = maxTenths
+        textStartSeek.progress = (textStartMs / 100L).toInt().coerceAtMost(maxTenths)
+        textEndSeek.progress = ceil(textEndMs / 100.0).toInt().coerceAtMost(maxTenths)
         textStartSeek.isEnabled = total > 0L
         textEndSeek.isEnabled = total > 0L
-        textStartLabel.text = "Yazı başlangıcı: " + formatMs(textStartMs)
-        textEndLabel.text = "Yazı bitişi: " + formatMs(textEndMs)
+        textStartLabel.text = "Yazı başlangıcı: " + formatTimelineMs(textStartMs)
+        textEndLabel.text = "Yazı bitişi: " + formatTimelineMs(textEndMs)
         syncSelectedTextLayerFromControls()
         updatePreviewTextOverlay()
         if (!deferTimelineRefresh) refreshTimelineTracks()
