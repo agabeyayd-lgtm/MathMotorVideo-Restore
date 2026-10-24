@@ -22,8 +22,8 @@ android {
         applicationId = "com.mathmotor.video.next"
         minSdk = 26
         targetSdk = 35
-        versionCode = 392
-        versionName = "8.26-preview-filmstrip-fix"
+        versionCode = 393
+        versionName = "8.27-timeline-text-controls"
         testInstrumentationRunner = "android.test.AndroidJUnitRunner"
     }
 
