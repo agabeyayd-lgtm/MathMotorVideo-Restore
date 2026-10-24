@@ -2569,7 +2569,7 @@ class VideoEditorActivity : Activity() {
             val title = queryDisplayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Video klibi"
             runOnUiThread {
                 if (duration <= 0L) {
-                    if (BuildConfig.DEBUG) android.util.Log.e(
+                    if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) android.util.Log.e(
                         "EditorSmokeTest",
                         "EDITOR_SMOKE_CLIP_REJECTED durationMs=$duration uri=$uri"
                     )
@@ -2594,7 +2594,7 @@ class VideoEditorActivity : Activity() {
                 status.text = "${title} eklendi. Kesme aralığını seçebilirsin."
                 // A debug-only signal lets CI verify clip import even when the
                 // emulator accessibility tree cannot be captured reliably.
-                if (BuildConfig.DEBUG) android.util.Log.i(
+                if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) android.util.Log.i(
                     "EditorSmokeTest",
                     "EDITOR_SMOKE_CLIP_ADDED title=$title durationMs=$duration clipCount=${clips.size}"
                 )
