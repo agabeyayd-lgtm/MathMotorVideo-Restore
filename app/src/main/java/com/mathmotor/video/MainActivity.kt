@@ -235,9 +235,7 @@ class MainActivity : Activity() {
         }
         topBar.addView(brand, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         root.addView(topBar)
-        root.addView(gap(14))
-
-        root.addView(gap(20))
+        root.addView(gap(18))
 
         root.addView(label("KURGU MASASI", 11f, accent, true))
         root.addView(label("Videonu düzenle.", 29f, white, true))
