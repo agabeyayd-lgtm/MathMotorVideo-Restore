@@ -192,6 +192,7 @@ class VideoEditorActivity : Activity() {
     private val editorPanels = linkedMapOf<String, LinearLayout>()
     private lateinit var editorPanelScroll: ScrollView
     private val editorTabButtons = linkedMapOf<String, Button>()
+    private var activeEditorPanel: String? = null
     private lateinit var selectedClipLabel: TextView
     private lateinit var startLabel: TextView
     private lateinit var endLabel: TextView
@@ -975,7 +976,7 @@ class VideoEditorActivity : Activity() {
             Triple("audio", "Ses", "♫"),
             Triple("export", "Dışa aktar", "⇧")
         ).forEach { (key, title, symbol) ->
-            val tab = miniButton("$symbol\n$title") { showEditorPanel(key) }.apply {
+            val tab = miniButton("$symbol\n$title") { toggleEditorPanel(key) }.apply {
                 textSize = 10f
                 minHeight = dp(52)
                 setPadding(dp(1), dp(2), dp(1), dp(2))
@@ -1250,6 +1251,7 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun showEditorPanel(name: String) {
+        activeEditorPanel = name
         if (::editorPanelScroll.isInitialized) editorPanelScroll.scrollTo(0, 0)
         editorPanels.forEach { (key, panel) ->
             panel.visibility = if (key == name) View.VISIBLE else View.GONE
@@ -1264,6 +1266,30 @@ class VideoEditorActivity : Activity() {
             button.setTextColor(if (selected) Color.rgb(5, 25, 29) else Color.rgb(220, 231, 240))
         }
         if (name == "export") status.text = "Projeyi kaydedebilir veya MP4 olarak dışa aktarabilirsin."
+    }
+
+    /** Tapping the currently selected tool a second time closes its panel. */
+    private fun toggleEditorPanel(name: String) {
+        if (activeEditorPanel != name) {
+            showEditorPanel(name)
+            return
+        }
+        activeEditorPanel = null
+        editorPanels.values.forEach { it.visibility = View.GONE }
+        editorTabButtons.values.forEach { button ->
+            button.background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.rgb(20, 31, 45))
+                cornerRadius = dp(12).toFloat()
+                setStroke(dp(1), Color.rgb(42, 59, 77))
+            }
+            button.setTextColor(Color.rgb(220, 231, 240))
+        }
+        val focused = currentFocus
+        val keyboard = getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
+            as? android.view.inputmethod.InputMethodManager
+        focused?.windowToken?.let { keyboard?.hideSoftInputFromWindow(it, 0) }
+        focused?.clearFocus()
+        if (::editorPanelScroll.isInitialized) editorPanelScroll.scrollTo(0, 0)
     }
 
     private fun refreshTimelineTracks() {
@@ -2014,7 +2040,7 @@ class VideoEditorActivity : Activity() {
         val next = (layer.sizeSp + delta).coerceIn(12, 96)
         layer.sizeSp = next
         textSizeSp = next
-        textSizeLabel.text = "Yazı boyutu: " + next
+        textSizeLabel.text = "Yazı boyutu: " + next + " sp"
         textSizeSeek.progress = next - 12
         updatePreviewTextOverlay()
         status.text = "Yazı boyutu: " + next + " sp. Videonun üzerinde iki parmakla da boyutlandırabilirsin."
@@ -2080,7 +2106,7 @@ class VideoEditorActivity : Activity() {
             textColorPreset = layer?.colorPreset ?: TextColorPreset.WHITE
             textBold = layer?.isBold ?: true
             textInput.setText(layer?.text.orEmpty())
-            textSizeLabel.text = "Yazı boyutu: $textSizeSp"
+            textSizeLabel.text = "Yazı boyutu: $textSizeSp sp"
             textSizeSeek.progress = textSizeSp - 12
             textPositionGroup.check(when (textPosition) {
                 TextPosition.TOP -> 1
@@ -2216,7 +2242,7 @@ class VideoEditorActivity : Activity() {
                         if (selectedTextLayerId == layer.id) {
                             loadingTextLayerControls = true
                             try {
-                                textSizeLabel.text = "Yazı boyutu: " + layer.sizeSp
+                                textSizeLabel.text = "Yazı boyutu: " + layer.sizeSp + " sp"
                                 textSizeSeek.progress = layer.sizeSp - 12
                             } finally {
                                 loadingTextLayerControls = false
