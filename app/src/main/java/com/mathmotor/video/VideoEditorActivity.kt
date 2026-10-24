@@ -51,6 +51,7 @@ import androidx.media3.effect.Presentation
 import androidx.media3.common.OverlaySettings
 import androidx.media3.effect.StaticOverlaySettings
 import androidx.media3.effect.TextOverlay
+import androidx.media3.inspector.FrameExtractor
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import androidx.media3.transformer.Composition
@@ -65,6 +66,7 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.lang.ref.WeakReference
 import java.util.Locale
+import java.util.concurrent.TimeUnit
 import kotlin.math.ceil
 
 @OptIn(UnstableApi::class)
@@ -1443,8 +1445,10 @@ class VideoEditorActivity : Activity() {
                             selectedTextLayerId = layer.id
                             loadTextLayerIntoControls(layer)
                             status.text = "Yazı katmanı zaman çizelgesinde taşındı."
+                            refreshTimelineTracks()
                         } else {
                             view.performClick()
+                            refreshTimelineTracks()
                         }
                         true
                     }
@@ -1531,6 +1535,7 @@ class VideoEditorActivity : Activity() {
                             } else {
                                 selectTextLayer(layer.id)
                             }
+                            refreshTimelineTracks()
                             view.performClick()
                             true
                         }
@@ -2840,7 +2845,8 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun refreshClipList() {
-        timelinePreviewLoaded = false
+        // This renderer is called during normal timeline playback at clip boundaries.
+        // It must not invalidate the active playlist or the playhead sync loop.
         clipList.removeAllViews()
         if (::previewEmptyState.isInitialized) {
             previewEmptyState.visibility = if (clips.isEmpty()) View.VISIBLE else View.GONE
@@ -3229,7 +3235,8 @@ class VideoEditorActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(Color.rgb(26, 37, 51))
         }
-        val thumbnailCount = (width / dp(14)).coerceIn(2, 48)
+        // Cap decode work per clip to keep long timelines responsive and avoid a stale queue.
+        val thumbnailCount = (width / dp(18)).coerceIn(2, 24)
         repeat(thumbnailCount) { slot ->
             val image = ImageView(this).apply {
                 scaleType = ImageView.ScaleType.CENTER_CROP
@@ -3369,8 +3376,57 @@ class VideoEditorActivity : Activity() {
         return container
     }
 
+    private fun decodeTimelineFrame(uri: Uri, timeMs: Long): Bitmap? {
+        val frameTimeUs = timeMs.coerceAtLeast(0L) * 1000L
+        val retriever = MediaMetadataRetriever()
+        val platformFrame = try {
+            retriever.setDataSource(this, uri)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                runCatching {
+                    retriever.getScaledFrameAtTime(
+                        frameTimeUs,
+                        MediaMetadataRetriever.OPTION_CLOSEST,
+                        96,
+                        54
+                    )
+                }.getOrNull()
+            } else {
+                null
+            } ?: runCatching {
+                retriever.getFrameAtTime(frameTimeUs, MediaMetadataRetriever.OPTION_CLOSEST)
+            }.getOrNull()
+                ?: runCatching {
+                    retriever.getFrameAtTime(frameTimeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                }.getOrNull()
+                // Some devices can provide a frame but fail timestamp-based seeking.
+                ?: runCatching { retriever.getFrameAtTime() }.getOrNull()
+        } catch (_: Exception) {
+            null
+        } finally {
+            runCatching { retriever.release() }
+        }
+        if (platformFrame != null) return platformFrame
+
+        // Fallback to Media3's decoder—the same playback stack used by the preview.
+        // It is only initialized when Android's platform decoder returned no frame.
+        var extractor: FrameExtractor? = null
+        var frameFuture: java.util.concurrent.Future<FrameExtractor.Frame>? = null
+        try {
+            extractor = FrameExtractor.Builder(this, MediaItem.fromUri(uri))
+                .setEffects(listOf(Presentation.createForHeight(96)))
+                .build()
+            val future = extractor.getFrame(timeMs.coerceAtLeast(0L))
+            frameFuture = future
+            return future.get(4L, TimeUnit.SECONDS).bitmap
+        } catch (_: Exception) {
+            frameFuture?.cancel(true)
+            return null
+        } finally {
+            runCatching { extractor?.close() }
+        }
+    }
+
     private fun requestTimelineThumbnail(uri: Uri, timeMs: Long, target: ImageView) {
-        // Keep every requested timestamp distinct so close filmstrip frames are not deduplicated.
         val timestampMs = timeMs.coerceAtLeast(0L)
         val key = "${uri}#${timestampMs}"
         target.tag = key
@@ -3388,59 +3444,23 @@ class VideoEditorActivity : Activity() {
         try {
             timelineThumbnailExecutor.execute {
                 var result: Bitmap? = null
-                val retriever = MediaMetadataRetriever()
                 try {
-                    retriever.setDataSource(this, uri)
-                    val frameTimeUs = timeMs.coerceAtLeast(0L) * 1000L
-                    // Decode thumbnails at timeline resolution on Android 8.1+ to avoid
-                    // allocating a full 4K frame for each tiny filmstrip cell.
-                    // Some Android decoders fail to produce a scaled frame for certain
-                    // phone-recorded/container formats. Fall back to a regular decoded frame
-                    // instead of leaving a black placeholder in the filmstrip.
-                    val original = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                        runCatching {
-                            retriever.getScaledFrameAtTime(
-                                frameTimeUs,
-                                MediaMetadataRetriever.OPTION_CLOSEST,
-                                96,
-                                54
-                            )
-                        }.getOrNull()
-                            ?: runCatching {
-                                retriever.getFrameAtTime(
-                                    frameTimeUs,
-                                    MediaMetadataRetriever.OPTION_CLOSEST
-                                )
-                            }.getOrNull()
-                    } else {
-                        runCatching {
-                            retriever.getFrameAtTime(
-                                frameTimeUs,
-                                MediaMetadataRetriever.OPTION_CLOSEST
-                            )
-                        }.getOrNull()
-                    } ?: runCatching {
-                        // Last fallback for devices that cannot seek to a non-sync frame.
-                        retriever.getFrameAtTime(
-                            frameTimeUs,
-                            MediaMetadataRetriever.OPTION_CLOSEST_SYNC
-                        )
-                    }.getOrNull()
-                    if (original != null) {
+                    val original = decodeTimelineFrame(uri, timestampMs)
+                    if (original != null && !original.isRecycled && original.width > 0 && original.height > 0) {
                         val scale = maxOf(96f / original.width, 54f / original.height)
                         val scaledWidth = (original.width * scale).toInt().coerceAtLeast(96)
                         val scaledHeight = (original.height * scale).toInt().coerceAtLeast(54)
                         val scaled = Bitmap.createScaledBitmap(original, scaledWidth, scaledHeight, true)
-                        if (scaled !== original) original.recycle()
+                        if (scaled !== original && !original.isRecycled) original.recycle()
                         val left = ((scaled.width - 96) / 2).coerceAtLeast(0)
                         val top = ((scaled.height - 54) / 2).coerceAtLeast(0)
                         result = Bitmap.createBitmap(scaled, left, top, 96, 54)
-                        if (result !== scaled) scaled.recycle()
+                        if (result !== scaled && !scaled.isRecycled) scaled.recycle()
+                    } else {
+                        original?.let { if (!it.isRecycled) it.recycle() }
                     }
                 } catch (_: Exception) {
-                    // Keep the neutral placeholder visible if a frame cannot be decoded.
-                } finally {
-                    runCatching { retriever.release() }
+                    // Keep the neutral placeholder visible only if both decoders fail.
                 }
                 val decoded = result
                 runOnUiThread {
@@ -3461,6 +3481,30 @@ class VideoEditorActivity : Activity() {
         }
     }
 
+    private fun finishTrimControlGesture() {
+        deferTimelineRefresh = false
+        finishTrimHistoryGesture()
+        val clip = selectedClip()
+        if (clip != null) {
+            timelinePreviewLoaded = false
+            previewSingleClip = true
+            player?.playWhenReady = false
+            timelinePlayheadMs = clips.take(selectedClipIndex).sumOf {
+                (it.endMs - it.startMs).coerceAtLeast(0L)
+            }
+            player?.setMediaItem(clippedMediaItem(clip))
+            player?.prepare()
+            player?.seekTo(0L)
+        } else {
+            timelinePreviewLoaded = false
+            previewSingleClip = false
+        }
+        refreshClipList()
+        loadTrimControls()
+        updateTimelinePlayheadLabel()
+        status.text = "Kesme aralığı güncellendi."
+    }
+
     private fun installTrimListeners() {
         startSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
@@ -3475,13 +3519,12 @@ class VideoEditorActivity : Activity() {
                 updateTrimLabels()
             }
             override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                player?.playWhenReady = false
                 deferTimelineRefresh = true
                 activeTrimHistorySnapshot = captureClipEditSnapshot()
             }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
-                deferTimelineRefresh = false
-                finishTrimHistoryGesture()
-                refreshClipList()
+                finishTrimControlGesture()
             }
         })
         endSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -3502,13 +3545,12 @@ class VideoEditorActivity : Activity() {
                 updateTrimLabels()
             }
             override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                player?.playWhenReady = false
                 deferTimelineRefresh = true
                 activeTrimHistorySnapshot = captureClipEditSnapshot()
             }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
-                deferTimelineRefresh = false
-                finishTrimHistoryGesture()
-                refreshClipList()
+                finishTrimControlGesture()
             }
         })
     }
