@@ -448,7 +448,7 @@ class VideoEditorActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
         }
         timelineHeader.addView(label("ZAMAN ÇİZELGESİ", 11f, Color.rgb(121, 202, 218), true).apply {
-            singleLine = true
+            setSingleLine(true)
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
@@ -1163,8 +1163,9 @@ class VideoEditorActivity : Activity() {
             if (!previewHeightAutoSized && !keyboardLayoutActive) {
                 val density = resources.displayMetrics.density.coerceAtLeast(1f)
                 val viewportDp = (viewportHeight / density).toInt()
-                compactEditorLayout = viewportDp < 710
-                previewDefaultStageHeightDp = (viewportDp * 0.30f).toInt().coerceIn(155, 340)
+                compactEditorLayout = viewportDp < 820
+                val previewRatio = if (viewportDp < 650) 0.23f else 0.30f
+                previewDefaultStageHeightDp = (viewportDp * previewRatio).toInt().coerceIn(150, 340)
                 previewStageHeightDp = previewDefaultStageHeightDp
                 previewHeightAutoSized = true
 
