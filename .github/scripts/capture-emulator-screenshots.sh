@@ -290,24 +290,20 @@ fi
 # Android's scoped-storage policy blocks shell access to another app's
 # /sdcard/Android/data directory. Stage the fixture in /data/local/tmp, then
 # copy it into this debuggable test APK's private files directory with run-as.
-staged_video="/data/local/tmp/editor-test-video.mp4"
 app_internal_video="/data/user/0/com.mathmotor.video.next/files/editor-test-video.mp4"
-timeout -k 2s 20s adb -s emulator-5554 push "$fixture" "$staged_video" 2>&1 | tee emulator-screenshots/video-fixture-push.txt
-# adb push leaves shell-owned files unreadable by the app UID on some images.
-# Make the test fixture world-readable before switching to the app UID.
-timeout -k 2s 8s adb -s emulator-5554 shell chmod 644 "$staged_video"
-timeout -k 2s 8s adb -s emulator-5554 shell ls -l "$staged_video" 2>&1 | tee emulator-screenshots/video-fixture-staged-permissions.txt
-if ! timeout -k 2s 8s adb -s emulator-5554 shell run-as com.mathmotor.video.next id 2>&1 | tee emulator-screenshots/run-as-preflight.txt; then
-  echo "run-as cannot enter the debuggable app sandbox; preserving diagnostics"
+# Stream the fixture through ADB stdin directly into the debuggable app's
+# own sandbox. This avoids both scoped-storage restrictions and SELinux
+# denying the app UID access to shell-owned /data/local/tmp files.
+if ! timeout -k 2s 30s adb -s emulator-5554 shell -T \
+  "run-as com.mathmotor.video.next sh -c 'cat > files/editor-test-video.mp4'" \
+  < "$fixture" 2>&1 | tee emulator-screenshots/video-fixture-private-copy.txt; then
+  echo "Streaming the test fixture into the app sandbox failed; preserving diagnostics"
+  timeout -k 2s 8s adb -s emulator-5554 shell run-as com.mathmotor.video.next id > emulator-screenshots/run-as-preflight.txt 2>&1 || true
   timeout -k 2s 8s adb -s emulator-5554 shell dumpsys package com.mathmotor.video.next > emulator-screenshots/package-debuggable.txt 2>&1 || true
-  exit 9
-fi
-if ! timeout -k 2s 8s adb -s emulator-5554 shell run-as com.mathmotor.video.next cp "$staged_video" files/editor-test-video.mp4 2>&1 | tee emulator-screenshots/video-fixture-private-copy.txt; then
-  echo "Could not copy test video into the app's private files; preserving diagnostics"
-  timeout -k 2s 8s adb -s emulator-5554 shell run-as com.mathmotor.video.next ls -ld . files 2>&1 | tee emulator-screenshots/app-files-permissions.txt || true
   exit 10
 fi
 timeout -k 2s 8s adb -s emulator-5554 shell run-as com.mathmotor.video.next ls -l files/editor-test-video.mp4 2>&1 | tee -a emulator-screenshots/video-fixture-private-copy.txt
+
 
 timeout -k 2s 8s adb -s emulator-5554 shell am force-stop com.mathmotor.video.next || true
 # Avoid -W for the same slow-emulator first-frame wait that affected the home launch.
