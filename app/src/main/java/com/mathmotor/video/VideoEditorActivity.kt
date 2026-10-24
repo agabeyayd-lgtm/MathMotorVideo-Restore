@@ -452,7 +452,7 @@ class VideoEditorActivity : Activity() {
                 }
             }
         })
-        timelineHeader.addView(miniButton("＋ Ekle") { chooseVideo(true) }
+        timelineHeader.addView(miniButton("＋ Ekle") { chooseVideo(true) },
         timelineHeader.addView(miniButton("↻ Değiştir") { chooseVideo(false) },
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(44)).apply {
                 leftMargin = dp(5)
