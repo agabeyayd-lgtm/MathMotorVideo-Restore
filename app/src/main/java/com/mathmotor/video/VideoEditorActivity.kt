@@ -894,7 +894,8 @@ class VideoEditorActivity : Activity() {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
                 val total = totalOutputDurationMs()
-                soundStartMs = (progress * 1000L).coerceAtMost((total - 1L).coerceAtLeast(0L))
+                soundStartMs = TimelineTrimMath.timeForProgress(progress, total)
+                    .coerceAtMost((total - 1L).coerceAtLeast(0L))
                 updateSoundControls()
                 if (!deferTimelineRefresh) refreshTimelineTracks()
             }
@@ -3537,8 +3538,18 @@ class VideoEditorActivity : Activity() {
 
         // Larger, high-contrast touch targets make the trim edges easy to find and drag.
         fun addTrimHandle(isStart: Boolean) {
-            // Keep start/end handles distinct on short clips; users can zoom in for a larger touch target.
+            // Bound handle travel by source-time limits, not rendered clip width.
+            // Otherwise short trimmed clips cannot be expanded back toward the source boundaries.
             val handleWidth = minOf(dp(40), (width / 2).coerceAtLeast(1))
+            fun allowedDeltaPx(startMs: Long, endMs: Long): Pair<Float, Float> {
+                val baseMs = if (isStart) startMs else endMs
+                val minMs = if (isStart) 0L else TimelineTrimMath.minEndMs(startMs, clip.durationMs)
+                val maxMs = if (isStart) TimelineTrimMath.maxStartMs(endMs, clip.durationMs) else clip.durationMs
+                val basePx = TimelineScaleMath.pixelsForTime(baseMs, timelinePixelsPerSecond())
+                val minPx = TimelineScaleMath.pixelsForTime(minMs, timelinePixelsPerSecond())
+                val maxPx = TimelineScaleMath.pixelsForTime(maxMs, timelinePixelsPerSecond())
+                return (minPx - basePx).toFloat() to (maxPx - basePx).toFloat()
+            }
             val handle = FrameLayout(this).apply {
                 background = android.graphics.drawable.GradientDrawable().apply {
                     setColor(Color.rgb(0, 205, 177))
@@ -3567,6 +3578,7 @@ class VideoEditorActivity : Activity() {
                             initialStartMs = clip.startMs
                             initialEndMs = clip.endMs
                             moved = false
+                            activeTrimHistorySnapshot = captureClipEditSnapshot()
                             player?.playWhenReady = false
                             view.parent?.requestDisallowInterceptTouchEvent(true)
                             true
@@ -3574,50 +3586,40 @@ class VideoEditorActivity : Activity() {
                         android.view.MotionEvent.ACTION_MOVE -> {
                             val delta = event.rawX - downRawX
                             if (kotlin.math.abs(delta) > dp(2)) moved = true
-                            val travel = (width - handleWidth).coerceAtLeast(0).toFloat()
-                            val sourceBeforePx = (initialStartMs / 1000f * timelinePixelsPerSecond())
-                            val sourceAfterPx = ((clip.durationMs - initialEndMs).coerceAtLeast(0L) / 1000f *
-                                timelinePixelsPerSecond())
-                            view.translationX = if (isStart) {
-                                delta.coerceIn(-sourceBeforePx, travel)
-                            } else {
-                                delta.coerceIn(-travel, sourceAfterPx)
-                            }
+                            val (minimumDeltaPx, maximumDeltaPx) = allowedDeltaPx(initialStartMs, initialEndMs)
+                            view.translationX = delta.coerceIn(minimumDeltaPx, maximumDeltaPx)
                             true
                         }
                         android.view.MotionEvent.ACTION_UP -> {
-                            val deltaPx = event.rawX - downRawX
-                            // The trim gesture uses the same px-per-second scale as the ruler.
-                            // This permits extending a cut back into the original source as well as shortening it.
+                            val (minimumDeltaPx, maximumDeltaPx) = allowedDeltaPx(initialStartMs, initialEndMs)
+                            val deltaPx = (event.rawX - downRawX).coerceIn(minimumDeltaPx, maximumDeltaPx)
                             val deltaMs = TimelineScaleMath.millisecondsForPixels(deltaPx, timelinePixelsPerSecond())
                             view.translationX = 0f
                             view.parent?.requestDisallowInterceptTouchEvent(false)
                             if (moved) {
-                                recordClipEdit()
-                                if (isStart) {
-                                    clip.startMs = TimelineTrimMath.clampStart(
-                                        initialStartMs + deltaMs, initialEndMs, clip.durationMs
-                                    )
-                                } else {
-                                    clip.endMs = TimelineTrimMath.clampEnd(
-                                        initialEndMs + deltaMs, initialStartMs, clip.durationMs
-                                    )
+                                val newStart = if (isStart) {
+                                    TimelineTrimMath.clampStart(initialStartMs + deltaMs, initialEndMs, clip.durationMs)
+                                } else initialStartMs
+                                val newEnd = if (isStart) initialEndMs else {
+                                    TimelineTrimMath.clampEnd(initialEndMs + deltaMs, initialStartMs, clip.durationMs)
                                 }
-                                selectedClipIndex = index
-                                refreshClipList()
-                                loadTrimControls()
-                                selectTimelineClip(index)
-                                status.text = if (isStart) {
-                                    "✓ Başlangıç ayarlandı: ${formatTimelineMs(clip.startMs)}"
+                                if (newStart != initialStartMs || newEnd != initialEndMs) {
+                                    if (isStart) clip.startMs = newStart else clip.endMs = newEnd
+                                    selectedClipIndex = index
+                                    finishTrimControlGesture()
+                                    status.text = "✓ Başlangıç: ${formatTimelineMs(clip.startMs)} / Bitiş: ${formatTimelineMs(clip.endMs)}"
                                 } else {
-                                    "✓ Bitiş ayarlandı: ${formatTimelineMs(clip.endMs)}"
+                                    activeTrimHistorySnapshot = null
                                 }
+                            } else {
+                                activeTrimHistorySnapshot = null
                             }
                             view.performClick()
                             true
                         }
                         android.view.MotionEvent.ACTION_CANCEL -> {
                             view.translationX = 0f
+                            activeTrimHistorySnapshot = null
                             view.parent?.requestDisallowInterceptTouchEvent(false)
                             true
                         }
@@ -3795,12 +3797,13 @@ class VideoEditorActivity : Activity() {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
                 val clip = selectedClip() ?: return
-                val maxStart = (clip.durationMs - 500L).coerceAtLeast(0L)
-                clip.startMs = (progress * 100L).coerceAtMost(maxStart)
-                if (clip.endMs - clip.startMs < 500L) {
-                    clip.endMs = (clip.startMs + 500L).coerceAtMost(clip.durationMs)
-                    endSeek.progress = ceil(clip.endMs / 100.0).toInt()
-                }
+                clip.startMs = TimelineTrimMath.clampStart(
+                    TimelineTrimMath.timeForProgress(progress, clip.durationMs),
+                    clip.endMs,
+                    clip.durationMs
+                )
+                val actualProgress = TimelineTrimMath.progressForTime(clip.startMs, clip.durationMs)
+                if (seekBar?.progress != actualProgress) seekBar?.progress = actualProgress
                 updateTrimLabels()
             }
             override fun onStartTrackingTouch(seekBar: SeekBar?) {
@@ -3816,17 +3819,13 @@ class VideoEditorActivity : Activity() {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
                 val clip = selectedClip() ?: return
-                clip.endMs = (progress * 100L).coerceAtMost(clip.durationMs)
-                if (clip.endMs - clip.startMs < 500L) {
-                    if (clip.endMs >= 500L) {
-                        clip.startMs = (clip.endMs - 500L).coerceAtLeast(0L)
-                    } else {
-                        clip.startMs = 0L
-                        clip.endMs = minOf(clip.durationMs, 500L)
-                    }
-                    startSeek.progress = (clip.startMs / 100L).toInt()
-                    endSeek.progress = ceil(clip.endMs / 100.0).toInt()
-                }
+                clip.endMs = TimelineTrimMath.clampEnd(
+                    TimelineTrimMath.timeForProgress(progress, clip.durationMs),
+                    clip.startMs,
+                    clip.durationMs
+                )
+                val actualProgress = TimelineTrimMath.progressForTime(clip.endMs, clip.durationMs)
+                if (seekBar?.progress != actualProgress) seekBar?.progress = actualProgress
                 updateTrimLabels()
             }
             override fun onStartTrackingTouch(seekBar: SeekBar?) {
@@ -3855,12 +3854,11 @@ class VideoEditorActivity : Activity() {
         }
         startSeek.isEnabled = true
         endSeek.isEnabled = true
-        val durationTenths = ceil(clip.durationMs / 100.0).toInt().coerceAtLeast(1)
-        val maxStartTenths = ((clip.durationMs - 500L).coerceAtLeast(0L) / 100L).toInt()
-        startSeek.max = maxStartTenths
-        endSeek.max = durationTenths
-        startSeek.progress = (clip.startMs / 100L).toInt().coerceAtMost(maxStartTenths)
-        endSeek.progress = ceil(clip.endMs / 100.0).toInt().coerceAtMost(durationTenths)
+        val durationProgressMax = TimelineTrimMath.progressMax(clip.durationMs)
+        startSeek.max = durationProgressMax
+        endSeek.max = durationProgressMax
+        startSeek.progress = TimelineTrimMath.progressForTime(clip.startMs, clip.durationMs)
+        endSeek.progress = TimelineTrimMath.progressForTime(clip.endMs, clip.durationMs)
         selectedClipLabel.text = "Seçili klip: ${clip.title} • Kesit ${formatTimelineMs((clip.endMs - clip.startMs).coerceAtLeast(0L))} / Kaynak ${formatTimelineMs(clip.durationMs)}"
         updateTrimLabels()
     }
@@ -3879,12 +3877,11 @@ class VideoEditorActivity : Activity() {
     private fun updateSoundControls() {
         if (!::soundStartSeek.isInitialized || !::soundStartLabel.isInitialized) return
         val total = totalOutputDurationMs()
-        val maxSeconds = ceil(total / 1000.0).toInt().coerceAtLeast(0)
-        soundStartSeek.max = maxSeconds
+        soundStartSeek.max = TimelineTrimMath.progressMax(total)
         soundStartMs = soundStartMs.coerceAtMost((total - 1L).coerceAtLeast(0L))
-        soundStartSeek.progress = (soundStartMs / 1000L).toInt().coerceAtMost(maxSeconds)
+        soundStartSeek.progress = TimelineTrimMath.progressForTime(soundStartMs, total)
         soundStartSeek.isEnabled = soundUri != null && total > 0L
-        soundStartLabel.text = "Ses başlangıcı: ${formatMs(soundStartMs)}"
+        soundStartLabel.text = "Ses başlangıcı: ${formatTimelineMs(soundStartMs)}"
     }
 
     private fun previewSelectedClip() {
@@ -4145,10 +4142,11 @@ class VideoEditorActivity : Activity() {
     private fun selectedClip(): Clip? = clips.getOrNull(selectedClipIndex)
 
     private fun formatTimelineMs(ms: Long): String {
-        val safeMs = ms.coerceAtLeast(0L)
-        val totalSeconds = safeMs / 1000L
-        val tenths = (safeMs % 1000L) / 100L
-        return String.format(Locale.US, "%02d:%02d.%d", totalSeconds / 60L, totalSeconds % 60L, tenths)
+        // Round to centiseconds rather than truncating the real player position to tenths.
+        val centiseconds = (ms.coerceAtLeast(0L) + 5L) / 10L
+        val totalSeconds = centiseconds / 100L
+        val fraction = (centiseconds % 100L).toInt()
+        return String.format(Locale.US, "%02d:%02d.%02d", totalSeconds / 60L, totalSeconds % 60L, fraction)
     }
 
     private fun formatMs(ms: Long): String {
