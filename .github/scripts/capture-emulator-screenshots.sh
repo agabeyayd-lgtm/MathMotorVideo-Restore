@@ -147,18 +147,58 @@ echo "Step 5/7: inspect the home screen and capture it"
 # the screenshot call the first point of failure without any diagnostics.
 dump_hierarchy window.xml emulator-screenshots/window.xml || true
 
-# A system-level ANR dialog can cover the app while the app remains the
-# focused activity. Select Wait once, give the emulator time to recover, and
-# re-check before treating a black/empty screenshot as an app failure.
-if [ -s emulator-screenshots/window.xml ] && grep -Eiq "isn.t responding|not responding" emulator-screenshots/window.xml; then
-  wait_node="$(grep -oi '<node[^>]*text="Wait"[^>]*bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' emulator-screenshots/window.xml | head -n 1 || true)"
-  wait_coords="$(printf '%s\n' "$wait_node" | sed -n 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/p' | awk '{print int(($1+$3)/2),int(($2+$4)/2)}')"
-  if [ -n "$wait_coords" ]; then
-    echo "Detected Android not-responding dialog; tapping Wait at $wait_coords"
+# Emulator system dialogs can appear between a hierarchy dump and a screenshot.
+# Parse XML attributes instead of relying on grep's attribute order.
+recover_system_anr() {
+  local xml="$1"
+  local remote_name
+  remote_name="$(basename "$xml")"
+  for attempt in 1 2 3; do
+    if [ ! -s "$xml" ] || ! grep -Eiq "isn.t responding|not responding" "$xml"; then
+      return 0
+    fi
+
+    local wait_coords
+    wait_coords="$(python3 - "$xml" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+try:
+    root = ET.parse(sys.argv[1]).getroot()
+except (OSError, ET.ParseError):
+    raise SystemExit(0)
+
+for node in root.iter("node"):
+    if node.attrib.get("text", "").strip().lower() == "wait":
+        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+        if match:
+            x1, y1, x2, y2 = map(int, match.groups())
+            print((x1 + x2) // 2, (y1 + y2) // 2)
+            break
+PY
+)"
+    if [ -z "$wait_coords" ]; then
+      echo "System ANR dialog detected but its Wait button could not be located in $xml"
+      return 1
+    fi
+
+    echo "System ANR dialog detected (attempt $attempt/3); tapping Wait at $wait_coords"
     timeout -k 2s 8s adb -s emulator-5554 shell input tap $wait_coords || true
     sleep 5
-    dump_hierarchy window.xml emulator-screenshots/window.xml || true
+    dump_hierarchy "$remote_name" "$xml" || true
+  done
+
+  if [ -s "$xml" ] && grep -Eiq "isn.t responding|not responding" "$xml"; then
+    echo "System ANR dialog is still present after recovery attempts"
+    return 1
   fi
+  return 0
+}
+
+if ! recover_system_anr emulator-screenshots/window.xml; then
+  collect_capture_diagnostics home-system-anr
+  exit 8
 fi
 
 if ! take_screen emulator-screenshots/home.png; then
@@ -166,6 +206,10 @@ if ! take_screen emulator-screenshots/home.png; then
   exit 6
 fi
 dump_hierarchy window.xml emulator-screenshots/window.xml || true
+if ! recover_system_anr emulator-screenshots/window.xml; then
+  collect_capture_diagnostics home-system-anr-after-screenshot
+  exit 8
+fi
 
 echo "Step 6/8: capture the empty editor for layout comparison"
 node=""
@@ -205,6 +249,10 @@ if ! take_screen emulator-screenshots/editor-empty.png; then
   exit 6
 fi
 dump_hierarchy editor-empty-window.xml emulator-screenshots/editor-empty-window.xml || true
+if ! recover_system_anr emulator-screenshots/editor-empty-window.xml; then
+  collect_capture_diagnostics empty-editor-system-anr
+  exit 8
+fi
 
 echo "Step 7/8: load a real sample video into the editor"
 fixture="app/build/test-fixtures/editor-test-video.mp4"
@@ -212,22 +260,30 @@ if [ ! -s "$fixture" ]; then
   echo "Missing generated test fixture: $fixture"
   exit 3
 fi
-remote_dir="/sdcard/Android/data/com.mathmotor.video.next/files"
-remote_video="$remote_dir/editor-test-video.mp4"
-timeout -k 2s 8s adb -s emulator-5554 shell mkdir -p "$remote_dir"
-timeout -k 2s 20s adb -s emulator-5554 push "$fixture" "$remote_video" | tee emulator-screenshots/video-fixture-push.txt
+# Android's scoped-storage policy blocks shell access to another app's
+# /sdcard/Android/data directory. Stage the fixture in /data/local/tmp, then
+# copy it into this debuggable test APK's private files directory with run-as.
+staged_video="/data/local/tmp/editor-test-video.mp4"
+app_internal_video="/data/user/0/com.mathmotor.video.next/files/editor-test-video.mp4"
+timeout -k 2s 20s adb -s emulator-5554 push "$fixture" "$staged_video" | tee emulator-screenshots/video-fixture-push.txt
+timeout -k 2s 8s adb -s emulator-5554 shell run-as com.mathmotor.video.next cp "$staged_video" files/editor-test-video.mp4
+timeout -k 2s 8s adb -s emulator-5554 shell run-as com.mathmotor.video.next ls -l files/editor-test-video.mp4 | tee emulator-screenshots/video-fixture-private-copy.txt
 
 timeout -k 2s 8s adb -s emulator-5554 shell am force-stop com.mathmotor.video.next || true
 # Avoid -W for the same slow-emulator first-frame wait that affected the home launch.
 timeout -k 2s 15s adb -s emulator-5554 shell am start \
   -n com.mathmotor.video.next/com.mathmotor.video.EditorTestEntryActivity \
-  --es video_uri "file://$remote_video" | tee emulator-screenshots/editor-video-launch.txt
+  --es video_uri "file://$app_internal_video" | tee emulator-screenshots/editor-video-launch.txt
 sleep 8
 if ! take_screen emulator-screenshots/editor.png; then
   collect_capture_diagnostics video-editor-capture-failure
   exit 6
 fi
 dump_hierarchy editor-window.xml emulator-screenshots/editor-window.xml || true
+if ! recover_system_anr emulator-screenshots/editor-window.xml; then
+  collect_capture_diagnostics video-editor-system-anr
+  exit 8
+fi
 
 # A green screenshot run must prove the sample reached the actual timeline,
 # not merely that a black empty editor launched.
