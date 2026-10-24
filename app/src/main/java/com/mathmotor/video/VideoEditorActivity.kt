@@ -156,6 +156,9 @@ class VideoEditorActivity : Activity() {
     private lateinit var previewFrame: FrameLayout
     private lateinit var previewFocusButton: Button
     private var previewStageHeightDp = 340
+    private var previewDefaultStageHeightDp = 340
+    private var previewHeightAutoSized = false
+    private var compactEditorLayout = false
     private var previewFocusMode = false
     private val previewFocusOriginalVisibility = linkedMapOf<View, Int>()
     private lateinit var previewTextOverlay: TextView
@@ -412,7 +415,7 @@ class VideoEditorActivity : Activity() {
             ).apply { leftMargin = dp(4); rightMargin = dp(2) })
             addView(miniButton("−") { adjustPreviewStageHeight(-30) },
                 LinearLayout.LayoutParams(dp(38), dp(40)))
-            addView(miniButton("↺") { setPreviewStageHeight(340) },
+            addView(miniButton("↺") { setPreviewStageHeight(previewDefaultStageHeightDp) },
                 LinearLayout.LayoutParams(dp(42), dp(40)))
             addView(miniButton("+") { adjustPreviewStageHeight(30) },
                 LinearLayout.LayoutParams(dp(38), dp(40)))
@@ -444,9 +447,14 @@ class VideoEditorActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        timelineHeader.addView(label("ZAMAN ÇİZELGESİ", 12f, Color.rgb(121, 202, 218), true),
-            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        timelineHeader.addView(miniButton("▶ / ⏸") {
+        timelineHeader.addView(label("ZAMAN ÇİZELGESİ", 11f, Color.rgb(121, 202, 218), true).apply {
+            singleLine = true
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+            marginEnd = dp(4)
+        })
+        timelineHeader.addView(miniButton("▶Ⅱ") {
             if (clips.isEmpty()) {
                 chooseVideo(true)
             } else {
@@ -460,12 +468,27 @@ class VideoEditorActivity : Activity() {
                     status.text = "Proje önizlemesi oynatılıyor."
                 }
             }
-        })
-        timelineHeader.addView(miniButton("＋ Ekle") { chooseVideo(true) })
-        timelineHeader.addView(miniButton("↻ Değiştir") { chooseVideo(false) },
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(44)).apply {
-                leftMargin = dp(5)
-            })
+        }.apply {
+            minWidth = dp(38)
+            minimumWidth = dp(38)
+            textSize = 13f
+            setPadding(0, 0, 0, 0)
+            contentDescription = "Önizlemeyi oynat veya duraklat"
+        }, LinearLayout.LayoutParams(dp(42), dp(40)))
+        timelineHeader.addView(miniButton("＋") { chooseVideo(true) }.apply {
+            minWidth = dp(38)
+            minimumWidth = dp(38)
+            textSize = 18f
+            setPadding(0, 0, 0, 0)
+            contentDescription = "Zaman çizelgesine video ekle"
+        }, LinearLayout.LayoutParams(dp(42), dp(40)).apply { leftMargin = dp(3) })
+        timelineHeader.addView(miniButton("↻") { chooseVideo(false) }.apply {
+            minWidth = dp(38)
+            minimumWidth = dp(38)
+            textSize = 16f
+            setPadding(0, 0, 0, 0)
+            contentDescription = "Seçili videoyu değiştir"
+        }, LinearLayout.LayoutParams(dp(42), dp(40)).apply { leftMargin = dp(3) })
         timelineCard.addView(timelineHeader, matchWrap())
 
         val clipScroll = android.widget.HorizontalScrollView(this).apply {
@@ -529,8 +552,11 @@ class VideoEditorActivity : Activity() {
             FrameLayout.LayoutParams(dp(28), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.TOP or Gravity.START)
         )
         timelineCard.addView(timelineTracksFrame, matchWrap())
-        timelineCard.addView(label("İPUCU: Klip kopyalamak, silmek veya sıralamak için klibe uzun bas. Turkuaz kenarları sürükleyerek kes.", 10f, Color.rgb(180, 202, 216), false).apply {
-            setPadding(dp(3), dp(3), dp(3), dp(1))
+        timelineCard.addView(label("Uzun bas: klibi taşı / sil / kopyala  •  Kenarlardan: kes", 9f, Color.rgb(180, 202, 216), false).apply {
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(dp(3), dp(2), dp(3), 0)
+            contentDescription = "Klibe uzun basarak taşı, sil veya kopyala; kesmek için kenarları sürükle"
         }, matchWrap())
 
         val playheadRow = LinearLayout(this).apply {
@@ -1076,7 +1102,7 @@ class VideoEditorActivity : Activity() {
                     previewParams.height = if (imeVisible) {
                         (availableHeight * 0.21f).toInt().coerceIn(dp(82), dp(112))
                     } else {
-                        dp(previewStageHeightDp).coerceIn(dp(250), dp(460))
+                        dp(previewStageHeightDp).coerceIn(dp(150), dp(460))
                     }
                     previewParams.weight = 0f
                 }
@@ -1134,6 +1160,44 @@ class VideoEditorActivity : Activity() {
             if (applyingResponsiveLayout) return@addOnLayoutChangeListener
             val viewportHeight = view.height
             if (viewportHeight <= 0) return@addOnLayoutChangeListener
+            if (!previewHeightAutoSized && !keyboardLayoutActive) {
+                val density = resources.displayMetrics.density.coerceAtLeast(1f)
+                val viewportDp = (viewportHeight / density).toInt()
+                compactEditorLayout = viewportDp < 710
+                previewDefaultStageHeightDp = (viewportDp * 0.30f).toInt().coerceIn(155, 340)
+                previewStageHeightDp = previewDefaultStageHeightDp
+                previewHeightAutoSized = true
+
+                // Reserve room for real tools and the multi-track timeline on shorter phones.
+                if (compactEditorLayout) {
+                    view.setPadding(dp(4), dp(2), dp(4), dp(2))
+                }
+                val previewParams = previewFrame.layoutParams as? LinearLayout.LayoutParams
+                if (previewParams != null && !previewFocusMode) {
+                    previewParams.height = dp(previewStageHeightDp)
+                    previewParams.weight = 0f
+                    previewFrame.layoutParams = previewParams
+                }
+                val clipParams = clipScroll.layoutParams as? LinearLayout.LayoutParams
+                if (clipParams != null) {
+                    clipParams.height = dp(if (compactEditorLayout) 44 else 58)
+                    clipScroll.layoutParams = clipParams
+                }
+                timelineCard.setPadding(
+                    dp(if (compactEditorLayout) 5 else 8),
+                    dp(if (compactEditorLayout) 2 else 5),
+                    dp(if (compactEditorLayout) 5 else 8),
+                    dp(if (compactEditorLayout) 2 else 5)
+                )
+                if (compactEditorLayout) {
+                    val timeLabelParams = timelinePlayheadLabel.layoutParams as? LinearLayout.LayoutParams
+                    if (timeLabelParams != null) {
+                        timeLabelParams.width = dp(94)
+                        timelinePlayheadLabel.layoutParams = timeLabelParams
+                    }
+                }
+                rulerAwareTimelineRefresh()
+            }
             if (!keyboardLayoutActive && viewportHeight > maxEditorViewportHeightPx) {
                 maxEditorViewportHeightPx = viewportHeight
             }
@@ -1148,7 +1212,7 @@ class VideoEditorActivity : Activity() {
             if (imeVisible != keyboardLayoutActive) {
                 applyKeyboardMode(imeVisible, viewportHeight)
             } else if (!imeVisible && !previewFocusMode) {
-                val normalHeight = dp(previewStageHeightDp).coerceIn(dp(250), dp(460))
+                val normalHeight = dp(previewStageHeightDp).coerceIn(dp(150), dp(460))
                 val params = previewFrame.layoutParams as? LinearLayout.LayoutParams
                 if (params != null && (params.height != normalHeight || params.weight != 0f)) {
                     applyingResponsiveLayout = true
@@ -1220,7 +1284,7 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun setPreviewStageHeight(heightDp: Int) {
-        previewStageHeightDp = heightDp.coerceIn(250, 460)
+        previewStageHeightDp = heightDp.coerceIn(150, 460)
         if (!::previewFrame.isInitialized) return
         if (!keyboardLayoutActive && !previewFocusMode) {
             val params = previewFrame.layoutParams as? LinearLayout.LayoutParams
@@ -1414,7 +1478,7 @@ class VideoEditorActivity : Activity() {
                 setPadding(0, dp(1), 0, dp(1))
             }
             scroll.addView(track)
-            val responsiveLaneHeight = if (keyboardLayoutActive) 18 else heightDp
+            val responsiveLaneHeight = if (keyboardLayoutActive || compactEditorLayout) 18 else heightDp
             row.addView(scroll, LinearLayout.LayoutParams(0, dp(responsiveLaneHeight), 1f))
             timelineTracks.addView(row, matchWrap())
             return track
@@ -1452,14 +1516,14 @@ class VideoEditorActivity : Activity() {
                     setOnClickListener { onClick() }
                 }
             }
-            val blockHeight = dp(if (keyboardLayoutActive) 18 else 24)
+            val blockHeight = dp(if (keyboardLayoutActive || compactEditorLayout) 18 else 24)
             track.addView(block, LinearLayout.LayoutParams(width, blockHeight))
         }
 
         fun addSpacer(track: LinearLayout, startMs: Long, endMs: Long) {
             val width = widthBetween(startMs, endMs)
             if (width <= 0) return
-            track.addView(View(this), LinearLayout.LayoutParams(width, dp(if (keyboardLayoutActive) 18 else 24)))
+            track.addView(View(this), LinearLayout.LayoutParams(width, dp(if (keyboardLayoutActive || compactEditorLayout) 18 else 24)))
         }
 
         fun addTextLayerBlock(track: LinearLayout, layer: TextLayer, layerIndex: Int) {
@@ -1468,7 +1532,7 @@ class VideoEditorActivity : Activity() {
             if (startMs > 0L) addSpacer(track, 0L, startMs)
 
             val blockWidth = widthBetween(startMs, endMs).coerceAtLeast(1)
-            val blockHeight = dp(if (keyboardLayoutActive) 18 else 24)
+            val blockHeight = dp(if (keyboardLayoutActive || compactEditorLayout) 18 else 24)
             val frame = FrameLayout(this).apply {
                 background = android.graphics.drawable.GradientDrawable().apply {
                     setColor(Color.rgb(110, 74, 154))
@@ -1661,7 +1725,7 @@ class VideoEditorActivity : Activity() {
             if (endMs < totalMs) addSpacer(track, endMs, totalMs)
         }
 
-        if (!keyboardLayoutActive) {
+        if (!keyboardLayoutActive && !compactEditorLayout) {
             val ruler = makeLane("SÜRE", 22)
             val rulerEndMs = (((totalMs + 4999L) / 5000L).coerceAtLeast(1L)) * 5000L
             var rulerTimeMs = 0L
@@ -1685,7 +1749,7 @@ class VideoEditorActivity : Activity() {
             }
         }
 
-        val videoTrack = makeLane("VIDEO", if (keyboardLayoutActive) 22 else 44)
+        val videoTrack = makeLane("VIDEO", if (keyboardLayoutActive || compactEditorLayout) 18 else 44)
         if (clips.isEmpty()) {
             addBlock(videoTrack, "+ Video ekle", 5000L, Color.rgb(38, 105, 123), onClick = { chooseVideo(true) }, minimumWidthDp = 115)
         } else {
@@ -1694,7 +1758,7 @@ class VideoEditorActivity : Activity() {
                 val duration = (clip.endMs - clip.startMs).coerceAtLeast(0L)
                 val nextVideoOffsetMs = videoOffsetMs + duration
                 val width = widthBetween(videoOffsetMs, nextVideoOffsetMs).coerceAtLeast(1)
-                val height = dp(if (keyboardLayoutActive) 22 else 42)
+                val height = dp(if (keyboardLayoutActive || compactEditorLayout) 18 else 42)
                 val block = buildVideoClipFilmstrip(clip, index, width, height, index == selectedClipIndex)
                 // Widths use absolute boundaries, so fractional-pixel rounding cannot accumulate.
                 videoTrack.addView(block, LinearLayout.LayoutParams(width, height))
