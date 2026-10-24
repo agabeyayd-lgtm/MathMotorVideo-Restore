@@ -234,10 +234,6 @@ class MainActivity : Activity() {
             addView(label("MOBİL VİDEO STÜDYOSU", 10f, muted, true))
         }
         topBar.addView(brand, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        topBar.addView(iconButton("＋") { openEditor(null) }.apply {
-            contentDescription = "Yeni düzenleme başlat"
-            layoutParams = LinearLayout.LayoutParams(dp(46), dp(46))
-        })
         root.addView(topBar)
         root.addView(gap(14))
 
@@ -273,8 +269,8 @@ class MainActivity : Activity() {
         val startCopy = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), 0, 0, 0)
-            addView(label("YENİ DÜZENLEME", 15f, white, true))
-            addView(label("Galeriden seç ve hemen düzenlemeye başla.", 12f, muted, false))
+            addView(label("YENİ PROJE", 15f, white, true))
+            addView(label("Bir video seçerek düzenlemeye başla.", 12f, muted, false))
         }
         startTop.addView(startCopy, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         startCard.addView(startTop)
@@ -285,27 +281,11 @@ class MainActivity : Activity() {
         }
         startCard.addView(choose, matchWrap())
         startCard.addView(gap(8))
-        startCard.addView(secondaryButton("Boş düzenleyiciyi aç   ›") { openEditor(null) }, matchWrap())
+        startCard.addView(secondaryButton("Boş proje oluştur   ›") { openEditor(null) }, matchWrap())
         root.addView(startCard, matchWrap())
 
-        root.addView(gap(25))
-        root.addView(label("DÜZENLEME ARAÇLARI", 11f, accent, true))
-        root.addView(gap(5))
-        val toolRows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val rowOne = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        rowOne.addView(toolCard("01", "Kes ve birleştir", "Klipleri sırala, böl ve kırp"), weightedCardParams())
-        rowOne.addView(gapWidth(9))
-        rowOne.addView(toolCard("02", "Metin katmanı", "Yazının süresini ve yerini ayarla"), weightedCardParams())
-        toolRows.addView(rowOne)
-        toolRows.addView(gap(9))
-        val rowTwo = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        rowTwo.addView(toolCard("03", "Ses ve müzik", "Ses seviyesini ve başlangıcını ayarla"), weightedCardParams())
-        rowTwo.addView(gapWidth(9))
-        rowTwo.addView(toolCard("04", "MP4 dışa aktar", "Projeyi kaydet veya videoyu çıkar"), weightedCardParams())
-        toolRows.addView(rowTwo)
-        root.addView(toolRows, matchWrap())
+        root.addView(gap(22))
 
-        root.addView(gap(26))
         val recentHeader = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
