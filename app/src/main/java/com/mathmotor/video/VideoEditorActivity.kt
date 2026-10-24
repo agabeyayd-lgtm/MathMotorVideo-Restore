@@ -3412,10 +3412,11 @@ class VideoEditorActivity : Activity() {
         var extractor: FrameExtractor? = null
         var frameFuture: java.util.concurrent.Future<FrameExtractor.Frame>? = null
         try {
-            extractor = FrameExtractor.Builder(this, MediaItem.fromUri(uri))
+            val createdExtractor = FrameExtractor.Builder(this, MediaItem.fromUri(uri))
                 .setEffects(listOf(Presentation.createForHeight(96)))
                 .build()
-            val future = extractor.getFrame(timeMs.coerceAtLeast(0L))
+            extractor = createdExtractor
+            val future = createdExtractor.getFrame(timeMs.coerceAtLeast(0L))
             frameFuture = future
             return future.get(4L, TimeUnit.SECONDS).bitmap
         } catch (_: Exception) {
