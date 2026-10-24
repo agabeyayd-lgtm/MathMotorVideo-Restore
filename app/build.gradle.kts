@@ -16,7 +16,7 @@ val signingProperties = Properties().apply {
 
 android {
     namespace = "com.mathmotor.video"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.mathmotor.video.next"
