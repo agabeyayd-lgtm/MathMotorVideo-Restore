@@ -1,1 +1,1 @@
-Build and publish signed APK for versionCode 393 (8.27-timeline-text-controls) — retry 2 after Kotlin syntax fix.
+Build and publish signed APK for versionCode 394 (8.28-timeline-trim-fix). Includes timeline time mapping, trim handle bounds, zoom-safe draft scroll restore, and thumbnail timestamp fixes.
