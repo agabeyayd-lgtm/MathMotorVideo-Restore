@@ -22,8 +22,8 @@ android {
         applicationId = "com.mathmotor.video.next"
         minSdk = 26
         targetSdk = 35
-        versionCode = 393
-        versionName = "8.27-timeline-text-controls"
+        versionCode = 394
+        versionName = "8.28-timeline-trim-fix"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
