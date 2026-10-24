@@ -55,8 +55,14 @@ jobs:
             adb exec-out screencap -p > emulator-screenshots/home.png
             adb shell uiautomator dump /sdcard/window.xml || true
             adb pull /sdcard/window.xml emulator-screenshots/window.xml || true
-            adb logcat -d > emulator-screenshots/logcat.txt
             test -s emulator-screenshots/home.png
+            adb shell input tap 540 1506
+            sleep 5
+            adb exec-out screencap -p > emulator-screenshots/editor.png
+            adb shell uiautomator dump /sdcard/editor-window.xml || true
+            adb pull /sdcard/editor-window.xml emulator-screenshots/editor-window.xml || true
+            adb logcat -d > emulator-screenshots/logcat.txt
+            test -s emulator-screenshots/editor.png
 
       - name: Upload emulator screenshots and diagnostics
         if: always()
