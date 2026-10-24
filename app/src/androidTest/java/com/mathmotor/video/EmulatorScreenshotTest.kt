@@ -58,9 +58,9 @@ class EmulatorScreenshotTest {
     }
 
     private fun takeScreenshot(device: UiDevice, name: String) {
-        val targetContext = InstrumentationRegistry.getInstrumentation().targetContext
+        val testContext = InstrumentationRegistry.getInstrumentation().context
         val pictures = File(
-            targetContext.getExternalFilesDir(Environment.DIRECTORY_PICTURES),
+            testContext.getExternalFilesDir(Environment.DIRECTORY_PICTURES),
             "emulator-screenshots"
         )
         assertTrue("Could not create screenshot directory", pictures.exists() || pictures.mkdirs())
