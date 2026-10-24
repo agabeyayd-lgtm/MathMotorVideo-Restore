@@ -1421,9 +1421,9 @@ class VideoEditorActivity : Activity() {
 
     private fun refreshTimelineTracks() {
         if (!::timelineTracks.isInitialized) return
-        val preservedScrollX = pendingTimelineScrollX
-            ?: timelineScrollViews.firstOrNull()?.scrollX
-            ?: timelineHorizontalScrollX
+        // The scroll listener keeps this value current. Reading a freshly rebuilt
+        // child view here can return zero before its posted scroll restoration runs.
+        val preservedScrollX = pendingTimelineScrollX ?: timelineHorizontalScrollX
         pendingTimelineScrollX = null
         timelineHorizontalScrollX = preservedScrollX
         timelineTracks.removeAllViews()
@@ -2040,7 +2040,8 @@ class VideoEditorActivity : Activity() {
         player?.prepare()
         player?.playWhenReady = false
         status.text = "Seçili klip: ${clip.title}. Klipler dışa aktarılırken bu sırayla tek MP4'e birleştirilir."
-        refreshTimelineTracks()
+        // refreshClipList() above rebuilds the timeline too; a second immediate refresh
+        // could discard the pending auto-zoom scroll before the posted scroll runs.
     }
 
     private fun captureClipEditSnapshot(): ClipEditSnapshot = ClipEditSnapshot(
