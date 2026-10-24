@@ -307,10 +307,37 @@ timeout -k 2s 8s adb -s emulator-5554 shell run-as com.mathmotor.video.next ls -
 
 timeout -k 2s 8s adb -s emulator-5554 shell am force-stop com.mathmotor.video.next || true
 # Avoid -W for the same slow-emulator first-frame wait that affected the home launch.
+# Clear stale markers so only this launch can satisfy the smoke assertion.
+timeout -k 2s 5s adb -s emulator-5554 logcat -c || true
 timeout -k 2s 15s adb -s emulator-5554 shell am start \
   -n com.mathmotor.video.next/com.mathmotor.video.EditorTestEntryActivity \
   --es video_uri "file://$app_internal_video" | tee emulator-screenshots/editor-video-launch.txt
-sleep 8
+
+# Do not assert that a filename appears in uiautomator XML: on these images
+# uiautomator frequently fails, and the editor is free to display a friendly
+# clip title rather than a source filename. Verify the real addClip outcome
+# through a debug-only app log marker instead.
+video_clip_loaded=false
+for attempt in $(seq 1 15); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime > emulator-screenshots/video-load-logcat.txt 2>&1 || true
+  if grep -q "EDITOR_SMOKE_CLIP_ADDED" emulator-screenshots/video-load-logcat.txt; then
+    video_clip_loaded=true
+    break
+  fi
+  if grep -q "EDITOR_SMOKE_CLIP_REJECTED" emulator-screenshots/video-load-logcat.txt; then
+    echo "Editor rejected the fixture video while reading its duration."
+    collect_capture_diagnostics video-editor-rejected-fixture
+    exit 4
+  fi
+  echo "Waiting for editor to add the fixture clip (attempt $attempt/15)"
+  sleep 2
+done
+if [ "$video_clip_loaded" != true ]; then
+  echo "Editor did not confirm sample clip import within 30 seconds."
+  collect_capture_diagnostics video-editor-clip-import-timeout
+  exit 4
+fi
+sleep 2
 if ! take_screen emulator-screenshots/editor.png; then
   collect_capture_diagnostics video-editor-capture-failure
   exit 6
@@ -330,13 +357,9 @@ if [ "$SYSTEM_ANR_RECOVERED" = true ]; then
   fi
 fi
 
-# A green screenshot run must prove the sample reached the actual timeline,
-# not merely that a black empty editor launched.
-if ! grep -q "editor-test-video.mp4" emulator-screenshots/editor-window.xml; then
-  echo "Sample video was not visible in the editor hierarchy; collect diagnostics and fail."
-  timeout -k 2s 8s adb -s emulator-5554 logcat -d > emulator-screenshots/video-load-logcat.txt || true
-  exit 4
-fi
+# The app's success marker is emitted only after metadata is readable and the
+# clip is inserted into the timeline, so inaccessible UI hierarchy is diagnostic
+# only and does not turn a successful import into a false failure.
 
 echo "Step 8/8: save diagnostics"
 timeout -k 2s 8s adb -s emulator-5554 logcat -d > emulator-screenshots/logcat.txt || true
