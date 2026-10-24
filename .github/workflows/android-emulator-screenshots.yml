@@ -64,8 +64,11 @@ jobs:
           arch: x86_64
           profile: pixel_2
           cores: 2
+          force-avd-creation: true
+          emulator-port: 5554
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -wipe-data -memory 4096
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -wipe-data
+          timeout: 600
           script: bash .github/scripts/capture-emulator-screenshots.sh
 
       - name: Upload emulator screenshots and diagnostics
