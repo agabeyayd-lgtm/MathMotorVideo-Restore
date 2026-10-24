@@ -51,7 +51,7 @@ import androidx.media3.effect.Presentation
 import androidx.media3.common.OverlaySettings
 import androidx.media3.effect.StaticOverlaySettings
 import androidx.media3.effect.TextOverlay
-import androidx.media3.inspector.FrameExtractor
+import androidx.media3.inspector.frame.FrameExtractor
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import androidx.media3.transformer.Composition
