@@ -1865,8 +1865,6 @@ class VideoEditorActivity : Activity() {
         }
         timelinePlayheadSeek.progress = targetMs.coerceAtMost(timelinePlayheadSeek.max.toLong()).toInt()
         updateTimelinePlayheadLabel()
-        // Seeking must immediately refresh text-layer visibility at the new playhead.
-        updatePreviewTextOverlay()
     }
 
     private fun syncTimelinePlayheadFromPlayer() {
@@ -1875,7 +1873,6 @@ class VideoEditorActivity : Activity() {
         val index = currentPlayer.currentMediaItemIndex
         if (index !in clips.indices) return
         val offsetMs = clips.take(index).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
-        val previousPlayheadMs = timelinePlayheadMs
         timelinePlayheadMs = (offsetMs + currentPlayer.currentPosition).coerceIn(0L, totalOutputDurationMs())
         if (selectedClipIndex != index) {
             selectedClipIndex = index
@@ -1885,7 +1882,6 @@ class VideoEditorActivity : Activity() {
         val progress = timelinePlayheadMs.coerceAtMost(timelinePlayheadSeek.max.toLong()).toInt()
         if (timelinePlayheadSeek.progress != progress) timelinePlayheadSeek.progress = progress
         updateTimelinePlayheadLabel()
-        if (timelinePlayheadMs != previousPlayheadMs) updatePreviewTextOverlay()
     }
 
     private fun syncSingleClipPlayheadFromPlayer() {
@@ -1894,14 +1890,12 @@ class VideoEditorActivity : Activity() {
         val clip = clips.getOrNull(index) ?: return
         val beforeMs = clips.take(index).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
         val clipDuration = (clip.endMs - clip.startMs).coerceAtLeast(0L)
-        val previousPlayheadMs = timelinePlayheadMs
         timelinePlayheadMs = (beforeMs + currentPlayer.currentPosition.coerceIn(0L, clipDuration))
             .coerceIn(0L, totalOutputDurationMs())
         if (::timelinePlayheadSeek.isInitialized) {
             timelinePlayheadSeek.progress = timelinePlayheadMs.coerceAtMost(timelinePlayheadSeek.max.toLong()).toInt()
         }
         updateTimelinePlayheadLabel()
-        if (timelinePlayheadMs != previousPlayheadMs) updatePreviewTextOverlay()
     }
 
     private fun selectTimelineClip(index: Int) {
