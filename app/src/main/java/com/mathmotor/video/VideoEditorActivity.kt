@@ -111,6 +111,7 @@ class VideoEditorActivity : Activity() {
     private var textBold = true
     private lateinit var textColorGroup: android.widget.RadioGroup
     private lateinit var textBoldCheck: CheckBox
+    private lateinit var textOverlayEditToggle: Button
     private enum class TextPosition { TOP, CENTER, BOTTOM }
     private fun defaultTextYFraction(position: TextPosition): Float = when (position) {
         TextPosition.TOP -> 0.16f
@@ -602,6 +603,20 @@ class VideoEditorActivity : Activity() {
         val textPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         textPanel.addView(label("METİN KATMANLARI", 13f, Color.rgb(121, 202, 218), true))
         textPanel.addView(label("Yazıyı videonun üstünde sürükle; iki parmakla büyüt veya küçült.", 11f, Color.rgb(154, 171, 190), false))
+        textOverlayEditToggle = miniButton("Önizlemede yazı düzenleme: KAPALI") {
+            textOverlayEditingEnabled = !textOverlayEditingEnabled
+            updateTextOverlayEditToggle()
+            status.text = if (textOverlayEditingEnabled) {
+                "Yazıyı videonun üzerinde sürükleyebilir ve iki parmakla boyutlandırabilirsin."
+            } else {
+                "Önizlemede yazı hareketi kapalı. Metin alanı ve boyut düğmeleri kullanılabilir."
+            }
+        }.apply {
+            contentDescription = "Önizleme üzerindeki yazıyı sürükleme ve iki parmakla boyutlandırmayı aç veya kapat"
+            minHeight = dp(42)
+        }
+        textPanel.addView(textOverlayEditToggle, matchWrap())
+        updateTextOverlayEditToggle()
         val textLayerActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         textLayerActions.addView(miniButton("＋ Yeni") { addTextLayer() },
             LinearLayout.LayoutParams(0, dp(42), 1f))
@@ -1254,6 +1269,7 @@ class VideoEditorActivity : Activity() {
     private fun showEditorPanel(name: String) {
         activeEditorPanel = name
         textOverlayEditingEnabled = name == "text"
+        updateTextOverlayEditToggle()
         if (::editorPanelScroll.isInitialized) editorPanelScroll.scrollTo(0, 0)
         editorPanels.forEach { (key, panel) ->
             panel.visibility = if (key == name) View.VISIBLE else View.GONE
@@ -1270,6 +1286,27 @@ class VideoEditorActivity : Activity() {
         if (name == "export") status.text = "Projeyi kaydedebilir veya MP4 olarak dışa aktarabilirsin."
     }
 
+    private fun updateTextOverlayEditToggle() {
+        if (!::textOverlayEditToggle.isInitialized) return
+        val enabled = textOverlayEditingEnabled && activeEditorPanel == "text"
+        textOverlayEditToggle.text = if (enabled) {
+            "Önizlemede yazı düzenleme: AÇIK  ·  kapat"
+        } else {
+            "Önizlemede yazı düzenleme: KAPALI  ·  aç"
+        }
+        textOverlayEditToggle.setTextColor(if (enabled) Color.rgb(5, 25, 29) else Color.WHITE)
+        textOverlayEditToggle.background = android.graphics.drawable.GradientDrawable().apply {
+            setColor(if (enabled) Color.rgb(57, 220, 190) else Color.rgb(27, 39, 54))
+            cornerRadius = dp(10).toFloat()
+            setStroke(dp(1), if (enabled) Color.rgb(100, 245, 218) else Color.rgb(42, 59, 77))
+        }
+        textOverlayEditToggle.contentDescription = if (enabled) {
+            "Önizlemede yazı düzenleme açık. Kapatmak için dokun."
+        } else {
+            "Önizlemede yazı düzenleme kapalı. Açmak için dokun."
+        }
+    }
+
     /** Tapping the currently selected tool a second time closes its panel. */
     private fun toggleEditorPanel(name: String) {
         if (activeEditorPanel != name) {
@@ -1278,6 +1315,7 @@ class VideoEditorActivity : Activity() {
         }
         activeEditorPanel = null
         textOverlayEditingEnabled = false
+        updateTextOverlayEditToggle()
         editorPanels.values.forEach { it.visibility = View.GONE }
         editorTabButtons.values.forEach { button ->
             button.background = android.graphics.drawable.GradientDrawable().apply {
