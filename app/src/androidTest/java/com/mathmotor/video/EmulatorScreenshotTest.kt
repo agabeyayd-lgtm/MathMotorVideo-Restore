@@ -35,7 +35,7 @@ class EmulatorScreenshotTest {
         takeScreenshot(device, "home.png")
 
         val openEditor = device.findObject(By.desc("Yeni düzenleme başlat"))
-        assertTrue("Could not find the button that opens a new edit", openEditor != null)
+            ?: throw AssertionError("Could not find the button that opens a new edit")
         openEditor.click()
 
         assertTrue(
@@ -47,7 +47,7 @@ class EmulatorScreenshotTest {
 
         val textTab = device.findObject(By.text("T\nMetin"))
             ?: device.findObject(By.clazz("android.widget.Button").textContains("Metin"))
-        assertTrue("Could not find the Metin tab in the editor dock", textTab != null)
+            ?: throw AssertionError("Could not find the Metin tab in the editor dock")
         textTab.click()
         device.waitForIdle()
         assertTrue(
