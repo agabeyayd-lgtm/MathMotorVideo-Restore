@@ -311,7 +311,8 @@ timeout -k 2s 8s adb -s emulator-5554 shell am force-stop com.mathmotor.video.ne
 timeout -k 2s 5s adb -s emulator-5554 logcat -c || true
 timeout -k 2s 15s adb -s emulator-5554 shell am start \
   -n com.mathmotor.video.next/com.mathmotor.video.EditorTestEntryActivity \
-  --es video_uri "file://$app_internal_video" | tee emulator-screenshots/editor-video-launch.txt
+  --es video_uri "file://$app_internal_video" \
+  --es draft_id "11111111-1111-4111-8111-111111111111" | tee emulator-screenshots/editor-video-launch.txt
 
 # Do not assert that a filename appears in uiautomator XML: on these images
 # uiautomator frequently fails, and the editor is free to display a friendly
@@ -361,9 +362,38 @@ fi
 # clip is inserted into the timeline, so inaccessible UI hierarchy is diagnostic
 # only and does not turn a successful import into a false failure.
 
-echo "Step 8/8: save diagnostics"
+echo "Step 8/9: validate automatic draft save and resume list"
+timeout -k 2s 8s adb -s emulator-5554 shell input keyevent 4 || true
+sleep 3
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime > emulator-screenshots/draft-autosave-logcat.txt 2>&1 || true
+if ! grep -q "LOCAL_DRAFT_SAVED id=11111111-1111-4111-8111-111111111111 clips=1" emulator-screenshots/draft-autosave-logcat.txt; then
+  echo "Editor did not confirm automatic draft save after leaving the editor."
+  collect_capture_diagnostics draft-autosave-failure
+  exit 11
+fi
+
+if ! timeout -k 2s 15s adb -s emulator-5554 shell am start \
+  -n com.mathmotor.video.next/com.mathmotor.video.MainActivity; then
+  echo "Could not return to the home screen to verify the saved draft."
+  collect_capture_diagnostics draft-home-launch-failure
+  exit 12
+fi
+sleep 3
+dump_hierarchy drafts-home.xml emulator-screenshots/drafts-home-window.xml || true
+if [ -s emulator-screenshots/drafts-home-window.xml ] && ! grep -q "TASLAKLAR" emulator-screenshots/drafts-home-window.xml; then
+  echo "Local draft was saved, but the home screen did not expose the draft section."
+  collect_capture_diagnostics draft-home-section-missing
+  exit 13
+fi
+if ! take_screen emulator-screenshots/home-with-drafts.png; then
+  collect_capture_diagnostics draft-home-capture-failure
+  exit 6
+fi
+
+echo "Step 9/9: save diagnostics"
 timeout -k 2s 8s adb -s emulator-5554 logcat -d > emulator-screenshots/logcat.txt || true
 test -s emulator-screenshots/home.png
 test -s emulator-screenshots/editor-empty.png
 test -s emulator-screenshots/editor.png
-echo "Home, empty-editor, and sample-video editor screenshots captured. Sample-video presence verified."
+test -s emulator-screenshots/home-with-drafts.png
+echo "Home, empty editor, sample-video editor, and autosaved-draft home screenshots captured. Editor auto-save verified."

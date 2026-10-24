@@ -4207,6 +4207,7 @@ class VideoEditorActivity : Activity() {
             check(VideoProjectDraftStore.save(this, id, title, createProjectJson())) {
                 "Yerel taslak dosyası kaydedilemedi."
             }
+            android.util.Log.i("MathMotorDraft", "LOCAL_DRAFT_SAVED id=$id clips=${clips.size}")
         }.onFailure {
             android.util.Log.w("MathMotorDraft", "Local draft autosave failed", it)
         }
