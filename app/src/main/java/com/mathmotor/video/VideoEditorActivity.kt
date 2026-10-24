@@ -256,7 +256,13 @@ class VideoEditorActivity : Activity() {
         }
         timelineHandler.post(timelineSyncTask)
         val incoming = intent.getStringExtra("video_uri")
+        if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            android.util.Log.i("EditorSmokeTest", "EDITOR_SMOKE_EDITOR_STARTED uri=$incoming")
+        }
         if (!incoming.isNullOrBlank()) addClip(Uri.parse(incoming), false)
+        else if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            android.util.Log.e("EditorSmokeTest", "EDITOR_SMOKE_MISSING_VIDEO_URI")
+        }
     }
 
     private fun buildUi() {
@@ -2552,6 +2558,8 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun addClip(uri: Uri, replaceExisting: Boolean) {
+        val smokeTest = (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        if (smokeTest) android.util.Log.i("EditorSmokeTest", "EDITOR_SMOKE_ADDCLIP_STARTED uri=$uri")
         try {
             contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
         } catch (_: Exception) { }
@@ -2567,6 +2575,10 @@ class VideoEditorActivity : Activity() {
                 }
             }.getOrDefault(0L)
             val title = queryDisplayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Video klibi"
+            if (smokeTest) android.util.Log.i(
+                "EditorSmokeTest",
+                "EDITOR_SMOKE_METADATA_READ durationMs=$duration title=$title uri=$uri"
+            )
             runOnUiThread {
                 if (duration <= 0L) {
                     if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) android.util.Log.e(
