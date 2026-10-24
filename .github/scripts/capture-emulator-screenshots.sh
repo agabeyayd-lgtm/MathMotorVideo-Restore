@@ -133,7 +133,7 @@ timeout -k 2s 20s adb -s emulator-5554 push "$fixture" "$remote_video" | tee emu
 
 timeout -k 2s 8s adb -s emulator-5554 shell am force-stop com.mathmotor.video.next || true
 timeout -k 2s 15s adb -s emulator-5554 shell am start -W \
-  -n com.mathmotor.video.next/com.mathmotor.video.VideoEditorActivity \
+  -n com.mathmotor.video.next/com.mathmotor.video.EditorTestEntryActivity \
   --es video_uri "file://$remote_video" | tee emulator-screenshots/editor-video-launch.txt
 sleep 8
 take_screen emulator-screenshots/editor.png
