@@ -57,9 +57,8 @@ jobs:
             adb shell monkey -p com.mathmotor.video.next 1
             sleep 10
 
-            # Cold Android 11 emulators sometimes display a system ANR dialog
-            # during first boot. Tap its explicit "Wait" action and recapture,
-            # rather than uploading a dimmed screenshot of the dialog.
+            # Cold Android 11 emulators may show a System UI ANR prompt on first boot.
+            # Select the visible "Wait" button and retry instead of saving a dimmed image.
             capture_clear_screen() {
               destination="$1"
               hierarchy="$2"
@@ -69,27 +68,14 @@ jobs:
                 timeout 12s adb shell uiautomator dump "/sdcard/$hierarchy" >/dev/null 2>&1 || true
                 adb pull "/sdcard/$hierarchy" "$hierarchy_path" >/dev/null 2>&1 || true
                 if grep -q "isn't responding" "$hierarchy_path" 2>/dev/null; then
-                  point="$(python3 - "$hierarchy_path" <<'PY'
-            import re, sys, xml.etree.ElementTree as ET
-            try:
-                root = ET.parse(sys.argv[1]).getroot()
-                for node in root.iter("node"):
-                    if node.attrib.get("text", "").strip().lower() == "wait" and node.attrib.get("clickable") == "true":
-                        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
-                        if match:
-                            x1, y1, x2, y2 = map(int, match.groups())
-                            print(f"{(x1 + x2) // 2} {(y1 + y2) // 2}")
-                            break
-            except Exception:
-                pass
-            PY
-            )"
-                  if [ -z "$point" ]; then
-                    echo "Android system ANR dialog found, but the Wait button could not be located."
+                  wait_node="$(grep -o '<node[^>]*text="Wait"[^>]*bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' "$hierarchy_path" | head -n 1 || true)"
+                  wait_coords="$(printf '%s\n' "$wait_node" | sed -n 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/p' | awk '{print int(($1+$3)/2), int(($2+$4)/2)}')"
+                  if [ -z "$wait_coords" ]; then
+                    echo "System ANR dialog found, but its Wait button could not be located."
                     return 1
                   fi
-                  echo "Android system ANR dialog found; choosing Wait (attempt $attempt/4)."
-                  adb shell input tap $point
+                  echo "System ANR prompt: choosing Wait (attempt $attempt/4)."
+                  adb shell input tap $wait_coords
                   sleep 4
                   continue
                 fi
@@ -97,48 +83,28 @@ jobs:
                 test -s "$destination"
                 return 0
               done
-              echo "Android system ANR dialog remained after recovery attempts."
+              echo "System ANR prompt remained after four recovery attempts."
               return 1
             }
 
             capture_clear_screen emulator-screenshots/home.png window.xml
 
-            python3 - <<'PY'
-            import re
-            import subprocess
-            import sys
-            import xml.etree.ElementTree as ET
-
-            try:
-                root = ET.parse("emulator-screenshots/window.xml").getroot()
-            except Exception as exc:
-                print(f"Could not parse home UI hierarchy: {exc}")
-                sys.exit(1)
-
-            nodes = []
-            for node in root.iter("node"):
-                label = " ".join((node.attrib.get("text", ""), node.attrib.get("content-desc", ""))).strip()
-                match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
-                if match:
-                    x1, y1, x2, y2 = map(int, match.groups())
-                    nodes.append((label, (x1 + x2) // 2, (y1 + y2) // 2))
-
-            preferred = ("Boş proje oluştur", "Boş düzenleyiciyi aç", "Yeni düzenleme başlat")
-            chosen = None
-            for target in preferred:
-                chosen = next((item for item in nodes if target in item[0]), None)
-                if chosen:
-                    break
-            if chosen is None:
-                chosen = next((item for item in nodes if "Galeriden video seç" in item[0]), None)
-            if chosen is None:
-                print("No usable home action button found in UI hierarchy.")
-                sys.exit(2)
-
-            label, x, y = chosen
-            print(f"Opening editor from home button: {label} at {x},{y}")
-            subprocess.run(["adb", "shell", "input", "tap", str(x), str(y)], check=True)
-            PY
+            # Locate the editor-opening action in the hierarchy. Prefer a blank
+            # project so the smoke test does not depend on a media-picker app.
+            node=""
+            for target in "Boş proje oluştur" "Boş düzenleyiciyi aç" "Yeni düzenleme başlat" "Galeriden video seç"; do
+              node="$(grep -o '<node[^>]*text="[^"]*'"$target"'[^"]*"[^>]*bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' emulator-screenshots/window.xml | head -n 1 || true)"
+              if [ -n "$node" ]; then
+                break
+              fi
+            done
+            if [ -z "$node" ]; then
+              echo "No usable home action button found in UI hierarchy."
+              exit 2
+            fi
+            coords="$(printf '%s\n' "$node" | sed -n 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/p' | awk '{print int(($1+$3)/2), int(($2+$4)/2)}')"
+            echo "Opening editor at $coords"
+            adb shell input tap $coords
             sleep 5
             capture_clear_screen emulator-screenshots/editor.png editor-window.xml
             adb logcat -d > emulator-screenshots/logcat.txt
