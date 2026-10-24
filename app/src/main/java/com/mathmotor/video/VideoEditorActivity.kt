@@ -1315,6 +1315,16 @@ class VideoEditorActivity : Activity() {
             layer.startMs = interval.startMs
             layer.endMs = interval.endMs
         }
+        // Rebind the selected layer's time controls after clip edits, project loads,
+        // or duration changes. This avoids stale labels from the previous video.
+        if (::textStartSeek.isInitialized && ::textEndSeek.isInitialized && !loadingTextLayerControls) {
+            selectedTextLayer()?.let { layer ->
+                textStartMs = layer.startMs
+                textEndMs = layer.endMs
+                textTimingCustomized = layer.timingCustomized
+            }
+            updateTextControls(refreshTimeline = false)
+        }
         val pxPerSecond = timelinePixelsPerSecond()
 
         fun widthBetween(startMs: Long, endMs: Long): Int =
@@ -2388,7 +2398,7 @@ class VideoEditorActivity : Activity() {
         })
     }
 
-    private fun updateTextControls() {
+    private fun updateTextControls(refreshTimeline: Boolean = true) {
         if (!::textStartSeek.isInitialized || !::textEndSeek.isInitialized) return
         val total = totalOutputDurationMs()
         // Seek controls use tenths of a second, but the final end may be a
@@ -2413,7 +2423,7 @@ class VideoEditorActivity : Activity() {
         textEndLabel.text = "Yazı bitişi: " + formatTimelineMs(textEndMs)
         syncSelectedTextLayerFromControls()
         updatePreviewTextOverlay()
-        if (!deferTimelineRefresh) refreshTimelineTracks()
+        if (!deferTimelineRefresh && refreshTimeline) refreshTimelineTracks()
     }
 
     /**
