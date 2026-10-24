@@ -29,13 +29,14 @@ class EmulatorScreenshotTest {
 
         assertTrue(
             "Home screen did not appear in the emulator",
-            device.wait(Until.hasObject(By.text("KURGU MASASI")), 20_000)
+            device.wait(Until.hasObject(By.text("VİDEO STÜDYOSU")), 20_000)
         )
         device.waitForIdle()
         takeScreenshot(device, "home.png")
 
-        val openEditor = device.findObject(By.desc("Yeni düzenleme başlat"))
-            ?: throw AssertionError("Could not find the button that opens a new edit")
+        val openEditor = device.findObject(
+            By.clazz("android.widget.Button").textContains("Galeriden video seç")
+        ) ?: throw AssertionError("Could not find the Galeriden video seç button")
         openEditor.click()
 
         assertTrue(

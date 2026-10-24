@@ -1,36 +1,39 @@
-# MathMotor Video — project status
+# MathMotor Video — current project status
 
-## Current product direction
+## Current direction
 
-MathMotor Video is now a **local Android video editor** with an easy, CapCut-inspired workflow. AI generation, AI scoring, social-media data learning, and paid API integration are outside the current scope. Normal editing should work on-device without a cloud account or AI service.
+MathMotor Video is a local Android video editor with a CapCut-inspired workflow. Normal editing should work on-device without a cloud account or paid AI service.
 
-## Published baseline and release policy
+## Version and release boundary
 
-- Working source currently declares versionCode = 393 and versionName = 8.27-timeline-text-controls.
-- Last documented published baseline: app-v8.3-44 — MathMotor Video signed APK build 44 (older than the current source).
-- The source is being improved incrementally on the main branch.
-- The debug-build workflow and signed-release workflow are manual-only. Pushing source changes must not automatically produce an APK artifact or release.
-- Do not change the version code or publish a replacement APK until explicitly requested.
+- Source: versionCode 393, versionName 8.27-timeline-text-controls.
+- Latest published signed artifact verified from GitHub Releases: app-v8.3-60 (versionCode 393).
+- The current source includes later timeline/editor changes that are not contained in that published APK.
+- Do not change versionCode or publish a replacement APK until explicitly requested. The existing release and in-app update must not be described as containing un-published source commits.
 
-## What the current source contains
+## Current source functionality
 
-- Android video editor screen with preview, a multi-lane timeline, seek/playhead controls and timeline zoom.
-- Import and order multiple clips; select, trim, split, move and remove clips.
-- Thumbnail filmstrips for clips.
-- Text overlay with adjustable visibility interval, position and size.
-- Audio controls for original audio, looping music, and a timed sound effect.
-- MP4 export using AndroidX Media3 Transformer with source / 720p / 1080p output-size options.
-- JSON project save/load and a local list of exported videos.
-- Home screen prioritizes one clear action (select a video), keeps empty-project creation secondary, and presents recent videos and manual update controls in compact sections.
-- The home gallery imports saved videos on a background thread so a slow MediaStore scan does not block the first screen.
-- Version checks remain available through the in-app button, but do not run automatically on every launch.
-- Preview canvas adapts to the source video's aspect ratio, including rotated sources.
-- File access through Android's document picker; in-app update checking remains available from a manual button (not on launch), and a newer published version can be downloaded and opened for installation.
+- Home screen with a primary gallery-import action, an empty-editor action, recent outputs and local drafts.
+- Video import, multi-clip timeline, clip reorder/copy/delete/split, source trim start/end, playhead seek and timeline zoom.
+- Trim and playhead controls now share a millisecond mapping; legal trim bounds consider the opposing edge and source duration. Short clips auto-zoom to keep handles reachable.
+- Video thumbnail extraction uses timestamped platform-frame APIs first, then Media3 for the same requested timestamp; it avoids an untimestamped first-frame fallback.
+- Text layer timing, position, size, colour and bold settings; background music and one timed sound effect; original audio volume.
+- MP4 export with source / 720p / 1080p options via Media3 Transformer.
+- JSON project save/load and local draft autosave. Draft state includes playhead time, zoom and horizontal scroll; older JSON files without those fields remain supported.
+- Responsive preview/timeline layout, reduced keyboard mode and compact dock.
+- Emulator KVM preparation step is fixed and has passed in prior runs.
 
-## Important limitations
+## Known gaps and verification still required
 
-- The old V7 APK and prototype archives were recoverable, but the original complete V7 source tree was not. The old app's social-data learning connectors and the exact old UI cannot be reconstructed from these files alone, and are not part of the present product goal.
-- Some older internal source files and physics-related tests remain in the repository as reconstruction leftovers; they are not part of the home-screen editing workflow.
-- GitHub Actions will compile/test source changes and capture emulator screenshots; this does not equal testing on a physical Android phone.
-- The published APK remains the older documented baseline and does not include new source changes. Do not change versionCode or publish a replacement APK until explicitly requested.
-- APK build and release are manual-only. Do not infer a new APK exists just because source commits were made.
+- The latest trim/time/auto-zoom changes must pass CI on the final commit before being considered verified.
+- A physical phone test is still required to test both trim handles by touch, trim down to the minimum legal duration, drag them back outward, and compare source time, project time and exported duration.
+- CI currently captures screens and checks app/sample-video launch; it does not fully exercise trim gestures or export an MP4 and reopen it.
+- Export should be tested end-to-end with multiple clips, trim boundaries, timed text, music and sound effects. Verify the output file's duration, frame content and audio sync.
+- Undo/redo currently records clip edits only; text and audio edits are not yet part of one global project history.
+- Multiple text layers at the same position can overlap; preview/export placement parity needs explicit tests.
+- The existing Android screenshot test selector was updated to match the current home screen, but the shell screenshot workflow does not itself guarantee that instrumentation test is executed.
+- README/status documentation must stay distinct between source state and signed release state.
+
+## Recovery background
+
+Some older physics/scenario-related source and tests remain as reconstruction leftovers; they are outside the active video-editing workflow. The original complete V7 source tree was not recoverable.
