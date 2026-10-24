@@ -61,8 +61,27 @@ wait "$logcat_pid" 2>/dev/null || true
 
 echo "Step 4/7: open home activity"
 timeout -k 2s 10s adb -s emulator-5554 shell am force-stop com.mathmotor.video.next || true
-timeout -k 2s 12s adb -s emulator-5554 shell am start -W -n com.mathmotor.video.next/com.mathmotor.video.MainActivity
-sleep 3
+# Do not use am start -W here: Android may block waiting for the first frame
+# on this slow emulator even after the activity has been launched. Start
+# asynchronously, then poll the focused window and preserve diagnostics on failure.
+timeout -k 2s 12s adb -s emulator-5554 shell am start -n com.mathmotor.video.next/com.mathmotor.video.MainActivity
+home_ready=""
+for attempt in $(seq 1 12); do
+  focused="$(timeout -k 2s 5s adb -s emulator-5554 shell dumpsys window 2>/dev/null | grep -E 'mCurrentFocus|mFocusedApp' | tail -n 2 || true)"
+  echo "Home launch check $attempt/12: $focused"
+  if echo "$focused" | grep -q "com.mathmotor.video.next"; then
+    home_ready="yes"
+    break
+  fi
+  sleep 2
+done
+if [ "$home_ready" != "yes" ]; then
+  echo "Home activity did not become focused; preserving launch diagnostics"
+  timeout -k 2s 8s adb -s emulator-5554 shell dumpsys activity activities > emulator-screenshots/home-activities.txt 2>&1 || true
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -t 1500 > emulator-screenshots/home-launch-logcat.txt 2>&1 || true
+  exit 5
+fi
+sleep 2
 
 take_screen() {
   local destination="$1"
