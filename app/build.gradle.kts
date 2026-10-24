@@ -22,8 +22,8 @@ android {
         applicationId = "com.mathmotor.video.next"
         minSdk = 26
         targetSdk = 35
-        versionCode = 391
-        versionName = "8.25-thumbnail-fallbacks"
+        versionCode = 392
+        versionName = "8.26-preview-filmstrip-fix"
         testInstrumentationRunner = "android.test.AndroidJUnitRunner"
     }
 
@@ -58,10 +58,11 @@ android {
 }
 
 dependencies {
-    implementation("androidx.media3:media3-exoplayer:1.8.0")
-    implementation("androidx.media3:media3-ui:1.8.0")
-    implementation("androidx.media3:media3-transformer:1.8.0")
-    implementation("androidx.media3:media3-effect:1.8.0")
+    implementation("androidx.media3:media3-exoplayer:1.10.1")
+    implementation("androidx.media3:media3-ui:1.10.1")
+    implementation("androidx.media3:media3-transformer:1.10.1")
+    implementation("androidx.media3:media3-effect:1.10.1")
+    implementation("androidx.media3:media3-inspector:1.10.1")
     testImplementation("junit:junit:4.13.2")
 }
 
