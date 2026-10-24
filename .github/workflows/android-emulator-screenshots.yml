@@ -40,6 +40,22 @@ jobs:
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
 
+      - name: Generate a deterministic sample video for editor smoke tests
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+          mkdir -p app/build/test-fixtures
+          ffmpeg -hide_banner -loglevel error -y \
+            -f lavfi -i "testsrc2=size=360x640:rate=24" \
+            -f lavfi -i "sine=frequency=440:sample_rate=44100" \
+            -t 8 -c:v mpeg4 -q:v 5 -pix_fmt yuv420p \
+            -c:a aac -b:a 64k -shortest \
+            app/build/test-fixtures/editor-test-video.mp4
+          test -s app/build/test-fixtures/editor-test-video.mp4
+          ls -lh app/build/test-fixtures/editor-test-video.mp4
+
       - name: Launch app and capture screen without instrumentation
         uses: reactivecircus/android-emulator-runner@v2
         with:
