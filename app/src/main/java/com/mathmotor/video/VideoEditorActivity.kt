@@ -1306,17 +1306,14 @@ class VideoEditorActivity : Activity() {
         if (!loadingTextLayerControls) syncSelectedTextLayerFromControls()
         val totalMs = totalOutputDurationMs()
         textLayers.forEach { layer ->
-            if (!layer.timingCustomized) {
-                layer.startMs = layer.startMs.coerceAtMost(totalMs)
-                layer.endMs = totalMs
+            val requestedEnd = if (layer.timingCustomized) {
+                layer.endMs.coerceAtMost(totalMs)
             } else {
-                layer.startMs = layer.startMs.coerceAtMost(totalMs)
-                layer.endMs = layer.endMs.coerceAtMost(totalMs)
-                if (totalMs > 0L && layer.endMs <= layer.startMs) {
-                    layer.startMs = 0L
-                    layer.endMs = totalMs
-                }
+                totalMs
             }
+            val interval = TextTimingMath.normalize(layer.startMs, requestedEnd, totalMs)
+            layer.startMs = interval.startMs
+            layer.endMs = interval.endMs
         }
         val pxPerSecond = timelinePixelsPerSecond()
 
@@ -2157,8 +2154,8 @@ class VideoEditorActivity : Activity() {
         if (!::previewTextOverlay.isInitialized || !::textInput.isInitialized) return
         val totalMs = totalOutputDurationMs()
         val active = textLayers.filter { layer ->
-            layer.text.isNotBlank() && totalMs > 0L &&
-                timelinePlayheadMs >= layer.startMs && timelinePlayheadMs < layer.endMs
+            layer.text.isNotBlank() &&
+                TextTimingMath.isVisibleAt(timelinePlayheadMs, layer.startMs, layer.endMs, totalMs)
         }
         activePreviewTextLayers = active
         while (previewTextOverlays.size < active.size) {
@@ -2343,8 +2340,13 @@ class VideoEditorActivity : Activity() {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
                 textTimingCustomized = true
-                textStartMs = (progress * 100L).coerceAtMost(totalOutputDurationMs())
-                if (textEndMs <= textStartMs) textEndMs = (textStartMs + 100L).coerceAtMost(totalOutputDurationMs())
+                val interval = TextTimingMath.moveStart(
+                    requestedStartMs = progress * TextTimingMath.SEEK_STEP_MS,
+                    currentEndMs = textEndMs,
+                    totalMs = totalOutputDurationMs()
+                )
+                textStartMs = interval.startMs
+                textEndMs = interval.endMs
                 updateTextControls()
             }
             override fun onStartTrackingTouch(seekBar: SeekBar?) { deferTimelineRefresh = true }
@@ -2357,8 +2359,13 @@ class VideoEditorActivity : Activity() {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
                 textTimingCustomized = true
-                textEndMs = (progress * 100L).coerceAtMost(totalOutputDurationMs())
-                if (textEndMs <= textStartMs) textStartMs = (textEndMs - 100L).coerceAtLeast(0L)
+                val interval = TextTimingMath.moveEnd(
+                    requestedEndMs = progress * TextTimingMath.SEEK_STEP_MS,
+                    currentStartMs = textStartMs,
+                    totalMs = totalOutputDurationMs()
+                )
+                textStartMs = interval.startMs
+                textEndMs = interval.endMs
                 updateTextControls()
             }
             override fun onStartTrackingTouch(seekBar: SeekBar?) { deferTimelineRefresh = true }
@@ -2372,18 +2379,22 @@ class VideoEditorActivity : Activity() {
     private fun updateTextControls() {
         if (!::textStartSeek.isInitialized || !::textEndSeek.isInitialized) return
         val total = totalOutputDurationMs()
-        // Use tenths of a second so short clips can be timed precisely.
-        val maxTenths = ceil(total / 100.0).toInt().coerceAtLeast(0)
-        if (!textTimingCustomized || textEndMs <= 0L || textEndMs > total) textEndMs = total
-        textStartMs = textStartMs.coerceAtMost((total - 1L).coerceAtLeast(0L))
-        if (textEndMs <= textStartMs && total > 0L) {
+        // Seek controls use tenths of a second, but the final end may be a
+        // partial tenth; normalize the interval before reflecting it in the UI.
+        val maxTenths = ceil(total / TextTimingMath.SEEK_STEP_MS.toDouble()).toInt().coerceAtLeast(0)
+        if (total <= 0L) {
             textStartMs = 0L
-            textEndMs = total
+            textEndMs = 0L
+        } else {
+            if (!textTimingCustomized) textEndMs = total
+            val interval = TextTimingMath.normalize(textStartMs, textEndMs, total)
+            textStartMs = interval.startMs
+            textEndMs = interval.endMs
         }
         textStartSeek.max = maxTenths
         textEndSeek.max = maxTenths
-        textStartSeek.progress = (textStartMs / 100L).toInt().coerceAtMost(maxTenths)
-        textEndSeek.progress = ceil(textEndMs / 100.0).toInt().coerceAtMost(maxTenths)
+        textStartSeek.progress = (textStartMs / TextTimingMath.SEEK_STEP_MS).toInt().coerceAtMost(maxTenths)
+        textEndSeek.progress = ceil(textEndMs / TextTimingMath.SEEK_STEP_MS.toDouble()).toInt().coerceAtMost(maxTenths)
         textStartSeek.isEnabled = total > 0L
         textEndSeek.isEnabled = total > 0L
         textStartLabel.text = "Yazı başlangıcı: " + formatTimelineMs(textStartMs)
