@@ -21,10 +21,29 @@ if [ "$device_state" != "device" ]; then
   exit 1
 fi
 
-echo "Step 2/6: install debug APK"
-timeout -k 5s 90s adb -s emulator-5554 install -r app/build/outputs/apk/debug/app-debug.apk
+echo "Step 2/7: wait for Android framework and package manager"
+boot_complete=""
+for attempt in $(seq 1 30); do
+  boot_complete=$(timeout -k 1s 5s adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d "\r" || true)
+  if [ "$boot_complete" = "1" ]; then
+    if timeout -k 1s 8s adb -s emulator-5554 shell pm path android >/dev/null 2>&1; then
+      break
+    fi
+  fi
+  echo "Android framework not ready (attempt $attempt/30; boot=$boot_complete)"
+  sleep 2
+done
+if [ "$boot_complete" != "1" ]; then
+  echo "Android framework did not finish booting; collecting diagnostics"
+  timeout -k 1s 8s adb -s emulator-5554 shell getprop > emulator-screenshots/getprop.txt 2>&1 || true
+  timeout -k 1s 8s adb -s emulator-5554 logcat -d -t 500 > emulator-screenshots/boot-logcat.txt 2>&1 || true
+  exit 1
+fi
 
-echo "Step 3/6: open home activity"
+echo "Step 3/7: install debug APK without streaming"
+timeout -k 3s 60s adb -s emulator-5554 install --no-streaming -r app/build/outputs/apk/debug/app-debug.apk
+
+echo "Step 4/7: open home activity"
 timeout -k 2s 10s adb -s emulator-5554 shell am force-stop com.mathmotor.video.next || true
 timeout -k 2s 12s adb -s emulator-5554 shell am start -W -n com.mathmotor.video.next/com.mathmotor.video.MainActivity
 sleep 3
@@ -42,7 +61,7 @@ dump_hierarchy() {
   [ -s "$local_file" ]
 }
 
-echo "Step 4/6: capture home screen"
+echo "Step 5/7: capture home screen"
 take_screen emulator-screenshots/home.png
 dump_hierarchy window.xml emulator-screenshots/window.xml || true
 
@@ -58,7 +77,7 @@ if [ -s emulator-screenshots/window.xml ] && grep -q "isn't responding" emulator
   fi
 fi
 
-echo "Step 5/6: open editor"
+echo "Step 6/7: open editor"
 node=""
 if [ -s emulator-screenshots/window.xml ]; then
   for target in "Boş proje oluştur" "Boş düzenleyiciyi aç" "Yeni düzenleme başlat"; do
@@ -85,7 +104,7 @@ sleep 4
 take_screen emulator-screenshots/editor.png
 dump_hierarchy editor-window.xml emulator-screenshots/editor-window.xml || true
 
-echo "Step 6/6: save diagnostics"
+echo "Step 7/7: save diagnostics"
 timeout -k 2s 8s adb -s emulator-5554 logcat -d > emulator-screenshots/logcat.txt || true
 test -s emulator-screenshots/home.png
 test -s emulator-screenshots/editor.png
