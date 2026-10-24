@@ -193,6 +193,7 @@ class VideoEditorActivity : Activity() {
     private lateinit var editorPanelScroll: ScrollView
     private val editorTabButtons = linkedMapOf<String, Button>()
     private var activeEditorPanel: String? = null
+    private var textOverlayEditingEnabled: Boolean = false
     private lateinit var selectedClipLabel: TextView
     private lateinit var startLabel: TextView
     private lateinit var endLabel: TextView
@@ -1252,6 +1253,7 @@ class VideoEditorActivity : Activity() {
 
     private fun showEditorPanel(name: String) {
         activeEditorPanel = name
+        textOverlayEditingEnabled = name == "text"
         if (::editorPanelScroll.isInitialized) editorPanelScroll.scrollTo(0, 0)
         editorPanels.forEach { (key, panel) ->
             panel.visibility = if (key == name) View.VISIBLE else View.GONE
@@ -1275,6 +1277,7 @@ class VideoEditorActivity : Activity() {
             return
         }
         activeEditorPanel = null
+        textOverlayEditingEnabled = false
         editorPanels.values.forEach { it.visibility = View.GONE }
         editorTabButtons.values.forEach { button ->
             button.background = android.graphics.drawable.GradientDrawable().apply {
@@ -2205,6 +2208,7 @@ class VideoEditorActivity : Activity() {
         var startSize = 24
         overlay.isClickable = true
         overlay.setOnTouchListener { view, event ->
+            if (!textOverlayEditingEnabled) return@setOnTouchListener false
             val layerId = view.tag as? Long ?: return@setOnTouchListener false
             val layer = textLayers.firstOrNull { it.id == layerId } ?: return@setOnTouchListener false
             when (event.actionMasked) {
