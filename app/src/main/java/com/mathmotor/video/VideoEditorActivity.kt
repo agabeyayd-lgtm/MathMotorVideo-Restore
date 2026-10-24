@@ -3680,8 +3680,10 @@ class VideoEditorActivity : Activity() {
                 ?: runCatching {
                     retriever.getFrameAtTime(frameTimeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
                 }.getOrNull()
-                // Some devices can provide a frame but fail timestamp-based seeking.
-                ?: runCatching { retriever.getFrameAtTime() }.getOrNull()
+                // Do not fall back to an untimestamped frame here: Android may
+                // return the video's first frame for every requested slot, creating
+                // a filmstrip full of incorrect/repeated thumbnails. Media3 below
+                // retries the exact requested timestamp instead.
         } catch (_: Exception) {
             null
         } finally {
