@@ -56,10 +56,53 @@ jobs:
             adb shell am force-stop com.mathmotor.video.next || true
             adb shell monkey -p com.mathmotor.video.next 1
             sleep 10
-            adb exec-out screencap -p > emulator-screenshots/home.png
-            timeout 12s adb shell uiautomator dump /sdcard/window.xml || true
-            adb pull /sdcard/window.xml emulator-screenshots/window.xml || true
-            test -s emulator-screenshots/home.png
+
+            # Cold Android 11 emulators sometimes display a system ANR dialog
+            # during first boot. Tap its explicit "Wait" action and recapture,
+            # rather than uploading a dimmed screenshot of the dialog.
+            capture_clear_screen() {
+              destination="$1"
+              hierarchy="$2"
+              hierarchy_path="emulator-screenshots/$hierarchy"
+              for attempt in 1 2 3 4; do
+                adb shell rm -f "/sdcard/$hierarchy" >/dev/null 2>&1 || true
+                timeout 12s adb shell uiautomator dump "/sdcard/$hierarchy" >/dev/null 2>&1 || true
+                adb pull "/sdcard/$hierarchy" "$hierarchy_path" >/dev/null 2>&1 || true
+                if grep -q "isn't responding" "$hierarchy_path" 2>/dev/null; then
+                  point="$(python3 - "$hierarchy_path" <<'PY'
+            import re, sys, xml.etree.ElementTree as ET
+            try:
+                root = ET.parse(sys.argv[1]).getroot()
+                for node in root.iter("node"):
+                    if node.attrib.get("text", "").strip().lower() == "wait" and node.attrib.get("clickable") == "true":
+                        match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+                        if match:
+                            x1, y1, x2, y2 = map(int, match.groups())
+                            print(f"{(x1 + x2) // 2} {(y1 + y2) // 2}")
+                            break
+            except Exception:
+                pass
+            PY
+            )"
+                  if [ -z "$point" ]; then
+                    echo "Android system ANR dialog found, but the Wait button could not be located."
+                    return 1
+                  fi
+                  echo "Android system ANR dialog found; choosing Wait (attempt $attempt/4)."
+                  adb shell input tap $point
+                  sleep 4
+                  continue
+                fi
+                adb exec-out screencap -p > "$destination"
+                test -s "$destination"
+                return 0
+              done
+              echo "Android system ANR dialog remained after recovery attempts."
+              return 1
+            }
+
+            capture_clear_screen emulator-screenshots/home.png window.xml
+
             python3 - <<'PY'
             import re
             import subprocess
@@ -75,21 +118,17 @@ jobs:
             nodes = []
             for node in root.iter("node"):
                 label = " ".join((node.attrib.get("text", ""), node.attrib.get("content-desc", ""))).strip()
-                match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+                match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
                 if match:
                     x1, y1, x2, y2 = map(int, match.groups())
                     nodes.append((label, (x1 + x2) // 2, (y1 + y2) // 2))
 
-            # Prefer the button that opens the editor without asking the emulator
-            # to open Android's media picker.
             preferred = ("Boş proje oluştur", "Boş düzenleyiciyi aç", "Yeni düzenleme başlat")
             chosen = None
             for target in preferred:
                 chosen = next((item for item in nodes if target in item[0]), None)
                 if chosen:
                     break
-
-            # Older app versions may only expose the gallery picker action.
             if chosen is None:
                 chosen = next((item for item in nodes if "Galeriden video seç" in item[0]), None)
             if chosen is None:
@@ -101,10 +140,9 @@ jobs:
             subprocess.run(["adb", "shell", "input", "tap", str(x), str(y)], check=True)
             PY
             sleep 5
-            adb exec-out screencap -p > emulator-screenshots/editor.png
-            timeout 12s adb shell uiautomator dump /sdcard/editor-window.xml || true
-            adb pull /sdcard/editor-window.xml emulator-screenshots/editor-window.xml || true
+            capture_clear_screen emulator-screenshots/editor.png editor-window.xml
             adb logcat -d > emulator-screenshots/logcat.txt
+            test -s emulator-screenshots/home.png
             test -s emulator-screenshots/editor.png
 
       - name: Upload emulator screenshots and diagnostics
