@@ -2302,8 +2302,20 @@ class VideoEditorActivity : Activity() {
                     true
                 }
                 android.view.MotionEvent.ACTION_POINTER_UP -> {
-                    downRawX = event.rawX
-                    downRawY = event.rawY
+                    // Re-anchor the one-finger drag to the finger that remains down.
+                    // Otherwise lifting pointer 0 can make the next move jump the overlay.
+                    val remainingIndex = if (event.actionIndex == 0) 1 else 0
+                    if (remainingIndex < event.pointerCount) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            downRawX = event.getRawX(remainingIndex)
+                            downRawY = event.getRawY(remainingIndex)
+                        } else {
+                            val location = IntArray(2)
+                            view.getLocationOnScreen(location)
+                            downRawX = location[0] + event.getX(remainingIndex)
+                            downRawY = location[1] + event.getY(remainingIndex)
+                        }
+                    }
                     startX = layer.xFraction
                     startY = layer.yFraction
                     startDistance = 0f
@@ -3243,6 +3255,9 @@ class VideoEditorActivity : Activity() {
                         filmstripLongPressed = false
                         filmstripDownX = event.x
                         player?.playWhenReady = false
+                        // The strip itself implements scrubbing and press-and-hold actions.
+                        // Prevent its horizontal parent from stealing the gesture mid-press.
+                        view.parent?.requestDisallowInterceptTouchEvent(true)
                         timelineHandler.postDelayed(
                             filmstripLongPress,
                             android.view.ViewConfiguration.getLongPressTimeout().toLong()
@@ -3267,6 +3282,7 @@ class VideoEditorActivity : Activity() {
                     android.view.MotionEvent.ACTION_UP -> {
                         timelineHandler.removeCallbacks(filmstripLongPress)
                         filmstripTouchActive = false
+                        view.parent?.requestDisallowInterceptTouchEvent(false)
                         if (!filmstripLongPressed) {
                             val safeWidth = view.width.coerceAtLeast(1)
                             val fraction = (event.x / safeWidth.toFloat()).coerceIn(0f, 1f)
@@ -3282,6 +3298,7 @@ class VideoEditorActivity : Activity() {
                     android.view.MotionEvent.ACTION_CANCEL -> {
                         timelineHandler.removeCallbacks(filmstripLongPress)
                         filmstripTouchActive = false
+                        view.parent?.requestDisallowInterceptTouchEvent(false)
                         true
                     }
                     else -> true
