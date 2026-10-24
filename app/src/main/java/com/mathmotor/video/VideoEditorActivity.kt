@@ -469,7 +469,7 @@ class VideoEditorActivity : Activity() {
         clipList = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(6), 0, dp(5))
+            setPadding(0, 0, 0, 0)
         }
         clipScroll.addView(clipList)
         timelineCard.addView(clipScroll, LinearLayout.LayoutParams(
@@ -1688,7 +1688,7 @@ class VideoEditorActivity : Activity() {
                 val duration = (clip.endMs - clip.startMs).coerceAtLeast(0L)
                 val nextVideoOffsetMs = videoOffsetMs + duration
                 val width = widthBetween(videoOffsetMs, nextVideoOffsetMs).coerceAtLeast(1)
-                val height = dp(if (keyboardLayoutActive) 22 else 42)
+                val height = dp(if (keyboardLayoutActive) 18 else 30)
                 val block = buildVideoClipFilmstrip(clip, index, width, height, index == selectedClipIndex)
                 // Widths use absolute boundaries, so fractional-pixel rounding cannot accumulate.
                 videoTrack.addView(block, LinearLayout.LayoutParams(width, height))
@@ -3017,7 +3017,7 @@ class VideoEditorActivity : Activity() {
                     setStroke(dp(1), Color.rgb(48, 66, 85))
                 }
                 setPadding(dp(16), 0, dp(16), 0)
-            }, LinearLayout.LayoutParams(dp(135), dp(54)))
+            }, LinearLayout.LayoutParams(dp(135), dp(52)))
         } else {
             clips.forEachIndexed { index, clip ->
                 val selected = index == selectedClipIndex
@@ -3092,7 +3092,7 @@ class VideoEditorActivity : Activity() {
                         else -> false
                     }
                 }
-                clipList.addView(tile, LinearLayout.LayoutParams(dp(145), dp(54)).apply {
+                clipList.addView(tile, LinearLayout.LayoutParams(dp(145), dp(52)).apply {
                     rightMargin = dp(6)
                 })
             }
