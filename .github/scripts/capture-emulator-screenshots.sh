@@ -41,7 +41,23 @@ if [ "$boot_complete" != "1" ]; then
 fi
 
 echo "Step 3/7: install debug APK without streaming"
-timeout -k 3s 60s adb -s emulator-5554 install --no-streaming -r app/build/outputs/apk/debug/app-debug.apk
+# Capture Android's logs while installation runs. With set -e, a bare timeout
+# exits before the artifact-upload step can preserve any useful diagnostics.
+timeout -k 2s 5s adb -s emulator-5554 logcat -c || true
+timeout -k 2s 5s adb -s emulator-5554 logcat -v threadtime > emulator-screenshots/install-live-logcat.txt 2>&1 &
+logcat_pid=$!
+if ! timeout -k 3s 60s adb -s emulator-5554 install --no-streaming -r app/build/outputs/apk/debug/app-debug.apk 2>&1 | tee emulator-screenshots/install-output.txt; then
+  install_status=${PIPESTATUS[0]}
+  echo "APK installation failed or timed out (status=$install_status); collecting diagnostics"
+  kill "$logcat_pid" 2>/dev/null || true
+  wait "$logcat_pid" 2>/dev/null || true
+  timeout -k 2s 8s adb -s emulator-5554 shell getprop > emulator-screenshots/install-getprop.txt 2>&1 || true
+  timeout -k 2s 8s adb -s emulator-5554 shell dumpsys package > emulator-screenshots/install-packages.txt 2>&1 || true
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -t 1500 > emulator-screenshots/install-logcat.txt 2>&1 || true
+  exit 1
+fi
+kill "$logcat_pid" 2>/dev/null || true
+wait "$logcat_pid" 2>/dev/null || true
 
 echo "Step 4/7: open home activity"
 timeout -k 2s 10s adb -s emulator-5554 shell am force-stop com.mathmotor.video.next || true
