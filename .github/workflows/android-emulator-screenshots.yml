@@ -17,7 +17,7 @@ permissions:
 jobs:
   emulator-ui:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 18
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -44,9 +44,10 @@ jobs:
           arch: x86_64
           profile: pixel_2
           disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
           script: |
             set +e
-            gradle --no-daemon connectedDebugAndroidTest
+            timeout 240s gradle --no-daemon connectedDebugAndroidTest
             test_status=$?
             mkdir -p emulator-screenshots
             adb pull /sdcard/Android/data/com.mathmotor.video.next.test/files/Pictures/emulator-screenshots emulator-screenshots/ || true
