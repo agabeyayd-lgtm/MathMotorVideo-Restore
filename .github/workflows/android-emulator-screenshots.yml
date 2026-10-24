@@ -48,13 +48,15 @@ jobs:
             set -e
             mkdir -p emulator-screenshots
             adb wait-for-device
-            adb shell am start -W -n com.mathmotor.video.next/com.mathmotor.video.MainActivity
-            sleep 8
-            adb shell screencap -p /sdcard/home.png
-            adb pull /sdcard/home.png emulator-screenshots/home.png
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb shell am force-stop com.mathmotor.video.next || true
+            adb shell monkey -p com.mathmotor.video.next 1
+            sleep 10
+            adb exec-out screencap -p > emulator-screenshots/home.png
             adb shell uiautomator dump /sdcard/window.xml || true
             adb pull /sdcard/window.xml emulator-screenshots/window.xml || true
             adb logcat -d > emulator-screenshots/logcat.txt
+            test -s emulator-screenshots/home.png
 
       - name: Upload emulator screenshots and diagnostics
         if: always()
