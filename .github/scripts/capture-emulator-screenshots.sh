@@ -1,59 +1,64 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
+set -x
 mkdir -p emulator-screenshots
 
-# android-emulator-runner has already waited for the emulator to boot.
-# Do not add another 60-second adb wait or a long post-boot sleep here.
-boot_complete=""
-for attempt in 1 2 3; do
-  boot_complete="$(timeout 5s adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)"
-  [ "$boot_complete" = "1" ] && break
+# The emulator runner owns booting the device. Re-establish and verify ADB
+# explicitly: on slow cold boots the client can otherwise hang without output.
+echo "Step 1/6: start ADB server"
+timeout -k 2s 8s adb start-server || true
+
+device_state=""
+for attempt in $(seq 1 15); do
+  device_state="$(timeout -k 2s 4s adb -s emulator-5554 get-state 2>/dev/null || true)"
+  if [ "$device_state" = "device" ]; then break; fi
+  echo "Waiting for ADB device (attempt $attempt/15; state='$device_state')"
   sleep 2
 done
-if [ "$boot_complete" != "1" ]; then
-  echo "Emulator runner started the script, but adb is not responding yet."
+if [ "$device_state" != "device" ]; then
+  echo "ADB device did not become ready; current devices:"
+  timeout -k 2s 5s adb devices -l || true
   exit 1
 fi
 
-timeout 60s adb install -r app/build/outputs/apk/debug/app-debug.apk
-timeout 8s adb shell am force-stop com.mathmotor.video.next >/dev/null 2>&1 || true
-# Starting the known launcher activity is faster and more deterministic than monkey.
-timeout 8s adb shell am start -n com.mathmotor.video.next/com.mathmotor.video.MainActivity
+echo "Step 2/6: install debug APK"
+timeout -k 5s 90s adb -s emulator-5554 install -r app/build/outputs/apk/debug/app-debug.apk
+
+echo "Step 3/6: open home activity"
+timeout -k 2s 10s adb -s emulator-5554 shell am force-stop com.mathmotor.video.next || true
+timeout -k 2s 12s adb -s emulator-5554 shell am start -W -n com.mathmotor.video.next/com.mathmotor.video.MainActivity
 sleep 3
 
 take_screen() {
   local destination="$1"
-  timeout 10s adb exec-out screencap -p > "$destination"
+  timeout -k 2s 12s adb -s emulator-5554 exec-out screencap -p > "$destination"
   test -s "$destination"
 }
-
 dump_hierarchy() {
   local remote="$1" local_file="$2"
   rm -f "$local_file"
-  timeout 8s adb shell uiautomator dump "/sdcard/$remote" >/dev/null 2>&1 || true
-  timeout 5s adb pull "/sdcard/$remote" "$local_file" >/dev/null 2>&1 || true
+  timeout -k 2s 10s adb -s emulator-5554 shell uiautomator dump "/sdcard/$remote" >/dev/null 2>&1 || true
+  timeout -k 2s 6s adb -s emulator-5554 pull "/sdcard/$remote" "$local_file" >/dev/null 2>&1 || true
   [ -s "$local_file" ]
 }
 
-# Capture first; hierarchy dumping can stall on a cold emulator.
+echo "Step 4/6: capture home screen"
 take_screen emulator-screenshots/home.png
 dump_hierarchy window.xml emulator-screenshots/window.xml || true
 
-# If Android raises its System UI ANR prompt, choose "Wait" and recapture.
+# If the platform raises its System UI ANR prompt, choose "Wait" and recapture.
 if [ -s emulator-screenshots/window.xml ] && grep -q "isn't responding" emulator-screenshots/window.xml; then
   wait_node="$(grep -o '<node[^>]*text="Wait"[^>]*bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' emulator-screenshots/window.xml | head -n 1 || true)"
   wait_coords="$(printf '%s\n' "$wait_node" | sed -n 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/p' | awk '{print int(($1+$3)/2),int(($2+$4)/2)}')"
   if [ -n "$wait_coords" ]; then
-    timeout 5s adb shell input tap $wait_coords >/dev/null 2>&1 || true
+    timeout -k 2s 8s adb -s emulator-5554 shell input tap $wait_coords || true
     sleep 2
     take_screen emulator-screenshots/home.png
     dump_hierarchy window.xml emulator-screenshots/window.xml || true
   fi
 fi
 
-# Prefer the actual button bounds from accessibility; use a proportion-based
-# fallback only when the emulator fails to provide a UI hierarchy.
+echo "Step 5/6: open editor"
 node=""
 if [ -s emulator-screenshots/window.xml ]; then
   for target in "Boş proje oluştur" "Boş düzenleyiciyi aç" "Yeni düzenleme başlat"; do
@@ -65,22 +70,23 @@ fi
 if [ -n "$node" ]; then
   coords="$(printf '%s\n' "$node" | sed -n 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/p' | awk '{print int(($1+$3)/2),int(($2+$4)/2)}')"
 else
-  screen_size="$(timeout 4s adb shell wm size | sed -n 's/.*: \([0-9]*\)x\([0-9]*\).*/\1 \2/p' | tail -n 1 || true)"
+  screen_size="$(timeout -k 2s 5s adb -s emulator-5554 shell wm size | sed -n 's/.*: \([0-9]*\)x\([0-9]*\).*/\1 \2/p' | tail -n 1 || true)"
   if [ -n "$screen_size" ]; then
     read -r screen_w screen_h <<< "$screen_size"
     coords="$((screen_w / 2)) $((screen_h * 49 / 100))"
   else
     coords="540 940"
   fi
-  echo "UI hierarchy unavailable; using fallback tap position."
+  echo "Accessibility hierarchy unavailable; fallback tap at $coords"
 fi
-
-[ -n "$coords" ] || { echo "Could not determine a home button position."; exit 2; }
-echo "Opening empty editor at $coords"
-timeout 8s adb shell input tap $coords
+[ -n "$coords" ] || { echo "Could not determine editor tap position"; exit 2; }
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $coords
 sleep 4
 take_screen emulator-screenshots/editor.png
 dump_hierarchy editor-window.xml emulator-screenshots/editor-window.xml || true
-timeout 8s adb logcat -d > emulator-screenshots/logcat.txt || true
+
+echo "Step 6/6: save diagnostics"
+timeout -k 2s 8s adb -s emulator-5554 logcat -d > emulator-screenshots/logcat.txt || true
 test -s emulator-screenshots/home.png
 test -s emulator-screenshots/editor.png
+echo "Both home and editor screenshots captured."
