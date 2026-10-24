@@ -1819,6 +1819,22 @@ class VideoEditorActivity : Activity() {
             addBlock(effectTrack, "+ Ses efekti ekle", totalMs.coerceAtLeast(5000L), Color.rgb(96, 68, 41),
                 onClick = { chooseAudio(false) }, minimumWidthDp = 115)
         }
+        // A MATCH_PARENT playhead inside a WRAP_CONTENT FrameLayout would let
+        // the frame expand to the full available screen height and push the tool dock
+        // off-screen. Size the frame from the actual timeline lanes instead.
+        val laneContentHeight = (0 until timelineTracks.childCount).sumOf { index ->
+            val row = timelineTracks.getChildAt(index) as? LinearLayout ?: return@sumOf 0
+            val lane = row.getChildAt(1)
+            val laneHeight = lane?.layoutParams?.height?.takeIf { it > 0 } ?: dp(24)
+            laneHeight + row.paddingTop + row.paddingBottom
+        }.coerceAtLeast(dp(24))
+        (timelineTracksFrame.layoutParams as? LinearLayout.LayoutParams)?.let { params ->
+            if (params.height != laneContentHeight) {
+                params.height = laneContentHeight
+                timelineTracksFrame.layoutParams = params
+            }
+        }
+
         val restoreScrollX = timelineHorizontalScrollX
         timelineScrollViews.toList().forEach { laneScroll ->
             laneScroll.post { laneScroll.scrollTo(restoreScrollX, 0) }
