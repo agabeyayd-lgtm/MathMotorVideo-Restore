@@ -15,11 +15,13 @@ class EditorTestEntryActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val videoUri = intent.getStringExtra("video_uri")
+        android.util.Log.i("EditorSmokeTest", "EDITOR_SMOKE_ENTRY_STARTED uri=$videoUri")
         if (videoUri.isNullOrBlank()) {
             finish()
             return
         }
 
+        android.util.Log.i("EditorSmokeTest", "EDITOR_SMOKE_STARTING_EDITOR")
         startActivity(Intent(this, VideoEditorActivity::class.java).apply {
             putExtra("video_uri", videoUri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
