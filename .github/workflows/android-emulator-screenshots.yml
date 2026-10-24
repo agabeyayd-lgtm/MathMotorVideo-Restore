@@ -60,15 +60,17 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30
-          target: default
+          # Use the lightweight Android Test Device image, not the full default
+          # system image whose SystemUI repeatedly ANRs on this CI runner.
+          target: aosp_atd
           arch: x86_64
-          profile: pixel_2
-          cores: 4
-          ram-size: 3072M
+          cores: 2
+          ram-size: 2048M
           heap-size: 512M
           force-avd-creation: true
           emulator-port: 5554
           disable-animations: true
+          disable-spellchecker: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -wipe-data
           timeout: 600
           script: bash .github/scripts/capture-emulator-screenshots.sh
