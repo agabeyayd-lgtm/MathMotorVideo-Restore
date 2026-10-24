@@ -63,6 +63,7 @@ jobs:
           target: default
           arch: x86_64
           profile: pixel_2
+          cores: 4
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -wipe-data
           script: bash .github/scripts/capture-emulator-screenshots.sh
