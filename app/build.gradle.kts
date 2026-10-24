@@ -24,7 +24,7 @@ android {
         targetSdk = 35
         versionCode = 393
         versionName = "8.27-timeline-text-controls"
-        testInstrumentationRunner = "android.test.AndroidJUnitRunner"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
