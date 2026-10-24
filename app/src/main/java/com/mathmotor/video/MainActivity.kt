@@ -311,14 +311,20 @@ class MainActivity : Activity() {
             textSize = 18f
             setPadding(dp(4), 0, dp(4), 0)
         }
-        recentHeader.addView(refresh)
-        recentHeader.addView(secondaryButton("Tümünü gör  ›") {
+        // Keep these secondary actions compact; default Button minimum sizes made
+        // the header controls look like two oversized cards on a phone screen.
+        recentHeader.addView(refresh, LinearLayout.LayoutParams(dp(42), dp(42)))
+        val allProjectsButton = secondaryButton("Tümünü gör  ›") {
             startActivity(Intent(this, VideoPlayerActivity::class.java))
         }.apply {
             minHeight = dp(38)
+            minimumHeight = dp(38)
             textSize = 10f
-            setPadding(dp(8), dp(5), dp(8), dp(5))
-        })
+            setPadding(dp(8), dp(4), dp(8), dp(4))
+        }
+        recentHeader.addView(allProjectsButton, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, dp(42)
+        ).apply { leftMargin = dp(8) })
         root.addView(recentHeader)
         root.addView(gap(9))
         recentList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -345,9 +351,10 @@ class MainActivity : Activity() {
         updateHeader.addView(updateCopy, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         updateHeader.addView(secondaryButton("Kontrol et") { checkForUpdates() }.apply {
             minHeight = dp(38)
+            minimumHeight = dp(38)
             textSize = 11f
-            setPadding(dp(10), dp(5), dp(10), dp(5))
-        })
+            setPadding(dp(10), dp(4), dp(10), dp(4))
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(42)))
         root.addView(updateHeader)
         updateStatus = label("Son sürümü kontrol etmek için aşağıdaki düğmeye dokun.", 10f, muted, false).apply {
             setPadding(0, dp(6), 0, dp(2))
