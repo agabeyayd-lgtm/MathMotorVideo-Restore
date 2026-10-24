@@ -531,8 +531,8 @@ class VideoEditorActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(3), dp(3), dp(3), 0)
         }
-        timelinePlayheadLabel = label("00:00 / 00:00", 10f, Color.rgb(225, 233, 237), true)
-        playheadRow.addView(timelinePlayheadLabel, LinearLayout.LayoutParams(dp(82), ViewGroup.LayoutParams.WRAP_CONTENT))
+        timelinePlayheadLabel = label("00:00.0 / 00:00.0", 10f, Color.rgb(225, 233, 237), true).apply { maxLines = 1; isSingleLine = true }
+        playheadRow.addView(timelinePlayheadLabel, LinearLayout.LayoutParams(dp(112), ViewGroup.LayoutParams.WRAP_CONTENT))
         timelinePlayheadSeek = SeekBar(this).apply {
             max = 0
             progress = 0
@@ -1771,7 +1771,7 @@ class VideoEditorActivity : Activity() {
 
     private fun updateTimelinePlayheadLabel() {
         if (!::timelinePlayheadLabel.isInitialized) return
-        timelinePlayheadLabel.text = "Proje ${formatTimelineMs(timelinePlayheadMs)} / ${formatTimelineMs(totalOutputDurationMs())}"
+        timelinePlayheadLabel.text = "${formatTimelineMs(timelinePlayheadMs)} / ${formatTimelineMs(totalOutputDurationMs())}"
         updateTimelinePlayheadLine()
         updatePreviewTextOverlay()
     }
