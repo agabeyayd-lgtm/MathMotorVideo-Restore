@@ -46,7 +46,7 @@ echo "Step 3/7: install debug APK without streaming"
 timeout -k 2s 5s adb -s emulator-5554 logcat -c || true
 timeout -k 2s 5s adb -s emulator-5554 logcat -v threadtime > emulator-screenshots/install-live-logcat.txt 2>&1 &
 logcat_pid=$!
-if ! timeout -k 3s 60s adb -s emulator-5554 install --no-streaming -r app/build/outputs/apk/debug/app-debug.apk 2>&1 | tee emulator-screenshots/install-output.txt; then
+if ! timeout -k 3s 180s adb -s emulator-5554 install --no-streaming -r app/build/outputs/apk/debug/app-debug.apk 2>&1 | tee emulator-screenshots/install-output.txt; then
   install_status=${PIPESTATUS[0]}
   echo "APK installation failed or timed out (status=$install_status); collecting diagnostics"
   kill "$logcat_pid" 2>/dev/null || true
