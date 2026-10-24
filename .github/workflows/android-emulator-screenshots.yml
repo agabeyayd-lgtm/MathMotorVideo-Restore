@@ -59,10 +59,10 @@ jobs:
       - name: Launch app and capture screen without instrumentation
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 30
-          # Use the lightweight Android Test Device image, not the full default
-          # system image whose SystemUI repeatedly ANRs on this CI runner.
-          target: aosp_atd
+          api-level: 35
+          # Use the current Google APIs image; the Android 30 AOSP ATD package
+          # could not be resolved by sdkmanager on the hosted runner.
+          target: google_apis
           arch: x86_64
           cores: 2
           ram-size: 2048M
