@@ -25,7 +25,7 @@ MathMotor Video is now a **local Android video editor** with an easy, CapCut-ins
 - The home gallery imports saved videos on a background thread so a slow MediaStore scan does not block the first screen.
 - Version checks remain available through the in-app button, but do not run automatically on every launch.
 - Preview canvas adapts to the source video's aspect ratio, including rotated sources.
-- File access through Android's document picker; automatic network update checking and APK installation flow have been removed.
+- File access through Android's document picker; in-app update checking remains available from a manual button (not on launch), and a newer published version can be downloaded and opened for installation.
 
 ## Important limitations
 
