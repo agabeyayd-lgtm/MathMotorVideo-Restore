@@ -59,3 +59,12 @@ After each meaningful change, update README and this short handoff with commit/r
 - [ ] Keep version 395 blocked; do not merge/release until remaining gates are independently verified and release is explicitly authorized.
 
 Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228445472
+
+
+### 2026-10-25 — Expanded manual project round-trip coverage (#189 pending)
+
+- [x] Expanded `EditorTimelineInteractionTest.manualJsonSaveAsThenCloseAndReopenPreservesProjectState` to seed two clips with distinct URIs and trim ranges, a nonzero timeline playhead/scroll, 200% zoom, timed top-position cyan non-bold text, and separate music/effect URIs.
+- [x] Added assertions after the actual Android Create Document → close editor → Open Document flow for both clips' order and trim bounds, combined duration, restored playhead/zoom/scroll, text interval/position/size/colour/bold state, source URIs, and audio levels.
+- [x] Fixed the timeline zoom accessibility description to reflect restored project zoom instead of retaining the initial value. Added a debug-only, redacted state marker to make restored model values testable without logging user text or full source URIs.
+- [ ] [Run #189 — PENDING](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40230332447), head commit `f4a55bb2659585e8de4baf3a7f371417b110469d`. It includes these changes; do not mark the persistence gate complete until the emulator run passes and the new assertions are reviewed.
+- [ ] Version 395 remains blocked; no merge/release until remaining gates pass and the user authorizes release.
