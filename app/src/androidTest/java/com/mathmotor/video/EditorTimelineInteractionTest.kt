@@ -170,6 +170,151 @@ class EditorTimelineInteractionTest {
         assertTrue("The timeline could not return to its first frame: $startTime ($startMs ms)", startMs <= 200L)
     }
 
+    @Test
+    fun rightAndLeftTrimHandlesChangeProjectDuration() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val density = instrumentation.targetContext.resources.displayMetrics.density
+        val device = UiDevice.getInstance(instrumentation)
+        val packageName = "com.mathmotor.video.next"
+        val fixtureUri = "file:///data/user/0/$packageName/files/editor-test-video.mp4"
+
+        // Clear markers from the preceding smoke test so this assertion only starts
+        // after this test's own sample clip has actually been inserted.
+        device.executeShellCommand("logcat -c")
+        device.executeShellCommand(
+            "am start -n $packageName/com.mathmotor.video.EditorTestEntryActivity " +
+                "--es video_uri $fixtureUri --es draft_id 33333333-3333-4333-8333-333333333333"
+        )
+        assertTrue(
+            "Editor did not show the video lane for trim test",
+            device.wait(Until.hasObject(By.text("VIDEO")), 20_000)
+        )
+        assertTrue(
+            "Project time label did not appear for trim test",
+            device.wait(Until.hasObject(By.textContains("Proje")), 20_000)
+        )
+        assertTrue("Trim test sample clip was not loaded", awaitClipAdded(device))
+        device.waitForIdle()
+        SystemClock.sleep(300)
+
+        val projectLabel = requireObject(device, By.textContains("Proje"), "project-time label")
+        val originalDurationMs = projectDurationMs(projectLabel.text)
+        assertTrue("Fixture duration is unexpectedly short: $originalDurationMs ms", originalDurationMs >= 7_800L)
+
+        val laneLabel = requireObject(device, By.text("VIDEO"), "VIDEO lane label")
+        val laneBounds = laneLabel.visibleBounds
+        val laneLeft = laneBounds.right
+        val laneRight = device.displayWidth - (4 * density).toInt()
+        val laneWidth = (laneRight - laneLeft).coerceAtLeast(1)
+        val swipeY = laneBounds.centerY()
+
+        // Bring the right edge under the viewport. At this zoom level the clip may
+        // require several swipes; the strict end assertion prevents a false trim pass.
+        var visibleTimeMs = projectPositionMs(requireProjectTime(device))
+        var atEnd = false
+        for (attempt in 0 until 12) {
+            if (visibleTimeMs >= 7_800L) {
+                atEnd = true
+                break
+            }
+            device.swipe(
+                laneLeft + laneWidth * 9 / 10,
+                swipeY,
+                laneLeft + laneWidth / 10,
+                swipeY,
+                40
+            )
+            device.waitForIdle()
+            SystemClock.sleep(180)
+            visibleTimeMs = projectPositionMs(requireProjectTime(device))
+            android.util.Log.i(
+                "TimelineTrimInteractionTest",
+                "stage=scroll-to-end attempt=${attempt + 1} value=$visibleTimeMs"
+            )
+        }
+        assertTrue("Could not scroll the trim test to the final frame: $visibleTimeMs ms", atEnd || visibleTimeMs >= 7_800L)
+
+        val rightSelector = By.descContains("Sağ tutamaç")
+        assertTrue("Right trim handle is not accessible at the end of the timeline", device.wait(Until.hasObject(rightSelector), 10_000))
+        val rightHandle = requireObject(device, rightSelector, "right trim handle")
+        val rightBounds = rightHandle.visibleBounds
+        assertTrue("Right trim handle has no visible hit target: $rightBounds", rightBounds.width() >= 4 && rightBounds.height() >= 4)
+        val dragPx = (20f * density).toInt().coerceAtLeast(8)
+        device.swipe(
+            rightBounds.centerX(),
+            rightBounds.centerY(),
+            (rightBounds.centerX() - dragPx).coerceAtLeast(laneLeft + 1),
+            rightBounds.centerY(),
+            30
+        )
+        device.waitForIdle()
+        SystemClock.sleep(450)
+        val durationAfterRightTrimMs = projectDurationMs(requireProjectTime(device))
+        android.util.Log.i(
+            "TimelineTrimInteractionTest",
+            "stage=right-trim before=$originalDurationMs after=$durationAfterRightTrimMs"
+        )
+        assertTrue(
+            "Dragging the right trim handle did not shorten the project: $originalDurationMs -> $durationAfterRightTrimMs ms",
+            durationAfterRightTrimMs <= originalDurationMs - 150L
+        )
+        assertTrue("Right trim produced an invalid duration: $durationAfterRightTrimMs ms", durationAfterRightTrimMs >= 500L)
+
+        // Return to the first frame and trim the left edge inward as well.
+        var startMs = projectPositionMs(requireProjectTime(device))
+        for (attempt in 0 until 12) {
+            if (startMs <= 200L) break
+            device.swipe(
+                laneLeft + laneWidth / 10,
+                swipeY,
+                laneLeft + laneWidth * 9 / 10,
+                swipeY,
+                40
+            )
+            device.waitForIdle()
+            SystemClock.sleep(180)
+            startMs = projectPositionMs(requireProjectTime(device))
+            android.util.Log.i(
+                "TimelineTrimInteractionTest",
+                "stage=scroll-to-start attempt=${attempt + 1} value=$startMs"
+            )
+        }
+        assertTrue("Could not return to the first frame before left trim: $startMs ms", startMs <= 200L)
+        val leftSelector = By.descContains("Sol tutamaç")
+        assertTrue("Left trim handle is not accessible at the first frame", device.wait(Until.hasObject(leftSelector), 10_000))
+        val leftHandle = requireObject(device, leftSelector, "left trim handle")
+        val leftBounds = leftHandle.visibleBounds
+        assertTrue("Left trim handle has no visible hit target: $leftBounds", leftBounds.width() >= 4 && leftBounds.height() >= 4)
+        device.swipe(
+            leftBounds.centerX(),
+            leftBounds.centerY(),
+            leftBounds.centerX() + dragPx,
+            leftBounds.centerY(),
+            30
+        )
+        device.waitForIdle()
+        SystemClock.sleep(450)
+        val durationAfterLeftTrimMs = projectDurationMs(requireProjectTime(device))
+        android.util.Log.i(
+            "TimelineTrimInteractionTest",
+            "stage=left-trim before=$durationAfterRightTrimMs after=$durationAfterLeftTrimMs"
+        )
+        assertTrue(
+            "Dragging the left trim handle did not shorten the project: $durationAfterRightTrimMs -> $durationAfterLeftTrimMs ms",
+            durationAfterLeftTrimMs <= durationAfterRightTrimMs - 150L
+        )
+        assertTrue("Left trim produced an invalid duration: $durationAfterLeftTrimMs ms", durationAfterLeftTrimMs >= 500L)
+    }
+
+    private fun projectDurationMs(label: String): Long {
+        val match = Regex("Proje\\s+\\d{2}:\\d{2}\\.\\d{2}\\s*/\\s*(\\d{2}):(\\d{2})\\.(\\d{2})")
+            .find(label) ?: throw AssertionError("Could not parse project duration from: $label")
+        val minutes = match.groupValues[1].toLong()
+        val seconds = match.groupValues[2].toLong()
+        val centiseconds = match.groupValues[3].toLong()
+        return (minutes * 60 + seconds) * 1000 + centiseconds * 10
+    }
+
     private fun awaitClipAdded(device: UiDevice): Boolean {
         val deadline = SystemClock.uptimeMillis() + 25_000L
         while (SystemClock.uptimeMillis() < deadline) {
