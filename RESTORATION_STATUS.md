@@ -63,27 +63,10 @@ Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228
 
 
 
-### 2026-10-25 — Manual JSON round-trip correction (#189 failed, #190 in progress)
+### 2026-10-25 — Current handoff: run #192
 
-- [x] Inspected [run #189](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40230332447): unit tests and debug APK build passed; 8 of 9 emulator instrumentation tests passed. The expanded JSON test failed because its seeded project contradicted the fixed-center timeline model: playhead was 7.70 s while scroll offset was 1.40 s. During the actual UI flow, scrolling correctly moved the playhead to ~1.41 s, so the assertion was testing an impossible mismatched state rather than lost state.
-- [x] Corrected the test fixture so playhead and centered timeline scroll both target 7.70 s. The test now reads the **latest** restoration marker rather than accidentally accepting the earlier draft-open marker.
-- [x] Preserved the production fix that refreshes the zoom accessibility description after project restore, plus the debug-only restoration marker.
-- [ ] [Run #190 — IN PROGRESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40231500974), commit `e80f446c4247b2ff97e58fed6093091d80530b99`. Build/unit tests were not yet rechecked to completion at the time of this note; final verdict waits for emulator assertions.
-- [ ] Keep version 395 blocked; broader text/audio export, timeline edge cases, physical-phone review, and signed install/update gate are still open.
-
-
-### 2026-10-25 — #189 failed: project scroll restore overwrote playhead
-
-- [x] Run [#189](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40230332447) compiled and started the emulator interaction suite; 8/9 tests passed, but the expanded manual JSON round-trip test failed because the restored project-time label was 1.41 s instead of the saved 7.70 s.
-- [x] Root cause confirmed in `VideoEditorActivity`: restoring the saved horizontal timeline scroll posts `scrollTo()`; its scroll listener interpreted that programmatic viewport restoration as a user scrub and replaced the independently persisted playhead with the time mapped from the scroll offset.
-- [x] Fix committed on `fix/global-editor-undo`: `976d4b38023ab4b5945577012b821b71476e85fd`. During project restoration, horizontal-scroll callbacks still synchronize timeline lanes and redraw the playhead line, but do not seek/change the saved playhead. The guard is released after the posted scroll restoration completes.
-- [ ] Re-run the full emulator interaction suite against the fix and verify the 7.70 s playhead plus the remaining JSON round-trip assertions.
-- [ ] Version 395 remains blocked; do not merge or release until the full suite and remaining release gates pass.
-
-
-### 2026-10-25 — Current handoff after run #191
-
-- [x] #191 confirmed unit tests and debug APK build are green and reached the manual JSON colour assertion after earlier restore/playhead/project-state assertions.
-- [x] Root cause was test navigation: it queried `Camgöbeği` while that radio was below the visible text-panel viewport after scrolling only to `Üst`. The test now explicitly scrolls the colour radio into view before asserting selected state.
-- [ ] Verify [run #192](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40233158607), commit [`6100ddb`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/6100ddb26ac2b89b5bc4cd0061ac583870905d56). Manual JSON persistence stays open until this complete run passes.
-- Installed baseline remains versionCode **394** / build **61**. Version 395 remains blocked; do not merge, sign, publish, or enable in-app update.
+- **Current branch:** `fix/global-editor-undo`; latest code/test commit [`6100ddb`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/6100ddb26ac2b89b5bc4cd0061ac583870905d56).
+- **#189 → #191:** project JSON restoration initially changed the saved playhead. The timeline scroll listener now ignores programmatic scroll events during restore ([`976d4b3`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/976d4b38023ab4b5945577012b821b71476e85fd)). Run #191 then passed the earlier playhead/zoom and project-state assertions but stopped because the test queried `Camgöbeği` without scrolling the text panel to that option.
+- **#192:** the test now scrolls the text panel to the cyan colour radio before asserting it remains selected. Unit tests and debug APK build passed; emulator UI suite is running: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40233158607
+- **Next:** inspect #192's final emulator result and fix any remaining assertion from evidence. Do not weaken assertions or restart from earlier completed work.
+- Installed baseline remains versionCode **394** / build **61**. Version 395 remains blocked; do not merge, sign, publish, or enable in-app update until all gates pass and the user explicitly approves.
