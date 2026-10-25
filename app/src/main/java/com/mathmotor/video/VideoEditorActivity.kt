@@ -192,6 +192,19 @@ class VideoEditorActivity : Activity() {
             }
         }
     }
+    private var pendingTimelinePinchScrollX: Int? = null
+    private val timelinePinchRefreshTask = object : Runnable {
+        override fun run() {
+            val requestedScrollX = pendingTimelinePinchScrollX ?: return
+            pendingTimelinePinchScrollX = null
+            timelineHorizontalScrollX = requestedScrollX
+            pendingTimelineScrollX = requestedScrollX
+            refreshTimelineTracks()
+            timelineScrollViews.toList().forEach { lane ->
+                lane.post { lane.scrollTo(requestedScrollX, 0) }
+            }
+        }
+    }
     private var timelinePreviewLoaded = false
     private var previewSingleClip = false
     private val timelineHandler = Handler(Looper.getMainLooper())
@@ -579,6 +592,7 @@ class VideoEditorActivity : Activity() {
                 timelinePixelsPerSecond()
             )
             timelineHorizontalScrollX = nextScrollX
+            pendingTimelinePinchScrollX = nextScrollX
             pendingTimelineScrollX = nextScrollX
             timelineTracksFrame.contentDescription =
                 "Zaman çizelgesi yakınlaştırma " + (nextZoom * 100f).toInt() + "%"
@@ -587,12 +601,9 @@ class VideoEditorActivity : Activity() {
                 "manual move span=$span startSpan=$pinchStartSpanPx zoom=$nextZoom " +
                     "scroll=$nextScrollX anchor=$pinchAnchorTimeMs"
             )
-            refreshTimelineTracks()
-            timelineTracksFrame.contentDescription =
-                "Zaman çizelgesi yakınlaştırma " + (timelineZoom * 100f).toInt() + "%"
-            timelineScrollViews.toList().forEach { lane ->
-                lane.post { lane.scrollTo(nextScrollX, 0) }
-            }
+            // Coalesce frequent MOVE events into at most one track rebuild per frame.
+            timelineHandler.removeCallbacks(timelinePinchRefreshTask)
+            timelineHandler.postDelayed(timelinePinchRefreshTask, 16L)
         }
 
         timelineTracksFrame = object : FrameLayout(this) {
@@ -4494,6 +4505,8 @@ class VideoEditorActivity : Activity() {
     override fun onDestroy() {
         timelineHandler.removeCallbacks(timelineSyncTask)
         timelineHandler.removeCallbacks(timelineScrollSeekTask)
+        timelineHandler.removeCallbacks(timelinePinchRefreshTask)
+        pendingTimelinePinchScrollX = null
         timelineHandler.removeCallbacks(textTimelineRefreshTask)
         timelineThumbnailExecutor.shutdownNow()
         pendingTimelineThumbnails.clear()
