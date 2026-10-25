@@ -35,6 +35,7 @@ MathMotor Video is a local Android video editor with a CapCut-inspired workflow.
 - [ ] Pending CI rerun after this repair. Do not call timeline scrolling fixed until the interaction test passes, particularly the repeat-swipe path back to 0 s.
 - This is not a release candidate yet. Version 395 is still blocked and must not be published.
 
+- Second related defect found in `buildVideoClipFilmstrip()`: horizontal movement used to call `seekTimelinePreview()` with the child's local x fraction and ACTION_UP sought again even after a drag. That could snap time away from the scrolled position. Source commit `1fe72bcb2d6257b28541902fd13bd51ec1a1a6d5` separates the gestures: taps select/seek, drags scroll the timeline and use a scroll fallback if the parent has not intercepted. This fix is awaiting the next emulator interaction test.
 ## Reported problems — release blockers until verified
 See the comprehensive checklist in README.md. Current list:
 1. One-finger timeline scrolling and trim gestures may conflict or be unreliable.
