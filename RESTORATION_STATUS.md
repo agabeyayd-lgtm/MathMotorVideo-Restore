@@ -15,9 +15,9 @@ MathMotor Video is a local Android video editor with a CapCut-inspired workflow.
 - New unit tests: `f8039c82c989d99f9e73df2e90f69719665e980d`.
 - Filmstrip one-finger swipe correction: `8458c7737649bf05ffba10d58208dea3304993f3`.
 - Added timeline gesture UI test: `7f1b886a5d8a4d0bce7163ae0c60b75ec7ea92fd`.
-- Added trim-handle UI test commit `ab25bd5af389890ea1e32edeac627d59663ee355`: start a fresh fixture editor, scroll to the right edge, drag the right trim handle and then the left trim handle, and assert each drag shortens project duration. Validation is pending workflow [#40178081902](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40178081902); keep trim unchecked until that run passes.
+- Added trim-handle UI test commit `ab25bd5af389890ea1e32edeac627d59663ee355`: start a fresh fixture editor, scroll to the right edge, drag the right trim handle then the left trim handle, and assert each changes project duration. Passed in run #40178530256: 8,020 ms → 7,110 ms after right trim, then 7,110 ms → 6,210 ms after left trim. Broader trim/scroll conflict and restore-trim cases remain open.
 - First attempt [#40178081902](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40178081902) failed before instrumentation: the Android emulator displayed “Pixel Launcher isn't responding”; the recovery script misclassified this system-launcher dialog as an app ANR. CI fix commit `b56fd2d26aabb26adb216bac8c9303ef0abc9b4d` now handles Pixel/Nexus Launcher dialogs explicitly while still failing MathMotor ANRs.
-- Retest with script fixes is [#40178530256](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40178530256). Commit `b56fd2d26aabb26adb216bac8c9303ef0abc9b4d` recognizes Pixel/Nexus Launcher ANR dialogs; follow-up `a5a56d8b569b03a385af2fe6c3b06b3abfc00068` updates both detection and persistent-dialog checks so the prompt is recoverable only if it clears after tapping Wait. Trim-handle behavior remains unverified pending the new run.
+- Validation [#40178530256](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40178530256) passed. Unit tests, debug build, screenshot/draft-autosave smoke checks and all 3 instrumentation tests passed. The Pixel/Nexus Launcher ANR recovery checks were exercised by the smoke workflow.
 - Updated old home-header assertion: `64670fbefbf88b66210190c936568111d9b4b25c`.
 - Workflow now includes androidTest path filters and runs `connectedDebugAndroidTest`: `ede0225a127021945736839ccf0f5199abb0a2e5`.
 - Connected test runs [#40169846327](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40169846327), [#40172042627](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40172042627), and [#40172447528](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40172447528) showed instrumentation process failure because tests called `am force-stop` on the package hosting the instrumentation runner; this command was removed from both UI tests.
@@ -39,16 +39,15 @@ MathMotor Video is a local Android video editor with a CapCut-inspired workflow.
 - The timeline interaction gate passed, but this is still not a release candidate: other README verification items remain open. Version 395 must not be published.
 
 - Second related defect found in `buildVideoClipFilmstrip()`: horizontal movement used to call `seekTimelinePreview()` with the child's local x fraction and ACTION_UP sought again after a drag, which could snap time away from the scrolled position. Source commit `1fe72bcb2d6257b28541902fd13bd51ec1a1a6d5` separates gestures: taps select/seek and drags scroll. This source behavior was verified by run #40177103726, which reached 8.00 s and returned to 0.00 s.
-## Latest verified CI result — 2026-10-25 (run #40177103726)
+## Latest verified CI result — 2026-10-25 (run #40178530256)
 
-- **Result: SUCCESS.** [Workflow #40177103726](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40177103726) passed on commit `832113681b1eb8e9ad6fcea14d99ffcb8790e87f`.
-- Unit tests passed; debug APK built; sample fixture generation and emulator screenshot capture passed; `connectedDebugAndroidTest` exited with code 0. XML confirms 2 tests, 0 failures, 0 errors, 0 skipped.
-- Verified in the deterministic 8.02 s single-clip scenario: playhead drag to 3.18 s; pinch 100% → 626% with center time preserved; timeline end reached at 8.00 s on forward swipe 4; timeline start reached at 0.00 s on reverse swipe 6.
-- Earlier 2.47 s and 2.04 s results occurred after a hard limit of four reverse gestures. The test now allows 12 attempts and logs every position without relaxing the boundary rule (start ≤0.20 s, end ≥7.8 s). This confirmed the start boundary is reachable.
-- The latest commit changes the test only; the editor source being tested already includes the filmstrip gesture separation and debounced-seek settle-window fixes. No signed/release APK was produced or published by this workflow.
-- [Run artifacts, screenshots and logs](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40177103726#artifacts).
-- Remaining release blockers: trim-handle reliability; thumbnail quality/loading; text timing and size including preview/export parity; complete Undo/Redo; audio sync; multi-clip assembly/export; project save/reopen; small-screen/keyboard layout; final screenshot review and physical-device smoke test.
-- Installed baseline remains versionCode 394 / build 61 (`app-v8.3-61`). Do not prepare or publish version 395 until every README release-gate item passes and the user authorizes release.
+- **Result: SUCCESS.** [Workflow #40178530256](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40178530256) completed successfully on commit `a5a56d8b569b03a385af2fe6c3b06b3abfc00068`.
+- Unit tests passed; debug APK built; fixture generation, screenshots and local draft auto-save checks passed. `connectedDebugAndroidTest` exit code 0; XML report confirms 3 tests, 0 failures/errors/skips.
+- Verified timeline interactions: playhead drag, centered pinch zoom, reach end and return to start. Verified both trim handles on the sample: right trim 8,020 ms → 7,110 ms; left trim 7,110 ms → 6,210 ms.
+- CI script now recognizes Pixel/Nexus Launcher ANR dialogs during emulator startup, and the final recovery check also detects if that dialog persists. Application-level MathMotor ANRs are still not dismissed as emulator noise.
+- Remaining work: verify trim handles against horizontal-scroll conflicts, restore footage by dragging outward and multiple zooms; review thumbnail variety/loading; text timing/size and export parity; unified Undo/Redo; audio sync; multi-clip assembly/export; save/reopen; small-screen/keyboard layout; final screenshots and physical-device smoke test.
+- This is a debug verification run only; no signed or published release APK was produced.
+- Installed baseline remains versionCode 394 / build 61. Version 395 remains blocked until every README release-gate item passes and the user explicitly authorizes release.
 
 ## Reported problems — release blockers until verified
 See the comprehensive checklist in README.md. Current list:
