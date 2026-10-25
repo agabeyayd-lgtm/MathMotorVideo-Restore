@@ -71,3 +71,10 @@ Basic end-to-end Save As → close editor → Open Document passed in [run #172 
 - Keep versionCode/versionName at the confirmed installed baseline until release is explicitly approved.
 - Do not prepare/publish version 395 or enable its in-app update until every required gate is verified and the user explicitly authorizes release.
 - Update this checkpoint after meaningful work, recording the exact commit/run URL and result. Keep this checklist canonical; put only a concise pointer/current handoff in `RESTORATION_STATUS.md`.
+
+
+### 2026-10-25 — Global Undo/Redo validation #183 / #184
+- [x] #183 failed before tests ran: Kotlin compilation reported nullable receiver errors for `undoClipButton` and `redoClipButton` at `VideoEditorActivity.kt` lines 1282–1287.
+- [x] Fixed by handling each nullable button with `?.let { button -> ... }` before styling and adding it to the bottom dock. Commit: `999a1d15eae6aababf8842655a6413ab2d694ad2` on `fix/global-editor-undo`.
+- [ ] #184 validation is queued: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40227983970
+- [ ] Keep release 395 blocked until build and emulator interaction tests pass; do not merge this branch or publish APK yet.
