@@ -21,6 +21,27 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - Do not bump `versionCode` or `versionName` during this work until the release gate is met and the user explicitly authorizes the release.
 - A successful source build is not the same as a tested, published APK. Keep the original media safe; export to a new file.
 
+## Repair progress log — 2026-10-25
+
+This section is the handoff point. Continue from this branch and update this log after every meaningful change; do not restart the review from scratch. Add any newly discovered defect to the release-blocking checklist before addressing it.
+
+- Working branch: `fix/editor-395-gate`.
+- Installed baseline reported by the user: versionCode 394 / release `app-v8.3-61`.
+- Release gate: **395 must not be version-bumped, signed, published, or offered as an update until all required items below pass and the user explicitly authorizes release.**
+- [x] Created a repair branch without changing the installed/release version.
+- [x] Increased filmstrip thumbnail density (target spacing reduced; more frames can be requested for a clip).
+- [x] Changed thumbnail sampling to evenly spaced timestamps including clip edges.
+- [x] Increased thumbnail decode/crop resolution from 96×54 to 144×81.
+- [x] Increased thumbnail cache capacity from 256 to 384 entries.
+- [x] Removed the redundant scissors symbol from the bottom “Klip” tab; the dedicated “Böl ✂” action remains the cut/split control.
+- [ ] **Not yet verified on emulator or device:** the code changes above may improve the filmstrip, but must be tested with changing and static video content, scroll/zoom, loading latency, memory use and black-frame behavior.
+- [ ] Timeline gestures, scroll/zoom and playhead alignment still need implementation and interactive validation.
+- [ ] Text-layer timing drag handles and a unified Undo/Redo history still need implementation.
+- [ ] Home-screen simplification and redundant scissor/icon review still need completion.
+- [ ] Build/unit tests/emulator interaction tests have not yet been run for this repair branch.
+
+Last completed code commit: `f0b9af235fb35f6b03581a41cae653a77e29249f`.
+
 ## Current baseline capabilities (present in source; not all are proven reliable)
 
 - [x] Multi-clip timeline and clip selection/reordering controls exist.
