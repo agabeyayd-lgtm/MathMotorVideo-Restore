@@ -175,7 +175,7 @@ class VideoEditorActivity : Activity() {
     private var deferTimelineRefresh = false
     private val timelineThumbnailCache = object : android.util.LruCache<String, Bitmap>(256) {}
     private val pendingTimelineThumbnails = mutableMapOf<String, MutableList<WeakReference<ImageView>>>()
-    private val timelineThumbnailExecutor = java.util.concurrent.Executors.newFixedThreadPool(2)
+    private val timelineThumbnailExecutor = java.util.concurrent.Executors.newFixedThreadPool(3)
     private lateinit var timelinePlayheadSeek: SeekBar
     private lateinit var timelinePlayheadLabel: TextView
     private var timelinePlayheadMs = 0L
@@ -3701,7 +3701,7 @@ class VideoEditorActivity : Activity() {
             setBackgroundColor(Color.rgb(26, 37, 51))
         }
         // Cap decode work per clip to keep long timelines responsive and avoid a stale queue.
-        val thumbnailCount = (width / dp(16)).coerceIn(10, 40)
+        val thumbnailCount = (width / dp(22)).coerceIn(10, 40)
         repeat(thumbnailCount) { slot ->
             val image = ImageView(this).apply {
                 scaleType = ImageView.ScaleType.CENTER_CROP
@@ -3941,6 +3941,20 @@ class VideoEditorActivity : Activity() {
                     // Keep the neutral placeholder visible only if both decoders fail.
                 }
                 val decoded = result
+                if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+                    if (decoded == null) {
+                        android.util.Log.w("EditorThumbnail", "THUMBNAIL_FAILED timeMs=$timestampMs")
+                    } else {
+                        var fingerprint = 1
+                        intArrayOf(8, 40, 80, 120, 152).forEach { x ->
+                            fingerprint = fingerprint * 31 + decoded.getPixel(x, 45)
+                        }
+                        android.util.Log.i(
+                            "EditorThumbnail",
+                            "THUMBNAIL_READY timeMs=$timestampMs hash=$fingerprint"
+                        )
+                    }
+                }
                 runOnUiThread {
                     val targets = pendingTimelineThumbnails.remove(key).orEmpty()
                     if (decoded != null && !isFinishing && !isDestroyed) {
