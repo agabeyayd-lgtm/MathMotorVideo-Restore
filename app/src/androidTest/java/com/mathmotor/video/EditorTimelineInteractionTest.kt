@@ -173,7 +173,7 @@ class EditorTimelineInteractionTest {
     }
 
     @Test
-    fun rightAndLeftTrimHandlesChangeProjectDuration() {
+    fun rightAndLeftTrimHandlesCanTrimAndRestoreSourceFootage() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val density = instrumentation.targetContext.resources.displayMetrics.density
         val device = UiDevice.getInstance(instrumentation)
@@ -262,6 +262,56 @@ class EditorTimelineInteractionTest {
         )
         assertTrue("Right trim produced an invalid duration: $durationAfterRightTrimMs ms", durationAfterRightTrimMs >= 500L)
 
+        // The shortened edge must also move outward again to recover the source footage.
+        // finishTrimControlGesture resets the playhead to the selected clip start, so first
+        // scroll the shortened clip's new right edge back under the center playhead.
+        var restoreEndMs = projectPositionMs(requireProjectTime(device))
+        for (attempt in 0 until 12) {
+            if (restoreEndMs >= durationAfterRightTrimMs - 200L) break
+            device.swipe(
+                laneLeft + laneWidth * 9 / 10,
+                swipeY,
+                laneLeft + laneWidth / 10,
+                swipeY,
+                40
+            )
+            device.waitForIdle()
+            SystemClock.sleep(180)
+            restoreEndMs = projectPositionMs(requireProjectTime(device))
+            android.util.Log.i(
+                "TimelineTrimInteractionTest",
+                "stage=scroll-to-right-restore-edge attempt=${attempt + 1} value=$restoreEndMs"
+            )
+        }
+        assertTrue(
+            "Could not reach the trimmed right edge to restore source footage: $restoreEndMs ms",
+            restoreEndMs >= durationAfterRightTrimMs - 200L
+        )
+        val rightRestoreHandle = requireObject(device, rightSelector, "right trim handle for restoration")
+        val rightRestoreBounds = rightRestoreHandle.visibleBounds
+        device.swipe(
+            rightRestoreBounds.centerX(),
+            rightRestoreBounds.centerY(),
+            (rightRestoreBounds.centerX() + dragPx).coerceAtMost(device.displayWidth - 2),
+            rightRestoreBounds.centerY(),
+            30
+        )
+        device.waitForIdle()
+        SystemClock.sleep(450)
+        val restoredDurationAfterRightMs = projectDurationMs(requireProjectTime(device))
+        android.util.Log.i(
+            "TimelineTrimInteractionTest",
+            "stage=restore-right before=$durationAfterRightTrimMs after=$restoredDurationAfterRightMs original=$originalDurationMs"
+        )
+        assertTrue(
+            "Dragging the right trim handle outward did not restore source footage: $durationAfterRightTrimMs -> $restoredDurationAfterRightMs ms",
+            restoredDurationAfterRightMs >= durationAfterRightTrimMs + 150L
+        )
+        assertTrue(
+            "Right-edge restoration did not recover the original source duration: $originalDurationMs -> $restoredDurationAfterRightMs ms",
+            restoredDurationAfterRightMs >= originalDurationMs - 250L
+        )
+
         // Return to the first frame and trim the left edge inward as well.
         var startMs = projectPositionMs(requireProjectTime(device))
         for (attempt in 0 until 12) {
@@ -306,6 +356,32 @@ class EditorTimelineInteractionTest {
             durationAfterLeftTrimMs <= durationAfterRightTrimMs - 150L
         )
         assertTrue("Left trim produced an invalid duration: $durationAfterLeftTrimMs ms", durationAfterLeftTrimMs >= 500L)
+
+        // The left trim must be reversible too: drag the left edge back to its source start.
+        val leftRestoreHandle = requireObject(device, leftSelector, "left trim handle for restoration")
+        val leftRestoreBounds = leftRestoreHandle.visibleBounds
+        device.swipe(
+            leftRestoreBounds.centerX(),
+            leftRestoreBounds.centerY(),
+            (leftRestoreBounds.centerX() - dragPx).coerceAtLeast(laneLeft + 1),
+            leftRestoreBounds.centerY(),
+            30
+        )
+        device.waitForIdle()
+        SystemClock.sleep(450)
+        val restoredDurationAfterLeftMs = projectDurationMs(requireProjectTime(device))
+        android.util.Log.i(
+            "TimelineTrimInteractionTest",
+            "stage=restore-left before=$durationAfterLeftTrimMs after=$restoredDurationAfterLeftMs original=$originalDurationMs"
+        )
+        assertTrue(
+            "Dragging the left trim handle outward did not restore source footage: $durationAfterLeftTrimMs -> $restoredDurationAfterLeftMs ms",
+            restoredDurationAfterLeftMs >= durationAfterLeftTrimMs + 150L
+        )
+        assertTrue(
+            "Restoring both trim edges did not recover the original source duration: $originalDurationMs -> $restoredDurationAfterLeftMs ms",
+            restoredDurationAfterLeftMs >= originalDurationMs - 250L
+        )
     }
 
     @Test
