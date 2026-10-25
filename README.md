@@ -11,7 +11,7 @@ A local-first Android video editor with a CapCut-inspired workflow. Editing and 
 - Draft PR: [#8 — repair editor interactions for version 395](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/pull/8)
 - User-installed baseline: **versionCode 394 / build 61 (`app-v8.3-61`)**.
 - Latest green baseline: [CI run #161 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40212230107), commit [`3d910eb`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/3d910eb5466ae05aca2e4fa5f17088dfa9602577). Unit tests, debug APK build, screenshot capture and **all 7 emulator interaction tests passed**.
-- Current task: finish the two remaining verification tracks. The basic manual JSON Save As → reopen and thumbnail fix passed [run #172](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40221395375). The broader JSON test now checks restored playhead (1.00 s), zoom (200%), text start/end, bottom position, yellow colour and bold style; [run #177](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40224656700) is queued for this expanded test. Separately, the global Undo/Redo branch copies the verified decoder fix and scrolls the compact panel to Undo; [run #175](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40223890916) is still running. Do not release 395 until both suites and the remaining gates are verified.
+- Current task: finish the two remaining verification tracks. The basic manual JSON Save As → reopen and thumbnail fix passed [run #172](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40221395375). The expanded JSON test checks the restored playhead (2.00 s), zoom (200%), text start/end, bottom position, yellow colour and bold style; [run #177](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40224656700) is running. On Undo/Redo, [run #175](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40223890916) confirmed the decoder fix but the test still couldn't reach Undo because the tab selector was ambiguous. The app tabs/Undo buttons now have stable accessibility labels; [run #178](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40224804039) is validating that correction. Keep version 395 blocked.
 - **Release 395 is still blocked.** A green debug CI run is not a signed release. Do not change version metadata, publish/sign an APK, or enable the in-app update until the remaining gates below pass and the user explicitly authorizes release.
 
 ## Verified — do not repeat without a relevant code change
@@ -43,7 +43,7 @@ Basic end-to-end Save As → close editor → Open Document passed in [run #172 
 
 ### 2. Unified editor Undo / Redo
 
-- [ ] The release branch still has clip-only Undo/Redo. A unified text/audio/clip history implementation exists on `fix/global-editor-undo`, but its new interaction test has not passed yet. Do not mark global undo/redo complete until the Undo test and regression suite pass.
+- [ ] The release branch still has clip-only Undo/Redo. A unified text/audio/clip history exists on `fix/global-editor-undo`; run #175 showed the test was selecting the wrong/hidden panel because tab lookup was ambiguous. Stable tab/action accessibility labels and selectors are in the current rerun (#178).
 - [ ] Verify Undo/Redo for text content/appearance/timing/position, music/effect and source-audio levels, and clip edits; confirm preview and timeline both restore together.
 
 ### 3. Text timeline and export parity
