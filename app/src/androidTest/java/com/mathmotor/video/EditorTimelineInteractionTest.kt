@@ -1217,16 +1217,27 @@ class EditorTimelineInteractionTest {
         val restoredAudioTab = device.findObject(By.clazz("android.widget.Button").textContains("Ses"))
             ?: throw AssertionError("Could not inspect restored manual JSON audio settings")
         restoredAudioTab.click()
+        val audioPanelScroller = UiScrollable(UiSelector().className("android.widget.ScrollView"))
+            .setAsVerticalList()
+        // The two labels sit at different vertical positions in the audio panel. Querying
+        // a ScrollView child before scrolling can miss it when the previous tab left the
+        // shared editor panel at a nonzero scroll offset.
+        assertTrue(
+            "Could not scroll to the restored music reference",
+            audioPanelScroller.scrollIntoView(UiSelector().textContains("ROUND_TRIP_MUSIC"))
+        )
         assertTrue(
             "Manual JSON did not restore the music reference",
             device.wait(Until.hasObject(By.textContains("ROUND_TRIP_MUSIC")), 8_000)
         )
         assertTrue(
+            "Could not scroll to the restored sound-effect reference",
+            audioPanelScroller.scrollIntoView(UiSelector().textContains("ROUND_TRIP_EFFECT"))
+        )
+        assertTrue(
             "Manual JSON did not restore the sound-effect reference",
             device.wait(Until.hasObject(By.textContains("ROUND_TRIP_EFFECT")), 8_000)
         )
-        val audioPanelScroller = UiScrollable(UiSelector().className("android.widget.ScrollView"))
-            .setAsVerticalList()
         assertTrue(
             "Manual JSON did not restore music volume 37%",
             audioPanelScroller.scrollIntoView(UiSelector().text("Müzik sesi: 37%"))
