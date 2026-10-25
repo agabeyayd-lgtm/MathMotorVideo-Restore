@@ -383,7 +383,10 @@ class EditorTimelineInteractionTest {
             "stage=size-changed label=${sizeLabel.text} before=$overlayBefore after=$previewAfterSize"
         )
 
-        assertTrue("Could not return to the top of the text panel", panelScroll.scrollToBeginning(10))
+        assertTrue(
+            "Could not scroll the text start-time slider into view",
+            panelScroll.scrollIntoView(UiSelector().description("Yazı başlangıç zamanı"))
+        )
         device.waitForIdle()
         val startSeek = requireObject(device, By.desc("Yazı başlangıç zamanı"), "text start-time seek bar")
         val startBounds = startSeek.visibleBounds
@@ -405,6 +408,11 @@ class EditorTimelineInteractionTest {
         )
         android.util.Log.i("TextLayerInteractionTest", "stage=start-time before=$startLabelBefore after=$startLabelAfter")
 
+        assertTrue(
+            "Could not scroll the text end-time slider into view",
+            panelScroll.scrollIntoView(UiSelector().description("Yazı bitiş zamanı"))
+        )
+        device.waitForIdle()
         val endSeek = requireObject(device, By.desc("Yazı bitiş zamanı"), "text end-time seek bar")
         val endBounds = endSeek.visibleBounds
         assertTrue("Text end-time seek bar is not visible: $endBounds", endBounds.width() > 100 && endBounds.height() > 0)
