@@ -805,7 +805,7 @@ class VideoEditorActivity : Activity() {
         textPanel.addView(textOverlayEditToggle, matchWrap())
         updateTextOverlayEditToggle()
         val textLayerActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        textLayerActions.addView(miniButton("＋ Yeni") { addTextLayer() },
+        textLayerActions.addView(miniButton("＋ Yeni") { addTextLayer() }.apply { contentDescription = "Yeni metin katmanı ekle" },
             LinearLayout.LayoutParams(0, dp(42), 1f))
         textLayerActions.addView(miniButton("Kopyala") { duplicateSelectedTextLayer() },
             LinearLayout.LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(4) })
