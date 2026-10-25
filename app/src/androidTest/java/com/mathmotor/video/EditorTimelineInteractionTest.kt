@@ -814,74 +814,100 @@ class EditorTimelineInteractionTest {
         )
         requireObject(device, By.text("Kayıtlı projeyi aç"), "open saved JSON button").click()
 
-        // The picker often starts on Recents. Opening the roots drawer can itself restore
-        // the last-used Downloads location asynchronously, so never hold a Downloads row
-        // across a wait or click it without checking whether the picker has already moved.
+        // DocumentsUI can report the file from the background list while its navigation
+        // drawer is still covering the screen. Never tap that obscured row: explicitly open
+        // Downloads after opening the roots drawer, then reacquire the row from the active page.
         val openFileSelector = By.text(fileName)
+
+        fun returnToHomeForFollowingTests() {
+            // This is test-only cleanup. Closing DocumentsUI first prevents a failed picker
+            // assertion from leaving an external activity above the home-screen screenshot test.
+            runCatching { device.executeShellCommand("am force-stop com.google.android.documentsui") }
+            repeat(3) {
+                if (device.wait(Until.hasObject(By.text("Videoların")), 500)) return
+                runCatching { device.pressBack() }
+                device.waitForIdle()
+            }
+            runCatching {
+                device.executeShellCommand("am start -n $packageName/com.mathmotor.video.MainActivity")
+            }
+            device.wait(Until.hasObject(By.text("Videoların")), 5_000)
+        }
+
+        fun throwWithPickerDiagnostics(message: String): Nothing {
+            val hierarchy = java.io.File(context.cacheDir, "manual-json-open-result.xml")
+            device.dumpWindowHierarchy(hierarchy)
+            val visibleUiText = device.findObjects(By.clazz("android.widget.TextView"))
+                .mapNotNull { runCatching { it.text?.toString() }.getOrNull() }
+                .filter { it.isNotBlank() }
+                .distinct()
+                .take(100)
+                .joinToString(" | ")
+            val fullHierarchy = hierarchy.takeIf { it.isFile }?.readText().orEmpty()
+            val actionableNodes = fullHierarchy.lineSequence()
+                .filter { it.contains("clickable=\"true\"") || it.contains("resource-id=\"com.google.android.documentsui:id/action_menu_item_open\"") }
+                .take(60)
+                .joinToString("\n")
+            returnToHomeForFollowingTests()
+            throw AssertionError(
+                "$message Visible UI: $visibleUiText. " +
+                    "Picker actions: $actionableNodes. " +
+                    "Hierarchy: ${fullHierarchy.take(16000)}"
+            )
+        }
+
         var savedFile = device.findObject(openFileSelector)
         if (savedFile == null) {
-            findObjectByAny(
+            val rootsButton = findObjectByAny(
                 device,
                 By.descContains("Show roots"),
                 By.descContains("Show navigation drawer"),
                 By.descContains("navigation drawer")
-            )?.let { rootsButton ->
+            )
+            if (rootsButton != null) {
                 try {
                     rootsButton.click()
                 } catch (_: androidx.test.uiautomator.StaleObjectException) {
-                    // The picker may have switched to its remembered root at the same time.
+                    // DocumentsUI recreates its toolbar when the drawer is opened.
                 }
+                device.waitForIdle()
+
+                // Choose Downloads even if the filename is still exposed by the obscured
+                // Recent list. Otherwise the test may mistake a covered TextView for a
+                // visible row and send its tap into the navigation drawer.
+                var downloadsChosen = false
+                val downloadsDeadline = SystemClock.uptimeMillis() + 6_000L
+                while (!downloadsChosen && SystemClock.uptimeMillis() < downloadsDeadline) {
+                    val downloads = device.findObject(By.text("Downloads"))
+                        ?: device.findObject(By.text("Download"))
+                    if (downloads != null) {
+                        try {
+                            downloads.click()
+                            downloadsChosen = true
+                        } catch (_: androidx.test.uiautomator.StaleObjectException) {
+                            // Reacquire the row on the next iteration.
+                        }
+                    }
+                    if (!downloadsChosen) SystemClock.sleep(200)
+                }
+                device.waitForIdle()
+                SystemClock.sleep(250)
             }
-            device.waitForIdle()
-            val settleDeadline = SystemClock.uptimeMillis() + 2_000L
-            while (SystemClock.uptimeMillis() < settleDeadline && savedFile == null) {
+
+            val fileDeadline = SystemClock.uptimeMillis() + 8_000L
+            while (SystemClock.uptimeMillis() < fileDeadline && savedFile == null) {
                 savedFile = device.findObject(openFileSelector)
                 if (savedFile == null) SystemClock.sleep(200)
             }
-
-            // Only tap Downloads if the file did not appear after the drawer/root transition.
-            // Re-query for each attempt because DocumentsUI recreates accessibility nodes as
-            // the drawer animates and the document stack changes.
-            var downloadsAttempts = 0
-            while (savedFile == null &&
-                downloadsAttempts < 4 &&
-                SystemClock.uptimeMillis() < settleDeadline + 8_000L
-            ) {
-                downloadsAttempts += 1
-                val downloads = device.findObject(By.text("Downloads"))
-                    ?: device.findObject(By.text("Download"))
-                if (downloads != null) {
-                    try {
-                        downloads.click()
-                    } catch (_: androidx.test.uiautomator.StaleObjectException) {
-                        // Accessibility nodes can become stale while DocumentsUI switches roots.
-                    }
-                    device.waitForIdle()
-                }
-                val lookupDeadline = SystemClock.uptimeMillis() + 1_500L
-                while (SystemClock.uptimeMillis() < lookupDeadline && savedFile == null) {
-                    savedFile = device.findObject(openFileSelector)
-                    if (savedFile == null) SystemClock.sleep(200)
-                }
-            }
         }
+
         if (savedFile == null) {
-            val hierarchy = java.io.File(context.cacheDir, "manual-json-open-picker.xml")
-            device.dumpWindowHierarchy(hierarchy)
-            // Do not leave DocumentsUI foreground if this assertion fails; the following
-            // independent screenshot test expects the app home screen.
-            device.pressBack()
-            device.waitForIdle()
-            device.executeShellCommand("am start -n $packageName/com.mathmotor.video.MainActivity")
-            throw AssertionError(
-                "The file saved through Create Document was not discoverable by Open Document: $fileName. " +
-                    "Hierarchy: ${hierarchy.takeIf { it.isFile }?.readText()?.take(4500)}"
+            throwWithPickerDiagnostics(
+                "The JSON saved through Create Document was not visible in the active Open Document folder: $fileName."
             )
         }
+
         fun tapSavedDocumentRow() {
-            // DocumentsUI exposes the filename as a non-clickable TextView nested inside
-            // a clickable row. UiObject2.click() on the title only emits a warning and
-            // does not activate the row, so tap its current screen coordinates instead.
             val currentFile = device.findObject(openFileSelector)
                 ?: throw AssertionError("Saved JSON disappeared from Open Document picker: $fileName")
             val bounds = currentFile.visibleBounds
@@ -894,31 +920,61 @@ class EditorTimelineInteractionTest {
             }
             device.click(bounds.centerX(), bounds.centerY())
         }
+
         try {
             tapSavedDocumentRow()
         } catch (_: androidx.test.uiautomator.StaleObjectException) {
-            // The row can be recreated during a DocumentsUI refresh; reacquire its bounds.
             device.waitForIdle()
             tapSavedDocumentRow()
         }
-        val restorationReported = device.wait(Until.hasObject(By.textContains("PROJE AÇILDI")), 15_000)
+
+        // Some DocumentsUI versions select a file on the first tap and expose a separate
+        // Open action. Prefer that explicit action instead of repeatedly tapping the title.
+        var restorationReported =
+            device.wait(Until.hasObject(By.textContains("PROJE AÇILDI")), 2_500)
         if (!restorationReported) {
-            val visibleUiText = device.findObjects(By.clazz("android.widget.TextView"))
-                .mapNotNull { runCatching { it.text?.toString() }.getOrNull() }
-                .filter { it.isNotBlank() }
-                .distinct()
-                .take(80)
-                .joinToString(" | ")
-            val hierarchy = java.io.File(context.cacheDir, "manual-json-open-result.xml")
-            device.dumpWindowHierarchy(hierarchy)
-            // Keep the subsequent screenshot smoke test independent when the manual
-            // document-open gate fails; include the actual app error in this assertion.
-            device.pressBack()
+            val openAction = findObjectByAny(
+                device,
+                By.res("com.google.android.documentsui:id/action_menu_item_open"),
+                By.res("com.android.documentsui:id/action_menu_item_open"),
+                By.res("com.google.android.documentsui:id/menu_open"),
+                By.res("com.android.documentsui:id/menu_open"),
+                By.text("Open"),
+                By.text("OPEN"),
+                By.text("Aç"),
+                By.text("AÇ")
+            )
+            if (openAction != null) {
+                android.util.Log.i("ManualJsonRoundTripTest", "stage=click-explicit-open-action")
+                try {
+                    openAction.click()
+                } catch (_: androidx.test.uiautomator.StaleObjectException) {
+                    findObjectByAny(
+                        device,
+                        By.res("com.google.android.documentsui:id/action_menu_item_open"),
+                        By.res("com.android.documentsui:id/action_menu_item_open"),
+                        By.text("Open"),
+                        By.text("OPEN"),
+                        By.text("Aç"),
+                        By.text("AÇ")
+                    )?.click()
+                }
+            } else {
+                // If the picker implements row selection without an exposed Open button, use
+                // the selected document's Enter action as a last resort.
+                android.util.Log.i("ManualJsonRoundTripTest", "stage=no-explicit-open-action-press-enter")
+                device.pressEnter()
+            }
             device.waitForIdle()
-            device.executeShellCommand("am start -n $packageName/com.mathmotor.video.MainActivity")
-            throw AssertionError(
-                "Opening saved JSON did not restore project. Visible UI: $visibleUiText. " +
-                    "Hierarchy: ${hierarchy.takeIf { it.isFile }?.readText()?.take(6000)}"
+            restorationReported = device.wait(
+                Until.hasObject(By.textContains("PROJE AÇILDI")),
+                12_000
+            )
+        }
+
+        if (!restorationReported) {
+            throwWithPickerDiagnostics(
+                "Opening saved JSON did not restore project (the picker may not have returned a URI)."
             )
         }
         assertTrue(
