@@ -86,7 +86,17 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 
 Working branch: `fix/editor-gestures-thumbnails-text-undo`. The installed baseline remains 394 / build 61. No version number was bumped and no APK was signed or published.
 
-**Source changes now on the repair branch, awaiting CI and behavior verification:**
+**Source-code work completed on the repair branch (still awaiting tests):**
+
+- [x] Implement fixed-playhead coordinates and add unit tests for time/scroll/pinch conversions.
+- [x] Add a two-finger pinch handler and remove the filmstrip touch handler that was intercepting horizontal swipes.
+- [x] Increase thumbnail height and decoded resolution; raise frame density; add distinct-frame diagnostics to CI.
+- [x] Expand Undo/Redo snapshots from clip-only data to the complete project JSON; add history hooks for text, text gestures/timing/size, and audio operations.
+- [x] Use a single output-timeline time readout; reduce the home intro copy and remove scissors icons from passive navigation/draft cards.
+- [x] Update the home-screen instrumentation selector, run JVM and Android instrumentation tests on PRs, and add CI thumbnail-diversity validation.
+- [x] Preserve the user's version 394 / build 61 baseline; leave app version fields unchanged and do not build/publish 395.
+
+**Source changes listed above are not yet accepted as behavior fixes. The acceptance checklist below remains unchecked until tests pass.**
 
 - Reworked the timeline marker to stay fixed in the viewport while scrolling updates the time beneath it. Added shared time/scroll conversion helpers and unit tests for fixed-playhead mapping and pinch anchoring.
 - Added a two-finger pinch handler that maintains the time near the pinch focus; removed the filmstrip's touch handler that consumed gestures and blocked parent horizontal scrolling.
