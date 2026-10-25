@@ -21,7 +21,7 @@ Previously verified and not to repeat unnecessarily: timeline playhead/zoom/scro
 
 ## Next steps — do these in order
 
-1. **Broader manual JSON persistence coverage — queued.** Basic Save As → close editor → Open Document passed in [run #172](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40221395375). Expanded assertions now check the 1.00 s playhead, 200% zoom and text timing/position/colour/bold style; [run #176](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40224513134) is queued.
+1. **Broader manual JSON persistence coverage — in progress.** Basic Save As → close editor → Open Document passed in [run #172](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40221395375). Expanded assertions now check the 1.00 s playhead, 200% zoom and text timing/position/colour/bold style; [run #177](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40224656700) is queued.
 2. **Unified Undo / Redo — validation in progress.** [Run #173](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40221794555) identified the old decoder in the feature branch and the compact-panel selector issue. Both were fixed on [`fix/global-editor-undo`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/tree/fix/global-editor-undo); [run #175](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40223890916) is checking the corrected code/test.
 3. **Text-strip interaction and export parity** — drag text-strip start/end handles; export timed/styled text and compare with preview.
 4. **Audio export verification** — source audio level/mute, background music loop/volume, timed sound-effect start/volume and audio/video sync.
