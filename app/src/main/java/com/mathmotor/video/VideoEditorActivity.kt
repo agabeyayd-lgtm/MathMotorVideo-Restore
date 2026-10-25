@@ -235,6 +235,7 @@ class VideoEditorActivity : Activity() {
     }
     private val editorPanels = linkedMapOf<String, LinearLayout>()
     private lateinit var editorPanelScroll: ScrollView
+    private lateinit var textPanel: LinearLayout
     private val editorTabButtons = linkedMapOf<String, Button>()
     private var activeEditorPanel: String? = null
     private var textOverlayEditingEnabled: Boolean = false
@@ -789,7 +790,7 @@ class VideoEditorActivity : Activity() {
         clipPanel.addView(endSeek, matchWrap())
         installTrimListeners()
 
-        val textPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        textPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         textPanel.addView(label("METİN KATMANLARI", 13f, Color.rgb(121, 202, 218), true))
         textPanel.addView(label("Yazıyı videonun üstünde sürükle; iki parmakla büyüt veya küçült.", 11f, Color.rgb(154, 171, 190), false))
         textOverlayEditToggle = miniButton("Önizlemede yazı düzenleme: KAPALI") {
