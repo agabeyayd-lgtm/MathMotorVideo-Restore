@@ -29,3 +29,11 @@ The new `savedDraftReopensTextLayerAndClipState` check writes a draft through th
 The canonical checklist lives in [README.md](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/blob/fix/editor-395-gate/README.md). This file is only the short handoff: update both after meaningful progress, but do not maintain duplicate historical unchecked lists. Older entries saying keyboard accessibility or two-clip export are unverified are superseded by run #152 above.
 
 No signed release APK was produced by run #152. Keep version metadata unchanged and do not release version 395.
+
+
+## Latest CI handoff — 2026-10-25
+
+- Run [#158](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40203831760) failed in `savedDraftReopensTextLayerAndClipState` with `Could not find restored text-size label`. Build/unit tests passed; six? The run reports one failing emulator test among seven, so the draft round-trip is still not green.
+- The clip duration check now passed; failure is at the text-size label query after switching to the Metin panel. This alone does not prove text-size data was lost: the size control is late in a vertically scrollable panel and may not be present in the visible accessibility tree.
+- Test-only commit [`eeda257`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/eeda2577ec86f9371fea6a00087abc9843de6ccb) scrolls the panel before asserting the restored size. Wait for the resulting CI run and inspect any next failure rather than weakening the assertion.
+- Keep version 395 unreleased. Baseline remains versionCode 394 / build 61 until all gates pass and user explicitly authorizes release.
