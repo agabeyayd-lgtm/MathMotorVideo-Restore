@@ -174,7 +174,7 @@ class VideoEditorActivity : Activity() {
     private var pendingTimelineScrollX: Int? = null
     private var timelineZoom = 1.0f
     private var deferTimelineRefresh = false
-    private val timelineThumbnailCache = object : android.util.LruCache<String, Bitmap>(256) {}
+    private val timelineThumbnailCache = object : android.util.LruCache<String, Bitmap>(384) {}
     private val pendingTimelineThumbnails = mutableMapOf<String, MutableList<WeakReference<ImageView>>>()
     private val timelineThumbnailExecutor = java.util.concurrent.Executors.newFixedThreadPool(2)
     private lateinit var timelinePlayheadSeek: SeekBar
@@ -1034,7 +1034,7 @@ class VideoEditorActivity : Activity() {
             setPadding(0, dp(5), 0, 0)
         }
         listOf(
-            Triple("clip", "Klip", "✂"),
+            Triple("clip", "Klip", "▣"),
             Triple("text", "Metin", "T"),
             Triple("audio", "Ses", "♫"),
             Triple("export", "Dışa aktar", "⇧")
@@ -3613,7 +3613,7 @@ class VideoEditorActivity : Activity() {
             setBackgroundColor(Color.rgb(26, 37, 51))
         }
         // Cap decode work per clip to keep long timelines responsive and avoid a stale queue.
-        val thumbnailCount = (width / dp(18)).coerceIn(2, 24)
+        val thumbnailCount = (width / dp(14)).coerceIn(3, 40)
         repeat(thumbnailCount) { slot ->
             val image = ImageView(this).apply {
                 scaleType = ImageView.ScaleType.CENTER_CROP
@@ -3623,7 +3623,7 @@ class VideoEditorActivity : Activity() {
             filmstrip.addView(image, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply {
                 if (slot < thumbnailCount - 1) rightMargin = dp(1)
             })
-            val frameTime = clip.startMs + (durationMs * (slot + 1L) / (thumbnailCount + 1L))
+            val frameTime = if (thumbnailCount <= 1) clip.startMs else clip.startMs + (durationMs * slot.toLong() / (thumbnailCount - 1L)).coerceIn(0L, durationMs.coerceAtLeast(0L))
             requestTimelineThumbnail(clip.uri, frameTime, image)
         }
         container.addView(filmstrip, FrameLayout.LayoutParams(
