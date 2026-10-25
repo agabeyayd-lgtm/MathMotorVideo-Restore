@@ -27,8 +27,11 @@ class EditorTimelineInteractionTest {
         val packageName = "com.mathmotor.video.next"
         val fixtureUri = "file:///data/user/0/$packageName/files/editor-test-video.mp4"
 
-        device.executeShellCommand("logcat -c")
-        device.executeShellCommand("am force-stop $packageName")
+        // The instrumentation runner is hosted in the app-under-test process on this
+        // configuration. Calling "am force-stop $packageName" here kills the test itself,
+        // producing "Instrumentation run failed due to Process crashed" before assertions run.
+        // Start the explicit test entry activity directly; it replaces the foreground screen
+        // without killing the package that is hosting this instrumentation.
         device.executeShellCommand(
             "am start -n $packageName/com.mathmotor.video.EditorTestEntryActivity " +
                 "--es video_uri $fixtureUri --es draft_id 22222222-2222-4222-8222-222222222222"
