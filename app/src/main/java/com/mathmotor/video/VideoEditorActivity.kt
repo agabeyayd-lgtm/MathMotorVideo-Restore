@@ -1233,7 +1233,6 @@ class VideoEditorActivity : Activity() {
             }
         }
         // Keep Undo/Redo globally reachable across every tool tab and without panel scrolling.
-        root.addView(clipHistoryRow, matchWrap())
         root.addView(editorPanelScroll, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
         ))
@@ -1278,6 +1277,20 @@ class VideoEditorActivity : Activity() {
                 if (key != "clip") leftMargin = dp(4)
             })
         }
+        // Keep history actions globally available without stealing vertical space
+        // from the compact editor panel on small phones.
+        undoClipButton.text = "↶"
+        undoClipButton.textSize = 18f
+        undoClipButton.minHeight = dp(52)
+        redoClipButton.text = "↷"
+        redoClipButton.textSize = 18f
+        redoClipButton.minHeight = dp(52)
+        dock.addView(undoClipButton, LinearLayout.LayoutParams(0, dp(52), 1f).apply {
+            leftMargin = dp(4)
+        })
+        dock.addView(redoClipButton, LinearLayout.LayoutParams(0, dp(52), 1f).apply {
+            leftMargin = dp(4)
+        })
         root.addView(dock, matchWrap())
 
         setContentView(root)
