@@ -15,6 +15,13 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 
 ## Release baseline and version 395 gate
 
+## Latest CI failure and follow-up — 2026-10-25
+
+- Multi-clip workflow [#40196560235](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40196560235) passed unit tests and debug APK assembly, but its two-clip UI test failed **before export**. The `video_uris` launch extra retained literal double quotes in the `file://` paths, so `MediaMetadataRetriever` could not open either source clip. This does not establish that the MP4 export engine itself failed; it was never reached.
+- Fixed the instrumentation command to wrap the pipe-delimited extra with shell single quotes in commit [`112b9ff46a3858563c492f0025581bba3fa47131`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/112b9ff46a3858563c492f0025581bba3fa47131). The Android-test path change should start a new CI run; mark the issue verified only after checking both import and export assertions.
+- Still required: 2 clips imported (`count=2 skipped=0`), one MP4 around 11 seconds, green second-clip frame at 9.5 seconds, and unchanged source-file hashes.
+
+
 - User-confirmed installed baseline: **versionCode 394, release/build 61 (app-v8.3-61)**.
 - **Version 395 must not be created, signed, published, or offered for update until every required fix below is implemented and verified.**
 - README checklist updates and source commits do not themselves mean a feature is fixed or included in an APK.
