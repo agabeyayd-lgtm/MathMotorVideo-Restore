@@ -120,3 +120,10 @@ This is a reconstruction from recoverable project files, not an exact recovery o
 - [ ] Two-source-video import and one-file export remain not verified.
 - [ ] Saved-project reopen, text/music/sound export parity, undo/redo, physical-device review, signed release/update remain open.
 - **Version 395 is still blocked. No version bump, signing, publication or update offer until all remaining checks pass and the user explicitly authorizes release.**
+
+
+## Latest multi-clip CI diagnosis — 2026-10-25
+- Run [#40196560235](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40196560235) failed at `twoClipsExportToOneMp4InOrder` before export: literal quote characters were preserved in both `file://` input values, so metadata retrieval could not read the files. The actual MP4 export assertions were never reached.
+- Applied the single-quote shell-grouping fix to the test in this active repair branch with commit [`139fa16382b419eeacd486d2b1060ea40c20c9af`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/139fa16382b419eeacd486d2b1060ea40c20c9af). The sibling test branch has the same fix in [`112b9ff46a3858563c492f0025581bba3fa47131`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/112b9ff46a3858563c492f0025581bba3fa47131); run [#145](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40197128496) was running at checkpoint time.
+- [ ] Verify both source clips import (`count=2 skipped=0`) and actually export as one MP4. Acceptance assertions: ~11 s combined duration, green second-clip frame at 9.5 s, unchanged source sizes and hashes.
+- Keep all release blockers open until CI proves them. Version 395 stays blocked; do not change version metadata or publish/offer an APK before all gates pass and the user explicitly authorizes release.
