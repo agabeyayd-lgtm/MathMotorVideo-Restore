@@ -2,17 +2,17 @@
 
 A local-first Android video editor with a CapCut-inspired workflow. Editing and export run on-device. Source videos must remain unchanged; finished edits are exported as new MP4 files.
 
-## Current handoff — 2026-10-25
+## Current handoff — 2026-10-26
 
-**Continue from this checkpoint. Do not restart completed work or repeat passing tests unless related source changes or a regression requires it.**
+**Continue from this checkpoint. Do not restart completed work or repeat passing tests unless a related change requires it. Record the exact failing assertion before changing source or tests.**
 
 - Repository: [MathMotorVideo-Restore](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore)
-- Active branch: `fix/editor-395-gate`
-- Draft PR: [#8 — repair editor interactions for version 395](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/pull/8)
+- Working branch for the latest verification loop: `fix/global-editor-undo`. The existing draft PR #8 targets `fix/editor-395-gate`; do not assume commits on this branch are in that PR.
 - User-installed baseline: **versionCode 394 / build 61 (`app-v8.3-61`)**.
-- Latest green baseline: [CI run #161 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40212230107), commit [`3d910eb`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/3d910eb5466ae05aca2e4fa5f17088dfa9602577). Unit tests, debug APK build, screenshot capture and **all 7 emulator interaction tests passed**.
-- Current task: manual JSON Save As → close editor → open saved JSON. The #165 failure was the test tapping a filename behind the DocumentsUI navigation drawer. In [run #169](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40219003521), the corrected picker flow advanced through JSON restore checks; remaining failures were the music-volume label text mismatch and a thumbnail fingerprint diagnostic that sampled too few points on the compact offline fixture. Commit [`bf1a6e9`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/bf1a6e9dc11ecbd709fabbb4c514be14b0b84b9c) aligns restored music/effect labels with normal editor controls and increases the debug-only thumbnail fingerprint grid from 6×4 to 20×16. [Run #171](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40220299247) is queued to validate both fixes. Do not mark this gate passed until Android round-trip assertions and the follow-on home screenshot test pass.
-- **Release 395 is still blocked.** A green debug CI run is not a signed release. Do not change version metadata, publish/sign an APK, or enable the in-app update until the remaining gates below pass and the user explicitly authorizes release.
+- Historical green baseline: [CI run #161 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40212230107), commit [`3d910eb`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/3d910eb5466ae05aca2e4fa5f17088dfa9602577). Unit tests, debug APK build, screenshot capture and the interaction checks in that run passed.
+- Latest failure: [run #192 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40233158607), commit [`6100ddb`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/6100ddb26ac2b89b5bc4cd0061ac583870905d56). Unit tests and debug APK build passed. The manual JSON round-trip progressed through clip order/trim, playhead/zoom/scroll, text styling, and the project-restoration log confirmed both the music and effect fixture URIs. It then failed while looking for the effect-title label in the audio panel, before scrolling that label into view.
+- Focused follow-up: commit [`941d5fd`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/941d5fd356c54c3278060a91a23a5e42d81340f4) updates the Android interaction test to scroll to the music and effect labels separately before asserting their visibility. [Run #193](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40234200553) is validating this change. If it fails, inspect the new assertion and UI/log evidence first; do not blindly repeat the same patch.
+- **Release 395 remains blocked.** Do not change version metadata, sign/publish an APK, or enable the in-app update until all required gates below pass and the user explicitly authorizes release.
 
 ## Verified — do not repeat without a relevant code change
 
@@ -36,8 +36,8 @@ Work top to bottom. Mark an item complete only when there is test or inspection 
 
 ### 1. Manual project Save As → reopen
 
-Test fixture CI diagnosis: [run #167 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40218228081) hit the hosted runner's apt mirror timeout; [run #168 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40218541657) got an invalid FFmpeg archive. Commit [`9c3c1f2`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/9c3c1f2228ee04c5e7d68fce96dfe9606c1e19b9) removed both network dependencies by decoding checked-in MP4 fixtures. In [run #169](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40219003521), the offline fixtures, unit tests and debug build passed; the two-clip MP4 export also passed. The manual JSON picker now reaches the reopened project, but the restoration test failed on the displayed music-volume label, not on locating/opening the file. The filmstrip fingerprint check also reported one fingerprint with the old sparse diagnostic sampler. Commit [`bf1a6e9`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/bf1a6e9dc11ecbd709fabbb4c514be14b0b84b9c) fixes the restoration label and densifies that sampler. [Run #171](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40220299247) validates these fixes. Keep this checklist item unchecked until the complete test suite passes.
-- [ ] Confirm manual project-file restoration retains clip order and trim bounds, playhead/zoom, text timing/position/style, music/effect URI and volume levels.
+- [ ] Confirm manual project-file restoration retains clip order and trim bounds, playhead/zoom/scroll, text timing/position/style, music/effect URI and titles, all volume levels, and effect start time.
+- Current evidence: run #192 got past the previous cyan text-colour-control failure and reached the audio assertions. The restoration marker reported `soundStartMs=750`, `musicFixtureMatches=true`, and `soundFixtureMatches=true`; the remaining failure was the effect-title selector not finding the off-screen label without scrolling. Commit [`941d5fd`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/941d5fd356c54c3278060a91a23a5e42d81340f4) adds explicit scrolling before the label assertions. Validation is pending in [run #193](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40234200553). Keep this gate unchecked until the complete interaction workflow passes.
 
 ### 2. Unified editor Undo / Redo
 
