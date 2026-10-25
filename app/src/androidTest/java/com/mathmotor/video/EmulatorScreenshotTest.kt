@@ -1,6 +1,5 @@
 package com.mathmotor.video
 
-import android.os.Environment
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
@@ -60,12 +59,14 @@ class EmulatorScreenshotTest {
     }
 
     private fun takeScreenshot(device: UiDevice, name: String) {
-        val testContext = InstrumentationRegistry.getInstrumentation().context
-        val pictures = File(
-            testContext.getExternalFilesDir(Environment.DIRECTORY_PICTURES),
-            "emulator-screenshots"
+        // Write into the app-under-test's writable cache. The instrumentation APK's
+        // external files directory may be unavailable on headless API 35 emulators.
+        val targetContext = InstrumentationRegistry.getInstrumentation().targetContext
+        val pictures = File(targetContext.cacheDir, "emulator-screenshots")
+        assertTrue(
+            "Could not create screenshot directory at ${pictures.absolutePath}",
+            pictures.exists() || pictures.mkdirs()
         )
-        assertTrue("Could not create screenshot directory", pictures.exists() || pictures.mkdirs())
         val saved = device.takeScreenshot(File(pictures, name))
         assertTrue("Screenshot was not saved: $name", saved)
     }
