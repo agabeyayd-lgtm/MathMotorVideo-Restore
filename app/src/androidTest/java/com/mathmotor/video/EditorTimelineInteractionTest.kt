@@ -549,11 +549,9 @@ class EditorTimelineInteractionTest {
 
         // Create a text layer and edit its value. Undo should first restore the empty
         // layer, then remove that layer; Redo must reapply both changes in order.
-        val textTab = device.findObject(By.text("T\nMetin"))
-            ?: device.findObject(By.clazz("android.widget.Button").textContains("Metin"))
-            ?: throw AssertionError("Could not find Metin tab")
+        val textTab = requireObject(device, By.desc("Metin araçları sekmesi"), "Metin tab")
         textTab.click()
-        val panelScroll = UiScrollable(UiSelector().className("android.widget.ScrollView"))
+        val panelScroll = UiScrollable(UiSelector().className("android.widget.ScrollView")).setAsVerticalList()
         assertTrue(
             "Could not reveal new-text control",
             panelScroll.scrollIntoView(UiSelector().description("Yeni metin katmanı ekle"))
@@ -567,18 +565,16 @@ class EditorTimelineInteractionTest {
         device.pressBack()
         device.waitForIdle()
 
-        val clipTab = device.findObject(By.text("▣\nKlip"))
-            ?: device.findObject(By.clazz("android.widget.Button").textContains("Klip"))
-            ?: throw AssertionError("Could not find Klip tab")
+        val clipTab = requireObject(device, By.desc("Klip araçları sekmesi"), "Klip tab")
         clipTab.click()
         device.waitForIdle()
         assertTrue(
             "Could not scroll the clip panel to the unified Undo button",
-            panelScroll.scrollIntoView(UiSelector().text("↶ Geri al"))
+            panelScroll.scrollIntoView(UiSelector().description("Düzenleme geri al"))
         )
         device.waitForIdle()
-        val undo = requireObject(device, By.text("↶ Geri al"), "global Undo button")
-        val redo = requireObject(device, By.text("↷ Yinele"), "global Redo button")
+        val undo = requireObject(device, By.desc("Düzenleme geri al"), "global Undo button")
+        val redo = requireObject(device, By.desc("Düzenleme yinele"), "global Redo button")
 
         undo.click()
         device.waitForIdle()
@@ -610,9 +606,7 @@ class EditorTimelineInteractionTest {
 
         // Exercise the same history with a real SeekBar touch, not a synthetic
         // direct state assignment, so start/stop tracking callbacks are included.
-        val audioTab = device.findObject(By.text("♫\nSes"))
-            ?: device.findObject(By.clazz("android.widget.Button").textContains("Ses"))
-            ?: throw AssertionError("Could not find Ses tab")
+        val audioTab = requireObject(device, By.desc("Ses araçları sekmesi"), "Ses tab")
         audioTab.click()
         assertTrue("Audio panel did not appear", device.wait(Until.hasObject(By.text("SES KATMANLARI")), 4_000))
         assertTrue(
@@ -633,11 +627,11 @@ class EditorTimelineInteractionTest {
         assertTrue("Touch did not change music volume: $changedLabel", changedValue != 45)
 
         clipTab.click()
-        requireObject(device, By.text("↶ Geri al"), "Undo audio volume").click()
+        requireObject(device, By.desc("Düzenleme geri al"), "Undo audio volume").click()
         val restoredLabel = requireObject(device, By.text("Müzik sesi: 45%"), "restored music volume label")
         assertTrue("Undo did not restore music volume 45%", restoredLabel.text == "Müzik sesi: 45%")
 
-        requireObject(device, By.text("↷ Yinele"), "Redo audio volume").click()
+        requireObject(device, By.desc("Düzenleme yinele"), "Redo audio volume").click()
         assertTrue(
             "Redo did not restore the adjusted music volume",
             device.wait(Until.hasObject(By.text("Müzik sesi: $changedValue%")), 4_000)

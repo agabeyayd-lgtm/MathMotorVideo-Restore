@@ -813,9 +813,11 @@ class VideoEditorActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
         }
         undoClipButton = miniButton("↶ Geri al") { undoEditorEdit() }.apply {
+            contentDescription = "Düzenleme geri al"
             isEnabled = false
         }
         redoClipButton = miniButton("↷ Yinele") { redoEditorEdit() }.apply {
+            contentDescription = "Düzenleme yinele"
             isEnabled = false
         }
         clipHistoryRow.addView(undoClipButton, LinearLayout.LayoutParams(0, dp(40), 1f))
@@ -1263,6 +1265,12 @@ class VideoEditorActivity : Activity() {
                 minHeight = dp(52)
                 setPadding(dp(1), dp(2), dp(1), dp(2))
                 maxLines = 2
+                contentDescription = when (key) {
+                    "clip" -> "Klip araçları sekmesi"
+                    "text" -> "Metin araçları sekmesi"
+                    "audio" -> "Ses araçları sekmesi"
+                    else -> "Dışa aktarma sekmesi"
+                }
             }
             editorTabButtons[key] = tab
             dock.addView(tab, LinearLayout.LayoutParams(0, dp(52), 1f).apply {
