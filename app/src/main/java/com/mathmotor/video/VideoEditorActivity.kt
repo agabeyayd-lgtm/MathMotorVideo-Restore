@@ -1039,7 +1039,7 @@ class VideoEditorActivity : Activity() {
             setPadding(0, dp(5), 0, 0)
         }
         listOf(
-            Triple("clip", "Klip", "✂"),
+            Triple("clip", "Klip", "▣"),
             Triple("text", "Metin", "T"),
             Triple("audio", "Ses", "♫"),
             Triple("export", "Dışa aktar", "⇧")
