@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - fix/editor-395-gate
+      - fix/global-editor-undo
     paths:
       - "app/build.gradle.kts"
       - "app/src/main/**"
