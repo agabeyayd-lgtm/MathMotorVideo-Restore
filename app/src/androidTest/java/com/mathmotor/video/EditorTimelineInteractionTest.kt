@@ -596,7 +596,7 @@ class EditorTimelineInteractionTest {
         )
         assertTrue(
             "Editor did not open from the saved draft",
-            device.wait(Until.hasObject(By.textContains("PROJE AÇILDI")), 20_000)
+            device.wait(Until.hasObject(By.textContains("Taslak açıldı")), 20_000)
         )
         assertTrue(
             "Saved draft did not restore the source video lane",
