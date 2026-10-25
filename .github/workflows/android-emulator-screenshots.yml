@@ -48,14 +48,14 @@ jobs:
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
 
+      - name: Set up FFmpeg
+        uses: AnimMouse/setup-ffmpeg@v1
+        with:
+          version: "7.1"
+
       - name: Generate a deterministic sample video for editor smoke tests
         run: |
           echo "Preparing deterministic editor fixtures"
-          if ! command -v ffmpeg >/dev/null 2>&1; then
-            echo "ffmpeg is missing; install it with a bounded package-manager timeout"
-            timeout -k 5s 120s sudo apt-get update
-            timeout -k 5s 120s sudo apt-get install -y ffmpeg
-          fi
           command -v ffmpeg
           ffmpeg -version | head -n 1
           mkdir -p app/build/test-fixtures
