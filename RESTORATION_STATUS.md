@@ -8,8 +8,9 @@
 - Branch: `fix/editor-395-gate`
 - PR: [#8](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/pull/8)
 - Installed baseline: versionCode **394** / build **61** (`app-v8.3-61`)
-- Latest commit: [`3d910eb`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/3d910eb5466ae05aca2e4fa5f17088dfa9602577)
-- Latest validation: [run #161 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40212230107). Unit tests, debug build, screenshot capture and **7/7 emulator interaction tests passed**.
+- Latest code fix: [`ec8db25`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/ec8db25a6422e4b9184c0cc79dccb22f0c9c8828) — make the manual JSON picker test resilient to stale DocumentsUI root rows.
+- Latest green validation: [run #161 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40212230107). Unit tests, debug build, screenshot capture and **7/7 emulator interaction tests passed**.
+- Active validation: [run #164](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40215482800) — new manual JSON Save As/reopen test and existing emulator checks; result not yet confirmed.
 
 ## Latest confirmed progress
 
