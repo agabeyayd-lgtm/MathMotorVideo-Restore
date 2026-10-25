@@ -36,16 +36,16 @@ This is the continuing handoff log. Resume from this branch and update this sect
 - [x] Added unit tests for center-playhead mapping, keeping the zoom anchor under the same finger position, and reaching the exact timeline end with symmetric padding.
 - [x] Updated CI path filters so changes in `app/src/test/**` and `app/src/androidTest/**` run the workflow.
 - [x] Removed an early `requestDisallowInterceptTouchEvent(true)` in the video filmstrip's down event so ordinary one-finger horizontal swipes can reach the parent timeline scroller; long-press menu continues to own the gesture when activated.
-- [x] Added a UIAutomator interaction test that starts the deterministic 8-second sample video, drags the fixed playhead, pinches to zoom, scrolls to the end and back to the start.
+- [x] Added a UIAutomator interaction test that starts the deterministic 8-second sample video, drags the fixed playhead, pinches to zoom, and repeatedly scrolls until it asserts the actual final frame (≥7.8 s) and start frame (≤0.2 s).
 - [x] Updated the older home-screen screenshot test to expect the current `Videoların` heading instead of the removed `VİDEO STÜDYOSU` label.
-- [ ] **Latest validation pending:** workflow [#40169600182](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40169600182) is running unit tests, building the debug APK and is configured to run connected Android UI tests after fixture setup. Check final result; don't call the gesture path passed until instrumentation succeeds.
+- [ ] **Latest validation pending:** workflow [#40169846327](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40169846327) is running unit tests, building the debug APK and is configured to run connected Android UI tests after fixture setup. Check final result; don't call the gesture path passed until instrumentation succeeds.
 - [ ] **Still not verified interactively:** one-finger lane scrolling/trim, pinch, fixed playhead sync, thumbnail variety/loading, text timing and size, Undo/Redo, export, multi-clip assembly and save/reopen.
 - [ ] Text-layer timing handles and unified Undo/Redo history still need work; known history records clip edits only.
 - [ ] Finish home-screen refinement after reviewing screenshots; scan every screen for redundant scissors icons.
 - [ ] Extend interaction tests to cover trim handles, split at the playhead, text timing/size, Undo/Redo, audio, MP4 export and save/reopen.
 - [ ] Do not bump versionCode/versionName or prepare a release APK until every checklist item passes and the user authorizes the release.
 
-Latest playhead source change: `ab6d614c8ceff847537fce4cd77a69db50fb3bc9`. Timeline math helpers: `2213b8d5305837a92b7408abfc813e91b1f216b6`. Mapping tests: `f8039c82c989d99f9e73df2e90f69719665e980d`. Filmstrip swipe fix: `8458c7737649bf05ffba10d58208dea3304993f3`. Interaction test: `7f1b886a5d8a4d0bce7163ae0c60b75ec7ea92fd`. Stale-home-test update: `64670fbefbf88b66210190c936568111d9b4b25c`. Instrumentation workflow: `ede0225a127021945736839ccf0f5199abb0a2e5`.
+Latest playhead source change: `ab6d614c8ceff847537fce4cd77a69db50fb3bc9`. Timeline math helpers: `2213b8d5305837a92b7408abfc813e91b1f216b6`. Mapping tests: `f8039c82c989d99f9e73df2e90f69719665e980d`. Filmstrip swipe fix: `8458c7737649bf05ffba10d58208dea3304993f3`. Interaction test: `7f1b886a5d8a4d0bce7163ae0c60b75ec7ea92fd`; strengthened exact start/end assertions: `7dd20078dd35a0f68b70075ff5bb8e20769b712b`. Stale-home-test update: `64670fbefbf88b66210190c936568111d9b4b25c`. Instrumentation workflow: `ede0225a127021945736839ccf0f5199abb0a2e5`.
 
 ## Current baseline capabilities (present in source; not all are proven reliable)
 
