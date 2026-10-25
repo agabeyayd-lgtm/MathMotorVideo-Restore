@@ -41,7 +41,7 @@ This section is the handoff point. Continue from this branch and update this log
 - [ ] Finish home-screen simplification after emulator review; inspect all screens for any remaining redundant scissors icons.
 - [ ] Build/unit tests/emulator interaction tests have not yet been run for this repair branch.
 
-Last completed code commit: `f0b9af235fb35f6b03581a41cae653a77e29249f`.
+Last source/UI commit: `ebf12bb8c9c752e22d2824c3c3b0c2ec600615b2`. Latest docs progress commit: `ac7ac751adb276cfde6428a4f733792b649b3821`. Emulator workflow run for the repair branch is queued: [run #40167092999](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40167092999).
 
 ## Current baseline capabilities (present in source; not all are proven reliable)
 
