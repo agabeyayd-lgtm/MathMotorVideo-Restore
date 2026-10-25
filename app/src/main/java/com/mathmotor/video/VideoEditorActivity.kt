@@ -3858,15 +3858,18 @@ class VideoEditorActivity : Activity() {
         // Cap decode work per clip to keep long timelines responsive and avoid a stale queue.
         val thumbnailCount = (width / dp(14)).coerceIn(3, 40)
         repeat(thumbnailCount) { slot ->
+            val frameTime = if (thumbnailCount <= 1) clip.startMs else {
+                clip.startMs + (durationMs * slot.toLong() / (thumbnailCount - 1L))
+                    .coerceIn(0L, durationMs.coerceAtLeast(0L))
+            }
             val image = ImageView(this).apply {
                 scaleType = ImageView.ScaleType.CENTER_CROP
                 setBackgroundColor(Color.rgb(31, 46, 59))
-                contentDescription = "Klip karesi"
+                contentDescription = "Klip karesi ${formatTimelineMs(frameTime)} yükleniyor"
             }
             filmstrip.addView(image, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply {
                 if (slot < thumbnailCount - 1) rightMargin = dp(1)
             })
-            val frameTime = if (thumbnailCount <= 1) clip.startMs else clip.startMs + (durationMs * slot.toLong() / (thumbnailCount - 1L)).coerceIn(0L, durationMs.coerceAtLeast(0L))
             requestTimelineThumbnail(clip.uri, frameTime, image)
         }
         container.addView(filmstrip, FrameLayout.LayoutParams(
@@ -4059,13 +4062,42 @@ class VideoEditorActivity : Activity() {
         }
     }
 
+    private fun recordTimelineThumbnailReady(timestampMs: Long, bitmap: Bitmap) {
+        if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) == 0) return
+        android.util.Log.i(
+            "TimelineThumbnail",
+            "TIMELINE_THUMBNAIL_READY timestampMs=$timestampMs fingerprint=${timelineThumbnailFingerprint(bitmap)}"
+        )
+    }
+
+    /**
+     * Sample pixels across the decoded filmstrip thumbnail, so emulator tests can detect
+     * accidental reuse of the same first frame for every requested timestamp.
+     */
+    private fun timelineThumbnailFingerprint(bitmap: Bitmap): Long {
+        if (bitmap.width <= 0 || bitmap.height <= 0 || bitmap.isRecycled) return 0L
+        var hash = 1469598103934665603L
+        val columns = 6
+        val rows = 4
+        for (row in 0 until rows) {
+            val y = (row * (bitmap.height - 1)) / (rows - 1)
+            for (column in 0 until columns) {
+                val x = (column * (bitmap.width - 1)) / (columns - 1)
+                hash = (hash xor bitmap.getPixel(x, y).toLong()) * 1099511628211L
+            }
+        }
+        return hash
+    }
+
     private fun requestTimelineThumbnail(uri: Uri, timeMs: Long, target: ImageView) {
         val timestampMs = timeMs.coerceAtLeast(0L)
         val key = "${uri}#${timestampMs}"
         target.tag = key
         val cached = timelineThumbnailCache.get(key)
         if (cached != null) {
+            target.contentDescription = "Klip karesi ${formatTimelineMs(timestampMs)} yüklendi"
             target.setImageBitmap(cached)
+            recordTimelineThumbnailReady(timestampMs, cached)
             return
         }
         val waiting = pendingTimelineThumbnails[key]
@@ -4096,15 +4128,25 @@ class VideoEditorActivity : Activity() {
                     // Keep the neutral placeholder visible only if both decoders fail.
                 }
                 val decoded = result
+                if (decoded != null) recordTimelineThumbnailReady(timestampMs, decoded)
                 runOnUiThread {
                     val targets = pendingTimelineThumbnails.remove(key).orEmpty()
                     if (decoded != null && !isFinishing && !isDestroyed) {
                         timelineThumbnailCache.put(key, decoded)
                         targets.forEach { ref ->
                             val image = ref.get()
-                            if (image != null && image.tag == key) image.setImageBitmap(decoded)
+                            if (image != null && image.tag == key) {
+                                image.contentDescription = "Klip karesi ${formatTimelineMs(timestampMs)} yüklendi"
+                                image.setImageBitmap(decoded)
+                            }
                         }
                     } else {
+                        targets.forEach { ref ->
+                            val image = ref.get()
+                            if (image != null && image.tag == key) {
+                                image.contentDescription = "Klip karesi ${formatTimelineMs(timestampMs)} yüklenemedi"
+                            }
+                        }
                         decoded?.recycle()
                     }
                 }
