@@ -652,6 +652,270 @@ class EditorTimelineInteractionTest {
     }
 
     @Test
+    fun manualJsonSaveAsThenCloseAndReopenPreservesProjectState() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val device = UiDevice.getInstance(instrumentation)
+        val packageName = context.packageName
+        val fixture = java.io.File(context.filesDir, "editor-test-video.mp4")
+        assertTrue("Manual JSON round-trip fixture is missing", fixture.isFile && fixture.length() > 0L)
+
+        val fileName = "MM_JSON_RT_${System.currentTimeMillis()}.json"
+        val draftId = java.util.UUID.randomUUID().toString()
+        val fixtureUri = Uri.fromFile(fixture).toString()
+        val clip = org.json.JSONObject()
+            .put("uri", fixtureUri)
+            .put("title", fixture.name)
+            .put("durationMs", 8020L)
+            .put("startMs", 500L)
+            .put("endMs", 7520L)
+        val textLayer = org.json.JSONObject()
+            .put("id", 932L)
+            .put("text", "MANUAL JSON TEXT")
+            .put("startMs", 0L)
+            .put("endMs", 6500L)
+            .put("timingCustomized", true)
+            .put("position", "BOTTOM")
+            .put("sizeSp", 32)
+            .put("xFraction", 0.5)
+            .put("yFraction", 0.82)
+            .put("colorPreset", "YELLOW")
+            .put("isBold", true)
+        val project = org.json.JSONObject()
+            .put("format", "MathMotorVideoProject")
+            .put("version", 1)
+            .put("clips", org.json.JSONArray().put(clip))
+            .put("selectedClipIndex", 0)
+            .put("timelinePlayheadMs", 1000L)
+            .put("timelineZoom", 2.0)
+            .put("timelineHorizontalScrollMs", 500L)
+            .put("musicUri", fixtureUri)
+            .put("musicTitle", "ROUND_TRIP_MUSIC")
+            .put("soundUri", fixtureUri)
+            .put("soundTitle", "ROUND_TRIP_EFFECT")
+            .put("soundDurationMs", 8020L)
+            .put("soundStartMs", 750L)
+            .put("textLayers", org.json.JSONArray().put(textLayer))
+            .put("selectedTextLayerId", 932L)
+            .put("sourceAudioVolume", 72)
+            .put("musicVolume", 37)
+            .put("soundVolume", 66)
+            .put("keepSourceAudio", true)
+            .put("exportName", "ManualJsonRoundTrip")
+
+        assertTrue(
+            "Could not seed the manual-file-picker test project",
+            VideoProjectDraftStore.save(context, draftId, "Manual JSON test seed", project)
+        )
+
+        // Ensure a real home activity exists underneath the test editor so Back genuinely
+        // closes the editing session before a second, fresh editor opens the JSON file.
+        device.executeShellCommand("am start -n $packageName/com.mathmotor.video.MainActivity")
+        assertTrue(
+            "The app home screen did not open before the manual JSON test",
+            device.wait(Until.hasObject(By.textContains("Boş proje oluştur")), 12_000)
+        )
+        device.executeShellCommand(
+            "am start -n $packageName/com.mathmotor.video.EditorTestEntryActivity --es draft_id $draftId"
+        )
+        assertTrue(
+            "The seeded editor project did not open",
+            device.wait(Until.hasObject(By.textContains("Taslak açıldı")), 20_000)
+        )
+        assertTrue(
+            "Seeded clip trim duration was not present before Save As",
+            device.wait(Until.hasObject(By.textContains("00:07.02")), 8_000)
+        )
+
+        val exportTab = device.findObject(By.text("Dışa aktar ›"))
+            ?: throw AssertionError("Could not open export/project panel for manual Save As")
+        exportTab.click()
+        assertTrue(
+            "The project/export panel did not open",
+            device.wait(Until.hasObject(By.text("PROJE / DIŞA AKTARMA")), 8_000)
+        )
+        val panelScroller = UiScrollable(UiSelector().className("android.widget.ScrollView"))
+            .setAsVerticalList()
+        assertTrue(
+            "Could not scroll to the actual project Save As button",
+            panelScroller.scrollIntoView(UiSelector().text("Projeyi farklı kaydet (.JSON)"))
+        )
+        requireObject(
+            device,
+            By.text("Projeyi farklı kaydet (.JSON)"),
+            "manual JSON Save As button"
+        ).click()
+
+        // Exercise the platform document picker rather than writing the JSON directly in the test.
+        val filenameSelectors = arrayOf(
+            By.res("com.google.android.documentsui:id/filename"),
+            By.res("com.android.documentsui:id/filename"),
+            By.clazz("android.widget.EditText")
+        )
+        val filenameDeadline = SystemClock.uptimeMillis() + 12_000L
+        var filenameField: UiObject2? = null
+        while (SystemClock.uptimeMillis() < filenameDeadline && filenameField == null) {
+            filenameField = findObjectByAny(device, *filenameSelectors)
+            if (filenameField == null) SystemClock.sleep(200)
+        }
+        if (filenameField == null) {
+            val hierarchy = java.io.File(context.cacheDir, "manual-json-save-picker.xml")
+            device.dumpWindowHierarchy(hierarchy)
+            throw AssertionError(
+                "Android Create Document picker did not expose a filename field. " +
+                    "Hierarchy: ${hierarchy.takeIf { it.isFile }?.readText()?.take(4500)}"
+            )
+        }
+        filenameField.setText(fileName)
+        val saveButton = findObjectByAny(
+            device,
+            By.res("com.google.android.documentsui:id/save"),
+            By.res("com.android.documentsui:id/save"),
+            By.text("Save"),
+            By.text("SAVE"),
+            By.text("Kaydet"),
+            By.text("KAYDET")
+        ) ?: throw AssertionError("Could not find Save in Android's Create Document picker")
+        saveButton.click()
+        assertTrue(
+            "The app did not confirm that manual JSON Save As completed",
+            device.wait(Until.hasObject(By.textContains("PROJE KAYDEDİLDİ")), 15_000)
+        )
+        android.util.Log.i("ManualJsonRoundTripTest", "stage=json-saved filename=$fileName")
+
+        // Close the original editor. Re-enter via the app's home button; no direct loadProject
+        // bridge is used for the reopening step.
+        device.pressBack()
+        device.waitForIdle()
+        if (!device.wait(Until.hasObject(By.textContains("Boş proje oluştur")), 6_000)) {
+            device.executeShellCommand("am start -n $packageName/com.mathmotor.video.MainActivity")
+        }
+        assertTrue(
+            "Back did not return to the home screen after saving JSON",
+            device.wait(Until.hasObject(By.textContains("Boş proje oluştur")), 12_000)
+        )
+        requireObject(
+            device,
+            By.textContains("Boş proje oluştur"),
+            "home screen empty-project action after closing editor"
+        ).click()
+        assertTrue(
+            "A fresh editor did not open after closing the original session",
+            device.wait(Until.hasObject(By.text("Dışa aktar ›")), 15_000)
+        )
+
+        val freshExportTab = requireObject(device, By.text("Dışa aktar ›"), "fresh editor export tab")
+        freshExportTab.click()
+        val freshPanelScroller = UiScrollable(UiSelector().className("android.widget.ScrollView"))
+            .setAsVerticalList()
+        assertTrue(
+            "Could not scroll to the Open Project action in the fresh editor",
+            freshPanelScroller.scrollIntoView(UiSelector().text("Kayıtlı projeyi aç"))
+        )
+        requireObject(device, By.text("Kayıtlı projeyi aç"), "open saved JSON button").click()
+
+        // The picker commonly opens on Recents. If the newly saved file is not immediately
+        // visible, navigate through its roots to Downloads before failing.
+        val openFileSelector = By.text(fileName)
+        var savedFile = device.findObject(openFileSelector)
+        if (savedFile == null) {
+            val showRoots = findObjectByAny(
+                device,
+                By.descContains("Show roots"),
+                By.descContains("Show navigation drawer"),
+                By.descContains("navigation drawer")
+            )
+            showRoots?.click()
+            val downloads = device.findObject(By.text("Downloads"))
+                ?: device.findObject(By.text("Download"))
+            if (downloads != null) {
+                downloads.click()
+                device.waitForIdle()
+            }
+            val fileDeadline = SystemClock.uptimeMillis() + 10_000L
+            while (SystemClock.uptimeMillis() < fileDeadline && savedFile == null) {
+                savedFile = device.findObject(openFileSelector)
+                if (savedFile == null) SystemClock.sleep(250)
+            }
+        }
+        if (savedFile == null) {
+            val hierarchy = java.io.File(context.cacheDir, "manual-json-open-picker.xml")
+            device.dumpWindowHierarchy(hierarchy)
+            throw AssertionError(
+                "The file saved through Create Document was not discoverable by Open Document: $fileName. " +
+                    "Hierarchy: ${hierarchy.takeIf { it.isFile }?.readText()?.take(4500)}"
+            )
+        }
+        savedFile.click()
+        assertTrue(
+            "Opening the saved JSON did not report project restoration",
+            device.wait(Until.hasObject(By.textContains("PROJE AÇILDI")), 15_000)
+        )
+        assertTrue(
+            "Manual JSON did not restore the trimmed clip duration",
+            device.wait(Until.hasObject(By.textContains("00:07.02")), 8_000)
+        )
+        assertTrue(
+            "Manual JSON did not restore the preview text",
+            device.wait(Until.hasObject(By.clazz("android.widget.TextView").text("MANUAL JSON TEXT")), 10_000)
+        )
+
+        val restoredTextTab = device.findObject(By.clazz("android.widget.Button").textContains("Metin"))
+            ?: throw AssertionError("Could not inspect restored manual JSON text settings")
+        restoredTextTab.click()
+        val restoredTextInput = requireObject(
+            device,
+            By.desc("Metin katmanı metin girişi"),
+            "editable text from manually reopened JSON"
+        )
+        assertTrue(
+            "Manual JSON did not restore the editable text",
+            restoredTextInput.text == "MANUAL JSON TEXT"
+        )
+        val textPanelScroller = UiScrollable(UiSelector().className("android.widget.ScrollView"))
+            .setAsVerticalList()
+        assertTrue(
+            "Could not scroll to text size after manual JSON restore",
+            textPanelScroller.scrollIntoView(UiSelector().textContains("Yazı boyutu:"))
+        )
+        assertTrue(
+            "Manual JSON did not restore text size 32 sp",
+            device.wait(Until.hasObject(By.textContains("Yazı boyutu: 32")), 5_000)
+        )
+
+        val restoredAudioTab = device.findObject(By.clazz("android.widget.Button").textContains("Ses"))
+            ?: throw AssertionError("Could not inspect restored manual JSON audio settings")
+        restoredAudioTab.click()
+        assertTrue(
+            "Manual JSON did not restore the music reference",
+            device.wait(Until.hasObject(By.textContains("ROUND_TRIP_MUSIC")), 8_000)
+        )
+        assertTrue(
+            "Manual JSON did not restore the sound-effect reference",
+            device.wait(Until.hasObject(By.textContains("ROUND_TRIP_EFFECT")), 8_000)
+        )
+        val audioPanelScroller = UiScrollable(UiSelector().className("android.widget.ScrollView"))
+            .setAsVerticalList()
+        assertTrue(
+            "Manual JSON did not restore music volume 37%",
+            audioPanelScroller.scrollIntoView(UiSelector().text("Müzik sesi: 37%"))
+        )
+        assertTrue(
+            "Manual JSON did not restore effect volume 66%",
+            audioPanelScroller.scrollIntoView(UiSelector().text("Efekt sesi: 66%"))
+        )
+        assertTrue(
+            "Manual JSON did not restore source volume 72%",
+            audioPanelScroller.scrollIntoView(UiSelector().text("Orijinal video sesi: 72%"))
+        )
+        android.util.Log.i(
+            "ManualJsonRoundTripTest",
+            "stage=verified filename=$fileName trimMs=7020 text=MANUAL_JSON_TEXT sizeSp=32 " +
+                "music=ROUND_TRIP_MUSIC/37 effect=ROUND_TRIP_EFFECT/66 sourceAudio=72"
+        )
+    }
+
+    @Test
     fun twoClipsExportToOneMp4InOrder() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
