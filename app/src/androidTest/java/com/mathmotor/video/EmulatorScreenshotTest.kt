@@ -29,7 +29,7 @@ class EmulatorScreenshotTest {
 
         assertTrue(
             "Home screen did not appear in the emulator",
-            device.wait(Until.hasObject(By.text("VİDEO STÜDYOSU")), 20_000)
+            device.wait(Until.hasObject(By.text("MathMotor Video")), 20_000)
         )
         device.waitForIdle()
         takeScreenshot(device, "home.png")
