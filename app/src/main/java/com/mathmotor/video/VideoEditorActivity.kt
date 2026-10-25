@@ -183,6 +183,9 @@ class VideoEditorActivity : Activity() {
     private var timelinePreviewLoaded = false
     private var previewSingleClip = false
     private val timelineHandler = Handler(Looper.getMainLooper())
+    private val commitTextInputHistoryTask = object : Runnable {
+        override fun run() { commitPendingTextInputHistory() }
+    }
     private val textTimelineRefreshTask = object : Runnable {
         override fun run() { refreshTimelineTracks() }
     }
@@ -350,7 +353,7 @@ class VideoEditorActivity : Activity() {
             textSize = textSizeSp.toFloat()
             gravity = Gravity.CENTER
             maxLines = 2
-            maxWidth = dp(170)
+            maxWidth = dp(320)
             setTextColor(Color.WHITE)
             setTypeface(Typeface.DEFAULT, Typeface.BOLD)
             setPadding(dp(10), dp(6), dp(10), dp(6))
@@ -1755,7 +1758,7 @@ class VideoEditorActivity : Activity() {
                 val duration = (clip.endMs - clip.startMs).coerceAtLeast(0L)
                 val nextVideoOffsetMs = videoOffsetMs + duration
                 val width = widthBetween(videoOffsetMs, nextVideoOffsetMs).coerceAtLeast(1)
-                val height = dp(if (keyboardLayoutActive || compactEditorLayout) 18 else 42)
+                val height = dp(if (keyboardLayoutActive || compactEditorLayout) 20 else 54)
                 val block = buildVideoClipFilmstrip(clip, index, width, height, index == selectedClipIndex)
                 // Widths use absolute boundaries, so fractional-pixel rounding cannot accumulate.
                 videoTrack.addView(block, LinearLayout.LayoutParams(width, height))
@@ -1841,6 +1844,65 @@ class VideoEditorActivity : Activity() {
         params.leftMargin = lineCenterX - dp(14)
         timelinePlayheadLine.layoutParams = params
         timelinePlayheadLine.bringToFront()
+    }
+
+    private inner class TimelineHorizontalScrollView(context: android.content.Context) :
+        android.widget.HorizontalScrollView(context) {
+        private var pinchAnchorTimeMs = 0L
+        private var pinchChanged = false
+        private val scaleDetector = android.view.ScaleGestureDetector(
+            context,
+            object : android.view.ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                override fun onScaleBegin(detector: android.view.ScaleGestureDetector): Boolean {
+                    val rawTimelineX = scrollX + detector.focusX - timelinePlayheadContentInsetPx()
+                    pinchAnchorTimeMs = TimelineScaleMath.millisecondsForPixels(
+                        rawTimelineX.coerceAtLeast(0f), timelinePixelsPerSecond()
+                    ).coerceIn(0L, totalOutputDurationMs())
+                    pinchChanged = false
+                    return true
+                }
+
+                override fun onScale(detector: android.view.ScaleGestureDetector): Boolean {
+                    val nextZoom = (timelineZoom * detector.scaleFactor).coerceIn(0.5f, 8.0f)
+                    if (nextZoom != timelineZoom) {
+                        timelineZoom = nextZoom
+                        pinchChanged = true
+                        pendingTimelineScrollX = TimelineScrollMath.scrollForTimeAtViewportX(
+                            pinchAnchorTimeMs, detector.focusX,
+                            timelinePlayheadContentInsetPx(), timelinePixelsPerSecond()
+                        )
+                        timelineHorizontalScrollX = pendingTimelineScrollX ?: timelineHorizontalScrollX
+                    }
+                    return true
+                }
+
+                override fun onScaleEnd(detector: android.view.ScaleGestureDetector) {
+                    if (!pinchChanged) return
+                    pendingTimelineScrollX = TimelineScrollMath.scrollForTimeAtViewportX(
+                        pinchAnchorTimeMs, detector.focusX,
+                        timelinePlayheadContentInsetPx(), timelinePixelsPerSecond()
+                    )
+                    timelineHorizontalScrollX = pendingTimelineScrollX ?: timelineHorizontalScrollX
+                    pinchChanged = false
+                    refreshTimelineTracks()
+                    status.text = "Zaman çizelgesi: " + timelineZoom.toString() + "×"
+                }
+            }
+        )
+
+        override fun onInterceptTouchEvent(ev: android.view.MotionEvent): Boolean {
+            if (ev.pointerCount >= 2 || scaleDetector.isInProgress) return true
+            return super.onInterceptTouchEvent(ev)
+        }
+
+        override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
+            if (event.pointerCount >= 2 || scaleDetector.isInProgress ||
+                event.actionMasked == android.view.MotionEvent.ACTION_POINTER_UP) {
+                scaleDetector.onTouchEvent(event)
+                return true
+            }
+            return super.onTouchEvent(event)
+        }
     }
 
     private fun timelinePixelsPerSecond(): Float = dp(22).toFloat() * timelineZoom
@@ -1950,6 +2012,7 @@ class VideoEditorActivity : Activity() {
                 timelinePlayheadMs = TimelineTrimMath.timeForProgress(progress, totalOutputDurationMs())
                 updateTimelinePlayheadLabel()
                 seekTimelinePreview(timelinePlayheadMs)
+                scrollTimelineToPlayhead(timelinePlayheadMs)
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar?) {
@@ -2022,6 +2085,7 @@ class VideoEditorActivity : Activity() {
         if (index !in clips.indices) return
         val offsetMs = clips.take(index).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
         timelinePlayheadMs = (offsetMs + currentPlayer.currentPosition).coerceIn(0L, totalOutputDurationMs())
+        if (currentPlayer.isPlaying) scrollTimelineToPlayhead(timelinePlayheadMs)
         if (selectedClipIndex != index) {
             selectedClipIndex = index
             refreshClipList()
@@ -2040,6 +2104,7 @@ class VideoEditorActivity : Activity() {
         val clipDuration = (clip.endMs - clip.startMs).coerceAtLeast(0L)
         timelinePlayheadMs = (beforeMs + currentPlayer.currentPosition.coerceIn(0L, clipDuration))
             .coerceIn(0L, totalOutputDurationMs())
+        if (currentPlayer.isPlaying) scrollTimelineToPlayhead(timelinePlayheadMs)
         if (::timelinePlayheadSeek.isInitialized) {
             timelinePlayheadSeek.progress = TimelineTrimMath.progressForTime(timelinePlayheadMs, totalOutputDurationMs())
         }
@@ -2069,6 +2134,7 @@ class VideoEditorActivity : Activity() {
         ClipEditSnapshot(projectJson = createProjectJson().toString())
 
     private fun recordClipEdit() {
+        commitPendingTextInputHistory()
         pushClipUndoSnapshot(captureClipEditSnapshot())
     }
 
@@ -2394,7 +2460,7 @@ class VideoEditorActivity : Activity() {
         textSize = 24f
         gravity = Gravity.CENTER
         maxLines = 2
-        maxWidth = dp(170)
+        maxWidth = dp(320)
         setTextColor(Color.WHITE)
         setTypeface(Typeface.DEFAULT, Typeface.BOLD)
         setPadding(dp(10), dp(6), dp(10), dp(6))
@@ -3562,11 +3628,11 @@ class VideoEditorActivity : Activity() {
             setBackgroundColor(Color.rgb(26, 37, 51))
         }
         // Cap decode work per clip to keep long timelines responsive and avoid a stale queue.
-        val thumbnailCount = (width / dp(18)).coerceIn(2, 24)
+        val thumbnailCount = (width / dp(16)).coerceIn(10, 40)
         repeat(thumbnailCount) { slot ->
             val image = ImageView(this).apply {
                 scaleType = ImageView.ScaleType.CENTER_CROP
-                setBackgroundColor(Color.rgb(31, 46, 59))
+                setBackgroundColor(Color.rgb(38, 55, 70))
                 contentDescription = "Klip karesi"
             }
             filmstrip.addView(image, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply {
@@ -3722,8 +3788,8 @@ class VideoEditorActivity : Activity() {
                     retriever.getScaledFrameAtTime(
                         frameTimeUs,
                         MediaMetadataRetriever.OPTION_CLOSEST,
-                        96,
-                        54
+                        160,
+                        90
                     )
                 }.getOrNull()
             } else {
@@ -3751,7 +3817,7 @@ class VideoEditorActivity : Activity() {
         var frameFuture: java.util.concurrent.Future<FrameExtractor.Frame>? = null
         try {
             val createdExtractor = FrameExtractor.Builder(this, MediaItem.fromUri(uri))
-                .setEffects(listOf(Presentation.createForHeight(96)))
+                .setEffects(listOf(Presentation.createForHeight(160)))
                 .build()
             extractor = createdExtractor
             val future = createdExtractor.getFrame(timeMs.coerceAtLeast(0L))
@@ -3786,14 +3852,14 @@ class VideoEditorActivity : Activity() {
                 try {
                     val original = decodeTimelineFrame(uri, timestampMs)
                     if (original != null && !original.isRecycled && original.width > 0 && original.height > 0) {
-                        val scale = maxOf(96f / original.width, 54f / original.height)
-                        val scaledWidth = (original.width * scale).toInt().coerceAtLeast(96)
-                        val scaledHeight = (original.height * scale).toInt().coerceAtLeast(54)
+                        val scale = maxOf(160f / original.width, 90f / original.height)
+                        val scaledWidth = (original.width * scale).toInt().coerceAtLeast(160)
+                        val scaledHeight = (original.height * scale).toInt().coerceAtLeast(90)
                         val scaled = Bitmap.createScaledBitmap(original, scaledWidth, scaledHeight, true)
                         if (scaled !== original && !original.isRecycled) original.recycle()
-                        val left = ((scaled.width - 96) / 2).coerceAtLeast(0)
-                        val top = ((scaled.height - 54) / 2).coerceAtLeast(0)
-                        result = Bitmap.createBitmap(scaled, left, top, 96, 54)
+                        val left = ((scaled.width - 160) / 2).coerceAtLeast(0)
+                        val top = ((scaled.height - 90) / 2).coerceAtLeast(0)
+                        result = Bitmap.createBitmap(scaled, left, top, 160, 90)
                         if (result !== scaled && !scaled.isRecycled) scaled.recycle()
                     } else {
                         original?.let { if (!it.isRecycled) it.recycle() }
