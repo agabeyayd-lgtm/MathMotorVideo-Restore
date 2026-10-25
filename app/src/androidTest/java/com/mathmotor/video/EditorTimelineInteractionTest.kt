@@ -1170,6 +1170,14 @@ class EditorTimelineInteractionTest {
         return digest.digest().joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }
     }
 
+    private fun findObjectByAny(device: UiDevice, vararg selectors: BySelector): UiObject2? {
+        for (selector in selectors) {
+            val found = device.findObject(selector)
+            if (found != null) return found
+        }
+        return null
+    }
+
     private fun requireObject(device: UiDevice, selector: BySelector, description: String): UiObject2 =
         device.findObject(selector) ?: throw AssertionError("Could not find $description")
 }
