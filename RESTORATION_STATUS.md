@@ -64,6 +64,6 @@ Source updates made but **not yet verified**:
 - Increased thumbnail image resolution and filmstrip size/density; added per-frame diagnostic fingerprints for emulator validation.
 - Undo/Redo now serializes the complete project state; hooks have been added for text, overlay movement/scale, text timing/size, audio volume and audio add/remove operations.
 - Home introductory copy and non-action scissors icons have been reduced.
-- CI is being updated to execute unit tests and Android instrumentation tests for pull requests, followed by the emulator import/screenshot/draft smoke flow and thumbnail-diversity validation.
+- CI executes JVM unit tests and Android instrumentation tests on pull requests, followed by the emulator import/screenshot/draft smoke flow and thumbnail-diversity validation. The fixture staging order has been corrected so the interaction test can access the generated video.
 
-Current checkpoint: **source repair is in progress; CI has not yet confirmed the changes.** Fix any build/test failures first. Keep the user-facing issue list open until actual behavior and tests are confirmed; do not create version 395.
+Current checkpoint: source changes and an interaction test are committed on the repair branch. Earlier source revisions built and passed JVM tests, but CI for the latest head is still pending. Fix any build/test failures first. Keep the user-facing issue list open until actual behavior and tests are confirmed; do not create version 395.
