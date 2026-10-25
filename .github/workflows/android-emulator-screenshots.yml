@@ -48,36 +48,23 @@ jobs:
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
 
-      - name: Set up FFmpeg
-        uses: AnimMouse/setup-ffmpeg@v1
-        with:
-          version: "7.1"
-
-      - name: Generate a deterministic sample video for editor smoke tests
+      - name: Prepare deterministic MP4 fixtures (offline)
         run: |
-          echo "Preparing deterministic editor fixtures"
-          command -v ffmpeg
-          ffmpeg -version | head -n 1
+          set -euo pipefail
           mkdir -p app/build/test-fixtures
-          echo "Generating the primary 8-second MP4 fixture (45-second hard limit)"
-          timeout -k 5s 45s ffmpeg -hide_banner -loglevel error -y \
-            -f lavfi -i "testsrc2=size=360x640:rate=24" \
-            -f lavfi -i "sine=frequency=440:sample_rate=44100" \
-            -t 8 -c:v mpeg4 -q:v 5 -threads 2 -pix_fmt yuv420p \
-            -c:a aac -b:a 64k -shortest \
-            app/build/test-fixtures/editor-test-video.mp4
+          echo "Decoding checked-in offline fixture payloads"
+          base64 --decode ci-fixtures/editor-test-video.mp4.b64 > app/build/test-fixtures/editor-test-video.mp4
+          base64 --decode ci-fixtures/editor-test-video-second.mp4.b64 > app/build/test-fixtures/editor-test-video-second.mp4
           test -s app/build/test-fixtures/editor-test-video.mp4
-          ls -lh app/build/test-fixtures/editor-test-video.mp4
-          echo "Generating the green 3-second MP4 fixture (45-second hard limit)"
-          timeout -k 5s 45s ffmpeg -hide_banner -loglevel error -y \
-            -f lavfi -i "color=c=0x00FF00:size=360x640:rate=24" \
-            -f lavfi -i "sine=frequency=880:sample_rate=44100" \
-            -t 3 -c:v mpeg4 -q:v 5 -threads 2 -pix_fmt yuv420p \
-            -c:a aac -b:a 64k -shortest \
-            app/build/test-fixtures/editor-test-video-second.mp4
           test -s app/build/test-fixtures/editor-test-video-second.mp4
-          ls -lh app/build/test-fixtures/editor-test-video.mp4 app/build/test-fixtures/editor-test-video-second.mp4
-          echo "Both deterministic editor fixtures are ready"
+          echo "Fixture sizes:"
+          wc -c app/build/test-fixtures/editor-test-video.mp4 app/build/test-fixtures/editor-test-video-second.mp4
+          echo "Fixture stream metadata:"
+          for f in app/build/test-fixtures/editor-test-video.mp4 app/build/test-fixtures/editor-test-video-second.mp4; do
+            printf '%s: ' "$f"
+            head -c 12 "$f" | od -An -tx1
+          done
+          echo "Both deterministic fixtures are ready without external downloads"
 
       - name: Enable KVM acceleration for the emulator
         run: |
