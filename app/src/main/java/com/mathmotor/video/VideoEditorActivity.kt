@@ -622,7 +622,7 @@ class VideoEditorActivity : Activity() {
         clipActions2.addView(miniButton("Sona al →") { moveSelectedClip(1) },
             LinearLayout.LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(4) })
         clipPanel.addView(clipActions2)
-remove duplicate history row from clip panel        startLabel = label("Başlangıç: 00:00", 12f, Color.rgb(225, 233, 237), true)
+        startLabel = label("Başlangıç: 00:00", 12f, Color.rgb(225, 233, 237), true)
         clipPanel.addView(startLabel)
         startSeek = SeekBar(this)
         clipPanel.addView(startSeek, matchWrap())
