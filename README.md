@@ -81,3 +81,19 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - The current emulator screenshot workflow builds a debug APK and captures screens, but its script does not by itself prove all touch gestures, exports, Undo/Redo or save/reopen flows work. Add/run interaction-level tests rather than treating screenshots alone as acceptance.
 - Record a checkbox as complete only after the corresponding behavior is implemented and its relevant test passes. If a test cannot be run, leave the item unchecked and say so.
 - This repository is a reconstruction from recoverable project files, not an exact recovery of the old V7 source tree.
+
+### Work log — 2026-10-25 (repair branch, not yet release-verified)
+
+Working branch: `fix/editor-gestures-thumbnails-text-undo`. The installed baseline remains 394 / build 61. No version number was bumped and no APK was signed or published.
+
+**Source changes now on the repair branch, awaiting CI and behavior verification:**
+
+- Reworked the timeline marker to stay fixed in the viewport while scrolling updates the time beneath it. Added shared time/scroll conversion helpers and unit tests for fixed-playhead mapping and pinch anchoring.
+- Added a two-finger pinch handler that maintains the time near the pinch focus; removed the filmstrip's touch handler that consumed gestures and blocked parent horizontal scrolling.
+- Increased filmstrip thumbnail height/resolution, reduced spacing to target roughly ten frames on a 10-second clip, and increased thumbnail decoding concurrency. Added debug-only timestamp/fingerprint logs so the emulator run can detect repeated thumbnails.
+- Changed Undo/Redo snapshots from clip-only state to the complete editable-project JSON. Added snapshot recording to text editing gestures, text timing/size changes, volume controls and audio add/remove actions.
+- Consolidated the visible time readout to one assembled-timeline duration. Simplified the home-screen intro copy and removed scissors icons from draft cards and the Klip tab; the scissors icon remains on the actual Split action.
+- Updated the home-screen instrumentation selector and expanded CI to run JVM unit tests and Android instrumentation tests on pull requests.
+- Added a smoke-script check for thumbnail decode count and distinct rendered-frame fingerprints using the generated moving test pattern.
+
+**Still open and release-blocking until tests pass:** one-finger scroll / two-finger zoom on real UI, timeline edge alignment, thumbnail performance and diversity on emulator, text range and size behavior in preview/export, global Undo/Redo across all edit types, multi-clip MP4 export, save/reopen, responsive home/editor layout, and physical-device verification. Do not mark the issue checklist complete merely because source code changed. The first CI build and emulator results must be inspected, failures corrected, and the tests rerun before version 395 can even be considered.
