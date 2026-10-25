@@ -531,15 +531,34 @@ class VideoEditorActivity : Activity() {
         timelineCard.addView(clipScroll, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(58)
         ))
+        var timelineScaleDetector: android.view.ScaleGestureDetector? = null
+        var timelinePinchCaptured = false
         timelineTracksFrame = object : FrameLayout(this) {
             override fun onInterceptTouchEvent(ev: android.view.MotionEvent): Boolean {
-                // A second finger takes ownership for pinch zoom; one-finger child
-                // gestures (clip selection, trim handles and horizontal scrolling) remain intact.
-                if (ev.pointerCount >= 2) return true
+                // Feed the detector while the first finger is still routed to its child.
+                // When pointer 2 arrives, take ownership and deliver all remaining events only
+                // through onTouchEvent; otherwise ScaleGestureDetector misses ACTION_DOWN.
+                if (timelinePinchCaptured) return true
+                if (ev.pointerCount >= 2) {
+                    timelinePinchCaptured = true
+                    return true
+                }
+                timelineScaleDetector?.onTouchEvent(ev)
                 return super.onInterceptTouchEvent(ev)
             }
+
+            override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
+                if (!timelinePinchCaptured) return super.onTouchEvent(event)
+                timelineScaleDetector?.onTouchEvent(event)
+                if (event.actionMasked == android.view.MotionEvent.ACTION_UP ||
+                    event.actionMasked == android.view.MotionEvent.ACTION_CANCEL
+                ) {
+                    timelinePinchCaptured = false
+                }
+                return true
+            }
         }.apply { isClickable = true }
-        val timelineScaleDetector = android.view.ScaleGestureDetector(
+        timelineScaleDetector = android.view.ScaleGestureDetector(
             this,
             object : android.view.ScaleGestureDetector.SimpleOnScaleGestureListener() {
                 override fun onScale(detector: android.view.ScaleGestureDetector): Boolean {
@@ -567,15 +586,6 @@ class VideoEditorActivity : Activity() {
                 }
             }
         )
-        timelineTracksFrame.setOnTouchListener { view, event ->
-            timelineScaleDetector.onTouchEvent(event)
-            if (event.pointerCount >= 2) {
-                view.parent?.requestDisallowInterceptTouchEvent(true)
-                true
-            } else {
-                false
-            }
-        }
         timelineTracks = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         timelineTracksFrame.addView(
             timelineTracks,
