@@ -127,3 +127,12 @@ This is a reconstruction from recoverable project files, not an exact recovery o
 - Applied the single-quote shell-grouping fix to the test in this active repair branch with commit [`139fa16382b419eeacd486d2b1060ea40c20c9af`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/139fa16382b419eeacd486d2b1060ea40c20c9af). The sibling test branch has the same fix in [`112b9ff46a3858563c492f0025581bba3fa47131`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/112b9ff46a3858563c492f0025581bba3fa47131); run [#145](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40197128496) was running at checkpoint time.
 - [ ] Verify both source clips import (`count=2 skipped=0`) and actually export as one MP4. Acceptance assertions: ~11 s combined duration, green second-clip frame at 9.5 s, unchanged source sizes and hashes.
 - Keep all release blockers open until CI proves them. Version 395 stays blocked; do not change version metadata or publish/offer an APK before all gates pass and the user explicitly authorizes release.
+
+
+## Follow-up after multi-clip retest — 2026-10-25
+
+- Run #145 confirmed the single-quote workaround was insufficient: quote characters remained in the URI and both clips failed metadata loading. The equivalent active repair-branch run #146 failed for the same reason. Export assertions did not run.
+- Replaced quote-based pipe-delimited transport with two separate unquoted extras, `video_uri_1` and `video_uri_2`; the debug-only entry activity now reads those extras and reconstructs the list.
+- Bridge fix commit: 295de6dda286fe7c6b935c149d37056554c59e5d. Test invocation fix: bbdbc5de254489259e04d6420c4609a1e8586e92.
+- Run #148 is testing the new approach. Require both clips to import, one MP4 around 11 seconds, a green frame at 9.5 seconds, and unchanged source hashes before marking complete.
+- Version 395 remains blocked; do not change version metadata or publish an APK before release checks pass and the user authorizes it.
