@@ -22,7 +22,8 @@ class EmulatorScreenshotTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val device = UiDevice.getInstance(instrumentation)
 
-        device.executeShellCommand("am force-stop com.mathmotor.video.next")
+        // Launch the home activity directly. Force-stopping the package can also kill
+        // the instrumentation process on this Android emulator configuration.
         device.executeShellCommand(
             "am start -n com.mathmotor.video.next/com.mathmotor.video.MainActivity"
         )
