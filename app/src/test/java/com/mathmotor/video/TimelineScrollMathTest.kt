@@ -66,6 +66,6 @@ class TimelineScrollMathTest {
         )
         val contentX = scrollX + focusX.toInt() - leadingInset
         val actual = TimelineScaleMath.millisecondsForPixels(contentX.toFloat(), pps)
-        assertEquals(7L, kotlin.math.abs(actual - timeMs))
+        assertEquals(0L, kotlin.math.abs(actual - timeMs))
     }
 }
