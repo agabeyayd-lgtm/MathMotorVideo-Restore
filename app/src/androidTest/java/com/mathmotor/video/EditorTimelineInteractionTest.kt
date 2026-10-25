@@ -7,6 +7,8 @@ import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
+import androidx.test.uiautomator.UiScrollable
+import androidx.test.uiautomator.UiSelector
 import androidx.test.uiautomator.Until
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -304,6 +306,120 @@ class EditorTimelineInteractionTest {
             durationAfterLeftTrimMs <= durationAfterRightTrimMs - 150L
         )
         assertTrue("Left trim produced an invalid duration: $durationAfterLeftTrimMs ms", durationAfterLeftTrimMs >= 500L)
+    }
+
+    @Test
+    fun textTimingAndSizeControlsUpdatePreview() {
+        val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+        val packageName = "com.mathmotor.video.next"
+        val fixtureUri = "file:///data/user/0/$packageName/files/editor-test-video.mp4"
+
+        // Ignore markers from earlier smoke steps; this test must import its own fixture.
+        device.executeShellCommand("logcat -c")
+        device.executeShellCommand(
+            "am start -n $packageName/com.mathmotor.video.EditorTestEntryActivity " +
+                "--es video_uri $fixtureUri --es draft_id 44444444-4444-4444-8444-444444444444"
+        )
+        assertTrue(
+            "Editor did not show the video lane for text test",
+            device.wait(Until.hasObject(By.text("VIDEO")), 20_000)
+        )
+        assertTrue(
+            "Project time label did not appear for text test",
+            device.wait(Until.hasObject(By.textContains("Proje")), 20_000)
+        )
+        assertTrue("Text test sample clip was not loaded", awaitClipAdded(device))
+        device.waitForIdle()
+        SystemClock.sleep(250)
+
+        val textTab = device.findObject(By.text("T\nMetin"))
+            ?: device.findObject(By.clazz("android.widget.Button").textContains("Metin"))
+            ?: throw AssertionError("Could not find the Metin tab for text test")
+        textTab.click()
+        assertTrue(
+            "Text layer panel did not appear",
+            device.wait(Until.hasObject(By.text("METİN KATMANLARI")), 8_000)
+        )
+
+        val addText = device.findObject(By.textContains("Yeni"))
+            ?: throw AssertionError("Could not find the new-text-layer control")
+        addText.click()
+        val input = requireObject(device, By.clazz("android.widget.EditText"), "text editor input")
+        input.setText("TIMING TEST")
+        device.pressBack()
+        device.waitForIdle()
+        SystemClock.sleep(300)
+
+        val overlaySelector = By.clazz("android.widget.TextView").text("TIMING TEST")
+        assertTrue(
+            "New text did not appear in the video preview",
+            device.wait(Until.hasObject(overlaySelector), 8_000)
+        )
+        val overlayBefore = requireObject(device, overlaySelector, "preview text overlay").visibleBounds
+        assertTrue("Preview text has no visible bounds: $overlayBefore", overlayBefore.width() > 0 && overlayBefore.height() > 0)
+
+        // Scroll only the editor's vertical panel; the actual preview overlay remains visible.
+        val panelScroll = UiScrollable(UiSelector().className("android.widget.ScrollView"))
+        assertTrue("Could not scroll to the text-size controls", panelScroll.scrollIntoView(UiSelector().text("A+")))
+        device.waitForIdle()
+        requireObject(device, By.text("A+"), "increase text size button").click()
+        device.waitForIdle()
+        SystemClock.sleep(250)
+
+        val sizeLabel = requireObject(device, By.textContains("Yazı boyutu:"), "text-size value label")
+        val sizeBefore = Regex("(\\d+)").find(sizeLabel.text)?.groupValues?.get(1)?.toInt()
+            ?: throw AssertionError("Could not parse current text size: ${sizeLabel.text}")
+        val previewAfterSize = requireObject(device, overlaySelector, "preview text after size change").visibleBounds
+        assertTrue(
+            "Increasing text size did not change the preview bounds: before=$overlayBefore after=$previewAfterSize",
+            previewAfterSize.width() > overlayBefore.width() || previewAfterSize.height() > overlayBefore.height()
+        )
+        android.util.Log.i(
+            "TextLayerInteractionTest",
+            "stage=size-changed label=${sizeLabel.text} before=$overlayBefore after=$previewAfterSize"
+        )
+
+        assertTrue("Could not return to the top of the text panel", panelScroll.scrollToBeginning(10))
+        device.waitForIdle()
+        val startSeek = requireObject(device, By.desc("Yazı başlangıç zamanı"), "text start-time seek bar")
+        val startBounds = startSeek.visibleBounds
+        assertTrue("Text start-time seek bar is not visible: $startBounds", startBounds.width() > 100 && startBounds.height() > 0)
+        val startLabelBefore = requireObject(device, By.textContains("Yazı başlangıcı:"), "text start-time label").text
+        device.swipe(
+            startBounds.left + 4,
+            startBounds.centerY(),
+            startBounds.left + (startBounds.width() * 0.20f).toInt(),
+            startBounds.centerY(),
+            25
+        )
+        device.waitForIdle()
+        SystemClock.sleep(250)
+        val startLabelAfter = requireObject(device, By.textContains("Yazı başlangıcı:"), "updated text start-time label").text
+        assertTrue(
+            "Changing the text start-time slider did not update its label: $startLabelBefore -> $startLabelAfter",
+            startLabelAfter != startLabelBefore
+        )
+        android.util.Log.i("TextLayerInteractionTest", "stage=start-time before=$startLabelBefore after=$startLabelAfter")
+
+        val endSeek = requireObject(device, By.desc("Yazı bitiş zamanı"), "text end-time seek bar")
+        val endBounds = endSeek.visibleBounds
+        assertTrue("Text end-time seek bar is not visible: $endBounds", endBounds.width() > 100 && endBounds.height() > 0)
+        val endLabelBefore = requireObject(device, By.textContains("Yazı bitişi:"), "text end-time label").text
+        device.swipe(
+            endBounds.right - 4,
+            endBounds.centerY(),
+            endBounds.left + (endBounds.width() * 0.78f).toInt(),
+            endBounds.centerY(),
+            25
+        )
+        device.waitForIdle()
+        SystemClock.sleep(250)
+        val endLabelAfter = requireObject(device, By.textContains("Yazı bitişi:"), "updated text end-time label").text
+        assertTrue(
+            "Changing the text end-time slider did not update its label: $endLabelBefore -> $endLabelAfter",
+            endLabelAfter != endLabelBefore
+        )
+        android.util.Log.i("TextLayerInteractionTest", "stage=end-time before=$endLabelBefore after=$endLabelAfter")
     }
 
     private fun projectDurationMs(label: String): Long {
