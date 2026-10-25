@@ -425,7 +425,18 @@ class EditorTimelineInteractionTest {
         device.waitForIdle()
         val addText = requireObject(device, By.desc("Yeni metin katmanı ekle"), "new-text-layer control")
         addText.click()
-        val input = requireObject(device, By.clazz("android.widget.EditText"), "text editor input")
+        val inputSelector = UiSelector().className("android.widget.EditText")
+        assertTrue(
+            "Could not scroll the focused text editor input into view after the keyboard opened",
+            panelScroll.scrollIntoView(inputSelector)
+        )
+        val inputQuery = By.clazz("android.widget.EditText")
+        assertTrue(
+            "Text editor input did not remain accessible after keyboard resize",
+            device.wait(Until.hasObject(inputQuery), 5_000)
+        )
+        device.waitForIdle()
+        val input = requireObject(device, inputQuery, "text editor input")
         input.setText("TIMING TEST")
         device.pressBack()
         device.waitForIdle()

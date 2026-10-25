@@ -2456,6 +2456,21 @@ class VideoEditorActivity : Activity() {
             val keyboard = getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
                 as? android.view.inputmethod.InputMethodManager
             keyboard?.showSoftInput(textInput, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+
+            // On compact phones, the keyboard can resize the editor before the input's
+            // first focus-scroll callback runs. Reposition the active panel after the IME
+            // settles so the focused text field remains visible and accessible.
+            textInput.postDelayed({
+                if (activeEditorPanel != "text" || !textInput.isAttachedToWindow) return@postDelayed
+                if (textInput.width <= 0 || textInput.height <= 0 || editorPanelScroll.height <= 0) return@postDelayed
+                val inputBottomInContent = textPanel.top + textInput.bottom
+                val targetScrollY = (inputBottomInContent - editorPanelScroll.height + dp(20)).coerceAtLeast(0)
+                editorPanelScroll.smoothScrollTo(0, targetScrollY)
+                textInput.requestRectangleOnScreen(
+                    android.graphics.Rect(0, 0, textInput.width, textInput.height),
+                    true
+                )
+            }, 350L)
         }
     }
 
