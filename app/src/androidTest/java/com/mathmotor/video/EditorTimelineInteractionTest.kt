@@ -814,39 +814,79 @@ class EditorTimelineInteractionTest {
         )
         requireObject(device, By.text("Kayıtlı projeyi aç"), "open saved JSON button").click()
 
-        // The picker commonly opens on Recents. If the newly saved file is not immediately
-        // visible, navigate through its roots to Downloads before failing.
+        // The picker often starts on Recents. Opening the roots drawer can itself restore
+        // the last-used Downloads location asynchronously, so never hold a Downloads row
+        // across a wait or click it without checking whether the picker has already moved.
         val openFileSelector = By.text(fileName)
         var savedFile = device.findObject(openFileSelector)
         if (savedFile == null) {
-            val showRoots = findObjectByAny(
+            findObjectByAny(
                 device,
                 By.descContains("Show roots"),
                 By.descContains("Show navigation drawer"),
                 By.descContains("navigation drawer")
-            )
-            showRoots?.click()
-            val downloads = device.findObject(By.text("Downloads"))
-                ?: device.findObject(By.text("Download"))
-            if (downloads != null) {
-                downloads.click()
-                device.waitForIdle()
+            )?.let { rootsButton ->
+                try {
+                    rootsButton.click()
+                } catch (_: androidx.test.uiautomator.StaleObjectException) {
+                    // The picker may have switched to its remembered root at the same time.
+                }
             }
-            val fileDeadline = SystemClock.uptimeMillis() + 10_000L
-            while (SystemClock.uptimeMillis() < fileDeadline && savedFile == null) {
+            device.waitForIdle()
+            val settleDeadline = SystemClock.uptimeMillis() + 2_000L
+            while (SystemClock.uptimeMillis() < settleDeadline && savedFile == null) {
                 savedFile = device.findObject(openFileSelector)
-                if (savedFile == null) SystemClock.sleep(250)
+                if (savedFile == null) SystemClock.sleep(200)
+            }
+
+            // Only tap Downloads if the file did not appear after the drawer/root transition.
+            // Re-query for each attempt because DocumentsUI recreates accessibility nodes as
+            // the drawer animates and the document stack changes.
+            var downloadsAttempts = 0
+            while (savedFile == null &&
+                downloadsAttempts < 4 &&
+                SystemClock.uptimeMillis() < settleDeadline + 8_000L
+            ) {
+                downloadsAttempts += 1
+                val downloads = device.findObject(By.text("Downloads"))
+                    ?: device.findObject(By.text("Download"))
+                if (downloads != null) {
+                    try {
+                        downloads.click()
+                    } catch (_: androidx.test.uiautomator.StaleObjectException) {
+                        // Accessibility nodes can become stale while DocumentsUI switches roots.
+                    }
+                    device.waitForIdle()
+                }
+                val lookupDeadline = SystemClock.uptimeMillis() + 1_500L
+                while (SystemClock.uptimeMillis() < lookupDeadline && savedFile == null) {
+                    savedFile = device.findObject(openFileSelector)
+                    if (savedFile == null) SystemClock.sleep(200)
+                }
             }
         }
         if (savedFile == null) {
             val hierarchy = java.io.File(context.cacheDir, "manual-json-open-picker.xml")
             device.dumpWindowHierarchy(hierarchy)
+            // Do not leave DocumentsUI foreground if this assertion fails; the following
+            // independent screenshot test expects the app home screen.
+            device.pressBack()
+            device.waitForIdle()
+            device.executeShellCommand("am start -n $packageName/com.mathmotor.video.MainActivity")
             throw AssertionError(
                 "The file saved through Create Document was not discoverable by Open Document: $fileName. " +
                     "Hierarchy: ${hierarchy.takeIf { it.isFile }?.readText()?.take(4500)}"
             )
         }
-        savedFile.click()
+        try {
+            savedFile.click()
+        } catch (_: androidx.test.uiautomator.StaleObjectException) {
+            // Reacquire the file item once if DocumentsUI refreshed between lookup and click.
+            device.waitForIdle()
+            val refreshedFile = device.findObject(openFileSelector)
+                ?: throw AssertionError("Saved JSON disappeared from Open Document picker: $fileName")
+            refreshedFile.click()
+        }
         assertTrue(
             "Opening the saved JSON did not report project restoration",
             device.wait(Until.hasObject(By.textContains("PROJE AÇILDI")), 15_000)
