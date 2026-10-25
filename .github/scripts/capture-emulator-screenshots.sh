@@ -304,6 +304,21 @@ if ! timeout -k 2s 30s adb -s emulator-5554 shell -T \
 fi
 timeout -k 2s 8s adb -s emulator-5554 shell run-as com.mathmotor.video.next ls -l files/editor-test-video.mp4 2>&1 | tee -a emulator-screenshots/video-fixture-private-copy.txt
 
+second_fixture="app/build/test-fixtures/editor-test-video-second.mp4"
+if [ ! -s "$second_fixture" ]; then
+  echo "Missing generated second test fixture: $second_fixture"
+  exit 3
+fi
+second_app_internal_video="/data/user/0/com.mathmotor.video.next/files/editor-test-video-second.mp4"
+if ! timeout -k 2s 30s adb -s emulator-5554 shell -T \
+  "run-as com.mathmotor.video.next sh -c 'mkdir -p files && cat > files/editor-test-video-second.mp4'" \
+  < "$second_fixture" 2>&1 | tee emulator-screenshots/video-fixture-second-private-copy.txt; then
+  echo "Streaming the second test fixture into the app sandbox failed; preserving diagnostics"
+  timeout -k 2s 8s adb -s emulator-5554 shell run-as com.mathmotor.video.next id > emulator-screenshots/run-as-second-preflight.txt 2>&1 || true
+  exit 10
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell run-as com.mathmotor.video.next ls -l files/editor-test-video-second.mp4 2>&1 | tee -a emulator-screenshots/video-fixture-second-private-copy.txt
+
 
 timeout -k 2s 8s adb -s emulator-5554 shell am force-stop com.mathmotor.video.next || true
 # Avoid -W for the same slow-emulator first-frame wait that affected the home launch.

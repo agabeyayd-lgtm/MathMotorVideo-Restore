@@ -1,5 +1,9 @@
 package com.mathmotor.video
 
+import android.content.ContentUris
+import android.media.MediaMetadataRetriever
+import android.net.Uri
+import android.provider.MediaStore
 import android.os.SystemClock
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -522,6 +526,115 @@ class EditorTimelineInteractionTest {
             endLabelAfter != endLabelBefore
         )
         android.util.Log.i("TextLayerInteractionTest", "stage=end-time before=$endLabelBefore after=$endLabelAfter")
+    }
+
+    @Test
+    fun twoClipsExportToOneMp4InOrder() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val resolver = context.contentResolver
+        val device = UiDevice.getInstance(instrumentation)
+        val packageName = context.packageName
+        val firstFile = java.io.File(context.filesDir, "editor-test-video.mp4")
+        val secondFile = java.io.File(context.filesDir, "editor-test-video-second.mp4")
+        assertTrue("First test video is missing", firstFile.isFile && firstFile.length() > 0L)
+        assertTrue("Second green test video is missing", secondFile.isFile && secondFile.length() > 0L)
+        val firstSize = firstFile.length()
+        val secondSize = secondFile.length()
+        val firstUri = "file://${firstFile.absolutePath}"
+        val secondUri = "file://${secondFile.absolutePath}"
+        val exportName = "MathMotor_two_clip_test_${System.currentTimeMillis()}"
+        val draftId = "66666666-6666-4666-8666-666666666666"
+
+        device.executeShellCommand("logcat -c")
+        device.executeShellCommand(
+            "am start -n $packageName/com.mathmotor.video.EditorTestEntryActivity " +
+                "--esa video_uris \"$firstUri,$secondUri\" --es draft_id $draftId"
+        )
+
+        val importDeadline = SystemClock.uptimeMillis() + 35_000L
+        var clipsReady = false
+        while (SystemClock.uptimeMillis() < importDeadline) {
+            val log = device.executeShellCommand("logcat -d -s EditorSmokeTest:I")
+            if (log.contains("EDITOR_SMOKE_CLIPS_ADDED count=2 skipped=0")) {
+                clipsReady = true
+                break
+            }
+            if (log.contains("EDITOR_SMOKE_MULTI_CLIP_SKIPPED")) {
+                throw AssertionError("The multi-clip test did not import both source videos: $log")
+            }
+            SystemClock.sleep(350)
+        }
+        assertTrue("The editor did not load both source clips in order", clipsReady)
+        device.waitForIdle()
+
+        val exportTab = device.findObject(By.text("Dışa aktar ›"))
+            ?: throw AssertionError("Could not find the editor's export tab")
+        exportTab.click()
+        assertTrue(
+            "The export panel did not open",
+            device.wait(Until.hasObject(By.text("PROJE / DIŞA AKTARMA")), 8_000)
+        )
+        val nameInput = requireObject(device, By.hint("Örn. Tatil_videosu"), "export filename input")
+        nameInput.setText(exportName)
+        requireObject(device, By.text("MP4 DIŞA AKTAR"), "MP4 export button").click()
+
+        assertTrue(
+            "MP4 export did not report success within 120 seconds",
+            device.wait(Until.hasObject(By.textContains("BAŞARILI")), 120_000)
+        )
+        android.util.Log.i("MultiClipExportTest", "stage=export-success name=$exportName")
+
+        var exportedUri: Uri? = null
+        val queryDeadline = SystemClock.uptimeMillis() + 30_000L
+        while (exportedUri == null && SystemClock.uptimeMillis() < queryDeadline) {
+            resolver.query(
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                arrayOf(MediaStore.Video.Media._ID),
+                "${MediaStore.Video.Media.DISPLAY_NAME} = ?",
+                arrayOf("$exportName.mp4"),
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    exportedUri = ContentUris.withAppendedId(
+                        MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                        cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID))
+                    )
+                }
+            }
+            if (exportedUri == null) SystemClock.sleep(300)
+        }
+        val outputUri = exportedUri ?: throw AssertionError("Export success was shown but the new MP4 was not found in MediaStore")
+        val metadata = MediaMetadataRetriever()
+        val durationMs: Long
+        val secondSegmentBitmap: android.graphics.Bitmap
+        try {
+            metadata.setDataSource(context, outputUri)
+            durationMs = metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+                ?: throw AssertionError("Could not read exported MP4 duration")
+            secondSegmentBitmap = metadata.getFrameAtTime(
+                9_500_000L,
+                MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+            ) ?: throw AssertionError("Could not decode a frame from the second clip's timeline position")
+        } finally {
+            metadata.release()
+        }
+        assertTrue("Combined export should be about 11 seconds, got $durationMs ms", durationMs in 10_500L..11_500L)
+        val pixel = secondSegmentBitmap.getPixel(secondSegmentBitmap.width / 2, secondSegmentBitmap.height / 2)
+        val red = android.graphics.Color.red(pixel)
+        val green = android.graphics.Color.green(pixel)
+        val blue = android.graphics.Color.blue(pixel)
+        secondSegmentBitmap.recycle()
+        assertTrue(
+            "Frame at 9.5 seconds does not look like the green second clip (r=$red g=$green b=$blue)",
+            green > red + 25 && green > blue + 25
+        )
+        assertTrue("First original fixture changed during export", firstFile.length() == firstSize)
+        assertTrue("Second original fixture changed during export", secondFile.length() == secondSize)
+        android.util.Log.i(
+            "MultiClipExportTest",
+            "stage=verified durationMs=$durationMs secondFrameRGB=$red,$green,$blue originalsUnchanged=true"
+        )
     }
 
     @Test

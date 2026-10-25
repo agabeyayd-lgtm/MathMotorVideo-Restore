@@ -305,8 +305,12 @@ class VideoEditorActivity : Activity() {
         }
         timelineHandler.post(timelineSyncTask)
         val incoming = intent.getStringExtra("video_uri")
-        if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
-            android.util.Log.i("EditorSmokeTest", "EDITOR_SMOKE_EDITOR_STARTED uri=$incoming")
+        val isDebugBuild = (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        val incomingVideos = if (isDebugBuild) {
+            intent.getStringArrayListExtra("video_uris").orEmpty().filter { it.isNotBlank() }
+        } else emptyList()
+        if (isDebugBuild) {
+            android.util.Log.i("EditorSmokeTest", "EDITOR_SMOKE_EDITOR_STARTED uri=$incoming videoCount=${incomingVideos.size}")
         }
         val savedDraft = requestedDraftId?.let { VideoProjectDraftStore.load(this, it) }
         if (savedDraft != null) {
@@ -314,11 +318,14 @@ class VideoEditorActivity : Activity() {
                 .onSuccess { status.text = "Taslak açıldı. Düzenlemeye kaldığın yerden devam edebilirsin." }
                 .onFailure {
                     status.text = "Taslak açılamadı: ${it.message ?: "proje verisi okunamadı"}"
-                    if (!incoming.isNullOrBlank()) addClip(Uri.parse(incoming), false)
+                    if (incomingVideos.isNotEmpty()) addClipsInOrder(incomingVideos.map(Uri::parse), false)
+                    else if (!incoming.isNullOrBlank()) addClip(Uri.parse(incoming), false)
                 }
+        } else if (incomingVideos.isNotEmpty()) {
+            addClipsInOrder(incomingVideos.map(Uri::parse), false)
         } else if (!incoming.isNullOrBlank()) {
             addClip(Uri.parse(incoming), false)
-        } else if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+        } else if (isDebugBuild) {
             android.util.Log.e("EditorSmokeTest", "EDITOR_SMOKE_MISSING_VIDEO_URI")
         }
     }
@@ -3524,6 +3531,17 @@ class VideoEditorActivity : Activity() {
                     append("${ready.size} video zaman çizelgesine eklendi. Klibe dokun: seç; basılı tutup sürükle: sırala.")
                     if (skipped > 0) append(" $skipped dosya okunamadığı için atlandı.")
                     append(" İstediğin sırada tek MP4 olarak dışa aktarabilirsin.")
+                }
+                if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+                    android.util.Log.i(
+                        "EditorSmokeTest",
+                        "EDITOR_SMOKE_CLIPS_ADDED count=${ready.size} skipped=$skipped " +
+                            "durationsMs=${ready.joinToString(",") { (it.endMs - it.startMs).toString() }}"
+                    )
+                    if (skipped > 0) android.util.Log.w(
+                        "EditorSmokeTest",
+                        "EDITOR_SMOKE_MULTI_CLIP_SKIPPED count=$skipped"
+                    )
                 }
             }
         }.start()
