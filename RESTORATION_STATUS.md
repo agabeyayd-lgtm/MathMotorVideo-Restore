@@ -118,3 +118,12 @@ This is a reconstruction from recoverable project files, not an exact recovery o
 - [ ] Retest the fixed invocation. Require two imported clips with `count=2 skipped=0`, one MP4 with total duration about 11 s, a green decoded frame at 9.5 s proving the second clip is present, and unchanged source file sizes and SHA-256 hashes.
 - Multi-clip work remains on `work/multiclip-export-verification`; it is not yet integrated into `fix/editor-395-gate`. Previously verified keyboard field access and trim restoration in run #141 remain verified.
 - **Version 395 remains blocked.** Do not change version metadata or publish/offer an APK until all release blockers pass and the user explicitly authorizes release.
+
+
+## Follow-up after multi-clip retest — 2026-10-25
+
+- Run #145 confirmed the single-quote workaround was insufficient: quote characters remained in the URI and both clips failed metadata loading. The equivalent repair-branch run #146 failed for the same reason. Export assertions did not run.
+- Replaced quote-based pipe-delimited transport with two separate unquoted extras, `video_uri_1` and `video_uri_2`; the debug-only entry activity now reads those extras and reconstructs the list.
+- Bridge fix commit: 6140399b0ab7c7202cfac912a89f020839a10147. Test invocation fix: 860d194387723cff3f2d1b923bded7cb86ee6a46.
+- Run #147 is testing the new approach. Require both clips to import, one MP4 around 11 seconds, a green frame at 9.5 seconds, and unchanged source hashes before marking complete.
+- Version 395 remains blocked; do not change version metadata or publish an APK before release checks pass and the user authorizes it.
