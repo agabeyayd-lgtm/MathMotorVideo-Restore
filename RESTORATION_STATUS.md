@@ -21,13 +21,13 @@ Previously verified and not to repeat unnecessarily: timeline playhead/zoom/scro
 
 ## Next steps — do these in order
 
-1. **Manual JSON Save As → reopen — in progress.** The E2E test uses Android's real Create Document picker, closes the editor, opens a fresh editor from home, then uses Open Document to reload and check clip trim, text content/size, music/effect titles and audio levels. [Run #163](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40214305429) saved JSON but hit a stale `Downloads` node; [run #164](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40215482800) found the file but the test called `UiObject2.click()` on the non-clickable filename TextView, so the JSON was not opened and restoration status timed out. The extra screenshot failure was a test cleanup cascade. Test-only fix [`de8948e`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/de8948e649431fd7e2b6aa32210b70d519a5222e) taps the visible filename coordinates, emits UI diagnostics when open fails, and returns home before throwing. [Run #165](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40216650783) validates this specific fix. Do not mark the gate complete until the full round trip passes.
-2. **Unified Undo / Redo** — implementation is currently clip-only. Extend it to clip, text and audio/music edits, and verify timeline plus preview restore together.
-3. **Text-strip interaction and text export parity** — drag text strip start/end handles; export timed/styled text and compare with preview.
-4. **Audio export verification** — original audio level/mute, background music loop/volume, timed sound effect and A/V sync.
-5. **Timeline edge cases** — split at playhead/export boundary, trim versus scroll conflicts, multi-clip trim/reorder/seek at multiple zooms.
-6. **Physical-phone review** — check compact layout, thumbnails, tap targets and keyboard/panel behavior on the user's actual device.
-7. **Release/install gate** — signed update/package install verification after blockers above pass.
+1. **Broader manual JSON persistence coverage — open.** Basic Save As → close editor → Open Document passed in [run #172](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40221395375): trim duration, text content/size, music/effect names and audio level values restore. Extend assertions to clip order, playhead/zoom, text timing/position/colour/style. Do not revisit the resolved DocumentsUI picker work unless a related regression appears.
+2. **Unified Undo / Redo — validation in progress.** Run #173 found two issues: the separate feature branch had the old thumbnail decoder, and the test didn't scroll the compact tool panel to Undo. The decoder fix and test scroll correction now live on [`fix/global-editor-undo`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/tree/fix/global-editor-undo); [run #175](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40223890916) is validating that version.
+3. **Text-strip interaction and export parity** — drag text strip start/end handles; export timed/styled text and compare with preview.
+4. **Audio export verification** — source audio level/mute, background-music loop/volume, timed sound-effect start/volume and audio/video sync.
+5. **Timeline edge cases** — split at playhead/export boundary; trim-versus-scroll conflicts and multi-clip trim/reorder/seek at several zoom levels.
+6. **Physical-phone review** — check compact layout, thumbnails, tap targets and keyboard/panel behavior on the user's actual phone.
+7. **Release/install gate** — verify signed update/package installation after blockers above pass. Version 395 remains blocked.
 
 ## Release rule
 
