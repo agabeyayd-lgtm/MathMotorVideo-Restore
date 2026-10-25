@@ -80,20 +80,30 @@ class EditorTimelineInteractionTest {
                 val bounds = it.visibleBounds
                 bounds.top <= laneY && bounds.bottom >= laneY && bounds.left >= laneLeft - 2
             } ?: throw AssertionError("Could not find the VIDEO timeline scroll viewport")
-        val clipBeforeZoom = requireObject(device, By.descContains("Klip 1:"), "first video clip")
-        val clipWidthBeforeZoom = clipBeforeZoom.visibleBounds.width()
+        val zoomLabelBefore = requireObject(
+            device, By.descContains("Zaman çizelgesi yakınlaştırma"), "timeline zoom accessibility label"
+        ).contentDescription
+        val zoomBefore = zoomPercent(zoomLabelBefore)
         val beforePinchTime = projectPositionMs(requireProjectTime(device))
-        android.util.Log.i("TimelineInteractionTest", "stage=before-pinch time=$beforePinchTime clipWidth=$clipWidthBeforeZoom")
+        android.util.Log.i(
+            "TimelineInteractionTest",
+            "stage=before-pinch time=$beforePinchTime label=$zoomLabelBefore"
+        )
         laneScroll.pinchOpen(0.5f)
         device.waitForIdle()
-        SystemClock.sleep(250)
-        val clipAfterZoom = requireObject(device, By.descContains("Klip 1:"), "first video clip after zoom")
-        val clipWidthAfterZoom = clipAfterZoom.visibleBounds.width()
+        SystemClock.sleep(350)
+        val zoomLabelAfter = requireObject(
+            device, By.descContains("Zaman çizelgesi yakınlaştırma"), "timeline zoom label after pinch"
+        ).contentDescription
+        val zoomAfter = zoomPercent(zoomLabelAfter)
         val afterPinchTime = projectPositionMs(requireProjectTime(device))
-        android.util.Log.i("TimelineInteractionTest", "stage=after-pinch time=$afterPinchTime clipWidth=$clipWidthAfterZoom")
+        android.util.Log.i(
+            "TimelineInteractionTest",
+            "stage=after-pinch time=$afterPinchTime label=$zoomLabelAfter"
+        )
         assertTrue(
-            "Pinch zoom did not expand the clip filmstrip ($clipWidthBeforeZoom -> $clipWidthAfterZoom px)",
-            clipWidthAfterZoom > clipWidthBeforeZoom
+            "Pinch zoom did not change the timeline scale ($zoomLabelBefore -> $zoomLabelAfter)",
+            zoomAfter > zoomBefore
         )
         assertTrue(
             "Centered pinch moved the time under the fixed playhead ($beforePinchTime -> $afterPinchTime ms)",
@@ -164,6 +174,12 @@ class EditorTimelineInteractionTest {
 
     private fun requireProjectTime(device: UiDevice): String =
         requireObject(device, By.textContains("Proje"), "project time label").text
+
+    private fun zoomPercent(description: CharSequence): Int {
+        val match = Regex("(\\d+)%").find(description.toString())
+            ?: throw AssertionError("Could not parse timeline zoom label: $description")
+        return match.groupValues[1].toInt()
+    }
 
     private fun projectPositionMs(label: String): Long {
         val match = Regex("Proje\\s+(\\d{2}):(\\d{2})\\.(\\d{2})").find(label)
