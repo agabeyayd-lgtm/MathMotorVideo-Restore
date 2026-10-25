@@ -1286,6 +1286,10 @@ class VideoEditorActivity : Activity() {
                 }
                 previewFrame.layoutParams = previewParams
 
+                // On compact phones, the fixed multi-lane timeline can consume all
+                // remaining height after the IME inset is applied. Hide it while typing;
+                // it returns as soon as the keyboard closes, preserving the same edit.
+                timelineCard.visibility = if (imeVisible && compactEditorLayout) View.GONE else View.VISIBLE
                 // Hide decorative strips and fixed docks so the active tool gets
                 // the visible space left by the keyboard.
                 clipScroll.visibility = if (

@@ -90,3 +90,12 @@ See the comprehensive checklist in README.md. Current list:
 
 ## Recovery background
 This is a reconstruction from recoverable project files, not an exact recovery of the old V7 source tree. Some old physics/scenario code remains as reconstruction leftovers and is outside the active video-editing workflow.
+
+
+## Latest verified state — 2026-10-25, run #140
+- [x] Unit tests passed and debug APK assembly succeeded in run [#40194075276](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40194075276).
+- [!] Emulator instrumentation still failed: `textTimingAndSizeControlsUpdatePreview` could not find the text-input accessibility node after the keyboard opened. Its log shows the text panel ScrollView collapsed to 0 px high (`panel=312x0`). Source commit `17d8cb1c1afd1c4497b8b661136b6a3118229de3` added input-only mode but did not resolve this. New targeted fix hides the multi-lane timeline on compact screens while IME is open and restores it when the keyboard closes; this follow-up is not yet CI-verified.
+- [x] Separate branch `work/multiclip-export-verification` contains a draft instrumentation test for actual sequential two-clip export: expected ~11 s duration, decoded green frame at 9.5 s proving the second clip is present, and unchanged input file sizes. Not yet merged into the active repair branch and not yet verified by CI.
+- [ ] Keyboard text input and two-clip export remain **not verified**.
+- [ ] Editable project save/reopen, text/audio export parity, undo/redo, signed release/update and physical-device usability review remain open.
+- **Release gate unchanged: version 395 must not be bumped, signed, published or offered until all checklist items pass and the user explicitly authorizes it.**

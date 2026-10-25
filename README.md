@@ -157,3 +157,14 @@ Fixed-playhead source change: `ab6d614c8ceff847537fce4cd77a69db50fb3bc9`. Timeli
 - The current emulator screenshot workflow builds a debug APK and captures screens, but its script does not by itself prove all touch gestures, exports, Undo/Redo or save/reopen flows work. Add/run interaction-level tests rather than treating screenshots alone as acceptance.
 - Record a checkbox as complete only after the corresponding behavior is implemented and its relevant test passes. If a test cannot be run, leave the item unchecked and say so.
 - This repository is a reconstruction from recoverable project files, not an exact recovery of the old V7 source tree.
+
+
+## Latest validation update — 2026-10-25 (run #140)
+
+- Run [#40194075276](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40194075276) passed unit tests, debug APK assembly and fixture generation, but the emulator text-entry UI test failed again at the accessibility check for the text input after the keyboard opened. The log showed the active tool ScrollView had a measured height of **0 px** while the keyboard was open (`panel=312x0`), so this is a real compact-layout space-allocation problem, not merely an unstable selector.
+- The earlier input-only panel change in source commit `17d8cb1c1afd1c4497b8b661136b6a3118229de3` was not enough; the field still did not become accessible in run #140. A targeted follow-up now hides the compact phone's timeline card while the keyboard is open, freeing height for the text field and restoring the timeline after the keyboard closes. This follow-up is **not yet verified by CI**.
+- A separate working branch `work/multiclip-export-verification` adds a deterministic green second-video fixture and a UI test that imports two different videos, exports them to a newly named MP4, checks approximately 11 seconds of duration, checks a green frame at 9.5 seconds to prove the second clip follows the first, and verifies both input files remain unchanged. This test is being prepared and has **not yet passed CI**.
+- [ ] Compact keyboard/text input remains a release blocker until a full emulator suite passes.
+- [ ] Two-clip single-MP4 export remains unverified until the new instrumentation test passes.
+- [ ] Saved-project editing/resume, text/audio layer export parity, undo/redo, signed release/update, and physical-phone review remain release blockers.
+- **Version 395 remains blocked. Do not bump version metadata, sign/publish an APK or offer an update.**
