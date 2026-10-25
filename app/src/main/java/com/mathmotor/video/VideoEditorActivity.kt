@@ -3486,6 +3486,9 @@ class VideoEditorActivity : Activity() {
         previewSingleClip = true
         timelineZoom = json.optDouble("timelineZoom", timelineZoom.toDouble())
             .toFloat().takeIf { it.isFinite() }?.coerceIn(0.5f, 8.0f) ?: 1.0f
+        // Keep the accessible zoom indicator in sync when restoring a project, not only after pinch input.
+        timelineTracksFrame.contentDescription =
+            "Zaman çizelgesi yakınlaştırma " + (timelineZoom * 100f).toInt() + "%"
         val savedTimelineScrollMs: Long? = when {
             json.has("timelineHorizontalScrollMs") ->
                 json.optLong("timelineHorizontalScrollMs", 0L).coerceAtLeast(0L)
@@ -3635,6 +3638,22 @@ class VideoEditorActivity : Activity() {
         }
         updateTimelinePlayheadControls()
         refreshTimelineTracks()
+        if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            val clipSummary = clips.joinToString(separator = ",") { "${it.title}:${it.startMs}-${it.endMs}" }
+            val textSummary = textLayers.joinToString(separator = ",") { layer ->
+                "${layer.startMs}-${layer.endMs}:${layer.position.name}:${layer.sizeSp}:${layer.colorPreset.name}:${layer.isBold}:" +
+                    String.format(Locale.US, "%.2f:%.2f", layer.xFraction, layer.yFraction)
+            }
+            val musicFixtureMatches = musicUri?.lastPathSegment == "editor-test-video.mp4"
+            val soundFixtureMatches = soundUri?.lastPathSegment == "editor-test-video-second.mp4"
+            android.util.Log.i(
+                "ProjectPersistenceTest",
+                "PROJECT_JSON_RESTORED clipCount=${clips.size} clips=$clipSummary " +
+                    "playheadMs=$timelinePlayheadMs zoomPercent=${(timelineZoom * 100f).toInt()} " +
+                    "scrollMs=${savedTimelineScrollMs ?: -1L} textLayers=$textSummary soundStartMs=$soundStartMs " +
+                    "musicFixtureMatches=$musicFixtureMatches soundFixtureMatches=$soundFixtureMatches"
+            )
+        }
         status.text = "PROJE AÇILDI. Klipler, kesmeler, oynatma noktası, yazı ve ses ayarları geri yüklendi."
     }
 
