@@ -4246,8 +4246,11 @@ class VideoEditorActivity : Activity() {
     private fun timelineThumbnailFingerprint(bitmap: Bitmap): Long {
         if (bitmap.width <= 0 || bitmap.height <= 0 || bitmap.isRecycled) return 0L
         var hash = 1469598103934665603L
-        val columns = 6
-        val rows = 4
+        // A sparse grid can miss small moving details and report identical fingerprints
+        // even when the decoded frames are genuinely different. Sample densely enough for
+        // compact vertical footage while keeping this debug-only diagnostic inexpensive.
+        val columns = 20
+        val rows = 16
         for (row in 0 until rows) {
             val y = (row * (bitmap.height - 1)) / (rows - 1)
             for (column in 0 until columns) {
