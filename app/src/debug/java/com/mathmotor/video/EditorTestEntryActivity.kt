@@ -15,12 +15,19 @@ class EditorTestEntryActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val videoUri = intent.getStringExtra("video_uri")
-        val videoUris = when (val raw = intent.extras?.get("video_uris")) {
+        val suppliedVideoUris = when (val raw = intent.extras?.get("video_uris")) {
             is ArrayList<*> -> raw.filterIsInstance<String>().filter { it.isNotBlank() }
             is Array<*> -> raw.filterIsInstance<String>().filter { it.isNotBlank() }
             is String -> raw.split('|').filter { it.isNotBlank() }
             else -> emptyList()
         }
+        // Keep UIAutomator's shell transport free of quote and pipe parsing:
+        // the two-clip test passes each private fixture URI in its own extra.
+        val indexedVideoUris = listOfNotNull(
+            intent.getStringExtra("video_uri_1"),
+            intent.getStringExtra("video_uri_2")
+        ).filter { it.isNotBlank() }
+        val videoUris = suppliedVideoUris.ifEmpty { indexedVideoUris }
         val draftId = intent.getStringExtra("draft_id")
         android.util.Log.i("EditorSmokeTest", "EDITOR_SMOKE_ENTRY_STARTED uri=$videoUri videoCount=${videoUris.size}")
         if (videoUris.isEmpty() && videoUri.isNullOrBlank()) {
