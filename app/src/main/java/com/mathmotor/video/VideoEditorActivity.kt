@@ -2284,6 +2284,9 @@ class VideoEditorActivity : Activity() {
 
     private fun syncTimelinePlayheadFromPlayer() {
         val currentPlayer = player ?: return
+        // ExoPlayer reports position 0 while a newly restored clip is still preparing.
+        // Do not let the periodic UI sync overwrite the saved project playhead before seek completes.
+        if (currentPlayer.playbackState != androidx.media3.common.Player.STATE_READY) return
         if (!timelinePreviewLoaded || clips.isEmpty()) return
         val index = currentPlayer.currentMediaItemIndex
         if (index !in clips.indices) return
@@ -2302,6 +2305,8 @@ class VideoEditorActivity : Activity() {
 
     private fun syncSingleClipPlayheadFromPlayer() {
         val currentPlayer = player ?: return
+        // Keep restored playhead state until the selected clip is actually ready at its seek position.
+        if (currentPlayer.playbackState != androidx.media3.common.Player.STATE_READY) return
         val index = selectedClipIndex
         val clip = clips.getOrNull(index) ?: return
         val beforeMs = clips.take(index).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
