@@ -518,7 +518,51 @@ class VideoEditorActivity : Activity() {
         timelineCard.addView(clipScroll, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(58)
         ))
-        timelineTracksFrame = FrameLayout(this)
+        timelineTracksFrame = object : FrameLayout(this) {
+            override fun onInterceptTouchEvent(ev: android.view.MotionEvent): Boolean {
+                // A second finger takes ownership for pinch zoom; one-finger child
+                // gestures (clip selection, trim handles and horizontal scrolling) remain intact.
+                if (ev.pointerCount >= 2) return true
+                return super.onInterceptTouchEvent(ev)
+            }
+        }.apply { isClickable = true }
+        val timelineScaleDetector = android.view.ScaleGestureDetector(
+            this,
+            object : android.view.ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                override fun onScale(detector: android.view.ScaleGestureDetector): Boolean {
+                    if (clips.isEmpty()) return false
+                    val oldZoom = timelineZoom
+                    val newZoom = (oldZoom * detector.scaleFactor).coerceIn(0.5f, 8.0f)
+                    if (newZoom == oldZoom) return true
+                    val focusOffsetPx = (detector.focusX - dp(57)).coerceAtLeast(0f)
+                    val currentScrollX = timelineScrollViews.firstOrNull()?.scrollX ?: timelineHorizontalScrollX
+                    val anchorContentPx = currentScrollX + focusOffsetPx
+                    val anchorTimeMs = TimelineScaleMath.millisecondsForPixels(
+                        anchorContentPx, timelinePixelsPerSecond()
+                    ).coerceIn(0L, totalOutputDurationMs())
+                    timelineZoom = newZoom
+                    val nextScrollX = (
+                        TimelineScaleMath.pixelsForTime(anchorTimeMs, timelinePixelsPerSecond()) -
+                            focusOffsetPx.toInt()
+                        ).coerceAtLeast(0)
+                    pendingTimelineScrollX = nextScrollX
+                    refreshTimelineTracks()
+                    timelineScrollViews.toList().forEach { lane ->
+                        lane.post { lane.scrollTo(nextScrollX, 0) }
+                    }
+                    return true
+                }
+            }
+        )
+        timelineTracksFrame.setOnTouchListener { view, event ->
+            timelineScaleDetector.onTouchEvent(event)
+            if (event.pointerCount >= 2) {
+                view.parent?.requestDisallowInterceptTouchEvent(true)
+                true
+            } else {
+                false
+            }
+        }
         timelineTracks = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         timelineTracksFrame.addView(
             timelineTracks,
