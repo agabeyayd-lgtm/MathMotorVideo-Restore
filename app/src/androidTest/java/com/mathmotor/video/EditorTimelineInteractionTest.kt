@@ -602,7 +602,7 @@ class EditorTimelineInteractionTest {
         val exportDeadline = SystemClock.uptimeMillis() + 120_000L
         var exportSaved = false
         while (SystemClock.uptimeMillis() < exportDeadline) {
-            val log = device.executeShellCommand("logcat -d -s MultiClipExport:I MultiClipExport:E")
+            val log = device.executeShellCommand("logcat -d -s MultiClipExport:I")
             if (log.contains("MULTICLIP_EXPORT_SAVED name=$exportName")) {
                 exportSaved = true
                 break
