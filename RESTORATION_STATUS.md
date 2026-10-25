@@ -37,3 +37,9 @@ No signed release APK was produced by run #152. Keep version metadata unchanged 
 - The clip duration check now passed; failure is at the text-size label query after switching to the Metin panel. This alone does not prove text-size data was lost: the size control is late in a vertically scrollable panel and may not be present in the visible accessibility tree.
 - Test-only commit [`eeda257`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/eeda2577ec86f9371fea6a00087abc9843de6ccb) scrolls the panel before asserting the restored size. Wait for the resulting CI run and inspect any next failure rather than weakening the assertion.
 - Keep version 395 unreleased. Baseline remains versionCode 394 / build 61 until all gates pass and user explicitly authorizes release.
+
+
+## Latest CI handoff — 2026-10-25 (run #159)
+
+- [Run #159](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40204548336) failed in the draft round-trip test at the scroll helper, not at the 32 sp comparison. The helper `scrollTextIntoView("Yazı boyutu:")` uses exact text matching; the real label includes the size value, so the selector could not match it.
+- Test-only fix [`1e0f987`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/1e0f987a90d37e8547621950ce93d4edb5ae24d7) uses a `textContains` selector with `scrollIntoView`. The check still verifies the restored value includes 32. Draft round-trip remains unverified until a new emulator run passes.
