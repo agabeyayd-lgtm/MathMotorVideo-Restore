@@ -3352,9 +3352,9 @@ class VideoEditorActivity : Activity() {
         musicLabel.text = musicTitle?.let { "Müzik: $it • video boyunca döngü" } ?: "Müzik seçilmedi."
         soundLabel.text = soundTitle?.let { "Ses/efekt: $it • ${formatMs(soundDurationMs)}" } ?: "Ses veya efekt seçilmedi."
         musicVolumeSeek.progress = musicVolume
-        musicVolumeLabel.text = "Müzik ses seviyesi: $musicVolume%"
+        musicVolumeLabel.text = "Müzik sesi: $musicVolume%"
         soundVolumeSeek.progress = soundVolume
-        soundVolumeLabel.text = "Ses/efekt seviyesi: $soundVolume%"
+        soundVolumeLabel.text = "Efekt sesi: $soundVolume%"
         sourceVolumeSeek.progress = sourceAudioVolume
         sourceVolumeLabel.text = "Orijinal video sesi: $sourceAudioVolume%"
         refreshClipList()
