@@ -26,6 +26,15 @@ MathMotor Video is a local Android video editor with a CapCut-inspired workflow.
 - Filmstrip density, timestamp sampling, decode/crop size and cache capacity were improved in source, but thumbnail quality/loading remains unverified on emulator/device.
 - Home-screen header text and scissors graphic were reduced in source, but the full UI still needs screenshot review.
 
+## Latest interaction failure and repair — 2026-10-25
+
+- Latest failing candidate run at the time of diagnosis: [#40175226161](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40175226161).
+- Unit tests and APK build passed. UI instrumentation successfully loaded the 8-second clip, dragged the playhead to 3.18 s, changed pinch zoom from 100% to 623% while preserving center time, and scrolled to 8.00 s.
+- The reverse-scroll/start assertion failed after four gestures: the label remained at 2.47 s instead of returning to 0 s. The error is reproduced in the workflow log, so this is a genuine remaining defect.
+- Source fix applied in commit `68b593e6d15e1f773a4811c95dcf92a63dee7955`: the debounced timeline-scroll seek used to set `timelineScrollSeeking = false` before `seekTimelinePreview()`. Periodic player polling could then write a stale player position back into the timeline. The fix keeps sync suppression active during the seek and for a 450 ms settle window; a new scroll cancels/restarts that settle window.
+- [ ] Pending CI rerun after this repair. Do not call timeline scrolling fixed until the interaction test passes, particularly the repeat-swipe path back to 0 s.
+- This is not a release candidate yet. Version 395 is still blocked and must not be published.
+
 ## Reported problems — release blockers until verified
 See the comprehensive checklist in README.md. Current list:
 1. One-finger timeline scrolling and trim gestures may conflict or be unreliable.
