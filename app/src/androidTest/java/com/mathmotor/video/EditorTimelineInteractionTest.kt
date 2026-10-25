@@ -878,19 +878,49 @@ class EditorTimelineInteractionTest {
                     "Hierarchy: ${hierarchy.takeIf { it.isFile }?.readText()?.take(4500)}"
             )
         }
-        try {
-            savedFile.click()
-        } catch (_: androidx.test.uiautomator.StaleObjectException) {
-            // Reacquire the file item once if DocumentsUI refreshed between lookup and click.
-            device.waitForIdle()
-            val refreshedFile = device.findObject(openFileSelector)
+        fun tapSavedDocumentRow() {
+            // DocumentsUI exposes the filename as a non-clickable TextView nested inside
+            // a clickable row. UiObject2.click() on the title only emits a warning and
+            // does not activate the row, so tap its current screen coordinates instead.
+            val currentFile = device.findObject(openFileSelector)
                 ?: throw AssertionError("Saved JSON disappeared from Open Document picker: $fileName")
-            refreshedFile.click()
+            val bounds = currentFile.visibleBounds
+            android.util.Log.i(
+                "ManualJsonRoundTripTest",
+                "stage=json-file-found filename=$fileName bounds=$bounds"
+            )
+            check(bounds.width() > 0 && bounds.height() > 0) {
+                "Saved JSON filename has no visible hit target: $bounds"
+            }
+            device.click(bounds.centerX(), bounds.centerY())
         }
-        assertTrue(
-            "Opening the saved JSON did not report project restoration",
-            device.wait(Until.hasObject(By.textContains("PROJE AÇILDI")), 15_000)
-        )
+        try {
+            tapSavedDocumentRow()
+        } catch (_: androidx.test.uiautomator.StaleObjectException) {
+            // The row can be recreated during a DocumentsUI refresh; reacquire its bounds.
+            device.waitForIdle()
+            tapSavedDocumentRow()
+        }
+        val restorationReported = device.wait(Until.hasObject(By.textContains("PROJE AÇILDI")), 15_000)
+        if (!restorationReported) {
+            val visibleUiText = device.findObjects(By.clazz("android.widget.TextView"))
+                .mapNotNull { runCatching { it.text?.toString() }.getOrNull() }
+                .filter { it.isNotBlank() }
+                .distinct()
+                .take(80)
+                .joinToString(" | ")
+            val hierarchy = java.io.File(context.cacheDir, "manual-json-open-result.xml")
+            device.dumpWindowHierarchy(hierarchy)
+            // Keep the subsequent screenshot smoke test independent when the manual
+            // document-open gate fails; include the actual app error in this assertion.
+            device.pressBack()
+            device.waitForIdle()
+            device.executeShellCommand("am start -n $packageName/com.mathmotor.video.MainActivity")
+            throw AssertionError(
+                "Opening saved JSON did not restore project. Visible UI: $visibleUiText. " +
+                    "Hierarchy: ${hierarchy.takeIf { it.isFile }?.readText()?.take(6000)}"
+            )
+        }
         assertTrue(
             "Manual JSON did not restore the trimmed clip duration",
             device.wait(Until.hasObject(By.textContains("00:07.02")), 8_000)
