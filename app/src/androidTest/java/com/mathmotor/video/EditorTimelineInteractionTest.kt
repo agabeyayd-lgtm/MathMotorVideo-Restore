@@ -686,9 +686,11 @@ class EditorTimelineInteractionTest {
             .put("version", 1)
             .put("clips", org.json.JSONArray().put(clip))
             .put("selectedClipIndex", 0)
-            .put("timelinePlayheadMs", 1000L)
+            .put("timelinePlayheadMs", 2000L)
             .put("timelineZoom", 2.0)
-            .put("timelineHorizontalScrollMs", 500L)
+            // Keep the saved offset consistent with the fixed playhead near the start;
+            // a mid-track scroll offset could override the restored playhead on reopen.
+            .put("timelineHorizontalScrollMs", 0L)
             .put("musicUri", fixtureUri)
             .put("musicTitle", "ROUND_TRIP_MUSIC")
             .put("soundUri", fixtureUri)
@@ -986,8 +988,8 @@ class EditorTimelineInteractionTest {
         )
         val restoredPlayheadMs = projectPositionMs(requireProjectTime(device))
         assertTrue(
-            "Manual JSON did not restore the 1.00 s playhead: $restoredPlayheadMs ms",
-            kotlin.math.abs(restoredPlayheadMs - 1_000L) <= 120L
+            "Manual JSON did not restore the 2.00 s playhead: $restoredPlayheadMs ms",
+            kotlin.math.abs(restoredPlayheadMs - 2_000L) <= 120L
         )
         assertTrue(
             "Manual JSON did not restore the trimmed clip duration",
