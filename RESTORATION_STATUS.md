@@ -30,7 +30,7 @@ MathMotor Video is a local Android video editor with a CapCut-inspired workflow.
 - Historical note: workflow [#40173820023](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40173820023) did not verify pinch successfully. It is superseded by successful interaction workflow #40177103726 below.
 - Timeline source now uses a fixed center playhead; scroll events map the centered time back to the project and debounce preview seeks. Playback and seeking move the timeline below the line. Each horizontal lane gets half-viewport leading/trailing padding so the beginning and end can align under the playhead. Pinch zoom math keeps the time under the pinch focus stable.
 - Unit tests were added for center-playhead scroll mapping, pinch-anchor stability, and reaching the final frame at maximum scroll. Tests are not marked passed until CI reports success.
-- Filmstrip density, timestamp sampling, decode/crop size and cache capacity were improved in source. Thumbnail views now expose per-frame loading states and debug-only timestamp/fingerprint markers (source commit `5d5629c736b127bc286a8cfbdeace6ad3b1380e8`). Test commit `1d915d325d5a4e131da68bb584ca5c9c9eda4183` asserts at least five distinct requested timestamps, at least two frame fingerprints and at least three loaded visible thumbnails; latest CI run [#40181440039](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40181440039) is the current validation. Do not mark thumbnail variety/loading complete until it passes.
+- Filmstrip density, timestamp sampling, decode/crop size and cache capacity were improved in source. Thumbnail views expose per-frame loading states and debug-only timestamp/fingerprint markers (source commit `5d5629c736b127bc286a8cfbdeace6ad3b1380e8`). **Frame variety/loading test passed** in [run #40181440039](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40181440039): the test requires at least five distinct requested timestamps, at least two bitmap fingerprints and at least three visible loaded thumbnails. Physical-device thumbnail size/density/readability remains open.
 - Home-screen header text and scissors graphic were reduced in source, but the full UI still needs screenshot review.
 
 ## Latest interaction failure and repair — 2026-10-25
@@ -43,23 +43,33 @@ MathMotor Video is a local Android video editor with a CapCut-inspired workflow.
 - The timeline interaction gate passed, but this is still not a release candidate: other README verification items remain open. Version 395 must not be published.
 
 - Second related defect found in `buildVideoClipFilmstrip()`: horizontal movement used to call `seekTimelinePreview()` with the child's local x fraction and ACTION_UP sought again after a drag, which could snap time away from the scrolled position. Source commit `1fe72bcb2d6257b28541902fd13bd51ec1a1a6d5` separates gestures: taps select/seek and drags scroll. This source behavior was verified by run #40177103726, which reached 8.00 s and returned to 0.00 s.
-## Latest verified CI result — 2026-10-25 (run #40180575601)
+## Latest verified CI result — 2026-10-25 (run #40181440039, run 129)
+
+- **Result: SUCCESS.** [Workflow #40181440039](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40181440039) completed successfully on test commit `1d915d325d5a4e131da68bb584ca5c9c9eda4183`.
+- Unit tests, debug APK build, fixture generation, emulator UI/interactions, screenshots and artifact upload all passed; `connectedDebugAndroidTest` exited with code 0.
+- **Thumbnail frame variety/loading test passed:** the test waits for and asserts at least five distinct requested timestamps, at least two distinct frame fingerprints, and at least three visible loaded thumbnails. This checks that the filmstrip is not just reusing one repeated frame placeholder in this emulator test.
+- The previous compact-screen text test remains green in [run #40180575601](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40180575601): live text appeared in preview, size changes affected bounds, and start/end timing controls changed values. Fixed-playhead, pinch-anchor and start/end scroll interactions are also verified by prior run #40177103726; left/right trim gestures by #40178530256.
+- **Still open:** adjust/review thumbnail size and density on a physical phone; test restoring trimmed footage and trim/scroll conflicts; text-strip trimming and export parity after save/reopen; full Undo/Redo; audio/music sync; multi-clip assembly/export; editable project save/reopen; home-screen/keyboard responsiveness and physical-device behavior.
+- [Run artifacts and screenshots](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40181440039#artifacts).
+- This run built a **debug APK**, not a signed release APK. Installed baseline remains versionCode 394 / build 61 (`app-v8.3-61`). Version 395 remains blocked until every release gate passes and the user explicitly authorizes release.
+
+## Previous verified compact text-panel CI result — 2026-10-25 (run #40180575601)
 
 - **Result: SUCCESS.** [Workflow #40180575601](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40180575601) passed on tested commit `ce86cb00efa2f52224d4aea4fd054a078c4aa370`.
-- Unit tests passed; debug APK built; 8.02-second fixture generated; emulator screenshots captured; local draft autosave passed; `connectedDebugAndroidTest` exit code 0. XML report: **4 tests, 0 failures, 0 errors, 0 skipped**.
+- Unit tests passed; debug APK built; 8.02-second fixture generated; emulator screenshots captured; local draft autosave passed; `connectedDebugAndroidTest` exited with code 0.
 - Timeline interactions passed: playhead drag to 3.18 s; pinch zoom 100% → 626% while preserving center time; end reached at 8.00 s on forward swipe 4; start reached at 0.00 s on reverse swipe 6.
 - Clip trim passed: right edge 8,020 ms → 7,110 ms; left edge 7,110 ms → 6,210 ms.
 - Text interaction passed on the compact emulator: `TIMING TEST` appeared in preview; raising font size to 28 sp enlarged measured overlay height from 73 px to 83 px; start-time label changed 00:00.00 → 00:01.30; end-time label changed 00:08.02 → 00:06.60.
-- The compact-panel UI change in source commit `11b17096313a3c6f2145dd21b98c8033352fcf1f` made the add-text and timing controls reachable on a small viewport by temporarily hiding the redundant clip carousel and shrinking the preview while a non-clip tool panel is active.
-- Remaining work: verify restoring trimmed footage and trim/scroll gesture conflicts; inspect thumbnail variety/loading; verify text-strip trimming and exported-text parity; validate full Undo/Redo, audio sync, multi-clip assembly/export, editable project save/reopen, full home/keyboard responsiveness, screenshots and physical-device behavior.
+- Compact-panel source commit `11b17096313a3c6f2145dd21b98c8033352fcf1f` hides the redundant clip carousel and temporarily shrinks the preview while a non-clip tool panel is active to make the controls reachable.
+- Remaining release blockers are listed above and in README.md. The compact-panel/text test itself does not qualify the app for release.
 - [Run artifacts and screenshots](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40180575601#artifacts).
-- This was a debug verification run, not a signed release APK. Installed baseline remains versionCode 394 / build 61. Version 395 stays blocked until every release-gate item passes and the user explicitly authorizes release.
+
 
 ## Reported problems — release blockers until verified
 See the comprehensive checklist in README.md. Current list:
 1. One-finger timeline scrolling and trim gestures may conflict or be unreliable.
 2. Timeline horizontal travel/start/end alignment and two-finger pinch need interactive validation.
-3. Filmstrip thumbnails are too small/sparse or initially black/repeated.
+3. Thumbnail frame variety/loading is now verified in emulator run #40181440039; thumbnail size/density/readability on a physical phone still needs visual review.
 4. Playhead, timeline time, preview, playback and split position must stay synchronized.
 5. Basic text size preview feedback and start/end timing sliders are verified; text-strip trimming, exported-text parity and persistence still need verification.
 6. Duplicate/confusing duration UI needs review against actual assembled sequence duration.
@@ -70,7 +80,7 @@ See the comprehensive checklist in README.md. Current list:
 ## Verification gaps
 - Previously successful workflow [#40167165450](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40167165450) passed the existing unit-test step, debug APK build, sample-video fixture creation and emulator screenshot capture. The emulator step was explicitly run without instrumentation, so it did not verify touch gestures or full editing.
 - Earlier workflow [#40169030780](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40169030780) passed unit tests, debug build and screenshot smoke; interactive verification subsequently exposed a failure, so those earlier green results are insufficient for gesture acceptance.
-- Required next validation: inspect latest job result; fix any compile/test error; inspect screenshots/logs. The first interaction instrumentation now exercises fixed-playhead drag, pinch anchor, filmstrip one-finger swipe and real project-time assertions at the start/end (≤0.2 s / ≥7.8 s); further tests for trim, text, Undo/Redo, export and project save/reopen remain required.
+- Latest validation results: run #40181440039 passed the thumbnail frame-variety/loading interaction test; run #40180575601 passed compact text timing/size controls and fixed-playhead/zoom/scroll interactions. Inspect the uploaded screenshots; further tests for trim restoration/gesture conflicts, text export parity, Undo/Redo, audio, multi-clip export and project save/reopen remain required.
 - Test a 10-second clip and multi-clip sequence at several zoom levels. Export to a new MP4 and verify output duration, picture/audio/text sync and that original media is unchanged.
 - Keep all release-gate boxes in README.md unchecked until their relevant tests pass. Record newly discovered defects and test outcomes in both README.md and this handoff.
 
