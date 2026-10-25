@@ -425,15 +425,18 @@ class EditorTimelineInteractionTest {
         device.waitForIdle()
         val addText = requireObject(device, By.desc("Yeni metin katmanı ekle"), "new-text-layer control")
         addText.click()
-        val inputSelector = UiSelector().className("android.widget.EditText")
-        assertTrue(
-            "Could not scroll the focused text editor input into view after the keyboard opened",
-            panelScroll.scrollIntoView(inputSelector)
-        )
         val inputQuery = By.clazz("android.widget.EditText")
         assertTrue(
+            "Keyboard-aware editor layout did not activate",
+            device.wait(Until.hasObject(By.text("Bitti ✓")), 8_000)
+        )
+        // The app itself must keep the newly focused field in the visible panel.
+        // Do not call scrollIntoView here: that can race the editor's own post-IME
+        // layout correction and accidentally scroll the field away again.
+        SystemClock.sleep(700)
+        assertTrue(
             "Text editor input did not remain accessible after keyboard resize",
-            device.wait(Until.hasObject(inputQuery), 5_000)
+            device.wait(Until.hasObject(inputQuery), 8_000)
         )
         device.waitForIdle()
         val input = requireObject(device, inputQuery, "text editor input")
