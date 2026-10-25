@@ -100,7 +100,9 @@ jobs:
           disable-spellchecker: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -wipe-data
           emulator-boot-timeout: 600
-          script: gradle --no-daemon connectedDebugAndroidTest && bash .github/scripts/capture-emulator-screenshots.sh
+          # The shell flow creates the private 8-second fixture first. The instrumentation
+          # test then uses that fixture to exercise timeline gestures and text controls.
+          script: bash .github/scripts/capture-emulator-screenshots.sh && gradle --no-daemon connectedDebugAndroidTest
 
       - name: Upload emulator screenshots and diagnostics
         if: always()
