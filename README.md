@@ -73,7 +73,17 @@ This is the continuing handoff log. Resume from this branch and update this sect
 
 Fixed-playhead source change: `ab6d614c8ceff847537fce4cd77a69db50fb3bc9`. Timeline math helpers: `2213b8d5305837a92b7408abfc813e91b1f216b6`. Mapping tests: `f8039c82c989d99f9e73df2e90f69719665e980d`. Filmstrip swipe fix: `8458c7737649bf05ffba10d58208dea3304993f3`. Interaction test: `7f1b886a5d8a4d0bce7163ae0c60b75ec7ea92fd`; exact start/end assertions: `7dd20078dd35a0f68b70075ff5bb8e20769b712b`. Pinch dispatch first attempt: `af579dd0a156bbad0ee4f93a734a51d2caf65e3d`; dispatch-once/import-paused source change: `f2c3c520df6f82991bfb5540d911a720cf907143`. Updated zoom percentage test: `d60b2d7528ed5fe40183962a5ee4b93215767cf7`. Removed force-stop from screenshot test: `57e1a4c924d4afbbc9dbd88de0e4bdfbc333fa6d`; instrumentation test process fix: `1dd19108139c8b353d1c1cc3606b749b33d8228c`. Exact ruler duration fix: `f742117b01cd9e63a5b27cbacdc4d1d67a19ac68`; sound placeholder duration fix: `546d750957923b24b2376b4b29d413b637319256`. Diagnostic script: `4de40f3ad49d8b49d5f7ff3d5fcf439d6f135914`; workflow wiring: `080a15f50557c70bc0d5e030a38f26ed27539870`. Stale-home-test update: `64670fbefbf88b66210190c936568111d9b4b25c`. Instrumentation workflow: `ede0225a127021945736839ccf0f5199abb0a2e5`.
 
-## Latest verified CI result — 2026-10-25 (run #40180575601)
+## Latest verified CI result — 2026-10-25 (run #40181440039, run 129)
+
+- **Result: SUCCESS.** [Workflow #40181440039](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40181440039) passed with the thumbnail-interaction test on commit `1d915d325d5a4e131da68bb584ca5c9c9eda4183`.
+- The uploaded JUnit report confirms **5 UI/instrumentation tests, 0 failures, 0 errors, 0 skipped**. Unit tests and debug APK build passed; screenshots and diagnostics were uploaded.
+- **Filmstrip frames:** the test log measured **12 distinct requested timestamps and 11 distinct bitmap fingerprints**, and it asserted at least three loaded thumbnails were visible. This verifies real frame variety/loading on the CI emulator; it does not certify the filmstrip's visual size/readability on a physical phone.
+- The compact-screen text test remains green in run #40180575601: live text in preview, text-size bounds changed, and start/end timing labels updated. Fixed-playhead/zoom/start-end scrolling passed in #40177103726; left/right inward trim passed in #40178530256.
+- **Still open:** restore previously trimmed source footage (new regression test is running as workflow #130); review thumbnail density on a physical phone; text-strip trimming/export parity; full Undo/Redo; audio/music sync; multi-clip assembly/export; editable project save/reopen; home/keyboard responsiveness and physical-device review.
+- [Run artifacts, test report and screenshots](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40181440039#artifacts).
+- This was a **debug APK** validation run, not a signed release APK. Installed baseline remains versionCode 394 / build 61. Version 395 remains blocked until the full checklist passes and the user explicitly authorizes release.
+
+## Previous verified text/timeline CI result — 2026-10-25 (run #40180575601)
 
 - **Result: SUCCESS.** [Workflow #40180575601](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40180575601) completed successfully on commit `ce86cb00efa2f52224d4aea4fd054a078c4aa370`.
 - Unit tests passed, debug APK built, the 8.02-second test fixture generated, emulator screenshots captured, local draft autosave verified, and `connectedDebugAndroidTest` exited with code 0. XML report: **4 tests, 0 failures, 0 errors, 0 skipped**.
@@ -131,7 +141,8 @@ Fixed-playhead source change: `ab6d614c8ceff847537fce4cd77a69db50fb3bc9`. Timeli
 ### Required validation before version 395
 
 - [x] CI unit tests pass for timeline mapping, zoom-anchor behavior, trim bounds, playhead-to-clip mapping and text timing (run #40180575601).
-- [ ] Run an interactive Android emulator test covering one-finger scroll/trim, two-finger zoom, playhead scrubbing/sync, thumbnail variety/loading, text timing/size, undo/redo and home-screen navigation.
+- [x] Emulator-tested: fixed-playhead scrubbing, centered pinch zoom, exact start/end scrolling, basic left/right trim, compact-screen text timing/size, and thumbnail frame variety/loading (runs #40177103726, #40178530256, #40180575601, #40181440039).
+- [ ] Still required: outward trim restoration/scroll conflict, undo/redo coverage, audio, multi-clip assembly/export, project save/reopen, home-screen/keyboard navigation, physical-device review, and exported text parity.
 - [ ] Test with a 10-second video and a multi-clip sequence; check the beginning, middle and end of the timeline at multiple zoom levels.
 - [ ] Export an MP4 and verify video, text, audio, duration and playhead cut position; confirm the original input video is unchanged.
 - [ ] Save a project, close/reopen it and verify clips, text, audio, duration, zoom and timeline position.
