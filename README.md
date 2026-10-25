@@ -41,8 +41,10 @@ Work top to bottom. Mark an item complete only when there is test or inspection 
 
 ### 2. Unified editor Undo / Redo
 
-- [ ] Current history is clip-only (`undoClipHistory` / `redoClipHistory`) and buttons say “Klip geri al / Klip yinele”; it is not a global editor history.
-- [ ] Extend undo/redo to supported text, audio/music and clip edits. Verify timeline and preview return to the same state together. Do not relabel the existing clip-only feature as global undo/redo.
+- [x] Replace the clip-only history with shared editor snapshots for text, clip, music/effect references and levels, sound-effect timing, source-audio settings, and editor timeline state.
+- [x] The interaction test `unifiedUndoRedoRestoresTextAndAudioEdits` passed in [run #192](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40233158607): it verifies text-layer add/edit Undo/Redo and a real music-volume slider gesture restoring/reapplying the value.
+- [ ] Extend explicit interaction coverage to clip trim/split/reorder, sound-effect add/remove/start/volume, source-audio toggle, preview/export parity, and state after saving/reopening. Do not infer full coverage from the shared snapshot implementation alone.
+- [ ] Verify buttons accurately reflect whether Undo/Redo is available after every supported operation and that each gesture creates only one history entry.
 
 ### 3. Text timeline and export parity
 
