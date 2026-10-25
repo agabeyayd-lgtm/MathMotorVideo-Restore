@@ -586,6 +586,17 @@ class EditorTimelineInteractionTest {
         )
         val nameInput = requireObject(device, By.clazz("android.widget.EditText"), "export filename input")
         nameInput.setText(exportName)
+
+        // The export controls extend below the compact emulator viewport. Scroll the
+        // editor's single vertical panel to the real export button instead of assuming
+        // it is already in the accessibility tree after the filename field is edited.
+        val panelScroller = UiScrollable(UiSelector().className("android.widget.ScrollView"))
+        panelScroller.setAsVerticalList()
+        assertTrue(
+            "Could not scroll the export panel to the MP4 export button",
+            panelScroller.scrollIntoView(UiSelector().text("MP4 DIŞA AKTAR"))
+        )
+        device.waitForIdle()
         requireObject(device, By.text("MP4 DIŞA AKTAR"), "MP4 export button").click()
 
         val exportDeadline = SystemClock.uptimeMillis() + 120_000L
