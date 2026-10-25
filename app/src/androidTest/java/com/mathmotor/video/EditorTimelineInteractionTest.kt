@@ -434,6 +434,70 @@ class EditorTimelineInteractionTest {
         android.util.Log.i("TextLayerInteractionTest", "stage=end-time before=$endLabelBefore after=$endLabelAfter")
     }
 
+    @Test
+    fun filmstripLoadsFramesFromDistinctTimestamps() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val device = UiDevice.getInstance(instrumentation)
+        val packageName = "com.mathmotor.video.next"
+        val fixtureUri = "file:///data/user/0/$packageName/files/editor-test-video.mp4"
+
+        device.executeShellCommand("logcat -c")
+        device.executeShellCommand(
+            "am start -n $packageName/com.mathmotor.video.EditorTestEntryActivity " +
+                "--es video_uri $fixtureUri --es draft_id 55555555-5555-4555-8555-555555555555"
+        )
+        assertTrue(
+            "Editor did not show the video lane for thumbnail test",
+            device.wait(Until.hasObject(By.text("VIDEO")), 20_000)
+        )
+        assertTrue(
+            "Project time label did not appear for thumbnail test",
+            device.wait(Until.hasObject(By.textContains("Proje")), 20_000)
+        )
+        assertTrue("Thumbnail test sample clip was not loaded", awaitClipAdded(device))
+        device.waitForIdle()
+
+        val readyPattern = Regex("TIMELINE_THUMBNAIL_READY timestampMs=(\\d+) fingerprint=(-?\\d+)")
+        val deadline = SystemClock.uptimeMillis() + 30_000L
+        var readyFrames = emptyList<Pair<Long, Long>>()
+        while (SystemClock.uptimeMillis() < deadline) {
+            val log = device.executeShellCommand("logcat -d -s TimelineThumbnail:I")
+            readyFrames = readyPattern.findAll(log).map { match ->
+                match.groupValues[1].toLong() to match.groupValues[2].toLong()
+            }.toList()
+            if (readyFrames.map { it.first }.distinct().size >= 5 &&
+                readyFrames.map { it.second }.distinct().size >= 2
+            ) break
+            SystemClock.sleep(350)
+        }
+
+        val uniqueTimes = readyFrames.map { it.first }.distinct()
+        val uniqueFrames = readyFrames.map { it.second }.distinct()
+        android.util.Log.i(
+            "TimelineThumbnailTest",
+            "stage=decoded timestamps=${uniqueTimes.size} fingerprints=${uniqueFrames.size} " +
+                "samples=${readyFrames.take(12)}"
+        )
+        assertTrue(
+            "Filmstrip did not decode enough distinct requested timestamps: ${uniqueTimes.take(12)}",
+            uniqueTimes.size >= 5
+        )
+        assertTrue(
+            "Multiple timestamps appear to reuse the same frame fingerprint: ${uniqueFrames.size}",
+            uniqueFrames.size >= 2
+        )
+
+        val loadedImages = device.findObjects(By.descContains("Klip karesi"))
+            .filter { image ->
+                image.contentDescription?.toString()?.contains("yüklendi") == true &&
+                    image.visibleBounds.width() > 0 && image.visibleBounds.height() > 0
+            }
+        assertTrue(
+            "Too few loaded thumbnails are exposed in the visible filmstrip: ${loadedImages.size}",
+            loadedImages.size >= 3
+        )
+    }
+
     private fun projectDurationMs(label: String): Long {
         val match = Regex("Proje\\s+\\d{2}:\\d{2}\\.\\d{2}\\s*/\\s*(\\d{2}):(\\d{2})\\.(\\d{2})")
             .find(label) ?: throw AssertionError("Could not parse project duration from: $label")
