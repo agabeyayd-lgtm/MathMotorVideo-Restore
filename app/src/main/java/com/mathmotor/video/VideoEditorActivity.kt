@@ -210,6 +210,7 @@ class VideoEditorActivity : Activity() {
     private var timelineScrubStartScrollX = 0
     private var pendingTimelineScrollSeekMs = 0L
     private var timelineScrollSeeking = false
+    private var restoringProjectTimelineState = false
     private val timelineScrollSettleTask = object : Runnable {
         override fun run() {
             // Do not let the periodic player poll overwrite the user's last scroll
@@ -1794,25 +1795,30 @@ class VideoEditorActivity : Activity() {
                         syncingTimelineScroll = false
                     }
                     updateTimelinePlayheadLine()
-                    val expectedScrollX = TimelineScaleMath.scrollForCenteredTime(
-                        timelinePlayheadMs, timelinePixelsPerSecond()
-                    )
-                    if (clips.isNotEmpty() && scrollX != expectedScrollX) {
-                        val mappedMs = TimelineScaleMath.timeForCenteredScroll(
-                            scrollX, timelinePixelsPerSecond()
-                        ).coerceIn(0L, totalOutputDurationMs())
-                        timelinePlayheadMs = mappedMs
-                        if (::timelinePlayheadSeek.isInitialized) {
-                            timelinePlayheadSeek.progress = TimelineTrimMath.progressForTime(
-                                mappedMs, totalOutputDurationMs()
-                            )
+                    // Applying a saved horizontal offset is viewport restoration, not a user seek.
+                    // Without this guard, the restored scroll listener overwrites the independently
+                    // saved playhead with the time represented by the viewport's left edge.
+                    if (!restoringProjectTimelineState) {
+                        val expectedScrollX = TimelineScaleMath.scrollForCenteredTime(
+                            timelinePlayheadMs, timelinePixelsPerSecond()
+                        )
+                        if (clips.isNotEmpty() && scrollX != expectedScrollX) {
+                            val mappedMs = TimelineScaleMath.timeForCenteredScroll(
+                                scrollX, timelinePixelsPerSecond()
+                            ).coerceIn(0L, totalOutputDurationMs())
+                            timelinePlayheadMs = mappedMs
+                            if (::timelinePlayheadSeek.isInitialized) {
+                                timelinePlayheadSeek.progress = TimelineTrimMath.progressForTime(
+                                    mappedMs, totalOutputDurationMs()
+                                )
+                            }
+                            updateTimelinePlayheadLabel()
+                            pendingTimelineScrollSeekMs = mappedMs
+                            timelineScrollSeeking = true
+                            timelineHandler.removeCallbacks(timelineScrollSeekTask)
+                            timelineHandler.removeCallbacks(timelineScrollSettleTask)
+                            timelineHandler.postDelayed(timelineScrollSeekTask, 70L)
                         }
-                        updateTimelinePlayheadLabel()
-                        pendingTimelineScrollSeekMs = mappedMs
-                        timelineScrollSeeking = true
-                        timelineHandler.removeCallbacks(timelineScrollSeekTask)
-                        timelineHandler.removeCallbacks(timelineScrollSettleTask)
-                        timelineHandler.postDelayed(timelineScrollSeekTask, 70L)
                     }
                 }
             }
@@ -3460,6 +3466,9 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun applyProjectJson(json: JSONObject) {
+        restoringProjectTimelineState = true
+        timelineHandler.removeCallbacks(timelineScrollSeekTask)
+        timelineHandler.removeCallbacks(timelineScrollSettleTask)
         require(json.optString("format") == "MathMotorVideoProject") { "Bu dosya MathMotorVideo proje dosyası değil." }
         require(json.optInt("version", 0) == 1) { "Bu proje sürümü desteklenmiyor." }
         val loadedClips = mutableListOf<Clip>()
@@ -3638,6 +3647,9 @@ class VideoEditorActivity : Activity() {
         }
         updateTimelinePlayheadControls()
         refreshTimelineTracks()
+        // Wait for refreshTimelineTracks()' posted scroll restoration to finish before
+        // accepting user-scroll gestures as playhead seeks again.
+        timelineHandler.postDelayed({ restoringProjectTimelineState = false }, 350L)
         if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
             val clipSummary = clips.joinToString(separator = ",") { "${it.title}:${it.startMs}-${it.endMs}" }
             val textSummary = textLayers.joinToString(separator = ",") { layer ->
