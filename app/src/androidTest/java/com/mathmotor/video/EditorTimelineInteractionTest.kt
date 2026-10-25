@@ -1190,6 +1190,10 @@ class EditorTimelineInteractionTest {
             requireObject(device, By.text("Üst"), "top text-position radio").isChecked
         )
         assertTrue(
+            "Could not scroll to the restored cyan text-colour control",
+            textPanelScroller.scrollIntoView(UiSelector().text("Camgöbeği"))
+        )
+        assertTrue(
             "Manual JSON did not restore the cyan text colour",
             requireObject(device, By.text("Camgöbeği"), "cyan text-colour radio").isChecked
         )
