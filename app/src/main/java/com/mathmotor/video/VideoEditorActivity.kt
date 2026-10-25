@@ -318,6 +318,10 @@ class VideoEditorActivity : Activity() {
             android.util.Log.i("EditorSmokeTest", "EDITOR_SMOKE_EDITOR_STARTED uri=$incoming videoCount=${incomingVideos.size}")
         }
         val savedDraft = requestedDraftId?.let { VideoProjectDraftStore.load(this, it) }
+        if (isDebugBuild) android.util.Log.i(
+            "EditorSmokeTest",
+            "EDITOR_SMOKE_DRAFT_LOOKUP id=$requestedDraftId found=${savedDraft != null} incomingVideos=${incomingVideos.size}"
+        )
         if (savedDraft != null) {
             runCatching { applyProjectJson(savedDraft) }
                 .onSuccess { status.text = "Taslak açıldı. Düzenlemeye kaldığın yerden devam edebilirsin." }
@@ -3491,13 +3495,21 @@ class VideoEditorActivity : Activity() {
 
     private fun addClipsInOrder(uris: List<Uri>, replaceExisting: Boolean) {
         if (uris.isEmpty()) return
+        val smokeTest = (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        if (smokeTest) android.util.Log.i(
+            "EditorSmokeTest",
+            "EDITOR_SMOKE_MULTI_IMPORT_STARTED count=${uris.size} replaceExisting=$replaceExisting uris=${uris.joinToString("|")}"
+        )
         status.text = "Seçilen ${uris.size} video sırayla hazırlanıyor…"
         Thread {
-            val ready = uris.mapNotNull { uri ->
+            val ready = uris.mapIndexedNotNull { index, uri ->
+                if (smokeTest) android.util.Log.i(
+                    "EditorSmokeTest", "EDITOR_SMOKE_MULTI_METADATA_BEGIN index=$index uri=$uri"
+                )
                 try {
                     contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 } catch (_: Exception) { }
-                runCatching {
+                val loadedClip = runCatching {
                     val retriever = MediaMetadataRetriever()
                     val duration = try {
                         retriever.setDataSource(this, uri)
@@ -3505,6 +3517,9 @@ class VideoEditorActivity : Activity() {
                     } finally {
                         retriever.release()
                     }
+                    if (smokeTest) android.util.Log.i(
+                        "EditorSmokeTest", "EDITOR_SMOKE_MULTI_METADATA_DONE index=$index durationMs=$duration"
+                    )
                     if (duration <= 0L) null else Clip(
                         uri = uri,
                         title = queryDisplayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Video klibi",
@@ -3512,10 +3527,21 @@ class VideoEditorActivity : Activity() {
                         startMs = 0L,
                         endMs = duration
                     )
+                }.onFailure { error ->
+                    if (smokeTest) android.util.Log.e(
+                        "EditorSmokeTest", "EDITOR_SMOKE_MULTI_METADATA_ERROR index=$index uri=$uri", error
+                    )
                 }.getOrNull()
+                loadedClip
             }
+            if (smokeTest) android.util.Log.i(
+                "EditorSmokeTest", "EDITOR_SMOKE_MULTI_METADATA_COMPLETE requested=${uris.size} loaded=${ready.size}"
+            )
             runOnUiThread {
                 if (ready.isEmpty()) {
+                    if (smokeTest) android.util.Log.e(
+                        "EditorSmokeTest", "EDITOR_SMOKE_MULTI_IMPORT_EMPTY requested=${uris.size}"
+                    )
                     // Keep the existing timeline untouched if every selected file failed to load.
                     status.text = "Videolar okunamadı. Mevcut kliplerin korunması için zaman çizelgesi değiştirilmedi. Başka bir MP4/video dosyası seç."
                     return@runOnUiThread

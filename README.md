@@ -168,3 +168,14 @@ Fixed-playhead source change: `ab6d614c8ceff847537fce4cd77a69db50fb3bc9`. Timeli
 - [ ] Two-clip single-MP4 export remains unverified until the new instrumentation test passes.
 - [ ] Saved-project editing/resume, text/audio layer export parity, undo/redo, signed release/update, and physical-phone review remain release blockers.
 - **Version 395 remains blocked. Do not bump version metadata, sign/publish an APK or offer an update.**
+
+## Latest validation update — 2026-10-25 (run #141)
+
+- Run [#40194882474](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40194882474): unit tests and debug APK assembly passed. Five of six emulator interaction/screenshot tests passed, including text timing/size input after keyboard resize and trim-handle restoration. This confirms the compact keyboard regression is fixed in this emulator run.
+- New multi-clip export test stopped during import, before export: the two video URI extras reached the test entry and the editor (videoCount=2), but `EDITOR_SMOKE_CLIPS_ADDED` was never emitted. Both fixture files were copied into app-private storage. This is not yet proof the feature failed at export; more detailed logging was added around saved-draft selection, per-file metadata reads, and empty import results. Export sequence/duration/second-frame/original-hash assertions have not run yet.
+- Multi-clip test now uses a fresh draft UUID per test to avoid accidental draft reuse. Re-run is required to determine why the ordered import did not complete.
+- [x] Compact keyboard/text input check passed in run #141.
+- [x] Left/right trim and trim restoration passed in run #141.
+- [ ] Two-clip import and single-MP4 export remain unverified.
+- [ ] Project reopen, text/audio export parity, undo/redo, physical-phone usability, signed release/update remain open.
+- **Version 395 remains blocked. Do not bump version metadata, sign/publish an APK, or offer an update before remaining checks pass and the user explicitly authorizes release.**

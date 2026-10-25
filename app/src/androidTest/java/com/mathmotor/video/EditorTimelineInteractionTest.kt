@@ -547,7 +547,7 @@ class EditorTimelineInteractionTest {
         val firstUri = "file://${firstFile.absolutePath}"
         val secondUri = "file://${secondFile.absolutePath}"
         val exportName = "MathMotor_two_clip_test_${System.currentTimeMillis()}"
-        val draftId = "66666666-6666-4666-8666-666666666666"
+        val draftId = java.util.UUID.randomUUID().toString()
 
         device.executeShellCommand("logcat -c")
         device.executeShellCommand(
@@ -563,12 +563,18 @@ class EditorTimelineInteractionTest {
                 clipsReady = true
                 break
             }
-            if (log.contains("EDITOR_SMOKE_MULTI_CLIP_SKIPPED")) {
-                throw AssertionError("The multi-clip test did not import both source videos: $log")
+            if (log.contains("EDITOR_SMOKE_MULTI_CLIP_SKIPPED") ||
+                log.contains("EDITOR_SMOKE_MULTI_IMPORT_EMPTY") ||
+                log.contains("EDITOR_SMOKE_MULTI_METADATA_ERROR")
+            ) {
+                throw AssertionError("The multi-clip import failed before export: $log")
             }
             SystemClock.sleep(350)
         }
-        assertTrue("The editor did not load both source clips in order", clipsReady)
+        if (!clipsReady) {
+            val log = device.executeShellCommand("logcat -d -s EditorSmokeTest:I EditorSmokeTest:E")
+            throw AssertionError("The editor did not load both source clips in order within 35s. Import markers:\n$log")
+        }
         device.waitForIdle()
 
         val exportTab = device.findObject(By.text("Dışa aktar ›"))

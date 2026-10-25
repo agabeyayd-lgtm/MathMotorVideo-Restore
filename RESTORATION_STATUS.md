@@ -99,3 +99,12 @@ This is a reconstruction from recoverable project files, not an exact recovery o
 - [ ] Keyboard text input and two-clip export remain **not verified**.
 - [ ] Editable project save/reopen, text/audio export parity, undo/redo, signed release/update and physical-device usability review remain open.
 - **Release gate unchanged: version 395 must not be bumped, signed, published or offered until all checklist items pass and the user explicitly authorizes it.**
+
+## Latest validation result — 2026-10-25, run #141
+- Run [#40194882474](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40194882474): unit tests and debug assembly passed; 5 of 6 emulator interaction/screenshot tests passed. Text field after keyboard resize now passes. Left/right trim plus restoration also passes.
+- The only failing test was newly added `twoClipsExportToOneMp4InOrder`. It reached the editor with two video URIs, but neither the final import success marker nor the error/skip marker appeared before timeout, so export assertions never ran. Both private fixture files were present. Added stage-by-stage diagnostic logs around saved-draft selection and per-video metadata/import completion; new test uses a fresh UUID to avoid loading a stale draft.
+- [x] Keyboard-open field accessibility verified in run #141.
+- [x] Trim restoration verified in run #141.
+- [ ] Two-source-video import and one-file export remain not verified.
+- [ ] Saved-project reopen, text/music/sound export parity, undo/redo, physical-device review, signed release/update remain open.
+- **Version 395 is still blocked. No version bump, signing, publication or update offer until all remaining checks pass and the user explicitly authorizes release.**
