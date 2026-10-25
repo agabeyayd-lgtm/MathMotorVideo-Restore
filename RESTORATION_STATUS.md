@@ -12,7 +12,7 @@ The keyboard assertion is inside `textTimingAndSizeControlsUpdatePreview` and pa
 
 ## New work in progress
 
-Commit [`1aa3323`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/1aa3323bcedac16e7ff89fe6deec42113b3905e0) adds/strengthens `savedDraftReopensTextLayerAndClipState` (initial test commit [`b109bbe`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/b109bbeff71876d93a90e53acd17f41cad1ad64f)). It writes a test draft using the real `VideoProjectDraftStore`, launches the editor with the draft ID, and checks the saved 7.02-second clip trim plus preview text, editable text value and 32 sp size. **Do not call this test passed until its workflow result is checked.**
+Commit [`1aa3323`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/1aa3323bcedac16e7ff89fe6deec42113b3905e0) adds/strengthens `savedDraftReopensTextLayerAndClipState` (initial test commit [`b109bbe`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/b109bbeff71876d93a90e53acd17f41cad1ad64f)). It writes a test draft using the real `VideoProjectDraftStore`, launches the editor with the draft ID, and checks the saved 7.02-second clip trim plus preview text, editable text value and 32 sp size. CI run [#40201158067 (#154)](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40201158067) is currently in progress. **Do not call this test passed until the workflow completes successfully.**
 
 ## Remaining real blockers
 
