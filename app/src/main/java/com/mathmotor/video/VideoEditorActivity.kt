@@ -844,11 +844,11 @@ class VideoEditorActivity : Activity() {
         textPanel.addView(label("Yazının görünme aralığı", 11f, Color.rgb(154, 171, 190), false))
         textStartLabel = label("Yazı başlangıcı: 00:00", 12f, Color.WHITE, true)
         textPanel.addView(textStartLabel)
-        textStartSeek = SeekBar(this).apply { max = 0; isEnabled = false }
+        textStartSeek = SeekBar(this).apply { max = 0; isEnabled = false; contentDescription = "Yazı başlangıç zamanı" }
         textPanel.addView(textStartSeek, matchWrap())
         textEndLabel = label("Yazı bitişi: 00:00", 12f, Color.WHITE, true)
         textPanel.addView(textEndLabel)
-        textEndSeek = SeekBar(this).apply { max = 0; isEnabled = false }
+        textEndSeek = SeekBar(this).apply { max = 0; isEnabled = false; contentDescription = "Yazı bitiş zamanı" }
         textPanel.addView(textEndSeek, matchWrap())
         installTextTimeListeners()
         textPanel.addView(label("Yazı konumu", 11f, Color.rgb(154, 171, 190), false))
