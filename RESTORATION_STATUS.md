@@ -70,3 +70,12 @@ Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228
 - [x] Preserved the production fix that refreshes the zoom accessibility description after project restore, plus the debug-only restoration marker.
 - [ ] [Run #190 — IN PROGRESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40231500974), commit `e80f446c4247b2ff97e58fed6093091d80530b99`. Build/unit tests were not yet rechecked to completion at the time of this note; final verdict waits for emulator assertions.
 - [ ] Keep version 395 blocked; broader text/audio export, timeline edge cases, physical-phone review, and signed install/update gate are still open.
+
+
+### 2026-10-25 — #189 failed: project scroll restore overwrote playhead
+
+- [x] Run [#189](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40230332447) compiled and started the emulator interaction suite; 8/9 tests passed, but the expanded manual JSON round-trip test failed because the restored project-time label was 1.41 s instead of the saved 7.70 s.
+- [x] Root cause confirmed in `VideoEditorActivity`: restoring the saved horizontal timeline scroll posts `scrollTo()`; its scroll listener interpreted that programmatic viewport restoration as a user scrub and replaced the independently persisted playhead with the time mapped from the scroll offset.
+- [x] Fix committed on `fix/global-editor-undo`: `976d4b38023ab4b5945577012b821b71476e85fd`. During project restoration, horizontal-scroll callbacks still synchronize timeline lanes and redraw the playhead line, but do not seek/change the saved playhead. The guard is released after the posted scroll restoration completes.
+- [ ] Re-run the full emulator interaction suite against the fix and verify the 7.70 s playhead plus the remaining JSON round-trip assertions.
+- [ ] Version 395 remains blocked; do not merge or release until the full suite and remaining release gates pass.
