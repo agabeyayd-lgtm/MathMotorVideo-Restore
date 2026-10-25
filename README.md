@@ -98,12 +98,6 @@ Working branch: `fix/editor-gestures-thumbnails-text-undo`. The installed baseli
 
 **Source changes listed above are not yet accepted as behavior fixes. The acceptance checklist below remains unchecked until tests pass.**
 
-- Reworked the timeline marker to stay fixed in the viewport while scrolling updates the time beneath it. Added shared time/scroll conversion helpers and unit tests for fixed-playhead mapping and pinch anchoring.
-- Added a two-finger pinch handler that maintains the time near the pinch focus; removed the filmstrip's touch handler that consumed gestures and blocked parent horizontal scrolling.
-- Increased filmstrip thumbnail height/resolution, reduced spacing to target roughly ten frames on a 10-second clip, and increased thumbnail decoding concurrency. Added debug-only timestamp/fingerprint logs so the emulator run can detect repeated thumbnails.
-- Changed Undo/Redo snapshots from clip-only state to the complete editable-project JSON. Added snapshot recording to text editing gestures, text timing/size changes, volume controls and audio add/remove actions.
-- Consolidated the visible time readout to one assembled-timeline duration. Simplified the home-screen intro copy and removed scissors icons from draft cards and the Klip tab; the scissors icon remains on the actual Split action.
-- Updated the home-screen instrumentation selector and expanded CI to run JVM unit tests and Android instrumentation tests on pull requests.
-- Added a smoke-script check for thumbnail decode count and distinct rendered-frame fingerprints using the generated moving test pattern.
+**CI status at this checkpoint:** Android debug APK build passed and JVM unit tests passed on workflow run [#82](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40146879693). The emulator/sample-video validation was still running when last checked; its result is not yet confirmed.
 
 **Still open and release-blocking until tests pass:** one-finger scroll / two-finger zoom on real UI, timeline edge alignment, thumbnail performance and diversity on emulator, text range and size behavior in preview/export, global Undo/Redo across all edit types, multi-clip MP4 export, save/reopen, responsive home/editor layout, and physical-device verification. Do not mark the issue checklist complete merely because source code changed. The first CI build and emulator results must be inspected, failures corrected, and the tests rerun before version 395 can even be considered.
