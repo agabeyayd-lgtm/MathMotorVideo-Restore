@@ -1061,7 +1061,11 @@ class VideoEditorActivity : Activity() {
         audioPanel.addView(musicActions)
         musicVolumeLabel = label("Müzik sesi: 45%", 12f, Color.WHITE, true)
         audioPanel.addView(musicVolumeLabel)
-        musicVolumeSeek = SeekBar(this).apply { max = 100; progress = musicVolume }
+        musicVolumeSeek = SeekBar(this).apply {
+            max = 100
+            progress = musicVolume
+            contentDescription = "Müzik ses düzeyi"
+        }
         musicVolumeSeek.setOnSeekBarChangeListener(volumeListener { value ->
             musicVolume = value
             musicVolumeLabel.text = "Müzik sesi: " + value + "%"
@@ -1111,7 +1115,11 @@ class VideoEditorActivity : Activity() {
         audioPanel.addView(soundStartSeek, matchWrap())
         soundVolumeLabel = label("Efekt sesi: 100%", 12f, Color.WHITE, true)
         audioPanel.addView(soundVolumeLabel)
-        soundVolumeSeek = SeekBar(this).apply { max = 100; progress = soundVolume }
+        soundVolumeSeek = SeekBar(this).apply {
+            max = 100
+            progress = soundVolume
+            contentDescription = "Efekt ses düzeyi"
+        }
         soundVolumeSeek.setOnSeekBarChangeListener(volumeListener { value ->
             soundVolume = value
             soundVolumeLabel.text = "Efekt sesi: " + value + "%"
@@ -1131,7 +1139,11 @@ class VideoEditorActivity : Activity() {
         audioPanel.addView(keepSourceAudio)
         sourceVolumeLabel = label("Orijinal video sesi: 100%", 12f, Color.WHITE, true)
         audioPanel.addView(sourceVolumeLabel)
-        sourceVolumeSeek = SeekBar(this).apply { max = 100; progress = sourceAudioVolume }
+        sourceVolumeSeek = SeekBar(this).apply {
+            max = 100
+            progress = sourceAudioVolume
+            contentDescription = "Orijinal video ses düzeyi"
+        }
         sourceVolumeSeek.setOnSeekBarChangeListener(volumeListener { value ->
             sourceAudioVolume = value
             sourceVolumeLabel.text = "Orijinal video sesi: " + value + "%"
