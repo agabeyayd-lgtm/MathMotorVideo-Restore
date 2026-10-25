@@ -53,3 +53,17 @@ See the detailed, release-blocking checklist in README.md. The active list is:
 ## Recovery background
 
 Some older physics/scenario-related source and tests remain as reconstruction leftovers; they are outside the active video-editing workflow. The original complete V7 source tree was not recoverable.
+
+## Latest repair work (2026-10-25)
+
+Repair branch: `fix/editor-gestures-thumbnails-text-undo`. Installed baseline remains 394 / build 61. No version bump, signed build, or publication has been made.
+
+Source updates made but **not yet verified**:
+- Fixed playhead design toward a stationary, white viewport marker; timeline scroll and zoom use shared pixel/time mapping helpers.
+- Added pinch zoom handling and removed the clip-filmstrip touch listener that intercepted horizontal swipes.
+- Increased thumbnail image resolution and filmstrip size/density; added per-frame diagnostic fingerprints for emulator validation.
+- Undo/Redo now serializes the complete project state; hooks have been added for text, overlay movement/scale, text timing/size, audio volume and audio add/remove operations.
+- Home introductory copy and non-action scissors icons have been reduced.
+- CI executes JVM unit tests and Android instrumentation tests on pull requests, followed by the emulator import/screenshot/draft smoke flow and thumbnail-diversity validation. The fixture staging order has been corrected so the interaction test can access the generated video.
+
+Current checkpoint: source changes and an interaction test are committed on the repair branch. Earlier source revisions built and passed JVM tests, but CI for the latest head is still pending. Fix any build/test failures first. Keep the user-facing issue list open until actual behavior and tests are confirmed; do not create version 395.

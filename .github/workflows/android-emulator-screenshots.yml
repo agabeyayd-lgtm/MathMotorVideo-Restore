@@ -8,6 +8,18 @@ on:
     paths:
       - "app/build.gradle.kts"
       - "app/src/main/**"
+      - "app/src/test/**"
+      - "app/src/androidTest/**"
+      - ".github/workflows/android-emulator-screenshots.yml"
+      - ".github/scripts/capture-emulator-screenshots.sh"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "app/build.gradle.kts"
+      - "app/src/main/**"
+      - "app/src/test/**"
+      - "app/src/androidTest/**"
       - ".github/workflows/android-emulator-screenshots.yml"
       - ".github/scripts/capture-emulator-screenshots.sh"
 
@@ -39,6 +51,9 @@ jobs:
 
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
+
+      - name: Run JVM unit tests
+        run: gradle --no-daemon testDebugUnitTest
 
       - name: Generate a deterministic sample video for editor smoke tests
         run: |
@@ -85,7 +100,9 @@ jobs:
           disable-spellchecker: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -wipe-data
           emulator-boot-timeout: 600
-          script: bash .github/scripts/capture-emulator-screenshots.sh
+          # The shell flow creates the private 8-second fixture first. The instrumentation
+          # test then uses that fixture to exercise timeline gestures and text controls.
+          script: bash .github/scripts/capture-emulator-screenshots.sh && gradle --no-daemon connectedDebugAndroidTest
 
       - name: Upload emulator screenshots and diagnostics
         if: always()

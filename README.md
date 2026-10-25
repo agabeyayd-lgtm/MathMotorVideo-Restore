@@ -81,3 +81,26 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - The current emulator screenshot workflow builds a debug APK and captures screens, but its script does not by itself prove all touch gestures, exports, Undo/Redo or save/reopen flows work. Add/run interaction-level tests rather than treating screenshots alone as acceptance.
 - Record a checkbox as complete only after the corresponding behavior is implemented and its relevant test passes. If a test cannot be run, leave the item unchecked and say so.
 - This repository is a reconstruction from recoverable project files, not an exact recovery of the old V7 source tree.
+
+### Work log — 2026-10-25 (repair branch, not yet release-verified)
+
+Working branch: `fix/editor-gestures-thumbnails-text-undo`. The installed baseline remains 394 / build 61. No version number was bumped and no APK was signed or published.
+
+**Source-code work completed on the repair branch (still awaiting tests):**
+
+- [x] Implement fixed-playhead coordinates and add unit tests for time/scroll/pinch conversions.
+- [x] Add a two-finger pinch handler and remove the filmstrip touch handler that was intercepting horizontal swipes.
+- [x] Increase thumbnail height and decoded resolution; raise frame density; add distinct-frame diagnostics to CI.
+- [x] Expand Undo/Redo snapshots from clip-only data to the complete project JSON; add history hooks for text, text gestures/timing/size, and audio operations.
+- [x] Use a single output-timeline time readout; reduce the home intro copy and remove scissors icons from passive navigation/draft cards.
+- [x] Update the home-screen instrumentation selector, run JVM and Android instrumentation tests on PRs, and add CI thumbnail-diversity validation.
+- [x] Add a UI instrumentation test for one-finger scroll, two-finger pinch, text start/end, text size, and Undo.
+- [x] Order CI so the shell smoke test stages the private sample video before the interaction test uses it.
+- [x] Make Undo/Redo controls available from the shared timeline header so they remain accessible in text/audio panels.
+- [x] Preserve the user's version 394 / build 61 baseline; leave app version fields unchanged and do not build/publish 395.
+
+**Source changes listed above are not yet accepted as behavior fixes. The acceptance checklist below remains unchecked until tests pass.**
+
+**CI status at this checkpoint:** Android debug APK build passed and JVM unit tests passed on workflow run [#82](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40146879693). The run for the prior source commit was cancelled by subsequent branch pushes, so it does not validate the current head. The new interaction test and corrected fixture/test order are committed; CI for the current head still needs to complete.
+
+**Still open and release-blocking until tests pass:** one-finger scroll / two-finger zoom on real UI, timeline edge alignment, thumbnail performance and diversity on emulator, text range and size behavior in preview/export, global Undo/Redo across all edit types, multi-clip MP4 export, save/reopen, responsive home/editor layout, and physical-device verification. Do not mark the issue checklist complete merely because source code changed. The first CI build and emulator results must be inspected, failures corrected, and the tests rerun before version 395 can even be considered.

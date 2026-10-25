@@ -79,18 +79,17 @@ class VideoEditorActivity : Activity() {
         var endMs: Long = durationMs
     )
 
-    private data class ClipEditSnapshot(
-        val clips: List<Clip>,
-        val selectedClipIndex: Int,
-        val timelinePlayheadMs: Long,
-        val previewSingleClip: Boolean
-    )
+    /** Full project snapshot used by global Undo/Redo, not just a clip-only snapshot. */
+    private data class ClipEditSnapshot(val projectJson: String)
 
     private val clips = mutableListOf<Clip>()
     private var draftId: String? = null
     private val undoClipHistory = mutableListOf<ClipEditSnapshot>()
     private val redoClipHistory = mutableListOf<ClipEditSnapshot>()
     private var activeTrimHistorySnapshot: ClipEditSnapshot? = null
+    private var activeOverlayHistorySnapshot: ClipEditSnapshot? = null
+    private var pendingTextInputHistorySnapshot: ClipEditSnapshot? = null
+    private var timelineScrollPlayheadSyncSuppressed = false
     private var undoClipButton: Button? = null
     private var redoClipButton: Button? = null
     private var selectedClipIndex = -1
@@ -176,7 +175,7 @@ class VideoEditorActivity : Activity() {
     private var deferTimelineRefresh = false
     private val timelineThumbnailCache = object : android.util.LruCache<String, Bitmap>(256) {}
     private val pendingTimelineThumbnails = mutableMapOf<String, MutableList<WeakReference<ImageView>>>()
-    private val timelineThumbnailExecutor = java.util.concurrent.Executors.newFixedThreadPool(2)
+    private val timelineThumbnailExecutor = java.util.concurrent.Executors.newFixedThreadPool(3)
     private lateinit var timelinePlayheadSeek: SeekBar
     private lateinit var timelinePlayheadLabel: TextView
     private var timelinePlayheadMs = 0L
@@ -184,6 +183,9 @@ class VideoEditorActivity : Activity() {
     private var timelinePreviewLoaded = false
     private var previewSingleClip = false
     private val timelineHandler = Handler(Looper.getMainLooper())
+    private val commitTextInputHistoryTask = object : Runnable {
+        override fun run() { commitPendingTextInputHistory() }
+    }
     private val textTimelineRefreshTask = object : Runnable {
         override fun run() { refreshTimelineTracks() }
     }
@@ -233,6 +235,7 @@ class VideoEditorActivity : Activity() {
     private var keyboardLayoutActive = false
     private var maxEditorViewportHeightPx = 0
     private var applyingResponsiveLayout = false
+    private var applyingProjectState = false
 
     companion object {
         private const val REQUEST_MAIN_VIDEO = 5101
@@ -351,7 +354,7 @@ class VideoEditorActivity : Activity() {
             textSize = textSizeSp.toFloat()
             gravity = Gravity.CENTER
             maxLines = 2
-            maxWidth = dp(170)
+            maxWidth = dp(320)
             setTextColor(Color.WHITE)
             setTypeface(Typeface.DEFAULT, Typeface.BOLD)
             setPadding(dp(10), dp(6), dp(10), dp(6))
@@ -524,43 +527,19 @@ class VideoEditorActivity : Activity() {
             timelineTracks,
             FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         )
+        // CapCut-style stationary playhead: the timeline scrolls under this marker.
         timelinePlayheadLine = FrameLayout(this).apply {
-            isClickable = true
+            isClickable = false
+            isFocusable = false
             elevation = dp(4).toFloat()
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             addView(
                 View(this@VideoEditorActivity).apply {
-                    setBackgroundColor(Color.rgb(255, 78, 92))
+                    setBackgroundColor(Color.rgb(248, 250, 252))
                 },
                 FrameLayout.LayoutParams(dp(2), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.TOP or Gravity.CENTER_HORIZONTAL)
             )
-            setOnTouchListener { view, event ->
-                when (event.actionMasked) {
-                    android.view.MotionEvent.ACTION_DOWN -> {
-                        if (clips.isEmpty()) return@setOnTouchListener false
-                        ensureTimelinePreviewLoaded()
-                        player?.playWhenReady = false
-                        // Preserve where the finger grabbed the handle so touching an edge
-                        // does not jump the playhead by half the handle width.
-                        timelineScrubGrabOffsetPx = event.x - view.width / 2f
-                        seekFromTimelineFrameX(view.x + event.x - timelineScrubGrabOffsetPx)
-                        true
-                    }
-                    android.view.MotionEvent.ACTION_MOVE -> {
-                        seekFromTimelineFrameX(view.x + event.x - timelineScrubGrabOffsetPx)
-                        true
-                    }
-                    android.view.MotionEvent.ACTION_UP -> {
-                        seekFromTimelineFrameX(view.x + event.x - timelineScrubGrabOffsetPx)
-                        view.performClick()
-                        true
-                    }
-                    android.view.MotionEvent.ACTION_CANCEL -> true
-                    else -> true
-                }
-            }
         }
-        timelinePlayheadLine.setOnClickListener { /* Touch position is handled by the scrub listener. */ }
         timelineTracksFrame.addView(
             timelinePlayheadLine,
             FrameLayout.LayoutParams(dp(28), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.TOP or Gravity.START)
@@ -578,8 +557,11 @@ class VideoEditorActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(3), dp(3), dp(3), 0)
         }
-        timelinePlayheadLabel = label("00:00.0 / 00:00.0", 9f, Color.rgb(225, 233, 237), true).apply { maxLines = 2; setLineSpacing(-dp(2).toFloat(), 1f) }
-        playheadRow.addView(timelinePlayheadLabel, LinearLayout.LayoutParams(dp(128), ViewGroup.LayoutParams.WRAP_CONTENT))
+        timelinePlayheadLabel = label("00:00 / 00:00", 10f, Color.rgb(225, 233, 237), true).apply {
+            maxLines = 1
+            contentDescription = "Zaman çizelgesi zamanı"
+        }
+        playheadRow.addView(timelinePlayheadLabel, LinearLayout.LayoutParams(dp(96), ViewGroup.LayoutParams.WRAP_CONTENT))
         timelinePlayheadSeek = SeekBar(this).apply {
             max = 0
             progress = 0
@@ -587,11 +569,30 @@ class VideoEditorActivity : Activity() {
             contentDescription = "Zaman çizelgesinde oynatma noktası"
         }
         playheadRow.addView(timelinePlayheadSeek, LinearLayout.LayoutParams(0, dp(34), 1f))
-        playheadRow.addView(miniButton("−") { adjustTimelineZoom(0.75f) },
-            LinearLayout.LayoutParams(dp(42), dp(42)).apply { leftMargin = dp(3) })
-        playheadRow.addView(miniButton("+") { adjustTimelineZoom(1.35f) },
-            LinearLayout.LayoutParams(dp(42), dp(42)).apply { leftMargin = dp(2) })
+        playheadRow.addView(miniButton("−") { adjustTimelineZoom(0.75f) }.apply {
+            contentDescription = "Zaman çizelgesini uzaklaştır"
+        }, LinearLayout.LayoutParams(dp(42), dp(42)).apply { leftMargin = dp(3) })
+        playheadRow.addView(miniButton("+") { adjustTimelineZoom(1.35f) }.apply {
+            contentDescription = "Zaman çizelgesini yakınlaştır"
+        }, LinearLayout.LayoutParams(dp(42), dp(42)).apply { leftMargin = dp(2) })
         timelineCard.addView(playheadRow, matchWrap())
+        val historyRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val undoButton = miniButton("↶ Geri al") { undoClipEdit() }.apply {
+            isEnabled = false
+            contentDescription = "Geri al"
+        }
+        val redoButton = miniButton("↷ Yinele") { redoClipEdit() }.apply {
+            isEnabled = false
+            contentDescription = "Yinele"
+        }
+        undoClipButton = undoButton
+        redoClipButton = redoButton
+        historyRow.addView(undoButton, LinearLayout.LayoutParams(0, dp(40), 1f))
+        historyRow.addView(redoButton, LinearLayout.LayoutParams(0, dp(40), 1f).apply { leftMargin = dp(5) })
+        timelineCard.addView(historyRow, matchWrap())
         installTimelinePlayheadListeners()
         root.addView(timelineCard, matchWrap())
         root.addView(gap(8))
@@ -621,21 +622,6 @@ class VideoEditorActivity : Activity() {
         clipActions2.addView(miniButton("Sona al →") { moveSelectedClip(1) },
             LinearLayout.LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(4) })
         clipPanel.addView(clipActions2)
-        val clipHistoryRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        undoClipButton = miniButton("↶ Klip geri al") { undoClipEdit() }.apply {
-            isEnabled = false
-        }
-        redoClipButton = miniButton("↷ Klip yinele") { redoClipEdit() }.apply {
-            isEnabled = false
-        }
-        clipHistoryRow.addView(undoClipButton, LinearLayout.LayoutParams(0, dp(40), 1f))
-        clipHistoryRow.addView(redoClipButton, LinearLayout.LayoutParams(0, dp(40), 1f).apply {
-            leftMargin = dp(5)
-        })
-        clipPanel.addView(clipHistoryRow)
         startLabel = label("Başlangıç: 00:00", 12f, Color.rgb(225, 233, 237), true)
         clipPanel.addView(startLabel)
         startSeek = SeekBar(this)
@@ -685,6 +671,7 @@ class VideoEditorActivity : Activity() {
             ViewGroup.LayoutParams.MATCH_PARENT, dp(48)
         ))
         textInput = EditText(this).apply {
+            contentDescription = "Videodaki yazı metni"
             hint = "Videoda görünecek yazı"
             setTextColor(Color.WHITE)
             setHintTextColor(Color.rgb(154, 171, 190))
@@ -703,11 +690,19 @@ class VideoEditorActivity : Activity() {
         textPanel.addView(label("Yazının görünme aralığı", 11f, Color.rgb(154, 171, 190), false))
         textStartLabel = label("Yazı başlangıcı: 00:00", 12f, Color.WHITE, true)
         textPanel.addView(textStartLabel)
-        textStartSeek = SeekBar(this).apply { max = 0; isEnabled = false }
+        textStartSeek = SeekBar(this).apply {
+            max = 0
+            isEnabled = false
+            contentDescription = "Yazı başlangıç zamanı"
+        }
         textPanel.addView(textStartSeek, matchWrap())
         textEndLabel = label("Yazı bitişi: 00:00", 12f, Color.WHITE, true)
         textPanel.addView(textEndLabel)
-        textEndSeek = SeekBar(this).apply { max = 0; isEnabled = false }
+        textEndSeek = SeekBar(this).apply {
+            max = 0
+            isEnabled = false
+            contentDescription = "Yazı bitiş zamanı"
+        }
         textPanel.addView(textEndSeek, matchWrap())
         installTextTimeListeners()
         textPanel.addView(label("Yazı konumu", 11f, Color.rgb(154, 171, 190), false))
@@ -718,6 +713,7 @@ class VideoEditorActivity : Activity() {
             addView(android.widget.RadioButton(this@VideoEditorActivity).apply { id = 3; text = "Alt"; setTextColor(Color.WHITE) })
             check(3)
             setOnCheckedChangeListener { _, checkedId ->
+                if (!loadingTextLayerControls) recordClipEdit()
                 textPosition = when (checkedId) {
                     1 -> TextPosition.TOP
                     2 -> TextPosition.CENTER
@@ -755,6 +751,7 @@ class VideoEditorActivity : Activity() {
             check(11)
             setOnCheckedChangeListener { _, checkedId ->
                 if (loadingTextLayerControls) return@setOnCheckedChangeListener
+                recordClipEdit()
                 textColorPreset = TextColorPreset.values().getOrNull(checkedId - 11)
                     ?: TextColorPreset.WHITE
                 syncSelectedTextLayerFromControls()
@@ -779,6 +776,7 @@ class VideoEditorActivity : Activity() {
             isChecked = true
             setOnCheckedChangeListener { _, checked ->
                 if (loadingTextLayerControls) return@setOnCheckedChangeListener
+                recordClipEdit()
                 textBold = checked
                 syncSelectedTextLayerFromControls()
                 updatePreviewTextOverlay()
@@ -812,12 +810,20 @@ class VideoEditorActivity : Activity() {
                 previewTextOverlays.forEach { it.requestLayout() }
                 refreshTextLayerList()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                activeTrimHistorySnapshot = captureClipEditSnapshot()
+            }
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                finishTrimHistoryGesture()
+            }
         })
         textPanel.addView(textSizeSeek, matchWrap())
         textInput.addTextChangedListener(object : android.text.TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {
+                if (!loadingTextLayerControls && pendingTextInputHistorySnapshot == null) {
+                    pendingTextInputHistorySnapshot = runCatching { captureClipEditSnapshot() }.getOrNull()
+                }
+            }
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                 if (loadingTextLayerControls) return
                 if (selectedTextLayer() == null && !s.isNullOrBlank()) {
@@ -843,6 +849,8 @@ class VideoEditorActivity : Activity() {
                 updatePreviewTextOverlay()
                 timelineHandler.removeCallbacks(textTimelineRefreshTask)
                 timelineHandler.postDelayed(textTimelineRefreshTask, 120L)
+                timelineHandler.removeCallbacks(commitTextInputHistoryTask)
+                timelineHandler.postDelayed(commitTextInputHistoryTask, 650L)
             }
             override fun afterTextChanged(s: android.text.Editable?) {}
         })
@@ -856,6 +864,7 @@ class VideoEditorActivity : Activity() {
         musicActions.addView(miniButton("Müzik ekle") { chooseAudio(true) },
             LinearLayout.LayoutParams(0, dp(42), 1f))
         musicActions.addView(miniButton("Müziği kaldır") {
+            recordClipEdit()
             musicUri = null
             musicTitle = null
             musicLabel.text = "Müzik seçilmedi."
@@ -879,6 +888,7 @@ class VideoEditorActivity : Activity() {
         soundActions.addView(miniButton("Efekt ekle") { chooseAudio(false) },
             LinearLayout.LayoutParams(0, dp(42), 1f))
         soundActions.addView(miniButton("Efekti kaldır") {
+            recordClipEdit()
             soundUri = null
             soundTitle = null
             soundDurationMs = 0L
@@ -900,9 +910,13 @@ class VideoEditorActivity : Activity() {
                 updateSoundControls()
                 if (!deferTimelineRefresh) refreshTimelineTracks()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) { deferTimelineRefresh = true }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                deferTimelineRefresh = true
+                activeTrimHistorySnapshot = captureClipEditSnapshot()
+            }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
                 deferTimelineRefresh = false
+                finishTrimHistoryGesture()
                 refreshTimelineTracks()
             }
         })
@@ -921,6 +935,13 @@ class VideoEditorActivity : Activity() {
             isChecked = true
             setTextColor(Color.WHITE)
             setOnCheckedChangeListener { _, checked ->
+                if (!applyingProjectState) {
+                    commitPendingTextInputHistory()
+                    val previousState = runCatching {
+                        JSONObject(createProjectJson().toString()).put("keepSourceAudio", !checked)
+                    }.getOrNull()
+                    if (previousState != null) pushClipUndoSnapshot(ClipEditSnapshot(previousState.toString()))
+                }
                 player?.volume = if (checked) sourceAudioVolume / 100f else 0f
             }
         }
@@ -1034,7 +1055,7 @@ class VideoEditorActivity : Activity() {
             setPadding(0, dp(5), 0, 0)
         }
         listOf(
-            Triple("clip", "Klip", "✂"),
+            Triple("clip", "Klip", "▣"),
             Triple("text", "Metin", "T"),
             Triple("audio", "Ses", "♫"),
             Triple("export", "Dışa aktar", "⇧")
@@ -1471,9 +1492,11 @@ class VideoEditorActivity : Activity() {
                 gravity = Gravity.CENTER_VERTICAL
             }, LinearLayout.LayoutParams(dp(54), ViewGroup.LayoutParams.MATCH_PARENT))
 
-            val scroll = android.widget.HorizontalScrollView(this).apply {
+            val scroll = TimelineHorizontalScrollView(this).apply {
                 isHorizontalScrollBarEnabled = false
                 overScrollMode = View.OVER_SCROLL_NEVER
+                isFillViewport = false
+                contentDescription = "$tag zaman çizelgesi • yakınlaştırma ${"%.2f".format(Locale.ROOT, timelineZoom)}x"
             }
             timelineScrollViews.add(scroll)
             scroll.setOnScrollChangeListener { view, scrollX, _, _, _ ->
@@ -1488,13 +1511,15 @@ class VideoEditorActivity : Activity() {
                         syncingTimelineScroll = false
                     }
                     updateTimelinePlayheadLine()
+                    if (!timelineScrollPlayheadSyncSuppressed) updatePlayheadFromTimelineScroll(scrollX)
                 }
             }
             val track = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                // Keep the content origin identical to the ruler and playhead coordinate system.
-                setPadding(0, dp(1), 0, dp(1))
+                // Insets let both timeline ends reach beneath the fixed playhead.
+                val inset = timelinePlayheadContentInsetPx()
+                setPadding(inset, dp(1), inset, dp(1))
             }
             scroll.addView(track)
             val responsiveLaneHeight = if (keyboardLayoutActive || compactEditorLayout) 18 else heightDp
@@ -1586,6 +1611,7 @@ class VideoEditorActivity : Activity() {
             var bodyDownRawX = 0f
             var bodyInitialStartMs = startMs
             var bodyInitialEndMs = endMs
+            var bodyBeforeSnapshot: ClipEditSnapshot? = null
             var bodyMoved = false
             body.setOnTouchListener { view, event ->
                 when (event.actionMasked) {
@@ -1593,6 +1619,7 @@ class VideoEditorActivity : Activity() {
                         bodyDownRawX = event.rawX
                         bodyInitialStartMs = layer.startMs
                         bodyInitialEndMs = layer.endMs
+                        bodyBeforeSnapshot = captureClipEditSnapshot()
                         bodyMoved = false
                         player?.playWhenReady = false
                         // Own this gesture from the start so the horizontal timeline does not steal it.
@@ -1628,6 +1655,8 @@ class VideoEditorActivity : Activity() {
                             layer.timingCustomized = true
                             selectedTextLayerId = layer.id
                             loadTextLayerIntoControls(layer)
+                            pushHistoryIfChanged(bodyBeforeSnapshot)
+                            bodyBeforeSnapshot = null
                             status.text = "Yazı katmanı zaman çizelgesinde taşındı."
                             refreshTimelineTracks()
                         } else {
@@ -1661,6 +1690,7 @@ class VideoEditorActivity : Activity() {
                 var downRawX = 0f
                 var initialStartMs = startMs
                 var initialEndMs = endMs
+                var textHandleBeforeSnapshot: ClipEditSnapshot? = null
                 var moved = false
                 handle.setOnTouchListener { view, event ->
                     when (event.actionMasked) {
@@ -1668,6 +1698,7 @@ class VideoEditorActivity : Activity() {
                             downRawX = event.rawX
                             initialStartMs = layer.startMs
                             initialEndMs = layer.endMs
+                            textHandleBeforeSnapshot = captureClipEditSnapshot()
                             moved = false
                             player?.playWhenReady = false
                             view.parent?.requestDisallowInterceptTouchEvent(true)
@@ -1711,6 +1742,8 @@ class VideoEditorActivity : Activity() {
                                 layer.timingCustomized = true
                                 selectedTextLayerId = layer.id
                                 loadTextLayerIntoControls(layer)
+                                pushHistoryIfChanged(textHandleBeforeSnapshot)
+                                textHandleBeforeSnapshot = null
                                 status.text = if (isStart) {
                                     "Yazı başlangıcı: ${formatTimelineMs(layer.startMs)}"
                                 } else {
@@ -1777,7 +1810,7 @@ class VideoEditorActivity : Activity() {
                 val duration = (clip.endMs - clip.startMs).coerceAtLeast(0L)
                 val nextVideoOffsetMs = videoOffsetMs + duration
                 val width = widthBetween(videoOffsetMs, nextVideoOffsetMs).coerceAtLeast(1)
-                val height = dp(if (keyboardLayoutActive || compactEditorLayout) 18 else 42)
+                val height = dp(if (keyboardLayoutActive || compactEditorLayout) 20 else 54)
                 val block = buildVideoClipFilmstrip(clip, index, width, height, index == selectedClipIndex)
                 // Widths use absolute boundaries, so fractional-pixel rounding cannot accumulate.
                 videoTrack.addView(block, LinearLayout.LayoutParams(width, height))
@@ -1851,22 +1884,130 @@ class VideoEditorActivity : Activity() {
         if (!::timelinePlayheadLine.isInitialized || !::timelineTracksFrame.isInitialized) return
         val scrollX = timelineScrollViews.firstOrNull()?.scrollX ?: 0
         val pixelsPerSecond = timelinePixelsPerSecond()
-        val timelineX = dp(57) + TimelineScaleMath.pixelsForTime(timelinePlayheadMs, pixelsPerSecond) - scrollX
         val frameWidth = timelineTracksFrame.width
-        if (frameWidth > 0 && (timelineX < 0 || timelineX > frameWidth)) {
-            timelinePlayheadLine.visibility = View.INVISIBLE
+        if (frameWidth <= 0) {
+            timelinePlayheadLine.post { updateTimelinePlayheadLine() }
             return
         }
-        timelinePlayheadLine.visibility = View.VISIBLE
+        val lineCenterX = timelinePlayheadViewportX()
+        timelinePlayheadLine.visibility = if (clips.isEmpty()) View.INVISIBLE else View.VISIBLE
         val params = timelinePlayheadLine.layoutParams as? FrameLayout.LayoutParams ?: return
         params.width = dp(28)
-        // Do not pin an out-of-range playhead to the left edge: preserve the exact x coordinate.
-        params.leftMargin = timelineX - dp(14)
+        params.leftMargin = lineCenterX - dp(14)
         timelinePlayheadLine.layoutParams = params
         timelinePlayheadLine.bringToFront()
     }
 
+    private inner class TimelineHorizontalScrollView(context: android.content.Context) :
+        android.widget.HorizontalScrollView(context) {
+        private var pinchAnchorTimeMs = 0L
+        private var pinchChanged = false
+        private val scaleDetector = android.view.ScaleGestureDetector(
+            context,
+            object : android.view.ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                override fun onScaleBegin(detector: android.view.ScaleGestureDetector): Boolean {
+                    val rawTimelineX = scrollX + detector.focusX - timelinePlayheadContentInsetPx()
+                    pinchAnchorTimeMs = TimelineScaleMath.millisecondsForPixels(
+                        rawTimelineX.coerceAtLeast(0f), timelinePixelsPerSecond()
+                    ).coerceIn(0L, totalOutputDurationMs())
+                    pinchChanged = false
+                    return true
+                }
+
+                override fun onScale(detector: android.view.ScaleGestureDetector): Boolean {
+                    val nextZoom = (timelineZoom * detector.scaleFactor).coerceIn(0.5f, 8.0f)
+                    if (nextZoom != timelineZoom) {
+                        timelineZoom = nextZoom
+                        pinchChanged = true
+                        pendingTimelineScrollX = TimelineScrollMath.scrollForTimeAtViewportX(
+                            pinchAnchorTimeMs, detector.focusX,
+                            timelinePlayheadContentInsetPx(), timelinePixelsPerSecond()
+                        )
+                        timelineHorizontalScrollX = pendingTimelineScrollX ?: timelineHorizontalScrollX
+                    }
+                    return true
+                }
+
+                override fun onScaleEnd(detector: android.view.ScaleGestureDetector) {
+                    if (!pinchChanged) return
+                    pendingTimelineScrollX = TimelineScrollMath.scrollForTimeAtViewportX(
+                        pinchAnchorTimeMs, detector.focusX,
+                        timelinePlayheadContentInsetPx(), timelinePixelsPerSecond()
+                    )
+                    timelineHorizontalScrollX = pendingTimelineScrollX ?: timelineHorizontalScrollX
+                    pinchChanged = false
+                    refreshTimelineTracks()
+                    status.text = "Zaman çizelgesi: " + timelineZoom.toString() + "×"
+                }
+            }
+        )
+
+        override fun onInterceptTouchEvent(ev: android.view.MotionEvent): Boolean {
+            if (ev.pointerCount >= 2 || scaleDetector.isInProgress) return true
+            return super.onInterceptTouchEvent(ev)
+        }
+
+        override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
+            if (event.pointerCount >= 2 || scaleDetector.isInProgress ||
+                event.actionMasked == android.view.MotionEvent.ACTION_POINTER_UP) {
+                scaleDetector.onTouchEvent(event)
+                return true
+            }
+            return super.onTouchEvent(event)
+        }
+    }
+
     private fun timelinePixelsPerSecond(): Float = dp(22).toFloat() * timelineZoom
+
+    private fun timelinePlayheadViewportX(): Int {
+        val originX = dp(57)
+        val width = if (::timelineTracksFrame.isInitialized) timelineTracksFrame.width else 0
+        return if (width > originX) originX + (width - originX) / 2 else originX
+    }
+
+    private fun timelinePlayheadContentInsetPx(): Int =
+        (timelinePlayheadViewportX() - dp(57)).coerceAtLeast(0)
+
+    private fun updatePlayheadFromTimelineScroll(scrollX: Int) {
+        if (clips.isEmpty() || timelineScrollPlayheadSyncSuppressed) return
+        val targetMs = TimelineScrollMath.timeAtFixedPlayhead(
+            scrollX = scrollX,
+            playheadViewportX = timelinePlayheadViewportX(),
+            contentOriginX = dp(57),
+            leadingInsetPx = timelinePlayheadContentInsetPx(),
+            pixelsPerSecond = timelinePixelsPerSecond(),
+            totalMs = totalOutputDurationMs()
+        )
+        if (kotlin.math.abs(targetMs - timelinePlayheadMs) >= 25L) {
+            if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+                android.util.Log.d("EditorTimeline", "TIMELINE_SCROLL_PLAYHEAD timeMs=$targetMs scrollX=$scrollX")
+            }
+            ensureTimelinePreviewLoaded()
+            player?.playWhenReady = false
+            seekTimelinePreview(targetMs)
+        }
+    }
+
+    private fun scrollTimelineToPlayhead(timeMs: Long) {
+        if (clips.isEmpty() || !::timelineTracksFrame.isInitialized) return
+        val desired = TimelineScrollMath.scrollForTimeAtFixedPlayhead(
+            timeMs, timelinePlayheadViewportX(), dp(57),
+            timelinePlayheadContentInsetPx(), timelinePixelsPerSecond()
+        )
+        val primary = timelineScrollViews.firstOrNull() ?: return
+        val maxScroll = ((primary.getChildAt(0)?.width ?: 0) - primary.width).coerceAtLeast(0)
+        val target = desired.coerceIn(0, maxScroll)
+        timelineScrollPlayheadSyncSuppressed = true
+        syncingTimelineScroll = true
+        try {
+            timelineHorizontalScrollX = target
+            timelineScrollViews.forEach { it.scrollTo(target, 0) }
+        } finally {
+            syncingTimelineScroll = false
+            timelineScrollPlayheadSyncSuppressed = false
+        }
+        updateTimelinePlayheadLine()
+    }
 
     private fun ensureTrimHandlesReachable(index: Int): Boolean {
         val clip = clips.getOrNull(index) ?: return false
@@ -1888,8 +2029,11 @@ class VideoEditorActivity : Activity() {
             (it.endMs - it.startMs).coerceAtLeast(0L)
         }
         val clipStartPx = TimelineScaleMath.pixelsForTime(projectOffsetMs, timelinePixelsPerSecond())
-        pendingTimelineScrollX = (clipStartPx - dp(8)).coerceAtLeast(0)
-        timelineHorizontalScrollX = pendingTimelineScrollX ?: 0
+        pendingTimelineScrollX = TimelineScrollMath.scrollForTimeAtFixedPlayhead(
+            projectOffsetMs, timelinePlayheadViewportX(), dp(57),
+            timelinePlayheadContentInsetPx(), timelinePixelsPerSecond()
+        ).coerceAtLeast(0)
+        timelineHorizontalScrollX = pendingTimelineScrollX ?: clipStartPx
         return zoomChanged || pendingTimelineScrollX != null
     }
 
@@ -1897,8 +2041,13 @@ class VideoEditorActivity : Activity() {
         val newZoom = (timelineZoom * factor).coerceIn(0.5f, 8.0f)
         if (newZoom == timelineZoom) return
         timelineZoom = newZoom
+        pendingTimelineScrollX = TimelineScrollMath.scrollForTimeAtFixedPlayhead(
+            timelinePlayheadMs, timelinePlayheadViewportX(), dp(57),
+            timelinePlayheadContentInsetPx(), timelinePixelsPerSecond()
+        )
+        timelineHorizontalScrollX = pendingTimelineScrollX ?: timelineHorizontalScrollX
         refreshTimelineTracks()
-        status.text = "Zaman çizelgesi yakınlaştırma: " + timelineZoom.toString() + "×. Kırmızı çizgiyi sürükleyebilir veya video karelerine dokunabilirsin."
+        status.text = "Zaman çizelgesi: " + timelineZoom.toString() + "×"
     }
 
     private fun seekFromTimelineFrameX(frameX: Float) {
@@ -1918,6 +2067,7 @@ class VideoEditorActivity : Activity() {
                 timelinePlayheadMs = TimelineTrimMath.timeForProgress(progress, totalOutputDurationMs())
                 updateTimelinePlayheadLabel()
                 seekTimelinePreview(timelinePlayheadMs)
+                scrollTimelineToPlayhead(timelinePlayheadMs)
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar?) {
@@ -1946,21 +2096,8 @@ class VideoEditorActivity : Activity() {
     private fun updateTimelinePlayheadLabel() {
         if (!::timelinePlayheadLabel.isInitialized) return
         val totalMs = totalOutputDurationMs()
-        val projectPositionMs = timelinePlayheadMs.coerceIn(0L, totalMs)
-        val projectText = "Proje ${formatTimelineMs(projectPositionMs)} / ${formatTimelineMs(totalMs)}"
-        val clip = selectedClip()
-        timelinePlayheadLabel.text = if (previewSingleClip && clip != null) {
-            val projectOffsetMs = clips.take(selectedClipIndex).sumOf {
-                (it.endMs - it.startMs).coerceAtLeast(0L)
-            }
-            val clipDurationMs = (clip.endMs - clip.startMs).coerceAtLeast(0L)
-            val clipPositionMs = (projectPositionMs - projectOffsetMs).coerceIn(0L, clipDurationMs)
-            // Lead with the combined project/output duration. The selected clip's
-            // local time is useful, but must not look like the final video duration.
-            "$projectText\nKlip ${formatTimelineMs(clipPositionMs)} / ${formatTimelineMs(clipDurationMs)}"
-        } else {
-            projectText
-        }
+        val positionMs = timelinePlayheadMs.coerceIn(0L, totalMs)
+        timelinePlayheadLabel.text = "${formatTimelineMs(positionMs)} / ${formatTimelineMs(totalMs)}"
         updateTimelinePlayheadLine()
         updatePreviewTextOverlay()
     }
@@ -2003,6 +2140,7 @@ class VideoEditorActivity : Activity() {
         if (index !in clips.indices) return
         val offsetMs = clips.take(index).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
         timelinePlayheadMs = (offsetMs + currentPlayer.currentPosition).coerceIn(0L, totalOutputDurationMs())
+        if (currentPlayer.isPlaying) scrollTimelineToPlayhead(timelinePlayheadMs)
         if (selectedClipIndex != index) {
             selectedClipIndex = index
             refreshClipList()
@@ -2021,6 +2159,7 @@ class VideoEditorActivity : Activity() {
         val clipDuration = (clip.endMs - clip.startMs).coerceAtLeast(0L)
         timelinePlayheadMs = (beforeMs + currentPlayer.currentPosition.coerceIn(0L, clipDuration))
             .coerceIn(0L, totalOutputDurationMs())
+        if (currentPlayer.isPlaying) scrollTimelineToPlayhead(timelinePlayheadMs)
         if (::timelinePlayheadSeek.isInitialized) {
             timelinePlayheadSeek.progress = TimelineTrimMath.progressForTime(timelinePlayheadMs, totalOutputDurationMs())
         }
@@ -2046,15 +2185,24 @@ class VideoEditorActivity : Activity() {
         // could discard the pending auto-zoom scroll before the posted scroll runs.
     }
 
-    private fun captureClipEditSnapshot(): ClipEditSnapshot = ClipEditSnapshot(
-        clips = clips.map { it.copy() },
-        selectedClipIndex = selectedClipIndex,
-        timelinePlayheadMs = timelinePlayheadMs,
-        previewSingleClip = previewSingleClip
-    )
+    private fun captureClipEditSnapshot(): ClipEditSnapshot =
+        ClipEditSnapshot(projectJson = createProjectJson().toString())
 
     private fun recordClipEdit() {
+        commitPendingTextInputHistory()
         pushClipUndoSnapshot(captureClipEditSnapshot())
+    }
+
+    private fun pushHistoryIfChanged(before: ClipEditSnapshot?) {
+        if (before == null) return
+        val after = runCatching { captureClipEditSnapshot() }.getOrNull() ?: return
+        if (before.projectJson != after.projectJson) pushClipUndoSnapshot(before)
+    }
+
+    private fun finishOverlayHistoryGesture() {
+        val before = activeOverlayHistorySnapshot
+        activeOverlayHistorySnapshot = null
+        pushHistoryIfChanged(before)
     }
 
     private fun pushClipUndoSnapshot(snapshot: ClipEditSnapshot) {
@@ -2065,15 +2213,18 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun finishTrimHistoryGesture() {
-        val before = activeTrimHistorySnapshot ?: return
+        val before = activeTrimHistorySnapshot
         activeTrimHistorySnapshot = null
-        if (before.clips != clips) pushClipUndoSnapshot(before)
+        pushHistoryIfChanged(before)
     }
 
     private fun clearClipHistory() {
         undoClipHistory.clear()
         redoClipHistory.clear()
         activeTrimHistorySnapshot = null
+        activeOverlayHistorySnapshot = null
+        pendingTextInputHistorySnapshot = null
+        timelineHandler.removeCallbacks(commitTextInputHistoryTask)
         updateClipHistoryButtons()
     }
 
@@ -2082,57 +2233,43 @@ class VideoEditorActivity : Activity() {
         redoClipButton?.isEnabled = redoClipHistory.isNotEmpty()
     }
 
+    private fun commitPendingTextInputHistory() {
+        timelineHandler.removeCallbacks(commitTextInputHistoryTask)
+        val before = pendingTextInputHistorySnapshot ?: return
+        pendingTextInputHistorySnapshot = null
+        val after = runCatching { captureClipEditSnapshot() }.getOrNull()
+        if (after != null && before.projectJson != after.projectJson) pushClipUndoSnapshot(before)
+    }
+
     private fun undoClipEdit() {
+        commitPendingTextInputHistory()
         if (undoClipHistory.isEmpty()) {
-            status.text = "Geri alınacak klip işlemi yok."
+            status.text = "Geri alınacak işlem yok."
             return
         }
         redoClipHistory.add(captureClipEditSnapshot())
         val snapshot = undoClipHistory.removeAt(undoClipHistory.lastIndex)
         restoreClipEditSnapshot(snapshot)
-        status.text = "Son klip işlemi geri alındı."
+        status.text = "Son işlem geri alındı."
         updateClipHistoryButtons()
     }
 
     private fun redoClipEdit() {
+        commitPendingTextInputHistory()
         if (redoClipHistory.isEmpty()) {
-            status.text = "Yinelenecek klip işlemi yok."
+            status.text = "Yinelenecek işlem yok."
             return
         }
         undoClipHistory.add(captureClipEditSnapshot())
         if (undoClipHistory.size > 50) undoClipHistory.removeAt(0)
         val snapshot = redoClipHistory.removeAt(redoClipHistory.lastIndex)
         restoreClipEditSnapshot(snapshot)
-        status.text = "Klip işlemi yinelendi."
+        status.text = "İşlem yinelendi."
         updateClipHistoryButtons()
     }
 
     private fun restoreClipEditSnapshot(snapshot: ClipEditSnapshot) {
-        clips.clear()
-        clips.addAll(snapshot.clips.map { it.copy() })
-        selectedClipIndex = snapshot.selectedClipIndex.takeIf { it in clips.indices } ?: -1
-        timelinePreviewLoaded = false
-        previewSingleClip = snapshot.previewSingleClip && selectedClipIndex in clips.indices
-        timelinePlayheadMs = snapshot.timelinePlayheadMs.coerceIn(0L, totalOutputDurationMs())
-
-        refreshClipList()
-        loadTrimControls()
-        updateTimelinePlayheadControls()
-
-        if (clips.isEmpty()) {
-            previewSingleClip = false
-            player?.clearMediaItems()
-        } else if (previewSingleClip) {
-            selectedClip()?.let { clip ->
-                player?.setMediaItem(clippedMediaItem(clip))
-                player?.prepare()
-                player?.seekTo(0L)
-                player?.playWhenReady = false
-            }
-        } else {
-            ensureTimelinePreviewLoaded()
-            seekTimelinePreview(timelinePlayheadMs)
-        }
+        applyProjectJson(JSONObject(snapshot.projectJson), clearHistory = false, allowEmpty = true)
         updateClipHistoryButtons()
     }
 
@@ -2189,6 +2326,7 @@ class VideoEditorActivity : Activity() {
             return
         }
         syncSelectedTextLayerFromControls()
+        recordClipEdit()
         val total = totalOutputDurationMs()
         if (total > 0L && timelinePlayheadMs >= total) {
             player?.playWhenReady = false
@@ -2235,6 +2373,7 @@ class VideoEditorActivity : Activity() {
             return
         }
         syncSelectedTextLayerFromControls()
+        recordClipEdit()
         val next = (layer.sizeSp + delta).coerceIn(12, 96)
         layer.sizeSp = next
         textSizeSp = next
@@ -2255,6 +2394,7 @@ class VideoEditorActivity : Activity() {
             status.text = "Kopyalamak için önce bir yazı katmanı seç."
             return
         }
+        recordClipEdit()
         val copy = source.copy(id = nextTextLayerId++, text = source.text)
         textLayers.add(textLayers.indexOf(source) + 1, copy)
         selectedTextLayerId = copy.id
@@ -2272,6 +2412,7 @@ class VideoEditorActivity : Activity() {
             status.text = "Silmek için önce bir yazı katmanı seç."
             return
         }
+        recordClipEdit()
         textLayers.removeAt(index)
         val next = textLayers.getOrNull(index.coerceAtMost(textLayers.lastIndex))
         selectedTextLayerId = next?.id
@@ -2389,7 +2530,7 @@ class VideoEditorActivity : Activity() {
         textSize = 24f
         gravity = Gravity.CENTER
         maxLines = 2
-        maxWidth = dp(170)
+        maxWidth = dp(320)
         setTextColor(Color.WHITE)
         setTypeface(Typeface.DEFAULT, Typeface.BOLD)
         setPadding(dp(10), dp(6), dp(10), dp(6))
@@ -2416,6 +2557,8 @@ class VideoEditorActivity : Activity() {
             val layer = textLayers.firstOrNull { it.id == layerId } ?: return@setOnTouchListener false
             when (event.actionMasked) {
                 android.view.MotionEvent.ACTION_DOWN -> {
+                    // Capture the project before moving or pinching the text overlay.
+                    activeOverlayHistorySnapshot = captureClipEditSnapshot()
                     // The parent editor ScrollView must not intercept vertical text drags.
                     view.parent?.requestDisallowInterceptTouchEvent(true)
                     if (selectedTextLayerId != layer.id) {
@@ -2507,6 +2650,7 @@ class VideoEditorActivity : Activity() {
                 android.view.MotionEvent.ACTION_UP -> {
                     view.parent?.requestDisallowInterceptTouchEvent(false)
                     if (selectedTextLayerId == layer.id) syncSelectedTextLayerFromControls()
+                    finishOverlayHistoryGesture()
                     refreshTextLayerList()
                     refreshTimelineTracks()
                     status.text = "Yazı konumu güncellendi. Sürükle veya iki parmağınla boyutlandır."
@@ -2515,6 +2659,7 @@ class VideoEditorActivity : Activity() {
                 }
                 android.view.MotionEvent.ACTION_CANCEL -> {
                     view.parent?.requestDisallowInterceptTouchEvent(false)
+                    finishOverlayHistoryGesture()
                     startDistance = 0f
                     true
                 }
@@ -2528,8 +2673,12 @@ class VideoEditorActivity : Activity() {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (fromUser) onValue(progress.coerceIn(0, 100))
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                activeTrimHistorySnapshot = captureClipEditSnapshot()
+            }
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                finishTrimHistoryGesture()
+            }
         }
 
     private fun installTextTimeListeners() {
@@ -2546,9 +2695,13 @@ class VideoEditorActivity : Activity() {
                 textEndMs = interval.endMs
                 updateTextControls()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) { deferTimelineRefresh = true }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                deferTimelineRefresh = true
+                activeTrimHistorySnapshot = captureClipEditSnapshot()
+            }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
                 deferTimelineRefresh = false
+                finishTrimHistoryGesture()
                 refreshTimelineTracks()
             }
         })
@@ -2565,9 +2718,13 @@ class VideoEditorActivity : Activity() {
                 textEndMs = interval.endMs
                 updateTextControls()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) { deferTimelineRefresh = true }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                deferTimelineRefresh = true
+                activeTrimHistorySnapshot = captureClipEditSnapshot()
+            }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
                 deferTimelineRefresh = false
+                finishTrimHistoryGesture()
                 refreshTimelineTracks()
             }
         })
@@ -2811,6 +2968,7 @@ class VideoEditorActivity : Activity() {
             put("timelineHorizontalScrollMs", TimelineScaleMath.millisecondsForPixels(
                 currentScrollX.toFloat(), timelinePixelsPerSecond()
             ).coerceAtLeast(0L))
+            put("previewSingleClip", previewSingleClip)
             put("musicUri", musicUri?.toString() ?: JSONObject.NULL)
             put("musicTitle", musicTitle ?: JSONObject.NULL)
             put("soundUri", soundUri?.toString() ?: JSONObject.NULL)
@@ -2836,7 +2994,11 @@ class VideoEditorActivity : Activity() {
         }
     }
 
-    private fun applyProjectJson(json: JSONObject) {
+    private fun applyProjectJson(
+        json: JSONObject,
+        clearHistory: Boolean = true,
+        allowEmpty: Boolean = false
+    ) {
         require(json.optString("format") == "MathMotorVideoProject") { "Bu dosya MathMotorVideo proje dosyası değil." }
         require(json.optInt("version", 0) == 1) { "Bu proje sürümü desteklenmiyor." }
         val loadedClips = mutableListOf<Clip>()
@@ -2853,14 +3015,14 @@ class VideoEditorActivity : Activity() {
             require(duration > 0L && end > start) { "Projede geçersiz klip aralığı var." }
             loadedClips.add(Clip(uri, item.optString("title", "Video klibi"), duration, start, end))
         }
-        require(loadedClips.isNotEmpty()) { "Projede video klibi bulunamadı." }
+        require(loadedClips.isNotEmpty() || allowEmpty) { "Projede video klibi bulunamadı." }
 
-        clearClipHistory()
+        if (clearHistory) clearClipHistory()
         clips.clear()
         clips.addAll(loadedClips)
-        selectedClipIndex = json.optInt("selectedClipIndex", 0).coerceIn(0, clips.lastIndex)
+        selectedClipIndex = if (clips.isEmpty()) -1 else json.optInt("selectedClipIndex", 0).coerceIn(0, clips.lastIndex)
         timelinePreviewLoaded = false
-        previewSingleClip = true
+        previewSingleClip = json.optBoolean("previewSingleClip", true) && clips.isNotEmpty()
         timelineZoom = json.optDouble("timelineZoom", timelineZoom.toDouble())
             .toFloat().takeIf { it.isFinite() }?.coerceIn(0.5f, 8.0f) ?: 1.0f
         val savedTimelineScrollMs: Long? = when {
@@ -2880,9 +3042,9 @@ class VideoEditorActivity : Activity() {
             TimelineScaleMath.pixelsForTime(it, timelinePixelsPerSecond())
         }
 
-        val defaultPlayheadMs = clips.take(selectedClipIndex).sumOf {
+        val defaultPlayheadMs = if (selectedClipIndex > 0) clips.take(selectedClipIndex).sumOf {
             (it.endMs - it.startMs).coerceAtLeast(0L)
-        }
+        } else 0L
         timelinePlayheadMs = if (json.has("timelinePlayheadMs")) {
             json.optLong("timelinePlayheadMs", defaultPlayheadMs)
                 .coerceIn(0L, totalOutputDurationMs())
@@ -2898,7 +3060,7 @@ class VideoEditorActivity : Activity() {
             selectedClipIndex = restoredPosition.clipIndex
             timelinePlayheadMs = restoredPosition.clipStartMs + restoredPosition.localPositionMs
         } else {
-            selectedClipIndex = json.optInt("selectedClipIndex", 0).coerceIn(0, clips.lastIndex)
+            selectedClipIndex = if (clips.isEmpty()) -1 else json.optInt("selectedClipIndex", 0).coerceIn(0, clips.lastIndex)
         }
         musicUri = json.optString("musicUri").takeIf { it.isNotBlank() && it != "null" }?.let(Uri::parse)
         musicTitle = json.optString("musicTitle").takeIf { it.isNotBlank() && it != "null" }
@@ -2967,7 +3129,12 @@ class VideoEditorActivity : Activity() {
 
         loadTextLayerIntoControls(selectedTextLayer())
         refreshTextLayerList()
-        keepSourceAudio.isChecked = json.optBoolean("keepSourceAudio", true)
+        applyingProjectState = true
+        try {
+            keepSourceAudio.isChecked = json.optBoolean("keepSourceAudio", true)
+        } finally {
+            applyingProjectState = false
+        }
         exportNameInput.setText(json.optString("exportName", "MathMotor_Edit"))
         exportResolutionShortSide = when (json.optInt("exportResolutionShortSide", 0)) {
             720 -> 720
@@ -2989,13 +3156,16 @@ class VideoEditorActivity : Activity() {
         sourceVolumeLabel.text = "Orijinal video sesi: $sourceAudioVolume%"
         refreshClipList()
         loadTrimControls()
-        selectedClip()?.let { clip ->
+        if (clips.isEmpty()) {
+            previewSingleClip = false
+            player?.clearMediaItems()
+        } else selectedClip()?.let { clip ->
             player?.setMediaItem(clippedMediaItem(clip))
             player?.prepare()
             player?.playWhenReady = false
-            val clipOffsetMs = clips.take(selectedClipIndex).sumOf {
+            val clipOffsetMs = if (selectedClipIndex > 0) clips.take(selectedClipIndex).sumOf {
                 (it.endMs - it.startMs).coerceAtLeast(0L)
-            }
+            } else 0L
             val localPositionMs = (timelinePlayheadMs - clipOffsetMs)
                 .coerceIn(0L, (clip.endMs - clip.startMs).coerceAtLeast(0L))
             player?.seekTo(localPositionMs)
@@ -3097,6 +3267,7 @@ class VideoEditorActivity : Activity() {
                 }.onFailure { status.text = "Proje açılamadı: ${it.message}" }
             }
             REQUEST_MUSIC -> {
+                recordClipEdit()
                 musicUri = uri
                 musicTitle = queryDisplayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Müzik"
                 musicLabel.text = "Müzik: ${musicTitle} • video boyunca döngü"
@@ -3120,6 +3291,7 @@ class VideoEditorActivity : Activity() {
                         if (duration <= 0L) {
                             status.text = "Ses dosyasının süresi okunamadı. Başka bir ses dosyası seç."
                         } else {
+                            recordClipEdit()
                             soundUri = uri
                             soundTitle = title
                             soundDurationMs = duration
@@ -3504,72 +3676,8 @@ class VideoEditorActivity : Activity() {
             isClickable = true
             isFocusable = true
             setOnClickListener { selectTimelineClip(index) }
-            var filmstripTouchActive = false
-            var filmstripMoved = false
-            var filmstripLongPressed = false
-            var filmstripDownX = 0f
-            val filmstripLongPress = Runnable {
-                if (filmstripTouchActive && !filmstripMoved) {
-                    filmstripLongPressed = performLongClick()
-                }
-            }
-            setOnTouchListener { view, event ->
-                when (event.actionMasked) {
-                    android.view.MotionEvent.ACTION_DOWN -> {
-                        filmstripTouchActive = true
-                        filmstripMoved = false
-                        filmstripLongPressed = false
-                        filmstripDownX = event.x
-                        player?.playWhenReady = false
-                        // The strip itself implements scrubbing and press-and-hold actions.
-                        // Prevent its horizontal parent from stealing the gesture mid-press.
-                        view.parent?.requestDisallowInterceptTouchEvent(true)
-                        timelineHandler.postDelayed(
-                            filmstripLongPress,
-                            android.view.ViewConfiguration.getLongPressTimeout().toLong()
-                        )
-                        true
-                    }
-                    android.view.MotionEvent.ACTION_MOVE -> {
-                        if (kotlin.math.abs(event.x - filmstripDownX) > android.view.ViewConfiguration.get(this@VideoEditorActivity).scaledTouchSlop) {
-                            filmstripMoved = true
-                            timelineHandler.removeCallbacks(filmstripLongPress)
-                            if (!filmstripLongPressed) {
-                                val safeWidth = view.width.coerceAtLeast(1)
-                                val fraction = (event.x / safeWidth.toFloat()).coerceIn(0f, 1f)
-                                val offsetBeforeClip = clips.take(index).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
-                                val clipDuration = (clip.endMs - clip.startMs).coerceAtLeast(0L)
-                                val targetMs = offsetBeforeClip + (clipDuration * fraction).toLong()
-                                seekTimelinePreview(targetMs.coerceIn(0L, totalOutputDurationMs()))
-                            }
-                        }
-                        true
-                    }
-                    android.view.MotionEvent.ACTION_UP -> {
-                        timelineHandler.removeCallbacks(filmstripLongPress)
-                        filmstripTouchActive = false
-                        view.parent?.requestDisallowInterceptTouchEvent(false)
-                        if (!filmstripLongPressed) {
-                            val safeWidth = view.width.coerceAtLeast(1)
-                            val fraction = (event.x / safeWidth.toFloat()).coerceIn(0f, 1f)
-                            val offsetBeforeClip = clips.take(index).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
-                            val clipDuration = (clip.endMs - clip.startMs).coerceAtLeast(0L)
-                            val targetMs = (offsetBeforeClip + (clipDuration * fraction).toLong())
-                                .coerceIn(0L, totalOutputDurationMs().coerceAtLeast(1L) - 1L)
-                            if (!filmstripMoved) selectTimelineClip(index)
-                            seekTimelinePreview(targetMs)
-                        }
-                        true
-                    }
-                    android.view.MotionEvent.ACTION_CANCEL -> {
-                        timelineHandler.removeCallbacks(filmstripLongPress)
-                        filmstripTouchActive = false
-                        view.parent?.requestDisallowInterceptTouchEvent(false)
-                        true
-                    }
-                    else -> true
-                }
-            }
+            // Leave horizontal drags to the parent timeline. Tap selects this clip;
+            // long-press opens the clip action menu.
             setOnLongClickListener {
                 val menu = android.widget.PopupMenu(this@VideoEditorActivity, this)
                 menu.menu.add(0, 1, 0, "Kopyala")
@@ -3613,11 +3721,11 @@ class VideoEditorActivity : Activity() {
             setBackgroundColor(Color.rgb(26, 37, 51))
         }
         // Cap decode work per clip to keep long timelines responsive and avoid a stale queue.
-        val thumbnailCount = (width / dp(18)).coerceIn(2, 24)
+        val thumbnailCount = (width / dp(22)).coerceIn(10, 40)
         repeat(thumbnailCount) { slot ->
             val image = ImageView(this).apply {
                 scaleType = ImageView.ScaleType.CENTER_CROP
-                setBackgroundColor(Color.rgb(31, 46, 59))
+                setBackgroundColor(Color.rgb(38, 55, 70))
                 contentDescription = "Klip karesi"
             }
             filmstrip.addView(image, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply {
@@ -3773,8 +3881,8 @@ class VideoEditorActivity : Activity() {
                     retriever.getScaledFrameAtTime(
                         frameTimeUs,
                         MediaMetadataRetriever.OPTION_CLOSEST,
-                        96,
-                        54
+                        160,
+                        90
                     )
                 }.getOrNull()
             } else {
@@ -3802,7 +3910,7 @@ class VideoEditorActivity : Activity() {
         var frameFuture: java.util.concurrent.Future<FrameExtractor.Frame>? = null
         try {
             val createdExtractor = FrameExtractor.Builder(this, MediaItem.fromUri(uri))
-                .setEffects(listOf(Presentation.createForHeight(96)))
+                .setEffects(listOf(Presentation.createForHeight(160)))
                 .build()
             extractor = createdExtractor
             val future = createdExtractor.getFrame(timeMs.coerceAtLeast(0L))
@@ -3837,14 +3945,14 @@ class VideoEditorActivity : Activity() {
                 try {
                     val original = decodeTimelineFrame(uri, timestampMs)
                     if (original != null && !original.isRecycled && original.width > 0 && original.height > 0) {
-                        val scale = maxOf(96f / original.width, 54f / original.height)
-                        val scaledWidth = (original.width * scale).toInt().coerceAtLeast(96)
-                        val scaledHeight = (original.height * scale).toInt().coerceAtLeast(54)
+                        val scale = maxOf(160f / original.width, 90f / original.height)
+                        val scaledWidth = (original.width * scale).toInt().coerceAtLeast(160)
+                        val scaledHeight = (original.height * scale).toInt().coerceAtLeast(90)
                         val scaled = Bitmap.createScaledBitmap(original, scaledWidth, scaledHeight, true)
                         if (scaled !== original && !original.isRecycled) original.recycle()
-                        val left = ((scaled.width - 96) / 2).coerceAtLeast(0)
-                        val top = ((scaled.height - 54) / 2).coerceAtLeast(0)
-                        result = Bitmap.createBitmap(scaled, left, top, 96, 54)
+                        val left = ((scaled.width - 160) / 2).coerceAtLeast(0)
+                        val top = ((scaled.height - 90) / 2).coerceAtLeast(0)
+                        result = Bitmap.createBitmap(scaled, left, top, 160, 90)
                         if (result !== scaled && !scaled.isRecycled) scaled.recycle()
                     } else {
                         original?.let { if (!it.isRecycled) it.recycle() }
@@ -3853,6 +3961,20 @@ class VideoEditorActivity : Activity() {
                     // Keep the neutral placeholder visible only if both decoders fail.
                 }
                 val decoded = result
+                if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+                    if (decoded == null) {
+                        android.util.Log.w("EditorThumbnail", "THUMBNAIL_FAILED timeMs=$timestampMs")
+                    } else {
+                        var fingerprint = 1
+                        intArrayOf(8, 40, 80, 120, 152).forEach { x ->
+                            fingerprint = fingerprint * 31 + decoded.getPixel(x, 45)
+                        }
+                        android.util.Log.i(
+                            "EditorThumbnail",
+                            "THUMBNAIL_READY timeMs=$timestampMs hash=$fingerprint"
+                        )
+                    }
+                }
                 runOnUiThread {
                     val targets = pendingTimelineThumbnails.remove(key).orEmpty()
                     if (decoded != null && !isFinishing && !isDestroyed) {
