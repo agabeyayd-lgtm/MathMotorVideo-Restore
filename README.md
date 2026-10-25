@@ -70,3 +70,10 @@ Multi-clip export log: `durationMs=11029 secondFrameRGB=0,254,2 originalsUnchang
 - Keep versionCode/versionName at the confirmed installed baseline until the release gate passes.
 - Do not prepare/publish version 395 or enable its in-app update unless every required item above has verified evidence and the user explicitly authorizes the release.
 - Update this checkpoint after meaningful changes with the exact commit/run URL and test outcome. Keep only this checklist canonical; do not copy stale unchecked versions into another section.
+
+
+### Latest handoff — 2026-10-25 (run #158)
+- [Run #158](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40203831760) built and unit-tested successfully, but the emulator suite failed only in `savedDraftReopensTextLayerAndClipState`: `Could not find restored text-size label`.
+- The restored clip-duration assertion passed this run, so the failure moved further into the draft round-trip test. This is currently an accessibility/viewport assertion, not proof that the stored text size is wrong.
+- Test-only follow-up commit [`eeda257`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/eeda2577ec86f9371fea6a00087abc9843de6ccb) scrolls the actual vertical text-controls panel before searching for the restored size label. Await the new CI run before treating draft restoration as verified.
+- Do not release an APK; version 395 remains blocked by the round-trip gate and the outstanding editor validations below.
