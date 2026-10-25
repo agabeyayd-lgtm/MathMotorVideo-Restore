@@ -3617,6 +3617,9 @@ class VideoEditorActivity : Activity() {
             val filmstripLongPress = Runnable {
                 if (filmstripTouchActive && !filmstripMoved) {
                     filmstripLongPressed = performLongClick()
+                    // A long-press action may keep ownership; ordinary horizontal swipes must
+                    // remain available to the parent HorizontalScrollView for timeline travel.
+                    if (filmstripLongPressed) parent?.requestDisallowInterceptTouchEvent(true)
                 }
             }
             setOnTouchListener { view, event ->
@@ -3627,9 +3630,8 @@ class VideoEditorActivity : Activity() {
                         filmstripLongPressed = false
                         filmstripDownX = event.x
                         player?.playWhenReady = false
-                        // The strip itself implements scrubbing and press-and-hold actions.
-                        // Prevent its horizontal parent from stealing the gesture mid-press.
-                        view.parent?.requestDisallowInterceptTouchEvent(true)
+                        // Do not disallow parent interception here. Once a one-finger horizontal
+                        // drag crosses touch slop, the parent lane should scroll the timeline.
                         timelineHandler.postDelayed(
                             filmstripLongPress,
                             android.view.ViewConfiguration.getLongPressTimeout().toLong()
