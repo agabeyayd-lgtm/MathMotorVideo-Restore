@@ -534,33 +534,37 @@ class VideoEditorActivity : Activity() {
         var timelineScaleDetector: android.view.ScaleGestureDetector? = null
         var timelinePinchCaptured = false
         timelineTracksFrame = object : FrameLayout(this) {
-            override fun onInterceptTouchEvent(ev: android.view.MotionEvent): Boolean {
-                // Feed the detector while the first finger is still routed to its child.
-                // When pointer 2 arrives, take ownership and deliver all remaining events only
-                // through onTouchEvent; otherwise ScaleGestureDetector misses ACTION_DOWN.
-                if (timelinePinchCaptured) return true
-                if (ev.pointerCount >= 2) {
-                    timelinePinchCaptured = true
-                    return true
-                }
+            override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+                // Observe each original event exactly once, before interception can cancel a child.
                 timelineScaleDetector?.onTouchEvent(ev)
+                if (ev.pointerCount >= 2) timelinePinchCaptured = true
+                val handled = super.dispatchTouchEvent(ev)
+                if (ev.actionMasked == android.view.MotionEvent.ACTION_UP ||
+                    ev.actionMasked == android.view.MotionEvent.ACTION_CANCEL
+                ) timelinePinchCaptured = false
+                return handled
+            }
+
+            override fun onInterceptTouchEvent(ev: android.view.MotionEvent): Boolean {
+                // One finger remains with the lane/trim children; the parent owns the complete pinch.
+                if (timelinePinchCaptured || ev.pointerCount >= 2) return true
                 return super.onInterceptTouchEvent(ev)
             }
 
-            override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
-                if (!timelinePinchCaptured) return super.onTouchEvent(event)
-                timelineScaleDetector?.onTouchEvent(event)
-                if (event.actionMasked == android.view.MotionEvent.ACTION_UP ||
-                    event.actionMasked == android.view.MotionEvent.ACTION_CANCEL
-                ) {
-                    timelinePinchCaptured = false
-                }
-                return true
-            }
-        }.apply { isClickable = true }
+            override fun onTouchEvent(event: android.view.MotionEvent): Boolean =
+                if (timelinePinchCaptured) true else super.onTouchEvent(event)
+        }.apply {
+            isClickable = true
+            contentDescription = "Zaman çizelgesi yakınlaştırma " + (timelineZoom * 100f).toInt() + "%"
+        }
         timelineScaleDetector = android.view.ScaleGestureDetector(
             this,
             object : android.view.ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                override fun onScaleBegin(detector: android.view.ScaleGestureDetector): Boolean {
+                    if (clips.isNotEmpty()) android.util.Log.d("TimelinePinch", "begin span=" + detector.currentSpan)
+                    return clips.isNotEmpty()
+                }
+
                 override fun onScale(detector: android.view.ScaleGestureDetector): Boolean {
                     if (clips.isEmpty()) return false
                     val oldZoom = timelineZoom
@@ -574,11 +578,20 @@ class VideoEditorActivity : Activity() {
                         currentScrollX, focusInLanePx, viewportWidthPx, timelinePixelsPerSecond()
                     ).coerceIn(0L, totalOutputDurationMs())
                     timelineZoom = newZoom
+                    timelineTracksFrame.contentDescription =
+                        "Zaman çizelgesi yakınlaştırma " + (newZoom * 100f).toInt() + "%"
+                    android.util.Log.d(
+                        "TimelinePinch",
+                        "scale factor=" + detector.scaleFactor + " zoom=" + newZoom +
+                            " focus=" + detector.focusX + "," + detector.focusY
+                    )
                     val nextScrollX = TimelineScaleMath.scrollForAnchorTime(
                         anchorTimeMs, focusInLanePx, viewportWidthPx, timelinePixelsPerSecond()
                     )
                     pendingTimelineScrollX = nextScrollX
                     refreshTimelineTracks()
+                    timelineTracksFrame.contentDescription =
+                        "Zaman çizelgesi yakınlaştırma " + (timelineZoom * 100f).toInt() + "%"
                     timelineScrollViews.toList().forEach { lane ->
                         lane.post { lane.scrollTo(nextScrollX, 0) }
                     }
@@ -2010,6 +2023,10 @@ class VideoEditorActivity : Activity() {
         val newZoom = (timelineZoom * factor).coerceIn(0.5f, 8.0f)
         if (newZoom == timelineZoom) return
         timelineZoom = newZoom
+        if (::timelineTracksFrame.isInitialized) {
+            timelineTracksFrame.contentDescription =
+                "Zaman çizelgesi yakınlaştırma " + (timelineZoom * 100f).toInt() + "%"
+        }
         refreshTimelineTracks()
         status.text = "Zaman çizelgesi yakınlaştırma: " + timelineZoom.toString() + "×. Kırmızı çizgiyi sürükleyebilir veya video karelerine dokunabilirsin."
     }
@@ -2840,7 +2857,10 @@ class VideoEditorActivity : Activity() {
                 selectedClipIndex = clips.lastIndex
                 player?.setMediaItem(MediaItem.fromUri(uri))
                 player?.prepare()
-                player?.playWhenReady = true
+                // Keep a newly imported clip at its first frame while the user arranges the timeline.
+                player?.playWhenReady = false
+                timelinePlayheadMs = clips.take(selectedClipIndex)
+                    .sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
                 refreshClipList()
                 loadTrimControls()
                 refreshTimelineTracks()
