@@ -39,7 +39,7 @@ Work top to bottom. Mark an item complete only when there is test or inspection 
 ### 1. Broader manual-project persistence (basic Save As → reopen is green)
 
 Basic end-to-end Save As → close editor → Open Document passed in [run #172 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40221395375). [Run #177](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40224656700) exposed a real restore race: ExoPlayer's pre-ready 0 ms position overwrote the saved 2.00 s playhead. Both periodic sync paths now ignore player position until `STATE_READY`; [run #179](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40225562573) is queued to verify.
-- [ ] Confirm manual project-file restoration retains clip order and trim bounds, playhead/zoom, text timing/position/style, music/effect URI and volume levels.
+- [ ] Confirm manual project-file restoration retains clip order and trim bounds, playhead/zoom, text timing/position/style, music/effect URI and volume levels. Playhead-ready race fix is green in run #179; full JSON gate remains open.
 
 ### 2. Unified editor Undo / Redo
 
