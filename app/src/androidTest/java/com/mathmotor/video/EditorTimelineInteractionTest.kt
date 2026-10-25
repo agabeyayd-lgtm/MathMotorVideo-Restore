@@ -543,8 +543,8 @@ class EditorTimelineInteractionTest {
             .put("uri", Uri.fromFile(fixture).toString())
             .put("title", fixture.name)
             .put("durationMs", 8020L)
-            .put("startMs", 0L)
-            .put("endMs", 8020L)
+            .put("startMs", 500L)
+            .put("endMs", 7520L)
         val textLayer = org.json.JSONObject()
             .put("id", 931L)
             .put("text", "ROUND TRIP TEXT")
@@ -602,13 +602,17 @@ class EditorTimelineInteractionTest {
             "Saved draft did not restore the source video lane",
             device.wait(Until.hasObject(By.text("VIDEO")), 8_000)
         )
+        assertTrue(
+            "Saved clip trim bounds were not restored (expected 7.02 s)",
+            device.wait(Until.hasObject(By.textContains("Kesit 00:07.02")), 8_000)
+        )
 
         val textTab = device.findObject(By.clazz("android.widget.Button").textContains("Metin"))
             ?: throw AssertionError("Could not open the text panel after draft restore")
         textTab.click()
         assertTrue(
             "Saved draft did not restore the text overlay in preview",
-            device.wait(Until.hasObject(By.text("ROUND TRIP TEXT")), 10_000)
+            device.wait(Until.hasObject(By.clazz("android.widget.TextView").text("ROUND TRIP TEXT")), 10_000)
         )
         val restoredSize = requireObject(
             device,
