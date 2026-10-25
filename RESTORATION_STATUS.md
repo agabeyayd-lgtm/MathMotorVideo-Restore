@@ -136,3 +136,12 @@ This is a reconstruction from recoverable project files, not an exact recovery o
 - Bridge fix commit: 295de6dda286fe7c6b935c149d37056554c59e5d. Test invocation fix: bbdbc5de254489259e04d6420c4609a1e8586e92.
 - Run #148 is testing the new approach. Require both clips to import, one MP4 around 11 seconds, a green frame at 9.5 seconds, and unchanged source hashes before marking complete.
 - Version 395 remains blocked; do not change version metadata or publish an APK before release checks pass and the user authorizes it.
+
+
+## Latest multi-clip test checkpoint — 2026-10-25
+
+- Run #148 passed the URI-import stage far enough to open the export panel, but failed because UIAutomator could not find the off-screen "MP4 DIŞA AKTAR" button. The actual MP4 export assertions were not reached.
+- Test now scrolls the editor's vertical panel to bring that button into view. Commit 90c55ca3f94bfa10bc9c1071f0b0879c179136f3.
+- Retest #150 is running: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40198463805.
+- Keep multi-clip export unchecked until the test proves two clips import, one MP4 is exported at approximately 11 seconds, the 9.5-second frame belongs to the green second clip, and both source hashes remain unchanged.
+- Version 395 remains blocked; no version metadata change or release until all release checks pass and the user authorizes publication.
