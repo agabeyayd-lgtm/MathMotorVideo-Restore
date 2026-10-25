@@ -1850,12 +1850,13 @@ class VideoEditorActivity : Activity() {
 
         if (!keyboardLayoutActive && !compactEditorLayout) {
             val ruler = makeLane("SÜRE", 22)
-            val rulerEndMs = (((totalMs + 4999L) / 5000L).coerceAtLeast(1L)) * 5000L
+            // The ruler must end at the actual sequence duration. Rounding 8 s up to
+            // 10 s makes it the widest track and lets the user scroll past the final clip.
+            val rulerEndMs = totalMs.coerceAtLeast(1L)
             var rulerTimeMs = 0L
             var rulerPositionPx = 0
             while (rulerTimeMs < rulerEndMs) {
-                val spanMs = minOf(5000L, rulerEndMs - rulerTimeMs)
-                val nextTimeMs = rulerTimeMs + spanMs
+                val nextTimeMs = minOf(rulerTimeMs + 5000L, rulerEndMs)
                 val nextPositionPx = TimelineScaleMath.pixelsForTime(nextTimeMs, pxPerSecond)
                 val tick = TextView(this).apply {
                     text = formatMs(rulerTimeMs) + " ┆"
@@ -1889,10 +1890,11 @@ class VideoEditorActivity : Activity() {
             }
         }
 
+        val emptyLanePlaceholderDurationMs = if (clips.isEmpty()) 5000L else totalMs.coerceAtLeast(1L)
         if (textLayers.isEmpty()) {
             val textTrack = makeLane("METİN", 24)
             addBlock(
-                textTrack, "+ Metin ekle", totalMs.coerceAtLeast(5000L), Color.rgb(70, 54, 93),
+                textTrack, "+ Metin ekle", emptyLanePlaceholderDurationMs, Color.rgb(70, 54, 93),
                 onClick = { showEditorPanel("text"); addTextLayer() }, minimumWidthDp = 115
             )
         } else {
@@ -1909,7 +1911,7 @@ class VideoEditorActivity : Activity() {
                 onClick = { showEditorPanel("audio") }
             )
         } else {
-            addBlock(musicTrack, "+ Müzik ekle", totalMs.coerceAtLeast(5000L), Color.rgb(42, 78, 63),
+            addBlock(musicTrack, "+ Müzik ekle", emptyLanePlaceholderDurationMs, Color.rgb(42, 78, 63),
                 onClick = { chooseAudio(true) }, minimumWidthDp = 115)
         }
 
