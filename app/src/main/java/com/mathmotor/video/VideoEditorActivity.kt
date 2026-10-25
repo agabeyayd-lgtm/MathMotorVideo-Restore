@@ -1042,10 +1042,6 @@ class VideoEditorActivity : Activity() {
             }
             override fun afterTextChanged(s: android.text.Editable?) {}
         })
-        textInput.setOnFocusChangeListener { _, hasFocus ->
-            if (loadingTextLayerControls || isRestoringEditorSnapshot) return@setOnFocusChangeListener
-            if (hasFocus) beginEditorHistoryGesture() else finishEditorHistoryGesture()
-        }
         refreshTextLayerList()
 
         val audioPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -1212,6 +1208,9 @@ class VideoEditorActivity : Activity() {
         }
         editorPanelScroll.addView(panelHolder)
         textInput.setOnFocusChangeListener { _, hasFocus ->
+            if (!loadingTextLayerControls && !isRestoringEditorSnapshot) {
+                if (hasFocus) beginEditorHistoryGesture() else finishEditorHistoryGesture()
+            }
             if (hasFocus) {
                 textInput.post {
                     textInput.requestRectangleOnScreen(
@@ -2480,6 +2479,8 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun undoEditorEdit() {
+        // Commit any in-progress text or slider gesture before deciding what "Undo" means.
+        if (activeEditorGestureSnapshot != null) finishEditorHistoryGesture()
         if (undoEditorHistory.isEmpty()) {
             status.text = "Geri alınacak düzenleme yok."
             return
@@ -2493,6 +2494,7 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun redoEditorEdit() {
+        if (activeEditorGestureSnapshot != null) finishEditorHistoryGesture()
         if (redoEditorHistory.isEmpty()) {
             status.text = "Yinelenecek düzenleme yok."
             return
@@ -2566,7 +2568,31 @@ class VideoEditorActivity : Activity() {
             if (::sourceVolumeLabel.isInitialized) sourceVolumeLabel.text = "Orijinal video sesi: $sourceAudioVolume%"
             if (::soundStartSeek.isInitialized) updateSoundControls()
 
-            if (::textInput.isInitialized) loadTextLayerIntoControls(selectedTextLayer())
+            if (::textInput.isInitialized) {
+                val layer = selectedTextLayer()
+                if (layer != null) {
+                    loadTextLayerIntoControls(layer)
+                } else {
+                    // No selected layer is a valid state (for example, after undoing
+                    // "add text"). Keep the snapshot's remembered text defaults intact.
+                    loadingTextLayerControls = true
+                    try {
+                        textInput.setText("")
+                        textSizeLabel.text = "Yazı boyutu: $textSizeSp sp"
+                        textSizeSeek.progress = textSizeSp - 12
+                        textPositionGroup.check(when (textPosition) {
+                            TextPosition.TOP -> 1
+                            TextPosition.CENTER -> 2
+                            TextPosition.BOTTOM -> 3
+                        })
+                        textColorGroup.check(11 + TextColorPreset.values().indexOf(textColorPreset).coerceAtLeast(0))
+                        textBoldCheck.isChecked = textBold
+                        updateTextControls(refreshTimeline = false)
+                    } finally {
+                        loadingTextLayerControls = false
+                    }
+                }
+            }
             refreshTextLayerList()
             updatePreviewTextOverlay()
             if (musicPreviewPlayer != null || soundPreviewPlayer != null || musicUri != null || soundUri != null) {
@@ -2783,8 +2809,8 @@ class VideoEditorActivity : Activity() {
             return
         }
         syncSelectedTextLayerFromControls()
-        recordEditorEdit()
         val next = (layer.sizeSp + delta).coerceIn(12, 96)
+        if (next != layer.sizeSp) recordEditorEdit()
         layer.sizeSp = next
         textSizeSp = next
         textSizeLabel.text = "Yazı boyutu: " + next + " sp"
