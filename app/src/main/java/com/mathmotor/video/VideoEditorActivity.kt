@@ -793,6 +793,26 @@ class VideoEditorActivity : Activity() {
         textPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         textPanel.addView(label("METİN KATMANLARI", 13f, Color.rgb(121, 202, 218), true))
         textPanel.addView(label("Yazıyı videonun üstünde sürükle; iki parmakla büyüt veya küçült.", 11f, Color.rgb(154, 171, 190), false))
+        // Keep the editable text field near the top of this panel. On compact phones,
+        // the software keyboard can leave only a short viewport; controls placed after
+        // the layer carousel can become hidden or leave the accessibility tree.
+        textInput = EditText(this).apply {
+            hint = "Videoda görünecek yazı"
+            contentDescription = "Metin katmanı metin girişi"
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.rgb(154, 171, 190))
+            setSingleLine(false)
+            minLines = 1
+            maxLines = 2
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or
+                android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE or
+                android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            setBackgroundColor(Color.rgb(27, 39, 54))
+        }
+        textPanel.addView(textInput, matchWrap())
         textOverlayEditToggle = miniButton("Önizlemede yazı düzenleme: KAPALI") {
             textOverlayEditingEnabled = !textOverlayEditingEnabled
             updateTextOverlayEditToggle()
@@ -828,23 +848,6 @@ class VideoEditorActivity : Activity() {
         textPanel.addView(textLayerScroll, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(48)
         ))
-        textInput = EditText(this).apply {
-            hint = "Videoda görünecek yazı"
-            contentDescription = "Metin katmanı metin girişi"
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.rgb(154, 171, 190))
-            setSingleLine(false)
-            minLines = 1
-            maxLines = 2
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or
-                android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or
-                android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
-            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE or
-                android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI
-            setPadding(dp(12), dp(8), dp(12), dp(8))
-            setBackgroundColor(Color.rgb(27, 39, 54))
-        }
-        textPanel.addView(textInput, matchWrap())
         textPanel.addView(label("Yazının görünme aralığı", 11f, Color.rgb(154, 171, 190), false))
         textStartLabel = label("Yazı başlangıcı: 00:00", 12f, Color.WHITE, true)
         textPanel.addView(textStartLabel)
