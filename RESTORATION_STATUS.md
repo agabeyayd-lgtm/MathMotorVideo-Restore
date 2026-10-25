@@ -10,11 +10,14 @@ MathMotor Video is a local Android video editor with a CapCut-inspired workflow.
 
 ## Repair handoff — 2026-10-25
 - Active branch: `fix/editor-395-gate`.
-- Latest relevant source commit: `ab6d614c8ceff847537fce4cd77a69db50fb3bc9`.
-- Centered timeline math/helpers: `2213b8d5305837a92b7408abfc813e91b1f216b6`.
+- Fixed-playhead source commit: `ab6d614c8ceff847537fce4cd77a69db50fb3bc9`.
+- Centered timeline mapping helpers: `2213b8d5305837a92b7408abfc813e91b1f216b6`.
 - New unit tests: `f8039c82c989d99f9e73df2e90f69719665e980d`.
-- CI test path update: `4d31899d4a838dd135c3d69850c98a3be55f8452`.
-- Latest workflow at last check: [#40169030780](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40169030780), queued; check the result before declaring the latest changes successful.
+- Filmstrip one-finger swipe correction: `8458c7737649bf05ffba10d58208dea3304993f3`.
+- Added timeline gesture UI test: `7f1b886a5d8a4d0bce7163ae0c60b75ec7ea92fd`.
+- Updated old home-header assertion: `64670fbefbf88b66210190c936568111d9b4b25c`.
+- Workflow now includes androidTest path filters and runs `connectedDebugAndroidTest`: `ede0225a127021945736839ccf0f5199abb0a2e5`.
+- Latest workflow [#40169600182](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40169600182) was in progress when this note was written. Check its final result before marking interaction tests as passed.
 - Timeline source now uses a fixed center playhead; scroll events map the centered time back to the project and debounce preview seeks. Playback and seeking move the timeline below the line. Each horizontal lane gets half-viewport leading/trailing padding so the beginning and end can align under the playhead. Pinch zoom math keeps the time under the pinch focus stable.
 - Unit tests were added for center-playhead scroll mapping, pinch-anchor stability, and reaching the final frame at maximum scroll. Tests are not marked passed until CI reports success.
 - Filmstrip density, timestamp sampling, decode/crop size and cache capacity were improved in source, but thumbnail quality/loading remains unverified on emulator/device.
@@ -35,7 +38,7 @@ See the comprehensive checklist in README.md. Current list:
 ## Verification gaps
 - Previously successful workflow [#40167165450](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40167165450) passed the existing unit-test step, debug APK build, sample-video fixture creation and emulator screenshot capture. The emulator step was explicitly run without instrumentation, so it did not verify touch gestures or full editing.
 - The current workflow [#40169030780](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40169030780) was queued when last checked after centered-playhead changes and new mapping tests.
-- Required next validation: inspect the latest job result; fix any compile/test error; inspect screenshots/logs; then add and run instrumentation that exercises scrolling, pinch zoom, text timing/size, Undo/Redo, MP4 export and project save/reopen.
+- Required next validation: inspect latest job result; fix any compile/test error; inspect screenshots/logs. The first interaction instrumentation now exercises fixed-playhead drag, pinch anchor, end/start timeline access and filmstrip one-finger swipe; further tests for trim, text, Undo/Redo, export and project save/reopen remain required.
 - Test a 10-second clip and multi-clip sequence at several zoom levels. Export to a new MP4 and verify output duration, picture/audio/text sync and that original media is unchanged.
 - Keep all release-gate boxes in README.md unchecked until their relevant tests pass. Record newly discovered defects and test outcomes in both README.md and this handoff.
 
