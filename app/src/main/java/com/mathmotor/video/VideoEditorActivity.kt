@@ -165,6 +165,7 @@ class VideoEditorActivity : Activity() {
     private lateinit var previewTextOverlay: TextView
     private lateinit var previewEmptyState: LinearLayout
     private lateinit var clipList: LinearLayout
+    private lateinit var timelineClipCarousel: android.widget.HorizontalScrollView
     private lateinit var timelineTracks: LinearLayout
     private lateinit var timelineTracksFrame: FrameLayout
     private lateinit var timelinePlayheadLine: View
@@ -542,10 +543,11 @@ class VideoEditorActivity : Activity() {
         }, LinearLayout.LayoutParams(dp(42), dp(40)).apply { leftMargin = dp(3) })
         timelineCard.addView(timelineHeader, matchWrap())
 
-        val clipScroll = android.widget.HorizontalScrollView(this).apply {
+        timelineClipCarousel = android.widget.HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
             overScrollMode = View.OVER_SCROLL_NEVER
         }
+        val clipScroll = timelineClipCarousel
         clipList = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -1258,7 +1260,7 @@ class VideoEditorActivity : Activity() {
                     previewParams.height = if (imeVisible) {
                         (availableHeight * 0.21f).toInt().coerceIn(dp(82), dp(112))
                     } else {
-                        dp(previewStageHeightDp).coerceIn(dp(150), dp(460))
+                        dp(effectivePreviewStageHeightDp())
                     }
                     previewParams.weight = 0f
                 }
@@ -1266,7 +1268,9 @@ class VideoEditorActivity : Activity() {
 
                 // Hide decorative strips and fixed docks so the active tool gets
                 // the visible space left by the keyboard.
-                clipScroll.visibility = if (imeVisible) View.GONE else View.VISIBLE
+                clipScroll.visibility = if (
+                    imeVisible || (compactEditorLayout && activeEditorPanel != null && activeEditorPanel != "clip")
+                ) View.GONE else View.VISIBLE
                 bottomDock.visibility = if (imeVisible) View.GONE else View.VISIBLE
                 statusView.visibility = if (imeVisible) View.GONE else View.VISIBLE
                 if (topBar.childCount > 2) {
@@ -1369,7 +1373,7 @@ class VideoEditorActivity : Activity() {
             if (imeVisible != keyboardLayoutActive) {
                 applyKeyboardMode(imeVisible, viewportHeight)
             } else if (!imeVisible && !previewFocusMode) {
-                val normalHeight = dp(previewStageHeightDp).coerceIn(dp(150), dp(460))
+                val normalHeight = dp(effectivePreviewStageHeightDp())
                 val params = previewFrame.layoutParams as? LinearLayout.LayoutParams
                 if (params != null && (params.height != normalHeight || params.weight != 0f)) {
                     applyingResponsiveLayout = true
@@ -1446,7 +1450,7 @@ class VideoEditorActivity : Activity() {
         if (!keyboardLayoutActive && !previewFocusMode) {
             val params = previewFrame.layoutParams as? LinearLayout.LayoutParams
             if (params != null && (params.height != dp(previewStageHeightDp) || params.weight != 0f)) {
-                params.height = dp(previewStageHeightDp)
+                params.height = dp(effectivePreviewStageHeightDp())
                 params.weight = 0f
                 previewFrame.layoutParams = params
             }
@@ -1493,6 +1497,39 @@ class VideoEditorActivity : Activity() {
         updatePreviewCanvasSize()
     }
 
+    /**
+     * On compact phones, reserve visible height for the selected tool controls.
+     * The clip carousel duplicates information available in the filmstrip while editing
+     * text/audio/export, so temporarily hide it and shrink the preview without losing
+     * the user's preferred preview height.
+     */
+    private fun effectivePreviewStageHeightDp(): Int {
+        val compactToolPanel = compactEditorLayout &&
+            activeEditorPanel != null && activeEditorPanel != "clip"
+        return if (compactToolPanel) minOf(previewStageHeightDp, 124).coerceAtLeast(112)
+        else previewStageHeightDp.coerceIn(150, 460)
+    }
+
+    private fun updateCompactToolPanelLayout() {
+        if (::timelineClipCarousel.isInitialized) {
+            val compactToolPanel = compactEditorLayout &&
+                activeEditorPanel != null && activeEditorPanel != "clip"
+            timelineClipCarousel.visibility =
+                if (keyboardLayoutActive || compactToolPanel) View.GONE else View.VISIBLE
+            timelineClipCarousel.requestLayout()
+        }
+        if (::previewFrame.isInitialized && !keyboardLayoutActive && !previewFocusMode) {
+            val params = previewFrame.layoutParams as? LinearLayout.LayoutParams
+            val targetHeight = dp(effectivePreviewStageHeightDp())
+            if (params != null && (params.height != targetHeight || params.weight != 0f)) {
+                params.height = targetHeight
+                params.weight = 0f
+                previewFrame.layoutParams = params
+            }
+        }
+        if (::editorPanelScroll.isInitialized) editorPanelScroll.requestLayout()
+    }
+
     private fun showEditorPanel(name: String) {
         activeEditorPanel = name
         textOverlayEditingEnabled = name == "text"
@@ -1510,6 +1547,7 @@ class VideoEditorActivity : Activity() {
             }
             button.setTextColor(if (selected) Color.rgb(5, 25, 29) else Color.rgb(220, 231, 240))
         }
+        updateCompactToolPanelLayout()
         if (name == "export") status.text = "Projeyi kaydedebilir veya MP4 olarak dışa aktarabilirsin."
     }
 
@@ -1552,6 +1590,7 @@ class VideoEditorActivity : Activity() {
             }
             button.setTextColor(Color.rgb(220, 231, 240))
         }
+        updateCompactToolPanelLayout()
         val focused = currentFocus
         val keyboard = getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
             as? android.view.inputmethod.InputMethodManager
