@@ -50,26 +50,34 @@ jobs:
 
       - name: Generate a deterministic sample video for editor smoke tests
         run: |
+          echo "Preparing deterministic editor fixtures"
           if ! command -v ffmpeg >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install -y ffmpeg
+            echo "ffmpeg is missing; install it with a bounded package-manager timeout"
+            timeout -k 5s 120s sudo apt-get update
+            timeout -k 5s 120s sudo apt-get install -y ffmpeg
           fi
+          command -v ffmpeg
+          ffmpeg -version | head -n 1
           mkdir -p app/build/test-fixtures
-          ffmpeg -hide_banner -loglevel error -y \
+          echo "Generating the primary 8-second MP4 fixture (45-second hard limit)"
+          timeout -k 5s 45s ffmpeg -hide_banner -loglevel error -y \
             -f lavfi -i "testsrc2=size=360x640:rate=24" \
             -f lavfi -i "sine=frequency=440:sample_rate=44100" \
-            -t 8 -c:v mpeg4 -q:v 5 -pix_fmt yuv420p \
+            -t 8 -c:v mpeg4 -q:v 5 -threads 2 -pix_fmt yuv420p \
             -c:a aac -b:a 64k -shortest \
             app/build/test-fixtures/editor-test-video.mp4
           test -s app/build/test-fixtures/editor-test-video.mp4
-          ffmpeg -hide_banner -loglevel error -y \
+          ls -lh app/build/test-fixtures/editor-test-video.mp4
+          echo "Generating the green 3-second MP4 fixture (45-second hard limit)"
+          timeout -k 5s 45s ffmpeg -hide_banner -loglevel error -y \
             -f lavfi -i "color=c=0x00FF00:size=360x640:rate=24" \
             -f lavfi -i "sine=frequency=880:sample_rate=44100" \
-            -t 3 -c:v mpeg4 -q:v 5 -pix_fmt yuv420p \
+            -t 3 -c:v mpeg4 -q:v 5 -threads 2 -pix_fmt yuv420p \
             -c:a aac -b:a 64k -shortest \
             app/build/test-fixtures/editor-test-video-second.mp4
           test -s app/build/test-fixtures/editor-test-video-second.mp4
           ls -lh app/build/test-fixtures/editor-test-video.mp4 app/build/test-fixtures/editor-test-video-second.mp4
+          echo "Both deterministic editor fixtures are ready"
 
       - name: Enable KVM acceleration for the emulator
         run: |
