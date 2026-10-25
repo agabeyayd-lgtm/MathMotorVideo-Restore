@@ -3772,9 +3772,9 @@ class VideoEditorActivity : Activity() {
                 runCatching {
                     retriever.getScaledFrameAtTime(
                         frameTimeUs,
-                        MediaMetadataRetriever.OPTION_CLOSEST,
-                        96,
-                        54
+                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                        144,
+                        81
                     )
                 }.getOrNull()
             } else {
@@ -3837,14 +3837,14 @@ class VideoEditorActivity : Activity() {
                 try {
                     val original = decodeTimelineFrame(uri, timestampMs)
                     if (original != null && !original.isRecycled && original.width > 0 && original.height > 0) {
-                        val scale = maxOf(96f / original.width, 54f / original.height)
-                        val scaledWidth = (original.width * scale).toInt().coerceAtLeast(96)
-                        val scaledHeight = (original.height * scale).toInt().coerceAtLeast(54)
+                        val scale = maxOf(144f / original.width, 81f / original.height)
+                        val scaledWidth = (original.width * scale).toInt().coerceAtLeast(144)
+                        val scaledHeight = (original.height * scale).toInt().coerceAtLeast(81)
                         val scaled = Bitmap.createScaledBitmap(original, scaledWidth, scaledHeight, true)
                         if (scaled !== original && !original.isRecycled) original.recycle()
-                        val left = ((scaled.width - 96) / 2).coerceAtLeast(0)
-                        val top = ((scaled.height - 54) / 2).coerceAtLeast(0)
-                        result = Bitmap.createBitmap(scaled, left, top, 96, 54)
+                        val left = ((scaled.width - 144) / 2).coerceAtLeast(0)
+                        val top = ((scaled.height - 81) / 2).coerceAtLeast(0)
+                        result = Bitmap.createBitmap(scaled, left, top, 144, 81)
                         if (result !== scaled && !scaled.isRecycled) scaled.recycle()
                     } else {
                         original?.let { if (!it.isRecycled) it.recycle() }
