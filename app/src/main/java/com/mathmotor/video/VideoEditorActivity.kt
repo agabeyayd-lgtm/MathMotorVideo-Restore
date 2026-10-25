@@ -180,7 +180,18 @@ class VideoEditorActivity : Activity() {
     private lateinit var timelinePlayheadSeek: SeekBar
     private lateinit var timelinePlayheadLabel: TextView
     private var timelinePlayheadMs = 0L
-    private var timelineScrubGrabOffsetPx = 0f
+    private var timelineScrubStartRawX = 0f
+    private var timelineScrubStartScrollX = 0
+    private var pendingTimelineScrollSeekMs = 0L
+    private var timelineScrollSeeking = false
+    private val timelineScrollSeekTask = object : Runnable {
+        override fun run() {
+            timelineScrollSeeking = false
+            if (clips.isNotEmpty()) {
+                seekTimelinePreview(pendingTimelineScrollSeekMs, synchronizeTimelineScroll = false)
+            }
+        }
+    }
     private var timelinePreviewLoaded = false
     private var previewSingleClip = false
     private val timelineHandler = Handler(Looper.getMainLooper())
@@ -189,8 +200,10 @@ class VideoEditorActivity : Activity() {
     }
     private val timelineSyncTask = object : Runnable {
         override fun run() {
-            if (timelinePreviewLoaded) syncTimelinePlayheadFromPlayer()
-            else if (previewSingleClip) syncSingleClipPlayheadFromPlayer()
+            if (!timelineScrollSeeking) {
+                if (timelinePreviewLoaded) syncTimelinePlayheadFromPlayer()
+                else if (previewSingleClip) syncSingleClipPlayheadFromPlayer()
+            }
             syncPreviewAudio()
             timelineHandler.postDelayed(this, 250L)
         }
@@ -534,17 +547,17 @@ class VideoEditorActivity : Activity() {
                     val oldZoom = timelineZoom
                     val newZoom = (oldZoom * detector.scaleFactor).coerceIn(0.5f, 8.0f)
                     if (newZoom == oldZoom) return true
-                    val focusOffsetPx = (detector.focusX - dp(57)).coerceAtLeast(0f)
+                    val laneLeftPx = dp(57)
+                    val focusInLanePx = detector.focusX - laneLeftPx
+                    val viewportWidthPx = timelineLaneViewportWidthPx()
                     val currentScrollX = timelineScrollViews.firstOrNull()?.scrollX ?: timelineHorizontalScrollX
-                    val anchorContentPx = currentScrollX + focusOffsetPx
-                    val anchorTimeMs = TimelineScaleMath.millisecondsForPixels(
-                        anchorContentPx, timelinePixelsPerSecond()
+                    val anchorTimeMs = TimelineScaleMath.timeAtViewportX(
+                        currentScrollX, focusInLanePx, viewportWidthPx, timelinePixelsPerSecond()
                     ).coerceIn(0L, totalOutputDurationMs())
                     timelineZoom = newZoom
-                    val nextScrollX = (
-                        TimelineScaleMath.pixelsForTime(anchorTimeMs, timelinePixelsPerSecond()) -
-                            focusOffsetPx.toInt()
-                        ).coerceAtLeast(0)
+                    val nextScrollX = TimelineScaleMath.scrollForAnchorTime(
+                        anchorTimeMs, focusInLanePx, viewportWidthPx, timelinePixelsPerSecond()
+                    )
                     pendingTimelineScrollX = nextScrollX
                     refreshTimelineTracks()
                     timelineScrollViews.toList().forEach { lane ->
@@ -584,18 +597,20 @@ class VideoEditorActivity : Activity() {
                         if (clips.isEmpty()) return@setOnTouchListener false
                         ensureTimelinePreviewLoaded()
                         player?.playWhenReady = false
-                        // Preserve where the finger grabbed the handle so touching an edge
-                        // does not jump the playhead by half the handle width.
-                        timelineScrubGrabOffsetPx = event.x - view.width / 2f
-                        seekFromTimelineFrameX(view.x + event.x - timelineScrubGrabOffsetPx)
+                        // The playhead stays fixed; dragging it scrolls the timeline underneath.
+                        timelineScrubStartRawX = event.rawX
+                        timelineScrubStartScrollX = timelineScrollViews.firstOrNull()?.scrollX
+                            ?: timelineHorizontalScrollX
                         true
                     }
                     android.view.MotionEvent.ACTION_MOVE -> {
-                        seekFromTimelineFrameX(view.x + event.x - timelineScrubGrabOffsetPx)
+                        val deltaPx = (event.rawX - timelineScrubStartRawX).toInt()
+                        scrollTimelineToOffset(timelineScrubStartScrollX + deltaPx)
                         true
                     }
                     android.view.MotionEvent.ACTION_UP -> {
-                        seekFromTimelineFrameX(view.x + event.x - timelineScrubGrabOffsetPx)
+                        val deltaPx = (event.rawX - timelineScrubStartRawX).toInt()
+                        scrollTimelineToOffset(timelineScrubStartScrollX + deltaPx)
                         view.performClick()
                         true
                     }
@@ -609,6 +624,9 @@ class VideoEditorActivity : Activity() {
             timelinePlayheadLine,
             FrameLayout.LayoutParams(dp(28), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.TOP or Gravity.START)
         )
+        timelineTracksFrame.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            updateTimelinePlayheadLine()
+        }
         timelineCard.addView(timelineTracksFrame, matchWrap())
         timelineCard.addView(label("Uzun bas: klibi taşı / sil / kopyala  •  Kenarlardan: kes", 9f, Color.rgb(180, 202, 216), false).apply {
             maxLines = 1
@@ -1525,19 +1543,38 @@ class VideoEditorActivity : Activity() {
                     syncingTimelineScroll = true
                     try {
                         timelineHorizontalScrollX = scrollX
-                    timelineScrollViews.forEach { other ->
+                        timelineScrollViews.forEach { other ->
                             if (other !== view && other.scrollX != scrollX) other.scrollTo(scrollX, 0)
                         }
                     } finally {
                         syncingTimelineScroll = false
                     }
                     updateTimelinePlayheadLine()
+                    val expectedScrollX = TimelineScaleMath.scrollForCenteredTime(
+                        timelinePlayheadMs, timelinePixelsPerSecond()
+                    )
+                    if (clips.isNotEmpty() && scrollX != expectedScrollX) {
+                        val mappedMs = TimelineScaleMath.timeForCenteredScroll(
+                            scrollX, timelinePixelsPerSecond()
+                        ).coerceIn(0L, totalOutputDurationMs())
+                        timelinePlayheadMs = mappedMs
+                        if (::timelinePlayheadSeek.isInitialized) {
+                            timelinePlayheadSeek.progress = TimelineTrimMath.progressForTime(
+                                mappedMs, totalOutputDurationMs()
+                            )
+                        }
+                        updateTimelinePlayheadLabel()
+                        pendingTimelineScrollSeekMs = mappedMs
+                        timelineScrollSeeking = true
+                        timelineHandler.removeCallbacks(timelineScrollSeekTask)
+                        timelineHandler.postDelayed(timelineScrollSeekTask, 70L)
+                    }
                 }
             }
             val track = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                // Keep the content origin identical to the ruler and playhead coordinate system.
+                // Half-viewport padding lets both the first and last frames sit under the fixed playhead.
                 setPadding(0, dp(1), 0, dp(1))
             }
             scroll.addView(track)
@@ -1886,28 +1923,50 @@ class VideoEditorActivity : Activity() {
 
         val restoreScrollX = timelineHorizontalScrollX
         timelineScrollViews.toList().forEach { laneScroll ->
-            laneScroll.post { laneScroll.scrollTo(restoreScrollX, 0) }
+            laneScroll.post {
+                val track = laneScroll.getChildAt(0)
+                val inset = (laneScroll.width / 2).coerceAtLeast(0)
+                track?.setPadding(inset, dp(1), inset, dp(1))
+                track?.requestLayout()
+                track?.post { laneScroll.scrollTo(restoreScrollX, 0) }
+            }
         }
         updateTimelinePlayheadLine()
     }
 
+    private fun timelineLaneViewportWidthPx(): Int =
+        timelineScrollViews.firstOrNull()?.width?.takeIf { it > 0 }
+            ?: (timelineTracksFrame.width - dp(60)).coerceAtLeast(0)
+
     private fun updateTimelinePlayheadLine() {
         if (!::timelinePlayheadLine.isInitialized || !::timelineTracksFrame.isInitialized) return
-        val scrollX = timelineScrollViews.firstOrNull()?.scrollX ?: 0
-        val pixelsPerSecond = timelinePixelsPerSecond()
-        val timelineX = dp(57) + TimelineScaleMath.pixelsForTime(timelinePlayheadMs, pixelsPerSecond) - scrollX
-        val frameWidth = timelineTracksFrame.width
-        if (frameWidth > 0 && (timelineX < 0 || timelineX > frameWidth)) {
-            timelinePlayheadLine.visibility = View.INVISIBLE
-            return
-        }
+        val viewportWidth = timelineLaneViewportWidthPx()
+        val timelineX = dp(57) + viewportWidth / 2
         timelinePlayheadLine.visibility = View.VISIBLE
         val params = timelinePlayheadLine.layoutParams as? FrameLayout.LayoutParams ?: return
         params.width = dp(28)
-        // Do not pin an out-of-range playhead to the left edge: preserve the exact x coordinate.
         params.leftMargin = timelineX - dp(14)
         timelinePlayheadLine.layoutParams = params
         timelinePlayheadLine.bringToFront()
+    }
+
+    private fun scrollTimelineToOffset(requestedScrollX: Int) {
+        val safeScrollX = requestedScrollX.coerceAtLeast(0)
+        timelineHorizontalScrollX = safeScrollX
+        timelineScrollViews.toList().forEach { lane ->
+            if (lane.scrollX != safeScrollX) lane.scrollTo(safeScrollX, 0)
+        }
+        updateTimelinePlayheadLine()
+    }
+
+    private fun scrollTimelineToPlayhead(timeMs: Long) {
+        if (timelineScrollViews.isEmpty()) return
+        val targetScrollX = TimelineScaleMath.scrollForCenteredTime(timeMs, timelinePixelsPerSecond())
+        timelineHorizontalScrollX = targetScrollX
+        timelineScrollViews.toList().forEach { lane ->
+            if (lane.scrollX != targetScrollX) lane.post { lane.scrollTo(targetScrollX, 0) }
+        }
+        updateTimelinePlayheadLine()
     }
 
     private fun timelinePixelsPerSecond(): Float = dp(22).toFloat() * timelineZoom
@@ -1932,7 +1991,7 @@ class VideoEditorActivity : Activity() {
             (it.endMs - it.startMs).coerceAtLeast(0L)
         }
         val clipStartPx = TimelineScaleMath.pixelsForTime(projectOffsetMs, timelinePixelsPerSecond())
-        pendingTimelineScrollX = (clipStartPx - dp(8)).coerceAtLeast(0)
+        pendingTimelineScrollX = clipStartPx.coerceAtLeast(0)
         timelineHorizontalScrollX = pendingTimelineScrollX ?: 0
         return zoomChanged || pendingTimelineScrollX != null
     }
@@ -1948,10 +2007,10 @@ class VideoEditorActivity : Activity() {
     private fun seekFromTimelineFrameX(frameX: Float) {
         if (clips.isEmpty()) return
         val scrollX = timelineScrollViews.firstOrNull()?.scrollX ?: 0
-        val timelineContentX = frameX + scrollX
-        val videoStartX = dp(57).toFloat()
-        val offsetPixels = (timelineContentX - videoStartX).coerceAtLeast(0f)
-        val requestedMs = TimelineScaleMath.millisecondsForPixels(offsetPixels, timelinePixelsPerSecond())
+        val viewportX = frameX - dp(57)
+        val requestedMs = TimelineScaleMath.timeAtViewportX(
+            scrollX, viewportX, timelineLaneViewportWidthPx(), timelinePixelsPerSecond()
+        )
         seekTimelinePreview(requestedMs.coerceIn(0L, totalOutputDurationMs()))
     }
 
@@ -2020,7 +2079,7 @@ class VideoEditorActivity : Activity() {
         timelinePreviewLoaded = true
     }
 
-    private fun seekTimelinePreview(requestedMs: Long) {
+    private fun seekTimelinePreview(requestedMs: Long, synchronizeTimelineScroll: Boolean = true) {
         if (clips.isEmpty()) return
         ensureTimelinePreviewLoaded()
         if (totalOutputDurationMs() <= 0L) return
@@ -2031,6 +2090,7 @@ class VideoEditorActivity : Activity() {
         val targetMs = position.clipStartMs + position.localPositionMs
         player?.seekTo(position.clipIndex, position.localPositionMs)
         timelinePlayheadMs = targetMs
+        if (synchronizeTimelineScroll) scrollTimelineToPlayhead(targetMs)
         if (selectedClipIndex != position.clipIndex) {
             selectedClipIndex = position.clipIndex
             refreshClipList()
@@ -2047,6 +2107,7 @@ class VideoEditorActivity : Activity() {
         if (index !in clips.indices) return
         val offsetMs = clips.take(index).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
         timelinePlayheadMs = (offsetMs + currentPlayer.currentPosition).coerceIn(0L, totalOutputDurationMs())
+        scrollTimelineToPlayhead(timelinePlayheadMs)
         if (selectedClipIndex != index) {
             selectedClipIndex = index
             refreshClipList()
@@ -2065,6 +2126,7 @@ class VideoEditorActivity : Activity() {
         val clipDuration = (clip.endMs - clip.startMs).coerceAtLeast(0L)
         timelinePlayheadMs = (beforeMs + currentPlayer.currentPosition.coerceIn(0L, clipDuration))
             .coerceIn(0L, totalOutputDurationMs())
+        scrollTimelineToPlayhead(timelinePlayheadMs)
         if (::timelinePlayheadSeek.isInitialized) {
             timelinePlayheadSeek.progress = TimelineTrimMath.progressForTime(timelinePlayheadMs, totalOutputDurationMs())
         }
@@ -4363,6 +4425,7 @@ class VideoEditorActivity : Activity() {
 
     override fun onDestroy() {
         timelineHandler.removeCallbacks(timelineSyncTask)
+        timelineHandler.removeCallbacks(timelineScrollSeekTask)
         timelineHandler.removeCallbacks(textTimelineRefreshTask)
         timelineThumbnailExecutor.shutdownNow()
         pendingTimelineThumbnails.clear()
