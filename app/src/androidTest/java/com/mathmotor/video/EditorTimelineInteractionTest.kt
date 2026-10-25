@@ -89,7 +89,8 @@ class EditorTimelineInteractionTest {
             "TimelineInteractionTest",
             "stage=before-pinch time=$beforePinchTime label=$zoomLabelBefore"
         )
-        laneScroll.pinchOpen(0.5f)
+        // Use a slow, wide pinch so both pointer streams produce multiple move events.
+        laneScroll.pinchOpen(0.85f, 60)
         device.waitForIdle()
         SystemClock.sleep(350)
         val zoomLabelAfter = requireObject(
