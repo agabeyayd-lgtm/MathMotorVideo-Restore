@@ -808,10 +808,8 @@ class VideoEditorActivity : Activity() {
         clipActions2.addView(miniButton("Sona al →") { moveSelectedClip(1) },
             LinearLayout.LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(4) })
         clipPanel.addView(clipActions2)
-        val clipHistoryRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
+        // Create the global history controls without attaching them to a temporary row.
+        // They are attached once to the persistent bottom dock in buildUi().
         undoClipButton = miniButton("↶ Geri al") { undoEditorEdit() }.apply {
             contentDescription = "Düzenleme geri al"
             isEnabled = false
@@ -820,10 +818,6 @@ class VideoEditorActivity : Activity() {
             contentDescription = "Düzenleme yinele"
             isEnabled = false
         }
-        clipHistoryRow.addView(undoClipButton, LinearLayout.LayoutParams(0, dp(40), 1f))
-        clipHistoryRow.addView(redoClipButton, LinearLayout.LayoutParams(0, dp(40), 1f).apply {
-            leftMargin = dp(5)
-        })
         startLabel = label("Başlangıç: 00:00", 12f, Color.rgb(225, 233, 237), true)
         clipPanel.addView(startLabel)
         startSeek = SeekBar(this)
