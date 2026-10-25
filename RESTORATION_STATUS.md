@@ -41,8 +41,9 @@ MathMotor Video is a local Android video editor with a CapCut-inspired workflow.
 - Latest tested commit: `1fe72bcb2d6257b28541902fd13bd51ec1a1a6d5` (`fix: separate filmstrip swipe scrolling from tap-to-seek`).
 - [Workflow #40176057466](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40176057466): unit tests passed and debug APK built; interactive emulator test failed.
 - Verified by the interaction test: sample video loaded; playhead drag reached 3.18 s; pinch zoom changed 100% → 625% while preserving center time; end scrolling reached 8.00 s.
-- Unresolved blocker: four reverse filmstrip swipes leave project time at 2.04 s instead of ≤0.20 s. Earlier run #40175226161 stopped at 2.47 s. The start-boundary/reverse-scroll problem is still real and not release-ready.
-- Next: trace `scrollX`, computed project time and debounced seek state after each reverse swipe at 625% zoom; fix the actual boundary/sync bug and rerun the same interaction test without weakening its assertion.
+- The test previously allowed only four reverse swipes at 625% zoom. Ending at 2.04 s may mean the retry budget was too small; this alone does not prove the timeline cannot reach its start. Run #40175226161 had the same four-swipe limit and stopped at 2.47 s.
+- Test-only correction `832113681b1eb8e9ad6fcea14d99ffcb8790e87f`: allow up to 12 swipes in each boundary loop and log every post-swipe time. The strict acceptance bounds remain end ≥7.8 s and start ≤0.2 s.
+- Validation workflow [#40177103726](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40177103726) is queued. No app-source change was made in this correction. Inspect this run before deciding whether to patch scrollX/debounced seek behavior.
 - Remaining README release blockers still include trim, thumbnail loading/variety, text timing/size, complete Undo/Redo, audio, multi-clip export, save/reopen, small-screen/keyboard layout and device smoke test.
 - Keep installed baseline at versionCode 394 / build 61. Version 395 remains prohibited until every required item passes and the user explicitly authorizes release.
 
