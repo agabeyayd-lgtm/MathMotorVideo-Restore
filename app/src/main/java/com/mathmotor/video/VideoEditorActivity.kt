@@ -1316,6 +1316,10 @@ class VideoEditorActivity : Activity() {
                 rulerAwareTimelineRefresh()
                 panelScroll.requestLayout()
                 root.requestLayout()
+                if (imeVisible && activeEditorPanel == "text" && ::textInput.isInitialized) {
+                    // Let the new weighted viewport layout finish before revealing the editor field.
+                    panelScroll.post { ensureTextInputVisibleInToolPanel() }
+                }
             } finally {
                 applyingResponsiveLayout = false
             }
@@ -1405,6 +1409,11 @@ class VideoEditorActivity : Activity() {
                         applyKeyboardMode(imeVisible, view.height)
                     }
                     applySafeRootPadding(imeVisible, view.height)
+                    if (imeVisible && activeEditorPanel == "text" && ::textInput.isInitialized) {
+                        // Insets can arrive after the first resize callback; re-check against
+                        // the final visible viewport instead of relying on a one-shot timer.
+                        editorPanelScroll.post { ensureTextInputVisibleInToolPanel() }
+                    }
                 }
                 insets
             }
@@ -2462,34 +2471,46 @@ class VideoEditorActivity : Activity() {
                 as? android.view.inputmethod.InputMethodManager
             keyboard?.showSoftInput(textInput, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
 
-            // adjustResize, IME insets and compact-panel reflow can each change the
-            // ScrollView viewport. Compute the correction from current screen bounds
-            // after those layout changes settle rather than mixing coordinates from
-            // different parents (textPanel.top + textInput.bottom).
-            textInput.postDelayed({
-                if (activeEditorPanel != "text" || !textInput.isAttachedToWindow) return@postDelayed
-                if (textInput.width <= 0 || textInput.height <= 0 || editorPanelScroll.height <= 0) return@postDelayed
-
-                val panelLocation = IntArray(2)
-                val inputLocation = IntArray(2)
-                editorPanelScroll.getLocationOnScreen(panelLocation)
-                textInput.getLocationOnScreen(inputLocation)
-                val panelTop = panelLocation[1]
-                val panelBottom = panelTop + editorPanelScroll.height
-                val inputTop = inputLocation[1]
-                val inputBottom = inputTop + textInput.height
-                val scrollDelta = when {
-                    inputBottom > panelBottom -> inputBottom - panelBottom + dp(12)
-                    inputTop < panelTop -> inputTop - panelTop - dp(12)
-                    else -> 0
-                }
-                if (scrollDelta != 0) editorPanelScroll.scrollBy(0, scrollDelta)
-                textInput.requestRectangleOnScreen(
-                    android.graphics.Rect(0, 0, textInput.width, textInput.height),
-                    true
-                )
-            }, 500L)
+            // IME opening is asynchronous. A single correction at 500 ms can happen
+            // before the keyboard animation and the responsive root layout have settled.
+            // Re-check after several layout frames; the operation is a no-op once the
+            // field is fully inside the visible tool-panel viewport.
+            listOf(250L, 600L, 1_000L, 1_500L, 2_000L).forEach { delay ->
+                editorPanelScroll.postDelayed({ ensureTextInputVisibleInToolPanel() }, delay)
+            }
         }
+    }
+
+    private fun ensureTextInputVisibleInToolPanel() {
+        if (!::textInput.isInitialized || !::editorPanelScroll.isInitialized) return
+        if (activeEditorPanel != "text" || !textInput.isAttachedToWindow || !textInput.isShown) return
+        if (textInput.width <= 0 || textInput.height <= 0 || editorPanelScroll.height <= 0) return
+
+        // Use the ScrollView's actual visible screen rectangle rather than only its
+        // measured height: adjustResize and IME insets behave differently across devices.
+        val panelVisible = android.graphics.Rect()
+        if (!editorPanelScroll.getGlobalVisibleRect(panelVisible)) return
+        val inputLocation = IntArray(2)
+        textInput.getLocationOnScreen(inputLocation)
+        val inputTop = inputLocation[1]
+        val inputBottom = inputTop + textInput.height
+        val scrollDelta = when {
+            inputBottom > panelVisible.bottom -> inputBottom - panelVisible.bottom + dp(12)
+            inputTop < panelVisible.top -> inputTop - panelVisible.top - dp(12)
+            else -> 0
+        }
+        if (scrollDelta != 0) {
+            android.util.Log.i(
+                "EditorImeLayout",
+                "reveal-text-input delta=$scrollDelta input=$inputTop..$inputBottom " +
+                    "panel=${panelVisible.top}..${panelVisible.bottom} ime=$keyboardLayoutActive"
+            )
+            editorPanelScroll.scrollBy(0, scrollDelta)
+        }
+        textInput.requestRectangleOnScreen(
+            android.graphics.Rect(0, 0, textInput.width, textInput.height),
+            true
+        )
     }
 
     private fun adjustSelectedTextSize(delta: Int) {
