@@ -536,8 +536,25 @@ class VideoEditorActivity : Activity() {
         timelineTracksFrame = object : FrameLayout(this) {
             override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
                 // Observe each original event exactly once, before interception can cancel a child.
+                // A HorizontalScrollView may already have disallowed parent interception after
+                // the first finger moved. Clear that flag as soon as the second finger lands so
+                // the timeline owns the entire pinch stream rather than panning a lane to zero.
                 timelineScaleDetector?.onTouchEvent(ev)
-                if (ev.pointerCount >= 2) timelinePinchCaptured = true
+                if (ev.actionMasked == android.view.MotionEvent.ACTION_POINTER_DOWN &&
+                    ev.pointerCount >= 2
+                ) {
+                    timelinePinchCaptured = true
+                    requestDisallowInterceptTouchEvent(false)
+                    android.util.Log.d(
+                        "TimelinePinch",
+                        "captured second pointer; span=" + kotlin.math.sqrt(
+                            (ev.getX(0) - ev.getX(1)).let { it * it } +
+                                (ev.getY(0) - ev.getY(1)).let { it * it }
+                        )
+                    )
+                } else if (ev.pointerCount >= 2) {
+                    timelinePinchCaptured = true
+                }
                 val handled = super.dispatchTouchEvent(ev)
                 if (ev.actionMasked == android.view.MotionEvent.ACTION_UP ||
                     ev.actionMasked == android.view.MotionEvent.ACTION_CANCEL
@@ -569,6 +586,12 @@ class VideoEditorActivity : Activity() {
                     if (clips.isEmpty()) return false
                     val oldZoom = timelineZoom
                     val newZoom = (oldZoom * detector.scaleFactor).coerceIn(0.5f, 8.0f)
+                    android.util.Log.d(
+                        "TimelinePinch",
+                        "onScale factor=" + detector.scaleFactor + " old=" + oldZoom +
+                            " new=" + newZoom + " span=" + detector.currentSpan +
+                            " previousSpan=" + detector.previousSpan
+                    )
                     if (newZoom == oldZoom) return true
                     val laneLeftPx = dp(57)
                     val focusInLanePx = detector.focusX - laneLeftPx
