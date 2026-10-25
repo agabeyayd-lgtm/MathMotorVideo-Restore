@@ -531,39 +531,98 @@ class VideoEditorActivity : Activity() {
         timelineCard.addView(clipScroll, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(58)
         ))
-        var timelineScaleDetector: android.view.ScaleGestureDetector? = null
         var timelinePinchCaptured = false
+        var pinchStartSpanPx = 0f
+        var pinchStartZoom = 1.0f
+        var pinchAnchorTimeMs = 0L
+        var pinchFocusXInLanePx = 0f
+        var lastAppliedPinchZoom = 1.0f
+
+        fun pointerSpan(event: android.view.MotionEvent): Float {
+            if (event.pointerCount < 2) return 0f
+            val dx = event.getX(0) - event.getX(1)
+            val dy = event.getY(0) - event.getY(1)
+            return kotlin.math.sqrt(dx * dx + dy * dy)
+        }
+
+        fun beginTimelinePinch(event: android.view.MotionEvent) {
+            pinchStartSpanPx = pointerSpan(event).coerceAtLeast(1f)
+            pinchStartZoom = timelineZoom
+            lastAppliedPinchZoom = timelineZoom
+            val focusX = (event.getX(0) + event.getX(1)) / 2f
+            pinchFocusXInLanePx = focusX - dp(57)
+            val viewportWidth = timelineLaneViewportWidthPx()
+            val scrollX = timelineScrollViews.firstOrNull()?.scrollX ?: timelineHorizontalScrollX
+            pinchAnchorTimeMs = TimelineScaleMath.timeAtViewportX(
+                scrollX, pinchFocusXInLanePx, viewportWidth, timelinePixelsPerSecond()
+            ).coerceIn(0L, totalOutputDurationMs())
+            android.util.Log.d(
+                "TimelinePinch",
+                "manual begin span=$pinchStartSpanPx zoom=$pinchStartZoom anchor=$pinchAnchorTimeMs " +
+                    "focusX=$pinchFocusXInLanePx viewport=$viewportWidth scroll=$scrollX"
+            )
+        }
+
+        fun updateTimelinePinch(event: android.view.MotionEvent) {
+            val span = pointerSpan(event)
+            if (span <= 0f || pinchStartSpanPx <= 0f) return
+            val nextZoom = (pinchStartZoom * span / pinchStartSpanPx).coerceIn(0.5f, 8.0f)
+            if (kotlin.math.abs(nextZoom - lastAppliedPinchZoom) < 0.025f) return
+
+            timelineZoom = nextZoom
+            lastAppliedPinchZoom = nextZoom
+            val viewportWidth = timelineLaneViewportWidthPx()
+            val nextScrollX = TimelineScaleMath.scrollForAnchorTime(
+                pinchAnchorTimeMs,
+                pinchFocusXInLanePx,
+                viewportWidth,
+                timelinePixelsPerSecond()
+            )
+            timelineHorizontalScrollX = nextScrollX
+            pendingTimelineScrollX = nextScrollX
+            timelineTracksFrame.contentDescription =
+                "Zaman çizelgesi yakınlaştırma " + (nextZoom * 100f).toInt() + "%"
+            android.util.Log.d(
+                "TimelinePinch",
+                "manual move span=$span startSpan=$pinchStartSpanPx zoom=$nextZoom " +
+                    "scroll=$nextScrollX anchor=$pinchAnchorTimeMs"
+            )
+            refreshTimelineTracks()
+            timelineTracksFrame.contentDescription =
+                "Zaman çizelgesi yakınlaştırma " + (timelineZoom * 100f).toInt() + "%"
+            timelineScrollViews.toList().forEach { lane ->
+                lane.post { lane.scrollTo(nextScrollX, 0) }
+            }
+        }
+
         timelineTracksFrame = object : FrameLayout(this) {
             override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
-                // Observe each original event exactly once, before interception can cancel a child.
-                // A HorizontalScrollView may already have disallowed parent interception after
-                // the first finger moved. Clear that flag as soon as the second finger lands so
-                // the timeline owns the entire pinch stream rather than panning a lane to zero.
-                timelineScaleDetector?.onTouchEvent(ev)
+                // Detect and scale from the actual two-pointer distance. This is more reliable
+                // than ScaleGestureDetector when a child HorizontalScrollView has already
+                // claimed a one-finger drag before the second finger arrives.
                 if (ev.actionMasked == android.view.MotionEvent.ACTION_POINTER_DOWN &&
                     ev.pointerCount >= 2
                 ) {
                     timelinePinchCaptured = true
                     requestDisallowInterceptTouchEvent(false)
-                    android.util.Log.d(
-                        "TimelinePinch",
-                        "captured second pointer; span=" + kotlin.math.sqrt(
-                            (ev.getX(0) - ev.getX(1)).let { it * it } +
-                                (ev.getY(0) - ev.getY(1)).let { it * it }
-                        )
-                    )
-                } else if (ev.pointerCount >= 2) {
-                    timelinePinchCaptured = true
+                    beginTimelinePinch(ev)
+                } else if (ev.actionMasked == android.view.MotionEvent.ACTION_MOVE &&
+                    timelinePinchCaptured && ev.pointerCount >= 2
+                ) {
+                    updateTimelinePinch(ev)
                 }
                 val handled = super.dispatchTouchEvent(ev)
                 if (ev.actionMasked == android.view.MotionEvent.ACTION_UP ||
                     ev.actionMasked == android.view.MotionEvent.ACTION_CANCEL
-                ) timelinePinchCaptured = false
+                ) {
+                    timelinePinchCaptured = false
+                    pinchStartSpanPx = 0f
+                }
                 return handled
             }
 
             override fun onInterceptTouchEvent(ev: android.view.MotionEvent): Boolean {
-                // One finger remains with the lane/trim children; the parent owns the complete pinch.
+                // One finger remains with lane/trim children; the parent owns the complete pinch.
                 if (timelinePinchCaptured || ev.pointerCount >= 2) return true
                 return super.onInterceptTouchEvent(ev)
             }
@@ -574,54 +633,6 @@ class VideoEditorActivity : Activity() {
             isClickable = true
             contentDescription = "Zaman çizelgesi yakınlaştırma " + (timelineZoom * 100f).toInt() + "%"
         }
-        timelineScaleDetector = android.view.ScaleGestureDetector(
-            this,
-            object : android.view.ScaleGestureDetector.SimpleOnScaleGestureListener() {
-                override fun onScaleBegin(detector: android.view.ScaleGestureDetector): Boolean {
-                    if (clips.isNotEmpty()) android.util.Log.d("TimelinePinch", "begin span=" + detector.currentSpan)
-                    return clips.isNotEmpty()
-                }
-
-                override fun onScale(detector: android.view.ScaleGestureDetector): Boolean {
-                    if (clips.isEmpty()) return false
-                    val oldZoom = timelineZoom
-                    val newZoom = (oldZoom * detector.scaleFactor).coerceIn(0.5f, 8.0f)
-                    android.util.Log.d(
-                        "TimelinePinch",
-                        "onScale factor=" + detector.scaleFactor + " old=" + oldZoom +
-                            " new=" + newZoom + " span=" + detector.currentSpan +
-                            " previousSpan=" + detector.previousSpan
-                    )
-                    if (newZoom == oldZoom) return true
-                    val laneLeftPx = dp(57)
-                    val focusInLanePx = detector.focusX - laneLeftPx
-                    val viewportWidthPx = timelineLaneViewportWidthPx()
-                    val currentScrollX = timelineScrollViews.firstOrNull()?.scrollX ?: timelineHorizontalScrollX
-                    val anchorTimeMs = TimelineScaleMath.timeAtViewportX(
-                        currentScrollX, focusInLanePx, viewportWidthPx, timelinePixelsPerSecond()
-                    ).coerceIn(0L, totalOutputDurationMs())
-                    timelineZoom = newZoom
-                    timelineTracksFrame.contentDescription =
-                        "Zaman çizelgesi yakınlaştırma " + (newZoom * 100f).toInt() + "%"
-                    android.util.Log.d(
-                        "TimelinePinch",
-                        "scale factor=" + detector.scaleFactor + " zoom=" + newZoom +
-                            " focus=" + detector.focusX + "," + detector.focusY
-                    )
-                    val nextScrollX = TimelineScaleMath.scrollForAnchorTime(
-                        anchorTimeMs, focusInLanePx, viewportWidthPx, timelinePixelsPerSecond()
-                    )
-                    pendingTimelineScrollX = nextScrollX
-                    refreshTimelineTracks()
-                    timelineTracksFrame.contentDescription =
-                        "Zaman çizelgesi yakınlaştırma " + (timelineZoom * 100f).toInt() + "%"
-                    timelineScrollViews.toList().forEach { lane ->
-                        lane.post { lane.scrollTo(nextScrollX, 0) }
-                    }
-                    return true
-                }
-            }
-        )
         timelineTracks = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         timelineTracksFrame.addView(
             timelineTracks,
