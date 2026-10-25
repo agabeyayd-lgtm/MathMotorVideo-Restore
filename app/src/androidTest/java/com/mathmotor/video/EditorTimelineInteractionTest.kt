@@ -43,6 +43,7 @@ class EditorTimelineInteractionTest {
             device.wait(Until.hasObject(By.textContains("Proje")), 20_000)
         )
         assertTrue("Sample clip was not loaded into the editor", awaitClipAdded(device))
+        android.util.Log.i("TimelineInteractionTest", "stage=clip-loaded")
         device.waitForIdle()
         SystemClock.sleep(250)
 
@@ -55,6 +56,7 @@ class EditorTimelineInteractionTest {
         val centerX = laneLeft + laneWidth / 2
         val initialTime = requireProjectTime(device)
         val initialMs = projectPositionMs(initialTime)
+        android.util.Log.i("TimelineInteractionTest", "stage=initial-time value=$initialTime laneY=$laneY centerX=$centerX")
 
         // Dragging the playhead handle must scroll the timeline under the stationary line.
         val dragPx = (70f * density).toInt()
@@ -63,6 +65,7 @@ class EditorTimelineInteractionTest {
         SystemClock.sleep(180)
         val afterPlayheadDrag = requireProjectTime(device)
         val afterPlayheadMs = projectPositionMs(afterPlayheadDrag)
+        android.util.Log.i("TimelineInteractionTest", "stage=after-playhead-drag value=$afterPlayheadDrag")
         assertTrue(
             "Dragging the playhead did not change the project time: $initialTime -> $afterPlayheadDrag",
             initialMs != afterPlayheadMs
@@ -77,12 +80,14 @@ class EditorTimelineInteractionTest {
         val clipBeforeZoom = requireObject(device, By.descContains("Klip 1:"), "first video clip")
         val clipWidthBeforeZoom = clipBeforeZoom.visibleBounds.width()
         val beforePinchTime = projectPositionMs(requireProjectTime(device))
+        android.util.Log.i("TimelineInteractionTest", "stage=before-pinch time=$beforePinchTime clipWidth=$clipWidthBeforeZoom")
         laneScroll.pinchOpen(0.5f)
         device.waitForIdle()
         SystemClock.sleep(250)
         val clipAfterZoom = requireObject(device, By.descContains("Klip 1:"), "first video clip after zoom")
         val clipWidthAfterZoom = clipAfterZoom.visibleBounds.width()
         val afterPinchTime = projectPositionMs(requireProjectTime(device))
+        android.util.Log.i("TimelineInteractionTest", "stage=after-pinch time=$afterPinchTime clipWidth=$clipWidthAfterZoom")
         assertTrue(
             "Pinch zoom did not expand the clip filmstrip ($clipWidthBeforeZoom -> $clipWidthAfterZoom px)",
             clipWidthAfterZoom > clipWidthBeforeZoom
@@ -116,6 +121,7 @@ class EditorTimelineInteractionTest {
             endMs = projectPositionMs(endTime)
         }
         assertTrue("A left swipe on the clip filmstrip did not move the timeline", endMs > afterPinchTime)
+        android.util.Log.i("TimelineInteractionTest", "stage=after-end-swipe value=$endTime")
         assertTrue(
             "The timeline could not reach the final 8-second frame: $endTime ($endMs ms)",
             endMs >= 7_800L
@@ -138,6 +144,7 @@ class EditorTimelineInteractionTest {
             startTime = requireProjectTime(device)
             startMs = projectPositionMs(startTime)
         }
+        android.util.Log.i("TimelineInteractionTest", "stage=after-start-swipe value=$startTime")
         assertTrue("The timeline could not return to its first frame: $startTime ($startMs ms)", startMs <= 200L)
     }
 
