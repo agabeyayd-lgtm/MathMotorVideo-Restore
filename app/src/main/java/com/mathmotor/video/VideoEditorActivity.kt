@@ -909,11 +909,13 @@ class VideoEditorActivity : Activity() {
             addView(android.widget.RadioButton(this@VideoEditorActivity).apply { id = 3; text = "Alt"; setTextColor(Color.WHITE) })
             check(3)
             setOnCheckedChangeListener { _, checkedId ->
-                textPosition = when (checkedId) {
+                val nextPosition = when (checkedId) {
                     1 -> TextPosition.TOP
                     2 -> TextPosition.CENTER
                     else -> TextPosition.BOTTOM
                 }
+                if (!loadingTextLayerControls && textPosition != nextPosition) recordEditorEdit()
+                textPosition = nextPosition
                 if (!loadingTextLayerControls) {
                     selectedTextLayer()?.let { it.yFraction = defaultTextYFraction(textPosition) }
                     syncSelectedTextLayerFromControls()
@@ -946,8 +948,10 @@ class VideoEditorActivity : Activity() {
             check(11)
             setOnCheckedChangeListener { _, checkedId ->
                 if (loadingTextLayerControls) return@setOnCheckedChangeListener
-                textColorPreset = TextColorPreset.values().getOrNull(checkedId - 11)
+                val nextColor = TextColorPreset.values().getOrNull(checkedId - 11)
                     ?: TextColorPreset.WHITE
+                if (textColorPreset != nextColor) recordEditorEdit()
+                textColorPreset = nextColor
                 syncSelectedTextLayerFromControls()
                 updatePreviewTextOverlay()
             }
@@ -970,6 +974,7 @@ class VideoEditorActivity : Activity() {
             isChecked = true
             setOnCheckedChangeListener { _, checked ->
                 if (loadingTextLayerControls) return@setOnCheckedChangeListener
+                if (textBold != checked) recordEditorEdit()
                 textBold = checked
                 syncSelectedTextLayerFromControls()
                 updatePreviewTextOverlay()
@@ -1003,8 +1008,8 @@ class VideoEditorActivity : Activity() {
                 previewTextOverlays.forEach { it.requestLayout() }
                 refreshTextLayerList()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStartTrackingTouch(seekBar: SeekBar?) { beginEditorHistoryGesture() }
+            override fun onStopTrackingTouch(seekBar: SeekBar?) { finishEditorHistoryGesture() }
         })
         textPanel.addView(textSizeSeek, matchWrap())
         textInput.addTextChangedListener(object : android.text.TextWatcher {
@@ -1037,6 +1042,10 @@ class VideoEditorActivity : Activity() {
             }
             override fun afterTextChanged(s: android.text.Editable?) {}
         })
+        textInput.setOnFocusChangeListener { _, hasFocus ->
+            if (loadingTextLayerControls || isRestoringEditorSnapshot) return@setOnFocusChangeListener
+            if (hasFocus) beginEditorHistoryGesture() else finishEditorHistoryGesture()
+        }
         refreshTextLayerList()
 
         val audioPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -1047,6 +1056,7 @@ class VideoEditorActivity : Activity() {
         musicActions.addView(miniButton("Müzik ekle") { chooseAudio(true) },
             LinearLayout.LayoutParams(0, dp(42), 1f))
         musicActions.addView(miniButton("Müziği kaldır") {
+            if (musicUri != null || musicTitle != null) recordEditorEdit()
             musicUri = null
             musicTitle = null
             musicLabel.text = "Müzik seçilmedi."
@@ -1070,6 +1080,7 @@ class VideoEditorActivity : Activity() {
         soundActions.addView(miniButton("Efekt ekle") { chooseAudio(false) },
             LinearLayout.LayoutParams(0, dp(42), 1f))
         soundActions.addView(miniButton("Efekti kaldır") {
+            if (soundUri != null || soundTitle != null) recordEditorEdit()
             soundUri = null
             soundTitle = null
             soundDurationMs = 0L
@@ -1091,9 +1102,13 @@ class VideoEditorActivity : Activity() {
                 updateSoundControls()
                 if (!deferTimelineRefresh) refreshTimelineTracks()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) { deferTimelineRefresh = true }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                beginEditorHistoryGesture()
+                deferTimelineRefresh = true
+            }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
                 deferTimelineRefresh = false
+                finishEditorHistoryGesture()
                 refreshTimelineTracks()
             }
         })
@@ -1112,6 +1127,8 @@ class VideoEditorActivity : Activity() {
             isChecked = true
             setTextColor(Color.WHITE)
             setOnCheckedChangeListener { _, checked ->
+                if (!isRestoringEditorSnapshot && keepSourceAudioEnabled != checked) recordEditorEdit()
+                keepSourceAudioEnabled = checked
                 player?.volume = if (checked) sourceAudioVolume / 100f else 0f
             }
         }
@@ -1868,6 +1885,7 @@ class VideoEditorActivity : Activity() {
             body.setOnTouchListener { view, event ->
                 when (event.actionMasked) {
                     android.view.MotionEvent.ACTION_DOWN -> {
+                        beginEditorHistoryGesture()
                         bodyDownRawX = event.rawX
                         bodyInitialStartMs = layer.startMs
                         bodyInitialEndMs = layer.endMs
@@ -1912,11 +1930,13 @@ class VideoEditorActivity : Activity() {
                             view.performClick()
                             refreshTimelineTracks()
                         }
+                        finishEditorHistoryGesture()
                         true
                     }
                     android.view.MotionEvent.ACTION_CANCEL -> {
                         frame.translationX = 0f
                         view.parent?.requestDisallowInterceptTouchEvent(false)
+                        finishEditorHistoryGesture()
                         true
                     }
                     else -> true
@@ -1943,6 +1963,7 @@ class VideoEditorActivity : Activity() {
                 handle.setOnTouchListener { view, event ->
                     when (event.actionMasked) {
                         android.view.MotionEvent.ACTION_DOWN -> {
+                            beginEditorHistoryGesture()
                             downRawX = event.rawX
                             initialStartMs = layer.startMs
                             initialEndMs = layer.endMs
@@ -1998,12 +2019,14 @@ class VideoEditorActivity : Activity() {
                                 selectTextLayer(layer.id)
                             }
                             refreshTimelineTracks()
+                            finishEditorHistoryGesture()
                             view.performClick()
                             true
                         }
                         android.view.MotionEvent.ACTION_CANCEL -> {
                             view.translationX = 0f
                             view.parent?.requestDisallowInterceptTouchEvent(false)
+                            finishEditorHistoryGesture()
                             true
                         }
                         else -> true
@@ -2412,6 +2435,7 @@ class VideoEditorActivity : Activity() {
 
     private fun recordEditorEdit() {
         if (isRestoringEditorSnapshot) return
+        if (activeEditorGestureSnapshot != null) finishEditorHistoryGesture()
         pushEditorUndoSnapshot(captureEditorSnapshot())
     }
 
@@ -2629,6 +2653,7 @@ class VideoEditorActivity : Activity() {
             return
         }
         syncSelectedTextLayerFromControls()
+        recordEditorEdit()
         val total = totalOutputDurationMs()
         if (total > 0L && timelinePlayheadMs >= total) {
             player?.playWhenReady = false
@@ -2758,6 +2783,7 @@ class VideoEditorActivity : Activity() {
             return
         }
         syncSelectedTextLayerFromControls()
+        recordEditorEdit()
         val next = (layer.sizeSp + delta).coerceIn(12, 96)
         layer.sizeSp = next
         textSizeSp = next
@@ -2778,6 +2804,7 @@ class VideoEditorActivity : Activity() {
             status.text = "Kopyalamak için önce bir yazı katmanı seç."
             return
         }
+        recordEditorEdit()
         val copy = source.copy(id = nextTextLayerId++, text = source.text)
         textLayers.add(textLayers.indexOf(source) + 1, copy)
         selectedTextLayerId = copy.id
@@ -2795,6 +2822,7 @@ class VideoEditorActivity : Activity() {
             status.text = "Silmek için önce bir yazı katmanı seç."
             return
         }
+        recordEditorEdit()
         textLayers.removeAt(index)
         val next = textLayers.getOrNull(index.coerceAtMost(textLayers.lastIndex))
         selectedTextLayerId = next?.id
@@ -2939,6 +2967,7 @@ class VideoEditorActivity : Activity() {
             val layer = textLayers.firstOrNull { it.id == layerId } ?: return@setOnTouchListener false
             when (event.actionMasked) {
                 android.view.MotionEvent.ACTION_DOWN -> {
+                    beginEditorHistoryGesture()
                     // The parent editor ScrollView must not intercept vertical text drags.
                     view.parent?.requestDisallowInterceptTouchEvent(true)
                     if (selectedTextLayerId != layer.id) {
@@ -3033,12 +3062,14 @@ class VideoEditorActivity : Activity() {
                     refreshTextLayerList()
                     refreshTimelineTracks()
                     status.text = "Yazı konumu güncellendi. Sürükle veya iki parmağınla boyutlandır."
+                    finishEditorHistoryGesture()
                     view.performClick()
                     true
                 }
                 android.view.MotionEvent.ACTION_CANCEL -> {
                     view.parent?.requestDisallowInterceptTouchEvent(false)
                     startDistance = 0f
+                    finishEditorHistoryGesture()
                     true
                 }
                 else -> true
@@ -3051,8 +3082,8 @@ class VideoEditorActivity : Activity() {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (fromUser) onValue(progress.coerceIn(0, 100))
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStartTrackingTouch(seekBar: SeekBar?) { beginEditorHistoryGesture() }
+            override fun onStopTrackingTouch(seekBar: SeekBar?) { finishEditorHistoryGesture() }
         }
 
     private fun installTextTimeListeners() {
@@ -3069,9 +3100,13 @@ class VideoEditorActivity : Activity() {
                 textEndMs = interval.endMs
                 updateTextControls()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) { deferTimelineRefresh = true }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                beginEditorHistoryGesture()
+                deferTimelineRefresh = true
+            }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
                 deferTimelineRefresh = false
+                finishEditorHistoryGesture()
                 refreshTimelineTracks()
             }
         })
@@ -3088,9 +3123,13 @@ class VideoEditorActivity : Activity() {
                 textEndMs = interval.endMs
                 updateTextControls()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) { deferTimelineRefresh = true }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                beginEditorHistoryGesture()
+                deferTimelineRefresh = true
+            }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
                 deferTimelineRefresh = false
+                finishEditorHistoryGesture()
                 refreshTimelineTracks()
             }
         })
@@ -3493,7 +3532,8 @@ class VideoEditorActivity : Activity() {
 
         loadTextLayerIntoControls(selectedTextLayer())
         refreshTextLayerList()
-        keepSourceAudio.isChecked = json.optBoolean("keepSourceAudio", true)
+        keepSourceAudioEnabled = json.optBoolean("keepSourceAudio", true)
+        keepSourceAudio.isChecked = keepSourceAudioEnabled
         exportNameInput.setText(json.optString("exportName", "MathMotor_Edit"))
         exportResolutionShortSide = when (json.optInt("exportResolutionShortSide", 0)) {
             720 -> 720
@@ -3623,6 +3663,7 @@ class VideoEditorActivity : Activity() {
                 }.onFailure { status.text = "Proje açılamadı: ${it.message}" }
             }
             REQUEST_MUSIC -> {
+                recordEditorEdit()
                 musicUri = uri
                 musicTitle = queryDisplayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Müzik"
                 musicLabel.text = "Müzik: ${musicTitle} • video boyunca döngü"
@@ -3646,6 +3687,7 @@ class VideoEditorActivity : Activity() {
                         if (duration <= 0L) {
                             status.text = "Ses dosyasının süresi okunamadı. Başka bir ses dosyası seç."
                         } else {
+                            recordEditorEdit()
                             soundUri = uri
                             soundTitle = title
                             soundDurationMs = duration
