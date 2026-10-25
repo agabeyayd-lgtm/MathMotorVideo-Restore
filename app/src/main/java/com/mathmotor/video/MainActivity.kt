@@ -420,7 +420,7 @@ class MainActivity : Activity() {
                 setOnClickListener { openDraftEditor(draft.id) }
             }
             val mark = TextView(this).apply {
-                text = "✂"
+                text = "▣"
                 textSize = 18f
                 typeface = Typeface.DEFAULT_BOLD
                 setTextColor(accent)
