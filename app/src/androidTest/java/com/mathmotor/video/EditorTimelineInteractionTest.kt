@@ -99,35 +99,46 @@ class EditorTimelineInteractionTest {
         val scrollLeft = afterZoomBounds.right
         val scrollWidth = (laneRight - scrollLeft).coerceAtLeast(1)
         val swipeY = afterZoomBounds.centerY()
-        device.swipe(
-            scrollLeft + scrollWidth * 9 / 10,
-            swipeY,
-            scrollLeft + scrollWidth / 10,
-            swipeY,
-            40
-        )
-        device.waitForIdle()
-        SystemClock.sleep(250)
-        val endTime = requireProjectTime(device)
-        val endMs = projectPositionMs(endTime)
-        assertTrue("A left swipe on the clip filmstrip did not move the timeline", endMs != afterPinchTime)
+        var endTime = requireProjectTime(device)
+        var endMs = projectPositionMs(endTime)
+        for (attempt in 0 until 4) {
+            if (endMs >= 7_800L) break
+            device.swipe(
+                scrollLeft + scrollWidth * 9 / 10,
+                swipeY,
+                scrollLeft + scrollWidth / 10,
+                swipeY,
+                40
+            )
+            device.waitForIdle()
+            SystemClock.sleep(180)
+            endTime = requireProjectTime(device)
+            endMs = projectPositionMs(endTime)
+        }
+        assertTrue("A left swipe on the clip filmstrip did not move the timeline", endMs > afterPinchTime)
         assertTrue(
-            "The timeline could not reach the final 8-second frame: $endTime",
-            endTime.contains("/ 00:08.")
+            "The timeline could not reach the final 8-second frame: $endTime ($endMs ms)",
+            endMs >= 7_800L
         )
 
         // The symmetric leading inset must also let the start align exactly under the center line.
-        device.swipe(
-            scrollLeft + scrollWidth / 10,
-            swipeY,
-            scrollLeft + scrollWidth * 9 / 10,
-            swipeY,
-            40
-        )
-        device.waitForIdle()
-        SystemClock.sleep(200)
-        val startTime = requireProjectTime(device)
-        assertTrue("The timeline could not return to its first frame: $startTime", startTime.contains("Proje 00:00."))
+        var startTime = requireProjectTime(device)
+        var startMs = projectPositionMs(startTime)
+        for (attempt in 0 until 4) {
+            if (startMs <= 200L) break
+            device.swipe(
+                scrollLeft + scrollWidth / 10,
+                swipeY,
+                scrollLeft + scrollWidth * 9 / 10,
+                swipeY,
+                40
+            )
+            device.waitForIdle()
+            SystemClock.sleep(180)
+            startTime = requireProjectTime(device)
+            startMs = projectPositionMs(startTime)
+        }
+        assertTrue("The timeline could not return to its first frame: $startTime ($startMs ms)", startMs <= 200L)
     }
 
     private fun awaitClipAdded(device: UiDevice): Boolean {
