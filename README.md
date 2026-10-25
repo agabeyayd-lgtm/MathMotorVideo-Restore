@@ -31,7 +31,7 @@ This is the continuing handoff log. Resume from this branch and update this sect
 - [x] Created a repair branch without changing installed/release version metadata.
 - [x] Increased thumbnail density, timestamp distribution, decode/crop size and bitmap cache capacity in source.
 - [x] Added accessible thumbnail states (`yüklüyor`, `yüklendi`, `yüklenemedi`) and debug-only per-frame fingerprints so CI can distinguish real frame diversity from repeated first-frame placeholders. Source commit `5d5629c736b127bc286a8cfbdeace6ad3b1380e8`.
-- [ ] **Thumbnail diversity/loading test pending:** test commit `1d915d325d5a4e131da68bb584ca5c9c9eda4183` verifies at least five distinct requested timestamps, multiple bitmap fingerprints and three visible loaded thumbnails. Current CI run [#40181440039](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40181440039) must pass before thumbnail variety is marked verified.
+- [x] **Thumbnail frame variety/loading verified in CI:** run [#40181440039](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40181440039) passed with test commit `1d915d325d5a4e131da68bb584ca5c9c9eda4183`. The UI test requires at least five distinct requested timestamps, at least two bitmap fingerprints, and at least three visible loaded thumbnails. This verifies frame extraction/loading in the emulator; thumbnail size/density and physical-phone readability still need visual review.
 - [x] Replaced the home-screen scissors graphic with a play icon and removed redundant explanatory header copy.
 - [x] Added two-finger zoom logic in source, plus unit-testable centered-scroll/anchor mapping helpers.
 - [x] Implemented a stationary center playhead in source: every timeline lane receives symmetric half-viewport padding, scrolling maps the center position to project time, playback/seek moves the timeline under the playhead, and dragging the playhead scrolls the timeline.
@@ -65,7 +65,7 @@ This is the continuing handoff log. Resume from this branch and update this sect
 - [x] Added a consolidated CI diagnostic script to preserve Android test reports and logcat on failure.
 - [x] **Timeline-interaction revalidation passed:** [run #40177103726](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40177103726) passed unit tests, debug build, the screenshot smoke test, and the interaction test. The old cancelled run #40174657026 is superseded.
 
-- [ ] **Still not verified interactively:** trim/scroll conflict edge cases and restoring trimmed footage, thumbnail variety/loading (retest #40181440039 is pending), text/export parity after saving and reopening, complete Undo/Redo, audio behavior, multi-clip assembly/export, editable project reopen, full home-screen/keyboard responsiveness and physical-device behavior. Basic text timing/preview sizing and left/right clip trim drags are verified in runs #40180575601 and #40178530256.
+- [ ] **Still not verified interactively:** trim/scroll conflict edge cases and restoring trimmed footage, thumbnail size/density on a physical phone, text/export parity after saving and reopening, complete Undo/Redo, audio behavior, multi-clip assembly/export, editable project reopen, full home-screen/keyboard responsiveness and physical-device behavior. Basic text timing/preview sizing, left/right clip trim drags, and emulator thumbnail variety/loading are verified in runs #40180575601, #40178530256, and #40181440039.
 - [ ] Text-strip trim handles and unified Undo/Redo history still need work; known history records clip edits only. The text start/end time sliders themselves now pass an emulator interaction test.
 - [ ] Finish home-screen refinement after reviewing screenshots; scan every screen for redundant scissors icons.
 - [ ] Extend interaction tests to cover trim handles, split at the playhead, text timing/size, Undo/Redo, audio, MP4 export and save/reopen.
@@ -80,7 +80,7 @@ Fixed-playhead source change: `ab6d614c8ceff847537fce4cd77a69db50fb3bc9`. Timeli
 - Timeline interactions passed: playhead drag to 3.18 s, pinch 100% → 626% while preserving center time, end reached at 8.00 s on forward swipe 4, start returned to 0.00 s on reverse swipe 6.
 - Clip trim passed: right edge reduced duration 8,020 ms → 7,110 ms; left edge then reduced 7,110 ms → 6,210 ms.
 - Text interaction passed on the compact emulator: `TIMING TEST` appeared in preview; increasing text size to 28 sp enlarged its measured bounds (height 73 → 83 px); start-time label changed 00:00.00 → 00:01.30; end-time label changed 00:08.02 → 00:06.60. To make controls reachable on small screens, the source hides the secondary clip carousel and temporarily shrinks the preview while a non-clip tool panel is active (source commit `11b17096313a3c6f2145dd21b98c8033352fcf1f`).
-- Still open: prove trimmed footage can be restored by dragging outward, avoid trim/scroll gesture conflicts, validate thumbnail variety/loading, text-strip trimming and exported text parity, unified Undo/Redo, audio/music sync, multi-clip export, project save/reopen, full home/keyboard responsiveness, and final screenshot/physical-device review.
+- Still open: prove trimmed footage can be restored by dragging outward, avoid trim/scroll gesture conflicts, review thumbnail size/density on a physical phone, validate text-strip trimming and exported text parity, unified Undo/Redo, audio/music sync, multi-clip export, project save/reopen, full home/keyboard responsiveness, and final screenshot/physical-device review.
 - [Run artifacts and screenshots](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40180575601#artifacts).
 - This is a debug validation run, not a signed release APK. Installed baseline remains versionCode 394 / build 61 (`app-v8.3-61`). Version 395 remains blocked until the full release checklist passes and the user explicitly authorizes release.
 
@@ -107,8 +107,8 @@ Fixed-playhead source change: `ab6d614c8ceff847537fce4cd77a69db50fb3bc9`. Timeli
 
 ### Thumbnails
 
-- [ ] Increase thumbnail height/visibility and use enough thumbnails to visually cover the clip; for a 10-second clip, aim for a dense, evenly spaced filmstrip comparable to common mobile editors, not a fixed arbitrary count.
-- [ ] Ensure each thumbnail is extracted from its own timestamp so consecutive thumbnails do not all show the same frame.
+- [ ] Review and tune thumbnail height/visibility and spacing on a physical phone; the CI verifies distinct frame extraction but does not certify that the filmstrip looks dense and readable on the user's device.
+- [x] Emulator test confirms thumbnail frames are requested from distinct timestamps and at least two different frame fingerprints load (run #40181440039). Physical-device visual density/readability is still pending.
 - [ ] Reduce black placeholders and loading delay; show a useful loading state and replace placeholders promptly as frames become available.
 - [ ] Cache/reuse extracted frames and avoid blocking timeline scrolling or editing while thumbnails are prepared.
 
