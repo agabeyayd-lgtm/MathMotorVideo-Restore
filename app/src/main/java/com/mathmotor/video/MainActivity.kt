@@ -246,12 +246,8 @@ class MainActivity : Activity() {
         root.addView(topBar)
         root.addView(gap(16))
 
-        root.addView(label("VİDEO STÜDYOSU", 10f, accent, true))
-        root.addView(label("Videonu hazırla.", 26f, white, true))
-        root.addView(label("Kes, birleştir, yazı ve ses ekle.", 13f, muted, false).apply {
-            setLineSpacing(dp(2).toFloat(), 1f)
-        })
-        root.addView(gap(13))
+        // Keep the brand row compact; the primary action is immediately available below.
+        root.addView(gap(12))
 
         // One clear primary action, with the empty-project option kept secondary.
         val startCard = LinearLayout(this).apply {
@@ -264,7 +260,7 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
         }
         val cardIcon = TextView(this).apply {
-            text = "✂"
+            text = "▣"
             textSize = 22f
             setTextColor(accent)
             gravity = Gravity.CENTER
