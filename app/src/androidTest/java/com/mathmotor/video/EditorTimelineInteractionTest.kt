@@ -853,8 +853,8 @@ class EditorTimelineInteractionTest {
             device.wait(Until.hasObject(By.textContains("Taslak açıldı")), 20_000)
         )
         assertTrue(
-            "Seeded clip trim duration was not present before Save As",
-            device.wait(Until.hasObject(By.textContains("00:07.02")), 8_000)
+            "Seeded combined trimmed duration was not present before Save As",
+            device.wait(Until.hasObject(By.textContains("00:09.52")), 8_000)
         )
 
         val exportTab = device.findObject(By.text("Dışa aktar ›"))
@@ -942,6 +942,7 @@ class EditorTimelineInteractionTest {
             "Could not scroll to the Open Project action in the fresh editor",
             freshPanelScroller.scrollIntoView(UiSelector().text("Kayıtlı projeyi aç"))
         )
+        device.executeShellCommand("logcat -c")
         requireObject(device, By.text("Kayıtlı projeyi aç"), "open saved JSON button").click()
 
         // DocumentsUI can report the file from the background list while its navigation
@@ -1108,8 +1109,46 @@ class EditorTimelineInteractionTest {
             )
         }
         assertTrue(
-            "Manual JSON did not restore the trimmed clip duration",
-            device.wait(Until.hasObject(By.textContains("00:07.02")), 8_000)
+            "Manual JSON did not restore the combined trimmed duration for both clips",
+            device.wait(Until.hasObject(By.textContains("00:09.52")), 8_000)
+        )
+        val restoredPlayheadMs = projectPositionMs(requireProjectTime(device))
+        assertTrue(
+            "Manual JSON did not restore the 7.70-second playhead: $restoredPlayheadMs",
+            abs(restoredPlayheadMs - 7700L) <= 250L
+        )
+        val restoredZoomDescription = requireObject(
+            device,
+            By.descContains("Zaman çizelgesi yakınlaştırma"),
+            "restored timeline zoom indicator"
+        ).contentDescription.toString()
+        assertTrue(
+            "Manual JSON did not restore 200% timeline zoom: $restoredZoomDescription",
+            zoomPercent(restoredZoomDescription) == 200
+        )
+        val restoreLog = device.executeShellCommand("logcat -d -s ProjectPersistenceTest:I")
+        assertTrue(
+            "Manual JSON did not preserve clip order and the two trim ranges: $restoreLog",
+            restoreLog.contains("clips=FIRST_ORDERED_CLIP:500-7520,SECOND_ORDERED_CLIP:200-2700")
+        )
+        assertTrue(
+            "Manual JSON did not preserve the playhead and zoom: $restoreLog",
+            restoreLog.contains("playheadMs=7700 zoomPercent=200")
+        )
+        val restoredScrollMatch = Regex("scrollMs=(\\\\d+)").find(restoreLog)
+            ?: throw AssertionError("Manual JSON restore did not report the saved timeline scroll: $restoreLog")
+        val restoredScrollMs = restoredScrollMatch.groupValues[1].toLong()
+        assertTrue(
+            "Manual JSON did not preserve the nonzero 1.4-second timeline scroll: $restoredScrollMs ms; $restoreLog",
+            restoredScrollMs in 1_000L..1_800L
+        )
+        assertTrue(
+            "Manual JSON did not preserve text timing, position, size, colour, bold state, and placement: $restoreLog",
+            restoreLog.contains("textLayers=7000-9000:TOP:32:CYAN:false:0.23:0.16")
+        )
+        assertTrue(
+            "Manual JSON did not restore the distinct music/effect source URIs and effect start: $restoreLog",
+            restoreLog.contains("soundStartMs=750 musicFixtureMatches=true soundFixtureMatches=true")
         )
         assertTrue(
             "Manual JSON did not restore the preview text",
@@ -1130,6 +1169,34 @@ class EditorTimelineInteractionTest {
         )
         val textPanelScroller = UiScrollable(UiSelector().className("android.widget.ScrollView"))
             .setAsVerticalList()
+        assertTrue(
+            "Manual JSON did not restore the text start time",
+            textPanelScroller.scrollIntoView(UiSelector().text("Yazı başlangıcı: 00:07.00"))
+        )
+        assertTrue(
+            "Manual JSON did not restore the text end time",
+            device.wait(Until.hasObject(By.text("Yazı bitişi: 00:09.00")), 5_000)
+        )
+        assertTrue(
+            "Could not scroll to the saved top-position control",
+            textPanelScroller.scrollIntoView(UiSelector().text("Üst"))
+        )
+        assertTrue(
+            "Manual JSON did not restore the text layer’s top position",
+            requireObject(device, By.text("Üst"), "top text-position radio").isChecked
+        )
+        assertTrue(
+            "Manual JSON did not restore the cyan text colour",
+            requireObject(device, By.text("Camgöbeği"), "cyan text-colour radio").isChecked
+        )
+        assertTrue(
+            "Could not scroll to the bold-text control",
+            textPanelScroller.scrollIntoView(UiSelector().text("Kalın yazı"))
+        )
+        assertTrue(
+            "Manual JSON did not restore the text layer’s non-bold style",
+            !requireObject(device, By.text("Kalın yazı"), "bold text checkbox").isChecked
+        )
         assertTrue(
             "Could not scroll to text size after manual JSON restore",
             textPanelScroller.scrollIntoView(UiSelector().textContains("Yazı boyutu:"))
@@ -1166,7 +1233,9 @@ class EditorTimelineInteractionTest {
         )
         android.util.Log.i(
             "ManualJsonRoundTripTest",
-            "stage=verified filename=$fileName trimMs=7020 text=MANUAL_JSON_TEXT sizeSp=32 " +
+            "stage=verified filename=$fileName clips=FIRST_ORDERED_CLIP:7020,SECOND_ORDERED_CLIP:2500 " +
+                "playheadMs=$restoredPlayheadMs zoom=200 scrollMs=$restoredScrollMs " +
+                "text=MANUAL_JSON_TEXT interval=7000-9000 position=TOP sizeSp=32 color=CYAN bold=false " +
                 "music=ROUND_TRIP_MUSIC/37 effect=ROUND_TRIP_EFFECT/66 sourceAudio=72"
         )
     }
