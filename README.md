@@ -30,6 +30,8 @@ This is the continuing handoff log. Resume from this branch and update this sect
 - Release gate: **do not create, sign, publish or offer version 395 until all required fixes pass and the user explicitly authorizes release.**
 - [x] Created a repair branch without changing installed/release version metadata.
 - [x] Increased thumbnail density, timestamp distribution, decode/crop size and bitmap cache capacity in source.
+- [x] Added accessible thumbnail states (`yüklüyor`, `yüklendi`, `yüklenemedi`) and debug-only per-frame fingerprints so CI can distinguish real frame diversity from repeated first-frame placeholders. Source commit `5d5629c736b127bc286a8cfbdeace6ad3b1380e8`.
+- [ ] **Thumbnail diversity/loading test pending:** test commit `1d915d325d5a4e131da68bb584ca5c9c9eda4183` verifies at least five distinct requested timestamps, multiple bitmap fingerprints and three visible loaded thumbnails. Current CI run [#40181440039](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40181440039) must pass before thumbnail variety is marked verified.
 - [x] Replaced the home-screen scissors graphic with a play icon and removed redundant explanatory header copy.
 - [x] Added two-finger zoom logic in source, plus unit-testable centered-scroll/anchor mapping helpers.
 - [x] Implemented a stationary center playhead in source: every timeline lane receives symmetric half-viewport padding, scrolling maps the center position to project time, playback/seek moves the timeline under the playhead, and dragging the playhead scrolls the timeline.
@@ -63,7 +65,7 @@ This is the continuing handoff log. Resume from this branch and update this sect
 - [x] Added a consolidated CI diagnostic script to preserve Android test reports and logcat on failure.
 - [x] **Timeline-interaction revalidation passed:** [run #40177103726](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40177103726) passed unit tests, debug build, the screenshot smoke test, and the interaction test. The old cancelled run #40174657026 is superseded.
 
-- [ ] **Still not verified interactively:** trim/scroll conflict edge cases and restoring trimmed footage, thumbnail variety/loading, text/export parity after saving and reopening, complete Undo/Redo, audio behavior, multi-clip assembly/export, editable project reopen, full home-screen/keyboard responsiveness and physical-device behavior. Basic text timing/preview sizing and left/right clip trim drags are verified in runs #40180575601 and #40178530256.
+- [ ] **Still not verified interactively:** trim/scroll conflict edge cases and restoring trimmed footage, thumbnail variety/loading (retest #40181440039 is pending), text/export parity after saving and reopening, complete Undo/Redo, audio behavior, multi-clip assembly/export, editable project reopen, full home-screen/keyboard responsiveness and physical-device behavior. Basic text timing/preview sizing and left/right clip trim drags are verified in runs #40180575601 and #40178530256.
 - [ ] Text-strip trim handles and unified Undo/Redo history still need work; known history records clip edits only. The text start/end time sliders themselves now pass an emulator interaction test.
 - [ ] Finish home-screen refinement after reviewing screenshots; scan every screen for redundant scissors icons.
 - [ ] Extend interaction tests to cover trim handles, split at the playhead, text timing/size, Undo/Redo, audio, MP4 export and save/reopen.
