@@ -3703,6 +3703,8 @@ class VideoEditorActivity : Activity() {
             var filmstripMoved = false
             var filmstripLongPressed = false
             var filmstripDownX = 0f
+            var filmstripDownRawX = 0f
+            var filmstripDownScrollX = 0
             val filmstripLongPress = Runnable {
                 if (filmstripTouchActive && !filmstripMoved) {
                     filmstripLongPressed = performLongClick()
@@ -3718,6 +3720,9 @@ class VideoEditorActivity : Activity() {
                         filmstripMoved = false
                         filmstripLongPressed = false
                         filmstripDownX = event.x
+                        filmstripDownRawX = event.rawX
+                        filmstripDownScrollX = timelineScrollViews.firstOrNull()?.scrollX
+                            ?: timelineHorizontalScrollX
                         player?.playWhenReady = false
                         // Do not disallow parent interception here. Once a one-finger horizontal
                         // drag crosses touch slop, the parent lane should scroll the timeline.
@@ -3728,16 +3733,16 @@ class VideoEditorActivity : Activity() {
                         true
                     }
                     android.view.MotionEvent.ACTION_MOVE -> {
-                        if (kotlin.math.abs(event.x - filmstripDownX) > android.view.ViewConfiguration.get(this@VideoEditorActivity).scaledTouchSlop) {
+                        val movedPx = event.rawX - filmstripDownRawX
+                        if (kotlin.math.abs(movedPx) > android.view.ViewConfiguration.get(this@VideoEditorActivity).scaledTouchSlop) {
                             filmstripMoved = true
                             timelineHandler.removeCallbacks(filmstripLongPress)
                             if (!filmstripLongPressed) {
-                                val safeWidth = view.width.coerceAtLeast(1)
-                                val fraction = (event.x / safeWidth.toFloat()).coerceIn(0f, 1f)
-                                val offsetBeforeClip = clips.take(index).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
-                                val clipDuration = (clip.endMs - clip.startMs).coerceAtLeast(0L)
-                                val targetMs = offsetBeforeClip + (clipDuration * fraction).toLong()
-                                seekTimelinePreview(targetMs.coerceIn(0L, totalOutputDurationMs()))
+                                // A drag on the filmstrip is a timeline-scroll gesture, not a
+                                // second independent seek based on the child's local x coordinate.
+                                // If the HorizontalScrollView has not intercepted yet, this is
+                                // the fallback that still moves every lane under the fixed playhead.
+                                scrollTimelineToOffset(filmstripDownScrollX - movedPx.toInt())
                             }
                         }
                         true
@@ -3746,14 +3751,16 @@ class VideoEditorActivity : Activity() {
                         timelineHandler.removeCallbacks(filmstripLongPress)
                         filmstripTouchActive = false
                         view.parent?.requestDisallowInterceptTouchEvent(false)
-                        if (!filmstripLongPressed) {
+                        // A tap selects/seeks; a horizontal drag scrolls. Never seek from the
+                        // release coordinate after a drag, because that snaps back to local clip time.
+                        if (!filmstripLongPressed && !filmstripMoved) {
                             val safeWidth = view.width.coerceAtLeast(1)
                             val fraction = (event.x / safeWidth.toFloat()).coerceIn(0f, 1f)
                             val offsetBeforeClip = clips.take(index).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
                             val clipDuration = (clip.endMs - clip.startMs).coerceAtLeast(0L)
                             val targetMs = (offsetBeforeClip + (clipDuration * fraction).toLong())
                                 .coerceIn(0L, totalOutputDurationMs().coerceAtLeast(1L) - 1L)
-                            if (!filmstripMoved) selectTimelineClip(index)
+                            selectTimelineClip(index)
                             seekTimelinePreview(targetMs)
                         }
                         true
