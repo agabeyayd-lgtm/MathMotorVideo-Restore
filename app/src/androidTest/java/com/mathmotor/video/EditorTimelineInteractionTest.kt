@@ -614,9 +614,21 @@ class EditorTimelineInteractionTest {
             "Saved draft did not restore the text overlay in preview",
             device.wait(Until.hasObject(By.clazz("android.widget.TextView").text("ROUND TRIP TEXT")), 10_000)
         )
-        // The text controls continue below the compact editor viewport. Scroll the
-        // actual vertical panel before asserting the restored size; otherwise UiAutomator
-        // may not expose the label in its accessibility tree even when the model is restored.
+        // Check the editable field while it is still near the top of the panel.
+        // Scrolling to the size controls first would move this EditText outside the
+        // visible viewport, where UiAutomator intentionally cannot find it.
+        val restoredInput = requireObject(
+            device,
+            By.desc("Metin katmanı metin girişi"),
+            "restored text input before scrolling the panel"
+        )
+        assertTrue(
+            "Saved text content was not restored to the editable control",
+            restoredInput.text == "ROUND TRIP TEXT"
+        )
+
+        // The size controls continue below the compact editor viewport. Scroll the
+        // actual vertical panel before looking for the size label in the accessibility tree.
         val textControlsScroll = UiScrollable(
             UiSelector().className("android.widget.ScrollView")
         ).setAsVerticalList()
@@ -632,15 +644,6 @@ class EditorTimelineInteractionTest {
         assertTrue(
             "Saved text size was not restored (expected 32 sp): $restoredSize",
             Regex("\\b32\\b").containsMatchIn(restoredSize)
-        )
-        val restoredInput = requireObject(
-            device,
-            By.desc("Metin katmanı metin girişi"),
-            "restored text input"
-        )
-        assertTrue(
-            "Saved text content was not restored to the editable control",
-            restoredInput.text == "ROUND TRIP TEXT"
         )
         android.util.Log.i(
             "ProjectRoundTripTest",
