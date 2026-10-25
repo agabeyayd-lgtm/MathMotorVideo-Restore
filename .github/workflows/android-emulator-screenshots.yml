@@ -9,6 +9,7 @@ on:
     paths:
       - "app/build.gradle.kts"
       - "app/src/main/**"
+      - "app/src/test/**"
       - ".github/workflows/android-emulator-screenshots.yml"
       - ".github/scripts/capture-emulator-screenshots.sh"
 
