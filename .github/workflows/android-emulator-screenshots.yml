@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - fix/editor-395-gate
+      - work/multiclip-export-verification
     paths:
       - "app/build.gradle.kts"
       - "app/src/main/**"
