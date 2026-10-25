@@ -1927,7 +1927,7 @@ class VideoEditorActivity : Activity() {
             )
             addSpacer(effectTrack, endMs, totalMs)
         } else {
-            addBlock(effectTrack, "+ Ses efekti ekle", totalMs.coerceAtLeast(5000L), Color.rgb(96, 68, 41),
+            addBlock(effectTrack, "+ Ses efekti ekle", emptyLanePlaceholderDurationMs, Color.rgb(96, 68, 41),
                 onClick = { chooseAudio(false) }, minimumWidthDp = 115)
         }
         // A MATCH_PARENT playhead inside a WRAP_CONTENT FrameLayout would let
