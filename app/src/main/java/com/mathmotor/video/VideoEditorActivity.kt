@@ -235,6 +235,7 @@ class VideoEditorActivity : Activity() {
     private var keyboardLayoutActive = false
     private var maxEditorViewportHeightPx = 0
     private var applyingResponsiveLayout = false
+    private var applyingProjectState = false
 
     companion object {
         private const val REQUEST_MAIN_VIDEO = 5101
@@ -918,6 +919,13 @@ class VideoEditorActivity : Activity() {
             isChecked = true
             setTextColor(Color.WHITE)
             setOnCheckedChangeListener { _, checked ->
+                if (!applyingProjectState) {
+                    commitPendingTextInputHistory()
+                    val previousState = runCatching {
+                        JSONObject(createProjectJson().toString()).put("keepSourceAudio", !checked)
+                    }.getOrNull()
+                    if (previousState != null) pushClipUndoSnapshot(ClipEditSnapshot(previousState.toString()))
+                }
                 player?.volume = if (checked) sourceAudioVolume / 100f else 0f
             }
         }
@@ -2667,9 +2675,13 @@ class VideoEditorActivity : Activity() {
                 textEndMs = interval.endMs
                 updateTextControls()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) { deferTimelineRefresh = true }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                deferTimelineRefresh = true
+                activeTrimHistorySnapshot = captureClipEditSnapshot()
+            }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
                 deferTimelineRefresh = false
+                finishTrimHistoryGesture()
                 refreshTimelineTracks()
             }
         })
@@ -2686,9 +2698,13 @@ class VideoEditorActivity : Activity() {
                 textEndMs = interval.endMs
                 updateTextControls()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) { deferTimelineRefresh = true }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                deferTimelineRefresh = true
+                activeTrimHistorySnapshot = captureClipEditSnapshot()
+            }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
                 deferTimelineRefresh = false
+                finishTrimHistoryGesture()
                 refreshTimelineTracks()
             }
         })
@@ -3093,7 +3109,12 @@ class VideoEditorActivity : Activity() {
 
         loadTextLayerIntoControls(selectedTextLayer())
         refreshTextLayerList()
-        keepSourceAudio.isChecked = json.optBoolean("keepSourceAudio", true)
+        applyingProjectState = true
+        try {
+            keepSourceAudio.isChecked = json.optBoolean("keepSourceAudio", true)
+        } finally {
+            applyingProjectState = false
+        }
         exportNameInput.setText(json.optString("exportName", "MathMotor_Edit"))
         exportResolutionShortSide = when (json.optInt("exportResolutionShortSide", 0)) {
             720 -> 720
@@ -3226,6 +3247,7 @@ class VideoEditorActivity : Activity() {
                 }.onFailure { status.text = "Proje açılamadı: ${it.message}" }
             }
             REQUEST_MUSIC -> {
+                recordClipEdit()
                 musicUri = uri
                 musicTitle = queryDisplayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Müzik"
                 musicLabel.text = "Müzik: ${musicTitle} • video boyunca döngü"
@@ -3249,6 +3271,7 @@ class VideoEditorActivity : Activity() {
                         if (duration <= 0L) {
                             status.text = "Ses dosyasının süresi okunamadı. Başka bir ses dosyası seç."
                         } else {
+                            recordClipEdit()
                             soundUri = uri
                             soundTitle = title
                             soundDurationMs = duration
