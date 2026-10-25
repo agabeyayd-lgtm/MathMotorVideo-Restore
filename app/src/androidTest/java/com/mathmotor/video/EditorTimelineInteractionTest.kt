@@ -572,6 +572,11 @@ class EditorTimelineInteractionTest {
             ?: throw AssertionError("Could not find Klip tab")
         clipTab.click()
         device.waitForIdle()
+        assertTrue(
+            "Could not scroll the clip panel to the unified Undo button",
+            panelScroll.scrollIntoView(UiSelector().text("↶ Geri al"))
+        )
+        device.waitForIdle()
         val undo = requireObject(device, By.text("↶ Geri al"), "global Undo button")
         val redo = requireObject(device, By.text("↷ Yinele"), "global Redo button")
 
