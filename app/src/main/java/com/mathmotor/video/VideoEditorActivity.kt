@@ -4185,9 +4185,12 @@ class VideoEditorActivity : Activity() {
             retriever.setDataSource(this, uri)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                 runCatching {
+                    // Use the nearest decoded frame, not the nearest sync frame. Long-GOP
+                    // phone videos may have very few sync frames, so CLOSEST_SYNC can make
+                    // every requested filmstrip timestamp display the same image.
                     retriever.getScaledFrameAtTime(
                         frameTimeUs,
-                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                        MediaMetadataRetriever.OPTION_CLOSEST,
                         144,
                         81
                     )
