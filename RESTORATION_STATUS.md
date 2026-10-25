@@ -136,3 +136,12 @@ This is a reconstruction from recoverable project files, not an exact recovery o
 - Retest #149 is running: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40198460301.
 - Keep multi-clip export unchecked until the test proves two clips import, one MP4 is exported at approximately 11 seconds, the 9.5-second frame belongs to the green second clip, and both source hashes remain unchanged.
 - Version 395 remains blocked; no version metadata change or release until all release checks pass and the user authorizes publication.
+
+
+## Multi-clip export test diagnosis — 2026-10-25
+
+- Run #149 on the test branch was blocked before instrumentation by a persistent Pixel Launcher/system ANR dialog after three recovery attempts. This is emulator infrastructure noise, not a verdict on the scroll fix.
+- Run #150 reached the MP4 export button and the app logged `MULTICLIP_EXPORT_SAVED` with a new MediaStore video URI. The test nevertheless timed out at its success-poll loop because it queried `logcat -d -s MultiClipExport:I MultiClipExport:E`; repeating the same tag with different priority filters caused the INFO-level success marker to be missed.
+- Corrected the poll filter to `logcat -d -s MultiClipExport:I` in commit a4c1ef9cc411242b54906fadcd67b9f515fa2bf2. This includes the INFO success marker and higher priorities. Retest #151: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40199349316.
+- Important: the app did save an MP4 in run #150, but the test exited before checking combined duration, the 9.5-second green second-clip frame, and unchanged source sizes/hashes. Those checks remain unverified; do not mark multi-clip export complete yet.
+- Version 395 remains blocked; do not change version metadata or publish an APK until the whole release gate passes and the user explicitly authorizes release.
