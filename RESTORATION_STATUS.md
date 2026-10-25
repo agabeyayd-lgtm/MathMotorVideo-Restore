@@ -108,3 +108,13 @@ This is a reconstruction from recoverable project files, not an exact recovery o
 - [ ] Two-source-video import and one-file export remain not verified.
 - [ ] Saved-project reopen, text/music/sound export parity, undo/redo, physical-device review, signed release/update remain open.
 - **Version 395 is still blocked. No version bump, signing, publication or update offer until all remaining checks pass and the user explicitly authorizes release.**
+
+
+## Latest CI diagnosis — 2026-10-25, multi-clip run #144
+
+- [x] Unit tests and debug APK assembly passed in workflow [#40196560235](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40196560235).
+- [!] The new `twoClipsExportToOneMp4InOrder` instrumentation test failed **before export** because the `video_uris` command-line extra contained literal double quotes at the beginning/end of the file URIs. Logs show `MediaMetadataRetriever` could not open either fixture and `EDITOR_SMOKE_MULTI_IMPORT_EMPTY requested=2` was emitted. The duration, second-clip frame and source-integrity checks did not run; do not classify this as a verified Transformer/export failure.
+- [x] Fixed the instrumentation invocation by shell-grouping the pipe-delimited `video_uris` value with single quotes. Commit: [`112b9ff46a3858563c492f0025581bba3fa47131`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/112b9ff46a3858563c492f0025581bba3fa47131).
+- [ ] Retest the fixed invocation. Require two imported clips with `count=2 skipped=0`, one MP4 with total duration about 11 s, a green decoded frame at 9.5 s proving the second clip is present, and unchanged source file sizes and SHA-256 hashes.
+- Multi-clip work remains on `work/multiclip-export-verification`; it is not yet integrated into `fix/editor-395-gate`. Previously verified keyboard field access and trim restoration in run #141 remain verified.
+- **Version 395 remains blocked.** Do not change version metadata or publish/offer an APK until all release blockers pass and the user explicitly authorizes release.
