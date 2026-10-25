@@ -604,7 +604,7 @@ class EditorTimelineInteractionTest {
         )
         assertTrue(
             "Saved clip trim bounds were not restored (expected 7.02 s)",
-            device.wait(Until.hasObject(By.textContains("Kesit 00:07.02")), 8_000)
+            device.wait(Until.hasObject(By.textContains("Klip 00:01.00 / 00:07.02")), 8_000)
         )
 
         val textTab = device.findObject(By.clazz("android.widget.Button").textContains("Metin"))
