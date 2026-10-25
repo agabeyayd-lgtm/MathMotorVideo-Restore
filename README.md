@@ -36,9 +36,9 @@ Useful latest evidence:
 
 Work top to bottom. Mark an item complete only when there is test or inspection evidence. Do not go back to the completed list above unless a related change breaks it.
 
-### 1. Manual project Save As → reopen
+### 1. Broader manual-project persistence (basic Save As → reopen is green)
 
-Test fixture CI diagnosis: earlier runs #167/#168 failed because the runner's apt mirror timed out and the downloaded FFmpeg archive was invalid. Commit [`9c3c1f2`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/9c3c1f2228ee04c5e7d68fce96dfe9606c1e19b9) makes CI decode checked-in MP4 fixtures offline. Run #171 found that the app still requested `OPTION_CLOSEST_SYNC` for scaled thumbnails, reusing keyframes. Commit [`52755a6`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/52755a6889f44e2c6936cf34dd0102743c0b875e) switched to `OPTION_CLOSEST`; [run #172 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40221395375) confirmed the fix with all 8/8 Android instrumentation tests passing. Full project-state coverage is separate from the basic manual JSON test.
+Basic end-to-end Save As → close editor → Open Document passed in [run #172 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40221395375), together with the thumbnail decoder fix. Earlier picker/fixture problems are resolved: CI now uses checked-in offline MP4 fixtures, and DocumentsUI navigation/selection reaches the saved JSON. Remaining work here is broader assertions for clip order, trim bounds, playhead/zoom, text timing/position/style, and audio URI/levels; do not repeat the basic picker fixes unless a related regression appears.
 - [ ] Confirm manual project-file restoration retains clip order and trim bounds, playhead/zoom, text timing/position/style, music/effect URI and volume levels.
 
 ### 2. Unified editor Undo / Redo
