@@ -1,5 +1,16 @@
 # MathMotor Video
 
+## Live handoff checkpoint — 2026-10-25
+
+This checkpoint supersedes older statements below that still describe run #139 as pending. Continue from the existing repair work; do not restart completed tasks.
+
+- Active repair line: `fix/editor-395-gate`. User-confirmed installed baseline remains versionCode 394 / build 61 (`app-v8.3-61`). Version 395 is still blocked.
+- Latest full-suite run checked: [#40194075276](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40194075276) failed at the emulator instrumentation assertion **“Text editor input did not remain accessible after keyboard resize.”** Unit tests, debug APK build, and fixture generation passed. Keyboard behavior is NOT verified fixed; continue from this failure.
+- Multi-clip test work exists separately on branch `work/multiclip-export-verification`, commit [`d030c3788a649cc1ca67f6a9f893234d2206ec0e`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/d030c3788a649cc1ca67f6a9f893234d2206ec0e). It adds a two-clip MP4 export UI test, ordered-frame check, combined-duration check, and source-file integrity checks. **No CI run was created for that branch**, because the workflow's push filter currently includes only `main` and `fix/editor-395-gate`. Do not mark multi-clip export verified until the test actually runs and passes.
+- Next steps: (1) fix and rerun the compact-keyboard text-input UI failure; (2) bring the multi-clip verification change into a workflow-triggering repair branch once safe; (3) execute the real two-clip export test and fix any failures; (4) keep this README and `RESTORATION_STATUS.md` updated with evidence and exact run/commit IDs.
+- No signed release APK was produced by run #40194075276. Do not change version metadata, publish, or offer version 395 until release-gate tests pass and the user explicitly authorizes release.
+
+
 MathMotor Video is a local-first Android video editor with a CapCut-inspired workflow. Normal editing runs on-device; AI generation, AI scoring and paid cloud APIs are outside the current product scope.
 
 ## Editing flow
