@@ -818,7 +818,8 @@ class EditorTimelineInteractionTest {
             .put("selectedClipIndex", 1)
             .put("timelinePlayheadMs", 7700L)
             .put("timelineZoom", 2.0)
-            .put("timelineHorizontalScrollMs", 1400L)
+            // For the fixed-center playhead, saved horizontal scroll and playhead describe the same project time.
+            .put("timelineHorizontalScrollMs", 7700L)
             .put("musicUri", fixtureUri)
             .put("musicTitle", "ROUND_TRIP_MUSIC")
             .put("soundUri", secondFixtureUri)
@@ -1126,7 +1127,10 @@ class EditorTimelineInteractionTest {
             "Manual JSON did not restore 200% timeline zoom: $restoredZoomDescription",
             zoomPercent(restoredZoomDescription) == 200
         )
-        val restoreLog = device.executeShellCommand("logcat -d -s ProjectPersistenceTest:I")
+        val restoreLogOutput = device.executeShellCommand("logcat -d -s ProjectPersistenceTest:I")
+        val restoreLog = restoreLogOutput.lineSequence()
+            .lastOrNull { it.contains("PROJECT_JSON_RESTORED") }
+            ?: throw AssertionError("Manual JSON open did not emit a project restoration marker: $restoreLogOutput")
         assertTrue(
             "Manual JSON did not preserve clip order and the two trim ranges: $restoreLog",
             restoreLog.contains("clips=FIRST_ORDERED_CLIP:500-7520,SECOND_ORDERED_CLIP:200-2700")
@@ -1139,8 +1143,8 @@ class EditorTimelineInteractionTest {
             ?: throw AssertionError("Manual JSON restore did not report the saved timeline scroll: $restoreLog")
         val restoredScrollMs = restoredScrollMatch.groupValues[1].toLong()
         assertTrue(
-            "Manual JSON did not preserve the nonzero 1.4-second timeline scroll: $restoredScrollMs ms; $restoreLog",
-            restoredScrollMs in 1_000L..1_800L
+            "Manual JSON did not preserve the 7.7-second playhead-aligned timeline scroll: $restoredScrollMs ms; $restoreLog",
+            restoredScrollMs in 7_000L..8_100L
         )
         assertTrue(
             "Manual JSON did not preserve text timing, position, size, colour, bold state, and placement: $restoreLog",
