@@ -1,20 +1,13 @@
-# MathMotor Video
-
 ## Live handoff checkpoint — 2026-10-25
 
-This checkpoint supersedes older statements below that still describe run #139 as pending. Continue from the existing repair work; do not restart completed tasks.
+This checkpoint supersedes older statements below that still describe run #152 as pending. Continue from the existing repair work; do not restart completed tasks.
 
 - Active repair line: `fix/editor-395-gate`. User-confirmed installed baseline remains versionCode 394 / build 61 (`app-v8.3-61`). Version 395 is still blocked.
-- Latest full-suite run checked: [#40194075276](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40194075276) failed at the emulator instrumentation assertion **“Text editor input did not remain accessible after keyboard resize.”** Unit tests, debug APK build, and fixture generation passed. Keyboard behavior is NOT verified fixed; continue from this failure.
-- Multi-clip test work exists on branch `work/multiclip-export-verification`, source/test commit [`d030c3788a649cc1ca67f6a9f893234d2206ec0e`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/d030c3788a649cc1ca67f6a9f893234d2206ec0e). It adds a two-clip MP4 export UI test, ordered-frame check, combined-duration check, and source-file integrity checks. The branch was initially excluded from push-triggered CI; I added it to the workflow branch filter in commit [`11ce461b8c533e82772e160aad27cce8ae847477`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/11ce461b8c533e82772e160aad27cce8ae847477). Confirm the actual Actions run and test result before marking multi-clip export verified.
-- Latest multi-clip diagnosis: run [#40196560235](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40196560235) failed before export because the shell launch argument retained literal double quotes around the two file URIs; `MediaMetadataRetriever` could not open either input. This is a test-invocation failure, not evidence that the MP4 export engine failed.
-- The first single-quote workaround in commits [`139fa16382b419eeacd486d2b1060ea40c20c9af`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/139fa16382b419eeacd486d2b1060ea40c20c9af) and [`112b9ff46a3858563c492f0025581bba3fa47131`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/112b9ff46a3858563c492f0025581bba3fa47131) was disproven: run #145 showed the single quotes also remained in the URI values.
-- More robust correction: pass the two test URIs as separate unquoted extras (`video_uri_1`, `video_uri_2`) and reconstruct the clip list in the debug-only test bridge. Active branch commits [`295de6dda286fe7c6b935c149d37056554c59e5d`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/295de6dda286fe7c6b935c149d37056554c59e5d) and [`bbdbc5de254489259e04d6420c4609a1e8586e92`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/bbdbc5de254489259e04d6420c4609a1e8586e92) removed quote-based URI passing. Run [#148](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40197763281) reached the export panel, but could not locate the off-screen MP4 button; export assertions never ran.
-- The current test scrolls the vertical export panel to reveal `MP4 DIŞA AKTAR`, commit [`90c55ca3f94bfa10bc9c1071f0b0879c179136f3`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/90c55ca3f94bfa10bc9c1071f0b0879c179136f3). Run #150 reached the export button and the app log shows `MULTICLIP_EXPORT_SAVED` for a new MP4, but the test timed out because a duplicate `MultiClipExport:I` / `MultiClipExport:E` filter hid the INFO success marker. The test therefore did not reach duration/frame/hash assertions.
-- Fixed the filter in commit [`515df8035d31508acb03f5e9fe59cf0e78879508`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/515df8035d31508acb03f5e9fe59cf0e78879508); retest [#152](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40199353737) is in progress.
-- Next gate: verify import (`count=2 skipped=0`), then confirm one MP4 around 11 s, green second-clip frame at 9.5 s, and unchanged source hashes. Version 395 remains blocked.
-- No signed release APK was produced by run #40194075276. Do not change version metadata, publish, or offer version 395 until release-gate tests pass and the user explicitly authorizes release.
-
+- **Latest full emulator workflow verified: [run #40199353737 (#152)](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40199353737) succeeded** on commit `515df8035d31508acb03f5e9fe59cf0e78879508`. Unit tests, debug APK build, fixture generation, emulator smoke steps, and Android instrumentation all passed.
+- JUnit report: **6 tests, 0 failures, 0 errors, 0 skipped**. Verified interactions include fixed-playhead scroll/pinch synchronization, left/right trim and restoration, distinct thumbnail frames, live text timing/size controls, and a two-clip MP4 export test.
+- **Two-clip export now verified in the emulator:** a new MP4 was saved; measured duration was **11,029 ms**; the frame sampled at 9.5 seconds was green (proving the second clip followed the first); both source files were unchanged (`originalsUnchanged=true`). Evidence is in the run's uploaded artifact/report.
+- This is a **debug validation run**, not a signed release APK. It does not prove every release-gate item: global Undo/Redo, audio/music behavior and export parity, editable project save/close/reopen, text export parity, full keyboard-after-resize reachability, physical-phone visual review, and release/update installation still need separate verification.
+- Do not bump version metadata, sign/publish a release APK, or offer version 395 until every required release-gate item is implemented and verified and the user explicitly authorizes release.
 
 MathMotor Video is a local-first Android video editor with a CapCut-inspired workflow. Normal editing runs on-device; AI generation, AI scoring and paid cloud APIs are outside the current product scope.
 
@@ -195,3 +188,13 @@ Fixed-playhead source change: `ab6d614c8ceff847537fce4cd77a69db50fb3bc9`. Timeli
 - [ ] Two-clip import and single-MP4 export remain unverified.
 - [ ] Project reopen, text/audio export parity, undo/redo, physical-phone usability, signed release/update remain open.
 - **Version 395 remains blocked. Do not bump version metadata, sign/publish an APK, or offer an update before remaining checks pass and the user explicitly authorizes release.**
+
+
+## Latest validation update — 2026-10-25 (run #152)
+
+- **SUCCESS:** [GitHub Actions run #40199353737](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40199353737) completed successfully on repair commit `515df8035d31508acb03f5e9fe59cf0e78879508`.
+- Android instrumentation report: 6 tests, 0 failures, 0 errors, 0 skipped. Passing test cases: `fixedPlayheadScrollAndCenteredPinchStayInSync`, `twoClipsExportToOneMp4InOrder`, `filmstripLoadsFramesFromDistinctTimestamps`, `rightAndLeftTrimHandlesCanTrimAndRestoreSourceFootage`, `textTimingAndSizeControlsUpdatePreview`, and `captureHomeEditorAndTextPanel`.
+- Multi-clip MP4 evidence: `MULTICLIP_EXPORT_SAVED`; `durationMs=11029`; `secondFrameRGB=0,254,2`; `originalsUnchanged=true`. The test therefore verifies one output MP4 with the second clip after the first and no modification of either source fixture.
+- Uploaded emulator evidence artifact: [run #152 artifacts](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40199353737#artifacts).
+- Remaining release blockers: keyboard-after-resize input reachability must be confirmed by a dedicated assertion in the latest suite; Undo/Redo across clip/text/audio edits; audio/music and exported text parity; editable project save/close/reopen; full home-screen and physical-device usability review; signed update/install verification.
+- **Do not create/publish version 395 yet.** The successful run builds a debug APK and is not a signed release.
