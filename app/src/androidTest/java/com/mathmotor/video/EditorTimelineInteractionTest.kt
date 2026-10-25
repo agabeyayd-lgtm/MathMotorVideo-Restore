@@ -552,7 +552,7 @@ class EditorTimelineInteractionTest {
         device.executeShellCommand("logcat -c")
         device.executeShellCommand(
             "am start -n $packageName/com.mathmotor.video.EditorTestEntryActivity " +
-                "--es video_uris \"$firstUri|$secondUri\" --es draft_id $draftId"
+                "--es video_uris '$firstUri|$secondUri' --es draft_id $draftId"
         )
 
         val importDeadline = SystemClock.uptimeMillis() + 35_000L
