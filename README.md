@@ -23,26 +23,26 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 
 ## Repair progress log — 2026-10-25
 
-This section is the handoff point. Continue from this branch and update this log after every meaningful change; do not restart the review from scratch. Add any newly discovered defect to the release-blocking checklist before addressing it.
+This is the continuing handoff log. Resume from this branch and update this section after each meaningful change; do not restart the review from scratch. Add newly found defects to the release-blocking checklist before addressing them.
 
 - Working branch: `fix/editor-395-gate`.
-- Installed baseline reported by the user: versionCode 394 / release `app-v8.3-61`.
-- Release gate: **395 must not be version-bumped, signed, published, or offered as an update until all required items below pass and the user explicitly authorizes release.**
-- [x] Created a repair branch without changing the installed/release version.
-- [x] Increased filmstrip thumbnail density (target spacing reduced; more frames can be requested for a clip).
-- [x] Changed thumbnail sampling to evenly spaced timestamps including clip edges.
-- [x] Added an anchored two-finger pinch-zoom gesture to the timeline frame; it preserves the time under the pinch focus in code (still requires interactive emulator/device verification).
-- [x] Increased thumbnail decode/crop resolution from 96×54 to 144×81.
-- [x] Increased thumbnail cache capacity from 256 to 384 entries.
-- [x] Removed the redundant scissors symbol from the bottom “Klip” tab; the dedicated “Böl ✂” action remains the cut/split control.
-- [x] Replaced the home-screen scissors graphic with a play icon and removed the extra “VİDEO STÜDYOSU / Videonu hazırla / Kes, birleştir…” explanatory stack.
-- [ ] **Not yet verified on emulator or device:** the code changes above may improve the filmstrip, but must be tested with changing and static video content, scroll/zoom, loading latency, memory use and black-frame behavior.
-- [ ] One-finger scroll/trim, free horizontal travel and CapCut-style fixed-playhead behavior still need implementation/validation; the new pinch zoom is implemented in source but not yet verified interactively.
-- [ ] Text-layer timing drag handles and a unified Undo/Redo history still need implementation.
-- [ ] Finish home-screen simplification after emulator review; inspect all screens for any remaining redundant scissors icons.
-- [ ] Build/unit tests/emulator interaction tests have not yet been run for this repair branch.
+- User-confirmed installed baseline: versionCode 394 / build 61 (`app-v8.3-61`).
+- Release gate: **do not create, sign, publish or offer version 395 until all required fixes pass and the user explicitly authorizes release.**
+- [x] Created a repair branch without changing installed/release version metadata.
+- [x] Increased thumbnail density, timestamp distribution, decode/crop size and bitmap cache capacity in source.
+- [x] Replaced the home-screen scissors graphic with a play icon and removed redundant explanatory header copy.
+- [x] Added two-finger zoom logic in source, plus unit-testable centered-scroll/anchor mapping helpers.
+- [x] Implemented a stationary center playhead in source: every timeline lane receives symmetric half-viewport padding, scrolling maps the center position to project time, playback/seek moves the timeline under the playhead, and dragging the playhead scrolls the timeline.
+- [x] Added unit tests for center-playhead mapping, keeping the zoom anchor under the same finger position, and reaching the exact timeline end with symmetric padding.
+- [x] Updated CI path filters so changes in `app/src/test/**` also run the tests.
+- [ ] **Validation pending:** latest CI run [#40169030780](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40169030780) was queued at the last check. Its result must be checked before calling these changes build/test verified.
+- [ ] **Still not verified interactively:** one-finger lane scrolling and trim gestures, two-finger pinch, fixed playhead synchronization, thumbnail variety/loading, text timing and size, Undo/Redo, export and save/reopen.
+- [ ] Text-layer timing drag handles and unified Undo/Redo history still require work; current known history records clip edits only.
+- [ ] Finish simplifying the home screen after reviewing emulator screenshots; scan every screen for redundant scissors icons.
+- [ ] Add interaction-level tests that exercise gestures and end-to-end flows; screenshot capture alone is not acceptance.
+- [ ] Do not bump versionCode/versionName or prepare a release APK until every checklist item passes and the user authorizes the release.
 
-Last source/UI commit: `ebf12bb8c9c752e22d2824c3c3b0c2ec600615b2`. Latest docs progress commit: `ac7ac751adb276cfde6428a4f733792b649b3821`. Emulator workflow run for the repair branch is queued: [run #40167092999](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40167092999).
+Latest source behavior change: `ab6d614c8ceff847537fce4cd77a69db50fb3bc9`. Timeline mapping helpers: `2213b8d5305837a92b7408abfc813e91b1f216b6`. New mapping tests: `f8039c82c989d99f9e73df2e90f69719665e980d`. CI test-path update: `4d31899d4a838dd135c3d69850c98a3be55f8452`.
 
 ## Current baseline capabilities (present in source; not all are proven reliable)
 
@@ -59,9 +59,9 @@ Last source/UI commit: `ebf12bb8c9c752e22d2824c3c3b0c2ec600615b2`. Latest docs p
 ### Timeline touch, scrolling and playhead
 
 - [ ] Make one-finger interactions reliable: select clips, scroll the timeline and drag trim handles without gesture conflicts.
-- [ ] Implement reliable two-finger timeline zoom; keep the time under the gesture anchor as stable as possible.
-- [ ] Fix the timeline appearing locked to the left; allow moving across the full timeline in both directions and reaching the beginning/end after zooming.
-- [ ] Make the playhead behave like CapCut: timeline moves beneath a stationary playhead during scrubbing; preview follows the exact time; playback stays synchronized; split uses the playhead time.
+- [ ] Verify two-finger timeline zoom interactively; the source now calculates the pinch anchor so the time under the fingers stays stable.
+- [ ] Verify free horizontal timeline travel, including exact start/end access. Source now adds symmetric half-viewport padding and uses centered playhead mapping; still pending interactive verification.
+- [ ] Verify CapCut-style fixed-playhead behavior end-to-end: timeline moves beneath the stationary playhead, preview/playback stay synchronized, and split uses the playhead time. The core scroll/time mapping was just changed in source.
 - [ ] Keep time-to-pixel mapping correct after scroll, zoom, trim, clip reorder and multi-clip edits.
 - [ ] Make the timeline's time scale and total duration follow the actual assembled clip sequence. Remove or simplify the separate “project duration” UI if it duplicates/conflicts with the actual timeline; preserve any technical export limit only if genuinely needed and explain it clearly.
 
@@ -89,7 +89,7 @@ Last source/UI commit: `ebf12bb8c9c752e22d2824c3c3b0c2ec600615b2`. Latest docs p
 
 ### Required validation before version 395
 
-- [ ] Run unit tests for timeline mapping, trim bounds, playhead-to-clip mapping and text timing.
+- [ ] Confirm CI unit tests pass for timeline mapping (new center-playhead/zoom-anchor tests were added), trim bounds, playhead-to-clip mapping and text timing.
 - [ ] Run an interactive Android emulator test covering one-finger scroll/trim, two-finger zoom, playhead scrubbing/sync, thumbnail variety/loading, text timing/size, undo/redo and home-screen navigation.
 - [ ] Test with a 10-second video and a multi-clip sequence; check the beginning, middle and end of the timeline at multiple zoom levels.
 - [ ] Export an MP4 and verify video, text, audio, duration and playhead cut position; confirm the original input video is unchanged.
