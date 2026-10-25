@@ -8,9 +8,9 @@
 - Branch: `fix/editor-395-gate`
 - PR: [#8](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/pull/8)
 - Installed baseline: versionCode **394** / build **61** (`app-v8.3-61`)
-- Latest code fix: [`ec8db25`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/ec8db25a6422e4b9184c0cc79dccb22f0c9c8828) — make the manual JSON picker test resilient to stale DocumentsUI root rows.
+- Latest code fix: [`de8948e`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/de8948e649431fd7e2b6aa32210b70d519a5222e) — tap the actual DocumentsUI filename row by screen coordinates instead of calling click on its non-clickable title TextView; failure path records visible UI text and restores home.
 - Latest green validation: [run #161 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40212230107). Unit tests, debug build, screenshot capture and **7/7 emulator interaction tests passed**.
-- Active validation: [run #164](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40215482800) — new manual JSON Save As/reopen test and existing emulator checks; result not yet confirmed.
+- Active validation: [run #165](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40216650783) — validates the new manual JSON document-row tap and diagnostics. Result not yet confirmed.
 
 ## Latest confirmed progress
 
@@ -20,7 +20,7 @@ Previously verified and not to repeat unnecessarily: timeline playhead/zoom/scro
 
 ## Next steps — do these in order
 
-1. **Manual JSON Save As → reopen — in progress.** The E2E test uses Android's real Create Document picker, closes the editor, opens a fresh editor from home, then uses Open Document to reload and check clip trim, text content/size, music/effect titles and audio levels. In [run #163](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40214305429), Save As succeeded but the test hit a `StaleObjectException` when a cached `Downloads` row changed as DocumentsUI switched roots; a following screenshot test also failed because the picker was left foreground. Test-only fix [`ec8db25`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/ec8db25a6422e4b9184c0cc79dccb22f0c9c8828) rechecks the picker state, retries fresh selectors, and returns to home on file-discovery failure. [Run #164](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40215482800) validates this fix. Do not mark the gate complete until the full round trip passes.
+1. **Manual JSON Save As → reopen — in progress.** The E2E test uses Android's real Create Document picker, closes the editor, opens a fresh editor from home, then uses Open Document to reload and check clip trim, text content/size, music/effect titles and audio levels. [Run #163](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40214305429) saved JSON but hit a stale `Downloads` node; [run #164](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40215482800) found the file but the test called `UiObject2.click()` on the non-clickable filename TextView, so the JSON was not opened and restoration status timed out. The extra screenshot failure was a test cleanup cascade. Test-only fix [`de8948e`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/de8948e649431fd7e2b6aa32210b70d519a5222e) taps the visible filename coordinates, emits UI diagnostics when open fails, and returns home before throwing. [Run #165](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40216650783) validates this specific fix. Do not mark the gate complete until the full round trip passes.
 2. **Unified Undo / Redo** — implementation is currently clip-only. Extend it to clip, text and audio/music edits, and verify timeline plus preview restore together.
 3. **Text-strip interaction and text export parity** — drag text strip start/end handles; export timed/styled text and compare with preview.
 4. **Audio export verification** — original audio level/mute, background music loop/volume, timed sound effect and A/V sync.
