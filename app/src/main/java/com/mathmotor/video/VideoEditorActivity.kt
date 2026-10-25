@@ -824,7 +824,6 @@ class VideoEditorActivity : Activity() {
         clipHistoryRow.addView(redoClipButton, LinearLayout.LayoutParams(0, dp(40), 1f).apply {
             leftMargin = dp(5)
         })
-        clipPanel.addView(clipHistoryRow)
         startLabel = label("Başlangıç: 00:00", 12f, Color.rgb(225, 233, 237), true)
         clipPanel.addView(startLabel)
         startSeek = SeekBar(this)
@@ -1233,6 +1232,8 @@ class VideoEditorActivity : Activity() {
                 }
             }
         }
+        // Keep Undo/Redo globally reachable across every tool tab and without panel scrolling.
+        root.addView(clipHistoryRow, matchWrap())
         root.addView(editorPanelScroll, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
         ))
