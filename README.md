@@ -85,3 +85,14 @@ Basic end-to-end Save As → close editor → Open Document passed in [run #172 
 - [x] Fixed in commit `09360482c1592858119b588f4e73f192285afc8d` on `fix/global-editor-undo`: create the buttons without attaching them to a temporary parent; attach each only once to the persistent bottom dock.
 - [ ] #185 validation is running: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228445472
 - [ ] Keep release 395 blocked until build and emulator interaction tests pass. Do not merge this branch or publish APK yet.
+
+
+### 2026-10-25 — Undo/Redo crash fix verified (#185)
+
+- [x] Run #185 passed on commit `09360482c1592858119b588f4e73f192285afc8d`: Android emulator UI job succeeded; debug build and all 9 connected instrumentation tests passed.
+- [x] Root cause from #184 fixed: Undo/Redo controls are no longer attached to a temporary row before being attached to the persistent bottom dock, preventing `The specified child already has a parent` crash in `VideoEditorActivity.buildUi()`.
+- [x] Editor smoke flow reached clip import and produced the expected screenshots/logs; connected instrumentation test exit code was 0.
+- [ ] This validates the crash fix and current emulator suite only. It does **not** close broader Undo/Redo behavior, text-strip/export parity, audio export, timeline edge cases, physical-device review, signed release, or in-app update/install gates.
+- [ ] Keep version 395 blocked; do not merge/release until remaining gates are independently verified and release is explicitly authorized.
+
+Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228445472
