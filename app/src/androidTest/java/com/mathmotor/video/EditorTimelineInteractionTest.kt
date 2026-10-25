@@ -630,6 +630,12 @@ class EditorTimelineInteractionTest {
 
         clipTab.click()
         requireObject(device, By.desc("Düzenleme geri al"), "Undo audio volume").click()
+        audioTab.click()
+        assertTrue(
+            "Could not reveal restored music volume label after Undo",
+            panelScroll.scrollIntoView(UiSelector().text("Müzik sesi: 45%"))
+        )
+        device.waitForIdle()
         val restoredLabel = requireObject(device, By.text("Müzik sesi: 45%"), "restored music volume label")
         assertTrue("Undo did not restore music volume 45%", restoredLabel.text == "Müzik sesi: 45%")
 
