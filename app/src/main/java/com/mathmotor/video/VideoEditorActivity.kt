@@ -557,7 +557,10 @@ class VideoEditorActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(3), dp(3), dp(3), 0)
         }
-        timelinePlayheadLabel = label("00:00 / 00:00", 10f, Color.rgb(225, 233, 237), true).apply { maxLines = 1 }
+        timelinePlayheadLabel = label("00:00 / 00:00", 10f, Color.rgb(225, 233, 237), true).apply {
+            maxLines = 1
+            contentDescription = "Zaman çizelgesi zamanı"
+        }
         playheadRow.addView(timelinePlayheadLabel, LinearLayout.LayoutParams(dp(96), ViewGroup.LayoutParams.WRAP_CONTENT))
         timelinePlayheadSeek = SeekBar(this).apply {
             max = 0
@@ -566,11 +569,30 @@ class VideoEditorActivity : Activity() {
             contentDescription = "Zaman çizelgesinde oynatma noktası"
         }
         playheadRow.addView(timelinePlayheadSeek, LinearLayout.LayoutParams(0, dp(34), 1f))
-        playheadRow.addView(miniButton("−") { adjustTimelineZoom(0.75f) },
-            LinearLayout.LayoutParams(dp(42), dp(42)).apply { leftMargin = dp(3) })
-        playheadRow.addView(miniButton("+") { adjustTimelineZoom(1.35f) },
-            LinearLayout.LayoutParams(dp(42), dp(42)).apply { leftMargin = dp(2) })
+        playheadRow.addView(miniButton("−") { adjustTimelineZoom(0.75f) }.apply {
+            contentDescription = "Zaman çizelgesini uzaklaştır"
+        }, LinearLayout.LayoutParams(dp(42), dp(42)).apply { leftMargin = dp(3) })
+        playheadRow.addView(miniButton("+") { adjustTimelineZoom(1.35f) }.apply {
+            contentDescription = "Zaman çizelgesini yakınlaştır"
+        }, LinearLayout.LayoutParams(dp(42), dp(42)).apply { leftMargin = dp(2) })
         timelineCard.addView(playheadRow, matchWrap())
+        val historyRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val undoButton = miniButton("↶ Geri al") { undoClipEdit() }.apply {
+            isEnabled = false
+            contentDescription = "Geri al"
+        }
+        val redoButton = miniButton("↷ Yinele") { redoClipEdit() }.apply {
+            isEnabled = false
+            contentDescription = "Yinele"
+        }
+        undoClipButton = undoButton
+        redoClipButton = redoButton
+        historyRow.addView(undoButton, LinearLayout.LayoutParams(0, dp(40), 1f))
+        historyRow.addView(redoButton, LinearLayout.LayoutParams(0, dp(40), 1f).apply { leftMargin = dp(5) })
+        timelineCard.addView(historyRow, matchWrap())
         installTimelinePlayheadListeners()
         root.addView(timelineCard, matchWrap())
         root.addView(gap(8))
@@ -600,22 +622,7 @@ class VideoEditorActivity : Activity() {
         clipActions2.addView(miniButton("Sona al →") { moveSelectedClip(1) },
             LinearLayout.LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(4) })
         clipPanel.addView(clipActions2)
-        val clipHistoryRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        undoClipButton = miniButton("↶ Geri al") { undoClipEdit() }.apply {
-            isEnabled = false
-        }
-        redoClipButton = miniButton("↷ Yinele") { redoClipEdit() }.apply {
-            isEnabled = false
-        }
-        clipHistoryRow.addView(undoClipButton, LinearLayout.LayoutParams(0, dp(40), 1f))
-        clipHistoryRow.addView(redoClipButton, LinearLayout.LayoutParams(0, dp(40), 1f).apply {
-            leftMargin = dp(5)
-        })
-        clipPanel.addView(clipHistoryRow)
-        startLabel = label("Başlangıç: 00:00", 12f, Color.rgb(225, 233, 237), true)
+remove duplicate history row from clip panel        startLabel = label("Başlangıç: 00:00", 12f, Color.rgb(225, 233, 237), true)
         clipPanel.addView(startLabel)
         startSeek = SeekBar(this)
         clipPanel.addView(startSeek, matchWrap())
@@ -664,6 +671,7 @@ class VideoEditorActivity : Activity() {
             ViewGroup.LayoutParams.MATCH_PARENT, dp(48)
         ))
         textInput = EditText(this).apply {
+            contentDescription = "Videodaki yazı metni"
             hint = "Videoda görünecek yazı"
             setTextColor(Color.WHITE)
             setHintTextColor(Color.rgb(154, 171, 190))
@@ -682,11 +690,19 @@ class VideoEditorActivity : Activity() {
         textPanel.addView(label("Yazının görünme aralığı", 11f, Color.rgb(154, 171, 190), false))
         textStartLabel = label("Yazı başlangıcı: 00:00", 12f, Color.WHITE, true)
         textPanel.addView(textStartLabel)
-        textStartSeek = SeekBar(this).apply { max = 0; isEnabled = false }
+        textStartSeek = SeekBar(this).apply {
+            max = 0
+            isEnabled = false
+            contentDescription = "Yazı başlangıç zamanı"
+        }
         textPanel.addView(textStartSeek, matchWrap())
         textEndLabel = label("Yazı bitişi: 00:00", 12f, Color.WHITE, true)
         textPanel.addView(textEndLabel)
-        textEndSeek = SeekBar(this).apply { max = 0; isEnabled = false }
+        textEndSeek = SeekBar(this).apply {
+            max = 0
+            isEnabled = false
+            contentDescription = "Yazı bitiş zamanı"
+        }
         textPanel.addView(textEndSeek, matchWrap())
         installTextTimeListeners()
         textPanel.addView(label("Yazı konumu", 11f, Color.rgb(154, 171, 190), false))
@@ -1480,6 +1496,7 @@ class VideoEditorActivity : Activity() {
                 isHorizontalScrollBarEnabled = false
                 overScrollMode = View.OVER_SCROLL_NEVER
                 isFillViewport = false
+                contentDescription = "$tag zaman çizelgesi • yakınlaştırma ${"%.2f".format(Locale.ROOT, timelineZoom)}x"
             }
             timelineScrollViews.add(scroll)
             scroll.setOnScrollChangeListener { view, scrollX, _, _, _ ->
@@ -1962,6 +1979,9 @@ class VideoEditorActivity : Activity() {
             totalMs = totalOutputDurationMs()
         )
         if (kotlin.math.abs(targetMs - timelinePlayheadMs) >= 25L) {
+            if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+                android.util.Log.d("EditorTimeline", "TIMELINE_SCROLL_PLAYHEAD timeMs=$targetMs scrollX=$scrollX")
+            }
             ensureTimelinePreviewLoaded()
             player?.playWhenReady = false
             seekTimelinePreview(targetMs)
