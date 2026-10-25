@@ -31,12 +31,13 @@ This section is the handoff point. Continue from this branch and update this log
 - [x] Created a repair branch without changing the installed/release version.
 - [x] Increased filmstrip thumbnail density (target spacing reduced; more frames can be requested for a clip).
 - [x] Changed thumbnail sampling to evenly spaced timestamps including clip edges.
+- [x] Added an anchored two-finger pinch-zoom gesture to the timeline frame; it preserves the time under the pinch focus in code (still requires interactive emulator/device verification).
 - [x] Increased thumbnail decode/crop resolution from 96×54 to 144×81.
 - [x] Increased thumbnail cache capacity from 256 to 384 entries.
 - [x] Removed the redundant scissors symbol from the bottom “Klip” tab; the dedicated “Böl ✂” action remains the cut/split control.
 - [x] Replaced the home-screen scissors graphic with a play icon and removed the extra “VİDEO STÜDYOSU / Videonu hazırla / Kes, birleştir…” explanatory stack.
 - [ ] **Not yet verified on emulator or device:** the code changes above may improve the filmstrip, but must be tested with changing and static video content, scroll/zoom, loading latency, memory use and black-frame behavior.
-- [ ] Timeline gestures, scroll/zoom and playhead alignment still need implementation and interactive validation.
+- [ ] One-finger scroll/trim, free horizontal travel and CapCut-style fixed-playhead behavior still need implementation/validation; the new pinch zoom is implemented in source but not yet verified interactively.
 - [ ] Text-layer timing drag handles and a unified Undo/Redo history still need implementation.
 - [ ] Finish home-screen simplification after emulator review; inspect all screens for any remaining redundant scissors icons.
 - [ ] Build/unit tests/emulator interaction tests have not yet been run for this repair branch.
