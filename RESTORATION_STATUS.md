@@ -21,12 +21,12 @@ Previously verified and not to repeat unnecessarily: timeline playhead/zoom/scro
 
 ## Next steps — do these in order
 
-1. **Broader manual JSON persistence coverage — open.** Basic Save As → close editor → Open Document passed in [run #172](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40221395375): trim duration, text content/size, music/effect names and audio level values restore. Extend assertions to clip order, playhead/zoom, text timing/position/colour/style. Do not revisit the resolved DocumentsUI picker work unless a related regression appears.
-2. **Unified Undo / Redo — validation in progress.** Run #173 found two issues: the separate feature branch had the old thumbnail decoder, and the test didn't scroll the compact tool panel to Undo. The decoder fix and test scroll correction now live on [`fix/global-editor-undo`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/tree/fix/global-editor-undo); [run #175](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40223890916) is validating that version.
-3. **Text-strip interaction and export parity** — drag text strip start/end handles; export timed/styled text and compare with preview.
-4. **Audio export verification** — source audio level/mute, background-music loop/volume, timed sound-effect start/volume and audio/video sync.
+1. **Broader manual JSON persistence coverage — queued.** Basic Save As → close editor → Open Document passed in [run #172](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40221395375). Expanded assertions now check the 1.00 s playhead, 200% zoom and text timing/position/colour/bold style; [run #176](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40224513134) is queued.
+2. **Unified Undo / Redo — validation in progress.** [Run #173](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40221794555) identified the old decoder in the feature branch and the compact-panel selector issue. Both were fixed on [`fix/global-editor-undo`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/tree/fix/global-editor-undo); [run #175](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40223890916) is checking the corrected code/test.
+3. **Text-strip interaction and export parity** — drag text-strip start/end handles; export timed/styled text and compare with preview.
+4. **Audio export verification** — source audio level/mute, background music loop/volume, timed sound-effect start/volume and audio/video sync.
 5. **Timeline edge cases** — split at playhead/export boundary; trim-versus-scroll conflicts and multi-clip trim/reorder/seek at several zoom levels.
-6. **Physical-phone review** — check compact layout, thumbnails, tap targets and keyboard/panel behavior on the user's actual phone.
+6. **Physical-phone review** — compact layout, thumbnails, tap targets and keyboard/panel behavior on the actual device.
 7. **Release/install gate** — verify signed update/package installation after blockers above pass. Version 395 remains blocked.
 
 ## Release rule
