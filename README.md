@@ -78,3 +78,10 @@ Basic end-to-end Save As → close editor → Open Document passed in [run #172 
 - [x] Fixed by handling each nullable button with `?.let { button -> ... }` before styling and adding it to the bottom dock. Commit: `999a1d15eae6aababf8842655a6413ab2d694ad2` on `fix/global-editor-undo`.
 - [ ] #184 validation is queued: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40227983970
 - [ ] Keep release 395 blocked until build and emulator interaction tests pass; do not merge this branch or publish APK yet.
+
+
+### 2026-10-25 — Global Undo/Redo validation #184 / #185
+- [x] #184 compiled but the editor crashed when opened: Android logcat showed `IllegalStateException: The specified child already has a parent` at `VideoEditorActivity.kt:1286`. The undo/redo buttons were still attached to the old, now-unused `clipHistoryRow` and were then added to the bottom dock.
+- [x] Fixed in commit `09360482c1592858119b588f4e73f192285afc8d` on `fix/global-editor-undo`: create the buttons without attaching them to a temporary parent; attach each only once to the persistent bottom dock.
+- [ ] #185 validation is running: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228445472
+- [ ] Keep release 395 blocked until build and emulator interaction tests pass. Do not merge this branch or publish APK yet.
