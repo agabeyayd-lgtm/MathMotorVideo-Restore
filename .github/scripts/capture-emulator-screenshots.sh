@@ -198,7 +198,7 @@ PY
     dump_hierarchy "$remote_name" "$xml" || true
   done
 
-  if [ -s "$xml" ] && grep -Eiq "(Process system|System UI).*isn.t responding" "$xml"; then
+  if [ -s "$xml" ] && grep -Eiq "(Process system|System UI|Pixel Launcher|Nexus Launcher|com\\.google\\.android\\.apps\\.nexuslauncher).*isn.t responding" "$xml"; then
     echo "System ANR dialog is still present after recovery attempts"
     return 1
   fi
