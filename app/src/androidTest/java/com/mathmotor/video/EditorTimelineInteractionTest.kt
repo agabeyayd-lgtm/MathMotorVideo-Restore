@@ -530,6 +530,120 @@ class EditorTimelineInteractionTest {
     }
 
     @Test
+    fun unifiedUndoRedoRestoresTextAndAudioEdits() {
+        val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+        val packageName = "com.mathmotor.video.next"
+        val fixtureUri = "file:///data/user/0/$packageName/files/editor-test-video.mp4"
+
+        device.executeShellCommand("logcat -c")
+        device.executeShellCommand(
+            "am start -n $packageName/com.mathmotor.video.EditorTestEntryActivity " +
+                "--es video_uri $fixtureUri --es draft_id 66666666-6666-4666-8666-666666666666"
+        )
+        assertTrue(
+            "Editor did not show the video lane for unified undo test",
+            device.wait(Until.hasObject(By.text("VIDEO")), 20_000)
+        )
+        assertTrue("Unified undo test clip was not loaded", awaitClipAdded(device))
+        device.waitForIdle()
+
+        // Create a text layer and edit its value. Undo should first restore the empty
+        // layer, then remove that layer; Redo must reapply both changes in order.
+        val textTab = device.findObject(By.text("T\nMetin"))
+            ?: device.findObject(By.clazz("android.widget.Button").textContains("Metin"))
+            ?: throw AssertionError("Could not find Metin tab")
+        textTab.click()
+        val panelScroll = UiScrollable(UiSelector().className("android.widget.ScrollView"))
+        assertTrue(
+            "Could not reveal new-text control",
+            panelScroll.scrollIntoView(UiSelector().description("Yeni metin katmanı ekle"))
+        )
+        requireObject(device, By.desc("Yeni metin katmanı ekle"), "new text layer").click()
+        assertTrue(
+            "Text input did not appear",
+            device.wait(Until.hasObject(By.desc("Metin katmanı metin girişi")), 8_000)
+        )
+        requireObject(device, By.desc("Metin katmanı metin girişi"), "text input").setText("UNDO REDO TEXT")
+        device.pressBack()
+        device.waitForIdle()
+
+        val clipTab = device.findObject(By.text("▣\nKlip"))
+            ?: device.findObject(By.clazz("android.widget.Button").textContains("Klip"))
+            ?: throw AssertionError("Could not find Klip tab")
+        clipTab.click()
+        device.waitForIdle()
+        val undo = requireObject(device, By.text("↶ Geri al"), "global Undo button")
+        val redo = requireObject(device, By.text("↷ Yinele"), "global Redo button")
+
+        undo.click()
+        device.waitForIdle()
+        assertTrue(
+            "Undo did not restore the blank text layer",
+            device.wait(Until.hasObject(By.text("YAZI 1")), 4_000)
+        )
+        assertTrue(
+            "Undo of text entry left the typed overlay visible",
+            !device.hasObject(By.text("UNDO REDO TEXT"))
+        )
+
+        undo.click()
+        device.waitForIdle()
+        assertTrue(
+            "Undo did not remove the newly added text layer",
+            device.wait(Until.hasObject(By.text("+ Metin ekle")), 4_000)
+        )
+
+        redo.click()
+        device.waitForIdle()
+        assertTrue("Redo did not restore the text layer", device.wait(Until.hasObject(By.text("YAZI 1")), 4_000))
+        redo.click()
+        device.waitForIdle()
+        assertTrue(
+            "Redo did not restore edited text to the preview",
+            device.wait(Until.hasObject(By.text("UNDO REDO TEXT")), 4_000)
+        )
+
+        // Exercise the same history with a real SeekBar touch, not a synthetic
+        // direct state assignment, so start/stop tracking callbacks are included.
+        val audioTab = device.findObject(By.text("♫\nSes"))
+            ?: device.findObject(By.clazz("android.widget.Button").textContains("Ses"))
+            ?: throw AssertionError("Could not find Ses tab")
+        audioTab.click()
+        assertTrue("Audio panel did not appear", device.wait(Until.hasObject(By.text("SES KATMANLARI")), 4_000))
+        assertTrue(
+            "Could not reveal music volume slider",
+            panelScroll.scrollIntoView(UiSelector().description("Müzik ses düzeyi"))
+        )
+        device.waitForIdle()
+        val musicSeek = requireObject(device, By.desc("Müzik ses düzeyi"), "music volume seek bar")
+        val bounds = musicSeek.visibleBounds
+        assertTrue("Music volume slider is not visible: $bounds", bounds.width() > 100 && bounds.height() > 0)
+        val currentX = bounds.left + (bounds.width() * 0.45f).toInt()
+        val targetX = bounds.left + (bounds.width() * 0.25f).toInt()
+        device.swipe(currentX, bounds.centerY(), targetX, bounds.centerY(), 25)
+        device.waitForIdle()
+        val changedLabel = requireObject(device, By.textContains("Müzik sesi:"), "changed music volume label").text
+        val changedValue = Regex("(\\d+)").find(changedLabel)?.groupValues?.get(1)?.toInt()
+            ?: throw AssertionError("Could not read adjusted music volume: $changedLabel")
+        assertTrue("Touch did not change music volume: $changedLabel", changedValue != 45)
+
+        clipTab.click()
+        requireObject(device, By.text("↶ Geri al"), "Undo audio volume").click()
+        val restoredLabel = requireObject(device, By.text("Müzik sesi: 45%"), "restored music volume label")
+        assertTrue("Undo did not restore music volume 45%", restoredLabel.text == "Müzik sesi: 45%")
+
+        requireObject(device, By.text("↷ Yinele"), "Redo audio volume").click()
+        assertTrue(
+            "Redo did not restore the adjusted music volume",
+            device.wait(Until.hasObject(By.text("Müzik sesi: $changedValue%")), 4_000)
+        )
+        android.util.Log.i(
+            "UnifiedUndoRedoTest",
+            "stage=verified textUndoRedo=true musicVolume=45->$changedValue->45->$changedValue"
+        )
+    }
+
+    @Test
     fun savedDraftReopensTextLayerAndClipState() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
