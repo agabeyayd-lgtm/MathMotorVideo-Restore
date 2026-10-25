@@ -1654,6 +1654,10 @@ class VideoEditorActivity : Activity() {
 
     private fun refreshTimelineTracks() {
         if (!::timelineTracks.isInitialized) return
+        // Project load/undo can restore zoom without a pinch gesture. Keep the
+        // accessibility label in sync with the active timeline scale in that case too.
+        timelineTracksFrame.contentDescription =
+            "Zaman çizelgesi yakınlaştırma " + (timelineZoom * 100f).toInt() + "%"
         // The scroll listener keeps this value current. Reading a freshly rebuilt
         // child view here can return zero before its posted scroll restoration runs.
         val preservedScrollX = pendingTimelineScrollX ?: timelineHorizontalScrollX

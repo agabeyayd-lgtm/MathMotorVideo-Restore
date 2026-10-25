@@ -977,6 +977,18 @@ class EditorTimelineInteractionTest {
                 "Opening saved JSON did not restore project (the picker may not have returned a URI)."
             )
         }
+
+        // The fixture also seeds the playhead and zoom. Check user-visible timeline state,
+        // not only the serialized fields or the restored clip duration.
+        assertTrue(
+            "Manual JSON did not restore timeline zoom to 200%",
+            device.wait(Until.hasObject(By.descContains("Zaman çizelgesi yakınlaştırma 200%")), 8_000)
+        )
+        val restoredPlayheadMs = projectPositionMs(requireProjectTime(device))
+        assertTrue(
+            "Manual JSON did not restore the 1.00 s playhead: $restoredPlayheadMs ms",
+            kotlin.math.abs(restoredPlayheadMs - 1_000L) <= 120L
+        )
         assertTrue(
             "Manual JSON did not restore the trimmed clip duration",
             device.wait(Until.hasObject(By.textContains("00:07.02")), 8_000)
@@ -1007,6 +1019,32 @@ class EditorTimelineInteractionTest {
         assertTrue(
             "Manual JSON did not restore text size 32 sp",
             device.wait(Until.hasObject(By.textContains("Yazı boyutu: 32")), 5_000)
+        )
+
+        assertTrue(
+            "Manual JSON did not restore text start time 00:00.00",
+            textPanelScroller.scrollIntoView(UiSelector().description("Yazı başlangıç zamanı")) &&
+                device.wait(Until.hasObject(By.text("Yazı başlangıcı: 00:00.00")), 5_000)
+        )
+        assertTrue(
+            "Manual JSON did not restore text end time 00:06.50",
+            textPanelScroller.scrollIntoView(UiSelector().description("Yazı bitiş zamanı")) &&
+                device.wait(Until.hasObject(By.text("Yazı bitişi: 00:06.50")), 5_000)
+        )
+        assertTrue(
+            "Manual JSON did not restore the bottom text position",
+            textPanelScroller.scrollIntoView(UiSelector().text("Alt")) &&
+                requireObject(device, By.text("Alt"), "restored bottom text position").isChecked
+        )
+        assertTrue(
+            "Manual JSON did not restore yellow text colour",
+            textPanelScroller.scrollIntoView(UiSelector().text("Sarı")) &&
+                requireObject(device, By.text("Sarı"), "restored yellow text colour").isChecked
+        )
+        assertTrue(
+            "Manual JSON did not restore bold text style",
+            textPanelScroller.scrollIntoView(UiSelector().text("Kalın yazı")) &&
+                requireObject(device, By.text("Kalın yazı"), "restored bold text setting").isChecked
         )
 
         val restoredAudioTab = device.findObject(By.clazz("android.widget.Button").textContains("Ses"))
