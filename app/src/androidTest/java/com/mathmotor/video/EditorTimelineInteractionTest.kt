@@ -342,7 +342,10 @@ class EditorTimelineInteractionTest {
         )
 
         val panelScroll = UiScrollable(UiSelector().className("android.widget.ScrollView"))
-        assertTrue("Could not reset the text panel scroll position", panelScroll.scrollToBeginning(10))
+        assertTrue(
+            "Could not scroll the add-text control into the compact tool panel",
+            panelScroll.scrollIntoView(UiSelector().description("Yeni metin katmanı ekle"))
+        )
         device.waitForIdle()
         val addText = requireObject(device, By.desc("Yeni metin katmanı ekle"), "new-text-layer control")
         addText.click()
