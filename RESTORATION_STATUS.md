@@ -12,6 +12,15 @@ MathMotor Video is a local Android video editor with a CapCut-inspired workflow.
 - README checklist and source commits do not mean the behavior is fixed or included in the installed APK.
 - Existing repository release notes may lag the user's installed version; use the user's confirmed 394/build 61 as the working baseline.
 
+## Repair handoff — 2026-10-25
+
+- Active branch: `fix/editor-395-gate`.
+- Last source commit before workflow/test setup: `f0b9af235fb35f6b03581a41cae653a77e29249f`.
+- Current work: filmstrip density/resolution/cache and timestamp distribution improved in source; the “Klip” tab no longer uses a scissors icon; workflow now includes unit tests and can run on the repair branch.
+- These changes are **not yet emulator/device verified**. Keep them marked in progress until CI and interactive tests confirm the behavior.
+- Next: check workflow result; then fix timeline scroll/pinch/playhead behavior, text timing strip drag controls, global undo/redo, simplify home screen and remove redundant scissors icons; add interaction tests; keep this handoff log current.
+- Do not change versionCode 394/versionName, do not create version 395 and do not publish an APK before all release-gate items pass.
+
 ## Current source functionality (implementation exists; reliability still needs testing)
 
 - Home screen with gallery import, empty-editor action, recent outputs and local drafts.
