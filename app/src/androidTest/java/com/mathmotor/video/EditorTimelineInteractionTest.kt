@@ -341,8 +341,10 @@ class EditorTimelineInteractionTest {
             device.wait(Until.hasObject(By.text("METİN KATMANLARI")), 8_000)
         )
 
-        val addText = device.findObject(By.textContains("Yeni"))
-            ?: throw AssertionError("Could not find the new-text-layer control")
+        val panelScroll = UiScrollable(UiSelector().className("android.widget.ScrollView"))
+        assertTrue("Could not reset the text panel scroll position", panelScroll.scrollToBeginning(10))
+        device.waitForIdle()
+        val addText = requireObject(device, By.desc("Yeni metin katmanı ekle"), "new-text-layer control")
         addText.click()
         val input = requireObject(device, By.clazz("android.widget.EditText"), "text editor input")
         input.setText("TIMING TEST")
@@ -359,7 +361,6 @@ class EditorTimelineInteractionTest {
         assertTrue("Preview text has no visible bounds: $overlayBefore", overlayBefore.width() > 0 && overlayBefore.height() > 0)
 
         // Scroll only the editor's vertical panel; the actual preview overlay remains visible.
-        val panelScroll = UiScrollable(UiSelector().className("android.widget.ScrollView"))
         assertTrue("Could not scroll to the text-size controls", panelScroll.scrollIntoView(UiSelector().text("A+")))
         device.waitForIdle()
         requireObject(device, By.text("A+"), "increase text size button").click()
