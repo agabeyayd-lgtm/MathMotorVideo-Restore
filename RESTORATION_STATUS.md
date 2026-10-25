@@ -36,6 +36,16 @@ MathMotor Video is a local Android video editor with a CapCut-inspired workflow.
 - This is not a release candidate yet. Version 395 is still blocked and must not be published.
 
 - Second related defect found in `buildVideoClipFilmstrip()`: horizontal movement used to call `seekTimelinePreview()` with the child's local x fraction and ACTION_UP sought again even after a drag. That could snap time away from the scrolled position. Source commit `1fe72bcb2d6257b28541902fd13bd51ec1a1a6d5` separates the gestures: taps select/seek, drags scroll the timeline and use a scroll fallback if the parent has not intercepted. This fix is awaiting the next emulator interaction test.
+## Latest verified CI result — 2026-10-25 (run #40176057466)
+
+- Latest tested commit: `1fe72bcb2d6257b28541902fd13bd51ec1a1a6d5` (`fix: separate filmstrip swipe scrolling from tap-to-seek`).
+- [Workflow #40176057466](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40176057466): unit tests passed and debug APK built; interactive emulator test failed.
+- Verified by the interaction test: sample video loaded; playhead drag reached 3.18 s; pinch zoom changed 100% → 625% while preserving center time; end scrolling reached 8.00 s.
+- Unresolved blocker: four reverse filmstrip swipes leave project time at 2.04 s instead of ≤0.20 s. Earlier run #40175226161 stopped at 2.47 s. The start-boundary/reverse-scroll problem is still real and not release-ready.
+- Next: trace `scrollX`, computed project time and debounced seek state after each reverse swipe at 625% zoom; fix the actual boundary/sync bug and rerun the same interaction test without weakening its assertion.
+- Remaining README release blockers still include trim, thumbnail loading/variety, text timing/size, complete Undo/Redo, audio, multi-clip export, save/reopen, small-screen/keyboard layout and device smoke test.
+- Keep installed baseline at versionCode 394 / build 61. Version 395 remains prohibited until every required item passes and the user explicitly authorizes release.
+
 ## Reported problems — release blockers until verified
 See the comprehensive checklist in README.md. Current list:
 1. One-finger timeline scrolling and trim gestures may conflict or be unreliable.
