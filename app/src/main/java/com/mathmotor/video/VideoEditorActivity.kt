@@ -323,11 +323,11 @@ class VideoEditorActivity : Activity() {
                 .onSuccess { status.text = "Taslak açıldı. Düzenlemeye kaldığın yerden devam edebilirsin." }
                 .onFailure {
                     status.text = "Taslak açılamadı: ${it.message ?: "proje verisi okunamadı"}"
-                    if (incomingVideos.isNotEmpty()) addClipsInOrder(incomingVideos.map(Uri::parse), false)
+                    if (incomingVideos.isNotEmpty()) addClipsInOrder(incomingVideos.map { Uri.parse(it) }, false)
                     else if (!incoming.isNullOrBlank()) addClip(Uri.parse(incoming), false)
                 }
         } else if (incomingVideos.isNotEmpty()) {
-            addClipsInOrder(incomingVideos.map(Uri::parse), false)
+            addClipsInOrder(incomingVideos.map { Uri.parse(it) }, false)
         } else if (!incoming.isNullOrBlank()) {
             addClip(Uri.parse(incoming), false)
         } else if (isDebugBuild) {
@@ -1286,6 +1286,10 @@ class VideoEditorActivity : Activity() {
                 }
                 previewFrame.layoutParams = previewParams
 
+                // On compact phones, the fixed multi-lane timeline can consume all
+                // remaining height after the IME inset is applied. Hide it while typing;
+                // it returns as soon as the keyboard closes, preserving the same edit.
+                timelineCard.visibility = if (imeVisible && compactEditorLayout) View.GONE else View.VISIBLE
                 // On compact phones, the fixed multi-lane timeline can consume all
                 // remaining height after the IME inset is applied. Hide it while typing;
                 // it returns as soon as the keyboard closes, preserving the same edit.

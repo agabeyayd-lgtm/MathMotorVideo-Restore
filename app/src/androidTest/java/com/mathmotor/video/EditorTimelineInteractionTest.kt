@@ -5,6 +5,7 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.provider.MediaStore
 import android.os.SystemClock
+import java.security.MessageDigest
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
@@ -541,6 +542,8 @@ class EditorTimelineInteractionTest {
         assertTrue("Second green test video is missing", secondFile.isFile && secondFile.length() > 0L)
         val firstSize = firstFile.length()
         val secondSize = secondFile.length()
+        val firstHash = sha256(firstFile)
+        val secondHash = sha256(secondFile)
         val firstUri = "file://${firstFile.absolutePath}"
         val secondUri = "file://${secondFile.absolutePath}"
         val exportName = "MathMotor_two_clip_test_${System.currentTimeMillis()}"
@@ -575,7 +578,7 @@ class EditorTimelineInteractionTest {
             "The export panel did not open",
             device.wait(Until.hasObject(By.text("PROJE / DIŞA AKTARMA")), 8_000)
         )
-        val nameInput = requireObject(device, By.hint("Örn. Tatil_videosu"), "export filename input")
+        val nameInput = requireObject(device, By.clazz("android.widget.EditText"), "export filename input")
         nameInput.setText(exportName)
         requireObject(device, By.text("MP4 DIŞA AKTAR"), "MP4 export button").click()
 
@@ -639,8 +642,10 @@ class EditorTimelineInteractionTest {
             "Frame at 9.5 seconds does not look like the green second clip (r=$red g=$green b=$blue)",
             green > red + 25 && green > blue + 25
         )
-        assertTrue("First original fixture changed during export", firstFile.length() == firstSize)
-        assertTrue("Second original fixture changed during export", secondFile.length() == secondSize)
+        assertTrue("First original fixture size changed during export", firstFile.length() == firstSize)
+        assertTrue("Second original fixture size changed during export", secondFile.length() == secondSize)
+        assertTrue("First original video content changed during export", sha256(firstFile) == firstHash)
+        assertTrue("Second original video content changed during export", sha256(secondFile) == secondHash)
         android.util.Log.i(
             "MultiClipExportTest",
             "stage=verified durationMs=$durationMs secondFrameRGB=$red,$green,$blue originalsUnchanged=true"
@@ -747,6 +752,19 @@ class EditorTimelineInteractionTest {
         val seconds = match.groupValues[2].toLong()
         val centiseconds = match.groupValues[3].toLong()
         return (minutes * 60 + seconds) * 1000 + centiseconds * 10
+    }
+
+    private fun sha256(file: java.io.File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(8192)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                digest.update(buffer, 0, count)
+            }
+        }
+        return digest.digest().joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }
     }
 
     private fun requireObject(device: UiDevice, selector: BySelector, description: String): UiObject2 =
