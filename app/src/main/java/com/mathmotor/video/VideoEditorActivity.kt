@@ -2458,20 +2458,33 @@ class VideoEditorActivity : Activity() {
                 as? android.view.inputmethod.InputMethodManager
             keyboard?.showSoftInput(textInput, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
 
-            // On compact phones, the keyboard can resize the editor before the input's
-            // first focus-scroll callback runs. Reposition the active panel after the IME
-            // settles so the focused text field remains visible and accessible.
+            // adjustResize, IME insets and compact-panel reflow can each change the
+            // ScrollView viewport. Compute the correction from current screen bounds
+            // after those layout changes settle rather than mixing coordinates from
+            // different parents (textPanel.top + textInput.bottom).
             textInput.postDelayed({
                 if (activeEditorPanel != "text" || !textInput.isAttachedToWindow) return@postDelayed
                 if (textInput.width <= 0 || textInput.height <= 0 || editorPanelScroll.height <= 0) return@postDelayed
-                val inputBottomInContent = textPanel.top + textInput.bottom
-                val targetScrollY = (inputBottomInContent - editorPanelScroll.height + dp(20)).coerceAtLeast(0)
-                editorPanelScroll.smoothScrollTo(0, targetScrollY)
+
+                val panelLocation = IntArray(2)
+                val inputLocation = IntArray(2)
+                editorPanelScroll.getLocationOnScreen(panelLocation)
+                textInput.getLocationOnScreen(inputLocation)
+                val panelTop = panelLocation[1]
+                val panelBottom = panelTop + editorPanelScroll.height
+                val inputTop = inputLocation[1]
+                val inputBottom = inputTop + textInput.height
+                val scrollDelta = when {
+                    inputBottom > panelBottom -> inputBottom - panelBottom + dp(12)
+                    inputTop < panelTop -> inputTop - panelTop - dp(12)
+                    else -> 0
+                }
+                if (scrollDelta != 0) editorPanelScroll.scrollBy(0, scrollDelta)
                 textInput.requestRectangleOnScreen(
                     android.graphics.Rect(0, 0, textInput.width, textInput.height),
                     true
                 )
-            }, 350L)
+            }, 500L)
         }
     }
 
