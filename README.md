@@ -10,7 +10,7 @@ A local-first Android video editor with a CapCut-inspired workflow. Editing and 
 - Installed baseline confirmed by the user: **versionCode 394 / build 61 (`app-v8.3-61`)**.
 - **Release 395 is blocked.** Do not change version metadata, sign/publish an APK, or offer an update until the true blockers below pass and the user explicitly authorizes release.
 - Latest completed full emulator workflow: [run #40199353737 (#152)](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40199353737), commit `515df8035d31508acb03f5e9fe59cf0e78879508`. Result: **6 tests passed, 0 failures, 0 errors, 0 skipped**.
-- A separate saved-draft round-trip UI test was added afterward in commit [`b109bbe`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/b109bbeff71876d93a90e53acd17f41cad1ad64f). Its CI result is **not yet confirmed**; treat that test as pending until a workflow run proves it.
+- A separate saved-draft round-trip UI test was added in commit [`1aa3323`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/1aa3323bcedac16e7ff89fe6deec42113b3905e0), building on [`b109bbe`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/b109bbeff71876d93a90e53acd17f41cad1ad64f). The test now checks restored clip trim duration, visible preview text, editable text content and 32 sp size. Its CI result is **not yet confirmed**; do not count it as passed until a workflow run proves it.
 
 ## Verified — do not repeat without a relevant code change
 
@@ -40,7 +40,7 @@ Multi-clip export log: `durationMs=11029 secondFrameRGB=0,254,2 originalsUnchang
 ## True remaining work — one canonical checklist
 
 ### 1. Saved project and resume
-- [ ] Run and fix the new `savedDraftReopensTextLayerAndClipState` test from commit `b109bbe`. It checks that a stored draft reopens with the clip and text layer, and restores the editable text and 32 sp size.
+- [ ] Run and fix the new `savedDraftReopensTextLayerAndClipState` test from commit `1aa3323`. It checks that a stored draft reopens with a 7.02-second trimmed clip and restores preview text, editable text content and 32 sp size.
 - [ ] After that test passes, add a separate end-to-end check of manual JSON **Save As → close → Open**. The current test covers the local draft store/restore path, not the Android document-picker path.
 - [ ] Verify project restoration of clip trims/order, playhead/zoom, text timing/position/style, music/effect URI and levels.
 
