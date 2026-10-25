@@ -272,6 +272,8 @@ class VideoEditorActivity : Activity() {
     private var keyboardLayoutActive = false
     private var maxEditorViewportHeightPx = 0
     private var applyingResponsiveLayout = false
+    private var textPanelInputOnlyMode = false
+    private val textPanelChildVisibilityBeforeIme = linkedMapOf<View, Int>()
 
     companion object {
         private const val REQUEST_MAIN_VIDEO = 5101
@@ -1249,6 +1251,7 @@ class VideoEditorActivity : Activity() {
         }
 
         fun applyKeyboardMode(imeVisible: Boolean, viewportHeight: Int) {
+            applyTextPanelImeFocusMode(imeVisible)
             if (imeVisible == keyboardLayoutActive) {
                 applySafeRootPadding(imeVisible, viewportHeight)
                 return
@@ -2481,35 +2484,78 @@ class VideoEditorActivity : Activity() {
         }
     }
 
+    /**
+     * When the IME is open on a compact phone, keep the actual editor field as the
+     * only visible child of the text tool panel. The full tool panel is restored when
+     * the keyboard closes. This avoids relying on a tall scroll panel squeezed between
+     * the preview and the keyboard.
+     */
+    private fun applyTextPanelImeFocusMode(imeVisible: Boolean) {
+        if (!::textPanel.isInitialized || !::textInput.isInitialized) return
+
+        if (!imeVisible) {
+            if (textPanelInputOnlyMode) {
+                textPanelChildVisibilityBeforeIme.forEach { (view, visibility) ->
+                    view.visibility = visibility
+                }
+                textPanelChildVisibilityBeforeIme.clear()
+                textPanelInputOnlyMode = false
+                textPanel.requestLayout()
+            }
+            return
+        }
+
+        if (activeEditorPanel != "text") return
+        if (!textPanelInputOnlyMode) {
+            textPanelChildVisibilityBeforeIme.clear()
+            for (index in 0 until textPanel.childCount) {
+                val child = textPanel.getChildAt(index)
+                textPanelChildVisibilityBeforeIme[child] = child.visibility
+                if (child !== textInput) child.visibility = View.GONE
+            }
+            textInput.visibility = View.VISIBLE
+            textPanelInputOnlyMode = true
+        }
+        textPanel.requestLayout()
+        editorPanelScroll.post {
+            editorPanelScroll.scrollTo(0, 0)
+            ensureTextInputVisibleInToolPanel()
+        }
+    }
+
     private fun ensureTextInputVisibleInToolPanel() {
         if (!::textInput.isInitialized || !::editorPanelScroll.isInitialized) return
-        if (activeEditorPanel != "text" || !textInput.isAttachedToWindow || !textInput.isShown) return
-        if (textInput.width <= 0 || textInput.height <= 0 || editorPanelScroll.height <= 0) return
-
-        // Use the ScrollView's actual visible screen rectangle rather than only its
-        // measured height: adjustResize and IME insets behave differently across devices.
-        val panelVisible = android.graphics.Rect()
-        if (!editorPanelScroll.getGlobalVisibleRect(panelVisible)) return
-        val inputLocation = IntArray(2)
-        textInput.getLocationOnScreen(inputLocation)
-        val inputTop = inputLocation[1]
-        val inputBottom = inputTop + textInput.height
-        val scrollDelta = when {
-            inputBottom > panelVisible.bottom -> inputBottom - panelVisible.bottom + dp(12)
-            inputTop < panelVisible.top -> inputTop - panelVisible.top - dp(12)
-            else -> 0
-        }
-        if (scrollDelta != 0) {
-            android.util.Log.i(
+        if (activeEditorPanel != "text" || !textInput.isAttachedToWindow || !textInput.isShown) {
+            android.util.Log.w(
                 "EditorImeLayout",
-                "reveal-text-input delta=$scrollDelta input=$inputTop..$inputBottom " +
-                    "panel=${panelVisible.top}..${panelVisible.bottom} ime=$keyboardLayoutActive"
+                "text-input-not-shown activePanel=$activeEditorPanel attached=${::textInput.isInitialized && textInput.isAttachedToWindow} shown=${::textInput.isInitialized && textInput.isShown}"
             )
-            editorPanelScroll.scrollBy(0, scrollDelta)
+            return
         }
+        if (textInput.width <= 0 || textInput.height <= 0 || editorPanelScroll.height <= 0) {
+            android.util.Log.w(
+                "EditorImeLayout",
+                "text-input-zero-size input=${textInput.width}x${textInput.height} panel=${editorPanelScroll.width}x${editorPanelScroll.height}"
+            )
+            return
+        }
+
+        // In IME focus mode the text field is the only child left in the panel, so
+        // resetting to the top gives it the entire viewport instead of leaving it at
+        // a stale scroll offset from the preceding "Add text" button.
+        if (keyboardLayoutActive && textPanelInputOnlyMode) editorPanelScroll.scrollTo(0, 0)
+        textInput.requestFocus()
         textInput.requestRectangleOnScreen(
             android.graphics.Rect(0, 0, textInput.width, textInput.height),
             true
+        )
+        val visible = android.graphics.Rect()
+        val hasVisibleRect = textInput.getGlobalVisibleRect(visible)
+        android.util.Log.i(
+            "EditorImeLayout",
+            "text-input-layout size=${textInput.width}x${textInput.height} " +
+                "panel=${editorPanelScroll.width}x${editorPanelScroll.height} " +
+                "visible=$hasVisibleRect rect=$visible keyboard=$keyboardLayoutActive"
         )
     }
 
