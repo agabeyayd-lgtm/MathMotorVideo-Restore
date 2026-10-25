@@ -1,5 +1,17 @@
 # MathMotor Video — current project status
 
+## Live checkpoint — 2026-10-25 (newest first)
+
+This section supersedes stale status wording lower in this historical log, including references that say run #139 is still the latest/current attempt. Continue from these commits and test results; do not repeat completed work from the beginning.
+
+- Installed baseline confirmed by user: versionCode 394 / build 61 (`app-v8.3-61`). Version 395 remains blocked; no release metadata changes or signed release APK.
+- Latest completed full-suite result inspected: run [#40194075276](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40194075276) failed only at the UI assertion `Text editor input did not remain accessible after keyboard resize`. Unit tests, debug APK build and fixture generation were successful; instrumentation reported 1 failure in the five-test suite.
+- README checkpoint was committed to `fix/editor-395-gate` in `35b1aee83ff5791338604fd8b6895b0f439369b7`.
+- Latest keyboard visibility repair source commit: `f82565d433245921dc1b8e4e7c7c18419c73a098`. It combines the resize signal with IME insets and re-reads the current root insets inside the posted callback to avoid stale IME-animation events hiding the input panel. **This is a proposed fix awaiting the next CI result, not yet verified.**
+- Two-clip export verification is in separate branch `work/multiclip-export-verification`, commit [`d030c3788a649cc1ca67f6a9f893234d2206ec0e`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/d030c3788a649cc1ca67f6a9f893234d2206ec0e). The test checks two source clips import in order, one exported MP4, combined duration, green second-clip frame at 9.5 seconds, and that source files are unchanged. The branch has no CI run because the workflow's push branches currently include only `main` and `fix/editor-395-gate`. Do not report this as passed.
+- Immediate sequence: validate commit `f82565d` in CI; inspect the exact result; only then integrate the multi-clip test into `fix/editor-395-gate` and run it; update this record with the actual run ID and outcome. Keep version metadata unchanged.
+
+
 ## Current direction
 MathMotor Video is a local Android video editor with a CapCut-inspired workflow. Normal editing should run on-device without a cloud account or paid AI service.
 
