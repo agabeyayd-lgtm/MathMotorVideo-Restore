@@ -390,8 +390,33 @@ if ! take_screen emulator-screenshots/home-with-drafts.png; then
   exit 6
 fi
 
-echo "Step 9/9: save diagnostics"
-timeout -k 2s 8s adb -s emulator-5554 logcat -d > emulator-screenshots/logcat.txt || true
+echo "Step 9/9: verify thumbnail frame diversity and save diagnostics"
+# Wait for several decoded thumbnails, then check actual sampled bitmap fingerprints.
+# The fixture is a moving test pattern, so identical hashes usually indicate that
+# the filmstrip reused the same frame rather than using each requested timestamp.
+thumbnail_ready=0
+thumbnail_unique=0
+for attempt in $(seq 1 15); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime > emulator-screenshots/logcat.txt 2>&1 || true
+  grep "EditorThumbnail.*THUMBNAIL_READY" emulator-screenshots/logcat.txt > emulator-screenshots/thumbnail-ready.txt || true
+  thumbnail_ready="$(grep -c "THUMBNAIL_READY" emulator-screenshots/thumbnail-ready.txt || true)"
+  thumbnail_unique="$(sed -n 's/.*hash=\([-0-9]*\).*/\1/p' emulator-screenshots/thumbnail-ready.txt | sort -u | wc -l | tr -d ' ')"
+  echo "Thumbnail verification attempt $attempt/15: ready=$thumbnail_ready distinct=$thumbnail_unique"
+  if [ "$thumbnail_ready" -ge 8 ] && [ "$thumbnail_unique" -ge 4 ]; then
+    break
+  fi
+  sleep 2
+done
+if [ "$thumbnail_ready" -lt 8 ]; then
+  echo "Too few timeline thumbnails decoded: $thumbnail_ready; expected at least 8"
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime > emulator-screenshots/logcat.txt 2>&1 || true
+  exit 14
+fi
+if [ "$thumbnail_unique" -lt 4 ]; then
+  echo "Thumbnail fingerprints are not diverse: $thumbnail_unique unique hashes from $thumbnail_ready frames"
+  exit 15
+fi
+echo "Thumbnail verification passed: $thumbnail_ready frames, $thumbnail_unique distinct fingerprints."
 test -s emulator-screenshots/home.png
 test -s emulator-screenshots/editor-empty.png
 test -s emulator-screenshots/editor.png
