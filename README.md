@@ -77,3 +77,9 @@ Multi-clip export log: `durationMs=11029 secondFrameRGB=0,254,2 originalsUnchang
 - The restored clip-duration assertion passed this run, so the failure moved further into the draft round-trip test. This is currently an accessibility/viewport assertion, not proof that the stored text size is wrong.
 - Test-only follow-up commit [`eeda257`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/eeda2577ec86f9371fea6a00087abc9843de6ccb) scrolls the actual vertical text-controls panel before searching for the restored size label. Await the new CI run before treating draft restoration as verified.
 - Do not release an APK; version 395 remains blocked by the round-trip gate and the outstanding editor validations below.
+
+
+### Latest handoff — run #159 diagnosed, test correction submitted
+- Run [#159](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40204548336) built successfully but failed in the draft-round-trip test at the new scroll step.
+- Root cause of that assertion: `UiScrollable.scrollTextIntoView("Yazı boyutu:")` creates an exact-text selector, while the real label includes its value (for example `Yazı boyutu: 32`). It could never match the full label.
+- Test correction [`1e0f987`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/1e0f987a90d37e8547621950ce93d4edb5ae24d7) now uses `scrollIntoView(UiSelector().textContains("Yazı boyutu:"))`, preserving the actual assertion that the restored text size is 32 sp. Await CI before marking draft restoration green.
