@@ -1135,7 +1135,7 @@ class EditorTimelineInteractionTest {
             "Manual JSON did not preserve the playhead and zoom: $restoreLog",
             restoreLog.contains("playheadMs=7700 zoomPercent=200")
         )
-        val restoredScrollMatch = Regex("scrollMs=(\\\\d+)").find(restoreLog)
+        val restoredScrollMatch = Regex("scrollMs=(\\d+)").find(restoreLog)
             ?: throw AssertionError("Manual JSON restore did not report the saved timeline scroll: $restoreLog")
         val restoredScrollMs = restoredScrollMatch.groupValues[1].toLong()
         assertTrue(
