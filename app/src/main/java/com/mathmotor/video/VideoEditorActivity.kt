@@ -696,6 +696,7 @@ class VideoEditorActivity : Activity() {
             addView(android.widget.RadioButton(this@VideoEditorActivity).apply { id = 3; text = "Alt"; setTextColor(Color.WHITE) })
             check(3)
             setOnCheckedChangeListener { _, checkedId ->
+                if (!loadingTextLayerControls) recordClipEdit()
                 textPosition = when (checkedId) {
                     1 -> TextPosition.TOP
                     2 -> TextPosition.CENTER
@@ -733,6 +734,7 @@ class VideoEditorActivity : Activity() {
             check(11)
             setOnCheckedChangeListener { _, checkedId ->
                 if (loadingTextLayerControls) return@setOnCheckedChangeListener
+                recordClipEdit()
                 textColorPreset = TextColorPreset.values().getOrNull(checkedId - 11)
                     ?: TextColorPreset.WHITE
                 syncSelectedTextLayerFromControls()
@@ -757,6 +759,7 @@ class VideoEditorActivity : Activity() {
             isChecked = true
             setOnCheckedChangeListener { _, checked ->
                 if (loadingTextLayerControls) return@setOnCheckedChangeListener
+                recordClipEdit()
                 textBold = checked
                 syncSelectedTextLayerFromControls()
                 updatePreviewTextOverlay()
@@ -790,12 +793,20 @@ class VideoEditorActivity : Activity() {
                 previewTextOverlays.forEach { it.requestLayout() }
                 refreshTextLayerList()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                activeTrimHistorySnapshot = captureClipEditSnapshot()
+            }
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                finishTrimHistoryGesture()
+            }
         })
         textPanel.addView(textSizeSeek, matchWrap())
         textInput.addTextChangedListener(object : android.text.TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {
+                if (!loadingTextLayerControls && pendingTextInputHistorySnapshot == null) {
+                    pendingTextInputHistorySnapshot = runCatching { captureClipEditSnapshot() }.getOrNull()
+                }
+            }
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                 if (loadingTextLayerControls) return
                 if (selectedTextLayer() == null && !s.isNullOrBlank()) {
@@ -821,6 +832,8 @@ class VideoEditorActivity : Activity() {
                 updatePreviewTextOverlay()
                 timelineHandler.removeCallbacks(textTimelineRefreshTask)
                 timelineHandler.postDelayed(textTimelineRefreshTask, 120L)
+                timelineHandler.removeCallbacks(commitTextInputHistoryTask)
+                timelineHandler.postDelayed(commitTextInputHistoryTask, 650L)
             }
             override fun afterTextChanged(s: android.text.Editable?) {}
         })
@@ -834,6 +847,7 @@ class VideoEditorActivity : Activity() {
         musicActions.addView(miniButton("Müzik ekle") { chooseAudio(true) },
             LinearLayout.LayoutParams(0, dp(42), 1f))
         musicActions.addView(miniButton("Müziği kaldır") {
+            recordClipEdit()
             musicUri = null
             musicTitle = null
             musicLabel.text = "Müzik seçilmedi."
@@ -857,6 +871,7 @@ class VideoEditorActivity : Activity() {
         soundActions.addView(miniButton("Efekt ekle") { chooseAudio(false) },
             LinearLayout.LayoutParams(0, dp(42), 1f))
         soundActions.addView(miniButton("Efekti kaldır") {
+            recordClipEdit()
             soundUri = null
             soundTitle = null
             soundDurationMs = 0L
@@ -878,9 +893,13 @@ class VideoEditorActivity : Activity() {
                 updateSoundControls()
                 if (!deferTimelineRefresh) refreshTimelineTracks()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) { deferTimelineRefresh = true }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                deferTimelineRefresh = true
+                activeTrimHistorySnapshot = captureClipEditSnapshot()
+            }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
                 deferTimelineRefresh = false
+                finishTrimHistoryGesture()
                 refreshTimelineTracks()
             }
         })
@@ -1567,6 +1586,7 @@ class VideoEditorActivity : Activity() {
             var bodyDownRawX = 0f
             var bodyInitialStartMs = startMs
             var bodyInitialEndMs = endMs
+            var bodyBeforeSnapshot: ClipEditSnapshot? = null
             var bodyMoved = false
             body.setOnTouchListener { view, event ->
                 when (event.actionMasked) {
@@ -1574,6 +1594,7 @@ class VideoEditorActivity : Activity() {
                         bodyDownRawX = event.rawX
                         bodyInitialStartMs = layer.startMs
                         bodyInitialEndMs = layer.endMs
+                        bodyBeforeSnapshot = captureClipEditSnapshot()
                         bodyMoved = false
                         player?.playWhenReady = false
                         // Own this gesture from the start so the horizontal timeline does not steal it.
@@ -1609,6 +1630,8 @@ class VideoEditorActivity : Activity() {
                             layer.timingCustomized = true
                             selectedTextLayerId = layer.id
                             loadTextLayerIntoControls(layer)
+                            pushHistoryIfChanged(bodyBeforeSnapshot)
+                            bodyBeforeSnapshot = null
                             status.text = "Yazı katmanı zaman çizelgesinde taşındı."
                             refreshTimelineTracks()
                         } else {
@@ -1642,6 +1665,7 @@ class VideoEditorActivity : Activity() {
                 var downRawX = 0f
                 var initialStartMs = startMs
                 var initialEndMs = endMs
+                var textHandleBeforeSnapshot: ClipEditSnapshot? = null
                 var moved = false
                 handle.setOnTouchListener { view, event ->
                     when (event.actionMasked) {
@@ -1649,6 +1673,7 @@ class VideoEditorActivity : Activity() {
                             downRawX = event.rawX
                             initialStartMs = layer.startMs
                             initialEndMs = layer.endMs
+                            textHandleBeforeSnapshot = captureClipEditSnapshot()
                             moved = false
                             player?.playWhenReady = false
                             view.parent?.requestDisallowInterceptTouchEvent(true)
@@ -1692,6 +1717,8 @@ class VideoEditorActivity : Activity() {
                                 layer.timingCustomized = true
                                 selectedTextLayerId = layer.id
                                 loadTextLayerIntoControls(layer)
+                                pushHistoryIfChanged(textHandleBeforeSnapshot)
+                                textHandleBeforeSnapshot = null
                                 status.text = if (isStart) {
                                     "Yazı başlangıcı: ${formatTimelineMs(layer.startMs)}"
                                 } else {
@@ -2138,6 +2165,18 @@ class VideoEditorActivity : Activity() {
         pushClipUndoSnapshot(captureClipEditSnapshot())
     }
 
+    private fun pushHistoryIfChanged(before: ClipEditSnapshot?) {
+        if (before == null) return
+        val after = runCatching { captureClipEditSnapshot() }.getOrNull() ?: return
+        if (before.projectJson != after.projectJson) pushClipUndoSnapshot(before)
+    }
+
+    private fun finishOverlayHistoryGesture() {
+        val before = activeOverlayHistorySnapshot
+        activeOverlayHistorySnapshot = null
+        pushHistoryIfChanged(before)
+    }
+
     private fun pushClipUndoSnapshot(snapshot: ClipEditSnapshot) {
         undoClipHistory.add(snapshot)
         if (undoClipHistory.size > 50) undoClipHistory.removeAt(0)
@@ -2146,10 +2185,9 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun finishTrimHistoryGesture() {
-        val before = activeTrimHistorySnapshot ?: return
+        val before = activeTrimHistorySnapshot
         activeTrimHistorySnapshot = null
-        val after = runCatching { captureClipEditSnapshot() }.getOrNull()
-        if (after != null && before.projectJson != after.projectJson) pushClipUndoSnapshot(before)
+        pushHistoryIfChanged(before)
     }
 
     private fun clearClipHistory() {
@@ -2260,6 +2298,7 @@ class VideoEditorActivity : Activity() {
             return
         }
         syncSelectedTextLayerFromControls()
+        recordClipEdit()
         val total = totalOutputDurationMs()
         if (total > 0L && timelinePlayheadMs >= total) {
             player?.playWhenReady = false
@@ -2306,6 +2345,7 @@ class VideoEditorActivity : Activity() {
             return
         }
         syncSelectedTextLayerFromControls()
+        recordClipEdit()
         val next = (layer.sizeSp + delta).coerceIn(12, 96)
         layer.sizeSp = next
         textSizeSp = next
@@ -2326,6 +2366,7 @@ class VideoEditorActivity : Activity() {
             status.text = "Kopyalamak için önce bir yazı katmanı seç."
             return
         }
+        recordClipEdit()
         val copy = source.copy(id = nextTextLayerId++, text = source.text)
         textLayers.add(textLayers.indexOf(source) + 1, copy)
         selectedTextLayerId = copy.id
@@ -2343,6 +2384,7 @@ class VideoEditorActivity : Activity() {
             status.text = "Silmek için önce bir yazı katmanı seç."
             return
         }
+        recordClipEdit()
         textLayers.removeAt(index)
         val next = textLayers.getOrNull(index.coerceAtMost(textLayers.lastIndex))
         selectedTextLayerId = next?.id
@@ -2487,6 +2529,8 @@ class VideoEditorActivity : Activity() {
             val layer = textLayers.firstOrNull { it.id == layerId } ?: return@setOnTouchListener false
             when (event.actionMasked) {
                 android.view.MotionEvent.ACTION_DOWN -> {
+                    // Capture the project before moving or pinching the text overlay.
+                    activeOverlayHistorySnapshot = captureClipEditSnapshot()
                     // The parent editor ScrollView must not intercept vertical text drags.
                     view.parent?.requestDisallowInterceptTouchEvent(true)
                     if (selectedTextLayerId != layer.id) {
@@ -2578,6 +2622,7 @@ class VideoEditorActivity : Activity() {
                 android.view.MotionEvent.ACTION_UP -> {
                     view.parent?.requestDisallowInterceptTouchEvent(false)
                     if (selectedTextLayerId == layer.id) syncSelectedTextLayerFromControls()
+                    finishOverlayHistoryGesture()
                     refreshTextLayerList()
                     refreshTimelineTracks()
                     status.text = "Yazı konumu güncellendi. Sürükle veya iki parmağınla boyutlandır."
@@ -2586,6 +2631,7 @@ class VideoEditorActivity : Activity() {
                 }
                 android.view.MotionEvent.ACTION_CANCEL -> {
                     view.parent?.requestDisallowInterceptTouchEvent(false)
+                    finishOverlayHistoryGesture()
                     startDistance = 0f
                     true
                 }
@@ -2599,8 +2645,12 @@ class VideoEditorActivity : Activity() {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (fromUser) onValue(progress.coerceIn(0, 100))
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                activeTrimHistorySnapshot = captureClipEditSnapshot()
+            }
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                finishTrimHistoryGesture()
+            }
         }
 
     private fun installTextTimeListeners() {
