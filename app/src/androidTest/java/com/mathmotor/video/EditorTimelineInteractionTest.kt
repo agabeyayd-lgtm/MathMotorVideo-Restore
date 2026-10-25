@@ -622,7 +622,7 @@ class EditorTimelineInteractionTest {
         ).setAsVerticalList()
         assertTrue(
             "Could not scroll the text panel to its size controls",
-            textControlsScroll.scrollTextIntoView("Yazı boyutu:")
+            textControlsScroll.scrollIntoView(UiSelector().textContains("Yazı boyutu:"))
         )
         val restoredSize = requireObject(
             device,
