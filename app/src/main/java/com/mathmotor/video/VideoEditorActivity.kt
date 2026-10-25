@@ -830,6 +830,7 @@ class VideoEditorActivity : Activity() {
         ))
         textInput = EditText(this).apply {
             hint = "Videoda görünecek yazı"
+            contentDescription = "Metin katmanı metin girişi"
             setTextColor(Color.WHITE)
             setHintTextColor(Color.rgb(154, 171, 190))
             setSingleLine(false)
