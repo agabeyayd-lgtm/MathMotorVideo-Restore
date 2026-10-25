@@ -43,3 +43,9 @@ No signed release APK was produced by run #152. Keep version metadata unchanged 
 
 - [Run #159](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40204548336) failed in the draft round-trip test at the scroll helper, not at the 32 sp comparison. The helper `scrollTextIntoView("Yazı boyutu:")` uses exact text matching; the real label includes the size value, so the selector could not match it.
 - Test-only fix [`1e0f987`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/1e0f987a90d37e8547621950ce93d4edb5ae24d7) uses a `textContains` selector with `scrollIntoView`. The check still verifies the restored value includes 32. Draft round-trip remains unverified until a new emulator run passes.
+
+
+## Latest CI handoff — 2026-10-25 (run #160)
+
+- Run [#160](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40205495392) failed before reaching interaction tests, during initial home-screen capture. Emulator diagnostics explicitly report a system ANR for `com.google.android.apps.nexuslauncher` (Pixel launcher); ADB then became unavailable and the capture script exited 8. `dumpsys activity` showed `com.mathmotor.video.next/.MainActivity` resumed. Treat this as emulator/launcher infrastructure failure, not a verdict on draft restore.
+- The [`1e0f987`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/1e0f987a90d37e8547621950ce93d4edb5ae24d7) substring-selector correction remains unverified because the editor suite did not run. Retried failed CI jobs on run #160. Await the retry; if the launcher ANR recurs, harden emulator workflow recovery instead of changing app assertions.
