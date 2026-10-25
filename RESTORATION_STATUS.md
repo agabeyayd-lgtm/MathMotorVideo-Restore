@@ -8,10 +8,11 @@
 - Branch: `fix/editor-395-gate`
 - PR: [#8](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/pull/8)
 - Installed baseline: versionCode **394** / build **61** (`app-v8.3-61`)
-- Latest code fix: [`c584c0d`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/c584c0db3068a1fd7c09c40ed372d95ace94f89f) — test navigation explicitly leaves the DocumentsUI drawer for Downloads, attempts the explicit Open action after selecting the JSON, and force-stops the picker before restoring home on failure.
+- Latest editor-test fix: [`c584c0d`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/c584c0db3068a1fd7c09c40ed372d95ace94f89f) — navigate into Downloads before tapping the JSON and try the DocumentsUI Open action.
+- Latest CI guardrail: [`3283509`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/32835092c3707ada8bfaa90620dbed701af491e5) — puts bounded timeouts and diagnostic markers around optional ffmpeg installation and both fixture encodes after run #166 stalled before emulator startup.
 - Latest green validation: [run #161 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40212230107). Unit tests, debug build, screenshot capture and **7/7 emulator interaction tests passed**.
-- Latest failed validation: [run #165 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40216650783). Unit tests/debug build and six editor interaction tests passed including two-clip MP4 export; the remaining failure showed the file tap occurred under the open navigation drawer. The second home-screen assertion also failed after picker cleanup.
-- Current validation: [run #166 — IN PROGRESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40217754007) — checks the corrected folder navigation/open action and stronger cleanup. Do not mark project-file reopening complete until it passes.
+- Latest completed emulator validation: [run #165 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40216650783). Unit tests/debug build and six editor interaction tests passed, including the sequential two-clip MP4 export. Manual JSON reopen left DocumentsUI's navigation drawer open; the screenshot test then could not see home.
+- [Run #166](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40217754007) passed unit tests and debug build but remained in fixture generation for over four minutes, never reaching emulator tests. [Run #167](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40218228081) is queued with the new bounded fixture-generation step. JSON restore remains unverified; leave its gate unchecked.
 
 ## Latest confirmed progress
 
