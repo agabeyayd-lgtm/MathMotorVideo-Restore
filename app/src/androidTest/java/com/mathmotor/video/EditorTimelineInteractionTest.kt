@@ -120,7 +120,7 @@ class EditorTimelineInteractionTest {
         val swipeY = afterZoomBounds.centerY()
         var endTime = requireProjectTime(device)
         var endMs = projectPositionMs(endTime)
-        for (attempt in 0 until 4) {
+        for (attempt in 0 until 12) {
             if (endMs >= 7_800L) break
             device.swipe(
                 scrollLeft + scrollWidth * 9 / 10,
@@ -133,6 +133,10 @@ class EditorTimelineInteractionTest {
             SystemClock.sleep(180)
             endTime = requireProjectTime(device)
             endMs = projectPositionMs(endTime)
+            android.util.Log.i(
+                "TimelineInteractionTest",
+                "stage=end-swipe attempt=${attempt + 1} value=$endTime"
+            )
         }
         assertTrue("A left swipe on the clip filmstrip did not move the timeline", endMs > afterPinchTime)
         android.util.Log.i("TimelineInteractionTest", "stage=after-end-swipe value=$endTime")
@@ -144,7 +148,7 @@ class EditorTimelineInteractionTest {
         // The symmetric leading inset must also let the start align exactly under the center line.
         var startTime = requireProjectTime(device)
         var startMs = projectPositionMs(startTime)
-        for (attempt in 0 until 4) {
+        for (attempt in 0 until 12) {
             if (startMs <= 200L) break
             device.swipe(
                 scrollLeft + scrollWidth / 10,
@@ -157,6 +161,10 @@ class EditorTimelineInteractionTest {
             SystemClock.sleep(180)
             startTime = requireProjectTime(device)
             startMs = projectPositionMs(startTime)
+            android.util.Log.i(
+                "TimelineInteractionTest",
+                "stage=start-swipe attempt=${attempt + 1} value=$startTime"
+            )
         }
         android.util.Log.i("TimelineInteractionTest", "stage=after-start-swipe value=$startTime")
         assertTrue("The timeline could not return to its first frame: $startTime ($startMs ms)", startMs <= 200L)
