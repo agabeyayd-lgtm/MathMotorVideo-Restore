@@ -114,5 +114,14 @@ Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228
 - [x] Run [#189](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40230332447) compiled and started the emulator interaction suite; 8/9 tests passed, but the expanded manual JSON round-trip test failed because the restored project-time label was 1.41 s instead of the saved 7.70 s.
 - [x] Root cause confirmed in `VideoEditorActivity`: restoring the saved horizontal timeline scroll posts `scrollTo()`; its scroll listener interpreted that programmatic viewport restoration as a user scrub and replaced the independently persisted playhead with the time mapped from the scroll offset.
 - [x] Fix committed on `fix/global-editor-undo`: `976d4b38023ab4b5945577012b821b71476e85fd`. During project restoration, horizontal-scroll callbacks still synchronize timeline lanes and redraw the playhead line, but do not seek/change the saved playhead. The guard is released after the posted scroll restoration completes.
-- [ ] Re-run the full emulator interaction suite against the fix and verify the 7.70 s playhead plus the remaining JSON round-trip assertions.
+- [x] Run [#191](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40232290189): unit tests and debug APK build passed; the manual JSON test passed its restore/playhead/zoom/clip/text-state checks and stopped later because the test queried `Camgöbeği` without first scrolling the narrow vertical text panel to that control. This is a test visibility/scroll-order issue, not a new JSON-restore assertion failure.
 - [ ] Version 395 remains blocked; do not merge or release until the full suite and remaining release gates pass.
+
+
+### 2026-10-25 — #191: cyan text control selector correction
+
+- [x] [Run #191](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40232290189) compiled and ran the emulator suite; unit tests and debug APK build passed. The manual JSON round-trip test progressed past restoration and the earlier playhead/time/zoom and project-state assertions, then failed at the cyan colour-radio lookup.
+- [x] Root cause: after scrolling the vertical text panel to the `Üst` position control, the test immediately queried `Camgöbeği` farther down the panel without scrolling it into view. The UI automation selector therefore could not see the off-screen control; the test had not yet completed the colour assertion.
+- [x] Corrected the test to call `textPanelScroller.scrollIntoView(UiSelector().text("Camgöbeği"))` before checking the restored selected colour. Test change: [`6100ddb`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/6100ddb26ac2b89b5bc4cd0061ac583870905d56).
+- [ ] [Run #192](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40233158607) is the next full verification for this selector correction. Manual JSON persistence remains open until all assertions pass.
+- [ ] Keep version 395 blocked; do not merge or release until the full suite and the other release gates pass.
