@@ -79,18 +79,43 @@ class VideoEditorActivity : Activity() {
         var endMs: Long = durationMs
     )
 
-    private data class ClipEditSnapshot(
+    private data class EditorEditSnapshot(
         val clips: List<Clip>,
         val selectedClipIndex: Int,
         val timelinePlayheadMs: Long,
-        val previewSingleClip: Boolean
+        val previewSingleClip: Boolean,
+        val textLayers: List<TextLayer>,
+        val selectedTextLayerId: Long?,
+        val nextTextLayerId: Long,
+        val textStartMs: Long,
+        val textEndMs: Long,
+        val textTimingCustomized: Boolean,
+        val textPosition: TextPosition,
+        val textSizeSp: Int,
+        val textColorPreset: TextColorPreset,
+        val textBold: Boolean,
+        val musicUri: Uri?,
+        val musicTitle: String?,
+        val soundUri: Uri?,
+        val soundTitle: String?,
+        val soundDurationMs: Long,
+        val soundStartMs: Long,
+        val sourceAudioVolume: Int,
+        val musicVolume: Int,
+        val soundVolume: Int,
+        val keepSourceAudio: Boolean,
+        val timelineZoom: Float,
+        val timelineHorizontalScrollX: Int
     )
 
     private val clips = mutableListOf<Clip>()
     private var draftId: String? = null
-    private val undoClipHistory = mutableListOf<ClipEditSnapshot>()
-    private val redoClipHistory = mutableListOf<ClipEditSnapshot>()
-    private var activeTrimHistorySnapshot: ClipEditSnapshot? = null
+    private val undoEditorHistory = mutableListOf<EditorEditSnapshot>()
+    private val redoEditorHistory = mutableListOf<EditorEditSnapshot>()
+    private var activeTrimHistorySnapshot: EditorEditSnapshot? = null
+    private var activeEditorGestureSnapshot: EditorEditSnapshot? = null
+    private var isRestoringEditorSnapshot = false
+    private var keepSourceAudioEnabled = true
     private var undoClipButton: Button? = null
     private var redoClipButton: Button? = null
     private var selectedClipIndex = -1
@@ -787,10 +812,10 @@ class VideoEditorActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        undoClipButton = miniButton("↶ Klip geri al") { undoClipEdit() }.apply {
+        undoClipButton = miniButton("↶ Geri al") { undoEditorEdit() }.apply {
             isEnabled = false
         }
-        redoClipButton = miniButton("↷ Klip yinele") { redoClipEdit() }.apply {
+        redoClipButton = miniButton("↷ Yinele") { redoEditorEdit() }.apply {
             isEnabled = false
         }
         clipHistoryRow.addView(undoClipButton, LinearLayout.LayoutParams(0, dp(40), 1f))
@@ -2330,94 +2355,225 @@ class VideoEditorActivity : Activity() {
         // could discard the pending auto-zoom scroll before the posted scroll runs.
     }
 
-    private fun captureClipEditSnapshot(): ClipEditSnapshot = ClipEditSnapshot(
-        clips = clips.map { it.copy() },
-        selectedClipIndex = selectedClipIndex,
-        timelinePlayheadMs = timelinePlayheadMs,
-        previewSingleClip = previewSingleClip
-    )
-
-    private fun recordClipEdit() {
-        pushClipUndoSnapshot(captureClipEditSnapshot())
+    private fun captureEditorSnapshot(): EditorEditSnapshot {
+        if (::textInput.isInitialized && !loadingTextLayerControls) {
+            syncSelectedTextLayerFromControls()
+        }
+        return EditorEditSnapshot(
+            clips = clips.map { it.copy() },
+            selectedClipIndex = selectedClipIndex,
+            timelinePlayheadMs = timelinePlayheadMs,
+            previewSingleClip = previewSingleClip,
+            textLayers = textLayers.map { it.copy() },
+            selectedTextLayerId = selectedTextLayerId,
+            nextTextLayerId = nextTextLayerId,
+            textStartMs = textStartMs,
+            textEndMs = textEndMs,
+            textTimingCustomized = textTimingCustomized,
+            textPosition = textPosition,
+            textSizeSp = textSizeSp,
+            textColorPreset = textColorPreset,
+            textBold = textBold,
+            musicUri = musicUri,
+            musicTitle = musicTitle,
+            soundUri = soundUri,
+            soundTitle = soundTitle,
+            soundDurationMs = soundDurationMs,
+            soundStartMs = soundStartMs,
+            sourceAudioVolume = sourceAudioVolume,
+            musicVolume = musicVolume,
+            soundVolume = soundVolume,
+            keepSourceAudio = keepSourceAudioEnabled,
+            timelineZoom = timelineZoom,
+            timelineHorizontalScrollX = timelineHorizontalScrollX
+        )
     }
 
-    private fun pushClipUndoSnapshot(snapshot: ClipEditSnapshot) {
-        undoClipHistory.add(snapshot)
-        if (undoClipHistory.size > 50) undoClipHistory.removeAt(0)
-        redoClipHistory.clear()
-        updateClipHistoryButtons()
+    private fun hasSameEditableContent(before: EditorEditSnapshot, after: EditorEditSnapshot): Boolean =
+        before.clips == after.clips &&
+            before.textLayers == after.textLayers &&
+            before.textStartMs == after.textStartMs &&
+            before.textEndMs == after.textEndMs &&
+            before.textTimingCustomized == after.textTimingCustomized &&
+            before.textPosition == after.textPosition &&
+            before.textSizeSp == after.textSizeSp &&
+            before.textColorPreset == after.textColorPreset &&
+            before.textBold == after.textBold &&
+            before.musicUri == after.musicUri &&
+            before.musicTitle == after.musicTitle &&
+            before.soundUri == after.soundUri &&
+            before.soundTitle == after.soundTitle &&
+            before.soundDurationMs == after.soundDurationMs &&
+            before.soundStartMs == after.soundStartMs &&
+            before.sourceAudioVolume == after.sourceAudioVolume &&
+            before.musicVolume == after.musicVolume &&
+            before.soundVolume == after.soundVolume &&
+            before.keepSourceAudio == after.keepSourceAudio
+
+    private fun recordEditorEdit() {
+        if (isRestoringEditorSnapshot) return
+        pushEditorUndoSnapshot(captureEditorSnapshot())
+    }
+
+    private fun pushEditorUndoSnapshot(snapshot: EditorEditSnapshot) {
+        if (isRestoringEditorSnapshot) return
+        undoEditorHistory.add(snapshot)
+        if (undoEditorHistory.size > 50) undoEditorHistory.removeAt(0)
+        redoEditorHistory.clear()
+        updateHistoryButtons()
+    }
+
+    private fun beginEditorHistoryGesture() {
+        if (activeEditorGestureSnapshot == null && !isRestoringEditorSnapshot) {
+            activeEditorGestureSnapshot = captureEditorSnapshot()
+        }
+    }
+
+    private fun finishEditorHistoryGesture() {
+        val before = activeEditorGestureSnapshot ?: return
+        activeEditorGestureSnapshot = null
+        val after = captureEditorSnapshot()
+        if (!hasSameEditableContent(before, after)) pushEditorUndoSnapshot(before)
     }
 
     private fun finishTrimHistoryGesture() {
         val before = activeTrimHistorySnapshot ?: return
         activeTrimHistorySnapshot = null
-        if (before.clips != clips) pushClipUndoSnapshot(before)
+        if (before.clips != clips) pushEditorUndoSnapshot(before)
     }
 
-    private fun clearClipHistory() {
-        undoClipHistory.clear()
-        redoClipHistory.clear()
+    private fun clearEditorHistory() {
+        undoEditorHistory.clear()
+        redoEditorHistory.clear()
         activeTrimHistorySnapshot = null
-        updateClipHistoryButtons()
+        activeEditorGestureSnapshot = null
+        updateHistoryButtons()
     }
 
-    private fun updateClipHistoryButtons() {
-        undoClipButton?.isEnabled = undoClipHistory.isNotEmpty()
-        redoClipButton?.isEnabled = redoClipHistory.isNotEmpty()
+    private fun updateHistoryButtons() {
+        undoClipButton?.isEnabled = undoEditorHistory.isNotEmpty()
+        redoClipButton?.isEnabled = redoEditorHistory.isNotEmpty()
     }
 
-    private fun undoClipEdit() {
-        if (undoClipHistory.isEmpty()) {
-            status.text = "Geri alınacak klip işlemi yok."
+    private fun undoEditorEdit() {
+        if (undoEditorHistory.isEmpty()) {
+            status.text = "Geri alınacak düzenleme yok."
             return
         }
-        redoClipHistory.add(captureClipEditSnapshot())
-        val snapshot = undoClipHistory.removeAt(undoClipHistory.lastIndex)
-        restoreClipEditSnapshot(snapshot)
-        status.text = "Son klip işlemi geri alındı."
-        updateClipHistoryButtons()
+        val current = captureEditorSnapshot()
+        redoEditorHistory.add(current)
+        val snapshot = undoEditorHistory.removeAt(undoEditorHistory.lastIndex)
+        restoreEditorSnapshot(snapshot)
+        status.text = "Son düzenleme geri alındı."
+        updateHistoryButtons()
     }
 
-    private fun redoClipEdit() {
-        if (redoClipHistory.isEmpty()) {
-            status.text = "Yinelenecek klip işlemi yok."
+    private fun redoEditorEdit() {
+        if (redoEditorHistory.isEmpty()) {
+            status.text = "Yinelenecek düzenleme yok."
             return
         }
-        undoClipHistory.add(captureClipEditSnapshot())
-        if (undoClipHistory.size > 50) undoClipHistory.removeAt(0)
-        val snapshot = redoClipHistory.removeAt(redoClipHistory.lastIndex)
-        restoreClipEditSnapshot(snapshot)
-        status.text = "Klip işlemi yinelendi."
-        updateClipHistoryButtons()
+        val current = captureEditorSnapshot()
+        undoEditorHistory.add(current)
+        if (undoEditorHistory.size > 50) undoEditorHistory.removeAt(0)
+        val snapshot = redoEditorHistory.removeAt(redoEditorHistory.lastIndex)
+        restoreEditorSnapshot(snapshot)
+        status.text = "Düzenleme yinelendi."
+        updateHistoryButtons()
     }
 
-    private fun restoreClipEditSnapshot(snapshot: ClipEditSnapshot) {
-        clips.clear()
-        clips.addAll(snapshot.clips.map { it.copy() })
-        selectedClipIndex = snapshot.selectedClipIndex.takeIf { it in clips.indices } ?: -1
-        timelinePreviewLoaded = false
-        previewSingleClip = snapshot.previewSingleClip && selectedClipIndex in clips.indices
-        timelinePlayheadMs = snapshot.timelinePlayheadMs.coerceIn(0L, totalOutputDurationMs())
+    private fun restoreEditorSnapshot(snapshot: EditorEditSnapshot) {
+        isRestoringEditorSnapshot = true
+        try {
+            activeTrimHistorySnapshot = null
+            activeEditorGestureSnapshot = null
 
-        refreshClipList()
-        loadTrimControls()
-        updateTimelinePlayheadControls()
+            clips.clear()
+            clips.addAll(snapshot.clips.map { it.copy() })
+            selectedClipIndex = snapshot.selectedClipIndex.takeIf { it in clips.indices } ?: -1
+            timelinePreviewLoaded = false
+            previewSingleClip = snapshot.previewSingleClip && selectedClipIndex in clips.indices
 
-        if (clips.isEmpty()) {
-            previewSingleClip = false
-            player?.clearMediaItems()
-        } else if (previewSingleClip) {
-            selectedClip()?.let { clip ->
-                player?.setMediaItem(clippedMediaItem(clip))
-                player?.prepare()
-                player?.seekTo(0L)
-                player?.playWhenReady = false
+            textLayers.clear()
+            textLayers.addAll(snapshot.textLayers.map { it.copy() })
+            selectedTextLayerId = snapshot.selectedTextLayerId?.takeIf { id ->
+                textLayers.any { it.id == id }
             }
-        } else {
-            ensureTimelinePreviewLoaded()
-            seekTimelinePreview(timelinePlayheadMs)
+            nextTextLayerId = maxOf(
+                snapshot.nextTextLayerId,
+                (textLayers.maxOfOrNull { it.id } ?: 0L) + 1L
+            )
+            textStartMs = snapshot.textStartMs
+            textEndMs = snapshot.textEndMs
+            textTimingCustomized = snapshot.textTimingCustomized
+            textPosition = snapshot.textPosition
+            textSizeSp = snapshot.textSizeSp
+            textColorPreset = snapshot.textColorPreset
+            textBold = snapshot.textBold
+
+            musicUri = snapshot.musicUri
+            musicTitle = snapshot.musicTitle
+            soundUri = snapshot.soundUri
+            soundTitle = snapshot.soundTitle
+            soundDurationMs = snapshot.soundDurationMs
+            soundStartMs = snapshot.soundStartMs
+            sourceAudioVolume = snapshot.sourceAudioVolume
+            musicVolume = snapshot.musicVolume
+            soundVolume = snapshot.soundVolume
+            keepSourceAudioEnabled = snapshot.keepSourceAudio
+
+            timelineZoom = snapshot.timelineZoom.coerceIn(0.5f, 8.0f)
+            timelineHorizontalScrollX = snapshot.timelineHorizontalScrollX.coerceAtLeast(0)
+            pendingTimelineScrollX = timelineHorizontalScrollX
+            timelinePlayheadMs = snapshot.timelinePlayheadMs.coerceIn(0L, totalOutputDurationMs())
+
+            if (::keepSourceAudio.isInitialized) keepSourceAudio.isChecked = keepSourceAudioEnabled
+            if (::musicLabel.isInitialized) {
+                musicLabel.text = musicTitle?.let { "Müzik: $it • video boyunca döngü" } ?: "Müzik seçilmedi."
+            }
+            if (::soundLabel.isInitialized) {
+                soundLabel.text = soundTitle?.let { "Ses/efekt: $it • ${formatMs(soundDurationMs)}" } ?: "Ses/efekt seçilmedi."
+            }
+            if (::musicVolumeSeek.isInitialized) musicVolumeSeek.progress = musicVolume
+            if (::musicVolumeLabel.isInitialized) musicVolumeLabel.text = "Müzik sesi: $musicVolume%"
+            if (::soundVolumeSeek.isInitialized) soundVolumeSeek.progress = soundVolume
+            if (::soundVolumeLabel.isInitialized) soundVolumeLabel.text = "Efekt sesi: $soundVolume%"
+            if (::sourceVolumeSeek.isInitialized) sourceVolumeSeek.progress = sourceAudioVolume
+            if (::sourceVolumeLabel.isInitialized) sourceVolumeLabel.text = "Orijinal video sesi: $sourceAudioVolume%"
+            if (::soundStartSeek.isInitialized) updateSoundControls()
+
+            if (::textInput.isInitialized) loadTextLayerIntoControls(selectedTextLayer())
+            refreshTextLayerList()
+            updatePreviewTextOverlay()
+            if (musicPreviewPlayer != null || soundPreviewPlayer != null || musicUri != null || soundUri != null) {
+                syncPreviewAudio()
+            }
+            musicPreviewPlayer?.volume = musicVolume / 100f
+            soundPreviewPlayer?.volume = soundVolume / 100f
+            player?.volume = if (keepSourceAudioEnabled) sourceAudioVolume / 100f else 0f
+
+            refreshClipList()
+            loadTrimControls()
+            updateTimelinePlayheadControls()
+            if (clips.isEmpty()) {
+                previewSingleClip = false
+                player?.clearMediaItems()
+            } else if (previewSingleClip) {
+                selectedClip()?.let { clip ->
+                    player?.setMediaItem(clippedMediaItem(clip))
+                    player?.prepare()
+                    player?.seekTo(0L)
+                    player?.playWhenReady = false
+                }
+            } else {
+                ensureTimelinePreviewLoaded()
+                seekTimelinePreview(timelinePlayheadMs)
+            }
+            refreshTimelineTracks()
+        } finally {
+            isRestoringEditorSnapshot = false
+            updateHistoryButtons()
         }
-        updateClipHistoryButtons()
     }
 
     private fun selectedTextLayer(): TextLayer? =
@@ -3080,7 +3236,7 @@ class VideoEditorActivity : Activity() {
                     status.text = "Bu videonun süresi okunamadı. Başka bir video dosyası seç."
                     return@runOnUiThread
                 }
-                recordClipEdit()
+                recordEditorEdit()
                 if (replaceExisting) {
                     clips.clear()
                     selectedClipIndex = -1
@@ -3225,7 +3381,7 @@ class VideoEditorActivity : Activity() {
         }
         require(loadedClips.isNotEmpty()) { "Projede video klibi bulunamadı." }
 
-        clearClipHistory()
+        clearEditorHistory()
         clips.clear()
         clips.addAll(loadedClips)
         selectedClipIndex = json.optInt("selectedClipIndex", 0).coerceIn(0, clips.lastIndex)
@@ -3558,7 +3714,7 @@ class VideoEditorActivity : Activity() {
                     status.text = "Videolar okunamadı. Mevcut kliplerin korunması için zaman çizelgesi değiştirilmedi. Başka bir MP4/video dosyası seç."
                     return@runOnUiThread
                 }
-                recordClipEdit()
+                recordEditorEdit()
                 if (replaceExisting) {
                     clips.clear()
                     selectedClipIndex = -1
@@ -3717,7 +3873,7 @@ class VideoEditorActivity : Activity() {
 
     private fun duplicateClipAt(index: Int) {
         val source = clips.getOrNull(index) ?: return
-        recordClipEdit()
+        recordEditorEdit()
         clips.add(index + 1, source.copy(title = "${source.title} • Kopya"))
         selectedClipIndex = index + 1
         timelinePreviewLoaded = false
@@ -3734,7 +3890,7 @@ class VideoEditorActivity : Activity() {
 
     private fun removeClipAt(index: Int) {
         if (index !in clips.indices) return
-        recordClipEdit()
+        recordEditorEdit()
         clips.removeAt(index)
         timelinePreviewLoaded = false
         selectedClipIndex = when {
@@ -3770,7 +3926,7 @@ class VideoEditorActivity : Activity() {
 
     private fun reorderClip(from: Int, to: Int) {
         if (from !in clips.indices || to !in clips.indices || from == to) return
-        recordClipEdit()
+        recordEditorEdit()
         val previouslySelected = selectedClip()
         val moved = clips.removeAt(from)
         clips.add(to, moved)
@@ -3831,7 +3987,7 @@ class VideoEditorActivity : Activity() {
             status.text = "Bölmek için oynatma noktasını klibin ortalarına getir; iki tarafta da en az 0,35 saniye olmalı."
             return
         }
-        recordClipEdit()
+        recordEditorEdit()
         clips[position.clipIndex] = clip.copy(title = "${clip.title} • A", endMs = splitAt)
         clips.add(position.clipIndex + 1, clip.copy(title = "${clip.title} • B", startMs = splitAt))
         selectedClipIndex = position.clipIndex + 1
@@ -3857,7 +4013,7 @@ class VideoEditorActivity : Activity() {
             status.text = if (delta < 0) "Bu klip zaten ilk sırada." else "Bu klip zaten son sırada."
             return
         }
-        recordClipEdit()
+        recordEditorEdit()
         val clip = clips.removeAt(selectedClipIndex)
         clips.add(target, clip)
         timelinePreviewLoaded = false
@@ -4087,7 +4243,7 @@ class VideoEditorActivity : Activity() {
                             initialStartMs = clip.startMs
                             initialEndMs = clip.endMs
                             moved = false
-                            activeTrimHistorySnapshot = captureClipEditSnapshot()
+                            activeTrimHistorySnapshot = captureEditorSnapshot()
                             player?.playWhenReady = false
                             view.parent?.requestDisallowInterceptTouchEvent(true)
                             true
@@ -4370,7 +4526,7 @@ class VideoEditorActivity : Activity() {
             override fun onStartTrackingTouch(seekBar: SeekBar?) {
                 player?.playWhenReady = false
                 deferTimelineRefresh = true
-                activeTrimHistorySnapshot = captureClipEditSnapshot()
+                activeTrimHistorySnapshot = captureEditorSnapshot()
             }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
                 finishTrimControlGesture()
@@ -4392,7 +4548,7 @@ class VideoEditorActivity : Activity() {
             override fun onStartTrackingTouch(seekBar: SeekBar?) {
                 player?.playWhenReady = false
                 deferTimelineRefresh = true
-                activeTrimHistorySnapshot = captureClipEditSnapshot()
+                activeTrimHistorySnapshot = captureEditorSnapshot()
             }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
                 finishTrimControlGesture()
