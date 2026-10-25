@@ -29,8 +29,14 @@ class EditorTestEntryActivity : Activity() {
         ).filter { it.isNotBlank() }
         val videoUris = suppliedVideoUris.ifEmpty { indexedVideoUris }
         val draftId = intent.getStringExtra("draft_id")
-        android.util.Log.i("EditorSmokeTest", "EDITOR_SMOKE_ENTRY_STARTED uri=$videoUri videoCount=${videoUris.size}")
-        if (videoUris.isEmpty() && videoUri.isNullOrBlank()) {
+            ?.takeIf { VideoProjectDraftStore.isValidId(it) }
+        android.util.Log.i(
+            "EditorSmokeTest",
+            "EDITOR_SMOKE_ENTRY_STARTED uri=$videoUri videoCount=${videoUris.size} hasDraft=${draftId != null}"
+        )
+        // A draft ID is a valid launch target even when no new video URI is supplied:
+        // VideoEditorActivity restores the already-saved local project from that ID.
+        if (videoUris.isEmpty() && videoUri.isNullOrBlank() && draftId == null) {
             finish()
             return
         }
