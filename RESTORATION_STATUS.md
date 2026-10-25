@@ -9,11 +9,10 @@
 - PR: [#8](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/pull/8)
 - Installed baseline: versionCode **394** / build **61** (`app-v8.3-61`)
 - Latest editor-test fix: [`c584c0d`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/c584c0db3068a1fd7c09c40ed372d95ace94f89f) — navigate into Downloads before tapping the JSON and try the DocumentsUI Open action.
-- Latest CI diagnosis: [run #167 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40218228081) confirmed `apt-get update` stalled on the hosted runner's package mirror and timed out before emulator startup.
-- Latest workflow fix: [`1a86084`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/1a8608474ffaf8c255cd69fe3e4cd7bd2c39e6d8) replaces apt installation with `AnimMouse/setup-ffmpeg@v1` pinned to version 7.1; fixture-encoding timeouts remain.
+- Fixture infrastructure: runs #167 and #168 failed before emulator startup due to external package/download sources (apt mirror timeout; invalid archive from the FFmpeg setup action). Commit [`9c3c1f2`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/9c3c1f2228ee04c5e7d68fce96dfe9606c1e19b9) removes that external dependency and decodes checked-in MP4 test fixtures offline.
 - Latest green validation: [run #161 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40212230107). Unit tests, debug build, screenshot capture and **7/7 emulator interaction tests passed**.
 - Latest completed emulator validation: [run #165 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40216650783). Unit tests/debug build and six editor interaction tests passed, including sequential two-clip MP4 export. Manual JSON reopen left DocumentsUI's navigation drawer open; the screenshot test then could not see home.
-- [Run #166](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40217754007) passed unit tests/debug build but was cancelled while stuck in fixture generation. [Run #167](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40218228081) failed at the package-manager timeout. [Run #168](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40218541657) is validating static FFmpeg setup. JSON restore remains unverified; leave its gate unchecked.
+- Run #166 was cancelled while stalled in fixture creation. Run #167 timed out during `apt-get update`; run #168 failed while downloading the FFmpeg archive. [Run #169](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40219003521) is validating the checked-in, offline MP4 fixture path. JSON restore remains unverified; leave its gate unchecked.
 
 ## Latest confirmed progress
 
