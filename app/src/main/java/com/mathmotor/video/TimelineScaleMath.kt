@@ -28,4 +28,41 @@ internal object TimelineScaleMath {
         return ((offsetPixels.toDouble() / pixelsPerSecond.toDouble()) * 1000.0)
             .roundToLong()
     }
+
+    /** Scroll offset that places [timeMs] directly under a stationary center playhead. */
+    fun scrollForCenteredTime(timeMs: Long, pixelsPerSecond: Float): Int =
+        pixelsForTime(timeMs, pixelsPerSecond)
+
+    /** Project time shown beneath the stationary center playhead for a horizontal scroll offset. */
+    fun timeForCenteredScroll(scrollX: Int, pixelsPerSecond: Float): Long =
+        millisecondsForPixels(scrollX.coerceAtLeast(0).toFloat(), pixelsPerSecond).coerceAtLeast(0L)
+
+    /**
+     * Maps a horizontal position inside the timeline viewport to project time.
+     * The content has a half-viewport leading inset, so the center position at scroll 0 is time 0.
+     */
+    fun timeAtViewportX(
+        scrollX: Int,
+        xWithinViewportPx: Float,
+        viewportWidthPx: Int,
+        pixelsPerSecond: Float
+    ): Long {
+        if (!xWithinViewportPx.isFinite()) return 0L
+        val centeredOffset = scrollX.toDouble() + xWithinViewportPx.toDouble() -
+            viewportWidthPx.coerceAtLeast(0).toDouble() / 2.0
+        return millisecondsForPixels(centeredOffset.toFloat(), pixelsPerSecond).coerceAtLeast(0L)
+    }
+
+    /** New scroll offset that keeps [timeMs] under the same viewport focus after zooming. */
+    fun scrollForAnchorTime(
+        timeMs: Long,
+        focusXWithinViewportPx: Float,
+        viewportWidthPx: Int,
+        pixelsPerSecond: Float
+    ): Int {
+        if (!focusXWithinViewportPx.isFinite()) return scrollForCenteredTime(timeMs, pixelsPerSecond)
+        val target = pixelsForTime(timeMs, pixelsPerSecond).toFloat() +
+            viewportWidthPx.coerceAtLeast(0) / 2f - focusXWithinViewportPx
+        return target.roundToInt().coerceAtLeast(0)
+    }
 }
