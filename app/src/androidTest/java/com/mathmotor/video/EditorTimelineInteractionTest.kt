@@ -530,6 +530,111 @@ class EditorTimelineInteractionTest {
     }
 
     @Test
+    fun savedDraftReopensTextLayerAndClipState() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val device = UiDevice.getInstance(instrumentation)
+        val packageName = context.packageName
+        val fixture = java.io.File(context.filesDir, "editor-test-video.mp4")
+        assertTrue("Draft round-trip fixture is missing", fixture.isFile && fixture.length() > 0L)
+
+        val draftId = java.util.UUID.randomUUID().toString()
+        val clip = org.json.JSONObject()
+            .put("uri", Uri.fromFile(fixture).toString())
+            .put("title", fixture.name)
+            .put("durationMs", 8020L)
+            .put("startMs", 0L)
+            .put("endMs", 8020L)
+        val textLayer = org.json.JSONObject()
+            .put("id", 931L)
+            .put("text", "ROUND TRIP TEXT")
+            .put("startMs", 0L)
+            .put("endMs", 6500L)
+            .put("timingCustomized", true)
+            .put("position", "BOTTOM")
+            .put("sizeSp", 32)
+            .put("xFraction", 0.5)
+            .put("yFraction", 0.82)
+            .put("colorPreset", "YELLOW")
+            .put("isBold", true)
+        val project = org.json.JSONObject()
+            .put("format", "MathMotorVideoProject")
+            .put("version", 1)
+            .put("clips", org.json.JSONArray().put(clip))
+            .put("selectedClipIndex", 0)
+            .put("timelinePlayheadMs", 1000L)
+            .put("timelineZoom", 2.0)
+            .put("timelineHorizontalScrollMs", 500L)
+            .put("musicUri", org.json.JSONObject.NULL)
+            .put("musicTitle", org.json.JSONObject.NULL)
+            .put("soundUri", org.json.JSONObject.NULL)
+            .put("soundTitle", org.json.JSONObject.NULL)
+            .put("soundDurationMs", 0L)
+            .put("soundStartMs", 0L)
+            .put("textLayers", org.json.JSONArray().put(textLayer))
+            .put("selectedTextLayerId", 931L)
+            .put("sourceAudioVolume", 100)
+            .put("musicVolume", 45)
+            .put("soundVolume", 100)
+            .put("keepSourceAudio", true)
+            .put("exportName", "RoundTripTest")
+
+        assertTrue(
+            "Could not persist the test editor project to the local draft store",
+            VideoProjectDraftStore.save(context, draftId, "Round-trip test", project)
+        )
+        val persisted = VideoProjectDraftStore.load(context, draftId)
+            ?: throw AssertionError("Saved draft could not be read back")
+        assertTrue(
+            "Draft JSON did not preserve the text-layer payload",
+            persisted.optJSONArray("textLayers")?.optJSONObject(0)?.optString("text") == "ROUND TRIP TEXT"
+        )
+
+        device.executeShellCommand(
+            "am start -n $packageName/com.mathmotor.video.EditorTestEntryActivity " +
+                "--es draft_id $draftId"
+        )
+        assertTrue(
+            "Editor did not open from the saved draft",
+            device.wait(Until.hasObject(By.textContains("PROJE AÇILDI")), 20_000)
+        )
+        assertTrue(
+            "Saved draft did not restore the source video lane",
+            device.wait(Until.hasObject(By.text("VIDEO")), 8_000)
+        )
+
+        val textTab = device.findObject(By.clazz("android.widget.Button").textContains("Metin"))
+            ?: throw AssertionError("Could not open the text panel after draft restore")
+        textTab.click()
+        assertTrue(
+            "Saved draft did not restore the text overlay in preview",
+            device.wait(Until.hasObject(By.text("ROUND TRIP TEXT")), 10_000)
+        )
+        val restoredSize = requireObject(
+            device,
+            By.textContains("Yazı boyutu:"),
+            "restored text-size label"
+        ).text
+        assertTrue(
+            "Saved text size was not restored (expected 32 sp): $restoredSize",
+            Regex("\\b32\\b").containsMatchIn(restoredSize)
+        )
+        val restoredInput = requireObject(
+            device,
+            By.desc("Metin katmanı metin girişi"),
+            "restored text input"
+        )
+        assertTrue(
+            "Saved text content was not restored to the editable control",
+            restoredInput.text == "ROUND TRIP TEXT"
+        )
+        android.util.Log.i(
+            "ProjectRoundTripTest",
+            "stage=verified draftId=$draftId clips=1 textLayer=ROUND_TRIP_TEXT sizeSp=32"
+        )
+    }
+
+    @Test
     fun twoClipsExportToOneMp4InOrder() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
