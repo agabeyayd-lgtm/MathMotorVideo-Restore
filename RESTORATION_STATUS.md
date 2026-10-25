@@ -8,12 +8,12 @@
 - Branch: `fix/editor-395-gate`
 - PR: [#8](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/pull/8)
 - Installed baseline: versionCode **394** / build **61** (`app-v8.3-61`)
-- Latest editor-test fix: [`c584c0d`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/c584c0db3068a1fd7c09c40ed372d95ace94f89f) — navigates into Downloads before selecting saved JSON and returns home after failure.
-- CI fixtures are now offline: [`9c3c1f2`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/9c3c1f2228ee04c5e7d68fce96dfe9606c1e19b9) removed apt/FFmpeg download dependencies by checking in test MP4 payloads.
-- [Run #171 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40220299247) confirmed unit tests, debug build and fixture preparation pass. The manual JSON restore no longer failed on its music-volume label; only the filmstrip fingerprint test failed. Root-cause review found the application requested `OPTION_CLOSEST_SYNC` for scaled thumbnails, which can repeatedly return the same keyframe.
-- Latest decoder fix: [`52755a6`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/52755a6889f44e2c6936cf34dd0102743c0b875e) uses `OPTION_CLOSEST` for the initial scaled frame request so thumbnails should reflect different requested times.
-- Latest green baseline: [run #161 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40212230107), with unit tests, debug build, screenshot capture and **7/7 emulator interaction tests passing**.
-- Current validation: [run #172](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40221395375) is validating the decoder fix. JSON restore remains unchecked until all project state assertions and the following home screenshot pass.
+- Latest tested decoder fix: [`52755a6`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/52755a6889f44e2c6936cf34dd0102743c0b875e) switches scaled filmstrip decoding to `OPTION_CLOSEST`.
+- [Run #172 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40221395375): unit tests, debug APK, offline fixture preparation, **8/8 Android instrumentation tests**, emulator screenshot capture, and diagnostic-artifact upload all passed.
+- Verified in #172: distinct filmstrip timestamps now yield usable thumbnails; manual JSON Save As → close → Open Document restores the currently asserted trim, text content/size, music/effect names, and audio levels.
+- The broader persistence gate remains open for untested clip order, playhead/zoom, and text position/colour/style.
+- Global Undo/Redo is being validated separately on [`fix/global-editor-undo`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/tree/fix/global-editor-undo); [run #173](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40221794555) contains its new text and audio history test.
+- Installed baseline remains versionCode **394** / build **61**. Version 395 is still blocked.
 
 The local saved-draft restore test now passes. It checks restored clip trim duration (7.02 s), preview text overlay, editable text (`ROUND TRIP TEXT`) and saved size (32 sp). The test order was corrected so the editable field is checked while visible, before scrolling down to the size control. Do not revisit this fixed selector/order issue unless a related code change regresses it.
 
