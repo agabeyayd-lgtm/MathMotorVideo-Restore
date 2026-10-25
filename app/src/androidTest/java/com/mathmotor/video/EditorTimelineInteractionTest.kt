@@ -349,11 +349,11 @@ class EditorTimelineInteractionTest {
         val durationAfterLeftTrimMs = projectDurationMs(requireProjectTime(device))
         android.util.Log.i(
             "TimelineTrimInteractionTest",
-            "stage=left-trim before=$durationAfterRightTrimMs after=$durationAfterLeftTrimMs"
+            "stage=left-trim before=$restoredDurationAfterRightMs after=$durationAfterLeftTrimMs"
         )
         assertTrue(
-            "Dragging the left trim handle did not shorten the project: $durationAfterRightTrimMs -> $durationAfterLeftTrimMs ms",
-            durationAfterLeftTrimMs <= durationAfterRightTrimMs - 150L
+            "Dragging the left trim handle did not shorten the project: $restoredDurationAfterRightMs -> $durationAfterLeftTrimMs ms",
+            durationAfterLeftTrimMs <= restoredDurationAfterRightMs - 150L
         )
         assertTrue("Left trim produced an invalid duration: $durationAfterLeftTrimMs ms", durationAfterLeftTrimMs >= 500L)
 
@@ -379,8 +379,8 @@ class EditorTimelineInteractionTest {
             restoredDurationAfterLeftMs >= durationAfterLeftTrimMs + 150L
         )
         assertTrue(
-            "Restoring both trim edges did not recover the original source duration: $originalDurationMs -> $restoredDurationAfterLeftMs ms",
-            restoredDurationAfterLeftMs >= originalDurationMs - 250L
+            "Restoring both trim edges did not recover the prior untrimmed duration: $restoredDurationAfterRightMs -> $restoredDurationAfterLeftMs ms",
+            restoredDurationAfterLeftMs >= restoredDurationAfterRightMs - 250L
         )
     }
 
