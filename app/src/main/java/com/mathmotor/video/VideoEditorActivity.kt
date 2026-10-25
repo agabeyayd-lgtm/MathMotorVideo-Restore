@@ -1279,18 +1279,22 @@ class VideoEditorActivity : Activity() {
         }
         // Keep history actions globally available without stealing vertical space
         // from the compact editor panel on small phones.
-        undoClipButton.text = "↶"
-        undoClipButton.textSize = 18f
-        undoClipButton.minHeight = dp(52)
-        redoClipButton.text = "↷"
-        redoClipButton.textSize = 18f
-        redoClipButton.minHeight = dp(52)
-        dock.addView(undoClipButton, LinearLayout.LayoutParams(0, dp(52), 1f).apply {
-            leftMargin = dp(4)
-        })
-        dock.addView(redoClipButton, LinearLayout.LayoutParams(0, dp(52), 1f).apply {
-            leftMargin = dp(4)
-        })
+        undoClipButton?.let { button ->
+            button.text = "↶"
+            button.textSize = 18f
+            button.minHeight = dp(52)
+            dock.addView(button, LinearLayout.LayoutParams(0, dp(52), 1f).apply {
+                leftMargin = dp(4)
+            })
+        }
+        redoClipButton?.let { button ->
+            button.text = "↷"
+            button.textSize = 18f
+            button.minHeight = dp(52)
+            dock.addView(button, LinearLayout.LayoutParams(0, dp(52), 1f).apply {
+                leftMargin = dp(4)
+            })
+        }
         root.addView(dock, matchWrap())
 
         setContentView(root)
