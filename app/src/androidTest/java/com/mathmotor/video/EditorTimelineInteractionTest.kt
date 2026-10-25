@@ -614,10 +614,20 @@ class EditorTimelineInteractionTest {
             "Saved draft did not restore the text overlay in preview",
             device.wait(Until.hasObject(By.clazz("android.widget.TextView").text("ROUND TRIP TEXT")), 10_000)
         )
+        // The text controls continue below the compact editor viewport. Scroll the
+        // actual vertical panel before asserting the restored size; otherwise UiAutomator
+        // may not expose the label in its accessibility tree even when the model is restored.
+        val textControlsScroll = UiScrollable(
+            UiSelector().className("android.widget.ScrollView")
+        ).setAsVerticalList()
+        assertTrue(
+            "Could not scroll the text panel to its size controls",
+            textControlsScroll.scrollTextIntoView("Yazı boyutu:")
+        )
         val restoredSize = requireObject(
             device,
             By.textContains("Yazı boyutu:"),
-            "restored text-size label"
+            "restored text-size label after scrolling text panel"
         ).text
         assertTrue(
             "Saved text size was not restored (expected 32 sp): $restoredSize",
