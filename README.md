@@ -83,3 +83,8 @@ Multi-clip export log: `durationMs=11029 secondFrameRGB=0,254,2 originalsUnchang
 - Run [#159](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40204548336) built successfully but failed in the draft-round-trip test at the new scroll step.
 - Root cause of that assertion: `UiScrollable.scrollTextIntoView("Yazı boyutu:")` creates an exact-text selector, while the real label includes its value (for example `Yazı boyutu: 32`). It could never match the full label.
 - Test correction [`1e0f987`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/1e0f987a90d37e8547621950ce93d4edb5ae24d7) now uses `scrollIntoView(UiSelector().textContains("Yazı boyutu:"))`, preserving the actual assertion that the restored text size is 32 sp. Await CI before marking draft restoration green.
+
+
+### Latest handoff — run #160 (environment-level failure)
+- Run [#160](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40205495392) did **not reach the editor interaction tests**. CI failed during the initial home-screen capture after the emulator reported a system ANR for `com.google.android.apps.nexuslauncher` (Pixel launcher); ADB then became unavailable and the capture script exited with code 8. The diagnostics show the app's MainActivity was resumed, while the ANR dialog explicitly named the launcher, so this is not evidence that the draft-size assertion failed.
+- The selector correction [`1e0f987`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/1e0f987a90d37e8547621950ce93d4edb5ae24d7) remains unverified. Retried the failed CI job on run #160 to distinguish an emulator transient from a repeatable issue. Do not treat draft restore as passed until the editor test actually runs and passes.
