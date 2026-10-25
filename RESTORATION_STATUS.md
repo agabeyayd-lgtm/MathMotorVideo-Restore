@@ -61,10 +61,12 @@ After each meaningful change, update README and this short handoff with commit/r
 Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228445472
 
 
-### 2026-10-25 — Expanded manual project round-trip coverage (#189 pending)
 
-- [x] Expanded `EditorTimelineInteractionTest.manualJsonSaveAsThenCloseAndReopenPreservesProjectState` to seed two clips with distinct URIs and trim ranges, a nonzero timeline playhead/scroll, 200% zoom, timed top-position cyan non-bold text, and separate music/effect URIs.
-- [x] Added assertions after the actual Android Create Document → close editor → Open Document flow for both clips' order and trim bounds, combined duration, restored playhead/zoom/scroll, text interval/position/size/colour/bold state, source URIs, and audio levels.
-- [x] Fixed the timeline zoom accessibility description to reflect restored project zoom instead of retaining the initial value. Added a debug-only, redacted state marker to make restored model values testable without logging user text or full source URIs.
-- [ ] [Run #189 — PENDING](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40230332447), head commit `f4a55bb2659585e8de4baf3a7f371417b110469d`. It includes these changes; do not mark the persistence gate complete until the emulator run passes and the new assertions are reviewed.
-- [ ] Version 395 remains blocked; no merge/release until remaining gates pass and the user authorizes release.
+
+### 2026-10-25 — Manual JSON round-trip correction (#189 failed, #190 in progress)
+
+- [x] Inspected [run #189](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40230332447): unit tests and debug APK build passed; 8 of 9 emulator instrumentation tests passed. The expanded JSON test failed because its seeded project contradicted the fixed-center timeline model: playhead was 7.70 s while scroll offset was 1.40 s. During the actual UI flow, scrolling correctly moved the playhead to ~1.41 s, so the assertion was testing an impossible mismatched state rather than lost state.
+- [x] Corrected the test fixture so playhead and centered timeline scroll both target 7.70 s. The test now reads the **latest** restoration marker rather than accidentally accepting the earlier draft-open marker.
+- [x] Preserved the production fix that refreshes the zoom accessibility description after project restore, plus the debug-only restoration marker.
+- [ ] [Run #190 — IN PROGRESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40231500974), commit `e80f446c4247b2ff97e58fed6093091d80530b99`. Build/unit tests were not yet rechecked to completion at the time of this note; final verdict waits for emulator assertions.
+- [ ] Keep version 395 blocked; broader text/audio export, timeline edge cases, physical-phone review, and signed install/update gate are still open.
