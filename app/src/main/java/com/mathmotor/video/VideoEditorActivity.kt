@@ -184,12 +184,23 @@ class VideoEditorActivity : Activity() {
     private var timelineScrubStartScrollX = 0
     private var pendingTimelineScrollSeekMs = 0L
     private var timelineScrollSeeking = false
+    private val timelineScrollSettleTask = object : Runnable {
+        override fun run() {
+            // Do not let the periodic player poll overwrite the user's last scroll
+            // while Media3 is still applying the debounced seek.
+            timelineScrollSeeking = false
+        }
+    }
     private val timelineScrollSeekTask = object : Runnable {
         override fun run() {
-            timelineScrollSeeking = false
             if (clips.isNotEmpty()) {
                 seekTimelinePreview(pendingTimelineScrollSeekMs, synchronizeTimelineScroll = false)
             }
+            // Keep player->timeline synchronization suspended briefly after the seek.
+            // Setting this false before seekTo() allowed a stale player position to
+            // pull the timeline back from the start/end during rapid repeated swipes.
+            timelineHandler.removeCallbacks(timelineScrollSettleTask)
+            timelineHandler.postDelayed(timelineScrollSettleTask, 450L)
         }
     }
     private var pendingTimelinePinchScrollX: Int? = null
@@ -1635,6 +1646,7 @@ class VideoEditorActivity : Activity() {
                         pendingTimelineScrollSeekMs = mappedMs
                         timelineScrollSeeking = true
                         timelineHandler.removeCallbacks(timelineScrollSeekTask)
+                        timelineHandler.removeCallbacks(timelineScrollSettleTask)
                         timelineHandler.postDelayed(timelineScrollSeekTask, 70L)
                     }
                 }
@@ -4505,6 +4517,7 @@ class VideoEditorActivity : Activity() {
     override fun onDestroy() {
         timelineHandler.removeCallbacks(timelineSyncTask)
         timelineHandler.removeCallbacks(timelineScrollSeekTask)
+        timelineHandler.removeCallbacks(timelineScrollSettleTask)
         timelineHandler.removeCallbacks(timelinePinchRefreshTask)
         pendingTimelinePinchScrollX = null
         timelineHandler.removeCallbacks(textTimelineRefreshTask)
