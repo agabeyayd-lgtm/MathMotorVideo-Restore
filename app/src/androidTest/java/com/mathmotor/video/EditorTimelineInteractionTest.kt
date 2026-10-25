@@ -425,7 +425,7 @@ class EditorTimelineInteractionTest {
         device.waitForIdle()
         val addText = requireObject(device, By.desc("Yeni metin katmanı ekle"), "new-text-layer control")
         addText.click()
-        val inputQuery = By.clazz("android.widget.EditText")
+        val inputQuery = By.desc("Metin katmanı metin girişi")
         assertTrue(
             "Keyboard-aware editor layout did not activate",
             device.wait(Until.hasObject(By.text("Bitti ✓")), 8_000)
