@@ -21,7 +21,7 @@ Previously verified and not to repeat unnecessarily: timeline playhead/zoom/scro
 
 ## Next steps — do these in order
 
-1. **Manual JSON project persistence — fix queued for verification.** Basic Save As → close editor → Open Document passed in [run #172](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40221395375). [Run #177](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40224656700) exposed a real race: the periodic playhead sync copied ExoPlayer's default 0 ms position while the restored clip was still preparing, overwriting the saved 2.00 s playhead. Both sync paths now wait for `Player.STATE_READY`; [run #179 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40225562573) passed the emulator workflow.
+1. **Manual JSON project persistence — still under full verification.** The newer JSON round-trip test got past restoration/playhead and related project-state assertions in [run #191](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40232290189), then failed because the test did not scroll the vertical text panel down to the `Camgöbeği` radio before querying it. This selector/scroll-order issue is fixed in [commit `6100ddb`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/6100ddb26ac2b89b5bc4cd0061ac583870905d56); [run #192](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40233158607) must pass before the persistence gate can close. Earlier playhead-ready race remains fixed and green in [run #179](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40225562573).
 2. **Unified Undo / Redo — crash fix green, full behavior gate still open.** The global controls now live in the persistent bottom dock; [run #185 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228445472) passed all 9 connected tests. Next, verify text content/appearance/timing/position, music/effect and source-audio levels, and clip edits, ensuring preview and timeline restore together. Do not weaken assertions.
 3. **Text-strip interaction and export parity** — drag text-strip start/end handles; export timed/styled text and compare with preview.
 4. **Audio export verification** — source audio level/mute, background music loop/volume, timed sound-effect start/volume and audio/video sync.
@@ -79,3 +79,11 @@ Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228
 - [x] Fix committed on `fix/global-editor-undo`: `976d4b38023ab4b5945577012b821b71476e85fd`. During project restoration, horizontal-scroll callbacks still synchronize timeline lanes and redraw the playhead line, but do not seek/change the saved playhead. The guard is released after the posted scroll restoration completes.
 - [ ] Re-run the full emulator interaction suite against the fix and verify the 7.70 s playhead plus the remaining JSON round-trip assertions.
 - [ ] Version 395 remains blocked; do not merge or release until the full suite and remaining release gates pass.
+
+
+### 2026-10-25 — Current handoff after run #191
+
+- [x] #191 confirmed unit tests and debug APK build are green and reached the manual JSON colour assertion after earlier restore/playhead/project-state assertions.
+- [x] Root cause was test navigation: it queried `Camgöbeği` while that radio was below the visible text-panel viewport after scrolling only to `Üst`. The test now explicitly scrolls the colour radio into view before asserting selected state.
+- [ ] Verify [run #192](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40233158607), commit [`6100ddb`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/6100ddb26ac2b89b5bc4cd0061ac583870905d56). Manual JSON persistence stays open until this complete run passes.
+- Installed baseline remains versionCode **394** / build **61**. Version 395 remains blocked; do not merge, sign, publish, or enable in-app update.
