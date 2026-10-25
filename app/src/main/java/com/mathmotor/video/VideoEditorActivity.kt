@@ -1401,11 +1401,13 @@ class VideoEditorActivity : Activity() {
             if (maxEditorViewportHeightPx == 0) maxEditorViewportHeightPx = viewportHeight
 
             val rootInsets = view.rootWindowInsets
-            val imeVisible = if (Build.VERSION.SDK_INT >= 30 && rootInsets != null) {
-                rootInsets.isVisible(WindowInsets.Type.ime())
-            } else {
+            // On compact devices adjustResize can report the IME through the reduced
+            // viewport before the WindowInsets visibility bit catches up. Treat either
+            // signal as authoritative so a transient/stale inset cannot collapse the
+            // text editor while the keyboard is still on screen.
+            val imeVisible = (Build.VERSION.SDK_INT >= 30 &&
+                rootInsets?.isVisible(WindowInsets.Type.ime()) == true) ||
                 maxEditorViewportHeightPx - viewportHeight > dp(150)
-            }
             if (imeVisible != keyboardLayoutActive) {
                 applyKeyboardMode(imeVisible, viewportHeight)
             } else if (!imeVisible && !previewFocusMode) {
@@ -1430,13 +1432,23 @@ class VideoEditorActivity : Activity() {
                 insetRight = bars.right
                 insetBottom = bars.bottom
                 imeInsetBottom = ime.bottom
-                val imeVisible = insets.isVisible(WindowInsets.Type.ime())
+                val imeVisibleFromDispatch = insets.isVisible(WindowInsets.Type.ime())
                 view.post {
-                    if (imeVisible != keyboardLayoutActive) {
-                        applyKeyboardMode(imeVisible, view.height)
+                    // The callback's captured inset can be stale by the time this posted
+                    // layout correction runs during the IME animation. Re-read the latest
+                    // root insets and combine them with the actual resize signal.
+                    val latestInsets = view.rootWindowInsets
+                    val latestViewportHeight = view.height
+                    val viewportSuggestsIme =
+                        maxEditorViewportHeightPx - latestViewportHeight > dp(150)
+                    val imeVisibleNow =
+                        (latestInsets?.isVisible(WindowInsets.Type.ime()) ?: imeVisibleFromDispatch) ||
+                            viewportSuggestsIme
+                    if (imeVisibleNow != keyboardLayoutActive) {
+                        applyKeyboardMode(imeVisibleNow, latestViewportHeight)
                     }
-                    applySafeRootPadding(imeVisible, view.height)
-                    if (imeVisible && activeEditorPanel == "text" && ::textInput.isInitialized) {
+                    applySafeRootPadding(imeVisibleNow, latestViewportHeight)
+                    if (imeVisibleNow && activeEditorPanel == "text" && ::textInput.isInitialized) {
                         // Insets can arrive after the first resize callback; re-check against
                         // the final visible viewport instead of relying on a one-shot timer.
                         editorPanelScroll.post { ensureTextInputVisibleInToolPanel() }
