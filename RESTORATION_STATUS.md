@@ -34,3 +34,10 @@ Previously verified and not to repeat unnecessarily: timeline playhead/zoom/scro
 Version 395 is **not released**. Keep version metadata unchanged at the installed baseline; do not sign/publish an APK or enable in-app update until the remaining gates pass and the user explicitly authorizes release.
 
 After each meaningful change, update README and this short handoff with commit/run links and evidence. Do not keep duplicating old failure logs here; README owns the canonical checklist.
+
+
+### 2026-10-25 — Global Undo/Redo validation #183 / #184
+- [x] #183 failed before tests ran: Kotlin compilation reported nullable receiver errors for `undoClipButton` and `redoClipButton` at `VideoEditorActivity.kt` lines 1282–1287.
+- [x] Fixed by handling each nullable button with `?.let { button -> ... }` before styling and adding it to the bottom dock. Commit: `999a1d15eae6aababf8842655a6413ab2d694ad2` on `fix/global-editor-undo`.
+- [ ] #184 validation is queued: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40227983970
+- [ ] Keep release 395 blocked until build and emulator interaction tests pass; do not merge this branch or publish APK yet.
