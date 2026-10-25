@@ -15,7 +15,12 @@ class EditorTestEntryActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val videoUri = intent.getStringExtra("video_uri")
-        val videoUris = intent.getStringArrayListExtra("video_uris").orEmpty().filter { it.isNotBlank() }
+        val videoUris = when (val raw = intent.extras?.get("video_uris")) {
+            is ArrayList<*> -> raw.filterIsInstance<String>().filter { it.isNotBlank() }
+            is Array<*> -> raw.filterIsInstance<String>().filter { it.isNotBlank() }
+            is String -> raw.split('|').filter { it.isNotBlank() }
+            else -> emptyList()
+        }
         val draftId = intent.getStringExtra("draft_id")
         android.util.Log.i("EditorSmokeTest", "EDITOR_SMOKE_ENTRY_STARTED uri=$videoUri videoCount=${videoUris.size}")
         if (videoUris.isEmpty() && videoUri.isNullOrBlank()) {

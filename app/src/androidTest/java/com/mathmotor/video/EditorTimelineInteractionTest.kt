@@ -549,7 +549,7 @@ class EditorTimelineInteractionTest {
         device.executeShellCommand("logcat -c")
         device.executeShellCommand(
             "am start -n $packageName/com.mathmotor.video.EditorTestEntryActivity " +
-                "--esa video_uris \"$firstUri,$secondUri\" --es draft_id $draftId"
+                "--es video_uris \"$firstUri|$secondUri\" --es draft_id $draftId"
         )
 
         val importDeadline = SystemClock.uptimeMillis() + 35_000L
@@ -579,10 +579,20 @@ class EditorTimelineInteractionTest {
         nameInput.setText(exportName)
         requireObject(device, By.text("MP4 DIŞA AKTAR"), "MP4 export button").click()
 
-        assertTrue(
-            "MP4 export did not report success within 120 seconds",
-            device.wait(Until.hasObject(By.textContains("BAŞARILI")), 120_000)
-        )
+        val exportDeadline = SystemClock.uptimeMillis() + 120_000L
+        var exportSaved = false
+        while (SystemClock.uptimeMillis() < exportDeadline) {
+            val log = device.executeShellCommand("logcat -d -s MultiClipExport:I MultiClipExport:E")
+            if (log.contains("MULTICLIP_EXPORT_SAVED name=$exportName")) {
+                exportSaved = true
+                break
+            }
+            if (log.contains("MULTICLIP_EXPORT_TRANSFORM_FAILED name=$exportName") ||
+                log.contains("MULTICLIP_EXPORT_SAVE_FAILED name=$exportName")
+            ) throw AssertionError("MP4 export failed: $log")
+            SystemClock.sleep(500)
+        }
+        assertTrue("MP4 export did not save within 120 seconds", exportSaved)
         android.util.Log.i("MultiClipExportTest", "stage=export-success name=$exportName")
 
         var exportedUri: Uri? = null

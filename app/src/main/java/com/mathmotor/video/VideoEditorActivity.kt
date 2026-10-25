@@ -307,7 +307,12 @@ class VideoEditorActivity : Activity() {
         val incoming = intent.getStringExtra("video_uri")
         val isDebugBuild = (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
         val incomingVideos = if (isDebugBuild) {
-            intent.getStringArrayListExtra("video_uris").orEmpty().filter { it.isNotBlank() }
+            when (val raw = intent.extras?.get("video_uris")) {
+                is ArrayList<*> -> raw.filterIsInstance<String>().filter { it.isNotBlank() }
+                is Array<*> -> raw.filterIsInstance<String>().filter { it.isNotBlank() }
+                is String -> raw.split('|').filter { it.isNotBlank() }
+                else -> emptyList()
+            }
         } else emptyList()
         if (isDebugBuild) {
             android.util.Log.i("EditorSmokeTest", "EDITOR_SMOKE_EDITOR_STARTED uri=$incoming videoCount=${incomingVideos.size}")
@@ -4574,9 +4579,15 @@ class VideoEditorActivity : Activity() {
                                         .removeSuffix(".mp4").removeSuffix(".MP4")
                                         .ifBlank { "Düzenlenmiş video" }
                                     VideoRecordStore.add(this@VideoEditorActivity, VideoRecord(savedTitle, resultUri, now, now))
+                                    if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+                                        android.util.Log.i("MultiClipExport", "MULTICLIP_EXPORT_SAVED name=$savedTitle uri=$resultUri")
+                                    }
                                     status.text = "BAŞARILI • " + savedTitle + " kaydedildi.\n" + resultUri
                                     Toast.makeText(this@VideoEditorActivity, "Video kaydedildi.", Toast.LENGTH_LONG).show()
                                 } else {
+                                    if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+                                        android.util.Log.e("MultiClipExport", "MULTICLIP_EXPORT_SAVE_FAILED name=$requestedExportName", saved.exceptionOrNull())
+                                    }
                                     status.text = "Video işlendi ancak kaydedilemedi: ${saved.exceptionOrNull()?.message}"
                                 }
                             }
@@ -4584,6 +4595,9 @@ class VideoEditorActivity : Activity() {
                     }
 
                     override fun onError(composition: Composition, exportResult: ExportResult, exportException: ExportException) {
+                        if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+                            android.util.Log.e("MultiClipExport", "MULTICLIP_EXPORT_TRANSFORM_FAILED name=$requestedExportName", exportException)
+                        }
                         tempOutput.delete()
                         runOnUiThread {
                             exporting = false
