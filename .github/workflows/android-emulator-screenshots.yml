@@ -13,6 +13,7 @@ on:
       - "app/src/androidTest/**"
       - ".github/workflows/android-emulator-screenshots.yml"
       - ".github/scripts/capture-emulator-screenshots.sh"
+      - ".github/scripts/run-android-instrumentation-tests.sh"
 
 permissions:
   contents: read
@@ -93,20 +94,7 @@ jobs:
           emulator-boot-timeout: 600
           script: |
             bash .github/scripts/capture-emulator-screenshots.sh
-            set +e
-            gradle --no-daemon connectedDebugAndroidTest > emulator-screenshots/android-test-gradle.log 2>&1
-            test_status=$?
-            adb -s emulator-5554 logcat -d -v threadtime > emulator-screenshots/after-instrumentation-logcat.txt 2>&1
-            mkdir -p emulator-screenshots/android-test-report emulator-screenshots/android-test-results
-            cp -R app/build/reports/androidTests/connected/debug/. emulator-screenshots/android-test-report/ 2>/dev/null || true
-            cp -R app/build/outputs/androidTest-results/connected/debug/. emulator-screenshots/android-test-results/ 2>/dev/null || true
-            echo "connectedDebugAndroidTest exit code: $test_status"
-            tail -n 180 emulator-screenshots/android-test-gradle.log || true
-            if [ "$test_status" -ne 0 ]; then
-              echo "Recent timeline interaction-test logs:"
-              grep -E "TimelineInteractionTest|TimelineInteractionTest|FATAL EXCEPTION|AndroidRuntime|AssertionError|FAILED" emulator-screenshots/after-instrumentation-logcat.txt | tail -n 160 || true
-              exit "$test_status"
-            fi
+            bash .github/scripts/run-android-instrumentation-tests.sh
 
       - name: Upload emulator screenshots and diagnostics
         if: always()
