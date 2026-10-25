@@ -15,7 +15,9 @@ MathMotor Video is a local Android video editor with a CapCut-inspired workflow.
 ## Repair handoff — 2026-10-25
 
 - Active branch: `fix/editor-395-gate`.
-- Latest source/UI commit: `ebf12bb8c9c752e22d2824c3c3b0c2ec600615b2`.
+- Latest source/UI commit before pinch-zoom change: `ebf12bb8c9c752e22d2824c3c3b0c2ec600615b2`.
+- Pinch zoom added in source commit `0c4692d391a8893dd0fe1a908700b22667323c47`; anchored zoom behavior is not yet emulator/device verified.
+- Emulator workflow run for the current code: [#40167165450](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40167165450), pending when last checked.
 - Latest README progress commit: `ac7ac751adb276cfde6428a4f733792b649b3821`.
 - Emulator workflow run: [#40167092999](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40167092999), queued when last checked.
 - Current work: filmstrip density/resolution/cache and timestamp distribution improved in source; the “Klip” tab no longer uses a scissors icon; workflow now includes unit tests and can run on the repair branch.
