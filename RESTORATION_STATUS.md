@@ -19,7 +19,7 @@ Previously verified and not to repeat unnecessarily: timeline playhead/zoom/scro
 
 ## Next steps — do these in order
 
-1. **Manual JSON Save As → reopen** — add an end-to-end test using Android's document picker: save project JSON, close/restart editor, open the JSON, and verify clips/order/trims, playhead/zoom, text state, music/effect references and levels. The current passing test covers the local draft store, not the manual file picker.
+1. **Manual JSON Save As → reopen — in progress.** Added an Android instrumentation test in commit [`9b41603`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/9b416035b5bca7ccb60090b7b3a857896f6a7e9b). It uses Android's Create Document picker to save JSON, closes the editor, opens a fresh editor from home, then uses Open Document to reload the file and checks clip trim, text content/size, music/effect titles and audio levels. [Run #163](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40214305429) is currently queued; do not mark this gate complete until it passes.
 2. **Unified Undo / Redo** — implementation is currently clip-only. Extend it to clip, text and audio/music edits, and verify timeline plus preview restore together.
 3. **Text-strip interaction and text export parity** — drag text strip start/end handles; export timed/styled text and compare with preview.
 4. **Audio export verification** — original audio level/mute, background music loop/volume, timed sound effect and A/V sync.
