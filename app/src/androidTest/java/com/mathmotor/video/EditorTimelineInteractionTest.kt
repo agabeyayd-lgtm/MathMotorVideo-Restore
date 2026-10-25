@@ -569,12 +569,14 @@ class EditorTimelineInteractionTest {
         clipTab.click()
         device.waitForIdle()
         assertTrue(
-            "Could not scroll the clip panel to the unified Undo button",
-            panelScroll.scrollIntoView(UiSelector().description("Düzenleme geri al"))
+            "Global Undo button is not visible outside the tool panel",
+            device.wait(Until.hasObject(By.desc("Düzenleme geri al")), 4_000)
         )
         device.waitForIdle()
         val undo = requireObject(device, By.desc("Düzenleme geri al"), "global Undo button")
         val redo = requireObject(device, By.desc("Düzenleme yinele"), "global Redo button")
+        assertTrue("Global Undo button has no visible hit target: ${undo.visibleBounds}", undo.visibleBounds.height() > 0)
+        assertTrue("Global Redo button has no visible hit target: ${redo.visibleBounds}", redo.visibleBounds.height() > 0)
 
         undo.click()
         device.waitForIdle()
