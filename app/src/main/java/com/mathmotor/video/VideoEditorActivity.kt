@@ -4421,9 +4421,12 @@ class VideoEditorActivity : Activity() {
             retriever.setDataSource(this, uri)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                 runCatching {
+                    // Use the nearest decoded frame rather than the nearest sync frame.
+                    // Long-GOP videos may have few sync frames, which makes CLOSEST_SYNC
+                    // repeat the same keyframe across the filmstrip.
                     retriever.getScaledFrameAtTime(
                         frameTimeUs,
-                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                        MediaMetadataRetriever.OPTION_CLOSEST,
                         144,
                         81
                     )
