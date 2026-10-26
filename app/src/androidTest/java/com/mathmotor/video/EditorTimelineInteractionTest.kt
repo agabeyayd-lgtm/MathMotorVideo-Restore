@@ -2104,21 +2104,20 @@ class EditorTimelineInteractionTest {
             assertTrue("Editor export tab did not appear for source-audio validation",
                 device.wait(Until.hasObject(By.textContains("Dışa aktar")), 8_000))
 
-            // The VIDEO marker appears before draft restoration is complete. Wait for the
-            // debug-only restore-complete marker emitted after every persisted control and
-            // audio URI is applied, so the default checked checkbox cannot produce a false pass.
+            // Wait for the editor's explicit success event after applyProjectJson returns.
+            // The timeline marker alone can appear before the saved audio controls are restored.
             val restoreDeadline = SystemClock.uptimeMillis() + 20_000L
             var draftRestored = false
             while (SystemClock.uptimeMillis() < restoreDeadline) {
-                val restoreLog = device.executeShellCommand("logcat -d -s ProjectPersistenceTest:I")
-                if (restoreLog.contains("PROJECT_JSON_RESTORED")) {
+                val restoreLog = device.executeShellCommand("logcat -d -s EditorSmokeTest:I")
+                if (restoreLog.contains("EDITOR_SMOKE_DRAFT_RESTORED id=$draftId")) {
                     draftRestored = true
                     break
                 }
                 SystemClock.sleep(200)
             }
             assertTrue(
-                "Seeded source-audio project did not finish restoring",
+                "Seeded source-audio project did not finish restoring (draftId=$draftId)",
                 draftRestored
             )
 
