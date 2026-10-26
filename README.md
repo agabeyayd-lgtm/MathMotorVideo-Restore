@@ -281,6 +281,12 @@ Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228
 - [ ] Next focused test builds an offline MP4 with a known 220 Hz source-audio track; export once with source audio at 40% and once muted, decode both AAC tracks, compare against the fixture's measured baseline, and confirm the source fixture hash is unchanged.
 
 
+### #222 — CI stalled while installing ffmpeg
+
+- [x] [#222 run](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40384778484) remained in `Install ffmpeg for deterministic audio fixture` for about 30 minutes; deterministic fixture generation and emulator instrumentation had not started. This is CI setup delay, not a pass/fail result for the audio fix.
+- [x] Workflow follow-up committed as `d20aadc2a27aca6a99d6f8ebe42d464e0053b9c5`: cap the ffmpeg installation step at 6 minutes, bound `apt-get update` and install separately, and use `--no-install-recommends`. This prevents a stalled package mirror from consuming the whole emulator job.
+- [ ] Confirm the new workflow reaches fixture generation and instrumentation; then use the actual decoded-MP4 result to decide whether the source-audio draft-state race is fixed. VersionCode 395 remains blocked.
+
 ### #221 — source-audio mute assertion failed; draft-restore race being isolated
 
 - [x] [#221 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40382129862), commit `e85f2047764e2fc6105be8865200d4b62babb8e5`: build and earlier instrumentation checks reached the actual decoded-MP4 assertion. The muted export still measured the 220 Hz source tone at ratio `0.3990`; expected below `0.08`. This is a real test failure signal and the source-audio gate remains open.
