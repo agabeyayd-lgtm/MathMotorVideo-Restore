@@ -35,6 +35,13 @@
 Text trim handles, preview/export parity, full audio export, gesture grouping, device review, and signed update/install remain unverified. No release actions taken.
 
 
+## Anti-loop handoff — 2026-10-26
+
+- Added [VERIFICATION_ANTI_LOOP.md](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/blob/fix/editor-395-gate/VERIFICATION_ANTI_LOOP.md) as the mandatory handoff: no duplicate runs while active, classify failures by layer, inspect exact diagnostics, one root-cause fix at a time, and never infer a target interaction passed if it never ran.
+- Current single run to inspect: [#207](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40318772112), head SHA `96e889be0cd923010b930530074225305ce695b0`. Last observed: unit tests, debug APK, offline fixtures and KVM passed; emulator screenshot/interaction step was still running. Check this before starting any new workflow.
+- #206 was a shell/preflight failure, fixed by removing the stray quote in `96e889b`; it did not exercise the trim-handle assertion.
+- Trim handles remain unverified until their actual instrumentation assertions execute. Version 395 remains blocked; no release actions taken.
+
 ## Latest handoff — run #203
 
 - Run [#203 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40312901567): unit tests and debug APK build passed, but the screenshot/launch preflight stopped before Android instrumentation. Uploaded diagnostics show `am_anr` for the Android-owned Nexus/Pixel Launcher: `Input dispatching timed out (Application does not have a focused window)`. The system ANR dialog persisted and the capture script exited with code 8.
