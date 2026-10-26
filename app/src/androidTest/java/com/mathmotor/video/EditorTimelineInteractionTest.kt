@@ -561,23 +561,27 @@ class EditorTimelineInteractionTest {
             stripStartBefore != stripStartAfter
         )
 
-        // The strip can be wider than the viewport; after moving the start handle,
-        // the end handle may be off-screen and therefore absent from UiAutomator's tree.
-        // Several unrelated HorizontalScrollViews exist in the editor. Target the actual
-        // selected text lane, not the first matching view (which can be the text-layer list).
+        // The end handle can be outside the viewport after dragging the start handle.
+        // Do not scroll to the lane's absolute end: that can move this shorter text strip
+        // entirely off the left edge. Ask UiScrollable to bring the specific handle into view
+        // inside the selected text lane; the editor has other unrelated horizontal lists.
         val timelineLane = UiScrollable(
             UiSelector()
                 .className("android.widget.HorizontalScrollView")
                 .description("Zaman çizelgesi satırı: YAZI 1")
         ).setAsHorizontalList()
-        assertTrue("Could not scroll the selected text timeline lane to its end", timelineLane.scrollToEnd(10))
+        val endHandleSelector = UiSelector().description("Yazı bitişini sürükle")
+        assertTrue(
+            "Could not bring the text-strip end handle into the selected text lane viewport",
+            timelineLane.scrollIntoView(endHandleSelector)
+        )
         device.waitForIdle()
         SystemClock.sleep(250)
 
-        val endHandleSelector = By.desc("Yazı bitişini sürükle")
+        val endHandleQuery = By.desc("Yazı bitişini sürükle")
         assertTrue(
-            "Could not find the text-strip end handle after scrolling the lane to its end",
-            device.wait(Until.hasObject(endHandleSelector), 5_000)
+            "Could not find the text-strip end handle after bringing it into view",
+            device.wait(Until.hasObject(endHandleQuery), 5_000)
         )
         val endHandle = requireObject(device, endHandleSelector, "text-strip end handle")
         val endHandleBounds = endHandle.visibleBounds
