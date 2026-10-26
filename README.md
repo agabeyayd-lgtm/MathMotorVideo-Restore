@@ -199,3 +199,6 @@ Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228
 - [x] Selector API correction is present in [`b1ec215`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/b1ec215e8d4a66342367491026773fbc23849562), but its runtime test remains unverified because the emulator smoke preflight blocked it.
 - [ ] Stabilize/recover the emulator launcher ANR so instrumentation can run, then inspect the trim-handle assertion result. Avoid repeating the same test without addressing this preflight failure.
 - [ ] Next feature gates remain preview/export text parity, audio export, remaining timeline edge cases, physical-device review, and signed update/install. Version 395 remains blocked.
+
+- [x] CI recovery hardening committed in [`7f2e1a0`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/7f2e1a086ff7ab2e1af6741351a67295e064c709): preserve the Android-owned launcher ANR dialog's “Close app” coordinates from the last valid hierarchy before tapping “Wait”, because later hierarchy dumps can fail while the launcher is hung.
+- [ ] One workflow run is triggered by this CI-script change. It must first clear the launcher preflight, then the text-end-handle instrumentation assertion can finally be evaluated.
