@@ -49,14 +49,15 @@ jobs:
         run: gradle --no-daemon assembleDebug
 
       - name: Install ffmpeg for deterministic audio fixture
-        timeout-minutes: 6
+        # The hosted runner mirror downloaded only part of the 62.8 MB ffmpeg
+        # dependency set in 120 seconds; allow a realistic transfer window while
+        # keeping the whole setup step bounded before emulator instrumentation.
+        timeout-minutes: 16
         run: |
           set -euo pipefail
           if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
-            # Bound package-manager work so a stalled Ubuntu mirror cannot consume
-            # the emulator job's entire timeout before instrumentation begins.
             timeout 240s sudo apt-get update -qq
-            timeout 120s sudo apt-get install -y --no-install-recommends ffmpeg
+            timeout 660s sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 install -y --no-install-recommends ffmpeg
           fi
           command -v ffmpeg
           command -v ffprobe
