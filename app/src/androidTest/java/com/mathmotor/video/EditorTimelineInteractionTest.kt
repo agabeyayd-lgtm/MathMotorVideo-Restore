@@ -2038,6 +2038,124 @@ class EditorTimelineInteractionTest {
     }
 
     @Test
+    fun timedTextPreviewFollowsSeekAndZoom() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val device = UiDevice.getInstance(instrumentation)
+        val packageName = context.packageName
+        val fixture = java.io.File(context.filesDir, "editor-test-video.mp4")
+        assertTrue("Text seek/zoom fixture is missing", fixture.isFile && fixture.length() > 0L)
+        val draftId = java.util.UUID.randomUUID().toString()
+        val clip = org.json.JSONObject()
+            .put("uri", Uri.fromFile(fixture).toString())
+            .put("title", "TEXT_SEEK_PREVIEW_FIXTURE")
+            .put("durationMs", 8_020L)
+            .put("startMs", 0L)
+            .put("endMs", 8_020L)
+        val layer = org.json.JSONObject()
+            .put("id", 991L)
+            .put("text", "SEEK PREVIEW")
+            .put("startMs", 2_500L)
+            .put("endMs", 5_000L)
+            .put("timingCustomized", true)
+            .put("position", "CENTER")
+            .put("sizeSp", 30)
+            .put("xFraction", 0.5)
+            .put("yFraction", 0.5)
+            .put("colorPreset", "CYAN")
+            .put("isBold", true)
+        val project = org.json.JSONObject()
+            .put("format", "MathMotorVideoProject")
+            .put("version", 1)
+            .put("clips", org.json.JSONArray().put(clip))
+            .put("selectedClipIndex", 0)
+            .put("timelinePlayheadMs", 3_300L)
+            .put("timelineZoom", 1.0)
+            .put("timelineHorizontalScrollMs", 3_300L)
+            .put("textLayers", org.json.JSONArray().put(layer))
+            .put("selectedTextLayerId", 991L)
+            .put("sourceAudioVolume", 100)
+            .put("musicVolume", 45)
+            .put("soundVolume", 100)
+            .put("keepSourceAudio", true)
+        assertTrue("Could not seed the text seek/zoom project",
+            VideoProjectDraftStore.save(context, draftId, "Text preview seek/zoom", project))
+
+        device.executeShellCommand("logcat -c")
+        device.executeShellCommand("am start -n $packageName/com.mathmotor.video.MainActivity")
+        assertTrue("Home did not open before text seek/zoom test",
+            device.wait(Until.hasObject(By.textContains("Boş proje oluştur")), 12_000))
+        device.executeShellCommand(
+            "am start -n $packageName/com.mathmotor.video.EditorTestEntryActivity --es draft_id $draftId")
+        assertTrue("Seeded text seek/zoom project did not open",
+            device.wait(Until.hasObject(By.textContains("Taslak açıldı")), 20_000))
+
+        val previewSelector = By.clazz("android.widget.TextView").text("SEEK PREVIEW")
+        fun previewOverlay(): UiObject2? = device.findObjects(previewSelector).firstOrNull { view ->
+            val bounds = view.visibleBounds
+            bounds.width() > 0 && bounds.height() > 0 &&
+                bounds.centerY() < (device.displayHeight * 0.58f).toInt()
+        }
+        fun awaitPreviewVisible(expected: Boolean, description: String) {
+            val deadline = SystemClock.uptimeMillis() + 8_000L
+            while (SystemClock.uptimeMillis() < deadline) {
+                device.waitForIdle()
+                val visible = previewOverlay() != null
+                if (visible == expected) return
+                SystemClock.sleep(150)
+            }
+            throw AssertionError("$description: expected visible=$expected, current=${previewOverlay()?.visibleBounds}")
+        }
+        fun dragPlayhead(fromFraction: Float, toFraction: Float) {
+            val seek = requireObject(
+                device, By.desc("Zaman çizelgesinde oynatma noktası"), "timeline playhead seek bar"
+            )
+            val bounds = seek.visibleBounds
+            assertTrue("Timeline playhead seek bar has no usable width: $bounds", bounds.width() > 150)
+            val inset = (bounds.width() * 0.06f).toInt()
+            val usable = (bounds.width() - inset * 2).coerceAtLeast(1)
+            val startX = bounds.left + inset + (usable * fromFraction).toInt()
+            val endX = bounds.left + inset + (usable * toFraction).toInt()
+            device.swipe(startX, bounds.centerY(), endX, bounds.centerY(), 30)
+            device.waitForIdle()
+            SystemClock.sleep(200)
+        }
+
+        awaitPreviewVisible(true, "Text should initially appear at 3.3 seconds")
+        val initialMs = projectPositionMs(requireProjectTime(device))
+        assertTrue("Seeded playhead did not restore near 3.3 seconds: $initialMs", abs(initialMs - 3_300L) < 180L)
+
+        dragPlayhead(0.41f, 0.10f)
+        val beforeIntervalMs = projectPositionMs(requireProjectTime(device))
+        assertTrue("Playhead did not seek before text interval: $beforeIntervalMs", beforeIntervalMs < 2_000L)
+        awaitPreviewVisible(false, "Text should disappear when seeking before its interval")
+
+        dragPlayhead(0.10f, 0.42f)
+        val insideIntervalMs = projectPositionMs(requireProjectTime(device))
+        assertTrue("Playhead did not seek inside text interval: $insideIntervalMs",
+            insideIntervalMs in 2_700L..4_300L)
+        awaitPreviewVisible(true, "Text should reappear when seeking inside its interval")
+
+        val beforeZoomMs = projectPositionMs(requireProjectTime(device))
+        requireObject(device, By.text("+"), "timeline zoom in button").click()
+        device.waitForIdle()
+        SystemClock.sleep(300)
+        val afterZoomMs = projectPositionMs(requireProjectTime(device))
+        assertTrue("Timeline zoom changed the project time: $beforeZoomMs -> $afterZoomMs",
+            abs(beforeZoomMs - afterZoomMs) <= 150L)
+        awaitPreviewVisible(true, "Text should remain visible after timeline zoom")
+        android.util.Log.i("TextPreviewSeekZoomTest",
+            "stage=verified before=$beforeIntervalMs inside=$insideIntervalMs zoomBefore=$beforeZoomMs zoomAfter=$afterZoomMs")
+
+        dragPlayhead(0.42f, 0.82f)
+        val afterIntervalMs = projectPositionMs(requireProjectTime(device))
+        assertTrue("Playhead did not seek after text interval: $afterIntervalMs", afterIntervalMs > 5_500L)
+        awaitPreviewVisible(false, "Text should disappear after seeking beyond its interval")
+        android.util.Log.i("TextPreviewSeekZoomTest",
+            "stage=verified textBeforeHidden=true textInsideVisible=true textAfterHidden=true")
+    }
+
+    @Test
     fun exportedMp4RespectsSourceAudioVolumeAndMute() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
