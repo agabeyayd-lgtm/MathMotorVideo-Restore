@@ -159,11 +159,19 @@ Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228
 - [x] Run [#200 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40307614939): after the generic lane selector was fixed, the test specifically targeted `YAZI 1`, but still couldn't find the end handle after scrolling to the lane's absolute end. This can push a shorter text strip out of the viewport rather than reveal its handle.
 - [x] Run [#201 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40309940904): Android test compilation error at line 586 because `scrollIntoView` expected a `BySelector`, but received a `UiSelector`.
 - [x] Fixed the selector type in [`b247898`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/b2478982fcb4646a85ed9bf70abd8da32cbc3a7b).
-- [ ] Verification [run #202 — QUEUED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40311694275).
+- [x] Verification [run #202 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40311694275): test compilation failed on the selector API mismatch described below.
 - [x] Added `contentDescription = "Zaman çizelgesi satırı: $tag"` to actual synchronized timeline lanes in source commit [`94b48c2`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/94b48c2488f401d90dc0419a538a87d2e07d8ef5), then made the test target `Zaman çizelgesi satırı: YAZI 1` in [`fb7b3b3`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/fb7b3b3030835cf80eac3978d9b58ad5e324f90f).
 - [x] Updated the scroll step in [`79973ba`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/79973ba8bdb2e1b30703afdd1a955fe5044bba43) to bring the end-handle selector into view inside that lane, instead of scrolling to the absolute end.
 - [x] Run [#201 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40309940904): compilation failed because `UiScrollable.scrollIntoView` expects a `BySelector`, but the test passed a `UiSelector`. This was a test compile error, not a runtime trim-handle result.
 - [x] Corrected the selector type to `By.desc("Yazı bitişini sürükle")` in [`b247898`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/b2478982fcb4646a85ed9bf70abd8da32cbc3a7b).
-- [ ] Verification [run #202 — QUEUED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40311694275).
+- [x] Verification [run #202 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40311694275): test compilation failed on the selector API mismatch described below.
 - [ ] Keep the text-strip trim test open until #202 passes. Next distinct goal: compare actual timed/styled text in preview with the exported MP4, then test audio export and remaining timeline edge cases.
 - [ ] Keep release 395 blocked pending the required gates and explicit release authorization.
+
+
+### 2026-10-26 — #202 selector API mismatch and focused correction
+
+- [x] Run [#202 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40311694275): Android-test compilation failed at `EditorTimelineInteractionTest.kt:576` because this version of `UiScrollable.scrollIntoView` accepts `UiSelector` or `UiObject`, not `BySelector`. The emulator trim-handle interaction did not run; this is a test-code/API mismatch, not proof of an app defect.
+- [x] Corrected the test to use `UiSelector().description("Yazı bitişini sürükle")` only for `UiScrollable.scrollIntoView`, while retaining `By.desc(...)` for `UiDevice.wait/findObject`. Correction commit: [`b1ec215`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/b1ec215e8d4a66342367491026773fbc23849562).
+- [ ] Wait for the single focused verification triggered by this correction; do not queue a duplicate run.
+- [ ] Next distinct coverage after the trim test passes: preview/export text parity, audio export, remaining timeline edge cases, physical-device review, signed update/install. Version 395 remains blocked.
