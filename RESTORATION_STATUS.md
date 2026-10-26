@@ -12,7 +12,7 @@
 
 - [Run #194 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40277453646) at Android-test compilation because `restoredPlayheadMs` was declared twice in the manual JSON test. Unit tests and debug APK build had passed; emulator interaction tests did not run.
 - Fixed in commit [`934d52e`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/934d52e6a6c1fcaf3e477029e5eee97210726899): removed the obsolete 2.00-second assertion; retained the 7.70-second restored playhead, 200% zoom and 9.52-second combined trimmed-duration assertions.
-- [Run #195 — IN PROGRESS at last check](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40277993448) is the single follow-up run for that correction. Do not queue a duplicate run; record its final result in README when complete.
+- [Run #195 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40277993448): unit tests and debug APK passed, emulator test failed on stale contradictory assertions demanding a different text state (00:00–00:06.50/bottom/yellow/bold) after the same test had already verified the loaded project's 00:07–00:09/top/cyan/non-bold state. Removed only the obsolete assertion block in commit [the next focused test-fix commit](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commits/fix/editor-395-gate). Run the integrated gate once on that fix; do not repeat passing checks manually.
 
 ## Existing evidence — do not repeat without a relevant code change
 
