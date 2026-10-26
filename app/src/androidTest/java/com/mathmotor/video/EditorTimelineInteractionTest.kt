@@ -2088,9 +2088,8 @@ class EditorTimelineInteractionTest {
             assertTrue("Could not seed source-audio validation project ($keepSourceAudio)",
                 VideoProjectDraftStore.save(context, draftId, "Source audio validation", project))
 
-            device.executeShellCommand("am start -n $packageName/com.mathmotor.video.MainActivity")
-            assertTrue("Home did not open before source-audio validation",
-                device.wait(Until.hasObject(By.textContains("Boş proje oluştur")), 12_000))
+            // Directly launch the prepared editor project; the home-screen text
+            // is not part of the source-audio export behavior under test.
             device.executeShellCommand(
                 "am start -n $packageName/com.mathmotor.video.EditorTestEntryActivity --es draft_id $draftId")
             assertTrue("Seeded source-audio project did not open ($keepSourceAudio)",
