@@ -281,6 +281,13 @@ Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228
 - [ ] Next focused test builds an offline MP4 with a known 220 Hz source-audio track; export once with source audio at 40% and once muted, decode both AAC tracks, compare against the fixture's measured baseline, and confirm the source fixture hash is unchanged.
 
 
+### #221 — source-audio mute assertion failed; draft-restore race being isolated
+
+- [x] [#221 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40382129862), commit `e85f2047764e2fc6105be8865200d4b62babb8e5`: build and earlier instrumentation checks reached the actual decoded-MP4 assertion. The muted export still measured the 220 Hz source tone at ratio `0.3990`; expected below `0.08`. This is a real test failure signal and the source-audio gate remains open.
+- [x] The prior launch check waited only for the `VIDEO` timeline marker. That marker can appear before draft restoration finishes, so the mute export may start while the checkbox still has its default checked state. This is a plausible race, not yet proven as the only cause.
+- [x] Follow-up test commit `d4028c15b549481a0d5b377a3a6e4131a9ee4a5c` waits for the visible `Videonun kendi sesini koru` checkbox to match the requested saved-draft state before exporting; it fails explicitly if restoration does not complete. It does not weaken the decoded-audio threshold or remove the source-file hash check.
+- [ ] Run the focused gate on this candidate. If the checkbox-state precondition passes but muted AAC still contains the 220 Hz tone, inspect the production export path and Media3 `setRemoveAudio(true)` behavior; do not mark source-audio mute verified. VersionCode 395 remains blocked.
+
 ### #218 — fixture-preparation dependency failure
 
 - [x] Unit tests and Debug APK build passed on candidate `86a534282d852b15c976f69728ab7dbb55f74ffe`; the workflow failed in `Prepare deterministic MP4 fixtures` before emulator/instrumentation began.
