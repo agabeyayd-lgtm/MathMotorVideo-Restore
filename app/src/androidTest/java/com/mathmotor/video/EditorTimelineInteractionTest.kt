@@ -563,11 +563,14 @@ class EditorTimelineInteractionTest {
 
         // The strip can be wider than the viewport; after moving the start handle,
         // the end handle may be off-screen and therefore absent from UiAutomator's tree.
-        // Scroll the synchronized timeline lanes to the end before querying its handle.
+        // Several unrelated HorizontalScrollViews exist in the editor. Target the actual
+        // selected text lane, not the first matching view (which can be the text-layer list).
         val timelineLane = UiScrollable(
-            UiSelector().className("android.widget.HorizontalScrollView")
+            UiSelector()
+                .className("android.widget.HorizontalScrollView")
+                .description("Zaman çizelgesi satırı: YAZI 1")
         ).setAsHorizontalList()
-        assertTrue("Could not scroll the timeline lane to its end", timelineLane.scrollToEnd(10))
+        assertTrue("Could not scroll the selected text timeline lane to its end", timelineLane.scrollToEnd(10))
         device.waitForIdle()
         SystemClock.sleep(250)
 
