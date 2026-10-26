@@ -2088,6 +2088,9 @@ class EditorTimelineInteractionTest {
             assertTrue("Could not seed source-audio validation project ($keepSourceAudio)",
                 VideoProjectDraftStore.save(context, draftId, "Source audio validation", project))
 
+            // Clear old restore events so the test waits for this draft, not a
+            // previous editor launch, before exporting its audio state.
+            device.executeShellCommand("logcat -c")
             // Directly launch the prepared editor project; the home-screen text
             // is not part of the source-audio export behavior under test.
             device.executeShellCommand(
@@ -2101,19 +2104,45 @@ class EditorTimelineInteractionTest {
             assertTrue("Editor export tab did not appear for source-audio validation",
                 device.wait(Until.hasObject(By.textContains("Dışa aktar")), 8_000))
 
-            // The timeline marker can appear before the saved draft has finished restoring.
-            // Wait for the source-audio checkbox to reflect this draft's requested state;
-            // otherwise the mute case can export using the default checked value.
-            val sourceAudioCheckbox = device.findObject(By.text("Videonun kendi sesini koru"))
-                ?: throw AssertionError("Source-audio checkbox did not appear")
-            val audioRestoreDeadline = SystemClock.uptimeMillis() + 15_000L
-            while (SystemClock.uptimeMillis() < audioRestoreDeadline &&
-                sourceAudioCheckbox.isChecked != keepSourceAudio
-            ) {
-                SystemClock.sleep(100)
+            // The VIDEO marker appears before draft restoration is complete. Wait for the
+            // debug-only restore-complete marker emitted after every persisted control and
+            // audio URI is applied, so the default checked checkbox cannot produce a false pass.
+            val restoreDeadline = SystemClock.uptimeMillis() + 20_000L
+            var draftRestored = false
+            while (SystemClock.uptimeMillis() < restoreDeadline) {
+                val restoreLog = device.executeShellCommand("logcat -d -s ProjectPersistenceTest:I")
+                if (restoreLog.contains("PROJECT_JSON_RESTORED")) {
+                    draftRestored = true
+                    break
+                }
+                SystemClock.sleep(200)
             }
             assertTrue(
-                "Draft source-audio state was not restored (expected=$keepSourceAudio, actual=${sourceAudioCheckbox.isChecked})",
+                "Seeded source-audio project did not finish restoring",
+                draftRestored
+            )
+
+            // Audio controls live on their own tab and can be below the compact
+            // scroll viewport. Open that tab and scroll to the checkbox before asserting it.
+            val audioTab = requireObject(device, By.desc("Ses araçları sekmesi"), "source-audio tools tab")
+            audioTab.click()
+            assertTrue(
+                "Audio panel did not appear for source-audio validation",
+                device.wait(Until.hasObject(By.text("SES KATMANLARI")), 8_000)
+            )
+            val audioPanelScroller = UiScrollable(
+                UiSelector().className("android.widget.ScrollView")
+            ).setAsVerticalList()
+            assertTrue(
+                "Could not reveal source-audio checkbox in audio panel",
+                audioPanelScroller.scrollIntoView(UiSelector().text("Videonun kendi sesini koru"))
+            )
+            device.waitForIdle()
+            val sourceAudioCheckbox = requireObject(
+                device, By.text("Videonun kendi sesini koru"), "source-audio checkbox"
+            )
+            assertTrue(
+                "Restored source-audio state mismatch (expected=$keepSourceAudio, actual=${sourceAudioCheckbox.isChecked})",
                 sourceAudioCheckbox.isChecked == keepSourceAudio
             )
 
