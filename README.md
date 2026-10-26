@@ -16,6 +16,7 @@ A local-first Android video editor with a CapCut-inspired workflow. Editing and 
 ## Verified — do not repeat without a relevant code change
 
 - [x] Fixed-center timeline playhead interaction, pinch-zoom anchor stability, and timeline scrolling to the beginning/end.
+- [x] Saved playhead restoration survives ExoPlayer preparation/`STATE_READY`; fix verified on the release-gate branch in [run #179](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40225562573). The integrated candidate retains this guard; #195 is checking the combined branch.
 - [x] Left/right clip trim and restoration of the original source duration.
 - [x] Filmstrip thumbnails load frames from distinct timestamps.
 - [x] Text-layer creation, live preview, text-size changes, and text start/end timing controls.
@@ -45,7 +46,8 @@ Work top to bottom. Mark an item complete only when there is test or inspection 
 - [x] Shared history implementation covers editor snapshots for clips, text, music/effect references and levels, effect timing, source-audio settings and timeline state.
 - [x] `unifiedUndoRedoRestoresTextAndAudioEdits` passed on the source branch in run #192; run #193 then passed the complete source-branch workflow.
 - [ ] Re-verify after integration, then add explicit coverage for trim/split/reorder, sound-effect add/remove/start/volume, source-audio toggle, preview/export parity and undo-history state after save/reopen.
-- [ ] Verify Undo/Redo button availability and one-history-entry-per-gesture behavior.
+- [x] Global Undo/Redo controls remain visible outside the tool panel and have visible hit targets; this assertion passed in `unifiedUndoRedoRestoresTextAndAudioEdits` in source-branch [run #193](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40234200553). The integrated candidate recheck is tracked in the active #195 workflow.
+- [ ] Verify one-history-entry-per-gesture/grouping for different edit types (especially repeated slider changes); the current text-step and music-volume Undo/Redo test does not cover all gesture types.
 
 ### 3. Text timeline and export parity
 
@@ -77,14 +79,14 @@ Work top to bottom. Mark an item complete only when there is test or inspection 
 ### 2026-10-25 — Global Undo/Redo validation #183 / #184
 - [x] #183 failed before tests ran: Kotlin compilation reported nullable receiver errors for `undoClipButton` and `redoClipButton` at `VideoEditorActivity.kt` lines 1282–1287.
 - [x] Fixed by handling each nullable button with `?.let { button -> ... }` before styling and adding it to the bottom dock. Commit: `999a1d15eae6aababf8842655a6413ab2d694ad2` on `fix/global-editor-undo`.
-- [ ] #184 validation is queued: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40227983970
+- [x] #184 finished with an editor-startup crash (not queued anymore); the parent-attachment bug was fixed and run #185 passed, as recorded below: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40227983970
 - [ ] Keep release 395 blocked until build and emulator interaction tests pass; do not merge this branch or publish APK yet.
 
 
 ### 2026-10-25 — Global Undo/Redo validation #184 / #185
 - [x] #184 compiled but the editor crashed when opened: Android logcat showed `IllegalStateException: The specified child already has a parent` at `VideoEditorActivity.kt:1286`. The undo/redo buttons were still attached to the old, now-unused `clipHistoryRow` and were then added to the bottom dock.
 - [x] Fixed in commit `09360482c1592858119b588f4e73f192285afc8d` on `fix/global-editor-undo`: create the buttons without attaching them to a temporary parent; attach each only once to the persistent bottom dock.
-- [ ] #185 validation is running: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228445472
+- [x] #185 passed: debug build and all 9 connected instrumentation tests succeeded. Details below: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228445472
 - [ ] Keep release 395 blocked until build and emulator interaction tests pass. Do not merge this branch or publish APK yet.
 
 
@@ -107,7 +109,7 @@ Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228
 - [x] **#190** aligned the fixture's stored horizontal scroll with the saved 7.70 s playhead, then exposed a smaller but real restore drift: the restoration marker reported `playheadMs=7705`, so the strict `playheadMs=7700` marker assertion failed.
 - [x] Production correction committed on `fix/global-editor-undo`: [`976d4b3`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/976d4b38023ab4b5945577012b821b71476e85fd). During project restoration, horizontal-scroll callbacks no longer seek or overwrite the saved playhead. In **#191**, the manual JSON test passed the restored playhead/zoom and prior project-state assertions, then failed later while querying the cyan colour option.
 - [x] Root cause of the **#191** failure was test navigation: the test scrolled the vertical text panel to `Üst`, then queried `Camgöbeği` farther down without scrolling that option into view. The assertion is retained; the test now explicitly scrolls to the colour option before checking its selected state. Test-only correction: [`6100ddb`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/6100ddb26ac2b89b5bc4cd0061ac583870905d56).
-- [ ] **Current verification:** [run #192](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40233158607) must finish successfully before closing manual JSON persistence. Unit tests and debug APK build already passed in #192; the emulator interaction suite is still running.
+- [x] Source-branch manual JSON Save As → close → Open Document persistence passed in [run #193](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40234200553) after the corrected text/audio-panel scrolling assertions. The separate integrated-branch check is run #195.
 - [ ] Keep version 395 blocked until the complete emulator suite and remaining release gates pass. Do not merge, sign, publish, or enable in-app updates yet.
 
 
@@ -117,7 +119,8 @@ Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228
 - [x] Kept the release-gate branch's existing manual-save test changes and added the source-branch unified Undo/Redo interaction test; the manual JSON fixture now uses the source branch's tested two-clip, 7.70 s playhead/scroll setup.
 - [x] Run #194 isolated the integration-only compile error: duplicate local `restoredPlayheadMs` declarations in `EditorTimelineInteractionTest.kt`; unit tests and debug APK compilation passed, but Android instrumentation-test compilation failed before emulator interaction tests.
 - [x] Removed the obsolete 2.00 s assertion for the old fixture and retained the actual 7.70 s saved-playhead assertion plus 200% zoom and combined 9.52 s duration checks.
-- [ ] Run the workflow again for this focused test-only correction. If it passes, do not rerun the same gate again absent a related change.
+- [x] Pushed the focused test-only correction in commit [`934d52e`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/934d52e6a6c1fcaf3e477029e5eee97210726899); removed the duplicate local declaration while keeping the 7.70 s playhead, 200% zoom and 9.52 s trimmed-duration assertions.
+- [ ] Integrated candidate validation is now [run #195 — IN PROGRESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40277993448). If it passes, do not rerun the same gate without a related source change.
 - [ ] Keep version 395 blocked. A successful earlier branch run does not certify this integrated tree.
 
 
@@ -125,4 +128,5 @@ Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228
 
 - [x] Inspected job logs, not just the red status: failure was `compileDebugAndroidTestKotlin`, with duplicate local declarations at test lines 1119 and 1128. Unit tests and debug APK build had passed.
 - [x] Removed only the stale 2.00 s playhead assertion/declaration from the combined manual JSON test. Kept the fixture's intended saved playhead at 7.70 s, the 200% zoom check and the 9.52 s combined trimmed duration check.
-- [ ] Validate this exact test correction once with CI. Avoid repeating already-passing unit/build stages manually; rely on the workflow's required full gate to verify the combined candidate.
+- [x] Started the single follow-up verification for this exact correction: [run #195](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40277993448). Do not queue a duplicate run or manually repeat unit/build stages that already passed in #194.
+- [ ] Record #195's final outcome here when the workflow finishes; version 395 remains blocked until the integrated gate and other distinct release blockers pass.
