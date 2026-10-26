@@ -1513,6 +1513,288 @@ class EditorTimelineInteractionTest {
         )
     }
 
+
+    @Test
+    fun timedStyledTextExportsOnlyInsideItsIntervalAtTopCenterInCyan() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val resolver = context.contentResolver
+        val device = UiDevice.getInstance(instrumentation)
+        val packageName = context.packageName
+        val fixture = java.io.File(context.filesDir, "editor-test-video.mp4")
+        assertTrue("Text parity fixture is missing", fixture.isFile && fixture.length() > 0L)
+        val originalHash = sha256(fixture)
+        val exportName = "MathMotor_text_parity_${System.currentTimeMillis()}"
+        val draftId = java.util.UUID.randomUUID().toString()
+
+        val clip = org.json.JSONObject()
+            .put("uri", Uri.fromFile(fixture).toString())
+            .put("title", "TEXT_PARITY_FIXTURE")
+            .put("durationMs", 8020L)
+            .put("startMs", 0L)
+            .put("endMs", 8020L)
+        val textLayer = org.json.JSONObject()
+            .put("id", 943L)
+            .put("text", "TEXT PARITY")
+            .put("startMs", 2000L)
+            .put("endMs", 5000L)
+            .put("timingCustomized", true)
+            .put("position", "TOP")
+            .put("sizeSp", 32)
+            .put("xFraction", 0.5)
+            .put("yFraction", 0.16)
+            .put("colorPreset", "CYAN")
+            .put("isBold", true)
+        val project = org.json.JSONObject()
+            .put("format", "MathMotorVideoProject")
+            .put("version", 1)
+            .put("clips", org.json.JSONArray().put(clip))
+            .put("selectedClipIndex", 0)
+            .put("timelinePlayheadMs", 3000L)
+            .put("timelineZoom", 1.0)
+            .put("timelineHorizontalScrollMs", 3000L)
+            .put("textLayers", org.json.JSONArray().put(textLayer))
+            .put("selectedTextLayerId", 943L)
+            .put("sourceAudioVolume", 100)
+            .put("musicVolume", 45)
+            .put("soundVolume", 100)
+            .put("keepSourceAudio", true)
+            .put("exportName", exportName)
+        assertTrue(
+            "Could not seed the timed-text export parity project",
+            VideoProjectDraftStore.save(context, draftId, "Timed text export parity", project)
+        )
+
+        device.executeShellCommand("logcat -c")
+        device.executeShellCommand("am start -n $packageName/com.mathmotor.video.MainActivity")
+        assertTrue(
+            "Home did not open before the timed-text export test",
+            device.wait(Until.hasObject(By.textContains("Boş proje oluştur")), 12_000)
+        )
+        device.executeShellCommand(
+            "am start -n $packageName/com.mathmotor.video.EditorTestEntryActivity --es draft_id $draftId"
+        )
+        assertTrue(
+            "Seeded timed-text project did not open",
+            device.wait(Until.hasObject(By.textContains("Taslak açıldı")), 20_000)
+        )
+        val previewTextSelector = By.clazz("android.widget.TextView").text("TEXT PARITY")
+        assertTrue(
+            "Timed text was not visible in the preview at 3 seconds",
+            device.wait(Until.hasObject(previewTextSelector), 10_000)
+        )
+        device.waitForIdle()
+        val previewTextBounds = requireObject(
+            device, previewTextSelector, "styled text in video preview"
+        ).visibleBounds
+        assertTrue(
+            "TOP-positioned text was not near the upper preview area: $previewTextBounds",
+            previewTextBounds.top < device.displayHeight * 0.35f
+        )
+
+        val previewShot = instrumentation.uiAutomation.takeScreenshot()
+            ?: throw AssertionError("Could not capture the preview text for colour verification")
+        fun isCyan(pixel: Int): Boolean {
+            val red = android.graphics.Color.red(pixel)
+            val green = android.graphics.Color.green(pixel)
+            val blue = android.graphics.Color.blue(pixel)
+            return red < 150 && green > 125 && blue > 155 &&
+                green - red > 35 && blue - red > 65
+        }
+        fun cyanPixelsInRect(
+            bitmap: android.graphics.Bitmap,
+            left: Int,
+            top: Int,
+            right: Int,
+            bottom: Int
+        ): Int {
+            var count = 0
+            val x0 = left.coerceIn(0, bitmap.width)
+            val x1 = right.coerceIn(x0, bitmap.width)
+            val y0 = top.coerceIn(0, bitmap.height)
+            val y1 = bottom.coerceIn(y0, bitmap.height)
+            for (y in y0 until y1) {
+                for (x in x0 until x1) {
+                    if (isCyan(bitmap.getPixel(x, y))) count++
+                }
+            }
+            return count
+        }
+        val previewCyanPixels = cyanPixelsInRect(
+            previewShot,
+            previewTextBounds.left,
+            previewTextBounds.top,
+            previewTextBounds.right,
+            previewTextBounds.bottom
+        )
+        previewShot.recycle()
+        assertTrue(
+            "Preview text does not render in the configured cyan colour (pixels=$previewCyanPixels)",
+            previewCyanPixels >= 8
+        )
+
+        val exportTab = device.findObject(By.text("Dışa aktar ›"))
+            ?: throw AssertionError("Could not open the export tab for timed text")
+        exportTab.click()
+        assertTrue(
+            "The export panel did not open for timed text",
+            device.wait(Until.hasObject(By.text("PROJE / DIŞA AKTARMA")), 8_000)
+        )
+        requireObject(device, By.clazz("android.widget.EditText"), "export filename input").setText(exportName)
+        val panelScroller = UiScrollable(UiSelector().className("android.widget.ScrollView")).setAsVerticalList()
+        assertTrue(
+            "Could not scroll the export panel to the MP4 export button",
+            panelScroller.scrollIntoView(UiSelector().text("MP4 DIŞA AKTAR"))
+        )
+        device.waitForIdle()
+        requireObject(device, By.text("MP4 DIŞA AKTAR"), "MP4 export button").click()
+
+        val exportDeadline = SystemClock.uptimeMillis() + 120_000L
+        var exportSaved = false
+        while (SystemClock.uptimeMillis() < exportDeadline) {
+            val log = device.executeShellCommand("logcat -d -s MultiClipExport:I")
+            if (log.contains("MULTICLIP_EXPORT_SAVED name=$exportName")) {
+                exportSaved = true
+                break
+            }
+            if (log.contains("MULTICLIP_EXPORT_TRANSFORM_FAILED name=$exportName") ||
+                log.contains("MULTICLIP_EXPORT_SAVE_FAILED name=$exportName")
+            ) throw AssertionError("Timed-text MP4 export failed: $log")
+            SystemClock.sleep(500)
+        }
+        assertTrue("Timed-text MP4 was not saved within 120 seconds", exportSaved)
+
+        var outputUri: Uri? = null
+        val queryDeadline = SystemClock.uptimeMillis() + 30_000L
+        while (outputUri == null && SystemClock.uptimeMillis() < queryDeadline) {
+            resolver.query(
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                arrayOf(MediaStore.Video.Media._ID),
+                "${MediaStore.Video.Media.DISPLAY_NAME} = ?",
+                arrayOf("$exportName.mp4"),
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    outputUri = ContentUris.withAppendedId(
+                        MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                        cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID))
+                    )
+                }
+            }
+            if (outputUri == null) SystemClock.sleep(300)
+        }
+        val savedUri = outputUri ?: throw AssertionError(
+            "Export reported success but the timed-text MP4 was not found in MediaStore"
+        )
+
+        val sourceRetriever = MediaMetadataRetriever()
+        val exportRetriever = MediaMetadataRetriever()
+        sourceRetriever.setDataSource(fixture.absolutePath)
+        exportRetriever.setDataSource(context, savedUri)
+        val frameWidth = exportRetriever.extractMetadata(
+            MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH
+        )?.toIntOrNull() ?: throw AssertionError("Could not read exported video width")
+        val frameHeight = exportRetriever.extractMetadata(
+            MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT
+        )?.toIntOrNull() ?: throw AssertionError("Could not read exported video height")
+
+        fun inspectTextAt(timeMs: Long): Triple<Int, Int, android.graphics.Rect?> {
+            val sourceFrame = sourceRetriever.getFrameAtTime(
+                timeMs * 1000L, MediaMetadataRetriever.OPTION_CLOSEST
+            ) ?: throw AssertionError("Could not decode original fixture frame at ${timeMs}ms")
+            val outputFrame = exportRetriever.getFrameAtTime(
+                timeMs * 1000L, MediaMetadataRetriever.OPTION_CLOSEST
+            ) ?: throw AssertionError("Could not decode exported frame at ${timeMs}ms")
+            val alignedSource = if (sourceFrame.width != outputFrame.width ||
+                sourceFrame.height != outputFrame.height
+            ) {
+                android.graphics.Bitmap.createScaledBitmap(
+                    sourceFrame, outputFrame.width, outputFrame.height, false
+                )
+            } else sourceFrame
+            var topCount = 0
+            var lowerCount = 0
+            var left = outputFrame.width
+            var top = outputFrame.height
+            var right = -1
+            var bottom = -1
+            val xStart = outputFrame.width / 10
+            val xEnd = outputFrame.width * 9 / 10
+            val topEnd = outputFrame.height * 45 / 100
+            val lowerEnd = outputFrame.height * 90 / 100
+            for (y in 0 until lowerEnd) {
+                for (x in xStart until xEnd) {
+                    val outputCyan = isCyan(outputFrame.getPixel(x, y))
+                    val sourceCyan = isCyan(alignedSource.getPixel(x, y))
+                    if (outputCyan && !sourceCyan) {
+                        if (y < topEnd) {
+                            topCount++
+                            left = minOf(left, x)
+                            right = maxOf(right, x)
+                            top = minOf(top, y)
+                            bottom = maxOf(bottom, y)
+                        } else {
+                            lowerCount++
+                        }
+                    }
+                }
+            }
+            val textBounds = if (right >= left && bottom >= top) {
+                android.graphics.Rect(left, top, right + 1, bottom + 1)
+            } else null
+            if (alignedSource !== sourceFrame) alignedSource.recycle()
+            sourceFrame.recycle()
+            outputFrame.recycle()
+            return Triple(topCount, lowerCount, textBounds)
+        }
+
+        try {
+            val before = inspectTextAt(1000L)
+            val during = inspectTextAt(3000L)
+            val after = inspectTextAt(6000L)
+            assertTrue(
+                "Timed text should not render before 2s; extra cyan pixels=${before.first}",
+                before.first < 25
+            )
+            assertTrue(
+                "Styled text did not render in exported frames during 2s-5s; extra cyan pixels=${during.first}",
+                during.first >= 40
+            )
+            assertTrue(
+                "Timed text should not render after 5s; extra cyan pixels=${after.first}",
+                after.first < 25
+            )
+            assertTrue(
+                "CYAN text should be concentrated near the top, not the lower frame " +
+                    "(top=${during.first}, lower=${during.second})",
+                during.first > during.second + 20
+            )
+            val bounds = during.third ?: throw AssertionError("Could not locate exported cyan text pixels")
+            assertTrue(
+                "Exported text was unexpectedly narrow for 32sp TEXT PARITY: $bounds width=$frameWidth",
+                bounds.width() > frameWidth * 0.15f
+            )
+            assertTrue(
+                "Exported text was unexpectedly short: $bounds height=$frameHeight",
+                bounds.height() > frameHeight * 0.04f
+            )
+            assertTrue(
+                "Exported text was not horizontally centered: $bounds width=$frameWidth",
+                bounds.centerX() in (frameWidth * 0.25f).toInt()..(frameWidth * 0.75f).toInt()
+            )
+            assertTrue("Text export modified the original source video", sha256(fixture) == originalHash)
+            android.util.Log.i(
+                "TextExportParityTest",
+                "stage=verified before=${before.first} during=${during.first} lower=${during.second} " +
+                    "after=${after.first} bounds=$bounds frame=${frameWidth}x$frameHeight " +
+                    "previewCyanPixels=$previewCyanPixels originalsUnchanged=true"
+            )
+        } finally {
+            sourceRetriever.release()
+            exportRetriever.release()
+        }
+    }
+
     @Test
     fun filmstripLoadsFramesFromDistinctTimestamps() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
