@@ -22,14 +22,15 @@ This is the concise handoff for ongoing CI debugging. Read it and the latest REA
 - [#216 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40372603373), head SHA `e71ecb195a0685023616f96e05fa159c2a5e2b11`: unit tests, Debug APK, connected instrumentation and artifact upload passed. The production timed-effect leading-gap fix is verified through a real exported MP4/AAC decode test; music is present across the output and the 880 Hz effect is limited to the configured interval.
 - Earlier #214 validated source-audio toggle and effect-volume Undo/Redo UI history only.
 - `sourceAudioToggleAndEffectVolumeUseUndoRedoHistory` is verified for UI state/history. This does not validate exported MP4 audio.
-- Next unique gate: an audio-bearing source-video fixture with a deterministic 220 Hz track; export at 40% source gain and again with source audio muted, then decode AAC and compare against the known source baseline.
+- Current unique gate: [#227](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40396049579), queued after #226 proved the package-install layer can time out. #226's exact failure was `apt-get install ffmpeg` exit 124 after its 120-second child timeout while downloading `libcodec2-1.2`; unit tests and Debug APK build passed, fixture generation and instrumentation did not start.
+- Workflow fix commit `7560ce792288ece7d2b3ca2116502589a68a24f1` allows up to 660 seconds for installation, a 16-minute step cap and APT network retries. Inspect #227 before doing anything else.
 - Do not repeat #210 text-strip drags or #212 timed-text export unchanged.
 - Remaining after this test: source-video audio mute/volume with a fixture that contains its own audio track, A/V sync, text preview after seek/zoom, split/reorder/trim-scroll conflicts, physical-device review, signed update/install.
 - Keep versionCode 395 blocked. Do not change version metadata, sign/publish an APK, or enable in-app updates without all required gates and explicit authorization.
 
 ## Next action (superseded by live run #226 below)
 
-Do not launch a duplicate source-audio run while #226 is in progress. Inspect its FFmpeg setup result first. If it passes, inspect decoded 220 Hz magnitudes and compare output/source ratios for 40% gain and mute; if it fails before fixture generation, repair only that CI preflight layer. Keep the #216 music-loop/timed-effect test green and do not repeat it unchanged; versionCode 395 remains blocked.
+Do not launch a duplicate source-audio run while #227 is queued/in progress. Inspect its FFmpeg setup result first. If it passes, inspect decoded 220 Hz magnitudes and compare output/source ratios for 40% gain and mute; if it fails before fixture generation, repair only that CI preflight layer. Keep the #216 music-loop/timed-effect test green and do not repeat it unchanged; versionCode 395 remains blocked.
 
 
 ## #215 root-cause record
