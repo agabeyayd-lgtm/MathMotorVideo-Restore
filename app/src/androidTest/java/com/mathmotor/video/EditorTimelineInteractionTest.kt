@@ -570,7 +570,7 @@ class EditorTimelineInteractionTest {
                 .className("android.widget.HorizontalScrollView")
                 .description("Zaman çizelgesi satırı: YAZI 1")
         ).setAsHorizontalList()
-        val endHandleSelector = UiSelector().description("Yazı bitişini sürükle")
+        val endHandleSelector = By.desc("Yazı bitişini sürükle")
         assertTrue(
             "Could not bring the text-strip end handle into the selected text lane viewport",
             timelineLane.scrollIntoView(endHandleSelector)
