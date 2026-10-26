@@ -48,8 +48,8 @@ Do not launch a duplicate source-audio run while #227 is in progress. FFmpeg ins
 - Next run must show fixture preparation passed and the source-audio assertions actually ran. Do not mark source audio complete from a build-only result.
 
 
-## #226 — current live run (2026-10-26)
-- Run [#226](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40395040884), head SHA `2ca65a0c50a3443218647640249128c471b35747`, is in progress.
-- Unit tests and `assembleDebug` passed. The current step is `Install ffmpeg for deterministic audio fixture`; it has a six-minute timeout. Fixture preparation, emulator setup and Android instrumentation have not started.
-- #225 was cancelled by the newer run and is not evidence of a pass or failure. #224 did not reach MP4 export; #221 remains the last actual mute measurement and failed with a 220 Hz ratio of `0.3990` instead of `<0.08`.
-- Next action: inspect #226's setup outcome before changing code or starting any new run. If FFmpeg setup fails, repair only that CI preflight issue. If it passes, verify the dedicated draft-restoration event, expected checkbox state, 40% gain measurement, mute measurement and unchanged source-file hash in the same test run. Do not weaken thresholds. Keep versionCode 395 blocked.
+## #226 / #227 source-audio handoff (2026-10-26)
+- [#226](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40395040884), head SHA `2ca65a0c50a3443218647640249128c471b35747`, failed before fixtures: FFmpeg apt install exited `124` at its 120-second child timeout while downloading dependencies. Unit tests and `assembleDebug` passed; instrumentation did not start.
+- [#227](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40396049579), head SHA `7560ce792288ece7d2b3ca2116502589a68a24f1`, is now in the emulator/instrumentation step. FFmpeg/FFprobe installation and deterministic audio-fixture preparation have passed.
+- #225 was cancelled by the newer push. #224 did not reach MP4 export; #221 remains the last actual mute measurement and failed with a 220 Hz ratio of `0.3990` instead of `<0.08`.
+- Next action: inspect #227's final result. Do not queue another run until it finishes. If the draft-restoration marker and checkbox state pass, inspect the decoded 40% gain and mute ratios plus unchanged source-file hash. If instrumentation fails, fix only the first demonstrated root cause and preserve all audio thresholds. Keep versionCode 395 blocked.
