@@ -2101,6 +2101,22 @@ class EditorTimelineInteractionTest {
             assertTrue("Editor export tab did not appear for source-audio validation",
                 device.wait(Until.hasObject(By.textContains("Dışa aktar")), 8_000))
 
+            // The timeline marker can appear before the saved draft has finished restoring.
+            // Wait for the source-audio checkbox to reflect this draft's requested state;
+            // otherwise the mute case can export using the default checked value.
+            val sourceAudioCheckbox = device.findObject(By.text("Videonun kendi sesini koru"))
+                ?: throw AssertionError("Source-audio checkbox did not appear")
+            val audioRestoreDeadline = SystemClock.uptimeMillis() + 15_000L
+            while (SystemClock.uptimeMillis() < audioRestoreDeadline &&
+                sourceAudioCheckbox.isChecked != keepSourceAudio
+            ) {
+                SystemClock.sleep(100)
+            }
+            assertTrue(
+                "Draft source-audio state was not restored (expected=$keepSourceAudio, actual=${sourceAudioCheckbox.isChecked})",
+                sourceAudioCheckbox.isChecked == keepSourceAudio
+            )
+
             (device.findObject(By.text("Dışa aktar ›"))
                 ?: throw AssertionError("Could not open export tab for source-audio validation")).click()
             assertTrue("Source-audio export panel did not open",
