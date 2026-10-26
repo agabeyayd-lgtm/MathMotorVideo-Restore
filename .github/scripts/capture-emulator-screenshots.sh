@@ -199,7 +199,42 @@ PY
   done
 
   if [ -s "$xml" ] && grep -Eiq "(Process system|System UI|Pixel Launcher|Nexus Launcher|com\\.google\\.android\\.apps\\.nexuslauncher).*isn.t responding" "$xml"; then
-    echo "System ANR dialog is still present after recovery attempts"
+    # If a system launcher remains ANR after repeated Wait taps, close that
+    # Android-owned launcher process to clear its modal dialog. The MathMotor
+    # activity has already been launched and is the intended foreground screen.
+    # Never use this fallback for an ANR whose title belongs to MathMotor.
+    local close_coords
+    close_coords="$(python3 - "$xml" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+try:
+    root = ET.parse(sys.argv[1]).getroot()
+except (OSError, ET.ParseError):
+    raise SystemExit(0)
+
+for node in root.iter("node"):
+    if node.attrib.get("text", "").strip().lower() in {"close app", "force close"}:
+        match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+        if match:
+            x1, y1, x2, y2 = map(int, match.groups())
+            print((x1 + x2) // 2, (y1 + y2) // 2)
+            break
+PY
+)"
+    if [ -n "$close_coords" ]; then
+      echo "System launcher ANR persisted after Wait; dismissing only the Android-owned launcher at $close_coords"
+      timeout -k 2s 8s adb -s emulator-5554 shell input tap $close_coords || true
+      sleep 3
+      dump_hierarchy "$remote_name" "$xml" || true
+      if [ ! -s "$xml" ] || ! grep -Eiq "isn.t responding|not responding" "$xml"; then
+        SYSTEM_ANR_RECOVERED=true
+        echo "Android-owned launcher ANR dialog cleared; continuing with MathMotor UI checks"
+        return 0
+      fi
+    fi
+    echo "System ANR dialog is still present after Wait and Close-app recovery attempts"
     return 1
   fi
   return 0
