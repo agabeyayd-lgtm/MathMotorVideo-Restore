@@ -22,8 +22,8 @@ This is the concise handoff for ongoing CI debugging. Read it and the latest REA
 - [#216 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40372603373), head SHA `e71ecb195a0685023616f96e05fa159c2a5e2b11`: unit tests, Debug APK, connected instrumentation and artifact upload passed. The production timed-effect leading-gap fix is verified through a real exported MP4/AAC decode test; music is present across the output and the 880 Hz effect is limited to the configured interval.
 - Earlier #214 validated source-audio toggle and effect-volume Undo/Redo UI history only.
 - `sourceAudioToggleAndEffectVolumeUseUndoRedoHistory` is verified for UI state/history. This does not validate exported MP4 audio.
-- Current unique gate: [#227](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40396049579), now in progress after FFmpeg installation and deterministic fixture preparation passed. #226's exact failure was `apt-get install ffmpeg` exit 124 after its 120-second child timeout while downloading `libcodec2-1.2`; unit tests and Debug APK build passed, fixture generation and instrumentation did not start.
-- Workflow fix commit `7560ce792288ece7d2b3ca2116502589a68a24f1` allows up to 660 seconds for installation, a 16-minute step cap and APT network retries. Inspect #227 before doing anything else.
+- Current unique gate: [#228](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40399875346), in progress on test-only commit `5380eef327bb3adfe8cdff2a314fd45b79721233`. #227's FFmpeg/setup path passed; its only failure was the second draft launch reusing the existing task and never emitting the requested restore marker. The new test uses `--activity-clear-task` and waits for entry, exact draft-lookup and restore markers.
+- #226's historical setup failure was `apt-get install ffmpeg` exit 124 during package download. Workflow fix commit `7560ce792288ece7d2b3ca2116502589a68a24f1` made that setup pass in #227/#228. Do not repeat package troubleshooting while #228 is active.
 - Do not repeat #210 text-strip drags or #212 timed-text export unchanged.
 - Remaining after this test: source-video audio mute/volume with a fixture that contains its own audio track, A/V sync, text preview after seek/zoom, split/reorder/trim-scroll conflicts, physical-device review, signed update/install.
 - Keep versionCode 395 blocked. Do not change version metadata, sign/publish an APK, or enable in-app updates without all required gates and explicit authorization.
@@ -45,7 +45,7 @@ Do not launch a duplicate source-audio run while #227 is in progress. FFmpeg ins
 ## #218 — preflight root cause and repair
 - Run #218 failed before emulator setup. Unit tests and Debug APK build passed; fixture preparation exited at `command -v ffmpeg` because ffmpeg/ffprobe are not present on this runner image.
 - This is a CI dependency/preflight failure, not an application assertion. The workflow now installs ffmpeg only when unavailable, then prepares the deterministic audio-bearing MP4 and verifies its streams before copying it into the emulator app sandbox.
-- Next run must show fixture preparation passed and the source-audio assertions actually ran. Do not mark source audio complete from a build-only result.
+- Fixture preparation passed in #227/#228. The remaining evidence is the second-draft restore, muted MP4 export/decode, quantitative source-audio ratios and unchanged source hash; do not mark this complete from setup/build alone.
 
 
 ## #227 result / #228 unique verification (2026-10-26)
