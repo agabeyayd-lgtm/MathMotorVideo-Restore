@@ -1,39 +1,35 @@
 # Restoration Status — 2026-10-26
 
-**Resume from this checkpoint; do not restart completed work.** The canonical verified-test record and remaining-work checklist live in [README.md](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/blob/fix/editor-395-gate/README.md). Keep this file as a short handoff only.
+**Resume from this checkpoint; do not restart completed work.** The canonical test history and remaining-work checklist live in [README.md](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/blob/fix/editor-395-gate/README.md).
 
 - Repo: `agabeyayd-lgtm/MathMotorVideo-Restore`
 - Active branch: `fix/editor-395-gate`
 - Draft PR: [#8](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/pull/8)
 - Installed phone baseline: versionCode **394** / build **61** (`app-v8.3-61`)
-- **Version 395 remains blocked**; do not change version metadata, sign/publish an APK, or enable in-app update.
+- **Version 395 remains blocked**. Do not change version metadata, sign/publish an APK, or enable in-app update.
 
-## Current integrated-candidate gate
+## Current gate
 
-- [Run #194 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40277453646) at Android-test compilation because `restoredPlayheadMs` was declared twice in the manual JSON test. Unit tests and debug APK build had passed; emulator interaction tests did not run.
-- Fixed in commit [`934d52e`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/934d52e6a6c1fcaf3e477029e5eee97210726899): removed the obsolete 2.00-second assertion; retained the 7.70-second restored playhead, 200% zoom and 9.52-second combined trimmed-duration assertions.
-- [Run #195 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40277993448): stale contradictory assertions demanded a second project's text state after the loaded project's actual state had already been verified. Removed only that obsolete assertion block in test-only commit [`fc76fb8`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/fc76fb81c199f1df074819c54cd19ae70a9ea462).
-- [Run #196 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40300395719): unit tests, debug APK build, emulator launch/interaction tests, screenshot capture and diagnostic upload all passed. This closes that integrated-candidate gate.
-- [Run #197 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40302379479): new text-strip trim-handle test could find the start handle but not the end handle after the drag. Unit tests/build passed; the end handle was likely outside the horizontal lane viewport and thus absent from UiAutomator's visible tree. No app code changed.
-- [x] Run [#198 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40304600189): unit tests/debug APK passed; emulator instrumentation failed at `Could not find end label before strip drag`.
-- [x] Run [#200 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40307614939): after lane selection was made explicit, `scrollToEnd` still left the end handle absent. The absolute end of the timeline is not necessarily where this shorter text strip ends.
-- [x] Added a stable `Zaman çizelgesi satırı: $tag` accessibility description in [`94b48c2`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/94b48c2488f401d90dc0419a538a87d2e07d8ef5), then changed the test to target `YAZI 1` in [`fb7b3b3`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/fb7b3b3030835cf80eac3978d9b58ad5e324f90f). Focused test commit [`79973ba`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/79973ba8bdb2e1b30703afdd1a955fe5044bba43) replaces scrolling to the absolute end with `scrollIntoView` for the end-handle selector within that lane.
-- [x] Run [#201 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40309940904): Android test compilation failed because `scrollIntoView` was passed a `UiSelector` instead of the required `BySelector`; no runtime trim-handle conclusion can be drawn from this run.
-- [x] Corrected the selector type in [`b247898`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/b2478982fcb4646a85ed9bf70abd8da32cbc3a7b).
-- - [x] Run [#202 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40311694275): `UiScrollable.scrollIntoView` rejected the `BySelector` argument at test line 576. Emulator interaction did not run.
+- [Run #202 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40311694275): test-code compilation error because the test supplied `BySelector` to this AndroidX `UiScrollable.scrollIntoView` overload. No trim interaction ran.
+- Fixed API usage in [`b1ec215`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/b1ec215e8d4a66342367491026773fbc23849562): use `UiSelector` for scrollIntoView and `BySelector` for UiDevice queries.
+- [Run #203 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40312901567): unit tests and debug APK build passed, but the screenshot/setup script stopped before instrumentation because Android's own Pixel/Nexus Launcher displayed a persistent ANR dialog. Diagnostics showed MathMotor's `MainActivity` was already resumed but the system overlay retained focus. This run does **not** demonstrate a MathMotor editor or trim-handle failure.
+- Corrected system-ANR recovery in [`2c278f3`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/2c278f3d45c21ac62a8505849924af179da3a5cb): after three Wait attempts, the helper can close only a confirmed Android-owned launcher ANR and re-check the window hierarchy. A MathMotor app-level ANR remains a hard failure.
+- [Run #204 — IN PROGRESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40313820818) verifies that recovery change. Check its result before taking further action; do not queue a duplicate run.
 
-## Existing evidence — do not repeat without a relevant code change
+## Proven earlier; do not repeat without relevant code changes
 
 - [Run #172](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40221395375): 8/8 instrumentation tests passed, including distinct filmstrip timestamps.
-- [Run #179](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40225562573): release-branch playhead restoration guard survives ExoPlayer preparation.
-- [Run #185](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228445472): debug build and 9/9 instrumentation tests passed after fixing the Undo/Redo button parent crash.
-- [Run #193](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40234200553): source branch passed the expanded manual JSON save/reopen test and text/music-volume Undo/Redo interaction test. This does not substitute for verifying the integrated candidate in #195.
+- [Run #179](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40225562573): playhead restoration guard survived ExoPlayer preparation.
+- [Run #185](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228445472): debug build and 9/9 instrumentation tests passed after the Undo/Redo button-parent crash fix.
+- [Run #193](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40234200553): source-branch manual JSON save/reopen and text/music-volume Undo/Redo interaction tests passed.
+- [Run #196](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40300395719): integrated-candidate unit/build/emulator gate passed before the new text-strip trim interaction test was added.
 
-Continue from the open items in README, starting with run #202's text-strip trim-handle verification, then preview/export parity. Gesture grouping, full audio export, timeline edge cases, physical-device review, and signed update/install remain unverified and must not be marked complete without evidence.
+## Continue after #204
 
+1. Confirm the emulator setup reaches the instrumentation suite; then inspect the exact right/left text-strip trim result.
+2. Add/verify preview-vs-export text parity using actual MP4 output.
+3. Verify audio export behavior and remaining timeline edge cases.
+4. Perform physical-device layout/keyboard/touch review.
+5. Verify signed update and in-app install only after all earlier gates and explicit release authorization.
 
-## Latest handoff — #202 compile failure
-
-- Run [#202 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40311694275) at Android-test compilation: this `UiScrollable.scrollIntoView` overload accepts `UiSelector`/`UiObject`, not `BySelector`. The text trim interaction was not exercised.
-- Focused correction in [`b1ec215`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/b1ec215e8d4a66342367491026773fbc23849562) separates the `UiSelector` used to scroll into view from the `BySelector` used by `UiDevice.wait/findObject`.
-- A single verification is triggered by the correction; check its result before any further run. Preview/export parity, audio export, timeline edge cases, physical-device review, and signed update/install remain open. Version 395 remains blocked.
+The trim-handle interaction, preview/export parity, full audio export, gesture-grouping edge cases, physical-device review, and signed update/install are not yet verified. No release actions taken.
