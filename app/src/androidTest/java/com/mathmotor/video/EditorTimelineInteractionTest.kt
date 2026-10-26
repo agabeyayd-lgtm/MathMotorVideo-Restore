@@ -570,15 +570,18 @@ class EditorTimelineInteractionTest {
                 .className("android.widget.HorizontalScrollView")
                 .description("Zaman çizelgesi satırı: YAZI 1")
         ).setAsHorizontalList()
-        val endHandleSelector = By.desc("Yazı bitişini sürükle")
+        // UiScrollable.scrollIntoView in this AndroidX version accepts UiSelector/UiObject,
+        // while UiDevice.wait/findObject use BySelector. Keep separate selectors for each API.
+        val endHandleScrollSelector = UiSelector().description("Yazı bitişini sürükle")
         assertTrue(
             "Could not bring the text-strip end handle into the selected text lane viewport",
-            timelineLane.scrollIntoView(endHandleSelector)
+            timelineLane.scrollIntoView(endHandleScrollSelector)
         )
         device.waitForIdle()
         SystemClock.sleep(250)
 
-        val endHandleQuery = By.desc("Yazı bitişini sürükle")
+        val endHandleSelector = By.desc("Yazı bitişini sürükle")
+        val endHandleQuery = endHandleSelector
         assertTrue(
             "Could not find the text-strip end handle after bringing it into view",
             device.wait(Until.hasObject(endHandleQuery), 5_000)
