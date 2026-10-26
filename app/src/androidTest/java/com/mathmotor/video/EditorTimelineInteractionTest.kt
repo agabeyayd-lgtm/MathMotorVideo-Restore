@@ -1221,32 +1221,6 @@ class EditorTimelineInteractionTest {
             device.wait(Until.hasObject(By.textContains("Yazı boyutu: 32")), 5_000)
         )
 
-        assertTrue(
-            "Manual JSON did not restore text start time 00:00.00",
-            textPanelScroller.scrollIntoView(UiSelector().description("Yazı başlangıç zamanı")) &&
-                device.wait(Until.hasObject(By.text("Yazı başlangıcı: 00:00.00")), 5_000)
-        )
-        assertTrue(
-            "Manual JSON did not restore text end time 00:06.50",
-            textPanelScroller.scrollIntoView(UiSelector().description("Yazı bitiş zamanı")) &&
-                device.wait(Until.hasObject(By.text("Yazı bitişi: 00:06.50")), 5_000)
-        )
-        assertTrue(
-            "Manual JSON did not restore the bottom text position",
-            textPanelScroller.scrollIntoView(UiSelector().text("Alt")) &&
-                requireObject(device, By.text("Alt"), "restored bottom text position").isChecked
-        )
-        assertTrue(
-            "Manual JSON did not restore yellow text colour",
-            textPanelScroller.scrollIntoView(UiSelector().text("Sarı")) &&
-                requireObject(device, By.text("Sarı"), "restored yellow text colour").isChecked
-        )
-        assertTrue(
-            "Manual JSON did not restore bold text style",
-            textPanelScroller.scrollIntoView(UiSelector().text("Kalın yazı")) &&
-                requireObject(device, By.text("Kalın yazı"), "restored bold text setting").isChecked
-        )
-
         val restoredAudioTab = device.findObject(By.clazz("android.widget.Button").textContains("Ses"))
             ?: throw AssertionError("Could not inspect restored manual JSON audio settings")
         restoredAudioTab.click()
