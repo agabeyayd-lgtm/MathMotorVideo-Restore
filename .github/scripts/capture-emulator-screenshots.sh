@@ -216,7 +216,7 @@ except (OSError, ET.ParseError):
 
 for node in root.iter("node"):
     if node.attrib.get("text", "").strip().lower() in {"close app", "force close"}:
-        match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
         if match:
             x1, y1, x2, y2 = map(int, match.groups())
             print((x1 + x2) // 2, (y1 + y2) // 2)
