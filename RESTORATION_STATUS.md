@@ -6,7 +6,9 @@
 - Active branch: fix/editor-395-gate
 - Draft repair PR: [#8](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/pull/8)
 - Installed phone baseline: versionCode **394**, build **61** (app-v8.3-61)
-- Latest successful gate: [#216 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40372603373), commit e71ecb195a0685023616f96e05fa159c2a5e2b11. Real MP4/AAC measurements verified looped background music and the timed-effect window after the Media3 leading-gap fix.
-- #218 stopped in fixture preparation before emulator setup because the runner lacked ffmpeg. The workflow now conditionally installs ffmpeg/ffprobe and generates a known-tone source-audio fixture; the updated source-audio test has not passed yet.
-- Next: verify source audio at 40%, mute, and untouched source hash; then continue with text preview after seek/zoom, split boundary, trim/scroll conflicts, multi-clip edge cases, physical-device usability and signed update/install.
+- Latest successful gate: [#216 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40372603373), commit e71ecb195a0685023616f96e05fa159c2a5e2b11. Real MP4/AAC measurements verified looped music and the timed-effect window.
+- Current unique gate: [#226 — IN PROGRESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40395040884), head SHA 2ca65a0c50a3443218647640249128c471b35747. Unit tests and Debug APK build passed; bounded FFmpeg setup is in progress. Fixture preparation and instrumentation have not started.
+- Unresolved evidence: #221's decoded mute check failed (220 Hz ratio 0.3990, expected <0.08). #224 failed before export while waiting for the old restore marker. The new dedicated restore marker in #226 is not yet verified.
+- Next: finish #226's setup; if setup passes, evaluate the explicit draft-restore marker, checkbox state, decoded 40% source-gain and mute ratios, and original fixture hash. If setup fails, fix preflight only and do not rerun unchanged instrumentation.
+- Then: text preview after seek/zoom, split boundary, trim/scroll conflicts, multi-clip edge cases, physical-device usability and signed update/install.
 - **Version 395 remains blocked.** No version bump, signing, publication or in-app update activation until required gates pass and release is explicitly authorized.
