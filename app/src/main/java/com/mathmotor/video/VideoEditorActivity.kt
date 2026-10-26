@@ -351,7 +351,13 @@ class VideoEditorActivity : Activity() {
         )
         if (savedDraft != null) {
             runCatching { applyProjectJson(savedDraft) }
-                .onSuccess { status.text = "Taslak açıldı. Düzenlemeye kaldığın yerden devam edebilirsin." }
+                .onSuccess {
+                    status.text = "Taslak açıldı. Düzenlemeye kaldığın yerden devam edebilirsin."
+                    if (isDebugBuild) android.util.Log.i(
+                        "EditorSmokeTest",
+                        "EDITOR_SMOKE_DRAFT_RESTORED id=$requestedDraftId"
+                    )
+                }
                 .onFailure {
                     status.text = "Taslak açılamadı: ${it.message ?: "proje verisi okunamadı"}"
                     if (incomingVideos.isNotEmpty()) addClipsInOrder(incomingVideos.map { Uri.parse(it) }, false)
