@@ -4810,10 +4810,32 @@ class VideoEditorActivity : Activity() {
             .setBackgroundFrameAnchor(x, y)
             .setOverlayFrameAnchor(0f, 0f)
             .build()
+        // Media3 TextOverlay rasterizes every frame, including frames outside this layer's
+        // active interval. Returning an empty string there gives TextOverlay a zero-width
+        // bitmap and crashes export (Bitmap.createBitmap: width and height must be > 0).
+        // Keep the same glyph metrics but make both glyphs and their background transparent
+        // while inactive, so the layer is invisible without producing a zero-sized bitmap.
+        val invisibleStyled = SpannableString(styled).apply {
+            getSpans(0, length, ForegroundColorSpan::class.java).forEach { span ->
+                val spanStart = getSpanStart(span)
+                val spanEnd = getSpanEnd(span)
+                val spanFlags = getSpanFlags(span)
+                removeSpan(span)
+                setSpan(ForegroundColorSpan(Color.TRANSPARENT), spanStart, spanEnd, spanFlags)
+            }
+            getSpans(0, length, BackgroundColorSpan::class.java).forEach { span ->
+                val spanStart = getSpanStart(span)
+                val spanEnd = getSpanEnd(span)
+                val spanFlags = getSpanFlags(span)
+                removeSpan(span)
+                setSpan(BackgroundColorSpan(Color.TRANSPARENT), spanStart, spanEnd, spanFlags)
+            }
+        }
         return object : TextOverlay() {
             override fun getText(presentationTimeUs: Long): SpannableString {
                 val timeMs = presentationTimeUs / 1000L
-                return if (timeMs >= startMs && timeMs < endMs) SpannableString(styled) else SpannableString("")
+                val text = if (timeMs >= startMs && timeMs < endMs) styled else invisibleStyled
+                return SpannableString(text)
             }
 
             override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings = settings
