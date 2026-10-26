@@ -561,26 +561,36 @@ class EditorTimelineInteractionTest {
             stripStartBefore != stripStartAfter
         )
 
-        // The end handle may be clipped off-screen after the start-handle drag.
-        // UiScrollable.scrollIntoView(handle) repeatedly swiped this nested lane but could
-        // not discover the clipped descendant in Android's accessibility tree. Scroll only
-        // the selected text lane to its right edge, then locate the visible handle directly.
-        // This fixture's text end remains within the timeline's right-side viewport at that
-        // offset, so the actual handle drag can be tested instead of failing during discovery.
-        val timelineLane = UiScrollable(
-            UiSelector()
-                .className("android.widget.HorizontalScrollView")
-                .description("Zaman çizelgesi satırı: YAZI 1")
-        ).setAsHorizontalList()
-        timelineLane.scrollToEnd(5)
-        device.waitForIdle()
-        SystemClock.sleep(250)
-
+        // The text-strip body deliberately consumes drags to move the strip itself and
+        // disallows its parent from intercepting the gesture. Do not swipe on that nested
+        // lane to reveal the other handle. The VIDEO lane is synchronized with every timeline
+        // lane and its filmstrip has already been verified to scroll the timeline.
+        // Move in bounded increments and stop as soon as the end handle becomes accessible;
+        // jumping straight to the absolute end can move past the handle at high timeline zoom.
         val endHandleSelector = By.desc("Yazı bitişini sürükle")
-        val endHandleQuery = endHandleSelector
+        var endHandleVisible = device.wait(Until.hasObject(endHandleSelector), 500)
+        val videoLane = requireObject(
+            device,
+            By.desc("Zaman çizelgesi satırı: VIDEO"),
+            "VIDEO timeline lane for synchronized scroll"
+        ).visibleBounds
+        val swipeY = videoLane.centerY()
+        val swipeFromX = videoLane.left + videoLane.width() * 3 / 4
+        val swipeToX = videoLane.left + videoLane.width() / 2
+        for (attempt in 0 until 8) {
+            if (endHandleVisible) break
+            device.swipe(swipeFromX, swipeY, swipeToX, swipeY, 25)
+            device.waitForIdle()
+            SystemClock.sleep(150)
+            endHandleVisible = device.wait(Until.hasObject(endHandleSelector), 500)
+            android.util.Log.i(
+                "TextLayerInteractionTest",
+                "stage=reveal-end-handle attempt=${attempt + 1} visible=$endHandleVisible"
+            )
+        }
         assertTrue(
-            "Could not find the text-strip end handle after bringing it into view",
-            device.wait(Until.hasObject(endHandleQuery), 5_000)
+            "Could not find the text-strip end handle after bounded VIDEO-lane scrolls",
+            endHandleVisible
         )
         val endHandle = requireObject(device, endHandleSelector, "text-strip end handle")
         val endHandleBounds = endHandle.visibleBounds
