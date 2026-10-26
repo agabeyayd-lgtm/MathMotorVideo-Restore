@@ -16,6 +16,12 @@ A local-first Android video editor with a CapCut-inspired workflow. Editing and 
 - Undo/Redo source test `unifiedUndoRedoRestoresTextAndAudioEdits` was green in source-branch validation. Remaining explicit coverage: trim/split/reorder, sound-effect mutations, source-audio toggle, preview/export parity and history state across save/reopen.
 - **Release 395 remains blocked.** Do not change version metadata, sign/publish APK, or enable in-app updates before the integrated candidate passes the required gates and release is explicitly authorized.
 
+### Live verification update — #226 (2026-10-26)
+
+- [#226 — IN PROGRESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40395040884), commit `2ca65a0c50a3443218647640249128c471b35747`: unit tests and Debug APK build passed. The workflow is currently on `Install ffmpeg for deterministic audio fixture`, which has a six-minute step timeout. Fixture generation, emulator launch and instrumentation have not started yet; there is no new evidence for source-audio export behavior.
+- #225 was cancelled by the newer push; do not count it as a test result. #224 remains a pre-export restore synchronization failure; #221 is still the last actual decoded mute assertion and remains a real failure (220 Hz ratio `0.3990`, expected `<0.08`).
+- Next action: wait for #226's setup result. If FFmpeg setup fails/times out, fix that preflight layer only; do not rerun audio instrumentation unchanged until fixture preparation passes. If setup passes, inspect the explicit draft-restored marker, saved checkbox state, decoded 40% gain and mute ratio, and source fixture hash.
+
 ## Verified — do not repeat without a relevant code change
 
 - [x] Fixed-center timeline playhead interaction, pinch-zoom anchor stability, and timeline scrolling to the beginning/end.
