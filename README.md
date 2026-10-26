@@ -9,7 +9,7 @@ A local-first Android video editor with a CapCut-inspired workflow. Editing and 
 - Active branch: `fix/editor-395-gate`; draft repair PR: [#8](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/pull/8).
 - User-installed baseline: **versionCode 394 / build 61 (`app-v8.3-61`)**.
 - Source-branch verification: [CI run #193 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40234200553), source commit [`941d5fd`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/941d5fd356c54c3278060a91a23a5e42d81340f4). Unit tests, debug APK, emulator launch, screenshots and editor interaction tests passed, including manual JSON save/reopen after scrolling the audio controls into view.
-- Integration combines the unified editor snapshot history from `fix/global-editor-undo` with the release-gate branch's existing playhead-restore guard and test coverage. This combined commit **still requires a fresh CI run on `fix/editor-395-gate`**; run #193 alone does not certify the combined candidate.
+- Integration commit [`cb2d153`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/cb2d1538fba6d04eca397f7b0df153a4276a6dd1) combined unified editor history with the release-gate branch's playhead-restore guard. Its first CI run [#194 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40277453646) at Android-test compilation: the manual JSON test contained duplicate `restoredPlayheadMs` declarations (around lines 1119 and 1128). The failure happened before emulator interaction tests; do not count it as an editor behavior failure.
 - Undo/Redo source test `unifiedUndoRedoRestoresTextAndAudioEdits` was green in source-branch validation. Remaining explicit coverage: trim/split/reorder, sound-effect mutations, source-audio toggle, preview/export parity and history state across save/reopen.
 - **Release 395 remains blocked.** Do not change version metadata, sign/publish APK, or enable in-app updates before the integrated candidate passes the required gates and release is explicitly authorized.
 
@@ -115,5 +115,14 @@ Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228
 
 - [x] Combined the shared `EditorEditSnapshot` Undo/Redo implementation with the release-gate branch's existing playhead-restoration guard instead of replacing either file wholesale.
 - [x] Kept the release-gate branch's existing manual-save test changes and added the source-branch unified Undo/Redo interaction test; the manual JSON fixture now uses the source branch's tested two-clip, 7.70 s playhead/scroll setup.
-- [ ] Fresh unit-test, debug-build and emulator interaction run on this exact integrated commit is required.
+- [x] Run #194 isolated the integration-only compile error: duplicate local `restoredPlayheadMs` declarations in `EditorTimelineInteractionTest.kt`; unit tests and debug APK compilation passed, but Android instrumentation-test compilation failed before emulator interaction tests.
+- [x] Removed the obsolete 2.00 s assertion for the old fixture and retained the actual 7.70 s saved-playhead assertion plus 200% zoom and combined 9.52 s duration checks.
+- [ ] Run the workflow again for this focused test-only correction. If it passes, do not rerun the same gate again absent a related change.
 - [ ] Keep version 395 blocked. A successful earlier branch run does not certify this integrated tree.
+
+
+### 2026-10-26 — #194 integration failure triage
+
+- [x] Inspected job logs, not just the red status: failure was `compileDebugAndroidTestKotlin`, with duplicate local declarations at test lines 1119 and 1128. Unit tests and debug APK build had passed.
+- [x] Removed only the stale 2.00 s playhead assertion/declaration from the combined manual JSON test. Kept the fixture's intended saved playhead at 7.70 s, the 200% zoom check and the 9.52 s combined trimmed duration check.
+- [ ] Validate this exact test correction once with CI. Avoid repeating already-passing unit/build stages manually; rely on the workflow's required full gate to verify the combined candidate.

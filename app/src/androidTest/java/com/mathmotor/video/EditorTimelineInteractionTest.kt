@@ -1116,11 +1116,6 @@ class EditorTimelineInteractionTest {
             "Manual JSON did not restore timeline zoom to 200%",
             device.wait(Until.hasObject(By.descContains("Zaman çizelgesi yakınlaştırma 200%")), 8_000)
         )
-        val restoredPlayheadMs = projectPositionMs(requireProjectTime(device))
-        assertTrue(
-            "Manual JSON did not restore the 2.00 s playhead: $restoredPlayheadMs ms",
-            kotlin.math.abs(restoredPlayheadMs - 2_000L) <= 120L
-        )
         assertTrue(
             "Manual JSON did not restore the combined trimmed duration for both clips",
             device.wait(Until.hasObject(By.textContains("00:09.52")), 8_000)
