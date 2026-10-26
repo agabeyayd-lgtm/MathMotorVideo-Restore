@@ -16,6 +16,7 @@
 - [#206 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40314729254): shell syntax error in emulator recovery script before instrumentation. Fixed in `96e889b`.
 - [#207 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40318772112): unit tests/build/preflight passed; instrumentation ran 9 tests, 8 passed and 1 failed. The failure was at test navigation (`UiScrollable.scrollIntoView` could not expose the clipped text end handle), before the end-handle drag assertion. This does **not** prove the end-handle drag itself fails.
 - Applied a focused test correction: scroll only the selected text lane to its right edge, then locate the end handle directly. The next workflow must verify the real handle drag and label change. Do not queue a duplicate workflow.
+- Focused verification [#208 — IN PROGRESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40322912271), head `f5227ffb38c41d3935b65f6278842f24fa354078`: at the last check Gradle setup was underway and instrumentation had not started. Inspect this run before retrying.
 - The text end-handle drag remains unverified until its assertion executes and passes. VersionCode 395 remains blocked; no release actions taken.
 
 ## Previously proven (do not repeat without relevant changes)
