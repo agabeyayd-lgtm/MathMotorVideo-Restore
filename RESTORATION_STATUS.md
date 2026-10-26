@@ -33,3 +33,10 @@
 5. Signed update and in-app installation only after all preceding gates and explicit release authorization.
 
 Text trim handles, preview/export parity, full audio export, gesture grouping, device review, and signed update/install remain unverified. No release actions taken.
+
+
+## Latest handoff — run #203
+
+- Run [#203 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40312901567): unit tests and debug APK build passed, but the screenshot/launch preflight stopped before Android instrumentation. Uploaded diagnostics show `am_anr` for the Android-owned Nexus/Pixel Launcher: `Input dispatching timed out (Application does not have a focused window)`. The system ANR dialog persisted and the capture script exited with code 8.
+- This is not evidence of a MathMotor app crash, and the text trim handle test did not run. Selector correction `b1ec215` is therefore still unverified at runtime.
+- Next: fix/recover the emulator launcher ANR before running the interaction suite again; do not call the trim test passed until its assertion executes. Text preview/export parity, audio export, timeline edge cases, physical-device review, and signed update/install remain open. Version 395 remains blocked.
