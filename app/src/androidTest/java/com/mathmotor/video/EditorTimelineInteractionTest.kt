@@ -758,6 +758,122 @@ class EditorTimelineInteractionTest {
     }
 
     @Test
+    fun sourceAudioToggleAndEffectVolumeUseUndoRedoHistory() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val device = UiDevice.getInstance(instrumentation)
+        val packageName = "com.mathmotor.video.next"
+        val fixtureUri = "file:///data/user/0/$packageName/files/editor-test-video.mp4"
+
+        device.executeShellCommand("logcat -c")
+        device.executeShellCommand(
+            "am start -n $packageName/com.mathmotor.video.EditorTestEntryActivity " +
+                "--es video_uri $fixtureUri --es draft_id 88888888-8888-4888-8888-888888888888"
+        )
+        assertTrue(
+            "Editor did not show the video lane for audio history test",
+            device.wait(Until.hasObject(By.text("VIDEO")), 20_000)
+        )
+        assertTrue("Audio history test clip was not loaded", awaitClipAdded(device))
+        device.waitForIdle()
+
+        val panelScroll = UiScrollable(
+            UiSelector().className("android.widget.ScrollView")
+        ).setAsVerticalList()
+        val audioTab = requireObject(device, By.desc("Ses araçları sekmesi"), "audio tools tab")
+        val clipTab = requireObject(device, By.desc("Klip araçları sekmesi"), "clip tools tab")
+        audioTab.click()
+        assertTrue(
+            "Audio panel did not appear for source-audio toggle",
+            device.wait(Until.hasObject(By.text("SES KATMANLARI")), 4_000)
+        )
+        assertTrue(
+            "Could not reveal source-audio checkbox",
+            panelScroll.scrollIntoView(UiSelector().text("Videonun kendi sesini koru"))
+        )
+        val sourceAudio = requireObject(
+            device, By.text("Videonun kendi sesini koru"), "source-audio checkbox"
+        )
+        assertTrue("Source audio should be enabled for a fresh project", sourceAudio.isChecked)
+        sourceAudio.click()
+        device.waitForIdle()
+        assertTrue(
+            "Source-audio checkbox did not switch off",
+            !requireObject(device, By.text("Videonun kendi sesini koru"), "muted source-audio checkbox").isChecked
+        )
+
+        clipTab.click()
+        requireObject(device, By.desc("Düzenleme geri al"), "Undo source-audio toggle").click()
+        audioTab.click()
+        assertTrue(
+            "Undo did not restore source audio",
+            panelScroll.scrollIntoView(UiSelector().text("Videonun kendi sesini koru"))
+        )
+        assertTrue(
+            "Undo did not re-enable source audio",
+            requireObject(device, By.text("Videonun kendi sesini koru"), "restored source-audio checkbox").isChecked
+        )
+
+        clipTab.click()
+        requireObject(device, By.desc("Düzenleme yinele"), "Redo source-audio toggle").click()
+        audioTab.click()
+        assertTrue(
+            "Could not reveal source audio after Redo",
+            panelScroll.scrollIntoView(UiSelector().text("Videonun kendi sesini koru"))
+        )
+        assertTrue(
+            "Redo did not disable source audio again",
+            !requireObject(device, By.text("Videonun kendi sesini koru"), "redone source-audio checkbox").isChecked
+        )
+
+        // Use a real drag on the effect-volume SeekBar to cover start/stop tracking
+        // and its own undoable history entry, not just serialized state.
+        assertTrue(
+            "Could not reveal the effect-volume slider",
+            panelScroll.scrollIntoView(UiSelector().description("Efekt ses düzeyi"))
+        )
+        device.waitForIdle()
+        val effectSeek = requireObject(device, By.desc("Efekt ses düzeyi"), "effect volume seek bar")
+        val bounds = effectSeek.visibleBounds
+        assertTrue("Effect-volume slider has no usable hit target: $bounds", bounds.width() > 100 && bounds.height() > 0)
+        device.swipe(
+            bounds.left + (bounds.width() * 0.80f).toInt(),
+            bounds.centerY(),
+            bounds.left + (bounds.width() * 0.30f).toInt(),
+            bounds.centerY(),
+            25
+        )
+        device.waitForIdle()
+        val changedLabel = requireObject(device, By.textContains("Efekt sesi:"), "changed effect-volume label").text
+        val changedValue = Regex("(\\d+)").find(changedLabel)?.groupValues?.get(1)?.toInt()
+            ?: throw AssertionError("Could not read adjusted effect volume: $changedLabel")
+        assertTrue("Touch did not change effect volume from 100%: $changedLabel", changedValue < 100)
+
+        clipTab.click()
+        requireObject(device, By.desc("Düzenleme geri al"), "Undo effect-volume gesture").click()
+        audioTab.click()
+        assertTrue(
+            "Could not reveal effect volume after Undo",
+            panelScroll.scrollIntoView(UiSelector().text("Efekt sesi: 100%"))
+        )
+        assertTrue(
+            "Undo did not restore effect volume to 100%",
+            device.wait(Until.hasObject(By.text("Efekt sesi: 100%")), 4_000)
+        )
+
+        clipTab.click()
+        requireObject(device, By.desc("Düzenleme yinele"), "Redo effect-volume gesture").click()
+        audioTab.click()
+        assertTrue(
+            "Redo did not restore the changed effect volume",
+            device.wait(Until.hasObject(By.text("Efekt sesi: $changedValue%")), 4_000)
+        )
+        android.util.Log.i(
+            "AudioHistoryTest",
+            "stage=verified sourceAudio=true->false->true->false effectVolume=100->$changedValue->100->$changedValue"
+        )
+    }
+
+    @Test
     fun savedDraftReopensTextLayerAndClipState() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

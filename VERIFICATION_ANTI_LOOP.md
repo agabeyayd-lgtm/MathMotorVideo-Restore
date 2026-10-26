@@ -15,20 +15,15 @@ This is the concise handoff for ongoing CI debugging. Read it and the latest REA
 - Keep versionCode 395 blocked. Do not change version metadata, sign/publish an APK, or enable in-app update without all release gates and explicit authorization.
 
 ## Latest known state (2026-10-26)
+
 - Repo: `agabeyayd-lgtm/MathMotorVideo-Restore`; branch: `fix/editor-395-gate`.
 - Installed phone baseline: versionCode 394, build 61 (`app-v8.3-61`).
-- Latest completed run: [#210 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40328122889), head SHA `e3388c48ea927dfe79845ddd58f85d6eedd7af4d`; all 9 Android instrumentation tests passed (0 failures).
-- #207 unit tests, debug APK build, deterministic MP4 fixtures, KVM setup, emulator launch and screenshot preflight passed. Instrumentation ran 9 tests: 8 passed, 1 failed.
-- Exact failure at `EditorTimelineInteractionTest.kt:578`: `UiScrollable.scrollIntoView` could not bring the text-strip end handle into view inside `Zaman çizelgesi satırı: YAZI 1`. This happened before the end-handle drag and its label-change assertion. Do not classify it as a confirmed app drag defect or a passed drag test.
-- Focused correction commit [`f5227ff`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/f5227ffb38c41d3935b65f6278842f24fa354078) replaced child `scrollIntoView` with `scrollToEnd(5)` on the selected timeline lane, then directly waited for the end handle.
-- [#208 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40322912271): the revised scroll still did not expose the handle to UiAutomator; assertion failed at `EditorTimelineInteractionTest.kt:581` before drag/label-change. Unit/build/preflight passed, 8/9 instrumentation tests passed.
-- #209 FAILED before end-handle drag because the value label was not exposed in the accessibility tree. Follow-up `e3388c4` brought the label into view.
-- #210 SUCCESS: the uploaded XML test report contains `tests="9" failures="0"`. The interaction log confirms start time changed `00:01.30 → 00:03.35` and end time changed `00:06.50 → 00:04.46` after dragging the actual strip handles. The text-strip drag gate is closed; do not repeat without a relevant source change.
-- #206's separate shell syntax error was fixed in `96e889b`; the latest #207 got beyond that preflight. Do not repeat the old preflight failure.
-- Previously proven; do not repeat without relevant changes: #172 (8/8 instrumentation, filmstrip timestamps); #179 (playhead restoration); #185 (9/9 instrumentation after Undo/Redo parent-attachment fix); #193 (manual JSON save/reopen and text/music-volume Undo/Redo); #196 (integrated candidate gates before the new text-trim-handle test).
-- [#211 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40332164279): 9/10 instrumentation tests passed. Full uploaded per-test logcat confirms `ExportException: Video frame processing error` caused by `IllegalArgumentException: width and height must be > 0` in `TextOverlay.getBitmap()`/`Bitmap.createBitmap()`. Root cause: empty text was returned outside the active interval.
-- [#212 SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40335645092), head SHA `6e474c0c5f62a838329660353bc50f1ec9419969`: focused overlay correction passed the full connected instrumentation workflow, unit tests, and debug APK build. Inactive text retains glyph metrics while foreground/background are transparent. Do not rerun this unchanged gate.
-- Keep versionCode 395 blocked. Do not change version metadata, sign/publish an APK, or enable in-app updates without all release gates and explicit authorization.
+- Latest completed verification: [#212 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40335645092), source fix commit `6e474c0c5f62a838329660353bc50f1ec9419969`; the workflow passed unit tests, debug APK build and the connected Android instrumentation suite. The docs-only branch head before the next test was `30be47782e6f0e4c27ab779e2650605aef1b6b08`.
+- Do not repeat #210 text-strip drags or #212 timed-text export unchanged; both gates are green.
+- The next distinct gap is audio control/history interaction. Added `sourceAudioToggleAndEffectVolumeUseUndoRedoHistory`: source-audio checkbox toggle plus actual effect-volume SeekBar drag with Undo/Redo. It is pending the next integrated CI run; until it passes, do not mark it verified.
+- Audio export (source track mute/volume, music looping/volume, effect timing/volume, mix and A/V sync), split/reorder and gesture conflicts, preview behavior after seek/zoom, physical-device review, and signed update/install remain open.
+- Keep versionCode 395 blocked. Do not change version metadata, sign/publish an APK, or enable in-app updates without all required gates and explicit authorization.
 
 ## Next action
-The zero-size timed-text export failure is fixed and #212 is green. Continue with the next unrepeated editor gate from the current README checklist, first checking whether required behaviors are already covered and whether any existing workflow run proves them. Do not repeat #210 text-strip handle drags or #212 timed-text export unchanged. Keep versionCode 395 blocked until all release gates and explicit authorization.
+
+Inspect the workflow triggered by the new test commit. Confirm its `head_sha` includes the test, then read the exact test report/logs. If it passes, record the observed assertions and move to genuine audio-export evidence. If it fails, classify the exact layer and fix only that root cause. Do not rerun #210/#212 unchanged, and never infer that an assertion passed if the test did not execute it.

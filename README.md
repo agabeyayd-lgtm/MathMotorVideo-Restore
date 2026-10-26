@@ -48,9 +48,10 @@ Work top to bottom. Mark an item complete only when there is test or inspection 
 - [x] Shared history implementation covers editor snapshots for clips, text, music/effect references and levels, effect timing, source-audio settings and timeline state.
 - [x] `unifiedUndoRedoRestoresTextAndAudioEdits` passed on the source branch in run #192; run #193 then passed the complete source-branch workflow.
 - [x] Integrated editor gate passed in [run #196 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40300395719), including the existing unified Undo/Redo interaction and manual JSON save/reopen assertions.
-- [ ] Add distinct coverage for trim/split/reorder, sound-effect add/remove/start/volume, source-audio toggle, preview/export parity and undo-history state after save/reopen.
+- [ ] Add distinct coverage for trim/split/reorder, sound-effect add/remove/start, preview/export parity and undo-history state after save/reopen.
+- [ ] Newly added `sourceAudioToggleAndEffectVolumeUseUndoRedoHistory` covers the source-audio checkbox plus a real effect-volume slider gesture and Undo/Redo. It is **pending** the next integrated emulator run; do not count this coverage as passed until the assertions execute.
 - [x] Global Undo/Redo controls remain visible outside the tool panel and have visible hit targets; this assertion passed in `unifiedUndoRedoRestoresTextAndAudioEdits` in source-branch [run #193](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40234200553). The integrated candidate recheck is verified in integrated-candidate [run #196](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40300395719).
-- [ ] Verify one-history-entry-per-gesture/grouping for different edit types (especially repeated slider changes); the current text-step and music-volume Undo/Redo test does not cover all gesture types.
+- [ ] Verify one-history-entry-per-gesture/grouping for different edit types, including repeated slider gestures. The new effect-volume test checks one real gesture with Undo/Redo, but does not yet prove repeated gesture grouping.
 
 ### 3. Text timeline and export parity
 
@@ -80,6 +81,13 @@ Work top to bottom. Mark an item complete only when there is test or inspection 
 - [x] Applied focused production correction in commit [`6e474c0`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/6e474c0c5f62a838329660353bc50f1ec9419969): inactive frames retain text/size/bold metrics with transparent foreground/background spans, avoiding zero-sized bitmaps while keeping text invisible outside its time range.
 - [x] [#212 SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40335645092): unit tests, debug APK, fixtures, emulator launch, and connected instrumentation suite all passed on the fix commit. Do not repeat the same gate unchanged.
 - [ ] Release 395 remains blocked.
+### 2026-10-26 — Added focused source-audio/effect-volume history test (pending CI)
+
+- [x] Inspected the integrated test suite and audio-panel implementation. The existing music-volume history test did not prove that the source-audio checkbox or effect-volume slider had working Undo/Redo interactions.
+- [x] Added `sourceAudioToggleAndEffectVolumeUseUndoRedoHistory` to the instrumentation suite. It toggles the source audio checkbox off/on using real UI input and drags the effect-volume SeekBar, then asserts the visible state after Undo and Redo.
+- [ ] The new test has not yet been validated by CI. Check the next workflow result and inspect its exact failed assertion if red; do not count the test as proof before it passes.
+- [ ] This is control/history coverage only—not proof of rendered audio in the exported MP4. Audio codec, looping, timing, mixing and audio/video sync remain open; release 395 remains blocked.
+
 ## Release boundary
 
 - Keep versionCode/versionName at the confirmed installed baseline until release is explicitly approved.
