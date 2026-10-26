@@ -152,13 +152,18 @@ Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228
 - [ ] Physical-device review and signed update/install verification remain outstanding. Version 395 remains blocked; no release actions taken.
 
 
-### 2026-10-26 — Text timeline trim-handle follow-up (#197–#201)
+### 2026-10-26 — Text timeline trim-handle follow-up (#197–#202)
 
 - [x] Run [#197 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40302379479): the test couldn't discover the end handle after dragging the start handle.
 - [x] Run [#198 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40304600189): unit tests and debug APK build passed; 8/9 emulator instrumentation tests passed. Exact failure: `Could not find end label before strip drag`.
 - [x] Run [#200 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40307614939): after the generic lane selector was fixed, the test specifically targeted `YAZI 1`, but still couldn't find the end handle after scrolling to the lane's absolute end. This can push a shorter text strip out of the viewport rather than reveal its handle.
+- [x] Run [#201 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40309940904): Android test compilation error at line 586 because `scrollIntoView` expected a `BySelector`, but received a `UiSelector`.
+- [x] Fixed the selector type in [`b247898`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/b2478982fcb4646a85ed9bf70abd8da32cbc3a7b).
+- [ ] Verification [run #202 — QUEUED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40311694275).
 - [x] Added `contentDescription = "Zaman çizelgesi satırı: $tag"` to actual synchronized timeline lanes in source commit [`94b48c2`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/94b48c2488f401d90dc0419a538a87d2e07d8ef5), then made the test target `Zaman çizelgesi satırı: YAZI 1` in [`fb7b3b3`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/fb7b3b3030835cf80eac3978d9b58ad5e324f90f).
 - [x] Updated the scroll step in [`79973ba`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/79973ba8bdb2e1b30703afdd1a955fe5044bba43) to bring the end-handle selector into view inside that lane, instead of scrolling to the absolute end.
-- [ ] Verification [run #201 — IN PROGRESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40309940904).
-- [ ] Keep the text-strip trim test open until #201 passes. Next distinct goal: compare actual timed/styled text in preview with the exported MP4, then test audio export and remaining timeline edge cases.
+- [x] Run [#201 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40309940904): compilation failed because `UiScrollable.scrollIntoView` expects a `BySelector`, but the test passed a `UiSelector`. This was a test compile error, not a runtime trim-handle result.
+- [x] Corrected the selector type to `By.desc("Yazı bitişini sürükle")` in [`b247898`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/b2478982fcb4646a85ed9bf70abd8da32cbc3a7b).
+- [ ] Verification [run #202 — QUEUED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40311694275).
+- [ ] Keep the text-strip trim test open until #202 passes. Next distinct goal: compare actual timed/styled text in preview with the exported MP4, then test audio export and remaining timeline edge cases.
 - [ ] Keep release 395 blocked pending the required gates and explicit release authorization.
