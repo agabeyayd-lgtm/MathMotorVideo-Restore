@@ -123,7 +123,7 @@ Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228
 - [x] Removed the obsolete 2.00 s assertion for the old fixture and retained the actual 7.70 s saved-playhead assertion plus 200% zoom and combined 9.52 s duration checks.
 - [x] Pushed the focused test-only correction in commit [`934d52e`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/934d52e6a6c1fcaf3e477029e5eee97210726899); removed the duplicate local declaration while keeping the 7.70 s playhead, 200% zoom and 9.52 s trimmed-duration assertions.
 - [x] Integrated candidate run [#195 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40277993448): unit tests and debug APK build passed; emulator interaction tests exposed a stale contradictory assertion in the manual JSON test. After correctly verifying the loaded project's 7.00–9.00 s / top / cyan / non-bold text state, the test incorrectly demanded a second, never-loaded project's 0.00–6.50 s / bottom / yellow / bold state. This is a test-fixture/assertion inconsistency; the run does not demonstrate an app regression.
-- [ ] Focused fix: remove only that obsolete second assertion block. Keep the real manual JSON text, timeline, clip and audio checks. Run the integrated gate once on the corrected commit; do not manually repeat already-passing unit/build steps.
+- [x] Focused fix: removed only the obsolete second assertion block in [`fc76fb8`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/fc76fb81c199f1df074819c54cd19ae70a9ea462). Integrated gate [#196 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40300395719); do not repeat already-passing unit/build steps without related source changes.
 - [ ] Keep version 395 blocked. A successful earlier branch run does not certify this integrated tree.
 
 
@@ -141,5 +141,15 @@ Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228
 - [x] Run [#196 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40300395719) on commit `fc76fb81c199f1df074819c54cd19ae70a9ea462`.
 - [x] Job steps confirm unit tests, debug APK build, offline MP4 fixture setup, emulator launch/interaction tests, screenshot/diagnostic upload all completed successfully.
 - [x] The test-only stale contradictory manual-JSON assertions are resolved; integrated candidate's current gate passes.
-- [ ] Next: add focused coverage for unverified text timeline strip dragging and preview/export parity, then audio export behavior and remaining timeline edge cases. Do not rerun #196 absent related source changes.
+- [x] Added focused UI coverage for text-strip start/end trim handles in commit [`05a081e`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/05a081e5492ce538cabef74ca4544ba8d6f70f3c). [Run #197 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40302379479): unit tests/build passed; instrumentation failed because after dragging the start handle the end handle was outside the horizontal timeline viewport and therefore absent from UiAutomator's visible accessibility tree. This is a test visibility/scroll setup failure, not proof that the app's end handle is broken.
+- [x] Adjusted the test to scroll the synchronized horizontal timeline lane to its end before querying the end handle in commit [`5093dd1`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/5093dd11f039e0be52e167d666558ee0f920eb2f).
+- [ ] Follow-up [run #198 — IN PROGRESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40304600189). Wait for its outcome before changing this test again.
+- [ ] After the handle test passes, add preview/export text parity coverage, then audio export behavior and remaining timeline edge cases. Do not rerun #196 absent related source changes.
 - [ ] Physical-device review and signed update/install verification remain outstanding. Version 395 remains blocked; no release actions taken.
+
+
+### 2026-10-26 — Text timeline trim-handle test follow-up
+
+- [x] Run [#197 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40302379479): unit tests, debug APK build and fixture setup passed; emulator test failed because the end handle was not in UiAutomator's visible accessibility tree after dragging the start handle. The failure message was `Could not find the text-strip end handle`.
+- [x] Root cause indicated by UI structure: the text strip can extend beyond the horizontal viewport; only visible accessibility nodes are discoverable. Updated the test to scroll the synchronized horizontal lane to the end before querying the end handle; app source unchanged.
+- [ ] [Run #198](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40304600189) is the single verification of that focused test adjustment; don't queue a duplicate run.
