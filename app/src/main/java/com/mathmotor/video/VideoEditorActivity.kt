@@ -41,6 +41,7 @@ import android.widget.Toast
 import org.json.JSONArray
 import org.json.JSONObject
 import androidx.media3.common.MediaItem
+import androidx.media3.common.C
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.audio.ChannelMixingAudioProcessor
@@ -4908,7 +4909,9 @@ class VideoEditorActivity : Activity() {
                 .setRemoveVideo(true)
                 .setEffects(Effects(audioEffects(soundVolume), emptyList()))
                 .build()
-            val soundSequenceBuilder = EditedMediaItemSequence.Builder()
+            // This sequence can begin with a gap when the effect is scheduled after t=0.
+            // Media3 1.10 requires an explicit audio track type to synthesize silence for that gap.
+            val soundSequenceBuilder = EditedMediaItemSequence.Builder(setOf(C.TRACK_TYPE_AUDIO))
             if (offsetMs > 0L) soundSequenceBuilder.addGap(offsetMs * 1000L)
             soundSequenceBuilder.addItem(soundItem)
             compositionSequences.add(soundSequenceBuilder.build())

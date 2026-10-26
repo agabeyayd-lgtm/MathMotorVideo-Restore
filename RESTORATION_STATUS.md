@@ -17,3 +17,7 @@ Inspect CI for the focused test-navigation correction. Only investigate further 
 
 ## Current next action
 Run the new exported-MP4 audio test, inspect decoded tone measurements, and fix any confirmed export defect before moving to source-audio validation. Keep version 395 blocked.
+
+
+## #215 failure and next verification
+- #215 failed on a confirmed production export-path exception: a timed sound effect whose start offset is greater than zero creates a leading gap without an explicit audio track. The fix candidate declares `C.TRACK_TYPE_AUDIO` on that sequence builder. Next run should confirm export completion and inspect the decoded AAC tone assertions; version 395 stays blocked.

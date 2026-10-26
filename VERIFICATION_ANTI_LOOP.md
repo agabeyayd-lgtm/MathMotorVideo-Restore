@@ -29,3 +29,7 @@ This is the concise handoff for ongoing CI debugging. Read it and the latest REA
 ## Next action
 
 Run the newly added exported-MP4 audio test, inspect decoded PCM measurements, and distinguish an export/mix issue from a decoder or fixture issue. The #214 Undo/Redo UI-history gate is green. Do not repeat passed text-strip or timed-text tests unchanged; keep versionCode 395 blocked.
+
+
+## #215 root-cause record
+- #215 failed in the newly added exported MP4 audio test, not during setup: `VideoEditorActivity.exportEditedVideo()` crashed while building the timed sound-effect sequence because its first item is a gap and the sequence did not declare an audio track. Fix the sequence builder with explicit `C.TRACK_TYPE_AUDIO`; preserve timing and amplitude assertions. Next run must prove actual AAC decoding and tone windows.
