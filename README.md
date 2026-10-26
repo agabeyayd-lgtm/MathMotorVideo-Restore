@@ -190,3 +190,12 @@ Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228
 - [x] Second inspection found that the new Close-app fallback's Python bounds regex had an extra layer of escaping, so it would not parse a button's bounds if the fallback were needed.
 - [x] Corrected the exact regex in [`ef9c058`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/ef9c058a999b96a99ee45b305ed580d06376aa0d).
 - [ ] Latest focused verification: [run #205 — QUEUED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40314156388). This is the run to trust for the corrected helper. #204 is based on the earlier helper revision and must not be treated as verification of this correction.
+
+
+### 2026-10-26 — #203 emulator-level failure (not the trim test)
+
+- [x] Run [#203 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40312901567): unit tests and debug APK build passed. The screenshot/launch preflight failed before Android instrumentation began.
+- Evidence from the uploaded diagnostics: Android logged `am_anr` for `com.google.android.apps.nexuslauncher` with `Input dispatching timed out (Application does not have a focused window)`; the capture script repeatedly saw the system-owned launcher ANR dialog and exited with code 8. This does not show a MathMotor crash and does not exercise the text-end-handle assertion.
+- [x] Selector API correction is present in [`b1ec215`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/b1ec215e8d4a66342367491026773fbc23849562), but its runtime test remains unverified because the emulator smoke preflight blocked it.
+- [ ] Stabilize/recover the emulator launcher ANR so instrumentation can run, then inspect the trim-handle assertion result. Avoid repeating the same test without addressing this preflight failure.
+- [ ] Next feature gates remain preview/export text parity, audio export, remaining timeline edge cases, physical-device review, and signed update/install. Version 395 remains blocked.
