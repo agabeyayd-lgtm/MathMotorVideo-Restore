@@ -52,7 +52,7 @@ Work top to bottom. Mark an item complete only when there is test or inspection 
 
 ### 3. Text timeline and export parity
 
-- [ ] Test dragging the start/end handles on a text timeline strip; passing the timing sliders does not prove strip dragging works.
+- [x] Text-strip start/end handles were actually dragged and their displayed times changed in [run #210 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40328122889): start `00:01.30 → 00:03.35`; end `00:06.50 → 00:04.46`. Artifact test report confirms 9/9 instrumentation tests passed.
 - [ ] Export a clip with timed/styled text and compare the MP4 with preview for timing, position, size, colour and style.
 - [x] Manual JSON Save As → close → Open Document restores tested text state: content, 7.00–9.00 s timing, top position, 32 sp size, cyan colour and non-bold style. Assertions passed on the source branch in [run #193](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40234200553); the integrated persistence rerun passed in [run #196](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40300395719).
 - [ ] Verify text settings/preview remain correct after timeline seek and zoom. This behavior is distinct from persistence and is not yet proven by the save/reopen test.
@@ -209,7 +209,7 @@ Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228
 - [x] Root cause confirmed in `recover_system_anr()`: the Python command substitution ended with an extra double quote after its closing `)`, leaving shell parsing broken. This was a CI shell-script syntax error, not an editor assertion failure.
 - [x] Removed only the stray quote in [fix commit](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/96e889be0cd923010b930530074225305ce695b0).
 - [ ] Verify the correction with the one newly triggered emulator workflow. Required first outcome: script parses, home preflight completes, and instrumentation actually starts. Then record the specific text-end-handle assertion result; do not mark the trim test complete solely because the script or APK builds.
-- [ ] After that focused interaction is verified, move to distinct checks: text preview/export parity, audio export, remaining timeline edge cases, physical-device review, and signed update/install. Keep version 395 blocked until every required release gate passes and release is explicitly authorized.
+- [ ] #210 closed the text-strip start/end drag gate: 9/9 Android instrumentation tests passed; start and end timestamps changed after direct handle drags. Next: timed/styled text export parity, then source/music/effect audio export, remaining timeline edge cases, physical-device screen/keyboard/touch review, and signed update/install. Keep version 395 blocked until all required gates pass and release is explicitly authorized.
 
 
 ### 2026-10-26 — #207 reached instrumentation; text end-handle visibility setup failed
@@ -231,5 +231,6 @@ Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228
 - [x] Focused test correction committed as `0f45accdeb64df64c1d2cbd248dbc87401891920`: reveal the handle using bounded, small swipes on the synchronized VIDEO lane, checking accessibility after each swipe and stopping as soon as the end handle appears. This avoids the text body's drag handler and avoids jumping past the handle at high zoom.
 - [x] [Run #209 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40325884219). Build/preflight passed and instrumentation ran 9 tests (8 passed, 1 failed). The bounded VIDEO-lane scroll found the end handle (`stage=reveal-end-handle attempt=1 visible=true`), but the test then failed at line 601 because the `Yazı bitişi:` value label was no longer exposed to UiAutomator. This is a test visibility/viewport issue after the scroll, not evidence that handle dragging itself failed; drag assertion still did not execute.
 - [x] Focused follow-up committed as `e3388c48ea927dfe79845ddd58f85d6eedd7af4d`: explicitly scroll the text panel's end-time label into view before reading it, and again after the handle drag before comparing values.
-- [ ] Run #210 result pending. Do not claim the trim handle works until the drag changes the displayed end-time label.
+- [x] [Run #210 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40328122889), commit `e3388c48ea927dfe79845ddd58f85d6eedd7af4d`: all build/preflight steps passed and instrumentation reported 9 tests, 0 failures. Log evidence confirms both text-strip handles changed the displayed time values; this gate is complete.
+- [ ] Next distinct gate: timed/styled text export parity. Export at times before/inside/after the layer interval and inspect decoded MP4 frames for presence/absence and expected placement/style. Existing two-clip export coverage does not prove text rendering parity.
 - [ ] VersionCode 395 remains blocked; no release actions taken.
