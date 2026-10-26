@@ -39,3 +39,9 @@ Run the new source-audio MP4 test, inspect the decoded 220 Hz magnitudes and com
 ## #216 passed / next gate
 - Run #216 passed on `e71ecb195a0685023616f96e05fa159c2a5e2b11`: the actual exported MP4's AAC audio decoded and passed music-loop and effect-window signal checks. The root cause of #215 was the leading gap in the timed effect sequence lacking an explicit audio track; this is now verified.
 - Next unique candidate test checks actual source-audio amplitude at 40%, mute behavior, and preservation of the original audio-bearing fixture. Do not mark the full audio gate green until these pass and A/V sync is independently checked.
+
+
+## #218 — preflight root cause and repair
+- Run #218 failed before emulator setup. Unit tests and Debug APK build passed; fixture preparation exited at `command -v ffmpeg` because ffmpeg/ffprobe are not present on this runner image.
+- This is a CI dependency/preflight failure, not an application assertion. The workflow now installs ffmpeg only when unavailable, then prepares the deterministic audio-bearing MP4 and verifies its streams before copying it into the emulator app sandbox.
+- Next run must show fixture preparation passed and the source-audio assertions actually ran. Do not mark source audio complete from a build-only result.
