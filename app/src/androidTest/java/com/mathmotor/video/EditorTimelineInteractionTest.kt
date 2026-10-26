@@ -598,6 +598,14 @@ class EditorTimelineInteractionTest {
             "Text-strip end handle has no usable hit target: $endHandleBounds",
             endHandleBounds.width() > 0 && endHandleBounds.height() > 0
         )
+        // The timeline gestures can change the compact editor's visible viewport.
+        // Explicitly bring the value label back into the text panel viewport instead of
+        // assuming the previous slider scroll position still exposes it to UiAutomator.
+        assertTrue(
+            "Could not scroll the end-time label into view before strip drag",
+            panelScroll.scrollIntoView(UiSelector().textContains("Yazı bitişi:"))
+        )
+        device.waitForIdle()
         val stripEndBefore = requireObject(
             device, By.textContains("Yazı bitişi:"), "end label before strip drag"
         ).text
@@ -610,6 +618,11 @@ class EditorTimelineInteractionTest {
         )
         device.waitForIdle()
         SystemClock.sleep(250)
+        assertTrue(
+            "Could not scroll the updated end-time label into view after strip drag",
+            panelScroll.scrollIntoView(UiSelector().textContains("Yazı bitişi:"))
+        )
+        device.waitForIdle()
         val stripEndAfter = requireObject(
             device, By.textContains("Yazı bitişi:"), "end label after strip drag"
         ).text
