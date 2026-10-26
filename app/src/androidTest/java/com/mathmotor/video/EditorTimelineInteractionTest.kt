@@ -527,6 +527,74 @@ class EditorTimelineInteractionTest {
             endLabelAfter != endLabelBefore
         )
         android.util.Log.i("TextLayerInteractionTest", "stage=end-time before=$endLabelBefore after=$endLabelAfter")
+
+        // Slider checks above do not prove that the actual timeline strip handles work.
+        // Drag the visible start/end handles and assert that the matching labels change.
+        val startHandleSelector = By.desc("Yazı başlangıcını sürükle")
+        assertTrue(
+            "Could not find the text-strip start handle",
+            device.wait(Until.hasObject(startHandleSelector), 5_000)
+        )
+        val startHandle = requireObject(device, startHandleSelector, "text-strip start handle")
+        val startHandleBounds = startHandle.visibleBounds
+        assertTrue(
+            "Text-strip start handle has no usable hit target: $startHandleBounds",
+            startHandleBounds.width() > 0 && startHandleBounds.height() > 0
+        )
+        val stripStartBefore = requireObject(
+            device, By.textContains("Yazı başlangıcı:"), "start label before strip drag"
+        ).text
+        device.swipe(
+            startHandleBounds.centerX(),
+            startHandleBounds.centerY(),
+            startHandleBounds.centerX() + 45,
+            startHandleBounds.centerY(),
+            20
+        )
+        device.waitForIdle()
+        SystemClock.sleep(250)
+        val stripStartAfter = requireObject(
+            device, By.textContains("Yazı başlangıcı:"), "start label after strip drag"
+        ).text
+        assertTrue(
+            "Dragging the text-strip start handle did not change the start time: $stripStartBefore -> $stripStartAfter",
+            stripStartBefore != stripStartAfter
+        )
+
+        val endHandleSelector = By.desc("Yazı bitişini sürükle")
+        assertTrue(
+            "Could not find the text-strip end handle",
+            device.wait(Until.hasObject(endHandleSelector), 5_000)
+        )
+        val endHandle = requireObject(device, endHandleSelector, "text-strip end handle")
+        val endHandleBounds = endHandle.visibleBounds
+        assertTrue(
+            "Text-strip end handle has no usable hit target: $endHandleBounds",
+            endHandleBounds.width() > 0 && endHandleBounds.height() > 0
+        )
+        val stripEndBefore = requireObject(
+            device, By.textContains("Yazı bitişi:"), "end label before strip drag"
+        ).text
+        device.swipe(
+            endHandleBounds.centerX(),
+            endHandleBounds.centerY(),
+            endHandleBounds.centerX() - 45,
+            endHandleBounds.centerY(),
+            20
+        )
+        device.waitForIdle()
+        SystemClock.sleep(250)
+        val stripEndAfter = requireObject(
+            device, By.textContains("Yazı bitişi:"), "end label after strip drag"
+        ).text
+        assertTrue(
+            "Dragging the text-strip end handle did not change the end time: $stripEndBefore -> $stripEndAfter",
+            stripEndBefore != stripEndAfter
+        )
+        android.util.Log.i(
+            "TextLayerInteractionTest",
+            "stage=strip-handles start=$stripStartBefore->$stripStartAfter end=$stripEndBefore->$stripEndAfter"
+        )
     }
 
     @Test
