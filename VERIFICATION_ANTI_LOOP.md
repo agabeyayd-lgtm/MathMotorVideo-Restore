@@ -45,3 +45,9 @@ Run the new source-audio MP4 test, inspect the decoded 220 Hz magnitudes and com
 - Run #218 failed before emulator setup. Unit tests and Debug APK build passed; fixture preparation exited at `command -v ffmpeg` because ffmpeg/ffprobe are not present on this runner image.
 - This is a CI dependency/preflight failure, not an application assertion. The workflow now installs ffmpeg only when unavailable, then prepares the deterministic audio-bearing MP4 and verifies its streams before copying it into the emulator app sandbox.
 - Next run must show fixture preparation passed and the source-audio assertions actually ran. Do not mark source audio complete from a build-only result.
+
+
+## Staged timeline gates
+- Prepared but not yet run: `timedTextPreviewFollowsSeekAndZoom` tests preview visibility around the active text interval and playhead stability across zoom.
+- Prepared but not yet run: `splitAtPlayheadMatchesExportBoundary` tests that the split equals the playhead in both clips and that export duration/frame samples preserve the source timeline.
+- These changes are isolated on `staging/editor-preview-seek-test` while #219 runs. Do not update the active release-gate ref until #219 completes, so the concurrency group does not cancel the current audio validation.

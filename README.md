@@ -69,7 +69,8 @@ Work top to bottom. Mark an item complete only when there is test or inspection 
 
 ### 5. Timeline edge cases
 
-- [ ] Test split-at-playhead and confirm the split boundary in export matches the visible playhead.
+- [ ] `timedTextPreviewFollowsSeekAndZoom` is staged for the next integrated run: seek before/inside/after the text interval, verify preview hide/show behavior, and ensure zoom preserves playhead time. Not yet verified.
+- [ ] `splitAtPlayheadMatchesExportBoundary` is staged for the next integrated run: compare playhead against first-clip end and second-clip start, then export and compare video-frame samples/duration against the source. Not yet verified.
 - [ ] Test trim-versus-scroll gesture conflicts and multi-clip trim/reorder/seek at multiple zoom levels. Do not repeat the already-passing single-clip trim/zoom or two-clip export tests unless a relevant change warrants it.
 
 ### 6. Physical-device and release validation
@@ -287,3 +288,9 @@ Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228
 - [x] Exact root cause from the step log: `command -v ffmpeg` returned exit code 1 because the Ubuntu runner did not have ffmpeg installed. This is a CI fixture-preparation dependency, not a production export failure and not an executed source-audio assertion.
 - [x] Corrected workflow to install ffmpeg/ffprobe on the runner when missing, then generate the audio-bearing fixture and print its stream metadata. This preserves deterministic fixture content and avoids rerunning the failing setup unchanged.
 - [ ] Re-run the source-audio gain/mute gate; only count it after the fixture build, emulator launch and actual decoded-MP4 assertions pass. Release 395 stays blocked.
+
+
+### Staged next gates — not yet verified
+
+- `staging/editor-preview-seek-test` includes two new instrumentation tests, intended to be moved onto the active release-gate branch only after #219 completes: `timedTextPreviewFollowsSeekAndZoom` and `splitAtPlayheadMatchesExportBoundary`.
+- These tests remain unchecked until they run on the integrated branch and their target assertions pass. The staging branch is not a release candidate and does not change the installed phone APK.
