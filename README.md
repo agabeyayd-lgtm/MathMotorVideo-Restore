@@ -281,6 +281,13 @@ Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228
 - [ ] Next focused test builds an offline MP4 with a known 220 Hz source-audio track; export once with source audio at 40% and once muted, decode both AAC tracks, compare against the fixture's measured baseline, and confirm the source fixture hash is unchanged.
 
 
+### #224 — restore-completion marker was not observable by the test
+
+- [x] [#224 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40392178279): build and most interaction tests ran; the source-audio export test stopped before MP4 export at `Seeded source-audio project did not finish restoring`. The emulator shutdown messages (`stop: Not implemented`, Netsim DNS cancellation) occurred after the instrumentation failure and are cleanup noise, not the cause.
+- [x] The test waited for a `ProjectPersistenceTest` log marker that was not observed in the instrumentation shell. This is a test synchronization failure; the actual AAC gain/mute assertion was not reached, so source-audio behavior remains unverified.
+- [x] Follow-up commit `1fd4b7989239850862ae81c95d2a8d1941058eb3` adds a dedicated debug-only `EDITOR_SMOKE_DRAFT_RESTORED` event only after `applyProjectJson()` returns successfully. Commit `2ca65a0c50a3443218647640249128c471b35747` makes the test wait for that exact event before checking the audio tab and saved checkbox state.
+- [ ] Verify the new marker is observed, then require both real exported-MP4 source-audio states to pass their decoded AAC measurements. VersionCode 395 remains blocked.
+
 ### #223 — setup timeout worked; source-audio test selected the wrong panel
 
 - [x] [#223 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40389357809): FFmpeg setup no longer monopolized the job; fixture setup and emulator instrumentation ran. The test then failed with `Source-audio checkbox did not appear` before exporting or decoding an MP4.
