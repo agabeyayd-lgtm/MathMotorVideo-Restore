@@ -45,3 +45,10 @@ Run the new source-audio MP4 test, inspect the decoded 220 Hz magnitudes and com
 - Run #218 failed before emulator setup. Unit tests and Debug APK build passed; fixture preparation exited at `command -v ffmpeg` because ffmpeg/ffprobe are not present on this runner image.
 - This is a CI dependency/preflight failure, not an application assertion. The workflow now installs ffmpeg only when unavailable, then prepares the deterministic audio-bearing MP4 and verifies its streams before copying it into the emulator app sandbox.
 - Next run must show fixture preparation passed and the source-audio assertions actually ran. Do not mark source audio complete from a build-only result.
+
+
+## #226 — current live run (2026-10-26)
+- Run [#226](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40395040884), head SHA `2ca65a0c50a3443218647640249128c471b35747`, is in progress.
+- Unit tests and `assembleDebug` passed. The current step is `Install ffmpeg for deterministic audio fixture`; it has a six-minute timeout. Fixture preparation, emulator setup and Android instrumentation have not started.
+- #225 was cancelled by the newer run and is not evidence of a pass or failure. #224 did not reach MP4 export; #221 remains the last actual mute measurement and failed with a 220 Hz ratio of `0.3990` instead of `<0.08`.
+- Next action: inspect #226's setup outcome before changing code or starting any new run. If FFmpeg setup fails, repair only that CI preflight issue. If it passes, verify the dedicated draft-restoration event, expected checkbox state, 40% gain measurement, mute measurement and unchanged source-file hash in the same test run. Do not weaken thresholds. Keep versionCode 395 blocked.
