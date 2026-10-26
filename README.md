@@ -181,5 +181,12 @@ Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228
 - [x] Run [#203 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40312901567): unit tests and debug APK build passed, but the screenshot/setup script stopped before running instrumentation interactions because Android's own Pixel/Nexus Launcher displayed a persistent `isn't responding` ANR dialog. Diagnostics showed MathMotor's `MainActivity` was already resumed; window focus remained on the system launcher ANR overlay. This is not evidence that the editor trim handle failed.
 - [x] Inspected the run's uploaded diagnostics artifact and confirmed the modal system-owned launcher ANR. The test suite did not reach the right text-trim interaction.
 - [x] Updated `.github/scripts/capture-emulator-screenshots.sh` in [`2c278f3`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/2c278f3d45c21ac62a8505849924af179da3a5cb): after the existing three Wait attempts, the recovery helper may dismiss only a confirmed Android-owned launcher ANR with its own Close app button, then re-check the hierarchy. Application-level MathMotor ANRs still fail the check and are not dismissed.
-- [ ] Focused verification [run #204 — IN PROGRESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40313820818). Let this run finish; don't queue another duplicate.
+- [ ] Run [#204](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40313820818) was started for the launcher-ANR recovery but uses the first version of that helper; a second inspection found an over-escaped bounds regex and the latest commit corrects it. Its outcome is not sufficient to verify the latest script.
 - [ ] Once the setup reaches instrumentation, check whether the text-strip trim interaction passes. Preview/export text parity, audio export, timeline edge cases, physical-device review, and signed update/install remain open. Version 395 remains blocked.
+
+
+### 2026-10-26 — Launcher ANR recovery parser hardening
+
+- [x] Second inspection found that the new Close-app fallback's Python bounds regex had an extra layer of escaping, so it would not parse a button's bounds if the fallback were needed.
+- [x] Corrected the exact regex in [`ef9c058`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/ef9c058a999b96a99ee45b305ed580d06376aa0d).
+- [ ] Latest focused verification: [run #205 — QUEUED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40314156388). This is the run to trust for the corrected helper. #204 is based on the earlier helper revision and must not be treated as verification of this correction.
