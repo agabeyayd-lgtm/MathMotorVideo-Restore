@@ -281,6 +281,13 @@ Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228
 - [ ] Next focused test builds an offline MP4 with a known 220 Hz source-audio track; export once with source audio at 40% and once muted, decode both AAC tracks, compare against the fixture's measured baseline, and confirm the source fixture hash is unchanged.
 
 
+### #223 — setup timeout worked; source-audio test selected the wrong panel
+
+- [x] [#223 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40389357809): FFmpeg setup no longer monopolized the job; fixture setup and emulator instrumentation ran. The test then failed with `Source-audio checkbox did not appear` before exporting or decoding an MP4.
+- [x] Root cause: the editor opens on the `Klip` tab, while the source-audio checkbox lives in the separate `Ses` panel and can be below the compact panel's scroll viewport. The prior test searched for it without selecting the audio tab. This is a test navigation/visibility failure, not a result for the actual source-audio mute behavior.
+- [x] Test fix committed as `5ac0d950da5342447cdd99d74cf19d0dba68b5e0`: clear stale logcat entries, wait for the debug-only `PROJECT_JSON_RESTORED` marker, open the audio tab, scroll the checkbox into view, and only then assert its restored state. No audio thresholds or production export behavior were weakened.
+- [ ] [#224 candidate run](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40392178279) must pass the actual decoded-MP4 source-audio gain/mute assertions. VersionCode 395 remains blocked.
+
 ### #222 — CI stalled while installing ffmpeg
 
 - [x] [#222 run](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40384778484) remained in `Install ffmpeg for deterministic audio fixture` for about 30 minutes; deterministic fixture generation and emulator instrumentation had not started. This is CI setup delay, not a pass/fail result for the audio fix.
