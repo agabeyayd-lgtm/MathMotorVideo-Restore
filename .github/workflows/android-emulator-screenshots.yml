@@ -57,8 +57,21 @@ jobs:
           base64 --decode ci-fixtures/editor-test-video-second.mp4.b64 > app/build/test-fixtures/editor-test-video-second.mp4
           test -s app/build/test-fixtures/editor-test-video.mp4
           test -s app/build/test-fixtures/editor-test-video-second.mp4
+          command -v ffmpeg
+          command -v ffprobe
+          # Add a deterministic 220 Hz source-audio track to the existing offline video.
+          # 4x the sine filter's default 1/8 amplitude makes the 40% gain measurable.
+          ffmpeg -nostdin -hide_banner -loglevel error -y \
+            -i app/build/test-fixtures/editor-test-video.mp4 \
+            -f lavfi -i "sine=frequency=220:sample_rate=44100:duration=8.02" \
+            -map 0:v:0 -map 1:a:0 -c:v copy -af "volume=4.0" \
+            -c:a aac -b:a 192k -shortest \
+            app/build/test-fixtures/editor-test-video-with-audio.mp4
+          test -s app/build/test-fixtures/editor-test-video-with-audio.mp4
+          ffprobe -v error -show_entries stream=codec_type,codec_name,sample_rate,channels \
+            -of default=noprint_wrappers=1 app/build/test-fixtures/editor-test-video-with-audio.mp4
           echo "Fixture sizes:"
-          wc -c app/build/test-fixtures/editor-test-video.mp4 app/build/test-fixtures/editor-test-video-second.mp4
+          wc -c app/build/test-fixtures/editor-test-video.mp4 app/build/test-fixtures/editor-test-video-second.mp4 app/build/test-fixtures/editor-test-video-with-audio.mp4
           echo "Fixture stream metadata:"
           for f in app/build/test-fixtures/editor-test-video.mp4 app/build/test-fixtures/editor-test-video-second.mp4; do
             printf '%s: ' "$f"

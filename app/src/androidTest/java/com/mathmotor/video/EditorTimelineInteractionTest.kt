@@ -2038,6 +2038,131 @@ class EditorTimelineInteractionTest {
     }
 
     @Test
+    fun exportedMp4RespectsSourceAudioVolumeAndMute() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val resolver = context.contentResolver
+        val device = UiDevice.getInstance(instrumentation)
+        val packageName = context.packageName
+        val sourceFixture = java.io.File(context.filesDir, "editor-test-video-with-audio.mp4")
+        assertTrue("Audio-bearing source fixture is missing", sourceFixture.isFile && sourceFixture.length() > 0L)
+        val originalHash = sha256(sourceFixture)
+        val musicFile = java.io.File(context.filesDir, "editor-audio-source-test-music.wav")
+        val effectFile = java.io.File(context.filesDir, "editor-audio-source-test-effect.wav")
+        writeToneWav(musicFile, 44_100, 1_000, 440.0, 12_000)
+        writeToneWav(effectFile, 44_100, 1_200, 880.0, 8_000)
+
+        val sourceDecoded = decodeExportedAudioMono(context, Uri.fromFile(sourceFixture))
+        val sourceBaseline = toneMagnitude(sourceDecoded, 220.0, 500L, 900L)
+        assertTrue("Source audio fixture has no measurable 220 Hz tone: $sourceBaseline", sourceBaseline > 5_000.0)
+
+        fun exportAndDecode(keepSourceAudio: Boolean): DecodedMonoAudio {
+            val exportName = "MathMotor_source_audio_\${if (keepSourceAudio) "kept" else "muted"}_\${System.currentTimeMillis()}"
+            val draftId = java.util.UUID.randomUUID().toString()
+            val clip = org.json.JSONObject()
+                .put("uri", Uri.fromFile(sourceFixture).toString())
+                .put("title", "AUDIO_SOURCE_VIDEO")
+                .put("durationMs", 8_020L)
+                .put("startMs", 0L)
+                .put("endMs", 8_020L)
+            val project = org.json.JSONObject()
+                .put("format", "MathMotorVideoProject")
+                .put("version", 1)
+                .put("clips", org.json.JSONArray().put(clip))
+                .put("selectedClipIndex", 0)
+                .put("timelinePlayheadMs", 500L)
+                .put("timelineZoom", 1.0)
+                .put("timelineHorizontalScrollMs", 0L)
+                .put("textLayers", org.json.JSONArray())
+                .put("sourceAudioVolume", 40)
+                .put("musicUri", Uri.fromFile(musicFile).toString())
+                .put("musicTitle", "SOURCE_AUDIO_TEST_MUSIC_440HZ")
+                .put("musicVolume", 35)
+                .put("soundUri", Uri.fromFile(effectFile).toString())
+                .put("soundTitle", "SOURCE_AUDIO_TEST_EFFECT_880HZ")
+                .put("soundDurationMs", 1_200L)
+                .put("soundStartMs", 2_500L)
+                .put("soundVolume", 60)
+                .put("keepSourceAudio", keepSourceAudio)
+                .put("exportName", exportName)
+            assertTrue("Could not seed source-audio validation project ($keepSourceAudio)",
+                VideoProjectDraftStore.save(context, draftId, "Source audio validation", project))
+
+            device.executeShellCommand("am start -n $packageName/com.mathmotor.video.MainActivity")
+            assertTrue("Home did not open before source-audio validation",
+                device.wait(Until.hasObject(By.textContains("Boş proje oluştur")), 12_000))
+            device.executeShellCommand(
+                "am start -n $packageName/com.mathmotor.video.EditorTestEntryActivity --es draft_id $draftId")
+            assertTrue("Seeded source-audio project did not open ($keepSourceAudio)",
+                device.wait(Until.hasObject(By.textContains("Taslak açıldı")), 20_000))
+
+            (device.findObject(By.text("Dışa aktar ›"))
+                ?: throw AssertionError("Could not open export tab for source-audio validation")).click()
+            assertTrue("Source-audio export panel did not open",
+                device.wait(Until.hasObject(By.text("PROJE / DIŞA AKTARMA")), 8_000))
+            requireObject(device, By.clazz("android.widget.EditText"), "source-audio export filename").setText(exportName)
+            val scroller = UiScrollable(UiSelector().className("android.widget.ScrollView")).setAsVerticalList()
+            assertTrue("Could not scroll to source-audio MP4 export button",
+                scroller.scrollIntoView(UiSelector().text("MP4 DIŞA AKTAR")))
+            device.waitForIdle()
+            requireObject(device, By.text("MP4 DIŞA AKTAR"), "source-audio MP4 button").click()
+
+            val exportDeadline = SystemClock.uptimeMillis() + 120_000L
+            var exported = false
+            while (SystemClock.uptimeMillis() < exportDeadline) {
+                val log = device.executeShellCommand("logcat -d -s MultiClipExport:I")
+                if (log.contains("MULTICLIP_EXPORT_SAVED name=$exportName")) { exported = true; break }
+                if (log.contains("MULTICLIP_EXPORT_TRANSFORM_FAILED name=$exportName") ||
+                    log.contains("MULTICLIP_EXPORT_SAVE_FAILED name=$exportName")) {
+                    throw AssertionError("Source-audio MP4 export failed ($keepSourceAudio): $log")
+                }
+                SystemClock.sleep(500)
+            }
+            assertTrue("Source-audio MP4 did not save within 120 seconds ($keepSourceAudio)", exported)
+
+            var outputUri: Uri? = null
+            val queryDeadline = SystemClock.uptimeMillis() + 30_000L
+            while (outputUri == null && SystemClock.uptimeMillis() < queryDeadline) {
+                resolver.query(MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                    arrayOf(MediaStore.Video.Media._ID),
+                    "\${MediaStore.Video.Media.DISPLAY_NAME} = ?",
+                    arrayOf("$exportName.mp4"), null
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) outputUri = ContentUris.withAppendedId(
+                        MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                        cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)))
+                }
+                if (outputUri == null) SystemClock.sleep(300)
+            }
+            val savedUri = outputUri
+                ?: throw AssertionError("Source-audio export succeeded but MP4 was not found ($keepSourceAudio)")
+            return decodeExportedAudioMono(context, savedUri)
+        }
+
+        val kept = exportAndDecode(keepSourceAudio = true)
+        val muted = exportAndDecode(keepSourceAudio = false)
+        val keptEarly = toneMagnitude(kept, 220.0, 500L, 900L)
+        val keptLate = toneMagnitude(kept, 220.0, 6_500L, 7_000L)
+        val mutedEarly = toneMagnitude(muted, 220.0, 500L, 900L)
+        val keptRatio = keptEarly / sourceBaseline
+        val mutedRatio = mutedEarly / sourceBaseline
+        android.util.Log.i("SourceAudioExportTest",
+            "stage=measured source220=$sourceBaseline keptEarly=$keptEarly keptLate=$keptLate " +
+                "mutedEarly=$mutedEarly keptRatio=$keptRatio mutedRatio=$mutedRatio")
+
+        assertTrue("Source audio volume 40% was not reflected in exported PCM: ratio=$keptRatio " +
+            "source=$sourceBaseline kept=$keptEarly", keptRatio in 0.28..0.52)
+        assertTrue("Source video audio disappeared before the end of the clip: early=$keptEarly late=$keptLate",
+            keptLate / sourceBaseline in 0.28..0.52)
+        assertTrue("Muted export still contains the source 220 Hz tone: ratio=$mutedRatio magnitude=$mutedEarly",
+            mutedRatio < 0.08)
+        assertTrue("Export modified the original audio-bearing source video",
+            sourceFixture.isFile && sha256(sourceFixture) == originalHash)
+        android.util.Log.i("SourceAudioExportTest",
+            "stage=verified sourceAudioVolume=40 mute=true musicVolume=35 effectVolume=60 originalsUnchanged=true")
+    }
+
+    @Test
     fun filmstripLoadsFramesFromDistinctTimestamps() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val device = UiDevice.getInstance(instrumentation)

@@ -19,17 +19,23 @@ This is the concise handoff for ongoing CI debugging. Read it and the latest REA
 - Repo: `agabeyayd-lgtm/MathMotorVideo-Restore`; branch: `fix/editor-395-gate`.
 - Installed phone baseline: versionCode 394, build 61 (`app-v8.3-61`).
 - [#212 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40335645092): timed-text export fix passed unit/build/instrumentation. Do not rerun unchanged.
-- [#214 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40357110853), head SHA `7f96ad989e975e02f9232373fbdaedc70bfa3754`: unit tests, Debug APK, offline fixtures, emulator setup, connected instrumentation and artifact upload all passed. The #213 effect-volume Redo visibility assertion was corrected by scrolling to the exact label before reading the unchanged expected value; no production history change was required.
+- [#216 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40372603373), head SHA `e71ecb195a0685023616f96e05fa159c2a5e2b11`: unit tests, Debug APK, connected instrumentation and artifact upload passed. The production timed-effect leading-gap fix is verified through a real exported MP4/AAC decode test; music is present across the output and the 880 Hz effect is limited to the configured interval.
+- Earlier #214 validated source-audio toggle and effect-volume Undo/Redo UI history only.
 - `sourceAudioToggleAndEffectVolumeUseUndoRedoHistory` is verified for UI state/history. This does not validate exported MP4 audio.
-- Next unique gate: an end-to-end MP4 audio test creates deterministic 440 Hz music and an 880 Hz timed effect WAV, exports the video, decodes the saved AAC track, and measures tone presence at configured intervals and gains. Its first run is pending.
+- Next unique gate: an audio-bearing source-video fixture with a deterministic 220 Hz track; export at 40% source gain and again with source audio muted, then decode AAC and compare against the known source baseline.
 - Do not repeat #210 text-strip drags or #212 timed-text export unchanged.
 - Remaining after this test: source-video audio mute/volume with a fixture that contains its own audio track, A/V sync, text preview after seek/zoom, split/reorder/trim-scroll conflicts, physical-device review, signed update/install.
 - Keep versionCode 395 blocked. Do not change version metadata, sign/publish an APK, or enable in-app updates without all required gates and explicit authorization.
 
 ## Next action
 
-Run the newly added exported-MP4 audio test, inspect decoded PCM measurements, and distinguish an export/mix issue from a decoder or fixture issue. The #214 Undo/Redo UI-history gate is green. Do not repeat passed text-strip or timed-text tests unchanged; keep versionCode 395 blocked.
+Run the new source-audio MP4 test, inspect the decoded 220 Hz magnitudes and compare the output/source ratio. Keep the #216 music-loop/timed-effect test green and do not repeat it unchanged; versionCode 395 remains blocked.
 
 
 ## #215 root-cause record
 - #215 failed in the newly added exported MP4 audio test, not during setup: `VideoEditorActivity.exportEditedVideo()` crashed while building the timed sound-effect sequence because its first item is a gap and the sequence did not declare an audio track. Fix the sequence builder with explicit `C.TRACK_TYPE_AUDIO`; preserve timing and amplitude assertions. Next run must prove actual AAC decoding and tone windows.
+
+
+## #216 passed / next gate
+- Run #216 passed on `e71ecb195a0685023616f96e05fa159c2a5e2b11`: the actual exported MP4's AAC audio decoded and passed music-loop and effect-window signal checks. The root cause of #215 was the leading gap in the timed effect sequence lacking an explicit audio track; this is now verified.
+- Next unique candidate test checks actual source-audio amplitude at 40%, mute behavior, and preservation of the original audio-bearing fixture. Do not mark the full audio gate green until these pass and A/V sync is independently checked.

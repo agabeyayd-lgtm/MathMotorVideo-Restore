@@ -8,7 +8,8 @@ A local-first Android video editor with a CapCut-inspired workflow. Editing and 
 
 - Active branch: `fix/editor-395-gate`; draft repair PR: [#8](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/pull/8).
 - User-installed baseline: **versionCode 394 / build 61 (`app-v8.3-61`)**.
-- Latest completed integrated-candidate gate: [#214 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40357110853), head commit [`7f96ad9`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/7f96ad989e975e02f9232373fbdaedc70bfa3754). Unit tests, Debug APK build, offline fixtures, emulator setup, connected Android instrumentation, screenshots and diagnostics all completed successfully. The effect-volume Redo assertion now scrolls the label into view before checking the unchanged expected value; no production history code changed for that UI visibility issue.
+- Latest completed integrated-candidate gate: [#216 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40372603373), commit [`e71ecb1`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/e71ecb195a0685023616f96e05fa159c2a5e2b11). Unit tests, Debug APK build and connected Android instrumentation passed. The timed-effect leading-gap production fix is verified; #216 does not yet certify source-audio volume/mute or A/V sync.
+- Earlier integrated-candidate gate [#214 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40357110853), commit [`7f96ad9`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/7f96ad989e975e02f9232373fbdaedc70bfa3754), confirmed source-audio toggle and effect-volume Undo/Redo UI history. No production history change was needed for the #213 panel-visibility assertion.
 - Prior gates: [#210 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40328122889) verified text-strip handle drags; [#212 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40335645092) verified the timed-text export fix. Do not repeat these unchanged.
 - Source-branch verification: [CI run #193 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40234200553), source commit [`941d5fd`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/941d5fd356c54c3278060a91a23a5e42d81340f4). Unit tests, debug APK, emulator launch, screenshots and editor interaction tests passed, including manual JSON save/reopen after scrolling the audio controls into view.
 - Integration commit [`cb2d153`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/cb2d1538fba6d04eca397f7b0df153a4276a6dd1) combined unified editor history with the release-gate branch's playhead-restore guard. Its first CI run [#194 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40277453646) at Android-test compilation: the manual JSON test contained duplicate `restoredPlayheadMs` declarations (around lines 1119 and 1128). The failure happened before emulator interaction tests; do not count it as an editor behavior failure.
@@ -62,7 +63,9 @@ Work top to bottom. Mark an item complete only when there is test or inspection 
 
 ### 4. Audio export
 
-- [ ] Validate source-video audio level/mute, background music looping/volume, timed sound-effect start/volume, and audio/video sync in the exported MP4. Controls and export code exist, but end-to-end proof is not complete.
+- [x] [#216 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40372603373) passes the real MP4/AAC decode gate for looped 440 Hz background music and the 880 Hz effect confined to its configured 2500–3700 ms interval. The leading-gap audio track fix is verified; do not repeat this unchanged.
+- [ ] Verify exported source-video audio gain and mute using an audio-bearing source fixture; compare the decoded 220 Hz signal against its known source amplitude and prove it disappears when source audio is disabled. Candidate test is being added for the next run.
+- [ ] Tighten quantitative verification of music/effect gains and verify audio/video synchronization against known video-frame boundaries.
 
 ### 5. Timeline edge cases
 
@@ -269,3 +272,10 @@ Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228
 - Root cause: the timed effect starts at 2500 ms, so the sequence starts with `addGap`; the old no-argument builder does not declare which track should carry synthesized silence. Media3 1.10.1 requires an explicit track type.
 - Fix candidate: construct this sequence as `EditedMediaItemSequence.Builder(setOf(C.TRACK_TYPE_AUDIO))`. This preserves the effect start time and keeps all signal assertions intact.
 - [ ] Verify the fix with the same exported MP4 audio test; inspect 440 Hz music and 880 Hz timed-effect measurements before closing the audio gate.
+
+
+### 2026-10-26 — #216 passed; source-audio MP4 gate added
+
+- [x] [#216 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40372603373), commit `e71ecb195a0685023616f96e05fa159c2a5e2b11`: unit tests, Debug APK, connected Android instrumentation and artifact upload passed. The actual exported AAC track contained the looped music signal in early/middle/late windows and the timed effect only during its configured window; the explicit audio track type fixes the leading-gap crash.
+- [x] Kept release 395 blocked. #216 does not validate source-video audio gain/mute or A/V sync.
+- [ ] Next focused test builds an offline MP4 with a known 220 Hz source-audio track; export once with source audio at 40% and once muted, decode both AAC tracks, compare against the fixture's measured baseline, and confirm the source fixture hash is unchanged.
