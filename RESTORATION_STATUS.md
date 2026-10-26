@@ -60,5 +60,7 @@ Text trim handles, preview/export parity, full audio export, gesture grouping, d
 - [#208 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40322912271), tested source SHA `f5227ffb38c41d3935b65f6278842f24fa354078`.
 - Unit tests, debug APK build, offline MP4 fixture preparation, KVM setup, emulator preflight and artifact upload passed. Instrumentation ran 9 tests: 8 passed, 1 failed.
 - Failure: `EditorTimelineInteractionTest.kt:581`, `Could not find the text-strip end handle after bringing it into view`. The attempted `scrollToEnd(5)` approach still did not expose the handle to UiAutomator. The test stopped before end-handle drag and label-change assertion; trim remains unverified.
-- Next step is to inspect #208's uploaded artifact/screenshots and the timeline scroll viewport/offset, then make one evidence-based test correction. Do not repeat the same scroll approach unchanged.
+- Inspected #208 artifact and source geometry: the YAZI 1 lane was a 228×18 viewport and the text-strip body intentionally captures drag gestures. The test was swiping the same nested lane to expose the far handle, so it could not reliably scroll the parent timeline.
+- Focused test correction commit: [`0f45acc`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/0f45accdeb64df64c1d2cbd248dbc87401891920). The test now performs bounded, small swipes on the synchronized VIDEO lane, checks for the end handle after each attempt, and stops once it becomes accessible. This has not yet been verified by CI.
+- Run #209 is pending; do not claim trim-handle success until the end-handle drag changes the displayed end-time label.
 - VersionCode 395 remains blocked.
