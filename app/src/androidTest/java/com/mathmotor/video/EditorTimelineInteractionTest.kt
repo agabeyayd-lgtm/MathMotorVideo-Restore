@@ -2091,25 +2091,37 @@ class EditorTimelineInteractionTest {
             // Clear old restore events so the test waits for this draft, not a
             // previous editor launch, before exporting its audio state.
             device.executeShellCommand("logcat -c")
-            // Directly launch the prepared editor project; the home-screen text
-            // is not part of the source-audio export behavior under test.
+            // The first export leaves VideoEditorActivity at the top of an existing task.
+            // Plain "am start" can then report START_DELIVERED_TO_TOP without creating a
+            // new EditorTestEntryActivity, so the second (muted) draft is never loaded.
+            // Clear that activity stack (not the process: force-stop would kill this
+            // instrumentation runner) before launching the next uniquely seeded draft.
             device.executeShellCommand(
-                "am start -n $packageName/com.mathmotor.video.EditorTestEntryActivity --es draft_id $draftId")
-            // The status label is not a reliable launch signal: it can be outside the
-            // visible accessibility tree on compact emulator layouts. Wait for the editor's
-            // stable timeline marker, then let the export-panel and decoded-audio assertions
-            // below verify that the seeded project was actually restored.
-            assertTrue("Editor did not open for seeded source-audio project ($keepSourceAudio)",
-                device.wait(Until.hasObject(By.text("VIDEO")), 20_000))
-            assertTrue("Editor export tab did not appear for source-audio validation",
-                device.wait(Until.hasObject(By.textContains("Dışa aktar")), 8_000))
+                "am start --activity-clear-task -n $packageName/com.mathmotor.video.EditorTestEntryActivity --es draft_id $draftId")
 
-            // Wait for the editor's explicit success event after applyProjectJson returns.
-            // The timeline marker alone can appear before the saved audio controls are restored.
+            // Verify the exact launch and project lookup markers before accepting any UI
+            // already visible from the previous export as evidence of a new editor launch.
             val restoreDeadline = SystemClock.uptimeMillis() + 20_000L
+            var entryStarted = false
+            var draftLookupSeen = false
+            var draftFound = false
             var draftRestored = false
+            var lastEditorSmokeLog = ""
             while (SystemClock.uptimeMillis() < restoreDeadline) {
                 val restoreLog = device.executeShellCommand("logcat -d -s EditorSmokeTest:I")
+                lastEditorSmokeLog = restoreLog.takeLast(1_200)
+                if (restoreLog.contains("EDITOR_SMOKE_ENTRY_STARTED") &&
+                    restoreLog.contains("hasDraft=true")) {
+                    entryStarted = true
+                }
+                if (restoreLog.contains("EDITOR_SMOKE_DRAFT_LOOKUP id=$draftId found=true")) {
+                    draftLookupSeen = true
+                    draftFound = true
+                }
+                if (restoreLog.contains("EDITOR_SMOKE_DRAFT_LOOKUP id=$draftId found=false")) {
+                    draftLookupSeen = true
+                    break
+                }
                 if (restoreLog.contains("EDITOR_SMOKE_DRAFT_RESTORED id=$draftId")) {
                     draftRestored = true
                     break
@@ -2117,9 +2129,24 @@ class EditorTimelineInteractionTest {
                 SystemClock.sleep(200)
             }
             assertTrue(
-                "Seeded source-audio project did not finish restoring (draftId=$draftId)",
+                "Editor test entry was not launched for source-audio draft " +
+                    "(keepSourceAudio=$keepSourceAudio, markers=$lastEditorSmokeLog)",
+                entryStarted
+            )
+            assertTrue(
+                "Editor did not find the seeded source-audio draft " +
+                    "(draftId=$draftId, lookupSeen=$draftLookupSeen, markers=$lastEditorSmokeLog)",
+                draftFound
+            )
+            assertTrue(
+                "Seeded source-audio project did not finish restoring " +
+                    "(draftId=$draftId, markers=$lastEditorSmokeLog)",
                 draftRestored
             )
+            assertTrue("Editor did not open for seeded source-audio project ($keepSourceAudio)",
+                device.wait(Until.hasObject(By.text("VIDEO")), 20_000))
+            assertTrue("Editor export tab did not appear for source-audio validation",
+                device.wait(Until.hasObject(By.textContains("Dışa aktar")), 8_000))
 
             // Audio controls live on their own tab and can be below the compact
             // scroll viewport. Open that tab and scroll to the checkbox before asserting it.
