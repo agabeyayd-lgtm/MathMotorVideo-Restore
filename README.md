@@ -71,7 +71,7 @@ Work top to bottom. Mark an item complete only when there is test or inspection 
 ### 4. Audio export
 
 - [x] [#216 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40372603373) passes the real MP4/AAC decode gate for looped 440 Hz background music and the 880 Hz effect confined to its configured 2500–3700 ms interval. The leading-gap audio track fix is verified; do not repeat this unchanged.
-- [ ] Verify exported source-video audio gain and mute using an audio-bearing source fixture; compare the decoded 220 Hz signal against its known source amplitude and prove it disappears when source audio is disabled. Current candidate is #227; mark complete only after setup, instrumentation, decoded AAC ratios and source-file hash all pass.
+- [ ] Verify exported source-video audio gain and mute using an audio-bearing source fixture; compare the decoded 220 Hz signal against its known source amplitude and prove it disappears when source audio is disabled. Current candidate is #228; mark complete only after both draft launches, instrumentation, decoded AAC ratios and source-file hash all pass.
 - [ ] Tighten quantitative verification of music/effect gains and verify audio/video synchronization against known video-frame boundaries.
 
 ### 5. Timeline edge cases
@@ -300,7 +300,7 @@ Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228
 - [x] [#223 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40389357809): FFmpeg setup no longer monopolized the job; fixture setup and emulator instrumentation ran. The test then failed with `Source-audio checkbox did not appear` before exporting or decoding an MP4.
 - [x] Root cause: the editor opens on the `Klip` tab, while the source-audio checkbox lives in the separate `Ses` panel and can be below the compact panel's scroll viewport. The prior test searched for it without selecting the audio tab. This is a test navigation/visibility failure, not a result for the actual source-audio mute behavior.
 - [x] Test fix committed as `5ac0d950da5342447cdd99d74cf19d0dba68b5e0`: clear stale logcat entries, wait for the debug-only `PROJECT_JSON_RESTORED` marker, open the audio tab, scroll the checkbox into view, and only then assert its restored state. No audio thresholds or production export behavior were weakened.
-- [ ] [#224 candidate run](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40392178279) must pass the actual decoded-MP4 source-audio gain/mute assertions. VersionCode 395 remains blocked.
+- [x] #224's old restore-marker candidate was superseded after its pre-export failure; the current replacement is [#228](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40399875346). This reference is historical, not a request to rerun #224.
 
 ### #222 — CI stalled while installing ffmpeg
 
@@ -320,4 +320,4 @@ Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228
 - [x] Unit tests and Debug APK build passed on candidate `86a534282d852b15c976f69728ab7dbb55f74ffe`; the workflow failed in `Prepare deterministic MP4 fixtures` before emulator/instrumentation began.
 - [x] Exact root cause from the step log: `command -v ffmpeg` returned exit code 1 because the Ubuntu runner did not have ffmpeg installed. This is a CI fixture-preparation dependency, not a production export failure and not an executed source-audio assertion.
 - [x] Corrected workflow to install ffmpeg/ffprobe on the runner when missing, then generate the audio-bearing fixture and print its stream metadata. This preserves deterministic fixture content and avoids rerunning the failing setup unchanged.
-- [ ] Re-run the source-audio gain/mute gate; only count it after the fixture build, emulator launch and actual decoded-MP4 assertions pass. Release 395 stays blocked.
+- [ ] Complete the source-audio gain/mute gate in [#228](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40399875346): the second draft must restore and export; decoded 40% gain, muted `<0.08` ratio, late-window gain and unchanged source-file hash must all pass. Release 395 stays blocked.
