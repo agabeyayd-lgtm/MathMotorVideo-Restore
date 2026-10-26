@@ -147,7 +147,6 @@ Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228
 - [x] Added a stable accessibility description to each actual synchronized timeline lane in commit [`94b48c2`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/94b48c2488f401d90dc0419a538a87d2e07d8ef5), then updated the test to scroll the specific `YAZI 1` lane in [`fb7b3b3`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/fb7b3b3030835cf80eac3978d9b58ad5e324f90f).
 - [x] Run [#200 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40307614939): unit tests/build passed; instrumentation still could not discover the end handle after `scrollToEnd`. Scrolling to the lane's absolute end can move a shorter text strip out of the viewport.
 - [x] Updated the test in commit [`79973ba`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/79973ba8bdb2e1b30703afdd1a955fe5044bba43) to call `scrollIntoView` for the end-handle selector inside the specifically named `YAZI 1` lane, rather than scroll to the far end.
-- [ ] Focused verification [run #201 — IN PROGRESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40309940904). Do not queue another run while this focused verification is active.
 - [ ] After the handle test passes, add preview/export text parity coverage, then audio export behavior and remaining timeline edge cases.
 - [ ] Physical-device review and signed update/install verification remain outstanding. Version 395 remains blocked; no release actions taken.
 
@@ -165,7 +164,7 @@ Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228
 - [x] Run [#201 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40309940904): compilation failed because `UiScrollable.scrollIntoView` expects a `BySelector`, but the test passed a `UiSelector`. This was a test compile error, not a runtime trim-handle result.
 - [x] Corrected the selector type to `By.desc("Yazı bitişini sürükle")` in [`b247898`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/b2478982fcb4646a85ed9bf70abd8da32cbc3a7b).
 - [x] Verification [run #202 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40311694275): test compilation failed on the selector API mismatch described below.
-- [ ] Keep the text-strip trim test open until #202 passes. Next distinct goal: compare actual timed/styled text in preview with the exported MP4, then test audio export and remaining timeline edge cases.
+- [ ] Keep the text-strip trim test open until the focused verification actually completes the interaction. Next distinct goal: compare actual timed/styled text in preview with the exported MP4, then test audio export and remaining timeline edge cases.
 - [ ] Keep release 395 blocked pending the required gates and explicit release authorization.
 
 
@@ -175,3 +174,12 @@ Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228
 - [x] Corrected the test to use `UiSelector().description("Yazı bitişini sürükle")` only for `UiScrollable.scrollIntoView`, while retaining `By.desc(...)` for `UiDevice.wait/findObject`. Correction commit: [`b1ec215`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/b1ec215e8d4a66342367491026773fbc23849562).
 - [ ] Wait for the single focused verification triggered by this correction; do not queue a duplicate run.
 - [ ] Next distinct coverage after the trim test passes: preview/export text parity, audio export, remaining timeline edge cases, physical-device review, signed update/install. Version 395 remains blocked.
+
+
+### 2026-10-26 — Emulator-owned launcher ANR interrupted #203
+
+- [x] Run [#203 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40312901567): unit tests and debug APK build passed, but the screenshot/setup script stopped before running instrumentation interactions because Android's own Pixel/Nexus Launcher displayed a persistent `isn't responding` ANR dialog. Diagnostics showed MathMotor's `MainActivity` was already resumed; window focus remained on the system launcher ANR overlay. This is not evidence that the editor trim handle failed.
+- [x] Inspected the run's uploaded diagnostics artifact and confirmed the modal system-owned launcher ANR. The test suite did not reach the right text-trim interaction.
+- [x] Updated `.github/scripts/capture-emulator-screenshots.sh` in [`2c278f3`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/2c278f3d45c21ac62a8505849924af179da3a5cb): after the existing three Wait attempts, the recovery helper may dismiss only a confirmed Android-owned launcher ANR with its own Close app button, then re-check the hierarchy. Application-level MathMotor ANRs still fail the check and are not dismissed.
+- [ ] Focused verification [run #204 — IN PROGRESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40313820818). Let this run finish; don't queue another duplicate.
+- [ ] Once the setup reaches instrumentation, check whether the text-strip trim interaction passes. Preview/export text parity, audio export, timeline edge cases, physical-device review, and signed update/install remain open. Version 395 remains blocked.
