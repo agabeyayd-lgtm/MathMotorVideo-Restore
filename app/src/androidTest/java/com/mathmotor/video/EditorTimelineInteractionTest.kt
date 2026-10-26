@@ -561,9 +561,19 @@ class EditorTimelineInteractionTest {
             stripStartBefore != stripStartAfter
         )
 
+        // The strip can be wider than the viewport; after moving the start handle,
+        // the end handle may be off-screen and therefore absent from UiAutomator's tree.
+        // Scroll the synchronized timeline lanes to the end before querying its handle.
+        val timelineLane = UiScrollable(
+            UiSelector().className("android.widget.HorizontalScrollView")
+        ).setAsHorizontalList()
+        assertTrue("Could not scroll the timeline lane to its end", timelineLane.scrollToEnd(10))
+        device.waitForIdle()
+        SystemClock.sleep(250)
+
         val endHandleSelector = By.desc("Yazı bitişini sürükle")
         assertTrue(
-            "Could not find the text-strip end handle",
+            "Could not find the text-strip end handle after scrolling the lane to its end",
             device.wait(Until.hasObject(endHandleSelector), 5_000)
         )
         val endHandle = requireObject(device, endHandleSelector, "text-strip end handle")
