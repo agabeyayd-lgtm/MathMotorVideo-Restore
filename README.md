@@ -210,3 +210,13 @@ Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228
 - [x] Removed only the stray quote in [fix commit](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/96e889be0cd923010b930530074225305ce695b0).
 - [ ] Verify the correction with the one newly triggered emulator workflow. Required first outcome: script parses, home preflight completes, and instrumentation actually starts. Then record the specific text-end-handle assertion result; do not mark the trim test complete solely because the script or APK builds.
 - [ ] After that focused interaction is verified, move to distinct checks: text preview/export parity, audio export, remaining timeline edge cases, physical-device review, and signed update/install. Keep version 395 blocked until every required release gate passes and release is explicitly authorized.
+
+
+### 2026-10-26 — #207 reached instrumentation; text end-handle visibility setup failed
+
+- [x] Run [#207 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40318772112), head `96e889be0cd923010b930530074225305ce695b0`: unit tests, debug APK build, offline MP4 fixtures, KVM setup, emulator launch and screenshot preflight passed. Android instrumentation ran.
+- [x] The test report recorded 9 tests with 1 failure; the other 8 tests passed, including two-clip MP4 export/order, video-clip trim handles, save/reopen, undo/redo, and screenshot capture.
+- [x] Exact failure: `textTimingAndSizeControlsUpdatePreview` stopped at `EditorTimelineInteractionTest.kt:578` because `UiScrollable.scrollIntoView("Yazı bitişini sürükle")` could not expose/find the clipped end handle inside the selected text lane. The test did not reach the end-handle drag or its label-change assertion. This is not proof that the app's end-handle drag is broken, and the feature remains unverified.
+- [x] Replaced that fragile child-discovery call with a right-edge scroll of the selected text lane, followed by a direct wait for the end-handle accessibility target. The next run must prove that the actual drag executes and changes the end-time label; do not mark the test passing just because the new scroll step succeeds.
+- [ ] Inspect the single verification workflow triggered by this focused correction. If it fails, read its exact assertion and diagnostics before another edit; do not repeat the unchanged failing attempt.
+- [ ] Still open after this interaction gate: text preview/export parity, source/music/effect audio export, remaining timeline edge cases, physical-device screen/keyboard/touch review, and signed update/install. VersionCode 395 remains blocked; no release actions have been taken.

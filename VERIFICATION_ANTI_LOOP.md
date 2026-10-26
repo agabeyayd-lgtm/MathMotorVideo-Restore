@@ -17,14 +17,14 @@ This is the concise handoff for ongoing CI debugging. Read it and the latest REA
 ## Latest known state (2026-10-26)
 - Repo: `agabeyayd-lgtm/MathMotorVideo-Restore`; branch: `fix/editor-395-gate`.
 - Installed phone baseline: versionCode 394, build 61 (`app-v8.3-61`).
-- Run #207: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40318772112
-- #207 head SHA: `96e889be0cd923010b930530074225305ce695b0`.
-- Last observed: unit tests, debug APK build, offline MP4 fixture preparation, and KVM setup passed; step 9 “Launch app, capture screens, and run interaction tests” was in progress. Inspect this run before any new run.
-- #206 failed before instrumentation because `.github/scripts/capture-emulator-screenshots.sh` had a stray quote after the Python command-substitution closing `)`; fixed in `96e889b`.
-- Text-strip trim remains UNVERIFIED until its start/end handle assertions execute. #202 was a UiSelector/BySelector compile mismatch; #203–#206 were emulator/system launcher ANR or preflight/script failures, not proof that trim interaction failed.
-- If #207 fails, identify its exact failing step and diagnostics first. Do not repeat the same failed preflight; fix the cause and run one verification only.
-- After trim passes, test distinct gates: text preview/export parity, source/music/effect audio export, remaining timeline edge cases, physical-device screen/keyboard/touch review, signed update and in-app installation.
-- Previously proven; do not repeat without relevant changes: #172 (8/8 instrumentation, filmstrip timestamps); #179 (playhead restoration); #185 (9/9 instrumentation after Undo/Redo parent-attachment fix); #193 (manual JSON save/reopen and text/music-volume Undo/Redo); #196 (integrated candidate gates before the new trim-handle test).
+- Latest completed run before this correction: [#207](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40318772112), head SHA `96e889be0cd923010b930530074225305ce695b0`.
+- #207 unit tests, debug APK build, deterministic MP4 fixtures, KVM setup, emulator launch and screenshot preflight passed. Instrumentation ran 9 tests: 8 passed, 1 failed.
+- Exact failure at `EditorTimelineInteractionTest.kt:578`: `UiScrollable.scrollIntoView` could not bring the text-strip end handle into view inside `Zaman çizelgesi satırı: YAZI 1`. This happened before the end-handle drag and its label-change assertion. Do not classify it as a confirmed app drag defect or a passed drag test.
+- Focused correction in the current commit: replace child `scrollIntoView` with `scrollToEnd(5)` on the selected timeline lane, then directly wait for the end handle. Next verify the real end-handle drag assertion once.
+- #206's separate shell syntax error was fixed in `96e889b`; the latest #207 got beyond that preflight. Do not repeat the old preflight failure.
+- Previously proven; do not repeat without relevant changes: #172 (8/8 instrumentation, filmstrip timestamps); #179 (playhead restoration); #185 (9/9 instrumentation after Undo/Redo parent-attachment fix); #193 (manual JSON save/reopen and text/music-volume Undo/Redo); #196 (integrated candidate gates before the new text-trim-handle test).
+- After the text trim passes, test distinct gates: text preview/export parity, source/music/effect audio export, remaining timeline edge cases, physical-device screen/keyboard/touch review, then signed update/in-app install.
+- Keep versionCode 395 blocked. Do not change version metadata, sign/publish an APK, or enable in-app updates without all release gates and explicit authorization.
 
 ## Next action
-Inspect run #207 and its diagnostics. Do not start another run unless #207 is complete and its exact failure has been identified and fixed. Update README and this file with the observed outcome.
+Inspect the one focused workflow triggered by this test correction. Verify that the selected lane scroll exposes the end handle and that dragging it changes the end-time label. Record the actual result in README and this handoff; if it fails, read the exact assertion/logs before making another change. Do not start a duplicate workflow.

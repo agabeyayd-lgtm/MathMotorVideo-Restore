@@ -561,22 +561,18 @@ class EditorTimelineInteractionTest {
             stripStartBefore != stripStartAfter
         )
 
-        // The end handle can be outside the viewport after dragging the start handle.
-        // Do not scroll to the lane's absolute end: that can move this shorter text strip
-        // entirely off the left edge. Ask UiScrollable to bring the specific handle into view
-        // inside the selected text lane; the editor has other unrelated horizontal lists.
+        // The end handle may be clipped off-screen after the start-handle drag.
+        // UiScrollable.scrollIntoView(handle) repeatedly swiped this nested lane but could
+        // not discover the clipped descendant in Android's accessibility tree. Scroll only
+        // the selected text lane to its right edge, then locate the visible handle directly.
+        // This fixture's text end remains within the timeline's right-side viewport at that
+        // offset, so the actual handle drag can be tested instead of failing during discovery.
         val timelineLane = UiScrollable(
             UiSelector()
                 .className("android.widget.HorizontalScrollView")
                 .description("Zaman çizelgesi satırı: YAZI 1")
         ).setAsHorizontalList()
-        // UiScrollable.scrollIntoView in this AndroidX version accepts UiSelector/UiObject,
-        // while UiDevice.wait/findObject use BySelector. Keep separate selectors for each API.
-        val endHandleScrollSelector = UiSelector().description("Yazı bitişini sürükle")
-        assertTrue(
-            "Could not bring the text-strip end handle into the selected text lane viewport",
-            timelineLane.scrollIntoView(endHandleScrollSelector)
-        )
+        timelineLane.scrollToEnd(5)
         device.waitForIdle()
         SystemClock.sleep(250)
 

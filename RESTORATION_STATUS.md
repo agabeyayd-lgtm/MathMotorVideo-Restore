@@ -10,11 +10,13 @@
 
 ## Current verification chain
 
-- [#202 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40311694275): Android-test compilation mismatch, `UiSelector` vs `BySelector`; no trim interaction ran. Corrected with commit [`b1ec215`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/b1ec215e8d4a66342367491026773fbc23849562).
-- [#203 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40312901567): instrumentation did not start because Android's Pixel/Nexus Launcher showed a persistent system ANR overlay. Diagnostics show MathMotor MainActivity was already resumed underneath it; this was not an editor assertion failure.
-- [#204](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40313820818): first attempt at system launcher ANR recovery. A subsequent code inspection found an over-escaped button-bounds regex in that helper, so this run does not verify the latest helper.
-- Fixed launcher recovery in [`2c278f3`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/2c278f3d45c21ac62a8505849924af179da3a5cb), then corrected the Close-app bounds regex in [`ef9c058`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/ef9c058a999b96a99ee45b305ed580d06376aa0d). This fallback applies only when the dialog is positively identified as an Android-owned Pixel/Nexus Launcher ANR; MathMotor's own ANR stays fatal.
-- [#205 — QUEUED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40314156388) is the latest focused verification to trust. Do not queue a duplicate.
+- [#202 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40311694275): Android-test compile mismatch (`UiSelector` vs `BySelector`); no trim interaction ran. Corrected in `b1ec215`.
+- [#203 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40312901567): system-owned Pixel/Nexus Launcher ANR overlay blocked instrumentation before the app interaction test.
+- [#204–#205]: intermediate launcher-ANR recovery checks were superseded by later fixes; they are not evidence that the text-strip end handle passed.
+- [#206 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40314729254): shell syntax error in emulator recovery script before instrumentation. Fixed in `96e889b`.
+- [#207 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40318772112): unit tests/build/preflight passed; instrumentation ran 9 tests, 8 passed and 1 failed. The failure was at test navigation (`UiScrollable.scrollIntoView` could not expose the clipped text end handle), before the end-handle drag assertion. This does **not** prove the end-handle drag itself fails.
+- Applied a focused test correction: scroll only the selected text lane to its right edge, then locate the end handle directly. The next workflow must verify the real handle drag and label change. Do not queue a duplicate workflow.
+- The text end-handle drag remains unverified until its assertion executes and passes. VersionCode 395 remains blocked; no release actions taken.
 
 ## Previously proven (do not repeat without relevant changes)
 
@@ -26,7 +28,7 @@
 
 ## Remaining gates
 
-1. Confirm #205 gets past emulator setup and actually runs the trim interaction; record the actual assertion result.
+1. Inspect the single workflow triggered by the focused #207 test-navigation correction; confirm the end-handle drag assertion actually executes and passes.
 2. Verify text preview matches exported MP4.
 3. Verify music/effect/source audio export and remaining timeline edge cases.
 4. Physical-device screen/keyboard/touch review.
