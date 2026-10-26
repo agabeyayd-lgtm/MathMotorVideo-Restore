@@ -220,3 +220,12 @@ Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228
 - [x] Replaced that fragile child-discovery call with a right-edge scroll of the selected text lane, followed by a direct wait for the end-handle accessibility target. The next run must prove that the actual drag executes and changes the end-time label; do not mark the test passing just because the new scroll step succeeds.
 - [ ] Focused verification: [run #208 — IN PROGRESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40322912271), head `f5227ffb38c41d3935b65f6278842f24fa354078`. At the last check it had reached Gradle setup; instrumentation had not started. Check this run first, and if it fails, inspect its exact assertion/diagnostics before editing; do not repeat the unchanged failing attempt.
 - [ ] Still open after this interaction gate: text preview/export parity, source/music/effect audio export, remaining timeline edge cases, physical-device screen/keyboard/touch review, and signed update/install. VersionCode 395 remains blocked; no release actions have been taken.
+
+
+### 2026-10-26 — #208 still fails at text end-handle discovery
+
+- [x] [Run #208 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40322912271), tested source `f5227ffb38c41d3935b65f6278842f24fa354078`. Unit tests, debug APK build, offline MP4 fixtures, KVM setup, emulator setup and screenshot collection succeeded.
+- [x] Instrumentation executed 9 tests; 8 passed and `textTimingAndSizeControlsUpdatePreview` failed at `EditorTimelineInteractionTest.kt:581`: `Could not find the text-strip end handle after bringing it into view`.
+- [x] The prior correction (`scrollToEnd(5)`) did not expose the end handle to UiAutomator. The test did not reach the end-handle drag or the end-time label-change assertion. Do not interpret this as a confirmed production drag defect or a passing trim test.
+- [ ] Next: inspect the uploaded #208 screenshot/test/logcat artifact and timeline viewport/scroll geometry before editing the selector/gesture again. Avoid a blind third variation of the same scroll method. Then make one evidence-based correction and run a single focused verification.
+- [ ] VersionCode 395 remains blocked; no release actions taken.

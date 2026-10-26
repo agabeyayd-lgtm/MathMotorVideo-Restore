@@ -53,3 +53,12 @@ Text trim handles, preview/export parity, full audio export, gesture grouping, d
 
 - CI preflight fix: [`7f2e1a0`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/7f2e1a086ff7ab2e1af6741351a67295e064c709) retains the launcher ANR dialog's Close-app coordinates from the last valid UI hierarchy, so a failed follow-up dump cannot erase the only recovery coordinates.
 - A single verification run is triggered by this harness change; check its result before any retry. The trim-handle interaction remains unverified until the instrumentation test itself executes.
+
+
+## #208 result — 2026-10-26
+
+- [#208 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40322912271), tested source SHA `f5227ffb38c41d3935b65f6278842f24fa354078`.
+- Unit tests, debug APK build, offline MP4 fixture preparation, KVM setup, emulator preflight and artifact upload passed. Instrumentation ran 9 tests: 8 passed, 1 failed.
+- Failure: `EditorTimelineInteractionTest.kt:581`, `Could not find the text-strip end handle after bringing it into view`. The attempted `scrollToEnd(5)` approach still did not expose the handle to UiAutomator. The test stopped before end-handle drag and label-change assertion; trim remains unverified.
+- Next step is to inspect #208's uploaded artifact/screenshots and the timeline scroll viewport/offset, then make one evidence-based test correction. Do not repeat the same scroll approach unchanged.
+- VersionCode 395 remains blocked.
