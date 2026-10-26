@@ -2092,8 +2092,14 @@ class EditorTimelineInteractionTest {
             // is not part of the source-audio export behavior under test.
             device.executeShellCommand(
                 "am start -n $packageName/com.mathmotor.video.EditorTestEntryActivity --es draft_id $draftId")
-            assertTrue("Seeded source-audio project did not open ($keepSourceAudio)",
-                device.wait(Until.hasObject(By.textContains("Taslak açıldı")), 20_000))
+            // The status label is not a reliable launch signal: it can be outside the
+            // visible accessibility tree on compact emulator layouts. Wait for the editor's
+            // stable timeline marker, then let the export-panel and decoded-audio assertions
+            // below verify that the seeded project was actually restored.
+            assertTrue("Editor did not open for seeded source-audio project ($keepSourceAudio)",
+                device.wait(Until.hasObject(By.text("VIDEO")), 20_000))
+            assertTrue("Editor export tab did not appear for source-audio validation",
+                device.wait(Until.hasObject(By.textContains("Dışa aktar")), 8_000))
 
             (device.findObject(By.text("Dışa aktar ›"))
                 ?: throw AssertionError("Could not open export tab for source-audio validation")).click()
