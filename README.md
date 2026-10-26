@@ -53,7 +53,8 @@ Work top to bottom. Mark an item complete only when there is test or inspection 
 
 - [ ] Test dragging the start/end handles on a text timeline strip; passing the timing sliders does not prove strip dragging works.
 - [ ] Export a clip with timed/styled text and compare the MP4 with preview for timing, position, size, colour and style.
-- [ ] Verify text settings remain correct after manual JSON save/open and after timeline seek/zoom.
+- [x] Manual JSON Save As → close → Open Document restores tested text state: content, 7.00–9.00 s timing, top position, 32 sp size, cyan colour and non-bold style. Assertions passed on the source branch in [run #193](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40234200553); the integrated persistence rerun remains tracked separately above.
+- [ ] Verify text settings/preview remain correct after timeline seek and zoom. This behavior is distinct from persistence and is not yet proven by the save/reopen test.
 
 ### 4. Audio export
 
