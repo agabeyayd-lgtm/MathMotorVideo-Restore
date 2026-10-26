@@ -10,6 +10,9 @@
 
 ## Current verification chain
 
+- [#210 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40328122889): 9/9 instrumentation tests passed. Real text-strip start/end drags changed the displayed timing labels (`00:01.30 → 00:03.35` and `00:06.50 → 00:04.46`). This gate is complete.
+- [#211 — IN PROGRESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40332164279), source `a78ca1f6ad10bbcdc815d471413b79c6a236e1cf`: new deterministic timed/styled text export test checks preview cyan pixels/upper placement and exported MP4 frames before/during/after the configured interval. Wait for this run's exact result before editing further.
+
 - [#202 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40311694275): Android-test compile mismatch (`UiSelector` vs `BySelector`); no trim interaction ran. Corrected in `b1ec215`.
 - [#203 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40312901567): system-owned Pixel/Nexus Launcher ANR overlay blocked instrumentation before the app interaction test.
 - [#204–#205]: intermediate launcher-ANR recovery checks were superseded by later fixes; they are not evidence that the text-strip end handle passed.
