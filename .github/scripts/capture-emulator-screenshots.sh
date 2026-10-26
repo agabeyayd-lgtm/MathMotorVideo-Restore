@@ -190,7 +190,7 @@ for node in root.iter("node"):
         coords["wait" if label == "wait" else "close"] = "%d %d" % ((x1+x2)//2, (y1+y2)//2)
 print(coords.get("wait", ""), coords.get("close", ""))
 PY
-)"
+)
     if [ -z "$wait_coords" ]; then
       echo "System ANR dialog detected but its Wait button could not be located in $xml"
       return 1
