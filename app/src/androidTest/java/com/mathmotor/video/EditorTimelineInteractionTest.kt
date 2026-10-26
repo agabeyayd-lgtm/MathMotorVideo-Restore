@@ -1919,6 +1919,124 @@ class EditorTimelineInteractionTest {
         }
     }
 
+
+    @Test
+    fun exportedMp4ContainsLoopedMusicAndTimedEffectAtConfiguredLevels() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val resolver = context.contentResolver
+        val device = UiDevice.getInstance(instrumentation)
+        val packageName = context.packageName
+        val fixture = java.io.File(context.filesDir, "editor-test-video.mp4")
+        assertTrue("Audio export video fixture is missing", fixture.isFile && fixture.length() > 0L)
+        val musicFile = java.io.File(context.filesDir, "editor-audio-test-music.wav")
+        val effectFile = java.io.File(context.filesDir, "editor-audio-test-effect.wav")
+        writeToneWav(musicFile, 44_100, 1_000, 440.0, 12_000)
+        writeToneWav(effectFile, 44_100, 1_200, 880.0, 8_000)
+        val exportName = "MathMotor_audio_export_${System.currentTimeMillis()}"
+        val draftId = java.util.UUID.randomUUID().toString()
+        val clip = org.json.JSONObject()
+            .put("uri", Uri.fromFile(fixture).toString())
+            .put("title", "AUDIO_EXPORT_VIDEO")
+            .put("durationMs", 8_020L)
+            .put("startMs", 0L)
+            .put("endMs", 8_020L)
+        val project = org.json.JSONObject()
+            .put("format", "MathMotorVideoProject")
+            .put("version", 1)
+            .put("clips", org.json.JSONArray().put(clip))
+            .put("selectedClipIndex", 0)
+            .put("timelinePlayheadMs", 3_000L)
+            .put("timelineZoom", 1.0)
+            .put("timelineHorizontalScrollMs", 3_000L)
+            .put("textLayers", org.json.JSONArray())
+            .put("sourceAudioVolume", 100)
+            .put("musicUri", Uri.fromFile(musicFile).toString())
+            .put("musicTitle", "AUDIO_TEST_MUSIC_440HZ")
+            .put("musicVolume", 35)
+            .put("soundUri", Uri.fromFile(effectFile).toString())
+            .put("soundTitle", "AUDIO_TEST_EFFECT_880HZ")
+            .put("soundDurationMs", 1_200L)
+            .put("soundStartMs", 2_500L)
+            .put("soundVolume", 60)
+            .put("keepSourceAudio", false)
+            .put("exportName", exportName)
+        assertTrue("Could not seed audio export validation project",
+            VideoProjectDraftStore.save(context, draftId, "Audio export validation", project))
+
+        device.executeShellCommand("logcat -c")
+        device.executeShellCommand("am start -n $packageName/com.mathmotor.video.MainActivity")
+        assertTrue("Home did not open before audio export validation",
+            device.wait(Until.hasObject(By.textContains("Boş proje oluştur")), 12_000))
+        device.executeShellCommand(
+            "am start -n $packageName/com.mathmotor.video.EditorTestEntryActivity --es draft_id $draftId")
+        assertTrue("Seeded audio project did not open",
+            device.wait(Until.hasObject(By.textContains("Taslak açıldı")), 20_000))
+
+        (device.findObject(By.text("Dışa aktar ›"))
+            ?: throw AssertionError("Could not open export tab for audio validation")).click()
+        assertTrue("Audio export panel did not open",
+            device.wait(Until.hasObject(By.text("PROJE / DIŞA AKTARMA")), 8_000))
+        requireObject(device, By.clazz("android.widget.EditText"), "audio export filename").setText(exportName)
+        val scroller = UiScrollable(UiSelector().className("android.widget.ScrollView")).setAsVerticalList()
+        assertTrue("Could not scroll to MP4 export button",
+            scroller.scrollIntoView(UiSelector().text("MP4 DIŞA AKTAR")))
+        device.waitForIdle()
+        requireObject(device, By.text("MP4 DIŞA AKTAR"), "audio validation MP4 button").click()
+
+        val exportDeadline = SystemClock.uptimeMillis() + 120_000L
+        var exported = false
+        while (SystemClock.uptimeMillis() < exportDeadline) {
+            val log = device.executeShellCommand("logcat -d -s MultiClipExport:I")
+            if (log.contains("MULTICLIP_EXPORT_SAVED name=$exportName")) { exported = true; break }
+            if (log.contains("MULTICLIP_EXPORT_TRANSFORM_FAILED name=$exportName") ||
+                log.contains("MULTICLIP_EXPORT_SAVE_FAILED name=$exportName")) {
+                throw AssertionError("Audio MP4 export failed: $log")
+            }
+            SystemClock.sleep(500)
+        }
+        assertTrue("Audio MP4 did not save within 120 seconds", exported)
+
+        var outputUri: Uri? = null
+        val queryDeadline = SystemClock.uptimeMillis() + 30_000L
+        while (outputUri == null && SystemClock.uptimeMillis() < queryDeadline) {
+            resolver.query(MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                arrayOf(MediaStore.Video.Media._ID),
+                "${MediaStore.Video.Media.DISPLAY_NAME} = ?", arrayOf("$exportName.mp4"), null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) outputUri = ContentUris.withAppendedId(
+                    MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                    cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)))
+            }
+            if (outputUri == null) SystemClock.sleep(300)
+        }
+        val savedUri = outputUri ?: throw AssertionError("Export succeeded but MP4 was not found in MediaStore")
+        val decoded = decodeExportedAudioMono(context, savedUri)
+        val sampleCount = decoded.chunks.sumOf { it.samples.size }
+        assertTrue("Decoded AAC track is too short: rate=${decoded.sampleRate} samples=$sampleCount",
+            sampleCount >= decoded.sampleRate * 7)
+
+        val musicEarly = toneMagnitude(decoded, 440.0, 400L, 900L)
+        val musicMiddle = toneMagnitude(decoded, 440.0, 4_000L, 4_500L)
+        val musicLate = toneMagnitude(decoded, 440.0, 6_500L, 7_000L)
+        val effectBefore = toneMagnitude(decoded, 880.0, 1_300L, 2_000L)
+        val effectDuring = toneMagnitude(decoded, 880.0, 2_800L, 3_400L)
+        val effectAfter = toneMagnitude(decoded, 880.0, 4_200L, 4_800L)
+        android.util.Log.i("AudioExportTest",
+            "stage=decoded rate=${decoded.sampleRate} music440=${musicEarly.toInt()},${musicMiddle.toInt()},${musicLate.toInt()} " +
+                "effect880=${effectBefore.toInt()},${effectDuring.toInt()},${effectAfter.toInt()}")
+
+        assertTrue("440 Hz music missing near start: $musicEarly", musicEarly in 2_000.0..6_500.0)
+        assertTrue("Background music did not loop into middle: $musicMiddle", musicMiddle in 2_000.0..6_500.0)
+        assertTrue("Background music did not loop into late video: $musicLate", musicLate in 2_000.0..6_500.0)
+        assertTrue("880 Hz effect appeared before 2.5 s: $effectBefore", effectBefore < 650.0)
+        assertTrue("Timed effect missing within 2.5–3.7 s: $effectDuring", effectDuring in 2_000.0..6_500.0)
+        assertTrue("Timed effect remained after 3.7 s: $effectAfter", effectAfter < 650.0)
+        assertTrue("Original video fixture was changed", fixture.isFile && fixture.length() > 0L)
+        android.util.Log.i("AudioExportTest",
+            "stage=verified musicLooped=true effectStartMs=2500 effectDurationMs=1200 musicVolume=35 effectVolume=60 sourceAudioRemoved=true")
+    }
+
     @Test
     fun filmstripLoadsFramesFromDistinctTimestamps() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -1981,6 +2099,151 @@ class EditorTimelineInteractionTest {
             "Too few loaded thumbnails are exposed in the visible filmstrip: ${loadedImages.size}",
             loadedImages.size >= 3
         )
+    }
+
+
+    private data class DecodedAudioChunk(val firstSampleIndex: Long, val samples: ShortArray)
+    private data class DecodedMonoAudio(val sampleRate: Int, val chunks: List<DecodedAudioChunk>)
+
+    private fun writeToneWav(
+        file: java.io.File, sampleRate: Int, durationMs: Int, frequencyHz: Double, amplitude: Int
+    ) {
+        val count = sampleRate * durationMs / 1_000
+        val dataBytes = count * 2
+        java.io.FileOutputStream(file).use { out ->
+            fun le(value: Int, bytes: Int) { repeat(bytes) { n -> out.write((value ushr (n * 8)) and 0xff) } }
+            out.write("RIFF".toByteArray(Charsets.US_ASCII)); le(36 + dataBytes, 4)
+            out.write("WAVE".toByteArray(Charsets.US_ASCII)); out.write("fmt ".toByteArray(Charsets.US_ASCII))
+            le(16, 4); le(1, 2); le(1, 2); le(sampleRate, 4); le(sampleRate * 2, 4); le(2, 2); le(16, 2)
+            out.write("data".toByteArray(Charsets.US_ASCII)); le(dataBytes, 4)
+            for (i in 0 until count) {
+                val value = (amplitude * kotlin.math.sin(2.0 * Math.PI * frequencyHz * i / sampleRate)).toInt()
+                le(value and 0xffff, 2)
+            }
+        }
+        assertTrue("Could not write deterministic audio fixture: ${file.name}", file.isFile && file.length() > 44L)
+    }
+
+    private fun decodeExportedAudioMono(context: android.content.Context, uri: Uri): DecodedMonoAudio {
+        val extractor = android.media.MediaExtractor()
+        var decoder: android.media.MediaCodec? = null
+        val chunks = mutableListOf<DecodedAudioChunk>()
+        try {
+            if (uri.scheme == "file") extractor.setDataSource(uri.path ?: throw AssertionError("File URI has no path"))
+            else extractor.setDataSource(context, uri, null)
+            var track = -1
+            var inputFormat: android.media.MediaFormat? = null
+            for (i in 0 until extractor.trackCount) {
+                val fmt = extractor.getTrackFormat(i)
+                if (fmt.getString(android.media.MediaFormat.KEY_MIME).orEmpty().startsWith("audio/")) {
+                    track = i; inputFormat = fmt; break
+                }
+            }
+            assertTrue("Exported MP4 has no audio track", track >= 0 && inputFormat != null)
+            val fmt = inputFormat!!
+            val mime = fmt.getString(android.media.MediaFormat.KEY_MIME)
+                ?: throw AssertionError("Audio track MIME missing")
+            extractor.selectTrack(track)
+            decoder = android.media.MediaCodec.createDecoderByType(mime)
+            decoder.configure(fmt, null, null, 0)
+            decoder.start()
+            var rate = fmt.getInteger(android.media.MediaFormat.KEY_SAMPLE_RATE)
+            var channels = fmt.getInteger(android.media.MediaFormat.KEY_CHANNEL_COUNT)
+            var encoding = android.media.AudioFormat.ENCODING_PCM_16BIT
+            var inputDone = false; var outputDone = false; var lastPts = 0L; var turns = 0
+            val info = android.media.MediaCodec.BufferInfo()
+            while (!outputDone && turns++ < 30_000) {
+                if (!inputDone) {
+                    val inputIndex = decoder.dequeueInputBuffer(10_000L)
+                    if (inputIndex >= 0) {
+                        val buf = decoder.getInputBuffer(inputIndex) ?: throw AssertionError("Null decoder input buffer")
+                        buf.clear()
+                        val size = extractor.readSampleData(buf, 0)
+                        if (size < 0) {
+                            decoder.queueInputBuffer(inputIndex, 0, 0, lastPts,
+                                android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                            inputDone = true
+                        } else {
+                            val pts = extractor.sampleTime.coerceAtLeast(0L)
+                            decoder.queueInputBuffer(inputIndex, 0, size, pts, 0)
+                            lastPts = pts; extractor.advance()
+                        }
+                    }
+                }
+                when (val outIndex = decoder.dequeueOutputBuffer(info, 10_000L)) {
+                    android.media.MediaCodec.INFO_TRY_AGAIN_LATER -> Unit
+                    android.media.MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                        val outFmt = decoder.outputFormat
+                        rate = outFmt.getInteger(android.media.MediaFormat.KEY_SAMPLE_RATE)
+                        channels = outFmt.getInteger(android.media.MediaFormat.KEY_CHANNEL_COUNT)
+                        if (outFmt.containsKey(android.media.MediaFormat.KEY_PCM_ENCODING))
+                            encoding = outFmt.getInteger(android.media.MediaFormat.KEY_PCM_ENCODING)
+                    }
+                    else -> if (outIndex >= 0) {
+                        if (info.size > 0) {
+                            val buf = decoder.getOutputBuffer(outIndex) ?: throw AssertionError("Null decoder output buffer")
+                            buf.order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                            buf.position(info.offset); buf.limit(info.offset + info.size)
+                            val bytes = when (encoding) {
+                                android.media.AudioFormat.ENCODING_PCM_FLOAT -> 4
+                                android.media.AudioFormat.ENCODING_PCM_8BIT -> 1
+                                else -> 2
+                            }
+                            val frameBytes = bytes * channels
+                            val frameCount = info.size / frameBytes
+                            val mono = ShortArray(frameCount)
+                            for (frame in 0 until frameCount) {
+                                var sum = 0.0
+                                for (channel in 0 until channels) {
+                                    val at = info.offset + frame * frameBytes + channel * bytes
+                                    val value = when (encoding) {
+                                        android.media.AudioFormat.ENCODING_PCM_FLOAT ->
+                                            (buf.getFloat(at).coerceIn(-1f, 1f) * 32767f).toInt()
+                                        android.media.AudioFormat.ENCODING_PCM_8BIT ->
+                                            ((buf.get(at).toInt() and 0xff) - 128) shl 8
+                                        else -> buf.getShort(at).toInt()
+                                    }
+                                    sum += value
+                                }
+                                mono[frame] = (sum / channels).toInt().coerceIn(-32768, 32767).toShort()
+                            }
+                            val first = info.presentationTimeUs.coerceAtLeast(0L) * rate / 1_000_000L
+                            chunks.add(DecodedAudioChunk(first, mono))
+                        }
+                        if ((info.flags and android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) outputDone = true
+                        decoder.releaseOutputBuffer(outIndex, false)
+                    }
+                }
+            }
+            assertTrue("Audio decoder timed out before EOS", outputDone)
+            assertTrue("Audio decoder produced no PCM", chunks.isNotEmpty())
+            return DecodedMonoAudio(rate, chunks)
+        } finally {
+            try { decoder?.stop() } catch (_: Exception) { }
+            decoder?.release()
+            extractor.release()
+        }
+    }
+
+    private fun toneMagnitude(audio: DecodedMonoAudio, frequencyHz: Double, startMs: Long, endMs: Long): Double {
+        val first = startMs * audio.sampleRate / 1_000L
+        val last = endMs * audio.sampleRate / 1_000L
+        var sinSum = 0.0; var cosSum = 0.0; var count = 0L
+        for (chunk in audio.chunks) {
+            val chunkEnd = chunk.firstSampleIndex + chunk.samples.size
+            val from = maxOf(first, chunk.firstSampleIndex)
+            val until = minOf(last, chunkEnd)
+            for (index in from until until) {
+                val sample = chunk.samples[(index - chunk.firstSampleIndex).toInt()].toDouble()
+                val phase = 2.0 * Math.PI * frequencyHz * index / audio.sampleRate
+                sinSum += sample * kotlin.math.sin(phase)
+                cosSum += sample * kotlin.math.cos(phase)
+                count++
+            }
+        }
+        assertTrue("Insufficient decoded samples in $startMs-$endMs ms for ${frequencyHz}Hz: $count",
+            count >= (last - first) * 3 / 4)
+        return 2.0 * kotlin.math.sqrt(sinSum * sinSum + cosSum * cosSum) / count.coerceAtLeast(1L)
     }
 
     private fun projectDurationMs(label: String): Long {

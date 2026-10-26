@@ -19,12 +19,13 @@ This is the concise handoff for ongoing CI debugging. Read it and the latest REA
 - Repo: `agabeyayd-lgtm/MathMotorVideo-Restore`; branch: `fix/editor-395-gate`.
 - Installed phone baseline: versionCode 394, build 61 (`app-v8.3-61`).
 - [#212 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40335645092): timed-text export fix passed unit/build/instrumentation. Do not rerun unchanged.
-- [#213 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40339578967), head SHA `278b5b03bb13f5ab71b218386ccdee9e4c6f068d`: unit tests, Debug APK build, fixtures and emulator preflight passed. 10/11 instrumentation tests passed. New `sourceAudioToggleAndEffectVolumeUseUndoRedoHistory` successfully exercised source-audio on/off history and effect-volume drag/Undo; failure occurred only at its final Redo assertion because the changed effect-volume label was searched immediately after switching tabs without scrolling it into view. The Undo assertion explicitly scrolled the panel and found 100%; no value check was logged after Redo.
-- Applied a focused test-only correction: scroll the shared audio panel to `Efekt sesi: $changedValue%` before checking Redo. This keeps the expected value intact and adds a specific visibility assertion. It is not yet verified until CI completes.
-- Do not change production Undo/Redo code unless the focused test demonstrates the changed value is actually wrong after proper navigation.
-- Remaining gates: exported audio behavior (source track mute/volume, music looping/volume, timed effect and A/V sync), split/reorder/trim-scroll conflicts, text preview after seek/zoom, physical-device review, and signed update/install.
+- [#214 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40357110853), head SHA `7f96ad989e975e02f9232373fbdaedc70bfa3754`: unit tests, Debug APK, offline fixtures, emulator setup, connected instrumentation and artifact upload all passed. The #213 effect-volume Redo visibility assertion was corrected by scrolling to the exact label before reading the unchanged expected value; no production history change was required.
+- `sourceAudioToggleAndEffectVolumeUseUndoRedoHistory` is verified for UI state/history. This does not validate exported MP4 audio.
+- Next unique gate: an end-to-end MP4 audio test creates deterministic 440 Hz music and an 880 Hz timed effect WAV, exports the video, decodes the saved AAC track, and measures tone presence at configured intervals and gains. Its first run is pending.
+- Do not repeat #210 text-strip drags or #212 timed-text export unchanged.
+- Remaining after this test: source-video audio mute/volume with a fixture that contains its own audio track, A/V sync, text preview after seek/zoom, split/reorder/trim-scroll conflicts, physical-device review, signed update/install.
 - Keep versionCode 395 blocked. Do not change version metadata, sign/publish an APK, or enable in-app updates without all required gates and explicit authorization.
 
 ## Next action
 
-Inspect the workflow triggered by the focused #213 test-navigation correction. Confirm the run's `head_sha` includes the correction and check the exact test report. Do not repeat #210 text-strip drags or #212 timed-text export unchanged. If the Redo value still fails after the scroll assertion passes, inspect the actual visible label and history status before changing production code.
+Run the newly added exported-MP4 audio test, inspect decoded PCM measurements, and distinguish an export/mix issue from a decoder or fixture issue. The #214 Undo/Redo UI-history gate is green. Do not repeat passed text-strip or timed-text tests unchanged; keep versionCode 395 blocked.
