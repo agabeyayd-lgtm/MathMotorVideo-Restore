@@ -863,6 +863,14 @@ class EditorTimelineInteractionTest {
         clipTab.click()
         requireObject(device, By.desc("Düzenleme yinele"), "Redo effect-volume gesture").click()
         audioTab.click()
+        // Switching away from the audio tab can leave the shared vertical panel at a
+        // previous scroll offset. Scroll to the changed label before asserting the value,
+        // exactly as the Undo branch above does, so an off-screen node is not mistaken
+        // for a failed Redo.
+        assertTrue(
+            "Could not reveal the changed effect-volume label after Redo",
+            panelScroll.scrollIntoView(UiSelector().text("Efekt sesi: $changedValue%"))
+        )
         assertTrue(
             "Redo did not restore the changed effect volume",
             device.wait(Until.hasObject(By.text("Efekt sesi: $changedValue%")), 4_000)
