@@ -202,3 +202,11 @@ Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228
 
 - [x] CI recovery hardening committed in [`7f2e1a0`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/7f2e1a086ff7ab2e1af6741351a67295e064c709): preserve the Android-owned launcher ANR dialog's “Close app” coordinates from the last valid hierarchy before tapping “Wait”, because later hierarchy dumps can fail while the launcher is hung.
 - [ ] One workflow run is triggered by this CI-script change. It must first clear the launcher preflight, then the text-end-handle instrumentation assertion can finally be evaluated.
+
+### 2026-10-26 — #206 shell syntax failure and targeted correction
+
+- [x] Run [#206 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40314729254): unit tests and debug APK build passed; emulator booted, installed the app, and brought `MainActivity` to the foreground. The smoke script then stopped at `.github/scripts/capture-emulator-screenshots.sh: line 199` with `syntax error near unexpected token '('` / exit code 2, before the interaction-test command was reached.
+- [x] Root cause confirmed in `recover_system_anr()`: the Python command substitution ended with an extra double quote after its closing `)`, leaving shell parsing broken. This was a CI shell-script syntax error, not an editor assertion failure.
+- [x] Removed only the stray quote in [fix commit](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/96e889be0cd923010b930530074225305ce695b0).
+- [ ] Verify the correction with the one newly triggered emulator workflow. Required first outcome: script parses, home preflight completes, and instrumentation actually starts. Then record the specific text-end-handle assertion result; do not mark the trim test complete solely because the script or APK builds.
+- [ ] After that focused interaction is verified, move to distinct checks: text preview/export parity, audio export, remaining timeline edge cases, physical-device review, and signed update/install. Keep version 395 blocked until every required release gate passes and release is explicitly authorized.
