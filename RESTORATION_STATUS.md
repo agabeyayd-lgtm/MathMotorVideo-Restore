@@ -20,7 +20,7 @@
 - [x] Added a stable `Zaman çizelgesi satırı: $tag` accessibility description in [`94b48c2`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/94b48c2488f401d90dc0419a538a87d2e07d8ef5), then changed the test to target `YAZI 1` in [`fb7b3b3`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/fb7b3b3030835cf80eac3978d9b58ad5e324f90f). Focused test commit [`79973ba`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/79973ba8bdb2e1b30703afdd1a955fe5044bba43) replaces scrolling to the absolute end with `scrollIntoView` for the end-handle selector within that lane.
 - [x] Run [#201 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40309940904): Android test compilation failed because `scrollIntoView` was passed a `UiSelector` instead of the required `BySelector`; no runtime trim-handle conclusion can be drawn from this run.
 - [x] Corrected the selector type in [`b247898`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/b2478982fcb4646a85ed9bf70abd8da32cbc3a7b).
-- [ ] Focused verification [run #202 — QUEUED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40311694275). Do not queue another run while this focused verification is active.
+- - [x] Run [#202 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40311694275): `UiScrollable.scrollIntoView` rejected the `BySelector` argument at test line 576. Emulator interaction did not run.
 
 ## Existing evidence — do not repeat without a relevant code change
 
@@ -30,3 +30,10 @@
 - [Run #193](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40234200553): source branch passed the expanded manual JSON save/reopen test and text/music-volume Undo/Redo interaction test. This does not substitute for verifying the integrated candidate in #195.
 
 Continue from the open items in README, starting with run #202's text-strip trim-handle verification, then preview/export parity. Gesture grouping, full audio export, timeline edge cases, physical-device review, and signed update/install remain unverified and must not be marked complete without evidence.
+
+
+## Latest handoff — #202 compile failure
+
+- Run [#202 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40311694275) at Android-test compilation: this `UiScrollable.scrollIntoView` overload accepts `UiSelector`/`UiObject`, not `BySelector`. The text trim interaction was not exercised.
+- Focused correction in [`b1ec215`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/b1ec215e8d4a66342367491026773fbc23849562) separates the `UiSelector` used to scroll into view from the `BySelector` used by `UiDevice.wait/findObject`.
+- A single verification is triggered by the correction; check its result before any further run. Preview/export parity, audio export, timeline edge cases, physical-device review, and signed update/install remain open. Version 395 remains blocked.
