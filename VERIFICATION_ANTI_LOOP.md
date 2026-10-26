@@ -27,9 +27,9 @@ This is the concise handoff for ongoing CI debugging. Read it and the latest REA
 - Remaining after this test: source-video audio mute/volume with a fixture that contains its own audio track, A/V sync, text preview after seek/zoom, split/reorder/trim-scroll conflicts, physical-device review, signed update/install.
 - Keep versionCode 395 blocked. Do not change version metadata, sign/publish an APK, or enable in-app updates without all required gates and explicit authorization.
 
-## Next action
+## Next action (superseded by live run #226 below)
 
-Run the new source-audio MP4 test, inspect the decoded 220 Hz magnitudes and compare the output/source ratio. Keep the #216 music-loop/timed-effect test green and do not repeat it unchanged; versionCode 395 remains blocked.
+Do not launch a duplicate source-audio run while #226 is in progress. Inspect its FFmpeg setup result first. If it passes, inspect decoded 220 Hz magnitudes and compare output/source ratios for 40% gain and mute; if it fails before fixture generation, repair only that CI preflight layer. Keep the #216 music-loop/timed-effect test green and do not repeat it unchanged; versionCode 395 remains blocked.
 
 
 ## #215 root-cause record
