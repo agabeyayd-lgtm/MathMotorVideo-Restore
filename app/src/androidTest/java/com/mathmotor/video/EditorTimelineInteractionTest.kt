@@ -2057,7 +2057,7 @@ class EditorTimelineInteractionTest {
         assertTrue("Source audio fixture has no measurable 220 Hz tone: $sourceBaseline", sourceBaseline > 5_000.0)
 
         fun exportAndDecode(keepSourceAudio: Boolean): DecodedMonoAudio {
-            val exportName = "MathMotor_source_audio_\${if (keepSourceAudio) "kept" else "muted"}_\${System.currentTimeMillis()}"
+            val exportName = "MathMotor_source_audio_${if (keepSourceAudio) "kept" else "muted"}_${System.currentTimeMillis()}"
             val draftId = java.util.UUID.randomUUID().toString()
             val clip = org.json.JSONObject()
                 .put("uri", Uri.fromFile(sourceFixture).toString())
@@ -2125,7 +2125,7 @@ class EditorTimelineInteractionTest {
             while (outputUri == null && SystemClock.uptimeMillis() < queryDeadline) {
                 resolver.query(MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
                     arrayOf(MediaStore.Video.Media._ID),
-                    "\${MediaStore.Video.Media.DISPLAY_NAME} = ?",
+                    "${MediaStore.Video.Media.DISPLAY_NAME} = ?",
                     arrayOf("$exportName.mp4"), null
                 )?.use { cursor ->
                     if (cursor.moveToFirst()) outputUri = ContentUris.withAppendedId(
