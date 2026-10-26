@@ -166,8 +166,10 @@ recover_system_anr() {
       return 1
     fi
 
-    local wait_coords
-    wait_coords="$(python3 - "$xml" <<'PY'
+    # Preserve both button coordinates from the last valid hierarchy before
+    # tapping Wait: a wedged launcher can make the next uiautomator dump fail.
+    local wait_coords close_coords
+    read -r wait_coords close_coords < <(python3 - "$xml" <<'PY'
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -177,13 +179,16 @@ try:
 except (OSError, ET.ParseError):
     raise SystemExit(0)
 
+coords = {}
 for node in root.iter("node"):
-    if node.attrib.get("text", "").strip().lower() == "wait":
-        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
-        if match:
-            x1, y1, x2, y2 = map(int, match.groups())
-            print((x1 + x2) // 2, (y1 + y2) // 2)
-            break
+    label = node.attrib.get("text", "").strip().lower()
+    if label not in {"wait", "close app", "force close"}:
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        x1, y1, x2, y2 = map(int, match.groups())
+        coords["wait" if label == "wait" else "close"] = "%d %d" % ((x1+x2)//2, (y1+y2)//2)
+print(coords.get("wait", ""), coords.get("close", ""))
 PY
 )"
     if [ -z "$wait_coords" ]; then
@@ -203,26 +208,6 @@ PY
     # Android-owned launcher process to clear its modal dialog. The MathMotor
     # activity has already been launched and is the intended foreground screen.
     # Never use this fallback for an ANR whose title belongs to MathMotor.
-    local close_coords
-    close_coords="$(python3 - "$xml" <<'PY'
-import re
-import sys
-import xml.etree.ElementTree as ET
-
-try:
-    root = ET.parse(sys.argv[1]).getroot()
-except (OSError, ET.ParseError):
-    raise SystemExit(0)
-
-for node in root.iter("node"):
-    if node.attrib.get("text", "").strip().lower() in {"close app", "force close"}:
-        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
-        if match:
-            x1, y1, x2, y2 = map(int, match.groups())
-            print((x1 + x2) // 2, (y1 + y2) // 2)
-            break
-PY
-)"
     if [ -n "$close_coords" ]; then
       echo "System launcher ANR persisted after Wait; dismissing only the Android-owned launcher at $close_coords"
       timeout -k 2s 8s adb -s emulator-5554 shell input tap $close_coords || true
