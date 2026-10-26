@@ -1785,6 +1785,10 @@ class VideoEditorActivity : Activity() {
             val scroll = android.widget.HorizontalScrollView(this).apply {
                 isHorizontalScrollBarEnabled = false
                 overScrollMode = View.OVER_SCROLL_NEVER
+                // Give each synchronized timeline lane a stable accessibility target.
+                // The editor also contains unrelated HorizontalScrollViews (e.g. text-layer
+                // and colour lists), so consumers must not select a lane by class alone.
+                contentDescription = "Zaman çizelgesi satırı: $tag"
             }
             timelineScrollViews.add(scroll)
             scroll.setOnScrollChangeListener { view, scrollX, _, _, _ ->
