@@ -2,17 +2,16 @@
 
 A local-first Android video editor with a CapCut-inspired workflow. Editing and export run on-device. Source videos must remain unchanged; finished edits are exported as new MP4 files.
 
-## Current handoff — 2026-10-25
+## Current handoff — 2026-10-26
 
-**Continue from this checkpoint. Do not restart completed work or repeat passing tests unless related source changes or a regression requires it.**
+**Continue from this checkpoint. Do not restart completed work or repeat passing tests unless a related source change requires it. Keep the current release gate and record the exact failing assertion before changing code.**
 
-- Repository: [MathMotorVideo-Restore](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore)
-- Active branch: `fix/editor-395-gate`
-- Draft PR: [#8 — repair editor interactions for version 395](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/pull/8)
+- Active branch: `fix/editor-395-gate`; draft repair PR: [#8](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/pull/8).
 - User-installed baseline: **versionCode 394 / build 61 (`app-v8.3-61`)**.
-- Latest green baseline: [CI run #161 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40212230107), commit [`3d910eb`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/3d910eb5466ae05aca2e4fa5f17088dfa9602577). Unit tests, debug APK build, screenshot capture and **all 7 emulator interaction tests passed**.
-- Current next task: broaden manual JSON project persistence coverage. The playhead restore race is fixed and verified in run #179. Global Undo/Redo crash fix is verified in run #185 on `fix/global-editor-undo`; the remaining Undo/Redo interaction coverage must still be checked before merge. [Run #177](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40224656700) failed the expanded JSON round-trip test: the saved 2.00 s playhead displayed as 0 ms after reopening. Root cause found: the periodic player sync read ExoPlayer's default 0 position while the restored clip was still preparing, overwriting the saved playhead. Both timeline sync paths now wait for `Player.STATE_READY` before copying player position; [run #179 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40225562573) passed the emulator workflow. The broader JSON persistence gate remains open for additional saved-state fields. Do not release 395 until all gates pass.
-- **Release 395 is still blocked.** A green debug CI run is not a signed release. Do not change version metadata, publish/sign an APK, or enable the in-app update until the remaining gates below pass and the user explicitly authorizes release.
+- Source-branch verification: [CI run #193 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40234200553), source commit [`941d5fd`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/941d5fd356c54c3278060a91a23a5e42d81340f4). Unit tests, debug APK, emulator launch, screenshots and editor interaction tests passed, including manual JSON save/reopen after scrolling the audio controls into view.
+- Integration combines the unified editor snapshot history from `fix/global-editor-undo` with the release-gate branch's existing playhead-restore guard and test coverage. This combined commit **still requires a fresh CI run on `fix/editor-395-gate`**; run #193 alone does not certify the combined candidate.
+- Undo/Redo source test `unifiedUndoRedoRestoresTextAndAudioEdits` was green in source-branch validation. Remaining explicit coverage: trim/split/reorder, sound-effect mutations, source-audio toggle, preview/export parity and history state across save/reopen.
+- **Release 395 remains blocked.** Do not change version metadata, sign/publish APK, or enable in-app updates before the integrated candidate passes the required gates and release is explicitly authorized.
 
 ## Verified — do not repeat without a relevant code change
 
@@ -25,7 +24,7 @@ A local-first Android video editor with a CapCut-inspired workflow. Editing and 
 - [x] Home/editor/text-panel screenshot smoke test passed. This is emulator evidence, not physical-phone usability sign-off.
 - [x] Removed the old home-screen items for scenario/world/10-second video creation; home shows gallery import, empty project, drafts, and recent exports.
 - [x] **Local saved-draft round trip passes in run #161:** restores the trimmed clip duration (**7.02 s**), text overlay and editable content (`ROUND TRIP TEXT`), and text size (**32 sp**). The test now checks the editable field before scrolling down to the size controls.
-- [x] Manual JSON Save As → close editor → Open Document round trip passed in [run #172](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40221395375): verifies trimmed duration, text content/size, music/effect names, and three audio-level values. Broader persistence coverage (clip order, playhead/zoom, text position/colour/style) remains open below.
+- [x] Manual JSON Save As → close editor → Open Document round trip passed in [run #193](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40234200553) on the source branch; expanded assertions cover clip order/trim, playhead/zoom/scroll, text style and audio/effect state. The integrated candidate must re-run this gate before release.
 - [x] Distinct filmstrip frames passed in [run #172](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40221395375) after the decoder switched from `OPTION_CLOSEST_SYNC` to `OPTION_CLOSEST`. The full run passed unit tests, debug build, **8/8 Android instrumentation tests**, screenshot capture and artifact upload.
 
 Useful latest evidence:
@@ -36,15 +35,17 @@ Useful latest evidence:
 
 Work top to bottom. Mark an item complete only when there is test or inspection evidence. Do not go back to the completed list above unless a related change breaks it.
 
-### 1. Broader manual-project persistence (basic Save As → reopen is green)
+### 1. Broader manual-project persistence
 
-Basic end-to-end Save As → close editor → Open Document passed in [run #172 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40221395375). [Run #177](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40224656700) exposed a real restore race: ExoPlayer's pre-ready 0 ms position overwrote the saved 2.00 s playhead. Both periodic sync paths now ignore player position until `STATE_READY`; [run #179 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40225562573) passed the emulator workflow.
-- [ ] **Next task:** extend the manual JSON Save As → close → Open Document test to verify clip order and trim bounds, playhead/zoom, text timing/position/style, music/effect URI and volume levels. The playhead-ready race fix is green in run #179; full JSON gate remains open.
+- [x] Source-branch run [#193 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40234200553) passed the expanded manual JSON save → close → reopen test, including clip order/trim, playhead/zoom/scroll, text styling and audio/effect restoration checks.
+- [ ] Re-run this exact gate on the integrated `fix/editor-395-gate` candidate before considering the release-candidate persistence gate closed.
 
 ### 2. Unified editor Undo / Redo
 
-- [x] Undo/Redo controls no longer crash editor startup: the duplicate-parent issue was fixed on `fix/global-editor-undo`; [run #185 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228445472) passed the debug build and all 9 connected Android instrumentation tests. This verifies the current emulator suite and crash fix, not every Undo/Redo state transition. Do not merge until the remaining behavior coverage below is green.
-- [ ] Verify Undo/Redo for text content/appearance/timing/position, music/effect and source-audio levels, and clip edits; confirm preview and timeline both restore together.
+- [x] Shared history implementation covers editor snapshots for clips, text, music/effect references and levels, effect timing, source-audio settings and timeline state.
+- [x] `unifiedUndoRedoRestoresTextAndAudioEdits` passed on the source branch in run #192; run #193 then passed the complete source-branch workflow.
+- [ ] Re-verify after integration, then add explicit coverage for trim/split/reorder, sound-effect add/remove/start/volume, source-audio toggle, preview/export parity and undo-history state after save/reopen.
+- [ ] Verify Undo/Redo button availability and one-history-entry-per-gesture behavior.
 
 ### 3. Text timeline and export parity
 
@@ -108,3 +109,11 @@ Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228
 - [x] Root cause of the **#191** failure was test navigation: the test scrolled the vertical text panel to `Üst`, then queried `Camgöbeği` farther down without scrolling that option into view. The assertion is retained; the test now explicitly scrolls to the colour option before checking its selected state. Test-only correction: [`6100ddb`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/6100ddb26ac2b89b5bc4cd0061ac583870905d56).
 - [ ] **Current verification:** [run #192](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40233158607) must finish successfully before closing manual JSON persistence. Unit tests and debug APK build already passed in #192; the emulator interaction suite is still running.
 - [ ] Keep version 395 blocked until the complete emulator suite and remaining release gates pass. Do not merge, sign, publish, or enable in-app updates yet.
+
+
+### 2026-10-26 — Integrated unified history and persistence fixes
+
+- [x] Combined the shared `EditorEditSnapshot` Undo/Redo implementation with the release-gate branch's existing playhead-restoration guard instead of replacing either file wholesale.
+- [x] Kept the release-gate branch's existing manual-save test changes and added the source-branch unified Undo/Redo interaction test; the manual JSON fixture now uses the source branch's tested two-clip, 7.70 s playhead/scroll setup.
+- [ ] Fresh unit-test, debug-build and emulator interaction run on this exact integrated commit is required.
+- [ ] Keep version 395 blocked. A successful earlier branch run does not certify this integrated tree.

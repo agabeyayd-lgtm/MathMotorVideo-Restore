@@ -530,6 +530,127 @@ class EditorTimelineInteractionTest {
     }
 
     @Test
+    fun unifiedUndoRedoRestoresTextAndAudioEdits() {
+        val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+        val packageName = "com.mathmotor.video.next"
+        val fixtureUri = "file:///data/user/0/$packageName/files/editor-test-video.mp4"
+
+        device.executeShellCommand("logcat -c")
+        device.executeShellCommand(
+            "am start -n $packageName/com.mathmotor.video.EditorTestEntryActivity " +
+                "--es video_uri $fixtureUri --es draft_id 66666666-6666-4666-8666-666666666666"
+        )
+        assertTrue(
+            "Editor did not show the video lane for unified undo test",
+            device.wait(Until.hasObject(By.text("VIDEO")), 20_000)
+        )
+        assertTrue("Unified undo test clip was not loaded", awaitClipAdded(device))
+        device.waitForIdle()
+
+        // Create a text layer and edit its value. Undo should first restore the empty
+        // layer, then remove that layer; Redo must reapply both changes in order.
+        val textTab = requireObject(device, By.desc("Metin araçları sekmesi"), "Metin tab")
+        textTab.click()
+        val panelScroll = UiScrollable(UiSelector().className("android.widget.ScrollView")).setAsVerticalList()
+        assertTrue(
+            "Could not reveal new-text control",
+            panelScroll.scrollIntoView(UiSelector().description("Yeni metin katmanı ekle"))
+        )
+        requireObject(device, By.desc("Yeni metin katmanı ekle"), "new text layer").click()
+        assertTrue(
+            "Text input did not appear",
+            device.wait(Until.hasObject(By.desc("Metin katmanı metin girişi")), 8_000)
+        )
+        requireObject(device, By.desc("Metin katmanı metin girişi"), "text input").setText("UNDO REDO TEXT")
+        device.pressBack()
+        device.waitForIdle()
+
+        val clipTab = requireObject(device, By.desc("Klip araçları sekmesi"), "Klip tab")
+        clipTab.click()
+        device.waitForIdle()
+        assertTrue(
+            "Global Undo button is not visible outside the tool panel",
+            device.wait(Until.hasObject(By.desc("Düzenleme geri al")), 4_000)
+        )
+        device.waitForIdle()
+        val undo = requireObject(device, By.desc("Düzenleme geri al"), "global Undo button")
+        val redo = requireObject(device, By.desc("Düzenleme yinele"), "global Redo button")
+        assertTrue("Global Undo button has no visible hit target: ${undo.visibleBounds}", undo.visibleBounds.height() > 0)
+        assertTrue("Global Redo button has no visible hit target: ${redo.visibleBounds}", redo.visibleBounds.height() > 0)
+
+        undo.click()
+        device.waitForIdle()
+        assertTrue(
+            "Undo did not restore the blank text layer",
+            device.wait(Until.hasObject(By.text("YAZI 1")), 4_000)
+        )
+        assertTrue(
+            "Undo of text entry left the typed overlay visible",
+            !device.hasObject(By.text("UNDO REDO TEXT"))
+        )
+
+        undo.click()
+        device.waitForIdle()
+        assertTrue(
+            "Undo did not remove the newly added text layer",
+            device.wait(Until.hasObject(By.text("+ Metin ekle")), 4_000)
+        )
+
+        redo.click()
+        device.waitForIdle()
+        assertTrue("Redo did not restore the text layer", device.wait(Until.hasObject(By.text("YAZI 1")), 4_000))
+        redo.click()
+        device.waitForIdle()
+        assertTrue(
+            "Redo did not restore edited text to the preview",
+            device.wait(Until.hasObject(By.text("UNDO REDO TEXT")), 4_000)
+        )
+
+        // Exercise the same history with a real SeekBar touch, not a synthetic
+        // direct state assignment, so start/stop tracking callbacks are included.
+        val audioTab = requireObject(device, By.desc("Ses araçları sekmesi"), "Ses tab")
+        audioTab.click()
+        assertTrue("Audio panel did not appear", device.wait(Until.hasObject(By.text("SES KATMANLARI")), 4_000))
+        assertTrue(
+            "Could not reveal music volume slider",
+            panelScroll.scrollIntoView(UiSelector().description("Müzik ses düzeyi"))
+        )
+        device.waitForIdle()
+        val musicSeek = requireObject(device, By.desc("Müzik ses düzeyi"), "music volume seek bar")
+        val bounds = musicSeek.visibleBounds
+        assertTrue("Music volume slider is not visible: $bounds", bounds.width() > 100 && bounds.height() > 0)
+        val currentX = bounds.left + (bounds.width() * 0.45f).toInt()
+        val targetX = bounds.left + (bounds.width() * 0.25f).toInt()
+        device.swipe(currentX, bounds.centerY(), targetX, bounds.centerY(), 25)
+        device.waitForIdle()
+        val changedLabel = requireObject(device, By.textContains("Müzik sesi:"), "changed music volume label").text
+        val changedValue = Regex("(\\d+)").find(changedLabel)?.groupValues?.get(1)?.toInt()
+            ?: throw AssertionError("Could not read adjusted music volume: $changedLabel")
+        assertTrue("Touch did not change music volume: $changedLabel", changedValue != 45)
+
+        clipTab.click()
+        requireObject(device, By.desc("Düzenleme geri al"), "Undo audio volume").click()
+        audioTab.click()
+        assertTrue(
+            "Could not reveal restored music volume label after Undo",
+            panelScroll.scrollIntoView(UiSelector().text("Müzik sesi: 45%"))
+        )
+        device.waitForIdle()
+        val restoredLabel = requireObject(device, By.text("Müzik sesi: 45%"), "restored music volume label")
+        assertTrue("Undo did not restore music volume 45%", restoredLabel.text == "Müzik sesi: 45%")
+
+        requireObject(device, By.desc("Düzenleme yinele"), "Redo audio volume").click()
+        assertTrue(
+            "Redo did not restore the adjusted music volume",
+            device.wait(Until.hasObject(By.text("Müzik sesi: $changedValue%")), 4_000)
+        )
+        android.util.Log.i(
+            "UnifiedUndoRedoTest",
+            "stage=verified textUndoRedo=true musicVolume=45->$changedValue->45->$changedValue"
+        )
+    }
+
+    @Test
     fun savedDraftReopensTextLayerAndClipState() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
@@ -658,44 +779,52 @@ class EditorTimelineInteractionTest {
         val device = UiDevice.getInstance(instrumentation)
         val packageName = context.packageName
         val fixture = java.io.File(context.filesDir, "editor-test-video.mp4")
+        val secondFixture = java.io.File(context.filesDir, "editor-test-video-second.mp4")
         assertTrue("Manual JSON round-trip fixture is missing", fixture.isFile && fixture.length() > 0L)
+        assertTrue("Second manual JSON round-trip fixture is missing", secondFixture.isFile && secondFixture.length() > 0L)
 
         val fileName = "MM_JSON_RT_${System.currentTimeMillis()}.json"
         val draftId = java.util.UUID.randomUUID().toString()
         val fixtureUri = Uri.fromFile(fixture).toString()
-        val clip = org.json.JSONObject()
+        val secondFixtureUri = Uri.fromFile(secondFixture).toString()
+        val firstClip = org.json.JSONObject()
             .put("uri", fixtureUri)
-            .put("title", fixture.name)
+            .put("title", "FIRST_ORDERED_CLIP")
             .put("durationMs", 8020L)
             .put("startMs", 500L)
             .put("endMs", 7520L)
+        val secondClip = org.json.JSONObject()
+            .put("uri", secondFixtureUri)
+            .put("title", "SECOND_ORDERED_CLIP")
+            .put("durationMs", 3000L)
+            .put("startMs", 200L)
+            .put("endMs", 2700L)
         val textLayer = org.json.JSONObject()
             .put("id", 932L)
             .put("text", "MANUAL JSON TEXT")
-            .put("startMs", 0L)
-            .put("endMs", 6500L)
+            .put("startMs", 7000L)
+            .put("endMs", 9000L)
             .put("timingCustomized", true)
-            .put("position", "BOTTOM")
+            .put("position", "TOP")
             .put("sizeSp", 32)
-            .put("xFraction", 0.5)
-            .put("yFraction", 0.82)
-            .put("colorPreset", "YELLOW")
-            .put("isBold", true)
+            .put("xFraction", 0.23)
+            .put("yFraction", 0.16)
+            .put("colorPreset", "CYAN")
+            .put("isBold", false)
         val project = org.json.JSONObject()
             .put("format", "MathMotorVideoProject")
             .put("version", 1)
-            .put("clips", org.json.JSONArray().put(clip))
-            .put("selectedClipIndex", 0)
-            .put("timelinePlayheadMs", 2000L)
+            .put("clips", org.json.JSONArray().put(firstClip).put(secondClip))
+            .put("selectedClipIndex", 1)
+            .put("timelinePlayheadMs", 7700L)
             .put("timelineZoom", 2.0)
-            // Keep the saved offset consistent with the fixed playhead near the start;
-            // a mid-track scroll offset could override the restored playhead on reopen.
-            .put("timelineHorizontalScrollMs", 0L)
+            // For the fixed-center playhead, saved horizontal scroll and playhead describe the same project time.
+            .put("timelineHorizontalScrollMs", 7700L)
             .put("musicUri", fixtureUri)
             .put("musicTitle", "ROUND_TRIP_MUSIC")
-            .put("soundUri", fixtureUri)
+            .put("soundUri", secondFixtureUri)
             .put("soundTitle", "ROUND_TRIP_EFFECT")
-            .put("soundDurationMs", 8020L)
+            .put("soundDurationMs", 3000L)
             .put("soundStartMs", 750L)
             .put("textLayers", org.json.JSONArray().put(textLayer))
             .put("selectedTextLayerId", 932L)
@@ -725,8 +854,8 @@ class EditorTimelineInteractionTest {
             device.wait(Until.hasObject(By.textContains("Taslak açıldı")), 20_000)
         )
         assertTrue(
-            "Seeded clip trim duration was not present before Save As",
-            device.wait(Until.hasObject(By.textContains("00:07.02")), 8_000)
+            "Seeded combined trimmed duration was not present before Save As",
+            device.wait(Until.hasObject(By.textContains("00:09.52")), 8_000)
         )
 
         val exportTab = device.findObject(By.text("Dışa aktar ›"))
@@ -814,6 +943,7 @@ class EditorTimelineInteractionTest {
             "Could not scroll to the Open Project action in the fresh editor",
             freshPanelScroller.scrollIntoView(UiSelector().text("Kayıtlı projeyi aç"))
         )
+        device.executeShellCommand("logcat -c")
         requireObject(device, By.text("Kayıtlı projeyi aç"), "open saved JSON button").click()
 
         // DocumentsUI can report the file from the background list while its navigation
@@ -992,8 +1122,49 @@ class EditorTimelineInteractionTest {
             kotlin.math.abs(restoredPlayheadMs - 2_000L) <= 120L
         )
         assertTrue(
-            "Manual JSON did not restore the trimmed clip duration",
-            device.wait(Until.hasObject(By.textContains("00:07.02")), 8_000)
+            "Manual JSON did not restore the combined trimmed duration for both clips",
+            device.wait(Until.hasObject(By.textContains("00:09.52")), 8_000)
+        )
+        val restoredPlayheadMs = projectPositionMs(requireProjectTime(device))
+        assertTrue(
+            "Manual JSON did not restore the 7.70-second playhead: $restoredPlayheadMs",
+            abs(restoredPlayheadMs - 7700L) <= 250L
+        )
+        val restoredZoomDescription = requireObject(
+            device,
+            By.descContains("Zaman çizelgesi yakınlaştırma"),
+            "restored timeline zoom indicator"
+        ).contentDescription.toString()
+        assertTrue(
+            "Manual JSON did not restore 200% timeline zoom: $restoredZoomDescription",
+            zoomPercent(restoredZoomDescription) == 200
+        )
+        val restoreLogOutput = device.executeShellCommand("logcat -d -s ProjectPersistenceTest:I")
+        val restoreLog = restoreLogOutput.lineSequence()
+            .lastOrNull { it.contains("PROJECT_JSON_RESTORED") }
+            ?: throw AssertionError("Manual JSON open did not emit a project restoration marker: $restoreLogOutput")
+        assertTrue(
+            "Manual JSON did not preserve clip order and the two trim ranges: $restoreLog",
+            restoreLog.contains("clips=FIRST_ORDERED_CLIP:500-7520,SECOND_ORDERED_CLIP:200-2700")
+        )
+        assertTrue(
+            "Manual JSON did not preserve the playhead and zoom: $restoreLog",
+            restoreLog.contains("playheadMs=7700 zoomPercent=200")
+        )
+        val restoredScrollMatch = Regex("scrollMs=(\\d+)").find(restoreLog)
+            ?: throw AssertionError("Manual JSON restore did not report the saved timeline scroll: $restoreLog")
+        val restoredScrollMs = restoredScrollMatch.groupValues[1].toLong()
+        assertTrue(
+            "Manual JSON did not preserve the 7.7-second playhead-aligned timeline scroll: $restoredScrollMs ms; $restoreLog",
+            restoredScrollMs in 7_000L..8_100L
+        )
+        assertTrue(
+            "Manual JSON did not preserve text timing, position, size, colour, bold state, and placement: $restoreLog",
+            restoreLog.contains("textLayers=7000-9000:TOP:32:CYAN:false:0.23:0.16")
+        )
+        assertTrue(
+            "Manual JSON did not restore the distinct music/effect source URIs and effect start: $restoreLog",
+            restoreLog.contains("soundStartMs=750 musicFixtureMatches=true soundFixtureMatches=true")
         )
         assertTrue(
             "Manual JSON did not restore the preview text",
@@ -1014,6 +1185,38 @@ class EditorTimelineInteractionTest {
         )
         val textPanelScroller = UiScrollable(UiSelector().className("android.widget.ScrollView"))
             .setAsVerticalList()
+        assertTrue(
+            "Manual JSON did not restore the text start time",
+            textPanelScroller.scrollIntoView(UiSelector().text("Yazı başlangıcı: 00:07.00"))
+        )
+        assertTrue(
+            "Manual JSON did not restore the text end time",
+            device.wait(Until.hasObject(By.text("Yazı bitişi: 00:09.00")), 5_000)
+        )
+        assertTrue(
+            "Could not scroll to the saved top-position control",
+            textPanelScroller.scrollIntoView(UiSelector().text("Üst"))
+        )
+        assertTrue(
+            "Manual JSON did not restore the text layer’s top position",
+            requireObject(device, By.text("Üst"), "top text-position radio").isChecked
+        )
+        assertTrue(
+            "Could not scroll to the restored cyan text-colour control",
+            textPanelScroller.scrollIntoView(UiSelector().text("Camgöbeği"))
+        )
+        assertTrue(
+            "Manual JSON did not restore the cyan text colour",
+            requireObject(device, By.text("Camgöbeği"), "cyan text-colour radio").isChecked
+        )
+        assertTrue(
+            "Could not scroll to the bold-text control",
+            textPanelScroller.scrollIntoView(UiSelector().text("Kalın yazı"))
+        )
+        assertTrue(
+            "Manual JSON did not restore the text layer’s non-bold style",
+            !requireObject(device, By.text("Kalın yazı"), "bold text checkbox").isChecked
+        )
         assertTrue(
             "Could not scroll to text size after manual JSON restore",
             textPanelScroller.scrollIntoView(UiSelector().textContains("Yazı boyutu:"))
@@ -1052,16 +1255,27 @@ class EditorTimelineInteractionTest {
         val restoredAudioTab = device.findObject(By.clazz("android.widget.Button").textContains("Ses"))
             ?: throw AssertionError("Could not inspect restored manual JSON audio settings")
         restoredAudioTab.click()
+        val audioPanelScroller = UiScrollable(UiSelector().className("android.widget.ScrollView"))
+            .setAsVerticalList()
+        // The two labels sit at different vertical positions in the audio panel. Querying
+        // a ScrollView child before scrolling can miss it when the previous tab left the
+        // shared editor panel at a nonzero scroll offset.
+        assertTrue(
+            "Could not scroll to the restored music reference",
+            audioPanelScroller.scrollIntoView(UiSelector().textContains("ROUND_TRIP_MUSIC"))
+        )
         assertTrue(
             "Manual JSON did not restore the music reference",
             device.wait(Until.hasObject(By.textContains("ROUND_TRIP_MUSIC")), 8_000)
         )
         assertTrue(
+            "Could not scroll to the restored sound-effect reference",
+            audioPanelScroller.scrollIntoView(UiSelector().textContains("ROUND_TRIP_EFFECT"))
+        )
+        assertTrue(
             "Manual JSON did not restore the sound-effect reference",
             device.wait(Until.hasObject(By.textContains("ROUND_TRIP_EFFECT")), 8_000)
         )
-        val audioPanelScroller = UiScrollable(UiSelector().className("android.widget.ScrollView"))
-            .setAsVerticalList()
         assertTrue(
             "Manual JSON did not restore music volume 37%",
             audioPanelScroller.scrollIntoView(UiSelector().text("Müzik sesi: 37%"))
@@ -1076,7 +1290,9 @@ class EditorTimelineInteractionTest {
         )
         android.util.Log.i(
             "ManualJsonRoundTripTest",
-            "stage=verified filename=$fileName trimMs=7020 text=MANUAL_JSON_TEXT sizeSp=32 " +
+            "stage=verified filename=$fileName clips=FIRST_ORDERED_CLIP:7020,SECOND_ORDERED_CLIP:2500 " +
+                "playheadMs=$restoredPlayheadMs zoom=200 scrollMs=$restoredScrollMs " +
+                "text=MANUAL_JSON_TEXT interval=7000-9000 position=TOP sizeSp=32 color=CYAN bold=false " +
                 "music=ROUND_TRIP_MUSIC/37 effect=ROUND_TRIP_EFFECT/66 sourceAudio=72"
         )
     }
