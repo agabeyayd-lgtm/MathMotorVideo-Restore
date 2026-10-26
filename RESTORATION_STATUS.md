@@ -15,9 +15,9 @@
 - [#204–#205]: intermediate launcher-ANR recovery checks were superseded by later fixes; they are not evidence that the text-strip end handle passed.
 - [#206 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40314729254): shell syntax error in emulator recovery script before instrumentation. Fixed in `96e889b`.
 - [#207 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40318772112): unit tests/build/preflight passed; instrumentation ran 9 tests, 8 passed and 1 failed. The failure was at test navigation (`UiScrollable.scrollIntoView` could not expose the clipped text end handle), before the end-handle drag assertion. This does **not** prove the end-handle drag itself fails.
-- Applied a focused test correction: scroll only the selected text lane to its right edge, then locate the end handle directly. The next workflow must verify the real handle drag and label change. Do not queue a duplicate workflow.
-- Focused verification [#208 — IN PROGRESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40322912271), head `f5227ffb38c41d3935b65f6278842f24fa354078`: at the last check Gradle setup was underway and instrumentation had not started. Inspect this run before retrying.
-- The text end-handle drag remains unverified until its assertion executes and passes. VersionCode 395 remains blocked; no release actions taken.
+- Focused text-strip end-handle verification ultimately passed in [#210 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40328122889): 9/9 instrumentation tests passed. The log proves the start handle changed `00:01.30 → 00:03.35` and the end handle changed `00:06.50 → 00:04.46`.
+- Runs #208 and #209 failed only in test navigation/label visibility before the end-handle drag. Those are superseded by the successful #210 evidence below.
+- Text-strip start/end dragging is now verified by #210. The next gate is timed/styled text export parity: inspect output frames before, during and after the configured layer interval. Preview/export parity, full audio export, gesture edge cases, physical-device review and signed update/install remain open. VersionCode 395 remains blocked; no release actions taken.
 
 ## Previously proven (do not repeat without relevant changes)
 
@@ -29,8 +29,7 @@
 
 ## Remaining gates
 
-1. Inspect the single workflow triggered by the focused #207 test-navigation correction; confirm the end-handle drag assertion actually executes and passes.
-2. Verify text preview matches exported MP4.
+1. Verify timed/styled text preview matches exported MP4 at before/during/after interval timestamps (next active gate).
 3. Verify music/effect/source audio export and remaining timeline edge cases.
 4. Physical-device screen/keyboard/touch review.
 5. Signed update and in-app installation only after all preceding gates and explicit release authorization.
