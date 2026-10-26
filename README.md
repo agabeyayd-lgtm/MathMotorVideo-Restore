@@ -39,21 +39,22 @@ Work top to bottom. Mark an item complete only when there is test or inspection 
 ### 1. Broader manual-project persistence
 
 - [x] Source-branch run [#193 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40234200553) passed the expanded manual JSON save → close → reopen test, including clip order/trim, playhead/zoom/scroll, text styling and audio/effect restoration checks.
-- [ ] Re-run this exact gate on the integrated `fix/editor-395-gate` candidate before considering the release-candidate persistence gate closed.
+- [x] Integrated candidate gate passed in [run #196 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40300395719): unit tests, debug APK build, emulator launch, screenshots and interaction tests all succeeded on commit `fc76fb81c199f1df074819c54cd19ae70a9ea462`.
 
 ### 2. Unified editor Undo / Redo
 
 - [x] Shared history implementation covers editor snapshots for clips, text, music/effect references and levels, effect timing, source-audio settings and timeline state.
 - [x] `unifiedUndoRedoRestoresTextAndAudioEdits` passed on the source branch in run #192; run #193 then passed the complete source-branch workflow.
-- [ ] Re-verify after integration, then add explicit coverage for trim/split/reorder, sound-effect add/remove/start/volume, source-audio toggle, preview/export parity and undo-history state after save/reopen.
-- [x] Global Undo/Redo controls remain visible outside the tool panel and have visible hit targets; this assertion passed in `unifiedUndoRedoRestoresTextAndAudioEdits` in source-branch [run #193](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40234200553). The integrated candidate recheck is tracked in the active #195 workflow.
+- [x] Integrated editor gate passed in [run #196 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40300395719), including the existing unified Undo/Redo interaction and manual JSON save/reopen assertions.
+- [ ] Add distinct coverage for trim/split/reorder, sound-effect add/remove/start/volume, source-audio toggle, preview/export parity and undo-history state after save/reopen.
+- [x] Global Undo/Redo controls remain visible outside the tool panel and have visible hit targets; this assertion passed in `unifiedUndoRedoRestoresTextAndAudioEdits` in source-branch [run #193](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40234200553). The integrated candidate recheck is verified in integrated-candidate [run #196](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40300395719).
 - [ ] Verify one-history-entry-per-gesture/grouping for different edit types (especially repeated slider changes); the current text-step and music-volume Undo/Redo test does not cover all gesture types.
 
 ### 3. Text timeline and export parity
 
 - [ ] Test dragging the start/end handles on a text timeline strip; passing the timing sliders does not prove strip dragging works.
 - [ ] Export a clip with timed/styled text and compare the MP4 with preview for timing, position, size, colour and style.
-- [x] Manual JSON Save As → close → Open Document restores tested text state: content, 7.00–9.00 s timing, top position, 32 sp size, cyan colour and non-bold style. Assertions passed on the source branch in [run #193](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40234200553); the integrated persistence rerun remains tracked separately above.
+- [x] Manual JSON Save As → close → Open Document restores tested text state: content, 7.00–9.00 s timing, top position, 32 sp size, cyan colour and non-bold style. Assertions passed on the source branch in [run #193](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40234200553); the integrated persistence rerun passed in [run #196](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40300395719).
 - [ ] Verify text settings/preview remain correct after timeline seek and zoom. This behavior is distinct from persistence and is not yet proven by the save/reopen test.
 
 ### 4. Audio export
@@ -131,4 +132,14 @@ Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228
 - [x] Inspected job logs, not just the red status: failure was `compileDebugAndroidTestKotlin`, with duplicate local declarations at test lines 1119 and 1128. Unit tests and debug APK build had passed.
 - [x] Removed only the stale 2.00 s playhead assertion/declaration from the combined manual JSON test. Kept the fixture's intended saved playhead at 7.70 s, the 200% zoom check and the 9.52 s combined trimmed duration check.
 - [x] Started the single follow-up verification for this exact correction: [run #195](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40277993448). Do not queue a duplicate run or manually repeat unit/build stages that already passed in #194.
-- [ ] Record #195's final outcome here when the workflow finishes; version 395 remains blocked until the integrated gate and other distinct release blockers pass.
+- [x] Recorded integrated gate outcome: [#196 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40300395719). The obsolete contradictory assertion was removed; app code was not changed for that test-only failure.
+- [ ] Continue with the next distinct uncovered behavior; version 395 remains blocked until all required release gates pass and release is explicitly authorized.
+
+
+### 2026-10-26 — Integrated candidate gate passed (#196)
+
+- [x] Run [#196 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40300395719) on commit `fc76fb81c199f1df074819c54cd19ae70a9ea462`.
+- [x] Job steps confirm unit tests, debug APK build, offline MP4 fixture setup, emulator launch/interaction tests, screenshot/diagnostic upload all completed successfully.
+- [x] The test-only stale contradictory manual-JSON assertions are resolved; integrated candidate's current gate passes.
+- [ ] Next: add focused coverage for unverified text timeline strip dragging and preview/export parity, then audio export behavior and remaining timeline edge cases. Do not rerun #196 absent related source changes.
+- [ ] Physical-device review and signed update/install verification remain outstanding. Version 395 remains blocked; no release actions taken.
