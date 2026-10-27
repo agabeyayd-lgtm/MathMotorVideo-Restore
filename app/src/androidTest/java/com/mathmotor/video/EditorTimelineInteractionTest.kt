@@ -522,27 +522,31 @@ class EditorTimelineInteractionTest {
             val bounds = seek.visibleBounds
             assertTrue("Timeline playhead seek bar is too narrow: $bounds", bounds.width() > 100)
             val expected = targetMs.coerceIn(0L, 8_020L)
-            // UiAutomator exposes touch/swipe but not a SeekBar setProgress API. Tap the
-            // requested track position, then use the displayed project time as feedback to
-            // compensate for the control's real thumb/padding insets (including after zoom).
-            val inset = (bounds.width() * 0.07f).toInt().coerceAtLeast(4)
+            // SeekBar keeps its thumb padding inside the accessibility bounds. On the
+            // compact emulator the default horizontal padding is about 15% per side;
+            // dragging from the time currently displayed avoids tap-only interactions,
+            // which did not move the thumb reliably after pinch zoom.
+            val inset = (bounds.width() * 0.15f).toInt().coerceAtLeast(4)
             val usableWidth = (bounds.width() - 2 * inset).coerceAtLeast(2)
-            val targetX = (bounds.left + inset +
-                (expected.toDouble() / 8_020.0 * usableWidth).toInt())
-                .coerceIn(bounds.left + 1, bounds.right - 2)
+            fun xForTime(timeMs: Long): Int =
+                (bounds.left + inset +
+                    (timeMs.coerceIn(0L, 8_020L).toDouble() / 8_020.0 * usableWidth).toInt())
+                    .coerceIn(bounds.left + 1, bounds.right - 2)
+
             var actual = projectPositionMs(requireProjectTime(device))
             for (attempt in 1..6) {
                 if (abs(actual - expected) <= 150L) break
-                val correctionPx = if (attempt == 1) 0 else
-                    ((expected - actual).toDouble() / 8_020.0 * usableWidth).toInt()
-                val x = (targetX + correctionPx).coerceIn(bounds.left + 1, bounds.right - 2)
-                device.click(x, bounds.centerY())
+                val fromX = xForTime(actual)
+                val correctionPx = ((expected - actual).toDouble() / 8_020.0 * usableWidth).toInt()
+                    .let { delta -> if (delta == 0) if (expected > actual) 1 else -1 else delta }
+                val toX = (fromX + correctionPx).coerceIn(bounds.left + 1, bounds.right - 2)
+                device.swipe(fromX, bounds.centerY(), toX, bounds.centerY(), 30)
                 device.waitForIdle()
                 SystemClock.sleep(300)
                 actual = projectPositionMs(requireProjectTime(device))
                 android.util.Log.i(
                     "TextPreviewSeekZoomTest",
-                    "stage=seek attempt=$attempt target=$expected actual=$actual tapX=$x bounds=$bounds"
+                    "stage=seek attempt=$attempt target=$expected actual=$actual fromX=$fromX toX=$toX bounds=$bounds"
                 )
             }
             android.util.Log.i(
