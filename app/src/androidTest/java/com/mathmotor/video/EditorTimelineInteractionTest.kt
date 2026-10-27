@@ -776,10 +776,9 @@ class EditorTimelineInteractionTest {
             )
             val bounds = seek.visibleBounds
             assertTrue("$stage playhead SeekBar is too narrow: $bounds", bounds.width() > 100)
-            // Run #246 showed that a 15% inset underestimates the actual SeekBar travel:
-            // target 1,000 ms stopped at 750 ms, then 6 px-scale corrections stayed below touch slop.
-            // Keep the calibrated near-edge travel range so a small seek is represented by a real drag.
-            val inset = (bounds.width() * 0.035f).toInt().coerceAtLeast(4)
+            // Match the 15% thumb-safe inset used by the existing passing seek tests.
+            // Moving closer to the view edge (3.5%) starts outside the reliable thumb track on emulator.
+            val inset = (bounds.width() * 0.15f).toInt().coerceAtLeast(4)
             val usableWidth = (bounds.width() - 2 * inset).coerceAtLeast(2)
             fun xForTime(timeMs: Long): Int =
                 (bounds.left + inset +
@@ -790,9 +789,14 @@ class EditorTimelineInteractionTest {
             for (attempt in 1..6) {
                 if (abs(actual - expected) <= 150L) break
                 val fromX = xForTime(actual)
-                val correctionPx = ((expected - actual).toDouble() /
+                val rawCorrectionPx = ((expected - actual).toDouble() /
                     totalMs.coerceAtLeast(1L).toDouble() * usableWidth).toInt()
-                    .let { delta -> if (delta == 0) if (expected > actual) 1 else -1 else delta }
+                // Android's SeekBar ignores tiny drags around its thumb. Preserve direction,
+                // but require a decisive minimum movement instead of repeating 1–7 px gestures.
+                val correctionPx = rawCorrectionPx.coerceIn(-12, 12).let { delta ->
+                    if (kotlin.math.abs(delta) >= 12) delta
+                    else if (expected > actual) 12 else -12
+                }
                 val toX = (fromX + correctionPx).coerceIn(bounds.left + 1, bounds.right - 2)
                 device.swipe(fromX, bounds.centerY(), toX, bounds.centerY(), 30)
                 device.waitForIdle()
