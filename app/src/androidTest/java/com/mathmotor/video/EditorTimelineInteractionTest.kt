@@ -797,7 +797,7 @@ class EditorTimelineInteractionTest {
             fun dragToTime(destinationMs: Long, attempt: Int, phase: String) {
                 val fromX = xForTime(actual)
                 val toX = xForTime(destinationMs)
-                device.swipe(fromX, bounds.centerY(), toX, bounds.centerY(), 30)
+                device.swipe(fromX, bounds.centerY(), toX, bounds.centerY(), 180)
                 device.waitForIdle()
                 SystemClock.sleep(300)
                 actual = projectPositionMs(requireProjectTime(device))
@@ -815,7 +815,7 @@ class EditorTimelineInteractionTest {
             // separated timeline position, then drag to the actual target coordinate.
             // This preserves the ±200 ms assertion instead of masking the mapping failure.
             if (abs(actual - expected) > 150L &&
-                abs(xForTime(actual) - xForTime(expected)) < 12
+                abs(xForTime(actual) - xForTime(expected)) < 20
             ) {
                 val detourMs = if (expected + 2_500L < totalMs) {
                     expected + 2_500L
@@ -823,8 +823,8 @@ class EditorTimelineInteractionTest {
                     (expected - 2_500L).coerceAtLeast(0L)
                 }
                 if (detourMs != expected &&
-                    abs(xForTime(detourMs) - xForTime(expected)) >= 12 &&
-                    abs(xForTime(detourMs) - xForTime(actual)) >= 12
+                    abs(xForTime(detourMs) - xForTime(expected)) >= 20 &&
+                    abs(xForTime(detourMs) - xForTime(actual)) >= 20
                 ) {
                     dragToTime(detourMs, 0, "touch-slop-detour")
                 }
