@@ -867,9 +867,22 @@ class EditorTimelineInteractionTest {
 
         // The filmstrip long-press menu is the real timeline reorder path.
         val firstFilmstrip = requireObject(device, By.descContains("Klip 1: FIRST_RED"), "first timeline filmstrip")
-        firstFilmstrip.longClick()
+        val firstFilmstripBounds = firstFilmstrip.visibleBounds
+        assertTrue("First filmstrip is not large enough for a long press: $firstFilmstripBounds",
+            firstFilmstripBounds.width() > 20 && firstFilmstripBounds.height() > 12)
+        // This view owns a custom touch listener that starts its own long-press timer.
+        // UiObject2.longClick() may dispatch an accessibility long-click without the
+        // physical down/hold/up sequence needed by that listener, so synthesize the real gesture.
+        device.swipe(
+            firstFilmstripBounds.centerX(),
+            firstFilmstripBounds.centerY(),
+            firstFilmstripBounds.centerX(),
+            firstFilmstripBounds.centerY(),
+            android.view.ViewConfiguration.getLongPressTimeout() + 400
+        )
+        device.waitForIdle()
         assertTrue(
-            "Long-pressing the first filmstrip did not open the clip menu",
+            "Long-pressing the first filmstrip did not open the clip menu; bounds=$firstFilmstripBounds",
             device.wait(Until.hasObject(By.text("Bir sonraya al")), 5_000)
         )
         requireObject(device, By.text("Bir sonraya al"), "move clip to next position").click()
