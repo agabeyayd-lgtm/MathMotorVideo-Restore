@@ -2744,6 +2744,271 @@ class EditorTimelineInteractionTest {
     }
 
     @Test
+    fun splitAtPlayheadExportsTwoOrderedSegmentsWithoutMovingAvSeam() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val resolver = context.contentResolver
+        val device = UiDevice.getInstance(instrumentation)
+        val packageName = context.packageName
+        val fixture = java.io.File(context.filesDir, "editor-av-sync-video.mp4")
+        assertTrue("Split/export A/V fixture is missing", fixture.isFile && fixture.length() > 0L)
+        val sourceSize = fixture.length()
+        val sourceHash = sha256(fixture)
+        val exportName = "MathMotor_split_boundary_${System.currentTimeMillis()}"
+        val draftId = java.util.UUID.randomUUID().toString()
+
+        val clip = org.json.JSONObject()
+            .put("uri", Uri.fromFile(fixture).toString())
+            .put("title", "SPLIT_RED_TO_LIME")
+            .put("durationMs", 4_000L)
+            .put("startMs", 0L)
+            .put("endMs", 4_000L)
+        val project = org.json.JSONObject()
+            .put("format", "MathMotorVideoProject")
+            .put("version", 1)
+            .put("clips", org.json.JSONArray().put(clip))
+            .put("selectedClipIndex", 0)
+            .put("timelinePlayheadMs", 2_000L)
+            .put("timelineZoom", 1.0)
+            .put("timelineHorizontalScrollMs", 0L)
+            .put("textLayers", org.json.JSONArray())
+            .put("sourceAudioVolume", 100)
+            .put("musicVolume", 0)
+            .put("soundVolume", 100)
+            .put("keepSourceAudio", true)
+            .put("exportName", exportName)
+        assertTrue("Could not seed split-at-playhead project",
+            VideoProjectDraftStore.save(context, draftId, "Split/export boundary validation", project))
+
+        device.executeShellCommand("logcat -c")
+        device.executeShellCommand(
+            "am start --activity-clear-task -n " + packageName +
+                "/com.mathmotor.video.EditorTestEntryActivity --es draft_id " + draftId
+        )
+        val restoreDeadline = SystemClock.uptimeMillis() + 20_000L
+        var entryStarted = false
+        var draftFound = false
+        var draftRestored = false
+        var restoreMarkers = ""
+        while (SystemClock.uptimeMillis() < restoreDeadline) {
+            val logs = device.executeShellCommand("logcat -d -s EditorSmokeTest:I")
+            restoreMarkers = logs.takeLast(1_600)
+            if (logs.contains("EDITOR_SMOKE_ENTRY_STARTED") && logs.contains("hasDraft=true")) {
+                entryStarted = true
+            }
+            if (logs.contains("EDITOR_SMOKE_DRAFT_LOOKUP id=" + draftId + " found=true")) {
+                draftFound = true
+            }
+            if (logs.contains("EDITOR_SMOKE_DRAFT_RESTORED id=" + draftId)) {
+                draftRestored = true
+                break
+            }
+            if (logs.contains("EDITOR_SMOKE_DRAFT_LOOKUP id=" + draftId + " found=false")) break
+            SystemClock.sleep(200)
+        }
+        assertTrue("Split test entry activity did not start; markers=" + restoreMarkers, entryStarted)
+        assertTrue("Split test draft was not found; markers=" + restoreMarkers, draftFound)
+        assertTrue("Split test draft did not restore; markers=" + restoreMarkers, draftRestored)
+        assertTrue("Split test project did not expose the VIDEO lane",
+            device.wait(Until.hasObject(By.text("VIDEO")), 12_000))
+
+        fun seekPlayheadTo(targetMs: Long) {
+            val seek = requireObject(
+                device, By.desc("Zaman çizelgesinde oynatma noktası"), "split test playhead seek bar"
+            )
+            val bounds = seek.visibleBounds
+            assertTrue("Split test playhead SeekBar is too narrow: $bounds", bounds.width() > 100)
+            val expected = targetMs.coerceIn(0L, 4_000L)
+            val inset = (bounds.width() * 0.15f).toInt().coerceAtLeast(4)
+            val usableWidth = (bounds.width() - 2 * inset).coerceAtLeast(2)
+            var actual = projectPositionMs(requireProjectTime(device))
+            for (attempt in 1..6) {
+                if (kotlin.math.abs(actual - expected) <= 100L) break
+                val fromX = (bounds.left + inset +
+                    (actual.coerceIn(0L, 4_000L).toDouble() / 4_000.0 * usableWidth).toInt())
+                    .coerceIn(bounds.left + 1, bounds.right - 2)
+                val delta = ((expected - actual).toDouble() / 4_000.0 * usableWidth).toInt()
+                    .let { if (it == 0) if (expected > actual) 1 else -1 else it }
+                val toX = (fromX + delta).coerceIn(bounds.left + 1, bounds.right - 2)
+                device.swipe(fromX, bounds.centerY(), toX, bounds.centerY(), 30)
+                device.waitForIdle()
+                SystemClock.sleep(250)
+                actual = projectPositionMs(requireProjectTime(device))
+                android.util.Log.i(
+                    "SplitAtPlayheadTest",
+                    "stage=seek attempt=$attempt target=$expected actual=$actual fromX=$fromX toX=$toX"
+                )
+            }
+            assertTrue("Could not position split playhead at $expected ms; actual=$actual ms",
+                kotlin.math.abs(actual - expected) <= 100L)
+        }
+
+        seekPlayheadTo(2_000L)
+        val splitTimeBefore = projectPositionMs(requireProjectTime(device))
+        assertTrue("Playhead was not at the 2 s split point: $splitTimeBefore", splitTimeBefore in 1_900L..2_100L)
+
+        var splitButton = device.findObject(By.text("Böl ✂"))
+        if (splitButton == null) {
+            val panelScroller = UiScrollable(UiSelector().className("android.widget.ScrollView")).setAsVerticalList()
+            assertTrue("Could not reveal the Split at Playhead action",
+                panelScroller.scrollIntoView(UiSelector().text("Böl ✂")))
+            splitButton = device.findObject(By.text("Böl ✂"))
+        }
+        (splitButton ?: throw AssertionError("Split at Playhead action was not exposed")).click()
+        assertTrue("Editor did not confirm that the clip was split at the playhead",
+            device.wait(Until.hasObject(By.textContains("Klip iki parçaya bölündü")), 8_000))
+        assertTrue("First split clip tile was not visible", device.wait(Until.hasObject(By.text("KLİP 1")), 5_000))
+        assertTrue("Second split clip tile was not visible", device.wait(Until.hasObject(By.text("KLİP 2")), 5_000))
+        assertTrue("Split clip A title was not restored in the clip list",
+            device.wait(Until.hasObject(By.textContains("SPLIT_RED_TO_LIME • A")), 5_000))
+        assertTrue("Split clip B title was not restored in the clip list",
+            device.wait(Until.hasObject(By.textContains("SPLIT_RED_TO_LIME • B")), 5_000))
+        val splitLengths = device.findObjects(By.text("00:02.00"))
+        assertTrue("Expected two 2-second split segments, found ${splitLengths.size} matching clip lengths",
+            splitLengths.size >= 2)
+        val playheadAfterSplit = projectPositionMs(requireProjectTime(device))
+        assertTrue("Playhead moved away from the new segment seam after split: $playheadAfterSplit",
+            playheadAfterSplit in 1_850L..2_150L)
+        android.util.Log.i(
+            "SplitAtPlayheadTest",
+            "stage=split-verified playheadBeforeMs=$splitTimeBefore playheadAfterMs=$playheadAfterSplit " +
+                "clipTiles=2 splitLengths=00:02.00,00:02.00"
+        )
+
+        (device.findObject(By.text("Dışa aktar ›"))
+            ?: throw AssertionError("Could not open export tab for split boundary validation")).click()
+        assertTrue("Split export panel did not open",
+            device.wait(Until.hasObject(By.text("PROJE / DIŞA AKTARMA")), 8_000))
+        requireObject(device, By.clazz("android.widget.EditText"), "split export filename").setText(exportName)
+        val exportScroller = UiScrollable(UiSelector().className("android.widget.ScrollView")).setAsVerticalList()
+        assertTrue("Could not scroll to split MP4 export button",
+            exportScroller.scrollIntoView(UiSelector().text("MP4 DIŞA AKTAR")))
+        device.waitForIdle()
+        requireObject(device, By.text("MP4 DIŞA AKTAR"), "split MP4 export button").click()
+
+        val exportDeadline = SystemClock.uptimeMillis() + 120_000L
+        var exported = false
+        while (SystemClock.uptimeMillis() < exportDeadline) {
+            val logs = device.executeShellCommand("logcat -d -s MultiClipExport:I")
+            if (logs.contains("MULTICLIP_EXPORT_SAVED name=$exportName")) {
+                exported = true
+                break
+            }
+            if (logs.contains("MULTICLIP_EXPORT_TRANSFORM_FAILED name=$exportName") ||
+                logs.contains("MULTICLIP_EXPORT_SAVE_FAILED name=$exportName")) {
+                throw AssertionError("Split MP4 export failed: $logs")
+            }
+            SystemClock.sleep(500)
+        }
+        assertTrue("Split MP4 did not save within 120 seconds", exported)
+
+        var outputUri: Uri? = null
+        val queryDeadline = SystemClock.uptimeMillis() + 30_000L
+        while (outputUri == null && SystemClock.uptimeMillis() < queryDeadline) {
+            resolver.query(
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                arrayOf(MediaStore.Video.Media._ID),
+                "${MediaStore.Video.Media.DISPLAY_NAME} = ?",
+                arrayOf("$exportName.mp4"),
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    outputUri = ContentUris.withAppendedId(
+                        MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                        cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID))
+                    )
+                }
+            }
+            if (outputUri == null) SystemClock.sleep(300)
+        }
+        val savedUri = outputUri
+            ?: throw AssertionError("Split export reported success but the MP4 was not found")
+
+        val retriever = MediaMetadataRetriever()
+        val videoMeasurement = try {
+            retriever.setDataSource(context, savedUri)
+            val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                ?.toLongOrNull() ?: throw AssertionError("Could not read split export duration")
+            fun classifyFrameAt(timeMs: Long): String {
+                val frame = retriever.getFrameAtTime(
+                    timeMs * 1_000L,
+                    MediaMetadataRetriever.OPTION_CLOSEST
+                ) ?: throw AssertionError("Could not decode split export frame at $timeMs ms")
+                try {
+                    val pixel = frame.getPixel(frame.width / 2, frame.height / 2)
+                    val red = android.graphics.Color.red(pixel)
+                    val green = android.graphics.Color.green(pixel)
+                    val blue = android.graphics.Color.blue(pixel)
+                    val label = when {
+                        green > red + 35 && green > blue + 35 -> "GREEN"
+                        red > green + 35 && red > blue + 35 -> "RED"
+                        else -> "UNKNOWN"
+                    }
+                    return "$label($red,$green,$blue)"
+                } finally {
+                    frame.recycle()
+                }
+            }
+            durationMs to (1_800L..2_200L step 25L).map { timeMs ->
+                timeMs to classifyFrameAt(timeMs)
+            }
+        } finally {
+            retriever.release()
+        }
+        val durationMs = videoMeasurement.first
+        val frameSamples = videoMeasurement.second
+        assertTrue("Split export must remain about 4 seconds; duration=$durationMs ms",
+            durationMs in 3_900L..4_200L)
+        val firstGreenIndex = frameSamples.indexOfFirst { it.second.startsWith("GREEN") }
+        assertTrue("Split export has no red→lime boundary near 2 s: $frameSamples", firstGreenIndex > 0)
+        val lastRed = frameSamples[firstGreenIndex - 1]
+        val firstGreen = frameSamples[firstGreenIndex]
+        assertTrue("Split export boundary frames are not red→lime: $lastRed -> $firstGreen",
+            lastRed.second.startsWith("RED") && firstGreen.second.startsWith("GREEN"))
+        val videoBoundaryMs = firstGreen.first
+        assertTrue("Split export video boundary drifted: $videoBoundaryMs ms; samples=$frameSamples",
+            videoBoundaryMs in 1_900L..2_100L)
+
+        val decodedAudio = decodeExportedAudioMono(context, savedUri)
+        val audioBefore = toneMagnitude(decodedAudio, 997.0, 1_650L, 1_900L)
+        val audioAfter = toneMagnitude(decodedAudio, 997.0, 2_100L, 2_350L)
+        assertTrue("Split export has an early 997 Hz tone before the seam: $audioBefore",
+            audioBefore < 900.0)
+        assertTrue("Split export lost 997 Hz source tone after the seam: $audioAfter",
+            audioAfter > 2_000.0)
+        var audioToneOnsetMs: Long? = null
+        for (windowStartMs in 1_500L..2_500L step 25L) {
+            val magnitude = toneMagnitude(decodedAudio, 997.0, windowStartMs, windowStartMs + 100L)
+            if (magnitude >= 1_500.0) {
+                audioToneOnsetMs = windowStartMs
+                break
+            }
+        }
+        val audioOnsetWindowMs = audioToneOnsetMs
+            ?: throw AssertionError("Could not detect 997 Hz tone onset in split export")
+        val seamDeltaMs = kotlin.math.abs(audioOnsetWindowMs - videoBoundaryMs)
+        android.util.Log.i(
+            "SplitAtPlayheadTest",
+            "stage=export-measured durationMs=$durationMs videoBoundaryMs=$videoBoundaryMs " +
+                "audioToneOnsetWindowMs=$audioOnsetWindowMs audioBefore=$audioBefore " +
+                "audioAfter=$audioAfter seamDeltaMs=$seamDeltaMs"
+        )
+        assertTrue(
+            "Split export audio/video seam differs by $seamDeltaMs ms " +
+                "(audioWindow=$audioOnsetWindowMs ms, videoBoundary=$videoBoundaryMs ms)",
+            seamDeltaMs <= 150L
+        )
+        assertTrue("Splitting/export modified the source fixture size",
+            fixture.isFile && fixture.length() == sourceSize)
+        assertTrue("Splitting/export modified the source fixture contents",
+            sha256(fixture) == sourceHash)
+        android.util.Log.i(
+            "SplitAtPlayheadTest",
+            "stage=verified clips=2 totalDurationMs=$durationMs seamDeltaMs=$seamDeltaMs originalsUnchanged=true"
+        )
+    }
+
+    @Test
     fun filmstripLoadsFramesFromDistinctTimestamps() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val device = UiDevice.getInstance(instrumentation)
