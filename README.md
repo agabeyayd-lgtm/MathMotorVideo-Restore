@@ -16,14 +16,15 @@ A local-first Android video editor with a CapCut-inspired workflow. Editing and 
 - Undo/Redo source test `unifiedUndoRedoRestoresTextAndAudioEdits` was green in source-branch validation. Remaining explicit coverage: trim/split/reorder, sound-effect mutations, source-audio toggle, preview/export parity and history state across save/reopen.
 - **Release 395 remains blocked.** Do not change version metadata, sign/publish APK, or enable in-app updates before the integrated candidate passes the required gates and release is explicitly authorized.
 
-### Live verification update — #227 failed; #228 passed (2026-10-27)
+### Live verification update — #227 failed; #228 passed; #229 queued (2026-10-27)
 
 - [#227 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40396049579): 12/13 Android tests passed. The second seeded draft reused the existing editor task and did not restore; this was a test-launch issue, and the final muted-audio assertions were not reached.
-- [#228 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40399875346), head SHA `5380eef327bb3adfe8cdff2a314fd45b79721233): unit tests, Debug APK, FFmpeg setup, fixture prep, emulator workflow and all **13/13 Android instrumentation tests** passed.
+- [#228 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40399875346), head SHA `5380eef327bb3adfe8cdff2a314fd45b79721233`: unit tests, Debug APK, FFmpeg setup, fixture prep, emulator workflow and all **13/13 Android instrumentation tests** passed.
 - Verified artifact `mathmotor-android-emulator-screenshots` (run #228, artifact ID `12689457854`) reports `exportedMp4RespectsSourceAudioVolumeAndMute` passed. Measured source 220 Hz baseline `16380.5592`; kept output early `6536.5540`, ratio `0.3990434`; kept late `6533.6536`; muted early `0.2376125`, ratio `0.0000145058`. Both kept and muted draft restore markers appeared, both MP4s saved, and `originalsUnchanged=true`.
 - Root cause fixed in test-only commit [`5380eef`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/5380eef327bb3adfe8cdff2a314fd45b79721233): the second `am start` was reusing the existing task. `--activity-clear-task` plus exact entry/lookup/restore markers made the test launch deterministic. Do not repeat this gate unchanged.
 - [x] Source-video audio gain/mute and original-source preservation verified in #228. This is independent from A/V synchronization and does not close that remaining gate.
-- Next unique gate: **A/V synchronization against known video-frame boundaries**. Then test text preview after timeline seek/zoom and split-at-playhead/export boundary. Keep versionCode 395 blocked until required gates and explicit release authorization.
+- [#229 — QUEUED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40452759400), commit [`2b227a6`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/2b227a66bb3981d254aa094eb3bf4abbd9722ee8): new distinct test checks text visibility and settings after timeline seek, pinch-zoom, seeking outside the text interval, and returning to the active interval. Do not queue a duplicate while it runs.
+- Next after #229: **A/V synchronization against known video-frame boundaries**, then split-at-playhead/export boundary and timeline/Undo-Redo edge cases. Keep versionCode 395 blocked until required gates and explicit release authorization.
 
 ## Verified — do not repeat without a relevant code change
 
@@ -68,7 +69,7 @@ Work top to bottom. Mark an item complete only when there is test or inspection 
 - [x] Text-strip start/end handles were actually dragged and their displayed times changed in [run #210 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40328122889): start `00:01.30 → 00:03.35`; end `00:06.50 → 00:04.46`. Artifact test report confirms 9/9 instrumentation tests passed.
 - [x] [#211 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40332164279): 9/10 instrumentation tests passed. Uploaded per-test logcat confirmed `ExportException: Video frame processing error` caused by `IllegalArgumentException: width and height must be > 0` in `TextOverlay.getBitmap()` → `Bitmap.createBitmap()`. Root cause: `buildTimedTextOverlay()` returned an empty string outside the active time interval.
 - [x] Manual JSON Save As → close → Open Document restores tested text state: content, 7.00–9.00 s timing, top position, 32 sp size, cyan colour and non-bold style. Assertions passed on the source branch in [run #193](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40234200553); the integrated persistence rerun passed in [run #196](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40300395719).
-- [ ] Verify text settings/preview remain correct after timeline seek and zoom. This behavior is distinct from persistence and is not yet proven by the save/reopen test.
+- [ ] Verify text settings/preview remain correct after timeline seek and zoom. Candidate: [#229](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40452759400); close only after its assertions pass. This is distinct from persistence and already-passing strip-handle drags.
 
 ### 4. Audio export
 
