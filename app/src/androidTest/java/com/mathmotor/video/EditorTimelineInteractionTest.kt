@@ -516,23 +516,38 @@ class EditorTimelineInteractionTest {
         assertTrue("Seeded text size was not restored: " + sizeLabelBefore, sizeLabelBefore.contains("32 sp"))
 
         fun seekPlayheadTo(targetMs: Long) {
-            // UiObject2 has no setProgress API. Use the legacy UiObject progress action,
-            // which targets the accessible SeekBar directly and avoids thumb-inset coordinate math.
-            val seek = device.findObject(
-                UiSelector().description("Zaman çizelgesinde oynatma noktası")
+            val seek = requireObject(
+                device, By.desc("Zaman çizelgesinde oynatma noktası"), "timeline playhead seek bar"
             )
-            assertTrue("Timeline playhead SeekBar was not found", seek.exists())
+            val bounds = seek.visibleBounds
+            assertTrue("Timeline playhead seek bar is too narrow: $bounds", bounds.width() > 100)
             val expected = targetMs.coerceIn(0L, 8_020L)
-            seek.setProgress(expected.toFloat() / 8_020f)
-            val deadline = SystemClock.uptimeMillis() + 3_000L
+            // UiAutomator exposes touch/swipe but not a SeekBar setProgress API. Tap the
+            // requested track position, then use the displayed project time as feedback to
+            // compensate for the control's real thumb/padding insets (including after zoom).
+            val inset = (bounds.width() * 0.07f).toInt().coerceAtLeast(4)
+            val usableWidth = (bounds.width() - 2 * inset).coerceAtLeast(2)
+            val targetX = (bounds.left + inset +
+                (expected.toDouble() / 8_020.0 * usableWidth).toInt())
+                .coerceIn(bounds.left + 1, bounds.right - 2)
             var actual = projectPositionMs(requireProjectTime(device))
-            while (SystemClock.uptimeMillis() < deadline && abs(actual - expected) > 150L) {
-                SystemClock.sleep(100)
+            for (attempt in 1..6) {
+                if (abs(actual - expected) <= 150L) break
+                val correctionPx = if (attempt == 1) 0 else
+                    ((expected - actual).toDouble() / 8_020.0 * usableWidth).toInt()
+                val x = (targetX + correctionPx).coerceIn(bounds.left + 1, bounds.right - 2)
+                device.click(x, bounds.centerY())
+                device.waitForIdle()
+                SystemClock.sleep(300)
                 actual = projectPositionMs(requireProjectTime(device))
+                android.util.Log.i(
+                    "TextPreviewSeekZoomTest",
+                    "stage=seek attempt=$attempt target=$expected actual=$actual tapX=$x bounds=$bounds"
+                )
             }
             android.util.Log.i(
                 "TextPreviewSeekZoomTest",
-                "stage=seek target=$expected actual=$actual zoom=" +
+                "stage=seek-complete target=$expected actual=$actual zoom=" +
                     requireObject(device, By.descContains("Zaman çizelgesi yakınlaştırma"), "timeline zoom label").contentDescription
             )
             assertTrue(
