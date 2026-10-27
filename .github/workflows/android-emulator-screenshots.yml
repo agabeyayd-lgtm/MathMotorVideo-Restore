@@ -49,13 +49,16 @@ jobs:
         run: gradle --no-daemon assembleDebug
 
       - name: Install ffmpeg for deterministic audio fixture
-        # The hosted runner mirror downloaded only part of the 62.8 MB ffmpeg
-        # dependency set in 120 seconds; allow a realistic transfer window while
-        # keeping the whole setup step bounded before emulator instrumentation.
+        # The Azure Ubuntu mirror throttled the 62.8 MB dependency set until
+        # the install hit its timeout. Switch to Ubuntu's primary archive mirror
+        # before refreshing package indexes; keep bounded retries and timeouts.
         timeout-minutes: 16
         run: |
           set -euo pipefail
           if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+            if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
+              sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu/|http://archive.ubuntu.com/ubuntu/|g; s|https://azure.archive.ubuntu.com/ubuntu/|http://archive.ubuntu.com/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources
+            fi
             timeout 240s sudo apt-get update -qq
             timeout 660s sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 install -y --no-install-recommends ffmpeg
           fi
