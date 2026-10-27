@@ -20,3 +20,9 @@
 - [#231 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40456248654): `UiObject2.setProgress` unresolved; Android instrumentation did not run.
 - [#232 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40457727313): legacy `UiObject.setProgress` was also unresolved; again, the failure occurred during test compilation before target assertions.
 - [#233 RUNNING](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40458467025), commit [`275f3a8`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/275f3a8013b80826256127f6584b7598f2b44879): removed both unsupported calls; tap the SeekBar track and calibrate from the measured project time. The target tolerance and text preview/settings assertions are unchanged. Do not mark text seek/zoom verified until this run passes those assertions.
+
+
+### 2026-10-27 — #233 target seek assertion and #234 fix
+
+- [#233 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40458467025): unit tests and Debug APK passed. The Android suite ran 14 tests; 13 passed. The new text seek/zoom test failed at its own seek helper: after timeline zoom reached 623%, seeking to 7100 ms read 7800 ms despite six taps. The failure is in test interaction/mapping; subsequent preview/settings checks did not run. Artifact log confirms tap attempts at x=197 then x=190 without any playhead movement.
+- [#234 QUEUED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40462756764), commit [`d202a62`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/d202a621db413cad76f0c302067fde0f4a761a29): use drag instead of taps; calculate start X from displayed actual time, apply the measured time delta as drag distance, and use the compact emulator thumb inset. Do not relax the ±150 ms assertion or preview/settings checks; wait for this exact target test to pass.
