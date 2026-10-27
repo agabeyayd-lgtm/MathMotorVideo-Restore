@@ -458,13 +458,46 @@ class EditorTimelineInteractionTest {
         val filmstripSelector = By.descContains("Klip 1:")
         val filmstrip = requireObject(device, filmstripSelector, "first clip filmstrip")
         val filmstripBounds = filmstrip.visibleBounds
-        assertTrue("First filmstrip has too little visible body for a safe swipe: " + filmstripBounds,
-            filmstripBounds.width() >= (70f * density).toInt())
+        val safeGapPx = (6f * density).toInt().coerceAtLeast(2)
+        var safeBodyLeft = filmstripBounds.left + safeGapPx
+        var safeBodyRight = filmstripBounds.right - safeGapPx
+
+        // Exclude any trim handle that is actually visible inside the filmstrip's clipped
+        // viewport. The previous 68%-to-46% swipe could be only ~15 dp after pinch zoom;
+        // at high zoom, that correctly moved the timeline by ~120 ms and failed the
+        // arbitrary 200 ms threshold without proving a scroll/trim conflict.
+        device.findObject(By.descContains("Sol tutamaç"))?.visibleBounds?.let { bounds ->
+            val overlapsFilmstrip = bounds.right > filmstripBounds.left &&
+                bounds.left < filmstripBounds.right &&
+                bounds.bottom > filmstripBounds.top && bounds.top < filmstripBounds.bottom
+            if (overlapsFilmstrip) safeBodyLeft = maxOf(safeBodyLeft, bounds.right + safeGapPx)
+        }
+        device.findObject(By.descContains("Sağ tutamaç"))?.visibleBounds?.let { bounds ->
+            val overlapsFilmstrip = bounds.right > filmstripBounds.left &&
+                bounds.left < filmstripBounds.right &&
+                bounds.bottom > filmstripBounds.top && bounds.top < filmstripBounds.bottom
+            if (overlapsFilmstrip) safeBodyRight = minOf(safeBodyRight, bounds.left - safeGapPx)
+        }
+        val safeBodyWidth = safeBodyRight - safeBodyLeft
+        assertTrue(
+            "First filmstrip has too little trim-handle-free body for a decisive swipe: " +
+                "filmstrip=$filmstripBounds safeBody=[$safeBodyLeft,$safeBodyRight] zoom=$zoomAfter%",
+            safeBodyWidth >= (65f * density).toInt()
+        )
         val swipeY = filmstripBounds.centerY()
-        val swipeStartX = filmstripBounds.left + (filmstripBounds.width() * 0.68f).toInt()
-        val swipeEndX = filmstripBounds.left + (filmstripBounds.width() * 0.46f).toInt()
+        // Use most of the available body, not a tiny fixed percentage of a possibly clipped
+        // post-zoom view. Both endpoints stay inside the safe area between trim handles.
+        val swipeStartX = safeBodyLeft + (safeBodyWidth * 0.90f).toInt()
+        val swipeEndX = safeBodyLeft + (safeBodyWidth * 0.10f).toInt()
         val positionBeforeBodySwipeMs = projectPositionMs(requireProjectTime(device))
         val durationBeforeBodySwipeMs = projectDurationMs(requireProjectTime(device))
+        val estimatedSwipeMs = (((swipeStartX - swipeEndX) / density) /
+            (22f * (zoomAfter.toFloat() / 100f)).coerceAtLeast(0.1f) * 1000f).toLong()
+        android.util.Log.i(
+            "TrimScrollConflictTest",
+            "stage=filmstrip-swipe-setup filmstrip=$filmstripBounds safeBodyWidth=$safeBodyWidth " +
+                "startX=$swipeStartX endX=$swipeEndX zoom=$zoomAfter estimatedDeltaMs=$estimatedSwipeMs"
+        )
         device.swipe(swipeStartX, swipeY, swipeEndX, swipeY, 40)
         device.waitForIdle()
         SystemClock.sleep(350)
