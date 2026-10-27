@@ -776,7 +776,10 @@ class EditorTimelineInteractionTest {
             )
             val bounds = seek.visibleBounds
             assertTrue("$stage playhead SeekBar is too narrow: $bounds", bounds.width() > 100)
-            val inset = (bounds.width() * 0.15f).toInt().coerceAtLeast(4)
+            // Run #246 showed that a 15% inset underestimates the actual SeekBar travel:
+            // target 1,000 ms stopped at 750 ms, then 6 px-scale corrections stayed below touch slop.
+            // Keep the calibrated near-edge travel range so a small seek is represented by a real drag.
+            val inset = (bounds.width() * 0.035f).toInt().coerceAtLeast(4)
             val usableWidth = (bounds.width() - 2 * inset).coerceAtLeast(2)
             fun xForTime(timeMs: Long): Int =
                 (bounds.left + inset +
@@ -797,7 +800,8 @@ class EditorTimelineInteractionTest {
                 actual = projectPositionMs(requireProjectTime(device))
                 android.util.Log.i(
                     "MultiClipTimelineTest",
-                    "stage=$stage attempt=$attempt target=$expected actual=$actual zoom=" +
+                    "stage=$stage attempt=$attempt target=$expected actual=$actual fromX=$fromX toX=$toX " +
+                        "bounds=$bounds totalMs=$totalMs zoom=" +
                         requireObject(device, By.descContains("Zaman çizelgesi yakınlaştırma"), "$stage zoom label").contentDescription
                 )
             }
