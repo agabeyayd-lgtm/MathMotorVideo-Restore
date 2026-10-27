@@ -1798,8 +1798,24 @@ class VideoEditorActivity : Activity() {
                 contentDescription = "Zaman çizelgesi satırı: $tag"
             }
             timelineScrollViews.add(scroll)
-            scroll.setOnScrollChangeListener { view, scrollX, _, _, _ ->
+            scroll.setOnScrollChangeListener { view, scrollX, _, oldScrollX, _ ->
                 if (!syncingTimelineScroll) {
+                    val childWidth = view.getChildAt(0)?.width ?: 0
+                    val maxScrollX = (childWidth - view.width).coerceAtLeast(0)
+                    if (tag == "VIDEO" && (
+                        scrollX == 0 ||
+                        kotlin.math.abs(scrollX - oldScrollX) >= dp(160) ||
+                        maxScrollX - scrollX <= dp(120)
+                    )) {
+                        android.util.Log.i(
+                            "TimelineScrollDiag",
+                            "phase=scroll lane=$tag old=$oldScrollX x=$scrollX max=$maxScrollX " +
+                                "childWidth=$childWidth viewport=${view.width} zoom=$timelineZoom " +
+                                "pps=${timelinePixelsPerSecond()} playhead=$timelinePlayheadMs " +
+                                "previewLoaded=$timelinePreviewLoaded single=$previewSingleClip " +
+                                "playerState=${player?.playbackState} playerPos=${player?.currentPosition}"
+                        )
+                    }
                     syncingTimelineScroll = true
                     try {
                         timelineHorizontalScrollX = scrollX
@@ -2202,7 +2218,18 @@ class VideoEditorActivity : Activity() {
                 val inset = (laneScroll.width / 2).coerceAtLeast(0)
                 track?.setPadding(inset, dp(1), inset, dp(1))
                 track?.requestLayout()
-                track?.post { laneScroll.scrollTo(restoreScrollX, 0) }
+                track?.post {
+                    laneScroll.scrollTo(restoreScrollX, 0)
+                    if (laneScroll.contentDescription?.toString() == "Zaman çizelgesi satırı: VIDEO") {
+                        android.util.Log.i(
+                            "TimelineScrollDiag",
+                            "phase=restore lane=VIDEO requested=$restoreScrollX actual=${laneScroll.scrollX} " +
+                                "childWidth=${track?.width ?: 0} viewport=${laneScroll.width} " +
+                                "max=${((track?.width ?: 0) - laneScroll.width).coerceAtLeast(0)} " +
+                                "zoom=$timelineZoom pps=${timelinePixelsPerSecond()} duration=${totalOutputDurationMs()}"
+                        )
+                    }
+                }
             }
         }
         updateTimelinePlayheadLine()
@@ -2387,7 +2414,18 @@ class VideoEditorActivity : Activity() {
         val index = currentPlayer.currentMediaItemIndex
         if (index !in clips.indices) return
         val offsetMs = clips.take(index).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
-        timelinePlayheadMs = (offsetMs + currentPlayer.currentPosition).coerceIn(0L, totalOutputDurationMs())
+        val previousPlayheadMs = timelinePlayheadMs
+        val playerTimelineMs = (offsetMs + currentPlayer.currentPosition).coerceIn(0L, totalOutputDurationMs())
+        if (kotlin.math.abs(playerTimelineMs - previousPlayheadMs) >= 1_000L) {
+            android.util.Log.w(
+                "TimelineScrollDiag",
+                "phase=player-sync previous=$previousPlayheadMs next=$playerTimelineMs " +
+                    "state=${currentPlayer.playbackState} mediaIndex=$index current=${currentPlayer.currentPosition} " +
+                    "duration=${currentPlayer.duration} timelineDuration=${totalOutputDurationMs()} " +
+                    "zoom=$timelineZoom scroll=${timelineScrollViews.firstOrNull()?.scrollX}"
+            )
+        }
+        timelinePlayheadMs = playerTimelineMs
         scrollTimelineToPlayhead(timelinePlayheadMs)
         if (selectedClipIndex != index) {
             selectedClipIndex = index
