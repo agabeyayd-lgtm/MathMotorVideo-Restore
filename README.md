@@ -2,7 +2,7 @@
 
 A local-first Android video editor with a CapCut-inspired workflow. Editing and export run on-device. Source videos must remain unchanged; finished edits are exported as new MP4 files.
 
-## Current handoff — 2026-10-26
+## Current handoff — 2026-10-27
 
 **Continue from this checkpoint. Do not restart completed work or repeat passing tests unless a related source change requires it. Keep the current release gate and record the exact failing assertion before changing code.**
 
