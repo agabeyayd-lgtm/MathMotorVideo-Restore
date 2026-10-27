@@ -82,7 +82,7 @@ Work top to bottom. Mark an item complete only when there is test or inspection 
 
 - [x] [#216 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40372603373) passes the real MP4/AAC decode gate for looped 440 Hz background music and the 880 Hz effect confined to its configured 2500–3700 ms interval. The leading-gap audio track fix is verified; do not repeat this unchanged.
 - [x] Verify exported source-video audio gain and mute using an audio-bearing source fixture: #228 measured source baseline `16380.5592`, kept early ratio `0.3990434`, kept late magnitude `6533.6536`, muted ratio `0.0000145058`, and `originalsUnchanged=true`. Both draft launches, MP4 saves and decoded AAC assertions passed. Do not repeat unchanged.
-- [ ] Verify audio/video synchronization against known video-frame boundaries.
+- [x] Verify exported audio/video synchronization against a known video-frame boundary in [#236 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40466133767): output video changed red→lime at 2,000 ms; 997 Hz tone detection window began at 1,925 ms (75 ms delta, tolerance ≤150 ms), pre-boundary tone magnitude 0.0, post-boundary 8177.09, original fixture hash/size unchanged. Split-seam continuity is a separate gate under #237.
 - [ ] Tighten quantitative verification of music/effect gains (separate from the already-passing tone-presence/timing-window assertions in #216).
 
 ### 5. Timeline edge cases
@@ -108,7 +108,7 @@ Work top to bottom. Mark an item complete only when there is test or inspection 
 - [x] [#213 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40339578967): unit tests, Debug APK build and fixture preparation passed; 10/11 connected instrumentation tests passed. The new test successfully toggled source audio and changed/undid the effect volume to 100%. Its final Redo check failed at `device.wait(Until.hasObject(By.text("Efekt sesi: $changedValue%")), 4_000)` immediately after switching tabs. The preceding Undo check explicitly scrolled the shared panel to its label; the Redo check did not. This is a test visibility/navigation failure signal, not confirmed evidence of a production Redo bug.
 - [x] Focused test-only correction: scroll the audio panel to `Efekt sesi: $changedValue%` before the Redo assertion, with a distinct error message if that label cannot be revealed. Do not weaken the actual expected value.
 - [x] Verified focused correction in [#214 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40357110853): the connected Android instrumentation step passed. This closes the test-navigation failure; it does not certify exported MP4 audio.
-- [ ] This test verifies edit-state/history controls only—not exported MP4 audio. Audio track presence, music loop/volume, timed effect mix and audio/video sync remain open; release 395 remains blocked.
+- [x] This #214 test verified edit-state/history controls only—not exported MP4 audio. Audio export was later verified independently by #216 (music/effect window), #228 (source gain/mute), and #236 (measured A/V sync). Release 395 remains blocked for the remaining gates.
 
 ## Release boundary
 
