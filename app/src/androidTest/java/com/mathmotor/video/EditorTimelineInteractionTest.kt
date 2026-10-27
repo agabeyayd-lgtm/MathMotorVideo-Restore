@@ -592,7 +592,9 @@ class EditorTimelineInteractionTest {
         assertTrue("Right trim handle has no visible drag target: " + rightBounds,
             rightBounds.width() >= 4 && rightBounds.height() >= 4)
         val durationBeforeHandleDragMs = projectDurationMs(requireProjectTime(device))
-        val handleDragPx = (18f * density).toInt().coerceAtLeast(10)
+        // 18 dp produced only a 130 ms trim at this zoom, missing the 150 ms assertion by 20 ms.
+        // Use a clear 28 dp gesture so the test exercises the handle without weakening the threshold.
+        val handleDragPx = (28f * density).toInt().coerceAtLeast(16)
         device.swipe(
             rightBounds.centerX(),
             rightBounds.centerY(),
@@ -612,7 +614,7 @@ class EditorTimelineInteractionTest {
                 " playheadAfter=" + positionAfterHandleDragMs
         )
         assertTrue(
-            "A right-handle drag was stolen by timeline scrolling instead of trimming: " +
+            "Right-handle drag did not shorten the clip by at least 150 ms: " +
                 durationBeforeHandleDragMs + " -> " + durationAfterHandleDragMs + " ms",
             durationAfterHandleDragMs <= durationBeforeHandleDragMs - 150L
         )
