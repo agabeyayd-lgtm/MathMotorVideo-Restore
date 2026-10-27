@@ -734,32 +734,24 @@ class EditorTimelineInteractionTest {
 
         fun assertSelectedClip(expectedTitle: String, stage: String) {
             // In full multi-clip preview the playhead label correctly shows project
-            // time/duration, not clip-local time. Verify selection using the visible
-            // clip-rail marker instead of assuming the project label exposes local time.
-            val expectedTile = (1..2).firstNotNullOfOrNull { ordinal ->
-                device.findObject(By.descContains("Klip $ordinal: $expectedTitle,"))
-                    ?.let { ordinal to it.visibleBounds }
-            } ?: throw AssertionError("$stage could not find clip-rail tile for $expectedTitle")
-
-            val ordinal = expectedTile.first
-            val tileBounds = expectedTile.second
-            val selectedMarker = device.findObject(By.text("▶ KLİP $ordinal"))
-            assertTrue(
-                "$stage expected $expectedTitle (clip $ordinal) selected, but its ▶ KLİP marker was absent",
-                selectedMarker != null
+            // time/duration, not clip-local time. The clip rail has no parent
+            // contentDescription, so pair its visible selected marker with the
+            // expected title by their shared horizontal position.
+            val titleBounds = requireObject(
+                device, By.text(expectedTitle), "$stage clip-rail title $expectedTitle"
+            ).visibleBounds
+            val selectedMarkers = device.findObjects(By.textMatches("▶ KLİP [12]"))
+            assertEquals(
+                "$stage should expose exactly one selected clip-rail marker",
+                1, selectedMarkers.size
             )
-            val markerBounds = selectedMarker!!.visibleBounds
+            val markerBounds = selectedMarkers.single().visibleBounds
+            val horizontalTolerancePx =
+                (8f * context.resources.displayMetrics.density).toInt().coerceAtLeast(4)
             assertTrue(
-                "$stage selected marker for $expectedTitle was outside its clip tile: marker=$markerBounds tile=$tileBounds",
-                markerBounds.left >= tileBounds.left - 2 &&
-                    markerBounds.right <= tileBounds.right + 2 &&
-                    markerBounds.top >= tileBounds.top - 2 &&
-                    markerBounds.bottom <= tileBounds.bottom + 2
-            )
-            val otherOrdinal = if (ordinal == 1) 2 else 1
-            assertTrue(
-                "$stage expected only $expectedTitle selected; other clip marker ▶ KLİP $otherOrdinal was present",
-                device.findObject(By.text("▶ KLİP $otherOrdinal")) == null
+                "$stage expected $expectedTitle to be selected, but selected marker bounds=$markerBounds " +
+                    "and expected title bounds=$titleBounds",
+                kotlin.math.abs(markerBounds.left - titleBounds.left) <= horizontalTolerancePx
             )
         }
 
