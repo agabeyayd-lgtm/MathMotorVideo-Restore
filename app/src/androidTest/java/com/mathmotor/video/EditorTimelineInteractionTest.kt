@@ -732,21 +732,29 @@ class EditorTimelineInteractionTest {
             )
         }
 
-        fun selectedClipText(stage: String): String {
-            val panel = UiScrollable(UiSelector().className("android.widget.ScrollView")).setAsVerticalList()
-            assertTrue(
-                "$stage: could not reveal selected clip label",
-                panel.scrollIntoView(UiSelector().textContains("Seçili klip:"))
-            )
-            device.waitForIdle()
-            return requireObject(device, By.textContains("Seçili klip:"), "$stage selected clip label").text
-        }
-
         fun assertSelectedClip(expectedTitle: String, stage: String) {
-            val selected = selectedClipText(stage)
+            // The compact 320x640 emulator can reduce the lower editor-panel viewport
+            // to 15 px, so scrolling its "Seçili klip" text is not a valid selection
+            // check. These deterministic fixtures have distinct durations; the live
+            // playhead label exposes the selected clip-local duration without relying
+            // on an off-screen panel.
+            val timelineLabel = requireProjectTime(device)
+            val expectedDurationMs = when (expectedTitle) {
+                "FIRST_RED" -> firstDurationMs
+                "SECOND_GREEN" -> secondDurationMs
+                else -> throw AssertionError("$stage has no duration mapping for $expectedTitle")
+            }
+            val expectedDurationText = String.format(
+                java.util.Locale.US, "%02d:%02d.%02d",
+                expectedDurationMs / 60_000L,
+                (expectedDurationMs / 1_000L) % 60L,
+                (expectedDurationMs % 1_000L) / 10L
+            )
             assertTrue(
-                "$stage expected selected clip $expectedTitle but got: $selected",
-                selected.contains("Seçili klip: $expectedTitle")
+                "$stage expected selected clip $expectedTitle with local duration $expectedDurationText " +
+                    "but timeline label was: $timelineLabel",
+                Regex("Klip\\s+\\d{2}:\\d{2}\\.\\d{2}\\s*/\\s*" +
+                    Regex.escape(expectedDurationText)).containsMatchIn(timelineLabel)
             )
         }
 
