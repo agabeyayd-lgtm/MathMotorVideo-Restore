@@ -16,7 +16,7 @@ A local-first Android video editor with a CapCut-inspired workflow. Editing and 
 - Undo/Redo source test `unifiedUndoRedoRestoresTextAndAudioEdits` was green in source-branch validation. Remaining explicit coverage: trim/split/reorder, sound-effect mutations, source-audio toggle, preview/export parity and history state across save/reopen.
 - **Release 395 remains blocked.** Do not change version metadata, sign/publish APK, or enable in-app updates before the integrated candidate passes the required gates and release is explicitly authorized.
 
-### Live verification update — #228 passed; #229 preflight failed; #230 queued (2026-10-27)
+### Live verification update — #228 passed; #229 preflight failed; #230 found seek-test failure; #231 running (2026-10-27)
 
 - [#227 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40396049579): 12/13 Android tests passed. The second seeded draft reused the existing editor task and did not restore; this was a test-launch issue, and the final muted-audio assertions were not reached.
 - [#228 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40399875346), head SHA `5380eef327bb3adfe8cdff2a314fd45b79721233`: unit tests, Debug APK, FFmpeg setup, fixture prep, emulator workflow and all **13/13 Android instrumentation tests** passed.
