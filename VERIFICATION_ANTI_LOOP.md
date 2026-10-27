@@ -19,13 +19,13 @@ This is the concise handoff for ongoing CI debugging. Read it and the latest REA
 - Repo: `agabeyayd-lgtm/MathMotorVideo-Restore`; branch: `fix/editor-395-gate`.
 - Installed phone baseline: versionCode 394, build 61 (`app-v8.3-61`).
 - [#212 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40335645092): timed-text export fix passed unit/build/instrumentation. Do not rerun unchanged.
-- [#216 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40372603373), head SHA `e71ecb195a0685023616f96e05fa159c2a5e2b11`: unit tests, Debug APK, connected instrumentation and artifact upload passed. The production timed-effect leading-gap fix is verified through a real exported MP4/AAC decode test; music is present across the output and the 880 Hz effect is limited to the configured interval.
+- [#216 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40372603373), head SHA `e71ecb195a0685023616f96e05fa159c2a5e2b11`: real exported MP4/AAC verification passed for looped background music and the timed-effect window.
 - Earlier #214 validated source-audio toggle and effect-volume Undo/Redo UI history only.
 - `sourceAudioToggleAndEffectVolumeUseUndoRedoHistory` is verified for UI state/history. This does not validate exported MP4 audio.
-- Current unique gate: [#228](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40399875346), in progress on test-only commit `5380eef327bb3adfe8cdff2a314fd45b79721233`. #227's FFmpeg/setup path passed; its only failure was the second draft launch reusing the existing task and never emitting the requested restore marker. The new test uses `--activity-clear-task` and waits for entry, exact draft-lookup and restore markers.
-- #226's historical setup failure was `apt-get install ffmpeg` exit 124 during package download. Workflow fix commit `7560ce792288ece7d2b3ca2116502589a68a24f1` made that setup pass in #227/#228. Do not repeat package troubleshooting while #228 is active.
+- [#228 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40399875346), head SHA `5380eef327bb3adfe8cdff2a314fd45b79721233`: all 13/13 Android instrumentation tests passed. The decoded AAC source-video audio gate measured baseline 16380.5592, kept early ratio 0.3990434, kept late magnitude 6533.6536, muted ratio 0.0000145058, and confirmed `originalsUnchanged=true`. Both draft lookup/restore markers and both exported MP4 saves were observed. Do not repeat source-audio gain/mute unchanged.
+- Workflow dependency timeouts (#218/#226) are resolved by bounded FFmpeg installation; do not repeat that setup fix unchanged.
 - Do not repeat #210 text-strip drags or #212 timed-text export unchanged.
-- Remaining after this test: source-video audio mute/volume with a fixture that contains its own audio track, A/V sync, text preview after seek/zoom, split/reorder/trim-scroll conflicts, physical-device review, signed update/install.
+- Remaining: A/V sync, text preview/settings after seek/zoom, split-at-playhead/export boundary, trim/scroll and multi-clip edge cases, extra Undo/Redo coverage, physical-device review and signed update/install.
 - Keep versionCode 395 blocked. Do not change version metadata, sign/publish an APK, or enable in-app updates without all required gates and explicit authorization.
 
 ## Next action (superseded by live run #226 below)
