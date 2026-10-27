@@ -90,7 +90,7 @@ Work top to bottom. Mark an item complete only when there is test or inspection 
 ### 5. Timeline edge cases
 
 - [x] Split-at-playhead/export boundary gate passed in [#238 — SUCCESS, 16/16 Android instrumentation tests](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40492151907), head SHA `43b10ea7858d3f025968d021e4c66a734bba5e96`. The test-only selector now finds the selected second tile via `By.textContains("KLİP 2")`; all 16 tests completed with 0 failures. The target test reached the split/export verification and passed the two ordered 2.00 s segment, ~4.00 s output, video/audio seam within 150 ms, and original-fixture preservation assertions. Do not rerun this gate unchanged.
-- [ ] Trim-versus-scroll gesture conflict test is now queued as [#239](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40499685097), commit `a938e9b`; its result is not yet verified. After inspecting this run, continue with multi-clip trim/reorder/seek at multiple zoom levels. Do not repeat the already-passing single-clip trim/zoom or two-clip export tests unless a relevant change warrants it.
+- [ ] Trim-versus-scroll gesture conflict test is running as [#239](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40499685097), commit `a938e9b`; its result is not yet verified. After inspecting this run, continue with multi-clip trim/reorder/seek at multiple zoom levels. Do not repeat the already-passing single-clip trim/zoom or two-clip export tests unless a relevant change warrants it.
 
 ### 6. Physical-device and release validation
 
@@ -118,6 +118,10 @@ Work top to bottom. Mark an item complete only when there is test or inspection 
 - Do not prepare/publish version 395 or enable its in-app update until every required gate is verified and the user explicitly authorizes release.
 - Update this checkpoint after meaningful work, recording the exact commit/run URL and result. Keep this checklist canonical; put only a concise pointer/current handoff in `RESTORATION_STATUS.md`.
 
+
+## Historical run-by-run verification log — reference only
+
+The dated sections below are snapshots of the state at the time each run was investigated. Their older unchecked boxes and “next” wording are **not the active task list** and may have been superseded by later passing runs. Use **Current handoff** and **Remaining work — canonical checklist** near the top of this README for what is actually open. Do not repeat a gate marked passed there unless relevant source code changes.
 
 ### 2026-10-25 — Global Undo/Redo validation #183 / #184
 - [x] #183 failed before tests ran: Kotlin compilation reported nullable receiver errors for `undoClipButton` and `redoClipButton` at `VideoEditorActivity.kt` lines 1282–1287.
