@@ -16,6 +16,7 @@ This is the concise handoff for ongoing CI debugging. Read it and the latest REA
 
 ## Latest known state (2026-10-27)
 
+- Current candidate branch: `fix/editor-395-gate`; installed baseline remains versionCode 394/build 61; release 395 blocked.\n- [#255 — FAILURE, 17/18 Android tests passed](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40557103318): the physical long-press adjustment passed its previous menu failure, then the multi-clip test failed on `return-to-first-before-zoom seek did not reach 1000 ms; actual=760 ms` (40 ms beyond the unchanged ±200 ms limit). Unit tests, Debug APK and FFmpeg fixtures passed. Test-only fix [`51d0f78`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/51d0f782d88690e2478bbe70c04c6e0556fb0da0) changes the seek drag duration from 30 to 180 ms and the small-distance detour threshold/separation from 12 to 20 px. Next: validate this exact seek, inspect the next assertion only if it fails, and do not repeat #255 unchanged.\n
 - Repo: `agabeyayd-lgtm/MathMotorVideo-Restore`; branch: `fix/editor-395-gate`.
 - Installed phone baseline: versionCode 394, build 61 (`app-v8.3-61`).
 - [#212 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40335645092): timed-text export fix passed unit/build/instrumentation. Do not rerun unchanged.
