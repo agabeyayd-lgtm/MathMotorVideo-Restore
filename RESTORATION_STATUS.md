@@ -13,3 +13,10 @@
 - Remaining after that: A/V synchronization against known frame boundaries; split-at-playhead/export boundary; trim-vs-scroll and multi-clip edge cases; Undo/Redo coverage for trim/split/reorder and sound-effect changes; physical-device review; signed update/install.
 - After #229: measured A/V synchronization; split-at-playhead/export boundary; trim/scroll and multi-clip edge cases; Undo/Redo grouping; physical-device usability and signed update/install.
 - **VersionCode 395 remains blocked.** No version bump, signing, publication or in-app update activation until required gates pass and release is explicitly authorized.
+
+
+### 2026-10-27 — seek/zoom test compile failures and correction
+
+- [#231 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40456248654): `UiObject2.setProgress` unresolved; Android instrumentation did not run.
+- [#232 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40457727313): legacy `UiObject.setProgress` was also unresolved; again, the failure occurred during test compilation before target assertions.
+- [#233 RUNNING](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40458467025), commit [`275f3a8`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/275f3a8013b80826256127f6584b7598f2b44879): removed both unsupported calls; tap the SeekBar track and calibrate from the measured project time. The target tolerance and text preview/settings assertions are unchanged. Do not mark text seek/zoom verified until this run passes those assertions.
