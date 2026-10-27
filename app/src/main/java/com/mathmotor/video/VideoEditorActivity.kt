@@ -1800,7 +1800,8 @@ class VideoEditorActivity : Activity() {
             timelineScrollViews.add(scroll)
             scroll.setOnScrollChangeListener { view, scrollX, _, oldScrollX, _ ->
                 if (!syncingTimelineScroll) {
-                    val childWidth = view.getChildAt(0)?.width ?: 0
+                    val laneView = view as? android.widget.HorizontalScrollView
+                    val childWidth = laneView?.getChildAt(0)?.width ?: 0
                     val maxScrollX = (childWidth - view.width).coerceAtLeast(0)
                     if (tag == "VIDEO" && (
                         scrollX == 0 ||
