@@ -516,15 +516,14 @@ class EditorTimelineInteractionTest {
         assertTrue("Seeded text size was not restored: " + sizeLabelBefore, sizeLabelBefore.contains("32 sp"))
 
         fun seekPlayheadTo(targetMs: Long) {
-            val seek = requireObject(
-                device, By.desc("Zaman çizelgesinde oynatma noktası"), "timeline playhead seek bar"
+            // UiObject2 has no setProgress API. Use the legacy UiObject progress action,
+            // which targets the accessible SeekBar directly and avoids thumb-inset coordinate math.
+            val seek = device.findObject(
+                UiSelector().description("Zaman çizelgesinde oynatma noktası")
             )
-            assertTrue("Timeline playhead seek bar is too narrow: " + seek.visibleBounds, seek.visibleBounds.width() > 100)
-            // Use the SeekBar's accessible progress action rather than estimating its thumb
-            // position from the outer bounds. Android's SeekBar has internal thumb/padding
-            // insets, so coordinate math can drift after the timeline has been zoomed.
-            seek.setProgress(targetMs.coerceIn(0L, 8_020L).toFloat() / 8_020f)
+            assertTrue("Timeline playhead SeekBar was not found", seek.exists())
             val expected = targetMs.coerceIn(0L, 8_020L)
+            seek.setProgress(expected.toFloat() / 8_020f)
             val deadline = SystemClock.uptimeMillis() + 3_000L
             var actual = projectPositionMs(requireProjectTime(device))
             while (SystemClock.uptimeMillis() < deadline && abs(actual - expected) > 150L) {
