@@ -89,13 +89,6 @@ jobs:
           test -s app/build/test-fixtures/editor-test-video-with-audio.mp4
           ffprobe -v error -show_entries stream=codec_type,codec_name,sample_rate,channels \
             -of default=noprint_wrappers=1 app/build/test-fixtures/editor-test-video-with-audio.mp4
-          echo "Fixture sizes:"
-          wc -c app/build/test-fixtures/editor-test-video.mp4 app/build/test-fixtures/editor-test-video-second.mp4 app/build/test-fixtures/editor-test-video-with-audio.mp4 app/build/test-fixtures/editor-av-sync-video.mp4
-          echo "Fixture stream metadata:"
-          for f in app/build/test-fixtures/editor-test-video.mp4 app/build/test-fixtures/editor-test-video-second.mp4; do
-            printf '%s: ' "$f"
-            head -c 12 "$f" | od -An -tx1
-          done
           # A/V sync fixture: red video for the first 2 s, lime video after 2 s,
           # and a 997 Hz source-audio tone delayed to exactly the same 2 s boundary.
           ffmpeg -nostdin -hide_banner -loglevel error -y \
@@ -110,6 +103,14 @@ jobs:
           test -s app/build/test-fixtures/editor-av-sync-video.mp4
           ffprobe -v error -show_entries format=duration:stream=codec_type,codec_name,r_frame_rate,sample_rate \
             -of default=noprint_wrappers=1 app/build/test-fixtures/editor-av-sync-video.mp4
+
+          echo "Fixture sizes:"
+          wc -c app/build/test-fixtures/editor-test-video.mp4 app/build/test-fixtures/editor-test-video-second.mp4 app/build/test-fixtures/editor-test-video-with-audio.mp4 app/build/test-fixtures/editor-av-sync-video.mp4
+          echo "Fixture stream metadata:"
+          for f in app/build/test-fixtures/editor-test-video.mp4 app/build/test-fixtures/editor-test-video-second.mp4; do
+            printf '%s: ' "$f"
+            head -c 12 "$f" | od -An -tx1
+          done
           echo "Both deterministic fixtures are ready without external downloads"
 
       - name: Enable KVM acceleration for the emulator
