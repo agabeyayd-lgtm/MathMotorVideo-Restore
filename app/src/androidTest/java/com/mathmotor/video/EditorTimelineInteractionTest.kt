@@ -786,29 +786,46 @@ class EditorTimelineInteractionTest {
                     .coerceIn(bounds.left + 1, bounds.right - 2)
 
             var actual = projectPositionMs(requireProjectTime(device))
-            for (attempt in 1..6) {
-                if (abs(actual - expected) <= 150L) break
+
+            fun dragToTime(destinationMs: Long, attempt: Int, phase: String) {
                 val fromX = xForTime(actual)
-                val rawCorrectionPx = ((expected - actual).toDouble() /
-                    totalMs.coerceAtLeast(1L).toDouble() * usableWidth).toInt()
-                // Android's SeekBar ignores tiny drags around its thumb. Preserve direction,
-                // but require a decisive minimum movement instead of repeating 1–7 px gestures.
-                val correctionPx = if (kotlin.math.abs(rawCorrectionPx) < 12) {
-                    if (expected > actual) 12 else -12
-                } else {
-                    rawCorrectionPx
-                }
-                val toX = (fromX + correctionPx).coerceIn(bounds.left + 1, bounds.right - 2)
+                val toX = xForTime(destinationMs)
                 device.swipe(fromX, bounds.centerY(), toX, bounds.centerY(), 30)
                 device.waitForIdle()
                 SystemClock.sleep(300)
                 actual = projectPositionMs(requireProjectTime(device))
                 android.util.Log.i(
                     "MultiClipTimelineTest",
-                    "stage=$stage attempt=$attempt target=$expected actual=$actual fromX=$fromX toX=$toX " +
-                        "bounds=$bounds totalMs=$totalMs zoom=" +
+                    "stage=$stage phase=$phase attempt=$attempt requested=$destinationMs target=$expected actual=$actual " +
+                        "fromX=$fromX toX=$toX bounds=$bounds totalMs=$totalMs zoom=" +
                         requireObject(device, By.descContains("Zaman çizelgesi yakınlaştırma"), "$stage zoom label").contentDescription
                 )
+            }
+
+            // On the compact emulator this SeekBar is only ~105 px wide. At 11 s,
+            // seeking from 0 to 1 s asks for a ~6 px drag; forcing that to 12 px
+            // oscillated between ~150 ms and ~1.8 s. First move to a nearby, safely
+            // separated timeline position, then drag to the actual target coordinate.
+            // This preserves the ±200 ms assertion instead of masking the mapping failure.
+            if (abs(actual - expected) > 150L &&
+                abs(xForTime(actual) - xForTime(expected)) < 12
+            ) {
+                val detourMs = if (expected + 2_500L < totalMs) {
+                    expected + 2_500L
+                } else {
+                    (expected - 2_500L).coerceAtLeast(0L)
+                }
+                if (detourMs != expected &&
+                    abs(xForTime(detourMs) - xForTime(expected)) >= 12 &&
+                    abs(xForTime(detourMs) - xForTime(actual)) >= 12
+                ) {
+                    dragToTime(detourMs, 0, "touch-slop-detour")
+                }
+            }
+
+            for (attempt in 1..6) {
+                if (abs(actual - expected) <= 150L) break
+                dragToTime(expected, attempt, "target")
             }
             assertTrue("$stage seek did not reach $expected ms; actual=$actual ms", abs(actual - expected) <= 200L)
         }
