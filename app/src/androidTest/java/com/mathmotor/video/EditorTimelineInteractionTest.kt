@@ -526,21 +526,55 @@ class EditorTimelineInteractionTest {
         var endPositionMs = positionAfterBodySwipeMs
         for (attempt in 0 until 12) {
             if (endPositionMs >= originalDurationMs - 200L) break
-            val lane = requireObject(device, laneSelector, "VIDEO lane while scrolling to trim edge")
-            val bounds = lane.visibleBounds
-            device.swipe(
-                bounds.left + bounds.width() * 9 / 10,
-                bounds.centerY(),
-                bounds.left + bounds.width() / 10,
-                bounds.centerY(),
-                40
+            // Scroll from the actual clip body, not the whole VIDEO lane. At high zoom the
+            // lane's rightmost 10% overlaps the visible right trim handle; starting there
+            // trims the source and resets the playhead instead of scrolling to the last frames.
+            val filmstripForEndScroll = requireObject(
+                device, filmstripSelector, "first clip filmstrip while scrolling to trim edge"
             )
+            val bodyBounds = filmstripForEndScroll.visibleBounds
+            val endSwipeGapPx = (6f * density).toInt().coerceAtLeast(2)
+            var endSafeLeft = bodyBounds.left + endSwipeGapPx
+            var endSafeRight = bodyBounds.right - endSwipeGapPx
+            device.findObject(By.descContains("Sol tutamaç"))?.visibleBounds?.let { handle ->
+                val overlaps = handle.right > bodyBounds.left && handle.left < bodyBounds.right &&
+                    handle.bottom > bodyBounds.top && handle.top < bodyBounds.bottom
+                if (overlaps) endSafeLeft = maxOf(endSafeLeft, handle.right + endSwipeGapPx)
+            }
+            device.findObject(By.descContains("Sağ tutamaç"))?.visibleBounds?.let { handle ->
+                val overlaps = handle.right > bodyBounds.left && handle.left < bodyBounds.right &&
+                    handle.bottom > bodyBounds.top && handle.top < bodyBounds.bottom
+                if (overlaps) endSafeRight = minOf(endSafeRight, handle.left - endSwipeGapPx)
+            }
+            val endSafeWidth = endSafeRight - endSafeLeft
+            assertTrue(
+                "Filmstrip has too little handle-free body to scroll toward the source end: " +
+                    "filmstrip=$bodyBounds safe=[$endSafeLeft,$endSafeRight] zoom=$zoomAfter%",
+                endSafeWidth >= (40f * density).toInt()
+            )
+            val endSwipeY = bodyBounds.centerY()
+            val endSwipeStartX = endSafeLeft + (endSafeWidth * 0.90f).toInt()
+            val endSwipeEndX = endSafeLeft + (endSafeWidth * 0.10f).toInt()
+            android.util.Log.i(
+                "TrimScrollConflictTest",
+                "stage=scroll-to-end-setup attempt=" + (attempt + 1) +
+                    " filmstrip=$bodyBounds safeWidth=$endSafeWidth startX=$endSwipeStartX " +
+                    "endX=$endSwipeEndX zoom=$zoomAfter"
+            )
+            device.swipe(endSwipeStartX, endSwipeY, endSwipeEndX, endSwipeY, 40)
             device.waitForIdle()
             SystemClock.sleep(180)
             endPositionMs = projectPositionMs(requireProjectTime(device))
+            val endDurationMs = projectDurationMs(requireProjectTime(device))
             android.util.Log.i(
                 "TrimScrollConflictTest",
-                "stage=scroll-to-end attempt=" + (attempt + 1) + " position=" + endPositionMs
+                "stage=scroll-to-end attempt=" + (attempt + 1) + " position=" + endPositionMs +
+                    " duration=" + endDurationMs
+            )
+            assertTrue(
+                "Scrolling the clip body toward the source end changed its duration: " +
+                    "$originalDurationMs -> $endDurationMs ms",
+                kotlin.math.abs(endDurationMs - originalDurationMs) <= 30L
             )
         }
         assertTrue(
