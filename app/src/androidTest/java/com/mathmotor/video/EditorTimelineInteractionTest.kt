@@ -783,12 +783,24 @@ class EditorTimelineInteractionTest {
             )
             assertTrue("$stage playhead SeekBar is too narrow: ${seek.visibleBounds}", seek.visibleBounds.width() > 100)
 
-            // This combined multi-clip gate was repeatedly failing on tiny 6–10 px
-            // physical drags on the compact emulator (e.g. 1,000 ms target -> 750 ms).
-            // Use Android's supported SeekBar accessibility progress action for exact
-            // deterministic positioning here; separate existing tests still exercise
-            // physical trim/scroll gestures. Keep the actual project-time assertion strict.
-            seek.setProgress(expected.toFloat() / totalMs.coerceAtLeast(1L).toFloat())
+            // UiObject2 has no setProgress method. Use the real accessibility ACTION_SET_PROGRESS
+            // action exposed by Android's SeekBar, then verify the actual project-time label below.
+            // Other existing tests continue to exercise physical trim/scroll gestures.
+            val seekNode = InstrumentationRegistry.getInstrumentation().uiAutomation.rootInActiveWindow
+                ?.findAccessibilityNodeInfosByContentDescription("Zaman çizelgesinde oynatma noktası")
+                ?.firstOrNull()
+            assertTrue("$stage playhead accessibility node was not found", seekNode != null)
+            val progressArgs = android.os.Bundle().apply {
+                putFloat(
+                    android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_PROGRESS_VALUE,
+                    expected.toFloat()
+                )
+            }
+            val accepted = seekNode!!.performAction(
+                android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_PROGRESS.id,
+                progressArgs
+            )
+            assertTrue("$stage SeekBar rejected ACTION_SET_PROGRESS for $expected ms", accepted)
             device.waitForIdle()
             SystemClock.sleep(250)
             val actual = projectPositionMs(requireProjectTime(device))
