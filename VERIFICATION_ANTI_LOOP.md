@@ -14,7 +14,7 @@ This is the concise handoff for ongoing CI debugging. Read it and the latest REA
 - Record run number, failing step, evidence, root cause, fix commit, unique verification, and result in README and this file.
 - Keep versionCode 395 blocked. Do not change version metadata, sign/publish an APK, or enable in-app update without all release gates and explicit authorization.
 
-## Latest known state (2026-10-26)
+## Latest known state (2026-10-27)
 
 - Repo: `agabeyayd-lgtm/MathMotorVideo-Restore`; branch: `fix/editor-395-gate`.
 - Installed phone baseline: versionCode 394, build 61 (`app-v8.3-61`).
@@ -27,7 +27,7 @@ This is the concise handoff for ongoing CI debugging. Read it and the latest REA
 - Do not repeat #210 text-strip drags or #212 timed-text export unchanged.
 - [#229 — FAILED BEFORE INSTRUMENTATION](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40452759400), head SHA `2b227a66bb3981d254aa094eb3bf4abbd9722ee8`: unit tests and Debug APK build passed; FFmpeg install timed out with `exit code 124` while downloading from the throttled Azure Ubuntu mirror. No emulator/text assertions ran; classify as CI preflight, not app behavior.
 - [#230 — FAILED, 13/14 instrumentation tests passed](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40454123893), head SHA `30ff517bdb0f943f9ca71d19982da4e843552228`: the mirror switch fixed FFmpeg setup and instrumentation ran. The only failure was the new text seek/zoom test's coordinate-based SeekBar mapping: requested return time 4200 ms but actual label stayed at 3330 ms. The test computed the thumb from outer bounds and ignored Android SeekBar internal insets; this is not yet evidence of an app preview defect.
-- [#231 — IN PROGRESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40456248654), head SHA `7e050ee535bc025f5793fe69faaa30cfcccb4d71`: use UiAutomator's accessible SeekBar progress action, then explicitly assert project time is within 150 ms of target. Verify this test interaction change; do not weaken the preview visibility/settings assertions.
+- [#231 — FAILED BEFORE INSTRUMENTATION](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40456248654), head SHA `7e050ee535bc025f5793fe69faaa30cfcccb4d71`: Android-test compilation failed at `EditorTimelineInteractionTest.kt:526` because `UiObject2.setProgress` does not exist; no text seek/zoom assertions ran. Test-only fix [`fe1bcfe`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/fe1bcfedce7ca85f7d99ec196677f5eb8f584e79) uses legacy `UiObject.setProgress` against the accessible SeekBar and keeps the ±150 ms actual-time assertion. Verify the new workflow; do not weaken preview visibility/settings assertions.
 - Remaining after #229: measured A/V sync, split-at-playhead/export boundary, trim/scroll and multi-clip edge cases, extra Undo/Redo coverage, physical-device review and signed update/install.
 - Keep versionCode 395 blocked. Do not change version metadata, sign/publish an APK, or enable in-app updates without all required gates and explicit authorization.
 
