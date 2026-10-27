@@ -6,6 +6,7 @@ import android.net.Uri
 import android.provider.MediaStore
 import android.os.SystemClock
 import java.security.MessageDigest
+import java.util.regex.Pattern
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
@@ -15,6 +16,7 @@ import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.UiScrollable
 import androidx.test.uiautomator.UiSelector
 import androidx.test.uiautomator.Until
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -740,7 +742,7 @@ class EditorTimelineInteractionTest {
             val titleBounds = requireObject(
                 device, By.text(expectedTitle), "$stage clip-rail title $expectedTitle"
             ).visibleBounds
-            val selectedMarkers = device.findObjects(By.textMatches("▶ KLİP [12]"))
+            val selectedMarkers = device.findObjects(By.text(Pattern.compile("^▶ KLİP [12]$")))
             assertEquals(
                 "$stage should expose exactly one selected clip-rail marker",
                 1, selectedMarkers.size
