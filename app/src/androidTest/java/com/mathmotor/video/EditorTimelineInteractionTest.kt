@@ -733,28 +733,33 @@ class EditorTimelineInteractionTest {
         }
 
         fun assertSelectedClip(expectedTitle: String, stage: String) {
-            // The compact 320x640 emulator can reduce the lower editor-panel viewport
-            // to 15 px, so scrolling its "Seçili klip" text is not a valid selection
-            // check. These deterministic fixtures have distinct durations; the live
-            // playhead label exposes the selected clip-local duration without relying
-            // on an off-screen panel.
-            val timelineLabel = requireProjectTime(device)
-            val expectedDurationMs = when (expectedTitle) {
-                "FIRST_RED" -> firstDurationMs
-                "SECOND_GREEN" -> secondDurationMs
-                else -> throw AssertionError("$stage has no duration mapping for $expectedTitle")
-            }
-            val expectedDurationText = String.format(
-                java.util.Locale.US, "%02d:%02d.%02d",
-                expectedDurationMs / 60_000L,
-                (expectedDurationMs / 1_000L) % 60L,
-                (expectedDurationMs % 1_000L) / 10L
-            )
+            // In full multi-clip preview the playhead label correctly shows project
+            // time/duration, not clip-local time. Verify selection using the visible
+            // clip-rail marker instead of assuming the project label exposes local time.
+            val expectedTile = (1..2).firstNotNullOfOrNull { ordinal ->
+                device.findObject(By.descContains("Klip $ordinal: $expectedTitle,"))
+                    ?.let { ordinal to it.visibleBounds }
+            } ?: throw AssertionError("$stage could not find clip-rail tile for $expectedTitle")
+
+            val ordinal = expectedTile.first
+            val tileBounds = expectedTile.second
+            val selectedMarker = device.findObject(By.text("▶ KLİP $ordinal"))
             assertTrue(
-                "$stage expected selected clip $expectedTitle with local duration $expectedDurationText " +
-                    "but timeline label was: $timelineLabel",
-                Regex("Klip\\s+\\d{2}:\\d{2}\\.\\d{2}\\s*/\\s*" +
-                    Regex.escape(expectedDurationText)).containsMatchIn(timelineLabel)
+                "$stage expected $expectedTitle (clip $ordinal) selected, but its ▶ KLİP marker was absent",
+                selectedMarker != null
+            )
+            val markerBounds = selectedMarker!!.visibleBounds
+            assertTrue(
+                "$stage selected marker for $expectedTitle was outside its clip tile: marker=$markerBounds tile=$tileBounds",
+                markerBounds.left >= tileBounds.left - 2 &&
+                    markerBounds.right <= tileBounds.right + 2 &&
+                    markerBounds.top >= tileBounds.top - 2 &&
+                    markerBounds.bottom <= tileBounds.bottom + 2
+            )
+            val otherOrdinal = if (ordinal == 1) 2 else 1
+            assertTrue(
+                "$stage expected only $expectedTitle selected; other clip marker ▶ KLİP $otherOrdinal was present",
+                device.findObject(By.text("▶ KLİP $otherOrdinal")) == null
             )
         }
 
