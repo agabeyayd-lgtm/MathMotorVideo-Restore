@@ -390,6 +390,181 @@ class EditorTimelineInteractionTest {
     }
 
     @Test
+    fun filmstripScrollDoesNotTrimAndTrimHandleDoesNotBecomeScroll() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val density = context.resources.displayMetrics.density
+        val device = UiDevice.getInstance(instrumentation)
+        val packageName = context.packageName
+        val fixture = java.io.File(context.filesDir, "editor-test-video.mp4")
+        assertTrue("Trim-vs-scroll fixture is missing", fixture.isFile && fixture.length() > 0L)
+        val originalHash = sha256(fixture)
+        val fixtureUri = Uri.fromFile(fixture).toString()
+        val draftId = java.util.UUID.randomUUID().toString()
+
+        device.executeShellCommand("logcat -c")
+        device.executeShellCommand(
+            "am start --activity-clear-task -n " + packageName +
+                "/com.mathmotor.video.EditorTestEntryActivity --es video_uri " +
+                fixtureUri + " --es draft_id " + draftId
+        )
+        assertTrue(
+            "Editor did not show the VIDEO lane for trim-vs-scroll test",
+            device.wait(Until.hasObject(By.text("VIDEO")), 20_000)
+        )
+        assertTrue(
+            "Project time label did not appear for trim-vs-scroll test",
+            device.wait(Until.hasObject(By.textContains("Proje")), 20_000)
+        )
+        assertTrue("Trim-vs-scroll fixture clip was not loaded", awaitClipAdded(device))
+        device.waitForIdle()
+        SystemClock.sleep(250)
+
+        val projectBefore = requireProjectTime(device)
+        val originalDurationMs = projectDurationMs(projectBefore)
+        assertTrue(
+            "Trim-vs-scroll test requires the full 8-second source, got " + originalDurationMs + " ms",
+            originalDurationMs in 7_800L..8_300L
+        )
+        val laneSelector = By.desc("Zaman çizelgesi satırı: VIDEO")
+        val laneBeforeZoom = requireObject(device, laneSelector, "VIDEO timeline lane before pinch")
+        val zoomBeforeLabel = requireObject(
+            device, By.descContains("Zaman çizelgesi yakınlaştırma"), "timeline zoom before pinch"
+        ).contentDescription
+        val zoomBefore = zoomPercent(zoomBeforeLabel)
+        val timeBeforeZoomMs = projectPositionMs(requireProjectTime(device))
+        laneBeforeZoom.pinchOpen(0.85f, 60)
+        device.waitForIdle()
+        SystemClock.sleep(300)
+
+        val zoomAfterLabel = requireObject(
+            device, By.descContains("Zaman çizelgesi yakınlaştırma"), "timeline zoom after pinch"
+        ).contentDescription
+        val zoomAfter = zoomPercent(zoomAfterLabel)
+        val timeAfterZoomMs = projectPositionMs(requireProjectTime(device))
+        assertTrue(
+            "Pinch did not change zoom before the trim-vs-scroll gestures: " +
+                zoomBeforeLabel + " -> " + zoomAfterLabel,
+            zoomAfter > zoomBefore
+        )
+        assertTrue(
+            "Pinch moved the fixed-playhead time before the trim-vs-scroll gestures: " +
+                timeBeforeZoomMs + " -> " + timeAfterZoomMs + " ms",
+            kotlin.math.abs(timeBeforeZoomMs - timeAfterZoomMs) <= 150L
+        )
+
+        // A horizontal swipe through the filmstrip body must travel the timeline.
+        // Keep both endpoints away from the visible trim handles.
+        val filmstripSelector = By.descContains("Klip 1:")
+        val filmstrip = requireObject(device, filmstripSelector, "first clip filmstrip")
+        val filmstripBounds = filmstrip.visibleBounds
+        assertTrue("First filmstrip has too little visible body for a safe swipe: " + filmstripBounds,
+            filmstripBounds.width() >= (70f * density).toInt())
+        val swipeY = filmstripBounds.centerY()
+        val swipeStartX = filmstripBounds.left + (filmstripBounds.width() * 0.68f).toInt()
+        val swipeEndX = filmstripBounds.left + (filmstripBounds.width() * 0.46f).toInt()
+        val positionBeforeBodySwipeMs = projectPositionMs(requireProjectTime(device))
+        val durationBeforeBodySwipeMs = projectDurationMs(requireProjectTime(device))
+        device.swipe(swipeStartX, swipeY, swipeEndX, swipeY, 40)
+        device.waitForIdle()
+        SystemClock.sleep(350)
+        val positionAfterBodySwipeMs = projectPositionMs(requireProjectTime(device))
+        val durationAfterBodySwipeMs = projectDurationMs(requireProjectTime(device))
+        android.util.Log.i(
+            "TrimScrollConflictTest",
+            "stage=filmstrip-swipe beforePosition=" + positionBeforeBodySwipeMs +
+                " afterPosition=" + positionAfterBodySwipeMs +
+                " beforeDuration=" + durationBeforeBodySwipeMs +
+                " afterDuration=" + durationAfterBodySwipeMs +
+                " zoom=" + zoomAfter
+        )
+        assertTrue(
+            "A swipe on the filmstrip body did not scroll the playhead: " +
+                positionBeforeBodySwipeMs + " -> " + positionAfterBodySwipeMs + " ms",
+            kotlin.math.abs(positionAfterBodySwipeMs - positionBeforeBodySwipeMs) >= 200L
+        )
+        assertTrue(
+            "A normal filmstrip swipe accidentally trimmed the clip: " +
+                durationBeforeBodySwipeMs + " -> " + durationAfterBodySwipeMs + " ms",
+            kotlin.math.abs(durationAfterBodySwipeMs - durationBeforeBodySwipeMs) <= 30L
+        )
+
+        // Move to the final source frames without touching either edge handle.
+        var endPositionMs = positionAfterBodySwipeMs
+        for (attempt in 0 until 12) {
+            if (endPositionMs >= originalDurationMs - 200L) break
+            val lane = requireObject(device, laneSelector, "VIDEO lane while scrolling to trim edge")
+            val bounds = lane.visibleBounds
+            device.swipe(
+                bounds.left + bounds.width() * 9 / 10,
+                bounds.centerY(),
+                bounds.left + bounds.width() / 10,
+                bounds.centerY(),
+                40
+            )
+            device.waitForIdle()
+            SystemClock.sleep(180)
+            endPositionMs = projectPositionMs(requireProjectTime(device))
+            android.util.Log.i(
+                "TrimScrollConflictTest",
+                "stage=scroll-to-end attempt=" + (attempt + 1) + " position=" + endPositionMs
+            )
+        }
+        assertTrue(
+            "Could not scroll the final source frames under the playhead: " + endPositionMs + " ms",
+            endPositionMs >= originalDurationMs - 200L
+        )
+
+        val rightSelector = By.descContains("Sağ tutamaç")
+        assertTrue(
+            "Right trim handle is not accessible at the source end",
+            device.wait(Until.hasObject(rightSelector), 10_000)
+        )
+        val rightHandle = requireObject(device, rightSelector, "right trim handle at source end")
+        val rightBounds = rightHandle.visibleBounds
+        assertTrue("Right trim handle has no visible drag target: " + rightBounds,
+            rightBounds.width() >= 4 && rightBounds.height() >= 4)
+        val durationBeforeHandleDragMs = projectDurationMs(requireProjectTime(device))
+        val handleDragPx = (18f * density).toInt().coerceAtLeast(10)
+        device.swipe(
+            rightBounds.centerX(),
+            rightBounds.centerY(),
+            rightBounds.centerX() - handleDragPx,
+            rightBounds.centerY(),
+            30
+        )
+        device.waitForIdle()
+        SystemClock.sleep(450)
+
+        val durationAfterHandleDragMs = projectDurationMs(requireProjectTime(device))
+        val positionAfterHandleDragMs = projectPositionMs(requireProjectTime(device))
+        android.util.Log.i(
+            "TrimScrollConflictTest",
+            "stage=trim-handle beforeDuration=" + durationBeforeHandleDragMs +
+                " afterDuration=" + durationAfterHandleDragMs +
+                " playheadAfter=" + positionAfterHandleDragMs
+        )
+        assertTrue(
+            "A right-handle drag was stolen by timeline scrolling instead of trimming: " +
+                durationBeforeHandleDragMs + " -> " + durationAfterHandleDragMs + " ms",
+            durationAfterHandleDragMs <= durationBeforeHandleDragMs - 150L
+        )
+        assertTrue(
+            "Right-handle trim left an invalid duration: " + durationAfterHandleDragMs + " ms",
+            durationAfterHandleDragMs >= 500L
+        )
+        assertTrue(
+            "Right-handle trim should restore the selected clip start under the fixed playhead, got " +
+                positionAfterHandleDragMs + " ms",
+            positionAfterHandleDragMs <= 250L
+        )
+        assertTrue(
+            "Trim-vs-scroll test modified its original source video",
+            fixture.isFile && fixture.length() > 0L && sha256(fixture) == originalHash
+        )
+    }
+
+    @Test
     fun textPreviewAndSettingsRemainStableAfterTimelineSeekAndZoom() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
