@@ -90,12 +90,26 @@ jobs:
           ffprobe -v error -show_entries stream=codec_type,codec_name,sample_rate,channels \
             -of default=noprint_wrappers=1 app/build/test-fixtures/editor-test-video-with-audio.mp4
           echo "Fixture sizes:"
-          wc -c app/build/test-fixtures/editor-test-video.mp4 app/build/test-fixtures/editor-test-video-second.mp4 app/build/test-fixtures/editor-test-video-with-audio.mp4
+          wc -c app/build/test-fixtures/editor-test-video.mp4 app/build/test-fixtures/editor-test-video-second.mp4 app/build/test-fixtures/editor-test-video-with-audio.mp4 app/build/test-fixtures/editor-av-sync-video.mp4
           echo "Fixture stream metadata:"
           for f in app/build/test-fixtures/editor-test-video.mp4 app/build/test-fixtures/editor-test-video-second.mp4; do
             printf '%s: ' "$f"
             head -c 12 "$f" | od -An -tx1
           done
+          # A/V sync fixture: red video for the first 2 s, lime video after 2 s,
+          # and a 997 Hz source-audio tone delayed to exactly the same 2 s boundary.
+          ffmpeg -nostdin -hide_banner -loglevel error -y \
+            -f lavfi -i "color=c=red:s=320x180:r=30:d=2" \
+            -f lavfi -i "color=c=lime:s=320x180:r=30:d=2" \
+            -f lavfi -i "sine=frequency=997:sample_rate=48000:duration=2" \
+            -filter_complex "[0:v][1:v]concat=n=2:v=1:a=0[v];[2:a]adelay=2000,volume=2.0[a]" \
+            -map "[v]" -map "[a]" -t 4.0 \
+            -c:v libx264 -preset ultrafast -pix_fmt yuv420p -r 30 -g 30 -keyint_min 30 -sc_threshold 0 \
+            -c:a aac -b:a 192k -movflags +faststart \
+            app/build/test-fixtures/editor-av-sync-video.mp4
+          test -s app/build/test-fixtures/editor-av-sync-video.mp4
+          ffprobe -v error -show_entries format=duration:stream=codec_type,codec_name,r_frame_rate,sample_rate \
+            -of default=noprint_wrappers=1 app/build/test-fixtures/editor-av-sync-video.mp4
           echo "Both deterministic fixtures are ready without external downloads"
 
       - name: Enable KVM acceleration for the emulator

@@ -2542,6 +2542,208 @@ class EditorTimelineInteractionTest {
     }
 
     @Test
+    fun exportedMp4KeepsAudioOnsetAlignedWithVideoColorBoundary() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val resolver = context.contentResolver
+        val device = UiDevice.getInstance(instrumentation)
+        val packageName = context.packageName
+        val fixture = java.io.File(context.filesDir, "editor-av-sync-video.mp4")
+        assertTrue("Deterministic A/V sync fixture is missing", fixture.isFile && fixture.length() > 0L)
+        val originalSize = fixture.length()
+        val originalHash = sha256(fixture)
+        val exportName = "MathMotor_av_sync_${System.currentTimeMillis()}"
+        val draftId = java.util.UUID.randomUUID().toString()
+
+        val clip = org.json.JSONObject()
+            .put("uri", Uri.fromFile(fixture).toString())
+            .put("title", "AV_SYNC_RED_TO_LIME")
+            .put("durationMs", 4_000L)
+            .put("startMs", 0L)
+            .put("endMs", 4_000L)
+        val project = org.json.JSONObject()
+            .put("format", "MathMotorVideoProject")
+            .put("version", 1)
+            .put("clips", org.json.JSONArray().put(clip))
+            .put("selectedClipIndex", 0)
+            .put("timelinePlayheadMs", 1_800L)
+            .put("timelineZoom", 1.0)
+            .put("timelineHorizontalScrollMs", 0L)
+            .put("textLayers", org.json.JSONArray())
+            .put("sourceAudioVolume", 100)
+            .put("musicVolume", 0)
+            .put("soundVolume", 100)
+            .put("keepSourceAudio", true)
+            .put("exportName", exportName)
+        assertTrue("Could not seed A/V synchronization project",
+            VideoProjectDraftStore.save(context, draftId, "A/V synchronization validation", project))
+
+        device.executeShellCommand("logcat -c")
+        device.executeShellCommand(
+            "am start --activity-clear-task -n " + packageName +
+                "/com.mathmotor.video.EditorTestEntryActivity --es draft_id " + draftId
+        )
+        val restoreDeadline = SystemClock.uptimeMillis() + 20_000L
+        var entryStarted = false
+        var draftFound = false
+        var draftRestored = false
+        var restoreMarkers = ""
+        while (SystemClock.uptimeMillis() < restoreDeadline) {
+            val logs = device.executeShellCommand("logcat -d -s EditorSmokeTest:I")
+            restoreMarkers = logs.takeLast(1_600)
+            if (logs.contains("EDITOR_SMOKE_ENTRY_STARTED") && logs.contains("hasDraft=true")) {
+                entryStarted = true
+            }
+            if (logs.contains("EDITOR_SMOKE_DRAFT_LOOKUP id=" + draftId + " found=true")) {
+                draftFound = true
+            }
+            if (logs.contains("EDITOR_SMOKE_DRAFT_RESTORED id=" + draftId)) {
+                draftRestored = true
+                break
+            }
+            if (logs.contains("EDITOR_SMOKE_DRAFT_LOOKUP id=" + draftId + " found=false")) break
+            SystemClock.sleep(200)
+        }
+        assertTrue("A/V test entry activity did not start; markers=" + restoreMarkers, entryStarted)
+        assertTrue("A/V test draft was not found; markers=" + restoreMarkers, draftFound)
+        assertTrue("A/V test draft did not restore; markers=" + restoreMarkers, draftRestored)
+        assertTrue("A/V test project did not expose the VIDEO lane",
+            device.wait(Until.hasObject(By.text("VIDEO")), 12_000))
+
+        (device.findObject(By.text("Dışa aktar ›"))
+            ?: throw AssertionError("Could not open export tab for A/V sync validation")).click()
+        assertTrue("A/V sync export panel did not open",
+            device.wait(Until.hasObject(By.text("PROJE / DIŞA AKTARMA")), 8_000))
+        requireObject(device, By.clazz("android.widget.EditText"), "A/V sync export filename").setText(exportName)
+        val scroller = UiScrollable(UiSelector().className("android.widget.ScrollView")).setAsVerticalList()
+        assertTrue("Could not scroll to A/V sync MP4 export button",
+            scroller.scrollIntoView(UiSelector().text("MP4 DIŞA AKTAR")))
+        device.waitForIdle()
+        requireObject(device, By.text("MP4 DIŞA AKTAR"), "A/V sync MP4 button").click()
+
+        val exportDeadline = SystemClock.uptimeMillis() + 120_000L
+        var exported = false
+        while (SystemClock.uptimeMillis() < exportDeadline) {
+            val logs = device.executeShellCommand("logcat -d -s MultiClipExport:I")
+            if (logs.contains("MULTICLIP_EXPORT_SAVED name=$exportName")) {
+                exported = true
+                break
+            }
+            if (logs.contains("MULTICLIP_EXPORT_TRANSFORM_FAILED name=$exportName") ||
+                logs.contains("MULTICLIP_EXPORT_SAVE_FAILED name=$exportName")) {
+                throw AssertionError("A/V sync MP4 export failed: $logs")
+            }
+            SystemClock.sleep(500)
+        }
+        assertTrue("A/V sync MP4 did not save within 120 seconds", exported)
+
+        var outputUri: Uri? = null
+        val queryDeadline = SystemClock.uptimeMillis() + 30_000L
+        while (outputUri == null && SystemClock.uptimeMillis() < queryDeadline) {
+            resolver.query(
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                arrayOf(MediaStore.Video.Media._ID),
+                "${MediaStore.Video.Media.DISPLAY_NAME} = ?",
+                arrayOf("$exportName.mp4"),
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    outputUri = ContentUris.withAppendedId(
+                        MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                        cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID))
+                    )
+                }
+            }
+            if (outputUri == null) SystemClock.sleep(300)
+        }
+        val savedUri = outputUri
+            ?: throw AssertionError("A/V sync export reported success but the new MP4 was not found")
+
+        val retriever = MediaMetadataRetriever()
+        val videoMeasurement = try {
+            retriever.setDataSource(context, savedUri)
+            val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                ?.toLongOrNull() ?: throw AssertionError("Could not read A/V sync export duration")
+            fun classifyFrameAt(timeMs: Long): String {
+                val frame = retriever.getFrameAtTime(
+                    timeMs * 1_000L,
+                    MediaMetadataRetriever.OPTION_CLOSEST
+                ) ?: throw AssertionError("Could not decode A/V sync frame at $timeMs ms")
+                try {
+                    val pixel = frame.getPixel(frame.width / 2, frame.height / 2)
+                    val red = android.graphics.Color.red(pixel)
+                    val green = android.graphics.Color.green(pixel)
+                    val blue = android.graphics.Color.blue(pixel)
+                    val label = when {
+                        green > red + 35 && green > blue + 35 -> "GREEN"
+                        red > green + 35 && red > blue + 35 -> "RED"
+                        else -> "UNKNOWN"
+                    }
+                    return "$label($red,$green,$blue)"
+                } finally {
+                    frame.recycle()
+                }
+            }
+            durationMs to (1_800L..2_200L step 25L).map { timeMs ->
+                timeMs to classifyFrameAt(timeMs)
+            }
+        } finally {
+            retriever.release()
+        }
+        val durationMs = videoMeasurement.first
+        val frameSamples = videoMeasurement.second
+        assertTrue("A/V sync export duration is not approximately 4 seconds: $durationMs ms",
+            durationMs in 3_900L..4_200L)
+        val firstGreenIndex = frameSamples.indexOfFirst { it.second.startsWith("GREEN") }
+        assertTrue("No green video boundary found around 2 seconds: $frameSamples",
+            firstGreenIndex > 0)
+        val lastRed = frameSamples[firstGreenIndex - 1]
+        val firstGreen = frameSamples[firstGreenIndex]
+        assertTrue("Video did not transition from red to lime at the 2 s boundary: $lastRed -> $firstGreen",
+            lastRed.second.startsWith("RED") && firstGreen.second.startsWith("GREEN"))
+        val videoBoundaryMs = firstGreen.first
+        assertTrue("Video color boundary drifted from 2,000 ms: $videoBoundaryMs ms; samples=$frameSamples",
+            videoBoundaryMs in 1_900L..2_100L)
+
+        val decodedAudio = decodeExportedAudioMono(context, savedUri)
+        val audioBefore = toneMagnitude(decodedAudio, 997.0, 1_650L, 1_900L)
+        val audioAfter = toneMagnitude(decodedAudio, 997.0, 2_100L, 2_350L)
+        assertTrue("997 Hz audio tone appeared too early before the video transition: magnitude=$audioBefore",
+            audioBefore < 900.0)
+        assertTrue("997 Hz audio tone missing after the 2 s video transition: magnitude=$audioAfter",
+            audioAfter > 2_000.0)
+        var audioToneOnsetMs: Long? = null
+        for (windowStartMs in 1_500L..2_500L step 25L) {
+            val magnitude = toneMagnitude(decodedAudio, 997.0, windowStartMs, windowStartMs + 100L)
+            if (magnitude >= 1_500.0) {
+                audioToneOnsetMs = windowStartMs
+                break
+            }
+        }
+        val detectedAudioOnsetMs = audioToneOnsetMs
+            ?: throw AssertionError("Could not find a measurable 997 Hz audio onset around 2 s")
+        val boundaryDeltaMs = kotlin.math.abs(detectedAudioOnsetMs - videoBoundaryMs)
+        android.util.Log.i(
+            "AVSyncExportTest",
+            "stage=measured durationMs=$durationMs videoBoundaryMs=$videoBoundaryMs " +
+                "lastRed=${lastRed.second} firstGreen=${firstGreen.second} " +
+                "audioToneOnsetWindowMs=$detectedAudioOnsetMs audioBefore=$audioBefore " +
+                "audioAfter=$audioAfter boundaryDeltaMs=$boundaryDeltaMs"
+        )
+        assertTrue(
+            "Exported audio onset and video color transition differ by $boundaryDeltaMs ms " +
+                "(audioWindow=$detectedAudioOnsetMs ms, videoBoundary=$videoBoundaryMs ms)",
+            boundaryDeltaMs <= 150L
+        )
+        assertTrue("Export changed the A/V sync fixture size", fixture.isFile && fixture.length() == originalSize)
+        assertTrue("Export modified the original A/V sync fixture", sha256(fixture) == originalHash)
+        android.util.Log.i(
+            "AVSyncExportTest",
+            "stage=verified aligned=true toleranceMs=150 originalsUnchanged=true"
+        )
+    }
+
+    @Test
     fun filmstripLoadsFramesFromDistinctTimestamps() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val device = UiDevice.getInstance(instrumentation)

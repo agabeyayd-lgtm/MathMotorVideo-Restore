@@ -353,6 +353,20 @@ if ! timeout -k 2s 30s adb -s emulator-5554 shell -T \
 fi
 timeout -k 2s 8s adb -s emulator-5554 shell run-as com.mathmotor.video.next ls -l files/editor-test-video-with-audio.mp4 2>&1 | tee -a emulator-screenshots/video-fixture-audio-private-copy.txt
 
+av_sync_fixture="app/build/test-fixtures/editor-av-sync-video.mp4"
+if [ ! -s "$av_sync_fixture" ]; then
+  echo "Missing deterministic A/V synchronization fixture: $av_sync_fixture"
+  exit 3
+fi
+if ! timeout -k 2s 30s adb -s emulator-5554 shell -T \
+  "run-as com.mathmotor.video.next sh -c 'mkdir -p files && cat > files/editor-av-sync-video.mp4'" \
+  < "$av_sync_fixture" 2>&1 | tee emulator-screenshots/video-fixture-av-sync-private-copy.txt; then
+  echo "Streaming the A/V sync fixture into the app sandbox failed; preserving diagnostics"
+  timeout -k 2s 8s adb -s emulator-5554 shell run-as com.mathmotor.video.next id > emulator-screenshots/run-as-av-sync-preflight.txt 2>&1 || true
+  exit 10
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell run-as com.mathmotor.video.next ls -l files/editor-av-sync-video.mp4 2>&1 | tee -a emulator-screenshots/video-fixture-av-sync-private-copy.txt
+
 timeout -k 2s 8s adb -s emulator-5554 shell am force-stop com.mathmotor.video.next || true
 # Avoid -W for the same slow-emulator first-frame wait that affected the home launch.
 # Clear stale markers so only this launch can satisfy the smoke assertion.
