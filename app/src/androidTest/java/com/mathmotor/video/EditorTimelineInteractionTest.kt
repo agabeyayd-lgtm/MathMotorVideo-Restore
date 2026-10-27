@@ -565,6 +565,312 @@ class EditorTimelineInteractionTest {
     }
 
     @Test
+    fun multiClipReorderTrimUndoRedoAndSeekStayCorrectAcrossZoomLevels() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val device = UiDevice.getInstance(instrumentation)
+        val packageName = context.packageName
+        val firstFile = java.io.File(context.filesDir, "editor-test-video.mp4")
+        val secondFile = java.io.File(context.filesDir, "editor-test-video-second.mp4")
+        assertTrue("First multi-clip fixture is missing", firstFile.isFile && firstFile.length() > 0L)
+        assertTrue("Second multi-clip fixture is missing", secondFile.isFile && secondFile.length() > 0L)
+        val firstHash = sha256(firstFile)
+        val secondHash = sha256(secondFile)
+
+        fun mediaDurationMs(file: java.io.File): Long {
+            val retriever = MediaMetadataRetriever()
+            return try {
+                retriever.setDataSource(file.absolutePath)
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+                    ?: throw AssertionError("Could not read fixture duration: ${file.name}")
+            } finally {
+                retriever.release()
+            }
+        }
+
+        val firstDurationMs = mediaDurationMs(firstFile)
+        val secondDurationMs = mediaDurationMs(secondFile)
+        assertTrue("First fixture duration is invalid: $firstDurationMs ms", firstDurationMs >= 7_800L)
+        assertTrue("Second fixture duration is invalid: $secondDurationMs ms", secondDurationMs >= 1_500L)
+
+        fun clipJson(file: java.io.File, title: String, durationMs: Long) =
+            org.json.JSONObject()
+                .put("uri", Uri.fromFile(file).toString())
+                .put("title", title)
+                .put("durationMs", durationMs)
+                .put("startMs", 0L)
+                .put("endMs", durationMs)
+
+        val draftId = java.util.UUID.randomUUID().toString()
+        val project = org.json.JSONObject()
+            .put("format", "MathMotorVideoProject")
+            .put("version", 1)
+            .put("clips", org.json.JSONArray()
+                .put(clipJson(firstFile, "FIRST_RED", firstDurationMs))
+                .put(clipJson(secondFile, "SECOND_GREEN", secondDurationMs)))
+            .put("selectedClipIndex", 0)
+            .put("timelinePlayheadMs", 0L)
+            .put("timelineZoom", 1.0)
+            .put("timelineHorizontalScrollMs", 0L)
+            .put("textLayers", org.json.JSONArray())
+            .put("sourceAudioVolume", 100)
+            .put("musicVolume", 0)
+            .put("soundVolume", 100)
+            .put("keepSourceAudio", true)
+        assertTrue(
+            "Could not seed multi-clip reorder/trim project",
+            VideoProjectDraftStore.save(context, draftId, "Multi-clip timeline interaction validation", project)
+        )
+
+        device.executeShellCommand("logcat -c")
+        device.executeShellCommand(
+            "am start --activity-clear-task -n " + packageName +
+                "/com.mathmotor.video.EditorTestEntryActivity --es draft_id " + draftId
+        )
+        val restoreDeadline = SystemClock.uptimeMillis() + 20_000L
+        var entryStarted = false
+        var draftFound = false
+        var draftRestored = false
+        var restoreMarkers = ""
+        while (SystemClock.uptimeMillis() < restoreDeadline) {
+            val logs = device.executeShellCommand("logcat -d -s EditorSmokeTest:I")
+            restoreMarkers = logs.takeLast(1_600)
+            if (logs.contains("EDITOR_SMOKE_ENTRY_STARTED") && logs.contains("hasDraft=true")) entryStarted = true
+            if (logs.contains("EDITOR_SMOKE_DRAFT_LOOKUP id=" + draftId + " found=true")) draftFound = true
+            if (logs.contains("EDITOR_SMOKE_DRAFT_RESTORED id=" + draftId)) {
+                draftRestored = true
+                break
+            }
+            if (logs.contains("EDITOR_SMOKE_DRAFT_LOOKUP id=" + draftId + " found=false")) break
+            SystemClock.sleep(200)
+        }
+        assertTrue("Multi-clip editor entry did not start; markers=$restoreMarkers", entryStarted)
+        assertTrue("Multi-clip draft was not found; markers=$restoreMarkers", draftFound)
+        assertTrue("Multi-clip draft did not restore; markers=$restoreMarkers", draftRestored)
+        assertTrue(
+            "Restored editor did not expose its VIDEO timeline lane",
+            device.wait(Until.hasObject(By.desc("Zaman çizelgesi satırı: VIDEO")), 10_000)
+        )
+        requireObject(device, By.desc("Klip araçları sekmesi"), "clip tools tab").click()
+        device.waitForIdle()
+
+        fun assertClipRailOrder(leftTitle: String, rightTitle: String, stage: String) {
+            val left = requireObject(device, By.text(leftTitle), "$stage clip tile $leftTitle").visibleBounds
+            val right = requireObject(device, By.text(rightTitle), "$stage clip tile $rightTitle").visibleBounds
+            assertTrue(
+                "$stage clip rail order is wrong: $leftTitle at $left, $rightTitle at $right",
+                left.centerX() < right.centerX()
+            )
+        }
+
+        fun selectedClipText(stage: String): String {
+            val panel = UiScrollable(UiSelector().className("android.widget.ScrollView")).setAsVerticalList()
+            assertTrue(
+                "$stage: could not reveal selected clip label",
+                panel.scrollIntoView(UiSelector().textContains("Seçili klip:"))
+            )
+            device.waitForIdle()
+            return requireObject(device, By.textContains("Seçili klip:"), "$stage selected clip label").text
+        }
+
+        fun assertSelectedClip(expectedTitle: String, stage: String) {
+            val selected = selectedClipText(stage)
+            assertTrue(
+                "$stage expected selected clip $expectedTitle but got: $selected",
+                selected.contains("Seçili klip: $expectedTitle")
+            )
+        }
+
+        fun seekPlayheadTo(targetMs: Long, stage: String) {
+            val totalMs = projectDurationMs(requireProjectTime(device))
+            val expected = targetMs.coerceIn(0L, (totalMs - 1L).coerceAtLeast(0L))
+            val seek = requireObject(
+                device, By.desc("Zaman çizelgesinde oynatma noktası"), "$stage timeline playhead seek bar"
+            )
+            val bounds = seek.visibleBounds
+            assertTrue("$stage playhead SeekBar is too narrow: $bounds", bounds.width() > 100)
+            val inset = (bounds.width() * 0.15f).toInt().coerceAtLeast(4)
+            val usableWidth = (bounds.width() - 2 * inset).coerceAtLeast(2)
+            fun xForTime(timeMs: Long): Int =
+                (bounds.left + inset +
+                    (timeMs.coerceIn(0L, totalMs).toDouble() / totalMs.coerceAtLeast(1L).toDouble() * usableWidth).toInt())
+                    .coerceIn(bounds.left + 1, bounds.right - 2)
+
+            var actual = projectPositionMs(requireProjectTime(device))
+            for (attempt in 1..6) {
+                if (abs(actual - expected) <= 150L) break
+                val fromX = xForTime(actual)
+                val correctionPx = ((expected - actual).toDouble() /
+                    totalMs.coerceAtLeast(1L).toDouble() * usableWidth).toInt()
+                    .let { delta -> if (delta == 0) if (expected > actual) 1 else -1 else delta }
+                val toX = (fromX + correctionPx).coerceIn(bounds.left + 1, bounds.right - 2)
+                device.swipe(fromX, bounds.centerY(), toX, bounds.centerY(), 30)
+                device.waitForIdle()
+                SystemClock.sleep(300)
+                actual = projectPositionMs(requireProjectTime(device))
+                android.util.Log.i(
+                    "MultiClipTimelineTest",
+                    "stage=$stage attempt=$attempt target=$expected actual=$actual zoom=" +
+                        requireObject(device, By.descContains("Zaman çizelgesi yakınlaştırma"), "$stage zoom label").contentDescription
+                )
+            }
+            assertTrue("$stage seek did not reach $expected ms; actual=$actual ms", abs(actual - expected) <= 200L)
+        }
+
+        assertClipRailOrder("FIRST_RED", "SECOND_GREEN", "initial")
+        seekPlayheadTo(1_000L, "initial-first-clip")
+        assertSelectedClip("FIRST_RED", "initial seek into first clip")
+        seekPlayheadTo(firstDurationMs + 1_000L, "initial-second-clip")
+        assertSelectedClip("SECOND_GREEN", "initial seek into second clip")
+        // Return to the first clip before pinching so its filmstrip is safely in the viewport.
+        seekPlayheadTo(1_000L, "return-to-first-before-zoom")
+        assertSelectedClip("FIRST_RED", "return to first clip")
+
+        val zoomLabelBefore = requireObject(
+            device, By.descContains("Zaman çizelgesi yakınlaştırma"), "initial timeline zoom"
+        ).contentDescription
+        val zoomBefore = zoomPercent(zoomLabelBefore)
+        val timeBeforePinchMs = projectPositionMs(requireProjectTime(device))
+        requireObject(device, By.desc("Zaman çizelgesi satırı: VIDEO"), "VIDEO lane before first zoom")
+            .pinchOpen(0.85f, 60)
+        device.waitForIdle()
+        SystemClock.sleep(350)
+        val zoomLabelAfter = requireObject(
+            device, By.descContains("Zaman çizelgesi yakınlaştırma"), "timeline zoom after first pinch"
+        ).contentDescription
+        val zoomAfter = zoomPercent(zoomLabelAfter)
+        val timeAfterPinchMs = projectPositionMs(requireProjectTime(device))
+        assertTrue("First pinch did not increase zoom: $zoomLabelBefore -> $zoomLabelAfter", zoomAfter > zoomBefore)
+        assertTrue(
+            "First pinch changed the fixed-playhead time: $timeBeforePinchMs -> $timeAfterPinchMs ms",
+            abs(timeBeforePinchMs - timeAfterPinchMs) <= 150L
+        )
+
+        // The filmstrip long-press menu is the real timeline reorder path.
+        val firstFilmstrip = requireObject(device, By.descContains("Klip 1: FIRST_RED"), "first timeline filmstrip")
+        firstFilmstrip.longClick()
+        assertTrue(
+            "Long-pressing the first filmstrip did not open the clip menu",
+            device.wait(Until.hasObject(By.text("Bir sonraya al")), 5_000)
+        )
+        requireObject(device, By.text("Bir sonraya al"), "move clip to next position").click()
+        device.waitForIdle()
+        SystemClock.sleep(250)
+        assertClipRailOrder("SECOND_GREEN", "FIRST_RED", "after-reorder")
+
+        val undo = requireObject(device, By.desc("Düzenleme geri al"), "global Undo button after reorder")
+        val redo = requireObject(device, By.desc("Düzenleme yinele"), "global Redo button after reorder")
+        assertTrue("Undo was not enabled after clip reorder", undo.isEnabled)
+        undo.click()
+        device.waitForIdle()
+        SystemClock.sleep(250)
+        assertClipRailOrder("FIRST_RED", "SECOND_GREEN", "after-undo-reorder")
+        assertTrue("Redo was not enabled after undoing clip reorder", redo.isEnabled)
+        redo.click()
+        device.waitForIdle()
+        SystemClock.sleep(250)
+        assertClipRailOrder("SECOND_GREEN", "FIRST_RED", "after-redo-reorder")
+
+        // Exercise a second zoom level with the new order, then trim the first output clip.
+        val zoomLabelBeforeSecond = requireObject(
+            device, By.descContains("Zaman çizelgesi yakınlaştırma"), "zoom before second pinch"
+        ).contentDescription
+        val zoomBeforeSecond = zoomPercent(zoomLabelBeforeSecond)
+        val timeBeforeSecondPinchMs = projectPositionMs(requireProjectTime(device))
+        requireObject(device, By.desc("Zaman çizelgesi satırı: VIDEO"), "VIDEO lane before second zoom")
+            .pinchOpen(0.85f, 60)
+        device.waitForIdle()
+        SystemClock.sleep(350)
+        val zoomLabelAfterSecond = requireObject(
+            device, By.descContains("Zaman çizelgesi yakınlaştırma"), "zoom after second pinch"
+        ).contentDescription
+        val zoomAfterSecond = zoomPercent(zoomLabelAfterSecond)
+        val timeAfterSecondPinchMs = projectPositionMs(requireProjectTime(device))
+        assertTrue(
+            "Second pinch did not change zoom: $zoomLabelBeforeSecond -> $zoomLabelAfterSecond",
+            zoomAfterSecond > zoomBeforeSecond
+        )
+        assertTrue(
+            "Second pinch changed the fixed-playhead time: $timeBeforeSecondPinchMs -> $timeAfterSecondPinchMs ms",
+            abs(timeBeforeSecondPinchMs - timeAfterSecondPinchMs) <= 150L
+        )
+
+        // Reordered first clip is SECOND_GREEN. Trim its right edge while its end remains
+        // inside the current viewport, and prove history restores the full multi-clip duration.
+        seekPlayheadTo(secondDurationMs - 350L, "before-multi-clip-trim")
+        assertSelectedClip("SECOND_GREEN", "before multi-clip trim")
+        val totalBeforeTrimMs = projectDurationMs(requireProjectTime(device))
+        val rightHandleSelector = By.descContains("Sağ tutamaç")
+        assertTrue(
+            "Right trim handle for the visible first output clip is not accessible",
+            device.wait(Until.hasObject(rightHandleSelector), 8_000)
+        )
+        val rightHandle = requireObject(device, rightHandleSelector, "first output clip right trim handle")
+        val rightBounds = rightHandle.visibleBounds
+        assertTrue("Right trim handle has no visible hit target: $rightBounds",
+            rightBounds.width() >= 4 && rightBounds.height() >= 4)
+        val trimDragPx = (40f * context.resources.displayMetrics.density).toInt().coerceAtLeast(12)
+        device.swipe(
+            rightBounds.centerX(),
+            rightBounds.centerY(),
+            rightBounds.centerX() - trimDragPx,
+            rightBounds.centerY(),
+            30
+        )
+        device.waitForIdle()
+        SystemClock.sleep(450)
+        val totalAfterTrimMs = projectDurationMs(requireProjectTime(device))
+        assertTrue(
+            "Trimming the first clip in a multi-clip project did not shorten the combined sequence: " +
+                "$totalBeforeTrimMs -> $totalAfterTrimMs ms",
+            totalAfterTrimMs <= totalBeforeTrimMs - 150L
+        )
+        assertTrue("Multi-clip trim produced an invalid total duration: $totalAfterTrimMs ms", totalAfterTrimMs > firstDurationMs)
+
+        undo.click()
+        device.waitForIdle()
+        SystemClock.sleep(350)
+        val totalAfterUndoTrimMs = projectDurationMs(requireProjectTime(device))
+        assertTrue(
+            "Undo did not restore the original multi-clip duration after trim: " +
+                "$totalBeforeTrimMs -> $totalAfterUndoTrimMs ms",
+            abs(totalAfterUndoTrimMs - totalBeforeTrimMs) <= 100L
+        )
+        redo.click()
+        device.waitForIdle()
+        SystemClock.sleep(350)
+        val totalAfterRedoTrimMs = projectDurationMs(requireProjectTime(device))
+        assertTrue(
+            "Redo did not reapply the multi-clip trim: $totalAfterTrimMs -> $totalAfterRedoTrimMs ms",
+            abs(totalAfterRedoTrimMs - totalAfterTrimMs) <= 100L
+        )
+
+        val trimmedFirstOutputClipMs = totalAfterRedoTrimMs - firstDurationMs
+        assertTrue("Derived trimmed first clip duration is invalid: $trimmedFirstOutputClipMs ms",
+            trimmedFirstOutputClipMs in 500L until secondDurationMs)
+        seekPlayheadTo(1_000L, "reordered-trimmed-first")
+        assertSelectedClip("SECOND_GREEN", "seek into reordered first clip after trim/redo")
+        seekPlayheadTo(trimmedFirstOutputClipMs + 1_000L, "reordered-trimmed-second")
+        assertSelectedClip("FIRST_RED", "seek into reordered second clip after trim/redo")
+
+        assertTrue(
+            "Multi-clip interactions modified the original first video fixture",
+            firstFile.isFile && firstFile.length() > 0L && sha256(firstFile) == firstHash
+        )
+        assertTrue(
+            "Multi-clip interactions modified the original second video fixture",
+            secondFile.isFile && secondFile.length() > 0L && sha256(secondFile) == secondHash
+        )
+        android.util.Log.i(
+            "MultiClipTimelineTest",
+            "stage=verified originalOrder=FIRST_RED,SECOND_GREEN reorderedOrder=SECOND_GREEN,FIRST_RED " +
+                "zoomLevels=$zoomBefore->$zoomAfter->$zoomAfterSecond durationBeforeTrim=$totalBeforeTrimMs " +
+                "durationAfterTrim=$totalAfterTrimMs durationAfterUndo=$totalAfterUndoTrimMs " +
+                "durationAfterRedo=$totalAfterRedoTrimMs sourceFilesUnchanged=true"
+        )
+    }
+
+    @Test
     fun textPreviewAndSettingsRemainStableAfterTimelineSeekAndZoom() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
