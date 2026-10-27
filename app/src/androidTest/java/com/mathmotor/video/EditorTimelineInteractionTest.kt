@@ -390,6 +390,280 @@ class EditorTimelineInteractionTest {
     }
 
     @Test
+    fun textPreviewAndSettingsRemainStableAfterTimelineSeekAndZoom() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val device = UiDevice.getInstance(instrumentation)
+        val packageName = context.packageName
+        val fixture = java.io.File(context.filesDir, "editor-test-video.mp4")
+        assertTrue("Text seek/zoom fixture is missing", fixture.isFile && fixture.length() > 0L)
+
+        val draftId = java.util.UUID.randomUUID().toString()
+        val clip = org.json.JSONObject()
+            .put("uri", Uri.fromFile(fixture).toString())
+            .put("title", "TEXT_SEEK_ZOOM_FIXTURE")
+            .put("durationMs", 8_020L)
+            .put("startMs", 0L)
+            .put("endMs", 8_020L)
+        val textLayer = org.json.JSONObject()
+            .put("id", 951L)
+            .put("text", "SEEK ZOOM TEXT")
+            .put("startMs", 1_000L)
+            .put("endMs", 6_000L)
+            .put("timingCustomized", true)
+            .put("position", "TOP")
+            .put("sizeSp", 32)
+            .put("xFraction", 0.5)
+            .put("yFraction", 0.16)
+            .put("colorPreset", "CYAN")
+            .put("isBold", false)
+        val project = org.json.JSONObject()
+            .put("format", "MathMotorVideoProject")
+            .put("version", 1)
+            .put("clips", org.json.JSONArray().put(clip))
+            .put("selectedClipIndex", 0)
+            .put("timelinePlayheadMs", 3_000L)
+            .put("timelineZoom", 1.0)
+            .put("timelineHorizontalScrollMs", 0L)
+            .put("textLayers", org.json.JSONArray().put(textLayer))
+            .put("selectedTextLayerId", 951L)
+            .put("sourceAudioVolume", 100)
+            .put("musicVolume", 45)
+            .put("soundVolume", 100)
+            .put("keepSourceAudio", true)
+        assertTrue(
+            "Could not seed text preview seek/zoom project",
+            VideoProjectDraftStore.save(context, draftId, "Text preview seek/zoom", project)
+        )
+
+        device.executeShellCommand("logcat -c")
+        device.executeShellCommand(
+            "am start --activity-clear-task -n " + packageName +
+                "/com.mathmotor.video.EditorTestEntryActivity --es draft_id " + draftId
+        )
+        val restoreDeadline = SystemClock.uptimeMillis() + 20_000L
+        var entryStarted = false
+        var draftFound = false
+        var draftRestored = false
+        var restoreMarkers = ""
+        while (SystemClock.uptimeMillis() < restoreDeadline) {
+            val logs = device.executeShellCommand("logcat -d -s EditorSmokeTest:I")
+            restoreMarkers = logs.takeLast(1_600)
+            if (logs.contains("EDITOR_SMOKE_ENTRY_STARTED") && logs.contains("hasDraft=true")) {
+                entryStarted = true
+            }
+            if (logs.contains("EDITOR_SMOKE_DRAFT_LOOKUP id=" + draftId + " found=true")) {
+                draftFound = true
+            }
+            if (logs.contains("EDITOR_SMOKE_DRAFT_RESTORED id=" + draftId)) {
+                draftRestored = true
+                break
+            }
+            if (logs.contains("EDITOR_SMOKE_DRAFT_LOOKUP id=" + draftId + " found=false")) break
+            SystemClock.sleep(200)
+        }
+        assertTrue("Text seek/zoom entry activity did not start; markers=" + restoreMarkers, entryStarted)
+        assertTrue("Text seek/zoom draft was not found; markers=" + restoreMarkers, draftFound)
+        assertTrue("Text seek/zoom draft did not restore; markers=" + restoreMarkers, draftRestored)
+        assertTrue(
+            "Editor did not expose the VIDEO lane for text seek/zoom",
+            device.wait(Until.hasObject(By.text("VIDEO")), 12_000)
+        )
+        assertTrue(
+            "Seeded text was not active at the 3-second playhead",
+            device.wait(Until.hasObject(By.clazz("android.widget.TextView").text("SEEK ZOOM TEXT")), 8_000)
+        )
+
+        val textTab = device.findObject(By.text("T\nMetin"))
+            ?: device.findObject(By.clazz("android.widget.Button").textContains("Metin"))
+            ?: throw AssertionError("Could not find the Metin tab for seek/zoom test")
+        textTab.click()
+        assertTrue(
+            "Text panel did not open for seek/zoom test",
+            device.wait(Until.hasObject(By.text("METİN KATMANLARI")), 8_000)
+        )
+        val panelScroll = UiScrollable(UiSelector().className("android.widget.ScrollView")).setAsVerticalList()
+        assertTrue(
+            "Could not reveal the text input before timeline interaction",
+            panelScroll.scrollIntoView(UiSelector().description("Metin katmanı metin girişi"))
+        )
+        val textValueBefore = requireObject(
+            device, By.desc("Metin katmanı metin girişi"), "seek/zoom text input"
+        ).text
+        assertTrue("Seeded text input was not restored: " + textValueBefore, textValueBefore == "SEEK ZOOM TEXT")
+
+        assertTrue(
+            "Could not reveal the start-time label before seek/zoom",
+            panelScroll.scrollIntoView(UiSelector().textContains("Yazı başlangıcı:"))
+        )
+        val startLabelBefore = requireObject(
+            device, By.textContains("Yazı başlangıcı:"), "text start label before seek/zoom"
+        ).text
+        assertTrue(
+            "Could not reveal the end-time label before seek/zoom",
+            panelScroll.scrollIntoView(UiSelector().textContains("Yazı bitişi:"))
+        )
+        val endLabelBefore = requireObject(
+            device, By.textContains("Yazı bitişi:"), "text end label before seek/zoom"
+        ).text
+        assertTrue(
+            "Could not reveal text-size controls before seek/zoom",
+            panelScroll.scrollIntoView(UiSelector().text("A+"))
+        )
+        val sizeLabelBefore = requireObject(
+            device, By.textContains("Yazı boyutu:"), "text size label before seek/zoom"
+        ).text
+        assertTrue("Seeded text size was not restored: " + sizeLabelBefore, sizeLabelBefore.contains("32 sp"))
+
+        fun seekPlayheadTo(targetMs: Long) {
+            val seek = requireObject(
+                device, By.desc("Zaman çizelgesinde oynatma noktası"), "timeline playhead seek bar"
+            )
+            val bounds = seek.visibleBounds
+            assertTrue("Timeline playhead seek bar is too narrow: " + bounds, bounds.width() > 100)
+            val currentMs = projectPositionMs(requireProjectTime(device)).coerceIn(0L, 8_020L)
+            val inset = (bounds.width() * 0.07f).toInt().coerceAtLeast(4)
+            val usableWidth = (bounds.width() - 2 * inset).coerceAtLeast(2)
+            val fromX = (bounds.left + inset + (currentMs.toDouble() / 8_020.0 * usableWidth).toInt())
+                .coerceIn(bounds.left + 1, bounds.right - 2)
+            val toX = (bounds.left + inset + (targetMs.coerceIn(0L, 8_020L).toDouble() / 8_020.0 * usableWidth).toInt())
+                .coerceIn(bounds.left + 1, bounds.right - 2)
+            device.swipe(fromX, bounds.centerY(), toX, bounds.centerY(), 30)
+            device.waitForIdle()
+            SystemClock.sleep(250)
+        }
+
+        seekPlayheadTo(4_200L)
+        val afterSeekMs = projectPositionMs(requireProjectTime(device))
+        assertTrue(
+            "Timeline did not seek into the text's active interval near 4.2 s: " + afterSeekMs,
+            afterSeekMs in 3_500L..4_900L
+        )
+        val previewTextSelector = By.clazz("android.widget.TextView").text("SEEK ZOOM TEXT")
+        assertTrue(
+            "Preview text disappeared after seeking within its active interval",
+            device.wait(Until.hasObject(previewTextSelector), 5_000)
+        )
+
+        val videoLaneLabel = requireObject(device, By.text("VIDEO"), "VIDEO lane label for text zoom")
+        val laneLabelBounds = videoLaneLabel.visibleBounds
+        val laneY = laneLabelBounds.centerY()
+        val laneScroll = device.findObjects(By.clazz("android.widget.HorizontalScrollView"))
+            .firstOrNull {
+                val bounds = it.visibleBounds
+                bounds.top <= laneY && bounds.bottom >= laneY && bounds.left >= laneLabelBounds.right - 2
+            } ?: throw AssertionError("Could not find the VIDEO timeline scroll viewport for text zoom")
+        val zoomLabelBefore = requireObject(
+            device, By.descContains("Zaman çizelgesi yakınlaştırma"), "timeline zoom label before text zoom"
+        ).contentDescription
+        val zoomBefore = zoomPercent(zoomLabelBefore)
+        val timeBeforePinch = projectPositionMs(requireProjectTime(device))
+        laneScroll.pinchOpen(0.85f, 60)
+        device.waitForIdle()
+        SystemClock.sleep(350)
+        val zoomLabelAfter = requireObject(
+            device, By.descContains("Zaman çizelgesi yakınlaştırma"), "timeline zoom label after text zoom"
+        ).contentDescription
+        val zoomAfter = zoomPercent(zoomLabelAfter)
+        val timeAfterPinch = projectPositionMs(requireProjectTime(device))
+        assertTrue(
+            "Pinch zoom did not change timeline scale: " + zoomLabelBefore + " -> " + zoomLabelAfter,
+            zoomAfter > zoomBefore
+        )
+        assertTrue(
+            "Pinch zoom changed the playhead time while checking text: " +
+                timeBeforePinch + " -> " + timeAfterPinch,
+            abs(timeBeforePinch - timeAfterPinch) <= 150L
+        )
+        assertTrue(
+            "Preview text disappeared after timeline pinch-zoom",
+            device.wait(Until.hasObject(previewTextSelector), 5_000)
+        )
+
+        seekPlayheadTo(7_100L)
+        val afterOutsideSeekMs = projectPositionMs(requireProjectTime(device))
+        assertTrue(
+            "Timeline did not seek outside the text's active interval: " + afterOutsideSeekMs,
+            afterOutsideSeekMs >= 6_500L
+        )
+        assertTrue(
+            "Timed preview text stayed visible after seeking beyond 6 seconds",
+            device.wait(Until.gone(previewTextSelector), 5_000)
+        )
+        seekPlayheadTo(4_200L)
+        val afterReturnSeekMs = projectPositionMs(requireProjectTime(device))
+        assertTrue(
+            "Timeline did not return to the text's active interval: " + afterReturnSeekMs,
+            afterReturnSeekMs in 3_500L..4_900L
+        )
+        assertTrue(
+            "Timed preview text did not reappear after returning to its active interval",
+            device.wait(Until.hasObject(previewTextSelector), 5_000)
+        )
+
+        assertTrue(
+            "Could not revisit the text input after seek/zoom",
+            panelScroll.scrollIntoView(UiSelector().description("Metin katmanı metin girişi"))
+        )
+        val textValueAfter = requireObject(
+            device, By.desc("Metin katmanı metin girişi"), "text input after seek/zoom"
+        ).text
+        assertTrue(
+            "Text content changed during timeline seek/zoom: " + textValueBefore + " -> " + textValueAfter,
+            textValueAfter == textValueBefore
+        )
+        assertTrue(
+            "Could not revisit the start-time label after seek/zoom",
+            panelScroll.scrollIntoView(UiSelector().textContains("Yazı başlangıcı:"))
+        )
+        val startLabelAfter = requireObject(
+            device, By.textContains("Yazı başlangıcı:"), "text start label after seek/zoom"
+        ).text
+        assertTrue(
+            "Text start setting changed during seek/zoom: " + startLabelBefore + " -> " + startLabelAfter,
+            startLabelAfter == startLabelBefore
+        )
+        assertTrue(
+            "Could not revisit the end-time label after seek/zoom",
+            panelScroll.scrollIntoView(UiSelector().textContains("Yazı bitişi:"))
+        )
+        val endLabelAfter = requireObject(
+            device, By.textContains("Yazı bitişi:"), "text end label after seek/zoom"
+        ).text
+        assertTrue(
+            "Text end setting changed during seek/zoom: " + endLabelBefore + " -> " + endLabelAfter,
+            endLabelAfter == endLabelBefore
+        )
+        assertTrue(
+            "Could not revisit text-size controls after seek/zoom",
+            panelScroll.scrollIntoView(UiSelector().text("A+"))
+        )
+        val sizeLabelAfter = requireObject(
+            device, By.textContains("Yazı boyutu:"), "text size label after seek/zoom"
+        ).text
+        assertTrue(
+            "Text size changed during timeline seek/zoom: " + sizeLabelBefore + " -> " + sizeLabelAfter,
+            sizeLabelAfter == sizeLabelBefore
+        )
+        val activePreviewBounds = requireObject(
+            device, previewTextSelector, "active preview text after returning to its interval"
+        ).visibleBounds
+        assertTrue(
+            "Top-positioned preview text moved out of the upper preview area after seek/zoom: " +
+                activePreviewBounds,
+            activePreviewBounds.top < device.displayHeight * 0.35f
+        )
+        android.util.Log.i(
+            "TextPreviewSeekZoomTest",
+            "stage=verified initial=3000 afterSeek=" + afterSeekMs +
+                " zoom=" + zoomBefore + "->" + zoomAfter +
+                " afterPinch=" + timeAfterPinch + " outside=" + afterOutsideSeekMs +
+                " returned=" + afterReturnSeekMs + " text=" + textValueAfter +
+                " size=" + sizeLabelAfter + " start=" + startLabelAfter + " end=" + endLabelAfter
+        )
+    }
+
+    @Test
     fun textTimingAndSizeControlsUpdatePreview() {
         val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
         val packageName = "com.mathmotor.video.next"
