@@ -786,9 +786,22 @@ class EditorTimelineInteractionTest {
             // UiObject2 has no setProgress method. Use the real accessibility ACTION_SET_PROGRESS
             // action exposed by Android's SeekBar, then verify the actual project-time label below.
             // Other existing tests continue to exercise physical trim/scroll gestures.
-            val seekNode = InstrumentationRegistry.getInstrumentation().uiAutomation.rootInActiveWindow
-                ?.findAccessibilityNodeInfosByContentDescription("Zaman çizelgesinde oynatma noktası")
-                ?.firstOrNull()
+            val accessibilityRoot =
+                InstrumentationRegistry.getInstrumentation().uiAutomation.rootInActiveWindow
+            fun findPlayheadNode(
+                node: android.view.accessibility.AccessibilityNodeInfo?
+            ): android.view.accessibility.AccessibilityNodeInfo? {
+                if (node == null) return null
+                if (node.contentDescription?.toString() == "Zaman çizelgesinde oynatma noktası") {
+                    return node
+                }
+                for (index in 0 until node.childCount) {
+                    val match = findPlayheadNode(node.getChild(index))
+                    if (match != null) return match
+                }
+                return null
+            }
+            val seekNode = findPlayheadNode(accessibilityRoot)
             assertTrue("$stage playhead accessibility node was not found", seekNode != null)
             val progressArgs = android.os.Bundle().apply {
                 putFloat(
