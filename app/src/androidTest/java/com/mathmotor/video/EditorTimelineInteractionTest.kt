@@ -793,9 +793,10 @@ class EditorTimelineInteractionTest {
                     totalMs.coerceAtLeast(1L).toDouble() * usableWidth).toInt()
                 // Android's SeekBar ignores tiny drags around its thumb. Preserve direction,
                 // but require a decisive minimum movement instead of repeating 1–7 px gestures.
-                val correctionPx = rawCorrectionPx.coerceIn(-12, 12).let { delta ->
-                    if (kotlin.math.abs(delta) >= 12) delta
-                    else if (expected > actual) 12 else -12
+                val correctionPx = if (kotlin.math.abs(rawCorrectionPx) < 12) {
+                    if (expected > actual) 12 else -12
+                } else {
+                    rawCorrectionPx
                 }
                 val toX = (fromX + correctionPx).coerceIn(bounds.left + 1, bounds.right - 2)
                 device.swipe(fromX, bounds.centerY(), toX, bounds.centerY(), 30)
