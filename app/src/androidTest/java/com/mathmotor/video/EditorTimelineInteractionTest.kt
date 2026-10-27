@@ -2858,7 +2858,7 @@ class EditorTimelineInteractionTest {
         assertTrue("Editor did not confirm that the clip was split at the playhead",
             device.wait(Until.hasObject(By.textContains("Klip iki parçaya bölündü")), 8_000))
         assertTrue("First split clip tile was not visible", device.wait(Until.hasObject(By.text("KLİP 1")), 5_000))
-        assertTrue("Second split clip tile was not visible", device.wait(Until.hasObject(By.text("KLİP 2")), 5_000))
+        assertTrue("Second split clip tile was not visible (selected tiles include the ▶ prefix)", device.wait(Until.hasObject(By.textContains("KLİP 2")), 5_000))
         assertTrue("Split clip A title was not restored in the clip list",
             device.wait(Until.hasObject(By.textContains("SPLIT_RED_TO_LIME • A")), 5_000))
         assertTrue("Split clip B title was not restored in the clip list",
