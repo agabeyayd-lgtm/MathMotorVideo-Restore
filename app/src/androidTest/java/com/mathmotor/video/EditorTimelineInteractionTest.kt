@@ -519,16 +519,27 @@ class EditorTimelineInteractionTest {
             val seek = requireObject(
                 device, By.desc("Zaman çizelgesinde oynatma noktası"), "timeline playhead seek bar"
             )
-            val bounds = seek.visibleBounds
-            assertTrue("Timeline playhead seek bar is too narrow: " + bounds, bounds.width() > 100)
-            val currentMs = projectPositionMs(requireProjectTime(device)).coerceIn(0L, 8_020L)
-            val inset = (bounds.width() * 0.07f).toInt().coerceAtLeast(4)
-            val usableWidth = (bounds.width() - 2 * inset).coerceAtLeast(2)
-            val fromX = (bounds.left + inset + (currentMs.toDouble() / 8_020.0 * usableWidth).toInt())
-                .coerceIn(bounds.left + 1, bounds.right - 2)
-            val toX = (bounds.left + inset + (targetMs.coerceIn(0L, 8_020L).toDouble() / 8_020.0 * usableWidth).toInt())
-                .coerceIn(bounds.left + 1, bounds.right - 2)
-            device.swipe(fromX, bounds.centerY(), toX, bounds.centerY(), 30)
+            assertTrue("Timeline playhead seek bar is too narrow: " + seek.visibleBounds, seek.visibleBounds.width() > 100)
+            // Use the SeekBar's accessible progress action rather than estimating its thumb
+            // position from the outer bounds. Android's SeekBar has internal thumb/padding
+            // insets, so coordinate math can drift after the timeline has been zoomed.
+            seek.setProgress(targetMs.coerceIn(0L, 8_020L).toFloat() / 8_020f)
+            val expected = targetMs.coerceIn(0L, 8_020L)
+            val deadline = SystemClock.uptimeMillis() + 3_000L
+            var actual = projectPositionMs(requireProjectTime(device))
+            while (SystemClock.uptimeMillis() < deadline && abs(actual - expected) > 150L) {
+                SystemClock.sleep(100)
+                actual = projectPositionMs(requireProjectTime(device))
+            }
+            android.util.Log.i(
+                "TextPreviewSeekZoomTest",
+                "stage=seek target=$expected actual=$actual zoom=" +
+                    requireObject(device, By.descContains("Zaman çizelgesi yakınlaştırma"), "timeline zoom label").contentDescription
+            )
+            assertTrue(
+                "Timeline seek did not reach requested time $expected ms; actual=$actual ms",
+                abs(actual - expected) <= 150L
+            )
             device.waitForIdle()
             SystemClock.sleep(250)
         }
