@@ -11,8 +11,8 @@
 - Historical preflight loop closed: #226's FFmpeg package download timeout was fixed in workflow commit 7560ce792288ece7d2b3ca2116502589a68a24f1; #227 then isolated the second-launch reused-task issue, fixed in test-only commit 5380eef, which #228 verified.
 - Text seek/zoom gate is now closed by [#234 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40462756764): 14/14 instrumentation tests passed; the target test verified 4.2 s → 7.1 s → 4.2 s after zoom and retained text/settings.
 - **Current unique gate: [#236 RUNNING](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40466133767), head SHA `a38415c360d54f5a0645ac24d7a6b03dbbe21cea` — measured A/V sync.** The new deterministic source has a red→lime video boundary at 2,000 ms and a 997 Hz audio tone onset at that same timestamp. The test exports through the editor, checks decoded frame colors and decoded AAC tone onset, requires a difference ≤150 ms, checks silence before/tone after the boundary and verifies the original source hash/size. #236 includes a fixture-prep ordering correction (generate the file before listing fixture sizes); this is the authoritative run. Keep release 395 blocked until this and all later release gates pass.
-- Remaining after that: A/V synchronization against known frame boundaries; split-at-playhead/export boundary; trim-vs-scroll and multi-clip edge cases; Undo/Redo coverage for trim/split/reorder and sound-effect changes; physical-device review; signed update/install.
-- After #229: measured A/V synchronization; split-at-playhead/export boundary; trim/scroll and multi-clip edge cases; Undo/Redo grouping; physical-device usability and signed update/install.
+- Remaining after #237: trim-vs-scroll and multi-clip edge cases; Undo/Redo coverage for trim/split/reorder and sound-effect changes; physical-device review; signed update/install.
+- Historical next-step list from #229 (superseded): measured A/V synchronization is now green in #236; split/export is being tested in #237. Still open: trim/scroll multi-clip cases, Undo/Redo grouping, physical-device usability and signed update/install.
 - **VersionCode 395 remains blocked.** No version bump, signing, publication or in-app update activation until required gates pass and release is explicitly authorized.
 
 
@@ -29,12 +29,12 @@
 - [#234 QUEUED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40462756764), commit [`d202a62`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/d202a621db413cad76f0c302067fde0f4a761a29): use drag instead of taps; calculate start X from displayed actual time, apply the measured time delta as drag distance, and use the compact emulator thumb inset. Do not relax the ±150 ms assertion or preview/settings checks; wait for this exact target test to pass.
 
 
-### Next focused task — measured A/V synchronization
+### Historical next-focused task — measured A/V synchronization (completed in #236)
 
 Do not repeat completed text seek/zoom, source-audio gain/mute, or music/effect tone-window gates unchanged. Next create a deterministic audio/video fixture with identifiable video-frame boundaries and a synchronized audio impulse/tone, export through the editor, and measure decoded MP4 audio timing against decoded frame timestamps. Record an explicit tolerance and source-preservation check. Release 395 remains blocked until required gates pass and release is authorized.
 
 
-### 2026-10-27 — #236 measured A/V synchronization gate running
+### 2026-10-27 — #236 measured A/V synchronization gate (initially queued, now passed)
 
 - Added a new deterministic four-second MP4 fixture: red video up to 2,000 ms, lime video after 2,000 ms, and a 997 Hz audio tone delayed to start at 2,000 ms. Workflow runs ffprobe to confirm both streams.
 - The new instrumentation test exports the fixture using a seeded editor draft, detects the first decoded lime frame and the first 100 ms decoded-tone window above threshold, asserts the two estimates differ by no more than 150 ms, checks no measurable tone in the pre-boundary window and tone after the boundary, and confirms source fixture size/hash remain unchanged.
@@ -45,3 +45,8 @@ Do not repeat completed text seek/zoom, source-audio gain/mute, or music/effect 
 
 - [#236 SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40466133767): 15/15 instrumentation tests; no failures/errors/skips. The output MP4 produced a red→lime frame boundary at 2,000 ms and a 997 Hz tone onset window at 1,925 ms, a 75 ms difference against the 150 ms threshold. Pre-boundary magnitude was 0.0, post-boundary magnitude 8177.09; original file hash and size were unchanged.
 - Next test should use the same deterministic fixture to split at 2,000 ms through the actual UI, confirm two ordered clip tiles and preserve split segments in saved draft/export. Check exported duration around 4 seconds and decode video/audio around the seam. Do not repeat #234 text seek/zoom or #236 single-clip A/V sync unchanged.
+
+
+### 2026-10-27 — #237 split-at-playhead/export gate running
+
+- [#237 RUNNING](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40487968674), commit [`ff379f3`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/ff379f3eb3357f9ae1381e28f712f2319a0cb5a4): adds `splitAtPlayheadExportsTwoOrderedSegmentsWithoutMovingAvSeam`. It restores a 4 s source with a red→lime video boundary and 997 Hz tone both at 2,000 ms; seeks to the boundary through the actual timeline, taps the UI split action, asserts clip tiles 1 and 2 and two 2.00 s segments, exports the resulting two-clip project, measures duration/color/audio onset near the seam, and checks the source hash and size. Unit test/build/emulator assertions remain to be confirmed. Do not call the gate passed until the target instrumentation test succeeds.
