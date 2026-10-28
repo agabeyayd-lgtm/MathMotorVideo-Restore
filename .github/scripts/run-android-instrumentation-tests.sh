@@ -5,10 +5,29 @@ mkdir -p emulator-screenshots
 test_status=0
 
 echo "Run connected Android instrumentation tests and retain diagnostics"
-if gradle --no-daemon connectedDebugAndroidTest > emulator-screenshots/android-test-gradle.log 2>&1; then
-  test_status=0
+focused_test_file=".github/focused-instrumentation-tests.txt"
+if [[ -f "$focused_test_file" ]]; then
+  # Focused development runs execute only explicitly listed test class/method
+  # selectors. Remove this file before the final integrated full-suite gate.
+  focused_test_filter="$(sed -E '/^[[:space:]]*($|#)/d; s/^[[:space:]]+//; s/[[:space:]]+$//' "$focused_test_file" | paste -sd, -)"
+  if [[ -z "$focused_test_filter" ]]; then
+    echo "ERROR: $focused_test_file exists but contains no test selectors" > emulator-screenshots/android-test-gradle.log
+    test_status=2
+  else
+    echo "Focused instrumentation selectors: $focused_test_filter" > emulator-screenshots/android-test-gradle.log
+    if gradle --no-daemon "-Pandroid.testInstrumentationRunnerArguments.class=$focused_test_filter" connectedDebugAndroidTest >> emulator-screenshots/android-test-gradle.log 2>&1; then
+      test_status=0
+    else
+      test_status=$?
+    fi
+  fi
 else
-  test_status=$?
+  echo "No focused test list; running the complete connected instrumentation suite"
+  if gradle --no-daemon connectedDebugAndroidTest > emulator-screenshots/android-test-gradle.log 2>&1; then
+    test_status=0
+  else
+    test_status=$?
+  fi
 fi
 
 # Always collect these files, including on assertion failure or app/instrumentation crash.

@@ -15,6 +15,7 @@ on:
       - ".github/workflows/android-emulator-screenshots.yml"
       - ".github/scripts/capture-emulator-screenshots.sh"
       - ".github/scripts/run-android-instrumentation-tests.sh"
+      - ".github/focused-instrumentation-tests.txt"
 
 permissions:
   contents: read
