@@ -521,17 +521,27 @@ class VideoEditorActivity : Activity() {
                 setStroke(dp(1), Color.rgb(48, 66, 85))
             }
         }
-        val timelineHeader = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
+        // Reuse the preview-control row for clip actions instead of keeping a second
+        // timeline title/action header. On compact phones the removed header used most
+        // of the remaining height and clipped the tool-panel controls and export fields.
+        val addVideoButton = miniButton("＋") { chooseVideo(true) }.apply {
+            minWidth = dp(38)
+            minimumWidth = dp(38)
+            minHeight = dp(38)
+            minimumHeight = dp(38)
+            textSize = 18f
+            setPadding(0, 0, 0, 0)
+            contentDescription = "Zaman çizelgesine video ekle"
         }
-        timelineHeader.addView(label("ZAMAN ÇİZELGESİ", 11f, Color.rgb(121, 202, 218), true).apply {
-            setSingleLine(true)
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-            marginEnd = dp(4)
-        })
+        val replaceVideoButton = miniButton("↻") { chooseVideo(false) }.apply {
+            minWidth = dp(38)
+            minimumWidth = dp(38)
+            minHeight = dp(38)
+            minimumHeight = dp(38)
+            textSize = 16f
+            setPadding(0, 0, 0, 0)
+            contentDescription = "Seçili videoyu değiştir"
+        }
         val playbackButton = miniButton("▶Ⅱ") {
             if (clips.isEmpty()) {
                 chooseVideo(true)
@@ -555,21 +565,6 @@ class VideoEditorActivity : Activity() {
             setPadding(0, 0, 0, 0)
             contentDescription = "Önizlemeyi oynat veya duraklat"
         }
-        timelineHeader.addView(miniButton("＋") { chooseVideo(true) }.apply {
-            minWidth = dp(38)
-            minimumWidth = dp(38)
-            textSize = 18f
-            setPadding(0, 0, 0, 0)
-            contentDescription = "Zaman çizelgesine video ekle"
-        }, LinearLayout.LayoutParams(dp(42), dp(38)).apply { leftMargin = dp(3) })
-        timelineHeader.addView(miniButton("↻") { chooseVideo(false) }.apply {
-            minWidth = dp(38)
-            minimumWidth = dp(38)
-            textSize = 16f
-            setPadding(0, 0, 0, 0)
-            contentDescription = "Seçili videoyu değiştir"
-        }, LinearLayout.LayoutParams(dp(42), dp(38)).apply { leftMargin = dp(3) })
-        timelineCard.addView(timelineHeader, matchWrap())
 
         timelineClipCarousel = android.widget.HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
@@ -846,7 +841,23 @@ class VideoEditorActivity : Activity() {
                 leftMargin = dp(4)
             })
         }
+        val clipActions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL or Gravity.START
+            addView(addVideoButton, LinearLayout.LayoutParams(dp(38), dp(38)))
+            addView(replaceVideoButton, LinearLayout.LayoutParams(dp(38), dp(38)).apply {
+                leftMargin = dp(2)
+            })
+        }
         val previewControlsRow = FrameLayout(this).apply {
+            addView(
+                clipActions,
+                FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    dp(38),
+                    Gravity.START or Gravity.CENTER_VERTICAL
+                )
+            )
             addView(playbackButton, FrameLayout.LayoutParams(dp(42), dp(38), Gravity.CENTER))
             addView(
                 historyActions,
