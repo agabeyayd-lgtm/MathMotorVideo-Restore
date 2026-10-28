@@ -505,29 +505,22 @@ class VideoEditorActivity : Activity() {
             previewEmptyState,
             FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER)
         )
+        // Keep the preview canvas clean; the responsive layout controls its height.
         val previewSizeControls = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             elevation = dp(12).toFloat()
-            setPadding(dp(4), 0, dp(4), 0)
+            setPadding(dp(3), 0, dp(3), 0)
             background = android.graphics.drawable.GradientDrawable().apply {
-                setColor(Color.argb(205, 8, 15, 22))
+                setColor(Color.argb(165, 8, 15, 22))
                 cornerRadius = dp(9).toFloat()
             }
-            addView(label("VİDEO", 9f, Color.WHITE, true), LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { leftMargin = dp(4); rightMargin = dp(2) })
-            addView(miniButton("−") { adjustPreviewStageHeight(-30) },
-                LinearLayout.LayoutParams(dp(38), dp(40)))
-            addView(miniButton("↺") { setPreviewStageHeight(previewDefaultStageHeightDp) },
-                LinearLayout.LayoutParams(dp(42), dp(40)))
-            addView(miniButton("+") { adjustPreviewStageHeight(30) },
-                LinearLayout.LayoutParams(dp(38), dp(40)))
-            previewFocusButton = miniButton("⛶") { togglePreviewFocusMode() }
-            previewFocusButton.contentDescription = "Videoyu geniş ekranda aç"
-            addView(previewFocusButton, LinearLayout.LayoutParams(dp(42), dp(40)))
-            contentDescription = "Video önizlemesini küçült, varsayılana döndür veya büyüt"
         }
+        previewFocusButton = miniButton("⛶") { togglePreviewFocusMode() }.apply {
+            textSize = 18f
+            contentDescription = "Videoyu geniş ekranda aç"
+        }
+        previewSizeControls.addView(previewFocusButton, LinearLayout.LayoutParams(dp(40), dp(40)))
         previewFrame.addView(previewSizeControls, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, dp(44), Gravity.TOP or Gravity.END
         ).apply { topMargin = dp(6); rightMargin = dp(6) })
@@ -761,12 +754,13 @@ class VideoEditorActivity : Activity() {
             updateTimelinePlayheadLine()
         }
         timelineCard.addView(timelineTracksFrame, matchWrap())
-        timelineCard.addView(label("Uzun bas: klibi taşı / sil / kopyala  •  Kenarlardan: kes", 9f, Color.rgb(180, 202, 216), false).apply {
+        val timelineGestureHint = label("Uzun bas: klibi taşı / sil / kopyala  •  Kenarlardan: kes", 9f, Color.rgb(180, 202, 216), false).apply {
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
             setPadding(dp(3), dp(2), dp(3), 0)
             contentDescription = "Klibe uzun basarak taşı, sil veya kopyala; kesmek için kenarları sürükle"
-        }, matchWrap())
+        }
+        timelineCard.addView(timelineGestureHint, matchWrap())
 
         val playheadRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1311,6 +1305,7 @@ class VideoEditorActivity : Activity() {
             root = root,
             previewFrame = previewFrame,
             timelineCard = timelineCard,
+            timelineGestureHint = timelineGestureHint,
             clipScroll = clipScroll,
             panelScroll = editorPanelScroll,
             statusView = status,
@@ -1324,6 +1319,7 @@ class VideoEditorActivity : Activity() {
         root: LinearLayout,
         previewFrame: FrameLayout,
         timelineCard: LinearLayout,
+        timelineGestureHint: TextView,
         clipScroll: android.widget.HorizontalScrollView,
         panelScroll: ScrollView,
         statusView: TextView,
@@ -1445,7 +1441,7 @@ class VideoEditorActivity : Activity() {
                 val density = resources.displayMetrics.density.coerceAtLeast(1f)
                 val viewportDp = (viewportHeight / density).toInt()
                 compactEditorLayout = viewportDp < 820
-                val previewRatio = if (viewportDp < 650) 0.23f else 0.30f
+                val previewRatio = if (viewportDp < 650) 0.26f else 0.30f
                 previewDefaultStageHeightDp = (viewportDp * previewRatio).toInt().coerceIn(150, 340)
                 previewStageHeightDp = previewDefaultStageHeightDp
                 previewHeightAutoSized = true
@@ -1476,6 +1472,35 @@ class VideoEditorActivity : Activity() {
                     if (timeLabelParams != null) {
                         timeLabelParams.width = dp(94)
                         timelinePlayheadLabel.layoutParams = timeLabelParams
+                    }
+                    // Small phones need room for actual tool controls, not a persistent help banner.
+                    timelineGestureHint.visibility = View.GONE
+                    statusView.maxLines = 1
+                    statusView.ellipsize = android.text.TextUtils.TruncateAt.END
+                    statusView.textSize = 10f
+                    statusView.setPadding(dp(6), dp(2), dp(6), dp(2))
+                    for (childIndex in 0 until bottomDock.childCount) {
+                        val child = bottomDock.getChildAt(childIndex)
+                        val params = child.layoutParams as? LinearLayout.LayoutParams
+                        if (params != null) {
+                            params.height = dp(46)
+                            child.layoutParams = params
+                        }
+                        child.minimumHeight = dp(46)
+                    }
+                } else {
+                    timelineGestureHint.visibility = View.VISIBLE
+                    statusView.maxLines = 2
+                    statusView.textSize = 11f
+                    statusView.setPadding(dp(8), dp(5), dp(8), dp(5))
+                    for (childIndex in 0 until bottomDock.childCount) {
+                        val child = bottomDock.getChildAt(childIndex)
+                        val params = child.layoutParams as? LinearLayout.LayoutParams
+                        if (params != null) {
+                            params.height = dp(52)
+                            child.layoutParams = params
+                        }
+                        child.minimumHeight = dp(52)
                     }
                 }
                 rulerAwareTimelineRefresh()
