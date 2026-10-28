@@ -56,8 +56,8 @@ class EmulatorScreenshotTest {
             ?: throw AssertionError("Undo is missing from the preview control row")
         val redo = device.findObject(By.desc("Düzenleme yinele"))
             ?: throw AssertionError("Redo is missing from the preview control row")
-        val timelineHeader = device.findObject(By.text("ZAMAN ÇİZELGESİ"))
-            ?: throw AssertionError("Timeline header did not appear below preview controls")
+        val timeRuler = device.findObject(By.text("SÜRE"))
+            ?: throw AssertionError("Shared time ruler did not appear below preview controls")
         val clipTab = device.findObject(By.desc("Klip araçları sekmesi"))
             ?: throw AssertionError("Edit tool tab is missing from the bottom dock")
         assertTrue(
@@ -65,8 +65,8 @@ class EmulatorScreenshotTest {
             playback.visibleBounds.top >= preview.visibleBounds.bottom
         )
         assertTrue(
-            "Playback row should sit above the timeline",
-            playback.visibleBounds.bottom <= timelineHeader.visibleBounds.top
+            "Playback row should sit above the time ruler",
+            playback.visibleBounds.bottom <= timeRuler.visibleBounds.top
         )
         assertTrue(
             "Playback control should be centered below the preview",
