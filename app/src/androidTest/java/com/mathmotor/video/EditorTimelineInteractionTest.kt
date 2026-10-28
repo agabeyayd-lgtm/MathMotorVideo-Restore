@@ -1481,6 +1481,11 @@ class EditorTimelineInteractionTest {
             "Text-strip start handle has no usable hit target: $startHandleBounds",
             startHandleBounds.width() > 0 && startHandleBounds.height() > 0
         )
+        assertTrue(
+            "Could not bring the text start-time label back into view before strip drag",
+            panelScroll.scrollIntoView(UiSelector().textContains("Yazı başlangıcı:"))
+        )
+        device.waitForIdle()
         val stripStartBefore = requireObject(
             device, By.textContains("Yazı başlangıcı:"), "start label before strip drag"
         ).text
@@ -3734,6 +3739,10 @@ class EditorTimelineInteractionTest {
         val splitTimeBefore = projectPositionMs(requireProjectTime(device))
         assertTrue("Playhead was not at the 2 s split point: $splitTimeBefore", splitTimeBefore in 1_900L..2_100L)
 
+        // Compact layout intentionally starts with tool panels closed; open the clip tools
+        // before searching the scrollable panel for the split action.
+        device.findObject(By.desc("Klip araçları sekmesi"))?.click()
+        device.waitForIdle()
         var splitButton = device.findObject(By.text("Böl ✂"))
         if (splitButton == null) {
             val panelScroller = UiScrollable(UiSelector().className("android.widget.ScrollView")).setAsVerticalList()

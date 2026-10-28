@@ -1635,7 +1635,7 @@ class VideoEditorActivity : Activity() {
     private fun effectivePreviewStageHeightDp(): Int {
         val compactToolPanel = compactEditorLayout &&
             activeEditorPanel != null && activeEditorPanel != "clip"
-        return if (compactToolPanel) minOf(previewStageHeightDp, 124).coerceAtLeast(112)
+        return if (compactToolPanel) minOf(previewStageHeightDp, 112).coerceAtLeast(104)
         else previewStageHeightDp.coerceIn(150, 460)
     }
 
@@ -1863,8 +1863,15 @@ class VideoEditorActivity : Activity() {
                 setPadding(0, dp(1), 0, dp(1))
             }
             scroll.addView(track)
+            val compactToolPanel = compactEditorLayout &&
+                activeEditorPanel != null && activeEditorPanel != "clip"
             val responsiveLaneHeight = when {
                 keyboardLayoutActive -> 18
+                compactToolPanel -> when (tag) {
+                    "VIDEO" -> 26
+                    "SÜRE" -> 16
+                    else -> 20
+                }
                 compactEditorLayout -> when (tag) {
                     "VIDEO" -> 40
                     "SÜRE" -> 20
@@ -2173,7 +2180,9 @@ class VideoEditorActivity : Activity() {
                 val duration = (clip.endMs - clip.startMs).coerceAtLeast(0L)
                 val nextVideoOffsetMs = videoOffsetMs + duration
                 val width = widthBetween(videoOffsetMs, nextVideoOffsetMs).coerceAtLeast(1)
-                val height = dp(if (keyboardLayoutActive) 18 else if (compactEditorLayout) 38 else 42)
+                val compactToolPanel = compactEditorLayout &&
+                    activeEditorPanel != null && activeEditorPanel != "clip"
+                val height = dp(if (keyboardLayoutActive) 18 else if (compactToolPanel) 24 else if (compactEditorLayout) 38 else 42)
                 val block = buildVideoClipFilmstrip(clip, index, width, height, index == selectedClipIndex)
                 // Widths use absolute boundaries, so fractional-pixel rounding cannot accumulate.
                 videoTrack.addView(block, LinearLayout.LayoutParams(width, height))
