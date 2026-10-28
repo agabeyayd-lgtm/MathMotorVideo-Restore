@@ -2,8 +2,8 @@
 
 **Resume here; do not restart completed work.** Detailed checklist and evidence live in [README.md](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/blob/fix/editor-395-gate/README.md). Follow [VERIFICATION_ANTI_LOOP.md](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/blob/fix/editor-395-gate/VERIFICATION_ANTI_LOOP.md) before launching or changing a CI run.
 
-- Current UI candidate commits: [`e1604e4`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/e1604e4c072ab45739d5df0cd4e2e7e18ac9076d) removes redundant preview size controls and frees compact-screen space; [`0613dbb`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/0613dbb7cbb644205f368565f6a40a38827b8b0c) changes the red playhead to a white line with a small head.
-- Current validation: [#273 — PENDING](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40684627547) targets the combined latest source. #272 was triggered for the intermediate UI commit and cannot verify the playhead follow-up. Inspect #273's final result and fresh screenshots. Do not repeat #269 unchanged.
+- Current UI candidate commits: [`e1604e4`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/e1604e4c072ab45739d5df0cd4e2e7e18ac9076d) frees compact-screen space; [`0613dbb`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/0613dbb7cbb644205f368565f6a40a38827b8b0c) changes the red playhead to white with a visible head; [`a8ca8bf`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/a8ca8bfd03f3acd10261e4cd97b12d132eff1e1b) removes the entire floating preview-control overlay, including fullscreen.
+- Current validation: [#274 — PENDING](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40685840644) targets the latest source with overlay removal. #273 is an earlier commit and cannot verify this latest change. Inspect #274's final result and fresh screenshots. Do not repeat #269 unchanged.
 
 - Repository: `agabeyayd-lgtm/MathMotorVideo-Restore`
 - Active branch: `fix/editor-395-gate`; draft repair PR: [#8](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/pull/8).
