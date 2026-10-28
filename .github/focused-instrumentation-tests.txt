@@ -1,0 +1,4 @@
+# Focused development-only instrumentation selectors.
+# Remove this file before the final full connectedAndroidTest release gate.
+com.mathmotor.video.EditorTimelineInteractionTest#soundEffectAddStartTimeRemoveAndUndoRedoWork
+com.mathmotor.video.EditorTimelineInteractionTest#exportedMp4MusicAndEffectGainMatchConfiguredRatios
