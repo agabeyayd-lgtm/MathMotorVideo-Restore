@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - fix/editor-395-gate
+      - work/focused-instrumentation-gates
     paths:
       - "app/build.gradle.kts"
       - "app/src/main/**"
