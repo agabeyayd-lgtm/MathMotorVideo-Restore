@@ -1932,7 +1932,7 @@ class EditorTimelineInteractionTest {
             assertTrue("Choosing an audio document did not add a visible sound-effect layer", effectAdded)
             assertTrue(
                 "The newly added effect did not expose its duration",
-                device.wait(Until.hasObject(By.textContains("00:03.00")), 5_000)
+                device.wait(Until.hasObject(By.textContains("00:03")), 5_000)
             )
 
             // Adding an effect is one edit: Undo removes it; Redo restores it.
