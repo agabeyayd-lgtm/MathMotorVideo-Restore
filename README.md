@@ -6,6 +6,14 @@ A local-first Android video editor with a CapCut-inspired workflow. Editing and 
 
 **Continue from this checkpoint. Do not restart completed work or repeat passing tests unless a related source change requires it. Keep the current release gate and record the exact failing assertion before changing code.**
 
+### 2026-10-28 — User-confirmed visual target: compact CapCut-style editor
+
+- User supplied a reference screenshot and explicitly confirmed: **this is the target interface layout**. Treat it as the visual acceptance reference for the editor, not as a request to copy CapCut branding.
+- Layout target: compact top bar (close/search, resolution selector, prominent export); large centered video preview with no floating controls over the picture; playback/Undo/Redo row; one clear time ruler and a single straight white playhead; legible video filmstrip; separate audio and text lanes; one bottom tool row with Edit, Audio, Text, Effects and adjacent editing tools.
+- Preserve the user's stated visual priority: **clean, clear, orderly, one straight playhead line**. Avoid duplicate chooser/control rows, clutter around preview, tiny/duplicated/black thumbnails, cramped timeline labels and wasted vertical space. The compact phone must balance preview and timeline so both remain usable; do not maximize preview by collapsing the timeline.
+- This is a reference/acceptance target, not a claim that the current app already matches it. Verify with fresh emulator screenshots at the 320×640 compact size and a real-device review. Keep behavior intact: trim vs scroll, zoom/pinch, split, text timing/size, audio/effects, Undo/Redo, multi-clip, and export must remain functional.
+- Current release gate remains: investigate #285's exact Split at Playhead action failure first; do not start an unrelated redesign or bump/release versionCode 395 until the failing gate and visual regressions are verified.
+
 ### 2026-10-28 — Latest verification: #285 FAILED; inspect the failed UI action before changing code
 
 - [#285 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40742272429), candidate head [`ad07a4f`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/ad07a4f7b02882cc4ca1d24cfd59287d98a3c669), `ui: give compact video preview more vertical space`. Unit tests, Debug APK build, deterministic fixture preparation and emulator setup passed. The Android instrumentation report says `tests=19 failures=1 errors=0 skipped=0`; failure: **`Could not reveal the Split at Playhead action`**. The test tried to open the clip-tools tab, find `Böl ✂`, then reveal it using a generic `UiScrollable(ScrollView)`. The exact cause is not yet proven: this may be a test selector/active-panel mismatch or an action visibility/layout defect. Do not weaken the assertion or rerun unchanged.
