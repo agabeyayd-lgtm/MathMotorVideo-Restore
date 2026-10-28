@@ -6,6 +6,13 @@ A local-first Android video editor with a CapCut-inspired workflow. Editing and 
 
 **Continue from this checkpoint. Do not restart completed work or repeat passing tests unless a related source change requires it. Keep the current release gate and record the exact failing assertion before changing code.**
 
+### 2026-10-28 — CapCut-style visual review and compact-phone cleanup
+
+- [x] Downloaded and inspected the actual #269 emulator screenshots. Home screen is reasonably structured, but the editor is **not yet visually equivalent to CapCut**: the preview has an overbuilt four-button size controller, a persistent gesture-help row consumes timeline space, and the compact screen leaves too little room for the active tool panel.
+- [x] Source-only UI cleanup committed to candidate branch as [`e1604e4`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/e1604e4c072ab45739d5df0cd4e2e7e18ac9076d): retain only the useful preview expand/focus control; hide the long gesture-help line on compact screens; reduce the status banner and bottom dock height there; slightly increase preview height on very short screens. Core timeline gestures and editing actions are untouched by this patch.
+- [ ] Validation run [#272 — IN PROGRESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40684441566) is testing this source change. Do not call the new layout verified until it finishes successfully and its fresh screenshots are inspected. If an interaction assertion fails, compare it with the #269 passing evidence before editing; do not rerun #269 unchanged.
+- [ ] CapCut visual similarity and physical-device usability remain open acceptance gates even if #272 passes. VersionCode 395 remains blocked.
+
 - Active branch: `fix/editor-395-gate`; draft repair PR: [#8](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/pull/8).
 - User-installed baseline: **versionCode 394 / build 61 (`app-v8.3-61`)**.
 - Latest candidate-branch run [#269 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40680915280), head [`8c78d8e`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/8c78d8eb7a6aa4b71733199c9e0d412e1b866331): unit tests and Debug APK build passed; **19/19 Android instrumentation tests passed**, including the previously failing sound-effect picker/timed-text launch flow. Emulator screenshots and diagnostics are available in [artifact 12813448192](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40680915280/artifacts/12813448192). This is verified automated-test progress on `fix/editor-395-gate`; it does not yet prove CapCut-level visual similarity or replace physical-device review. Do not rerun #269 unchanged.
