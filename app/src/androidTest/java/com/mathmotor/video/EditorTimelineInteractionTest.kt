@@ -1889,27 +1889,49 @@ class EditorTimelineInteractionTest {
             }
             device.waitForIdle()
 
-            var downloads: UiObject2? = null
+            var downloadsClicked = false
             val downloadsDeadline = SystemClock.uptimeMillis() + 10_000L
-            while (downloads == null && SystemClock.uptimeMillis() < downloadsDeadline) {
-                downloads = device.findObject(By.text("Downloads")) ?: device.findObject(By.text("Download"))
-                if (downloads == null) SystemClock.sleep(200)
+            while (!downloadsClicked && SystemClock.uptimeMillis() < downloadsDeadline) {
+                // Drawer rows can be recycled between accessibility snapshots. Re-query
+                // and click in the same iteration rather than retaining a stale UiObject2.
+                val candidate = device.findObject(By.text("Downloads"))
+                    ?: device.findObject(By.text("Download"))
+                if (candidate != null) {
+                    downloadsClicked = try {
+                        candidate.click()
+                        true
+                    } catch (_: androidx.test.uiautomator.StaleObjectException) {
+                        false
+                    }
+                }
+                if (!downloadsClicked) SystemClock.sleep(200)
             }
             assertTrue(
-                "DocumentsUI root navigation did not expose Downloads. Visible text=" +
+                "DocumentsUI root navigation did not expose/click Downloads. Visible text=" +
                     device.findObjects(By.clazz("android.widget.TextView"))
                         .mapNotNull { runCatching { it.text?.toString() }.getOrNull() }
                         .filter { it.isNotBlank() }.distinct().take(80).joinToString(" | "),
-                downloads != null
+                downloadsClicked
             )
-            downloads!!.click()
             device.waitForIdle()
 
             var fileRow: UiObject2? = null
+            var fileClicked = false
             val fileDeadline = SystemClock.uptimeMillis() + 10_000L
-            while (fileRow == null && SystemClock.uptimeMillis() < fileDeadline) {
-                fileRow = device.findObject(By.text(fileName))
-                if (fileRow == null) SystemClock.sleep(200)
+            while (!fileClicked && SystemClock.uptimeMillis() < fileDeadline) {
+                // The DocumentsUI list may refresh on the frame after Downloads opens.
+                val candidate = device.findObject(By.text(fileName))
+                if (candidate != null) {
+                    fileRow = candidate
+                    fileClicked = try {
+                        val rowBounds = candidate.visibleBounds
+                        candidate.click()
+                        rowBounds.width() > 0 && rowBounds.height() > 0
+                    } catch (_: androidx.test.uiautomator.StaleObjectException) {
+                        false
+                    }
+                }
+                if (!fileClicked) SystemClock.sleep(200)
             }
             if (fileRow == null) {
                 val hierarchy = java.io.File(context.cacheDir, "effect-history-picker.xml")
@@ -1922,9 +1944,13 @@ class EditorTimelineInteractionTest {
                         " hierarchy=" + hierarchy.takeIf { it.isFile }?.readText()?.take(8_000)
                 )
             }
-            val rowBounds = fileRow.visibleBounds
-            assertTrue("Audio fixture row has no visible hit target: $rowBounds", rowBounds.width() > 0 && rowBounds.height() > 0)
-            fileRow.click()
+            assertTrue(
+                "The WAV row disappeared or remained stale in DocumentsUI Downloads. Visible text=" +
+                    device.findObjects(By.clazz("android.widget.TextView"))
+                        .mapNotNull { runCatching { it.text?.toString() }.getOrNull() }
+                        .filter { it.isNotBlank() }.distinct().take(80).joinToString(" | "),
+                fileClicked
+            )
 
             var effectAdded = device.wait(Until.hasObject(By.textContains(fileName)), 3_000)
             if (!effectAdded) {
