@@ -713,9 +713,21 @@ class VideoEditorActivity : Activity() {
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             addView(
                 View(this@VideoEditorActivity).apply {
-                    setBackgroundColor(Color.rgb(255, 78, 92))
+                    setBackgroundColor(Color.WHITE)
                 },
                 FrameLayout.LayoutParams(dp(2), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.TOP or Gravity.CENTER_HORIZONTAL)
+            )
+            // CapCut-style playhead: a fine white line with a small draggable head.
+            addView(
+                View(this@VideoEditorActivity).apply {
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        shape = android.graphics.drawable.GradientDrawable.OVAL
+                        setColor(Color.WHITE)
+                        setStroke(dp(1), Color.rgb(12, 18, 28))
+                    }
+                    elevation = dp(5).toFloat()
+                },
+                FrameLayout.LayoutParams(dp(8), dp(8), Gravity.TOP or Gravity.CENTER_HORIZONTAL)
             )
             setOnTouchListener { view, event ->
                 when (event.actionMasked) {
