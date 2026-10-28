@@ -3242,6 +3242,26 @@ class EditorTimelineInteractionTest {
         assertTrue("880 Hz effect appeared before 2.5 s: $effectBefore", effectBefore < 650.0)
         assertTrue("Timed effect missing within 2.5–3.7 s: $effectDuring", effectDuring in 2_000.0..6_500.0)
         assertTrue("Timed effect remained after 3.7 s: $effectAfter", effectAfter < 650.0)
+
+        // Quantitatively verify configured gain against each deterministic source tone.
+        // Input WAV amplitudes are 12,000 (music) and 8,000 (effect), so expected
+        // decoded tone amplitudes are approximately 4,200 and 4,800 respectively.
+        // Tolerances allow AAC codec error but still catch a wrong volume multiplier.
+        val musicGainRatio = musicMiddle / 12_000.0
+        val effectGainRatio = effectDuring / 8_000.0
+        android.util.Log.i(
+            "AudioExportTest",
+            "stage=quantitative-gain musicConfigured=0.35 musicMeasured=$musicGainRatio " +
+                "effectConfigured=0.60 effectMeasured=$effectGainRatio"
+        )
+        assertTrue(
+            "Background music gain did not match configured 35%: amplitude=$musicMiddle ratio=$musicGainRatio",
+            musicGainRatio in 0.30..0.40
+        )
+        assertTrue(
+            "Timed effect gain did not match configured 60%: amplitude=$effectDuring ratio=$effectGainRatio",
+            effectGainRatio in 0.55..0.65
+        )
         assertTrue("Original video fixture was changed", fixture.isFile && fixture.length() > 0L)
         android.util.Log.i("AudioExportTest",
             "stage=verified musicLooped=true effectStartMs=2500 effectDurationMs=1200 musicVolume=35 effectVolume=60 sourceAudioRemoved=true")
