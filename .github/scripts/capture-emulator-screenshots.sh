@@ -169,7 +169,7 @@ recover_system_anr() {
     # Preserve both button coordinates from the last valid hierarchy before
     # tapping Wait: a wedged launcher can make the next uiautomator dump fail.
     local wait_coords close_coords
-    read -r wait_coords close_coords < <(python3 - "$xml" <<'PY'
+    IFS='|' read -r wait_coords close_coords < <(python3 - "$xml" <<'PY'
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -188,9 +188,12 @@ for node in root.iter("node"):
     if match:
         x1, y1, x2, y2 = map(int, match.groups())
         coords["wait" if label == "wait" else "close"] = "%d %d" % ((x1+x2)//2, (y1+y2)//2)
-print(coords.get("wait", ""), coords.get("close", ""))
+# Use an explicit non-whitespace separator: Bash must keep each x/y pair intact.
+print(coords.get("wait", "NONE"), coords.get("close", "NONE"), sep="|")
 PY
 )
+    [ "$wait_coords" = "NONE" ] && wait_coords=""
+    [ "$close_coords" = "NONE" ] && close_coords=""
     if [ -z "$wait_coords" ]; then
       echo "System ANR dialog detected but its Wait button could not be located in $xml"
       return 1
