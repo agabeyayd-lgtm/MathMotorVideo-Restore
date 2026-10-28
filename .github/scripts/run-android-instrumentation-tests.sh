@@ -44,7 +44,7 @@ if [[ -f "$focused_test_file" && "$test_status" -eq 0 ]]; then
   # A filtered task that silently ran zero/different tests must not be marked green.
   while IFS= read -r selector; do
     [[ -z "$selector" || "$selector" =~ ^[[:space:]]*# ]] && continue
-    selector="${selector#" ${selector%%[![:space:]]*}"}"
+    selector="$(printf '%s' "$selector" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
     expected_method="${selector##*#}"
     if ! grep -R -q --include='TEST-*.xml' "name=\"$expected_method\"" app/build/outputs/androidTest-results/connected/debug 2>/dev/null; then
       echo "ERROR: focused selector did not appear in Android XML results: $selector" | tee -a emulator-screenshots/android-test-gradle.log
