@@ -6,7 +6,14 @@ A local-first Android video editor with a CapCut-inspired workflow. Editing and 
 
 **Continue from this checkpoint. Do not restart completed work or repeat passing tests unless a related source change requires it. Keep the current release gate and record the exact failing assertion before changing code.**
 
-### 2026-10-28 — Quantitative music/effect gain gate added; #291 queued
+### 2026-10-28 — #291 SUCCESS: decoded music/effect gain verified
+
+- [#291 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40761920880), exact head [`0c71177`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/0c711779a816162921c2e894f6402466f8b46604). Unit tests, Debug APK, emulator setup, screenshot/interaction step all passed; JUnit reports `tests=19 failures=0 errors=0 skipped=0`. The new quantitative decoded-AAC assertions passed along with existing timing, loop and source-preservation checks.
+- Measured decoded tone amplitudes: music source amplitude 12,000 at configured 35% produced amplitude 4,188 and ratio **0.34908** (accepted 0.30–0.40); effect source amplitude 8,000 at configured 60% produced amplitude 4,789 and ratio **0.59874** (accepted 0.55–0.65). Effect tone was absent before/after its interval; original video fixture remained unchanged.
+- Artifact [`12850187563`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40761920880/artifacts/12850187563) was downloaded and its JUnit/logcat inspected. Do not rerun #291 or #216 unchanged.
+- Next unique gate: repeated gesture/history grouping (one Undo entry per continuous drag/slider gesture, with Undo/Redo restoring the correct before/after values). Physical-device layout/tap-target review and signed update/install validation remain open. VersionCode 395 remains blocked.
+
+### 2026-10-28 — Quantitative music/effect gain gate added; #291 verified
 
 - Test commit [`0c71177`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/0c711779a816162921c2e894f6402466f8b46604) extends the existing deterministic audio-export test with decoded AAC amplitude ratios: 35% music must measure 0.30–0.40 against the 12,000-amplitude WAV source; 60% effect must measure 0.55–0.65 against the 8,000-amplitude WAV source. These bounds retain codec tolerance while detecting a wrong gain multiplier. Existing timing/presence/source-preservation assertions remain unchanged.
 - [#291 — QUEUED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40761920880) is the unique verification for this new assertion. Do not repeat #216 or #290 unchanged; wait for #291 and inspect the exact quantitative-gain result. VersionCode 395 remains blocked.
@@ -181,7 +188,7 @@ Work top to bottom. Mark an item complete only when there is test or inspection 
 - [x] [#216 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40372603373) passes the real MP4/AAC decode gate for looped 440 Hz background music and the 880 Hz effect confined to its configured 2500–3700 ms interval. The leading-gap audio track fix is verified; do not repeat this unchanged.
 - [x] Verify exported source-video audio gain and mute using an audio-bearing source fixture: #228 measured source baseline `16380.5592`, kept early ratio `0.3990434`, kept late magnitude `6533.6536`, muted ratio `0.0000145058`, and `originalsUnchanged=true`. Both draft launches, MP4 saves and decoded AAC assertions passed. Do not repeat unchanged.
 - [x] Verify exported audio/video synchronization against a known video-frame boundary in [#236 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40466133767): output video changed red→lime at 2,000 ms; 997 Hz tone detection window began at 1,925 ms (75 ms delta, tolerance ≤150 ms), pre-boundary tone magnitude 0.0, post-boundary 8177.09, original fixture hash/size unchanged. Split-seam continuity is a separate gate in #238; do not repeat #236 unchanged.
-- [ ] Quantitatively verify music/effect gain. Added decoded AAC amplitude-ratio assertions to the deterministic export test in commit `0c71177`: music 35% ratio 0.30–0.40 against 12,000 source amplitude; effect 60% ratio 0.55–0.65 against 8,000 source amplitude. [#291](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40761920880) is queued. Mark complete only when this exact assertion passes; do not rerun #216 unchanged.
+- [x] Quantitatively verified decoded music/effect gain in [#291 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40761920880): configured music 35% measured 0.34908 (12,000 source amplitude → 4,188 decoded tone amplitude); effect 60% measured 0.59874 (8,000 → 4,789). Both stayed inside the codec-tolerant limits, the effect was absent outside its interval, original video fixture remained unchanged, and JUnit reports 19/19 passed. Do not rerun #291 or #216 unchanged.
 
 ### 5. Timeline edge cases
 
