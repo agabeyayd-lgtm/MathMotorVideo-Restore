@@ -3249,6 +3249,174 @@ class EditorTimelineInteractionTest {
     }
 
     @Test
+    fun exportedMp4MusicAndEffectGainMatchConfiguredRatios() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val resolver = context.contentResolver
+        val device = UiDevice.getInstance(instrumentation)
+        val packageName = context.packageName
+        val fixture = java.io.File(context.filesDir, "editor-test-video.mp4")
+        assertTrue("Audio gain video fixture is missing", fixture.isFile && fixture.length() > 0L)
+        val originalHash = sha256(fixture)
+        val musicFile = java.io.File(context.filesDir, "editor-audio-gain-music.wav")
+        val effectFile = java.io.File(context.filesDir, "editor-audio-gain-effect.wav")
+        writeToneWav(musicFile, 44_100, 1_000, 440.0, 12_000)
+        writeToneWav(effectFile, 44_100, 1_200, 880.0, 8_000)
+
+        fun exportAtLevels(musicVolume: Int, effectVolume: Int, suffix: String): DecodedMonoAudio {
+            val exportName = "MathMotor_gain_${suffix}_${System.currentTimeMillis()}"
+            val draftId = java.util.UUID.randomUUID().toString()
+            val clip = org.json.JSONObject()
+                .put("uri", Uri.fromFile(fixture).toString())
+                .put("title", "AUDIO_GAIN_VIDEO")
+                .put("durationMs", 8_020L)
+                .put("startMs", 0L)
+                .put("endMs", 8_020L)
+            val project = org.json.JSONObject()
+                .put("format", "MathMotorVideoProject")
+                .put("version", 1)
+                .put("clips", org.json.JSONArray().put(clip))
+                .put("selectedClipIndex", 0)
+                .put("timelinePlayheadMs", 1_000L)
+                .put("timelineZoom", 1.0)
+                .put("timelineHorizontalScrollMs", 0L)
+                .put("textLayers", org.json.JSONArray())
+                .put("sourceAudioVolume", 100)
+                .put("musicUri", Uri.fromFile(musicFile).toString())
+                .put("musicTitle", "GAIN_TEST_MUSIC_440HZ")
+                .put("musicVolume", musicVolume)
+                .put("soundUri", Uri.fromFile(effectFile).toString())
+                .put("soundTitle", "GAIN_TEST_EFFECT_880HZ")
+                .put("soundDurationMs", 1_200L)
+                .put("soundStartMs", 2_500L)
+                .put("soundVolume", effectVolume)
+                .put("keepSourceAudio", false)
+                .put("exportName", exportName)
+            assertTrue(
+                "Could not seed gain test project (music=$musicVolume effect=$effectVolume)",
+                VideoProjectDraftStore.save(context, draftId, "Audio gain ratio validation", project)
+            )
+
+            device.executeShellCommand("logcat -c")
+            // Clear the previous Activity task so this export belongs to the exact seeded draft.
+            device.executeShellCommand(
+                "am start --activity-clear-task -n $packageName/com.mathmotor.video.EditorTestEntryActivity --es draft_id $draftId"
+            )
+            val restoreDeadline = SystemClock.uptimeMillis() + 20_000L
+            var draftRestored = false
+            var lastRestoreLog = ""
+            while (SystemClock.uptimeMillis() < restoreDeadline) {
+                val restoreLog = device.executeShellCommand("logcat -d -s EditorSmokeTest:I")
+                lastRestoreLog = restoreLog.takeLast(1_500)
+                if (restoreLog.contains("EDITOR_SMOKE_DRAFT_RESTORED id=$draftId")) {
+                    draftRestored = true
+                    break
+                }
+                if (restoreLog.contains("EDITOR_SMOKE_DRAFT_LOOKUP id=$draftId found=false")) break
+                SystemClock.sleep(200)
+            }
+            assertTrue(
+                "The seeded gain project did not restore (draft=$draftId, volumes=$musicVolume/$effectVolume, " +
+                    "markers=$lastRestoreLog)",
+                draftRestored
+            )
+            assertTrue(
+                "Gain test editor did not show its preview",
+                device.wait(Until.hasObject(By.text("VIDEO")), 20_000)
+            )
+            requireObject(device, By.text("Dışa aktar ›"), "gain test export tab").click()
+            assertTrue(
+                "Gain test export panel did not open",
+                device.wait(Until.hasObject(By.text("PROJE / DIŞA AKTARMA")), 8_000)
+            )
+            requireObject(device, By.clazz("android.widget.EditText"), "gain test export filename").setText(exportName)
+            val scroller = UiScrollable(UiSelector().className("android.widget.ScrollView")).setAsVerticalList()
+            assertTrue(
+                "Could not reveal MP4 export button for gain test",
+                scroller.scrollIntoView(UiSelector().text("MP4 DIŞA AKTAR"))
+            )
+            device.waitForIdle()
+            requireObject(device, By.text("MP4 DIŞA AKTAR"), "gain test MP4 export").click()
+
+            val exportDeadline = SystemClock.uptimeMillis() + 120_000L
+            var exported = false
+            var lastExportLog = ""
+            while (SystemClock.uptimeMillis() < exportDeadline) {
+                val log = device.executeShellCommand("logcat -d -s MultiClipExport:I")
+                lastExportLog = log.takeLast(1_500)
+                if (log.contains("MULTICLIP_EXPORT_SAVED name=$exportName")) {
+                    exported = true
+                    break
+                }
+                if (log.contains("MULTICLIP_EXPORT_TRANSFORM_FAILED name=$exportName") ||
+                    log.contains("MULTICLIP_EXPORT_SAVE_FAILED name=$exportName")) {
+                    throw AssertionError("Gain test MP4 export failed: $lastExportLog")
+                }
+                SystemClock.sleep(500)
+            }
+            assertTrue("Gain test MP4 did not save within 120 seconds: $lastExportLog", exported)
+
+            var savedUri: Uri? = null
+            val queryDeadline = SystemClock.uptimeMillis() + 30_000L
+            while (savedUri == null && SystemClock.uptimeMillis() < queryDeadline) {
+                resolver.query(
+                    MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                    arrayOf(MediaStore.Video.Media._ID),
+                    "${MediaStore.Video.Media.DISPLAY_NAME} = ?",
+                    arrayOf("$exportName.mp4"),
+                    null
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        savedUri = ContentUris.withAppendedId(
+                            MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                            cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID))
+                        )
+                    }
+                }
+                if (savedUri == null) SystemClock.sleep(300)
+            }
+            val uri = savedUri ?: throw AssertionError("Gain test export was saved but not found in MediaStore")
+            return try {
+                decodeExportedAudioMono(context, uri)
+            } finally {
+                runCatching { resolver.delete(uri, null, null) }
+            }
+        }
+
+        val reference = exportAtLevels(musicVolume = 100, effectVolume = 100, suffix = "reference")
+        val configured = exportAtLevels(musicVolume = 35, effectVolume = 60, suffix = "configured")
+        val referenceMusic = toneMagnitude(reference, 440.0, 400L, 900L)
+        val configuredMusic = toneMagnitude(configured, 440.0, 400L, 900L)
+        val referenceEffect = toneMagnitude(reference, 880.0, 2_800L, 3_400L)
+        val configuredEffect = toneMagnitude(configured, 880.0, 2_800L, 3_400L)
+        assertTrue("Reference 440 Hz music tone is too weak to measure: $referenceMusic", referenceMusic > 500.0)
+        assertTrue("Reference 880 Hz effect tone is too weak to measure: $referenceEffect", referenceEffect > 500.0)
+        val musicRatio = configuredMusic / referenceMusic
+        val effectRatio = configuredEffect / referenceEffect
+        android.util.Log.i(
+            "AudioGainRatioTest",
+            "stage=measured musicReference=$referenceMusic musicAt35=$configuredMusic musicRatio=$musicRatio " +
+                "effectReference=$referenceEffect effectAt60=$configuredEffect effectRatio=$effectRatio " +
+                "expectedMusic=0.35 expectedEffect=0.60"
+        )
+        assertTrue(
+            "Exported music gain should match 35% of the 100% reference (ratio=$musicRatio; " +
+                "reference=$referenceMusic configured=$configuredMusic)",
+            musicRatio in 0.27..0.43
+        )
+        assertTrue(
+            "Exported sound-effect gain should match 60% of the 100% reference (ratio=$effectRatio; " +
+                "reference=$referenceEffect configured=$configuredEffect)",
+            effectRatio in 0.48..0.72
+        )
+        assertTrue("Gain verification modified the original source video", sha256(fixture) == originalHash)
+        android.util.Log.i(
+            "AudioGainRatioTest",
+            "stage=verified musicRatio=$musicRatio effectRatio=$effectRatio originalsUnchanged=true"
+        )
+    }
+
+    @Test
     fun exportedMp4RespectsSourceAudioVolumeAndMute() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
