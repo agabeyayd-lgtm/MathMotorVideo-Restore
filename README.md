@@ -6,6 +6,13 @@ A local-first Android video editor with a CapCut-inspired workflow. Editing and 
 
 **Continue from this checkpoint. Do not restart completed work or repeat passing tests unless a related source change requires it. Keep the current release gate and record the exact failing assertion before changing code.**
 
+### 2026-10-28 — Single-clip timeline layout pass (verification pending)
+
+- Candidate source change: on compact phones the redundant single-clip chooser row is hidden, while the main filmstrip is increased to a 40 dp lane, text/music/effect tracks to 24 dp, and a shared time ruler is restored above the filmstrip with zoom-aware label spacing.
+- Multi-clip chooser behavior is retained, so the existing multi-clip selection/reorder route is not removed. Preview, trim, text, audio, Undo/Redo and export logic are untouched.
+- Added regression assertions to the existing trim-vs-scroll gate for compact VIDEO lane height, ruler visibility, and absence of the duplicate single-clip chooser. Verification is pending the workflow on this exact commit; no prior successful run is being repeated unchanged.
+- Do not change version metadata or release 395.
+
 ### 2026-10-28 — CapCut-style visual review and compact-phone cleanup
 
 - [x] Downloaded and inspected the actual #269 emulator screenshots. Home screen is reasonably structured, but the editor is **not yet visually equivalent to CapCut**: the preview has an overbuilt four-button size controller, a persistent gesture-help row consumes timeline space, and the compact screen leaves too little room for the active tool panel.

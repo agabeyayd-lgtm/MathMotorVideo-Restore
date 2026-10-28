@@ -572,6 +572,7 @@ class VideoEditorActivity : Activity() {
         timelineClipCarousel = android.widget.HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
             overScrollMode = View.OVER_SCROLL_NEVER
+            contentDescription = "Klip seçici satırı"
         }
         val clipScroll = timelineClipCarousel
         clipList = LinearLayout(this).apply {
@@ -1372,11 +1373,9 @@ class VideoEditorActivity : Activity() {
                 // remaining height after the IME inset is applied. Hide it while typing;
                 // it returns as soon as the keyboard closes, preserving the same edit.
                 timelineCard.visibility = if (imeVisible && compactEditorLayout) View.GONE else View.VISIBLE
-                // Hide decorative strips and fixed docks so the active tool gets
-                // the visible space left by the keyboard.
-                clipScroll.visibility = if (
-                    imeVisible || (compactEditorLayout && activeEditorPanel != null && activeEditorPanel != "clip")
-                ) View.GONE else View.VISIBLE
+                // Hide duplicate chooser rows and fixed docks while the keyboard is
+                // active; the main timeline is already hidden on compact phones.
+                updateClipCarouselVisibility()
                 bottomDock.visibility = if (imeVisible) View.GONE else View.VISIBLE
                 statusView.visibility = if (imeVisible) View.GONE else View.VISIBLE
                 if (topBar.childCount > 2) {
@@ -1434,6 +1433,7 @@ class VideoEditorActivity : Activity() {
                 val density = resources.displayMetrics.density.coerceAtLeast(1f)
                 val viewportDp = (viewportHeight / density).toInt()
                 compactEditorLayout = viewportDp < 820
+                updateClipCarouselVisibility()
                 val previewRatio = if (viewportDp < 650) 0.26f else 0.30f
                 previewDefaultStageHeightDp = (viewportDp * previewRatio).toInt().coerceIn(150, 340)
                 previewStageHeightDp = previewDefaultStageHeightDp
@@ -1632,14 +1632,21 @@ class VideoEditorActivity : Activity() {
         else previewStageHeightDp.coerceIn(150, 460)
     }
 
+    private fun updateClipCarouselVisibility() {
+        if (!::timelineClipCarousel.isInitialized) return
+        val compactToolPanel = compactEditorLayout &&
+            activeEditorPanel != null && activeEditorPanel != "clip"
+        // On a compact phone with a single clip, the chooser repeats the same content
+        // as the main VIDEO filmstrip. Keep the primary timeline as the only clip row.
+        val duplicateSingleClip = compactEditorLayout && clips.size <= 1
+        timelineClipCarousel.visibility = if (
+            keyboardLayoutActive || compactToolPanel || duplicateSingleClip
+        ) View.GONE else View.VISIBLE
+        timelineClipCarousel.requestLayout()
+    }
+
     private fun updateCompactToolPanelLayout() {
-        if (::timelineClipCarousel.isInitialized) {
-            val compactToolPanel = compactEditorLayout &&
-                activeEditorPanel != null && activeEditorPanel != "clip"
-            timelineClipCarousel.visibility =
-                if (keyboardLayoutActive || compactToolPanel) View.GONE else View.VISIBLE
-            timelineClipCarousel.requestLayout()
-        }
+        updateClipCarouselVisibility()
         if (::previewFrame.isInitialized && !keyboardLayoutActive && !previewFocusMode) {
             val params = previewFrame.layoutParams as? LinearLayout.LayoutParams
             val targetHeight = dp(effectivePreviewStageHeightDp())
@@ -1849,7 +1856,15 @@ class VideoEditorActivity : Activity() {
                 setPadding(0, dp(1), 0, dp(1))
             }
             scroll.addView(track)
-            val responsiveLaneHeight = if (keyboardLayoutActive || compactEditorLayout) 18 else heightDp
+            val responsiveLaneHeight = when {
+                keyboardLayoutActive -> 18
+                compactEditorLayout -> when (tag) {
+                    "VIDEO" -> 40
+                    "SÜRE" -> 20
+                    else -> 24
+                }
+                else -> heightDp
+            }
             row.addView(scroll, LinearLayout.LayoutParams(0, dp(responsiveLaneHeight), 1f))
             timelineTracks.addView(row, matchWrap())
             return track
@@ -1887,14 +1902,16 @@ class VideoEditorActivity : Activity() {
                     setOnClickListener { onClick() }
                 }
             }
-            val blockHeight = dp(if (keyboardLayoutActive || compactEditorLayout) 18 else 24)
+            val blockHeight = dp(if (keyboardLayoutActive) 18 else if (compactEditorLayout) 22 else 24)
             track.addView(block, LinearLayout.LayoutParams(width, blockHeight))
         }
 
         fun addSpacer(track: LinearLayout, startMs: Long, endMs: Long) {
             val width = widthBetween(startMs, endMs)
             if (width <= 0) return
-            track.addView(View(this), LinearLayout.LayoutParams(width, dp(if (keyboardLayoutActive || compactEditorLayout) 18 else 24)))
+            track.addView(View(this), LinearLayout.LayoutParams(
+                width, dp(if (keyboardLayoutActive) 18 else if (compactEditorLayout) 22 else 24)
+            ))
         }
 
         fun addTextLayerBlock(track: LinearLayout, layer: TextLayer, layerIndex: Int) {
@@ -1903,7 +1920,7 @@ class VideoEditorActivity : Activity() {
             if (startMs > 0L) addSpacer(track, 0L, startMs)
 
             val blockWidth = widthBetween(startMs, endMs).coerceAtLeast(1)
-            val blockHeight = dp(if (keyboardLayoutActive || compactEditorLayout) 18 else 24)
+            val blockHeight = dp(if (keyboardLayoutActive) 18 else if (compactEditorLayout) 22 else 24)
             val frame = FrameLayout(this).apply {
                 background = android.graphics.drawable.GradientDrawable().apply {
                     setColor(Color.rgb(110, 74, 154))
@@ -2102,32 +2119,45 @@ class VideoEditorActivity : Activity() {
             if (endMs < totalMs) addSpacer(track, endMs, totalMs)
         }
 
-        if (!keyboardLayoutActive && !compactEditorLayout) {
-            val ruler = makeLane("SÜRE", 22)
-            // The ruler must end at the actual sequence duration. Rounding 8 s up to
-            // 10 s makes it the widest track and lets the user scroll past the final clip.
+        if (!keyboardLayoutActive) {
+            // Keep the ruler visible on compact phones so the user can read one shared
+            // time scale above the actual filmstrip. Increase label density only when
+            // the current zoom provides enough room for it.
+            val compactRulerStepMs = when {
+                pxPerSecond >= dp(34).toFloat() -> 1000L
+                pxPerSecond >= dp(16).toFloat() -> 2000L
+                else -> 5000L
+            }
+            val rulerStepMs = if (compactEditorLayout) compactRulerStepMs else 5000L
+            val ruler = makeLane("SÜRE", if (compactEditorLayout) 20 else 22)
+            // Stop at the actual sequence duration rather than rounding up and allowing
+            // an invisible overscroll tail beyond the final clip.
             val rulerEndMs = totalMs.coerceAtLeast(1L)
             var rulerTimeMs = 0L
             var rulerPositionPx = 0
             while (rulerTimeMs < rulerEndMs) {
-                val nextTimeMs = minOf(rulerTimeMs + 5000L, rulerEndMs)
+                val nextTimeMs = minOf(rulerTimeMs + rulerStepMs, rulerEndMs)
                 val nextPositionPx = TimelineScaleMath.pixelsForTime(nextTimeMs, pxPerSecond)
                 val tick = TextView(this).apply {
                     text = formatMs(rulerTimeMs) + " ┆"
-                    textSize = 9f
+                    textSize = if (compactEditorLayout) 8f else 9f
                     setTextColor(Color.rgb(166, 184, 201))
                     gravity = Gravity.CENTER_VERTICAL or Gravity.START
                     setPadding(dp(2), 0, 0, 0)
                 }
                 ruler.addView(tick, LinearLayout.LayoutParams(
-                    maxOf(dp(26), (nextPositionPx - rulerPositionPx).coerceAtLeast(1)), dp(22)
+                    maxOf(dp(26), (nextPositionPx - rulerPositionPx).coerceAtLeast(1)),
+                    dp(if (compactEditorLayout) 20 else 22)
                 ))
                 rulerTimeMs = nextTimeMs
                 rulerPositionPx = nextPositionPx
             }
         }
 
-        val videoTrack = makeLane("VIDEO", if (keyboardLayoutActive || compactEditorLayout) 18 else 44)
+        val videoTrack = makeLane(
+            "VIDEO",
+            if (keyboardLayoutActive) 18 else if (compactEditorLayout) 40 else 44
+        )
         if (clips.isEmpty()) {
             addBlock(videoTrack, "+ Video ekle", 5000L, Color.rgb(38, 105, 123), onClick = { chooseVideo(true) }, minimumWidthDp = 115)
         } else {
@@ -2136,7 +2166,7 @@ class VideoEditorActivity : Activity() {
                 val duration = (clip.endMs - clip.startMs).coerceAtLeast(0L)
                 val nextVideoOffsetMs = videoOffsetMs + duration
                 val width = widthBetween(videoOffsetMs, nextVideoOffsetMs).coerceAtLeast(1)
-                val height = dp(if (keyboardLayoutActive || compactEditorLayout) 18 else 42)
+                val height = dp(if (keyboardLayoutActive) 18 else if (compactEditorLayout) 38 else 42)
                 val block = buildVideoClipFilmstrip(clip, index, width, height, index == selectedClipIndex)
                 // Widths use absolute boundaries, so fractional-pixel rounding cannot accumulate.
                 videoTrack.addView(block, LinearLayout.LayoutParams(width, height))
@@ -2295,7 +2325,7 @@ class VideoEditorActivity : Activity() {
                 "Zaman çizelgesi yakınlaştırma " + (timelineZoom * 100f).toInt() + "%"
         }
         refreshTimelineTracks()
-        status.text = "Zaman çizelgesi yakınlaştırma: " + timelineZoom.toString() + "×. Kırmızı çizgiyi sürükleyebilir veya video karelerine dokunabilirsin."
+        status.text = "Zaman çizelgesi yakınlaştırma: " + timelineZoom.toString() + "×. Beyaz oynatma çizgisini sürükleyebilir veya video karelerine dokunabilirsin."
     }
 
     private fun seekFromTimelineFrameX(frameX: Float) {
@@ -4047,6 +4077,7 @@ class VideoEditorActivity : Activity() {
             }
         }
         refreshTimelineTracks()
+        updateClipCarouselVisibility()
     }
 
     private fun duplicateClipAt(index: Int) {

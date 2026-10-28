@@ -432,6 +432,16 @@ class EditorTimelineInteractionTest {
         )
         val laneSelector = By.desc("Zaman çizelgesi satırı: VIDEO")
         val laneBeforeZoom = requireObject(device, laneSelector, "VIDEO timeline lane before pinch")
+        val compactLaneBounds = laneBeforeZoom.visibleBounds
+        assertTrue(
+            "Compact VIDEO filmstrip should be a readable primary lane, bounds=$compactLaneBounds density=$density",
+            compactLaneBounds.height() >= (34f * density).toInt()
+        )
+        assertTrue("Compact timeline is missing its shared time ruler", device.hasObject(By.text("SÜRE")))
+        assertFalse(
+            "Single-clip screen still shows a duplicate clip chooser row",
+            device.hasObject(By.desc("Klip seçici satırı"))
+        )
         val zoomBeforeLabel = requireObject(
             device, By.descContains("Zaman çizelgesi yakınlaştırma"), "timeline zoom before pinch"
         ).contentDescription
