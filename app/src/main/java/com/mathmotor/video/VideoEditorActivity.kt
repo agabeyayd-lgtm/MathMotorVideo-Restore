@@ -4278,8 +4278,10 @@ class VideoEditorActivity : Activity() {
                         filmstripDownScrollX = timelineScrollViews.firstOrNull()?.scrollX
                             ?: timelineHorizontalScrollX
                         player?.playWhenReady = false
-                        // Do not disallow parent interception here. Once a one-finger horizontal
-                        // drag crosses touch slop, the parent lane should scroll the timeline.
+                        // Keep this child in charge of the down/hold sequence so a parent
+                        // HorizontalScrollView cannot cancel the long-press timer. Horizontal
+                        // movement remains handled by scrollTimelineToOffset() in ACTION_MOVE.
+                        view.parent?.requestDisallowInterceptTouchEvent(true)
                         timelineHandler.postDelayed(
                             filmstripLongPress,
                             android.view.ViewConfiguration.getLongPressTimeout().toLong()
