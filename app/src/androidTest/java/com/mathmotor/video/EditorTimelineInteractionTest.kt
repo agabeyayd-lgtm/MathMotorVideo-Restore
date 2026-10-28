@@ -2591,6 +2591,10 @@ class EditorTimelineInteractionTest {
             textPanelScroller.scrollIntoView(UiSelector().text("Yazı başlangıcı: 00:07.00"))
         )
         assertTrue(
+            "Manual JSON did not expose the restored text end-time control",
+            textPanelScroller.scrollIntoView(UiSelector().text("Yazı bitişi: 00:09.00"))
+        )
+        assertTrue(
             "Manual JSON did not restore the text end time",
             device.wait(Until.hasObject(By.text("Yazı bitişi: 00:09.00")), 5_000)
         )
