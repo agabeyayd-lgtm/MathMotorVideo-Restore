@@ -860,14 +860,21 @@ class EditorTimelineInteractionTest {
         // Inject a down event, keep the same finger down beyond Android's long-press
         // timeout, then inject up. This avoids both UiDevice.swipe step-count semantics and
         // shell input swipe implementations that may compress/collapse a tiny motion.
-        val longPressX = firstFilmstripBounds.centerX()
+        // The fixed playhead is a 28dp-wide touch layer placed above the timeline lanes.
+        // Touching the filmstrip's center can hit that overlay instead of the clip itself.
+        val longPressX = firstFilmstripBounds.left + firstFilmstripBounds.width() / 4
+        val playheadOverlayHalfWidthPx = (16f * context.resources.displayMetrics.density).toInt()
+        assertTrue(
+            "Long-press target is too close to the fixed playhead overlay: bounds=$firstFilmstripBounds x=$longPressX",
+            kotlin.math.abs(longPressX - firstFilmstripBounds.centerX()) > playheadOverlayHalfWidthPx
+        )
         val longPressY = firstFilmstripBounds.centerY()
         val longPressDurationMs = android.view.ViewConfiguration.getLongPressTimeout() + 500
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
         val downTime = SystemClock.uptimeMillis()
         android.util.Log.i(
             "MultiClipTimelineTest",
-            "stage=filmstrip-long-press-inject x=$longPressX y=$longPressY durationMs=$longPressDurationMs bounds=$firstFilmstripBounds"
+            "stage=filmstrip-long-press-inject x=$longPressX y=$longPressY centerX=${firstFilmstripBounds.centerX()} durationMs=$longPressDurationMs bounds=$firstFilmstripBounds"
         )
         val down = android.view.MotionEvent.obtain(
             downTime, downTime, android.view.MotionEvent.ACTION_DOWN,

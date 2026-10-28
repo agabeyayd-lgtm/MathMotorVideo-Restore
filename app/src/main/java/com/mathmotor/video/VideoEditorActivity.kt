@@ -4259,32 +4259,17 @@ class VideoEditorActivity : Activity() {
             var filmstripDownX = 0f
             var filmstripDownRawX = 0f
             var filmstripDownScrollX = 0
-            val filmstripLogTag = "FilmstripLongPress"
             val filmstripLongPress = Runnable {
-                android.util.Log.i(
-                    filmstripLogTag,
-                    "timer-fired index=$index active=$filmstripTouchActive moved=$filmstripMoved"
-                )
                 if (filmstripTouchActive && !filmstripMoved) {
                     filmstripLongPressed = performLongClick()
-                    android.util.Log.i(
-                        filmstripLogTag,
-                        "performLongClick=$filmstripLongPressed index=$index"
-                    )
                     // A long-press action may keep ownership; ordinary horizontal swipes must
                     // remain available to the parent HorizontalScrollView for timeline travel.
                     if (filmstripLongPressed) parent?.requestDisallowInterceptTouchEvent(true)
-                } else {
-                    android.util.Log.w(filmstripLogTag, "timer-skipped index=$index")
                 }
             }
             setOnTouchListener { view, event ->
                 when (event.actionMasked) {
                     android.view.MotionEvent.ACTION_DOWN -> {
-                        android.util.Log.i(
-                            filmstripLogTag,
-                            "down index=$index x=${event.rawX.toInt()} y=${event.rawY.toInt()} view=${view.width}x${view.height}"
-                        )
                         filmstripTouchActive = true
                         filmstripMoved = false
                         filmstripLongPressed = false
@@ -4293,10 +4278,8 @@ class VideoEditorActivity : Activity() {
                         filmstripDownScrollX = timelineScrollViews.firstOrNull()?.scrollX
                             ?: timelineHorizontalScrollX
                         player?.playWhenReady = false
-                        // Keep this child in charge of the down/hold sequence so a parent
-                        // HorizontalScrollView cannot cancel the long-press timer. Horizontal
-                        // movement remains handled by scrollTimelineToOffset() in ACTION_MOVE.
-                        view.parent?.requestDisallowInterceptTouchEvent(true)
+                        // Do not disallow parent interception here. Once a one-finger horizontal
+                        // drag crosses touch slop, the parent lane should scroll the timeline.
                         timelineHandler.postDelayed(
                             filmstripLongPress,
                             android.view.ViewConfiguration.getLongPressTimeout().toLong()
@@ -4306,10 +4289,6 @@ class VideoEditorActivity : Activity() {
                     android.view.MotionEvent.ACTION_MOVE -> {
                         val movedPx = event.rawX - filmstripDownRawX
                         if (kotlin.math.abs(movedPx) > android.view.ViewConfiguration.get(this@VideoEditorActivity).scaledTouchSlop) {
-                            android.util.Log.i(
-                                filmstripLogTag,
-                                "move-crossed-slop index=$index movedPx=${movedPx.toInt()}"
-                            )
                             filmstripMoved = true
                             timelineHandler.removeCallbacks(filmstripLongPress)
                             if (!filmstripLongPressed) {
@@ -4323,10 +4302,6 @@ class VideoEditorActivity : Activity() {
                         true
                     }
                     android.view.MotionEvent.ACTION_UP -> {
-                        android.util.Log.i(
-                            filmstripLogTag,
-                            "up index=$index longPressed=$filmstripLongPressed moved=$filmstripMoved"
-                        )
                         timelineHandler.removeCallbacks(filmstripLongPress)
                         filmstripTouchActive = false
                         view.parent?.requestDisallowInterceptTouchEvent(false)
@@ -4345,7 +4320,6 @@ class VideoEditorActivity : Activity() {
                         true
                     }
                     android.view.MotionEvent.ACTION_CANCEL -> {
-                        android.util.Log.w(filmstripLogTag, "cancel index=$index")
                         timelineHandler.removeCallbacks(filmstripLongPress)
                         filmstripTouchActive = false
                         view.parent?.requestDisallowInterceptTouchEvent(false)
@@ -4355,7 +4329,6 @@ class VideoEditorActivity : Activity() {
                 }
             }
             setOnLongClickListener {
-                android.util.Log.i(filmstripLogTag, "long-click-listener index=$index")
                 val menu = android.widget.PopupMenu(this@VideoEditorActivity, this)
                 menu.menu.add(0, 1, 0, "Kopyala")
                 menu.menu.add(0, 2, 1, "Sil")
@@ -4373,7 +4346,6 @@ class VideoEditorActivity : Activity() {
                     true
                 }
                 menu.show()
-                android.util.Log.i(filmstripLogTag, "menu-show-requested index=$index")
                 true
             }
             setOnDragListener { _, event ->
