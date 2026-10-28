@@ -1831,6 +1831,7 @@ class EditorTimelineInteractionTest {
         }
         val effectDocument = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
             ?: throw AssertionError("Could not publish the deterministic audio fixture to Downloads")
+        var documentPickerOpened = false
         try {
             val output = context.contentResolver.openOutputStream(effectDocument, "w")
                 ?: throw AssertionError("Could not open the published audio fixture")
@@ -1868,29 +1869,41 @@ class EditorTimelineInteractionTest {
                 panelScroll.scrollIntoView(UiSelector().text("Efekt ekle"))
             )
             requireObject(device, By.text("Efekt ekle"), "add sound-effect button").click()
+            documentPickerOpened = true
 
-            // Always navigate into Downloads, rather than trusting a possibly obscured
-            // Recent-list result in DocumentsUI.
+            // Recent intentionally omits files that have not been opened before.
+            // Prefer the provider's accessible root button, but retain a coordinate
+            // fallback for the API-35 compact DocumentsUI toolbar whose root button
+            // has no exposed content description.
             val rootsButton = findObjectByAny(
                 device,
                 By.descContains("Show roots"),
                 By.descContains("Show navigation drawer"),
-                By.descContains("navigation drawer")
+                By.descContains("navigation drawer"),
+                By.res("com.google.android.documentsui:id/roots")
             )
             if (rootsButton != null) {
                 rootsButton.click()
-                device.waitForIdle()
+            } else {
+                device.click(28, 48)
             }
+            device.waitForIdle()
+
             var downloads: UiObject2? = null
-            val downloadsDeadline = SystemClock.uptimeMillis() + 8_000L
+            val downloadsDeadline = SystemClock.uptimeMillis() + 10_000L
             while (downloads == null && SystemClock.uptimeMillis() < downloadsDeadline) {
                 downloads = device.findObject(By.text("Downloads")) ?: device.findObject(By.text("Download"))
                 if (downloads == null) SystemClock.sleep(200)
             }
-            if (downloads != null) {
-                downloads.click()
-                device.waitForIdle()
-            }
+            assertTrue(
+                "DocumentsUI root navigation did not expose Downloads. Visible text=" +
+                    device.findObjects(By.clazz("android.widget.TextView"))
+                        .mapNotNull { runCatching { it.text?.toString() }.getOrNull() }
+                        .filter { it.isNotBlank() }.distinct().take(80).joinToString(" | "),
+                downloads != null
+            )
+            downloads!!.click()
+            device.waitForIdle()
 
             var fileRow: UiObject2? = null
             val fileDeadline = SystemClock.uptimeMillis() + 10_000L
@@ -2032,6 +2045,12 @@ class EditorTimelineInteractionTest {
                     "startBefore=$initialStartLabel startAfter=$changedStartLabel"
             )
         } finally {
+            // Do not leave the system document picker on top if an assertion fails;
+            // later instrumentation cases launch their own editor activity/task.
+            if (documentPickerOpened) {
+                runCatching { device.pressBack() }
+                runCatching { device.waitForIdle() }
+            }
             runCatching { context.contentResolver.delete(effectDocument, null, null) }
             runCatching { wavFixture.delete() }
         }
@@ -2846,13 +2865,13 @@ class EditorTimelineInteractionTest {
         )
 
         device.executeShellCommand("logcat -c")
-        device.executeShellCommand("am start -n $packageName/com.mathmotor.video.MainActivity")
+        device.executeShellCommand("am start --activity-clear-task -n $packageName/com.mathmotor.video.MainActivity")
         assertTrue(
             "Home did not open before the timed-text export test",
             device.wait(Until.hasObject(By.textContains("Boş proje oluştur")), 12_000)
         )
         device.executeShellCommand(
-            "am start -n $packageName/com.mathmotor.video.EditorTestEntryActivity --es draft_id $draftId"
+            "am start --activity-clear-task -n $packageName/com.mathmotor.video.EditorTestEntryActivity --es draft_id $draftId"
         )
         assertTrue(
             "Seeded timed-text project did not open",
