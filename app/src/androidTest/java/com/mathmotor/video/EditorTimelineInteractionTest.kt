@@ -1777,8 +1777,9 @@ class EditorTimelineInteractionTest {
             !requireObject(device, By.text("Videonun kendi sesini koru"), "redone source-audio checkbox").isChecked
         )
 
-        // Use a real drag on the effect-volume SeekBar to cover start/stop tracking
-        // and its own undoable history entry, not just serialized state.
+        // Exercise two distinct physical slider gestures. Intermediate move events
+        // within each swipe must be grouped as one history entry, while the two swipes
+        // must remain separate entries that Undo/Redo can traverse in order.
         assertTrue(
             "Could not reveal the effect-volume slider",
             panelScroll.scrollIntoView(UiSelector().description("Efekt ses düzeyi"))
@@ -1787,49 +1788,95 @@ class EditorTimelineInteractionTest {
         val effectSeek = requireObject(device, By.desc("Efekt ses düzeyi"), "effect volume seek bar")
         val bounds = effectSeek.visibleBounds
         assertTrue("Effect-volume slider has no usable hit target: $bounds", bounds.width() > 100 && bounds.height() > 0)
+
         device.swipe(
-            bounds.left + (bounds.width() * 0.80f).toInt(),
+            bounds.left + (bounds.width() * 0.95f).toInt(),
+            bounds.centerY(),
+            bounds.left + (bounds.width() * 0.70f).toInt(),
+            bounds.centerY(),
+            30
+        )
+        device.waitForIdle()
+        val firstLabel = requireObject(device, By.textContains("Efekt sesi:"), "first effect-volume label").text
+        val firstGestureValue = Regex("(\\d+)").find(firstLabel)?.groupValues?.get(1)?.toInt()
+            ?: throw AssertionError("Could not read first effect-volume gesture value: $firstLabel")
+        assertTrue(
+            "First effect-volume gesture did not reach an intermediate value: $firstLabel",
+            firstGestureValue in 55..85
+        )
+
+        val secondStartX = bounds.left + (bounds.width() * (firstGestureValue / 100f)).toInt()
+        device.swipe(
+            secondStartX,
             bounds.centerY(),
             bounds.left + (bounds.width() * 0.30f).toInt(),
             bounds.centerY(),
-            25
+            30
         )
         device.waitForIdle()
-        val changedLabel = requireObject(device, By.textContains("Efekt sesi:"), "changed effect-volume label").text
-        val changedValue = Regex("(\\d+)").find(changedLabel)?.groupValues?.get(1)?.toInt()
-            ?: throw AssertionError("Could not read adjusted effect volume: $changedLabel")
-        assertTrue("Touch did not change effect volume from 100%: $changedLabel", changedValue < 100)
+        val secondLabel = requireObject(device, By.textContains("Efekt sesi:"), "second effect-volume label").text
+        val secondGestureValue = Regex("(\\d+)").find(secondLabel)?.groupValues?.get(1)?.toInt()
+            ?: throw AssertionError("Could not read second effect-volume gesture value: $secondLabel")
+        assertTrue(
+            "Second separate effect-volume gesture did not move lower than the first: " +
+                "$firstGestureValue -> $secondGestureValue ($secondLabel)",
+            secondGestureValue <= firstGestureValue - 10
+        )
 
+        // One Undo should erase all intermediate values from gesture 2, returning to
+        // gesture 1's committed value exactly. A second Undo returns to the baseline.
         clipTab.click()
-        requireObject(device, By.desc("Düzenleme geri al"), "Undo effect-volume gesture").click()
+        requireObject(device, By.desc("Düzenleme geri al"), "Undo second effect-volume gesture").click()
         audioTab.click()
         assertTrue(
-            "Could not reveal effect volume after Undo",
+            "Could not reveal first gesture value after Undo",
+            panelScroll.scrollIntoView(UiSelector().text("Efekt sesi: $firstGestureValue%"))
+        )
+        assertTrue(
+            "One Undo did not restore the first gesture's committed value",
+            device.wait(Until.hasObject(By.text("Efekt sesi: $firstGestureValue%")), 4_000)
+        )
+
+        clipTab.click()
+        requireObject(device, By.desc("Düzenleme geri al"), "Undo first effect-volume gesture").click()
+        audioTab.click()
+        assertTrue(
+            "Could not reveal baseline effect volume after second Undo",
             panelScroll.scrollIntoView(UiSelector().text("Efekt sesi: 100%"))
         )
         assertTrue(
-            "Undo did not restore effect volume to 100%",
+            "Second Undo did not restore baseline effect volume",
             device.wait(Until.hasObject(By.text("Efekt sesi: 100%")), 4_000)
         )
 
+        // Redo must recover the two distinct committed values in the same order.
         clipTab.click()
-        requireObject(device, By.desc("Düzenleme yinele"), "Redo effect-volume gesture").click()
+        requireObject(device, By.desc("Düzenleme yinele"), "Redo first effect-volume gesture").click()
         audioTab.click()
-        // Switching away from the audio tab can leave the shared vertical panel at a
-        // previous scroll offset. Scroll to the changed label before asserting the value,
-        // exactly as the Undo branch above does, so an off-screen node is not mistaken
-        // for a failed Redo.
         assertTrue(
-            "Could not reveal the changed effect-volume label after Redo",
-            panelScroll.scrollIntoView(UiSelector().text("Efekt sesi: $changedValue%"))
+            "Could not reveal first gesture value after Redo",
+            panelScroll.scrollIntoView(UiSelector().text("Efekt sesi: $firstGestureValue%"))
         )
         assertTrue(
-            "Redo did not restore the changed effect volume",
-            device.wait(Until.hasObject(By.text("Efekt sesi: $changedValue%")), 4_000)
+            "First Redo did not restore the first gesture's committed value",
+            device.wait(Until.hasObject(By.text("Efekt sesi: $firstGestureValue%")), 4_000)
+        )
+
+        clipTab.click()
+        requireObject(device, By.desc("Düzenleme yinele"), "Redo second effect-volume gesture").click()
+        audioTab.click()
+        assertTrue(
+            "Could not reveal second gesture value after Redo",
+            panelScroll.scrollIntoView(UiSelector().text("Efekt sesi: $secondGestureValue%"))
+        )
+        assertTrue(
+            "Second Redo did not restore the second gesture's committed value",
+            device.wait(Until.hasObject(By.text("Efekt sesi: $secondGestureValue%")), 4_000)
         )
         android.util.Log.i(
             "AudioHistoryTest",
-            "stage=verified sourceAudio=true->false->true->false effectVolume=100->$changedValue->100->$changedValue"
+            "stage=verified separateGestureGrouping baseline=100 first=$firstGestureValue second=$secondGestureValue " +
+                "undo=[$firstGestureValue,100] redo=[$firstGestureValue,$secondGestureValue]"
         )
     }
 
