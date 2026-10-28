@@ -1095,7 +1095,11 @@ class VideoEditorActivity : Activity() {
         audioPanel.addView(soundActions)
         soundStartLabel = label("Efekt başlangıcı: 00:00", 12f, Color.WHITE, true)
         audioPanel.addView(soundStartLabel)
-        soundStartSeek = SeekBar(this).apply { max = 0; isEnabled = false }
+        soundStartSeek = SeekBar(this).apply {
+            max = 0
+            isEnabled = false
+            contentDescription = "Efekt başlangıç zamanı"
+        }
         soundStartSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
@@ -4791,7 +4795,7 @@ class VideoEditorActivity : Activity() {
         soundStartMs = soundStartMs.coerceAtMost((total - 1L).coerceAtLeast(0L))
         soundStartSeek.progress = TimelineTrimMath.progressForTime(soundStartMs, total)
         soundStartSeek.isEnabled = soundUri != null && total > 0L
-        soundStartLabel.text = "Ses başlangıcı: ${formatTimelineMs(soundStartMs)}"
+        soundStartLabel.text = "Efekt başlangıcı: ${formatTimelineMs(soundStartMs)}"
     }
 
     private fun previewSelectedClip() {

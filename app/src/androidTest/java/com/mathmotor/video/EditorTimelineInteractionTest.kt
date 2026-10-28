@@ -1,10 +1,12 @@
 package com.mathmotor.video
 
 import android.content.ContentUris
+import android.content.ContentValues
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.provider.MediaStore
 import android.os.SystemClock
+import android.os.Environment
 import java.security.MessageDigest
 import java.util.regex.Pattern
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -1806,6 +1808,233 @@ class EditorTimelineInteractionTest {
             "AudioHistoryTest",
             "stage=verified sourceAudio=true->false->true->false effectVolume=100->$changedValue->100->$changedValue"
         )
+    }
+
+
+    @Test
+    fun soundEffectAddStartTimeRemoveAndUndoRedoWork() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val device = UiDevice.getInstance(instrumentation)
+        val packageName = "com.mathmotor.video.next"
+        val videoFixture = java.io.File(context.filesDir, "editor-test-video.mp4")
+        assertTrue("Sound-effect history video fixture is missing", videoFixture.isFile && videoFixture.length() > 0L)
+
+        val fileName = "MM_EFFECT_HISTORY_${System.currentTimeMillis()}.wav"
+        val wavFixture = java.io.File(context.cacheDir, fileName)
+        writeToneWav(wavFixture, sampleRate = 48_000, durationMs = 3_000, frequencyHz = 880.0, amplitude = 12_000)
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+            put(MediaStore.MediaColumns.MIME_TYPE, "audio/wav")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+        val effectDocument = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            ?: throw AssertionError("Could not publish the deterministic audio fixture to Downloads")
+        try {
+            val output = context.contentResolver.openOutputStream(effectDocument, "w")
+                ?: throw AssertionError("Could not open the published audio fixture")
+            output.use { stream -> wavFixture.inputStream().use { source -> source.copyTo(stream) } }
+            val publishValues = ContentValues().apply {
+                put(MediaStore.MediaColumns.IS_PENDING, 0)
+            }
+            assertTrue(
+                "Could not make the deterministic audio fixture visible to the document picker",
+                context.contentResolver.update(effectDocument, publishValues, null, null) > 0
+            )
+
+            device.executeShellCommand("logcat -c")
+            device.executeShellCommand(
+                "am start -n $packageName/com.mathmotor.video.EditorTestEntryActivity " +
+                    "--es video_uri ${Uri.fromFile(videoFixture)} --es draft_id effect-history-${System.currentTimeMillis()}"
+            )
+            assertTrue(
+                "Editor did not open for sound-effect lifecycle test",
+                device.wait(Until.hasObject(By.text("VIDEO")), 20_000)
+            )
+            assertTrue("Sound-effect lifecycle test clip was not loaded", awaitClipAdded(device))
+            device.waitForIdle()
+
+            val audioTab = requireObject(device, By.desc("Ses araçları sekmesi"), "sound-effect audio tab")
+            val clipTab = requireObject(device, By.desc("Klip araçları sekmesi"), "sound-effect history tab")
+            val panelScroll = UiScrollable(UiSelector().className("android.widget.ScrollView")).setAsVerticalList()
+            audioTab.click()
+            assertTrue(
+                "Audio panel did not appear for sound-effect lifecycle test",
+                device.wait(Until.hasObject(By.text("SES KATMANLARI")), 4_000)
+            )
+            assertTrue(
+                "Could not reveal the sound-effect add button",
+                panelScroll.scrollIntoView(UiSelector().text("Efekt ekle"))
+            )
+            requireObject(device, By.text("Efekt ekle"), "add sound-effect button").click()
+
+            // Always navigate into Downloads, rather than trusting a possibly obscured
+            // Recent-list result in DocumentsUI.
+            val rootsButton = findObjectByAny(
+                device,
+                By.descContains("Show roots"),
+                By.descContains("Show navigation drawer"),
+                By.descContains("navigation drawer")
+            )
+            if (rootsButton != null) {
+                rootsButton.click()
+                device.waitForIdle()
+            }
+            var downloads: UiObject2? = null
+            val downloadsDeadline = SystemClock.uptimeMillis() + 8_000L
+            while (downloads == null && SystemClock.uptimeMillis() < downloadsDeadline) {
+                downloads = device.findObject(By.text("Downloads")) ?: device.findObject(By.text("Download"))
+                if (downloads == null) SystemClock.sleep(200)
+            }
+            if (downloads != null) {
+                downloads.click()
+                device.waitForIdle()
+            }
+
+            var fileRow: UiObject2? = null
+            val fileDeadline = SystemClock.uptimeMillis() + 10_000L
+            while (fileRow == null && SystemClock.uptimeMillis() < fileDeadline) {
+                fileRow = device.findObject(By.text(fileName))
+                if (fileRow == null) SystemClock.sleep(200)
+            }
+            if (fileRow == null) {
+                val hierarchy = java.io.File(context.cacheDir, "effect-history-picker.xml")
+                device.dumpWindowHierarchy(hierarchy)
+                throw AssertionError(
+                    "The audio fixture was not listed in DocumentsUI Downloads. " +
+                        "Visible text=" + device.findObjects(By.clazz("android.widget.TextView"))
+                            .mapNotNull { runCatching { it.text?.toString() }.getOrNull() }
+                            .filter { it.isNotBlank() }.distinct().take(80).joinToString(" | ") +
+                        " hierarchy=" + hierarchy.takeIf { it.isFile }?.readText()?.take(8_000)
+                )
+            }
+            val rowBounds = fileRow.visibleBounds
+            assertTrue("Audio fixture row has no visible hit target: $rowBounds", rowBounds.width() > 0 && rowBounds.height() > 0)
+            fileRow.click()
+
+            var effectAdded = device.wait(Until.hasObject(By.textContains(fileName)), 3_000)
+            if (!effectAdded) {
+                val openAction = findObjectByAny(
+                    device,
+                    By.res("com.google.android.documentsui:id/action_menu_item_open"),
+                    By.res("com.android.documentsui:id/action_menu_item_open"),
+                    By.res("com.google.android.documentsui:id/menu_open"),
+                    By.res("com.android.documentsui:id/menu_open"),
+                    By.text("Open"),
+                    By.text("OPEN"),
+                    By.text("Aç"),
+                    By.text("AÇ")
+                )
+                openAction?.click()
+                effectAdded = device.wait(Until.hasObject(By.textContains(fileName)), 15_000)
+            }
+            assertTrue("Choosing an audio document did not add a visible sound-effect layer", effectAdded)
+            assertTrue(
+                "The newly added effect did not expose its duration",
+                device.wait(Until.hasObject(By.textContains("00:03.00")), 5_000)
+            )
+
+            // Adding an effect is one edit: Undo removes it; Redo restores it.
+            clipTab.click()
+            val undo = requireObject(device, By.desc("Düzenleme geri al"), "Undo sound-effect add")
+            assertTrue("Undo was disabled after adding an effect", undo.isEnabled)
+            undo.click()
+            audioTab.click()
+            assertTrue("Undo did not remove the newly added sound effect",
+                device.wait(Until.gone(By.textContains(fileName)), 4_000))
+            clipTab.click()
+            val redo = requireObject(device, By.desc("Düzenleme yinele"), "Redo sound-effect add")
+            assertTrue("Redo was disabled after undoing sound-effect add", redo.isEnabled)
+            redo.click()
+            audioTab.click()
+            assertTrue("Redo did not restore the sound-effect layer",
+                device.wait(Until.hasObject(By.textContains(fileName)), 4_000))
+
+            assertTrue(
+                "Could not reveal the sound-effect start-time slider",
+                panelScroll.scrollIntoView(UiSelector().description("Efekt başlangıç zamanı"))
+            )
+            device.waitForIdle()
+            val startSeek = requireObject(device, By.desc("Efekt başlangıç zamanı"), "sound-effect start-time seek bar")
+            val seekBounds = startSeek.visibleBounds
+            assertTrue(
+                "Sound-effect start-time slider has no usable hit target: $seekBounds",
+                seekBounds.width() > 100 && seekBounds.height() > 0 && startSeek.isEnabled
+            )
+            val startLabelSelector = By.textContains("Efekt başlangıcı:")
+            val initialStartLabel = requireObject(device, startLabelSelector, "initial sound-effect start-time label").text
+            device.swipe(
+                seekBounds.left + (seekBounds.width() * 0.12f).toInt(),
+                seekBounds.centerY(),
+                seekBounds.left + (seekBounds.width() * 0.56f).toInt(),
+                seekBounds.centerY(),
+                30
+            )
+            device.waitForIdle()
+            val changedStartLabel = requireObject(device, startLabelSelector, "changed sound-effect start-time label").text
+            assertTrue(
+                "Dragging the sound-effect start-time slider did not change the visible start time: " +
+                    "$initialStartLabel -> $changedStartLabel",
+                changedStartLabel != initialStartLabel
+            )
+
+            // One real slider gesture must be one history step; Undo/Redo restores its exact label.
+            clipTab.click()
+            requireObject(device, By.desc("Düzenleme geri al"), "Undo sound-effect start-time gesture").click()
+            audioTab.click()
+            assertTrue(
+                "Undo did not restore the original sound-effect start time",
+                panelScroll.scrollIntoView(UiSelector().text(initialStartLabel))
+            )
+            assertTrue(
+                "Undo restored a different sound-effect start-time value",
+                requireObject(device, By.text(initialStartLabel), "restored original effect start time").text == initialStartLabel
+            )
+            clipTab.click()
+            requireObject(device, By.desc("Düzenleme yinele"), "Redo sound-effect start-time gesture").click()
+            audioTab.click()
+            assertTrue(
+                "Redo did not restore the changed sound-effect start time",
+                panelScroll.scrollIntoView(UiSelector().text(changedStartLabel))
+            )
+            assertTrue(
+                "Redo restored a different sound-effect start-time value",
+                requireObject(device, By.text(changedStartLabel), "redone effect start time").text == changedStartLabel
+            )
+
+            // Removing the layer is independently undoable and redoable, preserving its
+            // selected file and adjusted start time in the restored snapshot.
+            assertTrue(
+                "Could not reveal the sound-effect remove button",
+                panelScroll.scrollIntoView(UiSelector().text("Efekti kaldır"))
+            )
+            requireObject(device, By.text("Efekti kaldır"), "remove sound-effect button").click()
+            assertTrue("Removing the effect left its file name visible",
+                device.wait(Until.gone(By.textContains(fileName)), 4_000))
+            clipTab.click()
+            requireObject(device, By.desc("Düzenleme geri al"), "Undo sound-effect removal").click()
+            audioTab.click()
+            assertTrue("Undo did not restore the removed sound effect",
+                device.wait(Until.hasObject(By.textContains(fileName)), 4_000))
+            assertTrue(
+                "Undo of removal did not restore the effect's adjusted start time",
+                panelScroll.scrollIntoView(UiSelector().text(changedStartLabel))
+            )
+            clipTab.click()
+            requireObject(device, By.desc("Düzenleme yinele"), "Redo sound-effect removal").click()
+            audioTab.click()
+            assertTrue("Redo did not remove the sound-effect layer again",
+                device.wait(Until.gone(By.textContains(fileName)), 4_000))
+            android.util.Log.i(
+                "SoundEffectHistoryTest",
+                "stage=verified addUndoRedo=true startTimeUndoRedo=true removeUndoRedo=true " +
+                    "startBefore=$initialStartLabel startAfter=$changedStartLabel"
+            )
+        } finally {
+            runCatching { context.contentResolver.delete(effectDocument, null, null) }
+            runCatching { wavFixture.delete() }
+        }
     }
 
     @Test
