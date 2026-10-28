@@ -27,9 +27,9 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 
 ### What the latest runs actually prove
 
-- Run [#270](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40682611758) on `work/focused-instrumentation-gates`: unit tests and debug APK build completed, but the emulator interaction step failed with `androidx.test.uiautomator.StaleObjectException`. This is a test failure to investigate, not proof by itself that the editor feature is broken or fixed. This branch is not the release-candidate branch.
-- Run [#269](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40680915280) on `fix/editor-395-gate`: was still running at the last status check; do not count it as passed until GitHub reports a final successful result.
-- Therefore, neither a green build nor code being present should be reported as a newly completed editor feature. Do not count #270 as a release-candidate pass.
+- Run [#269 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40680915280) on `fix/editor-395-gate`, head `8c78d8e`: unit tests, Debug APK build, and all **19 Android instrumentation tests** passed; emulator screenshots/diagnostics were uploaded as [artifact 12813448192](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40680915280/artifacts/12813448192). This is real automated interaction-test progress on the candidate branch, but it does not by itself prove the interface visually matches CapCut or replace a physical-phone review.
+- Run [#270 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40682611758) on separate branch `work/focused-instrumentation-gates`: unit tests and Debug APK build passed, but emulator interaction failed with `androidx.test.uiautomator.StaleObjectException`. It is a test failure to investigate on that branch, not a release-candidate failure and not proof by itself that an editor feature is broken or fixed.
+- Keep the distinction clear: #269 is a successful candidate-branch automated test run; visual CapCut resemblance and physical-device usability remain unverified. Version 395 remains blocked.
 
 ### How progress will be counted from here
 
