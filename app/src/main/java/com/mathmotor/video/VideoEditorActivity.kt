@@ -1439,6 +1439,13 @@ class VideoEditorActivity : Activity() {
                 previewStageHeightDp = previewDefaultStageHeightDp
                 previewHeightAutoSized = true
 
+                // On compact phones, keep the initial canvas focused on the preview and
+                // primary timeline. Clip actions remain available from the Klip dock tab;
+                // opening them on demand avoids squeezing the filmstrip and layer lanes.
+                if (compactEditorLayout && activeEditorPanel == "clip") {
+                    toggleEditorPanel("clip")
+                }
+
                 // Reserve room for real tools and the multi-track timeline on shorter phones.
                 if (compactEditorLayout) {
                     view.setPadding(dp(4), dp(2), dp(4), dp(2))
