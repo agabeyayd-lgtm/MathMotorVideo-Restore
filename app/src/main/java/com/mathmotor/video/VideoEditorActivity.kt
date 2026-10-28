@@ -532,7 +532,7 @@ class VideoEditorActivity : Activity() {
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
             marginEnd = dp(4)
         })
-        timelineHeader.addView(miniButton("▶Ⅱ") {
+        val playbackButton = miniButton("▶Ⅱ") {
             if (clips.isEmpty()) {
                 chooseVideo(true)
             } else {
@@ -549,10 +549,12 @@ class VideoEditorActivity : Activity() {
         }.apply {
             minWidth = dp(38)
             minimumWidth = dp(38)
+            minHeight = dp(38)
+            minimumHeight = dp(38)
             textSize = 13f
             setPadding(0, 0, 0, 0)
             contentDescription = "Önizlemeyi oynat veya duraklat"
-        }, LinearLayout.LayoutParams(dp(42), dp(38)))
+        }
         timelineHeader.addView(miniButton("＋") { chooseVideo(true) }.apply {
             minWidth = dp(38)
             minimumWidth = dp(38)
@@ -814,6 +816,55 @@ class VideoEditorActivity : Activity() {
             contentDescription = "Düzenleme yinele"
             isEnabled = false
         }
+
+        // Keep playback centered below the preview and Undo/Redo grouped at the right,
+        // following the supplied mobile-editor reference. The timeline header remains
+        // reserved for adding/replacing clips instead of carrying playback controls.
+        undoClipButton?.apply {
+            text = "↶"
+            textSize = 18f
+            minWidth = dp(40)
+            minimumWidth = dp(40)
+            minHeight = dp(36)
+            minimumHeight = dp(36)
+            setPadding(0, 0, 0, 0)
+        }
+        redoClipButton?.apply {
+            text = "↷"
+            textSize = 18f
+            minWidth = dp(40)
+            minimumWidth = dp(40)
+            minHeight = dp(36)
+            minimumHeight = dp(36)
+            setPadding(0, 0, 0, 0)
+        }
+        val historyActions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL or Gravity.END
+            addView(undoClipButton, LinearLayout.LayoutParams(dp(40), dp(36)))
+            addView(redoClipButton, LinearLayout.LayoutParams(dp(40), dp(36)).apply {
+                leftMargin = dp(4)
+            })
+        }
+        val previewControlsRow = FrameLayout(this).apply {
+            addView(playbackButton, FrameLayout.LayoutParams(dp(42), dp(38), Gravity.CENTER))
+            addView(
+                historyActions,
+                FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    dp(36),
+                    Gravity.END or Gravity.CENTER_VERTICAL
+                )
+            )
+        }
+        root.addView(
+            previewControlsRow,
+            3,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(40)).apply {
+                bottomMargin = dp(2)
+            }
+        )
+
         startLabel = label("Başlangıç: 00:00", 12f, Color.rgb(225, 233, 237), true)
         clipPanel.addView(startLabel)
         startSeek = SeekBar(this)
@@ -1249,9 +1300,9 @@ class VideoEditorActivity : Activity() {
             setPadding(0, dp(5), 0, 0)
         }
         listOf(
-            Triple("clip", "Klip", "▣"),
-            Triple("text", "Metin", "T"),
+            Triple("clip", "Düzenle", "✂"),
             Triple("audio", "Ses", "♫"),
+            Triple("text", "Metin", "T"),
             Triple("export", "Dışa aktar", "⇧")
         ).forEach { (key, title, symbol) ->
             val tab = miniButton("$symbol\n$title") { toggleEditorPanel(key) }.apply {
@@ -1269,24 +1320,6 @@ class VideoEditorActivity : Activity() {
             editorTabButtons[key] = tab
             dock.addView(tab, LinearLayout.LayoutParams(0, dp(52), 1f).apply {
                 if (key != "clip") leftMargin = dp(4)
-            })
-        }
-        // Keep history actions globally available without stealing vertical space
-        // from the compact editor panel on small phones.
-        undoClipButton?.let { button ->
-            button.text = "↶"
-            button.textSize = 18f
-            button.minHeight = dp(52)
-            dock.addView(button, LinearLayout.LayoutParams(0, dp(52), 1f).apply {
-                leftMargin = dp(4)
-            })
-        }
-        redoClipButton?.let { button ->
-            button.text = "↷"
-            button.textSize = 18f
-            button.minHeight = dp(52)
-            dock.addView(button, LinearLayout.LayoutParams(0, dp(52), 1f).apply {
-                leftMargin = dp(4)
             })
         }
         root.addView(dock, matchWrap())
