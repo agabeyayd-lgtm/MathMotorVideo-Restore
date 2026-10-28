@@ -3777,9 +3777,13 @@ class EditorTimelineInteractionTest {
         assertTrue("Undo was disabled immediately after splitting a clip", splitUndo.isEnabled)
         splitUndo.click()
         device.waitForIdle()
+        val restoredTitleVisible = UiScrollable(
+            UiSelector().className("android.widget.ScrollView")
+        ).setAsVerticalList().scrollIntoView(UiSelector().textContains("SPLIT_RED_TO_LIME"))
+        device.waitForIdle()
         assertTrue(
-            "Undo did not restore the original unsplit clip",
-            device.wait(Until.hasObject(By.textContains("SPLIT_RED_TO_LIME")), 5_000)
+            "Undo did not restore the original unsplit clip title into the visible clip list",
+            restoredTitleVisible && device.wait(Until.hasObject(By.text("SPLIT_RED_TO_LIME")), 5_000)
         )
         assertTrue(
             "Undo left split segment A in the clip list",
