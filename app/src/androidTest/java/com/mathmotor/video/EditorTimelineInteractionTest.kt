@@ -857,23 +857,37 @@ class EditorTimelineInteractionTest {
         val firstFilmstripBounds = firstFilmstrip.visibleBounds
         assertTrue("First filmstrip is not large enough for a long press: $firstFilmstripBounds",
             firstFilmstripBounds.width() > 20 && firstFilmstripBounds.height() > 12)
-        // UiDevice.swipe's final argument is a step count, not milliseconds. Use Android
-        // shell's timed touchscreen gesture so the custom onTouch timer sees a real, stable hold.
+        // Inject a down event, keep the same finger down beyond Android's long-press
+        // timeout, then inject up. This avoids both UiDevice.swipe step-count semantics and
+        // shell input swipe implementations that may compress/collapse a tiny motion.
         val longPressX = firstFilmstripBounds.centerX()
         val longPressY = firstFilmstripBounds.centerY()
         val longPressDurationMs = android.view.ViewConfiguration.getLongPressTimeout() + 500
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        val downTime = SystemClock.uptimeMillis()
         android.util.Log.i(
             "MultiClipTimelineTest",
-            "stage=filmstrip-long-press x=$longPressX y=$longPressY durationMs=$longPressDurationMs bounds=$firstFilmstripBounds"
+            "stage=filmstrip-long-press-inject x=$longPressX y=$longPressY durationMs=$longPressDurationMs bounds=$firstFilmstripBounds"
         )
-        // A zero-distance shell swipe can collapse to a tap on the emulator.
-        // Move only one physical pixel: enough to keep a swipe sequence alive, below touch slop.
-        device.executeShellCommand(
-            "input touchscreen swipe $longPressX $longPressY ${longPressX + 1} $longPressY $longPressDurationMs"
-        )
+        val down = android.view.MotionEvent.obtain(
+            downTime, downTime, android.view.MotionEvent.ACTION_DOWN,
+            longPressX.toFloat(), longPressY.toFloat(), 0
+        ).apply { source = android.view.InputDevice.SOURCE_TOUCHSCREEN }
+        val downInjected = automation.injectInputEvent(down, true)
+        down.recycle()
+        assertTrue("Touchscreen ACTION_DOWN injection failed at ($longPressX,$longPressY)", downInjected)
+        SystemClock.sleep(longPressDurationMs.toLong())
+        val upTime = SystemClock.uptimeMillis()
+        val up = android.view.MotionEvent.obtain(
+            downTime, upTime, android.view.MotionEvent.ACTION_UP,
+            longPressX.toFloat(), longPressY.toFloat(), 0
+        ).apply { source = android.view.InputDevice.SOURCE_TOUCHSCREEN }
+        val upInjected = automation.injectInputEvent(up, true)
+        up.recycle()
+        assertTrue("Touchscreen ACTION_UP injection failed at ($longPressX,$longPressY)", upInjected)
         device.waitForIdle()
         assertTrue(
-            "Timed long-press did not open the first filmstrip clip menu; bounds=$firstFilmstripBounds durationMs=$longPressDurationMs",
+            "Injected long-press did not open the first filmstrip clip menu; bounds=$firstFilmstripBounds durationMs=$longPressDurationMs",
             device.wait(Until.hasObject(By.text("Bir sonraya al")), 5_000)
         )
         requireObject(device, By.text("Bir sonraya al"), "move clip to next position").click()
