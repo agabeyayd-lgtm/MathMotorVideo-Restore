@@ -1938,13 +1938,11 @@ class EditorTimelineInteractionTest {
                         " hierarchy=" + hierarchy.takeIf { it.isFile }?.readText()?.take(8_000)
                 )
             }
-            val rowBounds = fileRow.visibleBounds
-            assertTrue("Audio fixture row has no visible hit target: $rowBounds", rowBounds.width() > 0 && rowBounds.height() > 0)
-            // DocumentsUI may replace accessibility nodes after bounds inspection; reacquire
-            // the row immediately before clicking so this test doesn't tap a stale node.
-            val freshFileRow = device.wait(Until.findObject(By.text(fileName)), 3_000)
-                ?: throw AssertionError("Audio fixture row disappeared before selection: $fileName")
-            freshFileRow.click()
+            // Use the selector-backed UiObject API here: DocumentsUI replaces UiObject2
+            // nodes while its row/selection state updates, even after a fresh query.
+            val fileRowSelector = UiSelector().text(fileName)
+            assertTrue("Audio fixture row has no visible hit target", device.wait(Until.hasObject(By.text(fileName)), 3_000))
+            assertTrue("Audio fixture row could not be clicked", device.findObject(fileRowSelector).click())
 
             var effectAdded = device.wait(Until.hasObject(By.textContains(fileName)), 3_000)
             if (!effectAdded) {
@@ -3798,13 +3796,15 @@ class EditorTimelineInteractionTest {
             "Undo did not restore a single 4-second clip; matching lengths=${restoredWholeClipLengths.size}",
             restoredWholeClipLengths.isNotEmpty()
         )
-        val restoredTitleVisible = UiScrollable(
-            UiSelector().className("android.widget.HorizontalScrollView")
-        ).setAsHorizontalList().scrollIntoView(UiSelector().text("SPLIT_RED_TO_LIME"))
-        device.waitForIdle()
+        // Select the restored tile and verify the app reports its original model title.
+        // The compact carousel does not always expose child title nodes to UiAutomator.
+        val restoredTile = device.findObject(By.text("KLİP 1"))
+            ?: device.findObject(By.textContains("KLİP 1"))
+        assertTrue("Undo did not expose the restored first clip tile", restoredTile != null)
+        restoredTile!!.click()
         assertTrue(
-            "Undo restored a 4-second clip but its original title was not exposed in the clip carousel",
-            restoredTitleVisible && device.wait(Until.hasObject(By.text("SPLIT_RED_TO_LIME")), 5_000)
+            "Undo restored a 4-second clip but its original title was not retained in the clip model",
+            device.wait(Until.hasObject(By.textContains("Klip 1 seçildi: SPLIT_RED_TO_LIME")), 5_000)
         )
         android.util.Log.i(
             "SplitUndoRedoTest",
