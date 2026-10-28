@@ -1633,21 +1633,25 @@ class VideoEditorActivity : Activity() {
      * the user's preferred preview height.
      */
     private fun effectivePreviewStageHeightDp(): Int {
-        val compactToolPanel = compactEditorLayout &&
-            activeEditorPanel != null && activeEditorPanel != "clip"
+        // Every active tool panel needs usable vertical space, including clip tools.
+        // Previously the preview stayed at its preferred height on the Clip tab,
+        // leaving the panel only a few pixels tall on compact phones and hiding Split.
+        val compactToolPanel = compactEditorLayout && activeEditorPanel != null
         return if (compactToolPanel) minOf(previewStageHeightDp, 112).coerceAtLeast(104)
         else previewStageHeightDp.coerceIn(150, 460)
     }
 
     private fun updateClipCarouselVisibility() {
         if (!::timelineClipCarousel.isInitialized) return
-        val compactToolPanel = compactEditorLayout &&
+        // Non-clip tools hide the clip chooser while editing their controls. The Clip
+        // panel still keeps the multi-clip chooser when it is useful.
+        val nonClipToolPanel = compactEditorLayout &&
             activeEditorPanel != null && activeEditorPanel != "clip"
         // On a compact phone with a single clip, the chooser repeats the same content
         // as the main VIDEO filmstrip. Keep the primary timeline as the only clip row.
         val duplicateSingleClip = compactEditorLayout && clips.size <= 1
         timelineClipCarousel.visibility = if (
-            keyboardLayoutActive || compactToolPanel || duplicateSingleClip
+            keyboardLayoutActive || nonClipToolPanel || duplicateSingleClip
         ) View.GONE else View.VISIBLE
         timelineClipCarousel.requestLayout()
     }
