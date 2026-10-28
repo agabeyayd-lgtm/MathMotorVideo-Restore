@@ -21,6 +21,25 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - Do not bump `versionCode` or `versionName` during this work until the release gate is met and the user explicitly authorizes the release.
 - A successful source build is not the same as a tested, published APK. Keep the original media safe; export to a new file.
 
+## Progress reality check — 2026-10-28
+
+**Honest assessment: recent work has not yet produced a newly verified, user-facing improvement that we can confidently call finished.** The project is not starting from zero: editing/export code and earlier focused checks exist. But repeated CI/emulator failures mean we have spent too much time cycling through test failures without closing the main phone-use problems. From the user's perspective, progress has therefore felt stalled; that concern is justified.
+
+### What the latest runs actually prove
+
+- Run [#270](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40682611758) on `work/focused-instrumentation-gates`: unit tests and debug APK build completed, but the emulator interaction step failed with `androidx.test.uiautomator.StaleObjectException`. This is a test failure to investigate, not proof by itself that the editor feature is broken or fixed. This branch is not the release-candidate branch.
+- Run [#269](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40680915280) on `fix/editor-395-gate`: was still running at the last status check; do not count it as passed until GitHub reports a final successful result.
+- Therefore, neither a green build nor code being present should be reported as a newly completed editor feature. Do not count #270 as a release-candidate pass.
+
+### How progress will be counted from here
+
+- Report three states separately: **implemented in source**, **automated test passed**, and **verified in actual device use**.
+- A test-harness fix or a passing build is engineering progress, but it does not close a user-facing editor requirement.
+- Before rerunning a red test, inspect its failing assertion/log and compare with prior failures. Fix the identified cause first; avoid rerunning the same unchanged failure just to get another result.
+- After each fix, record the exact behavior changed, the specific test evidence, and what remains unverified. Do not mark a feature done from screenshots or source presence alone.
+- The next meaningful milestone is not “more green CI”: it is a repeatable, evidenced interaction/export/save-reopen flow that closes at least one of the open user-facing blockers listed below.
+- Version 395 remains blocked. No version bump, signed release APK, publication, or update offer until the release gate passes and the user authorizes it.
+
 ## Current baseline capabilities (present in source; not all are proven reliable)
 
 - [x] Multi-clip timeline and clip selection/reordering controls exist.
