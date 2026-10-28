@@ -866,8 +866,10 @@ class EditorTimelineInteractionTest {
             "MultiClipTimelineTest",
             "stage=filmstrip-long-press x=$longPressX y=$longPressY durationMs=$longPressDurationMs bounds=$firstFilmstripBounds"
         )
+        // A zero-distance shell swipe can collapse to a tap on the emulator.
+        // Move only one physical pixel: enough to keep a swipe sequence alive, below touch slop.
         device.executeShellCommand(
-            "input touchscreen swipe $longPressX $longPressY $longPressX $longPressY $longPressDurationMs"
+            "input touchscreen swipe $longPressX $longPressY ${longPressX + 1} $longPressY $longPressDurationMs"
         )
         device.waitForIdle()
         assertTrue(
