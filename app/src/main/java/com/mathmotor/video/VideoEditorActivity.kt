@@ -552,21 +552,21 @@ class VideoEditorActivity : Activity() {
             textSize = 13f
             setPadding(0, 0, 0, 0)
             contentDescription = "Önizlemeyi oynat veya duraklat"
-        }, LinearLayout.LayoutParams(dp(42), dp(40)))
+        }, LinearLayout.LayoutParams(dp(42), dp(38)))
         timelineHeader.addView(miniButton("＋") { chooseVideo(true) }.apply {
             minWidth = dp(38)
             minimumWidth = dp(38)
             textSize = 18f
             setPadding(0, 0, 0, 0)
             contentDescription = "Zaman çizelgesine video ekle"
-        }, LinearLayout.LayoutParams(dp(42), dp(40)).apply { leftMargin = dp(3) })
+        }, LinearLayout.LayoutParams(dp(42), dp(38)).apply { leftMargin = dp(3) })
         timelineHeader.addView(miniButton("↻") { chooseVideo(false) }.apply {
             minWidth = dp(38)
             minimumWidth = dp(38)
             textSize = 16f
             setPadding(0, 0, 0, 0)
             contentDescription = "Seçili videoyu değiştir"
-        }, LinearLayout.LayoutParams(dp(42), dp(40)).apply { leftMargin = dp(3) })
+        }, LinearLayout.LayoutParams(dp(42), dp(38)).apply { leftMargin = dp(3) })
         timelineCard.addView(timelineHeader, matchWrap())
 
         timelineClipCarousel = android.widget.HorizontalScrollView(this).apply {
@@ -771,13 +771,13 @@ class VideoEditorActivity : Activity() {
         }
         playheadRow.addView(timelinePlayheadSeek, LinearLayout.LayoutParams(0, dp(34), 1f))
         playheadRow.addView(miniButton("−") { adjustTimelineZoom(0.75f) },
-            LinearLayout.LayoutParams(dp(42), dp(42)).apply { leftMargin = dp(3) })
+            LinearLayout.LayoutParams(dp(42), dp(38)).apply { leftMargin = dp(3) })
         playheadRow.addView(miniButton("+") { adjustTimelineZoom(1.35f) },
-            LinearLayout.LayoutParams(dp(42), dp(42)).apply { leftMargin = dp(2) })
+            LinearLayout.LayoutParams(dp(42), dp(38)).apply { leftMargin = dp(2) })
         timelineCard.addView(playheadRow, matchWrap())
         installTimelinePlayheadListeners()
         root.addView(timelineCard, matchWrap())
-        root.addView(gap(8))
+        root.addView(gap(4))
 
         val clipPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         clipPanel.addView(label("KLİP DÜZENLEME", 13f, Color.rgb(121, 202, 218), true))
@@ -1434,7 +1434,7 @@ class VideoEditorActivity : Activity() {
                 val viewportDp = (viewportHeight / density).toInt()
                 compactEditorLayout = viewportDp < 820
                 updateClipCarouselVisibility()
-                val previewRatio = if (viewportDp < 650) 0.26f else 0.30f
+                val previewRatio = if (viewportDp < 650) 0.31f else 0.30f
                 previewDefaultStageHeightDp = (viewportDp * previewRatio).toInt().coerceIn(150, 340)
                 previewStageHeightDp = previewDefaultStageHeightDp
                 previewHeightAutoSized = true
@@ -1873,8 +1873,8 @@ class VideoEditorActivity : Activity() {
                     else -> 20
                 }
                 compactEditorLayout -> when (tag) {
-                    "VIDEO" -> 40
-                    "SÜRE" -> 20
+                    "VIDEO" -> 36
+                    "SÜRE" -> 18
                     else -> 24
                 }
                 else -> heightDp
@@ -2143,7 +2143,7 @@ class VideoEditorActivity : Activity() {
                 else -> 5000L
             }
             val rulerStepMs = if (compactEditorLayout) compactRulerStepMs else 5000L
-            val ruler = makeLane("SÜRE", if (compactEditorLayout) 20 else 22)
+            val ruler = makeLane("SÜRE", if (compactEditorLayout) 18 else 22)
             // Stop at the actual sequence duration rather than rounding up and allowing
             // an invisible overscroll tail beyond the final clip.
             val rulerEndMs = totalMs.coerceAtLeast(1L)
@@ -2161,7 +2161,7 @@ class VideoEditorActivity : Activity() {
                 }
                 ruler.addView(tick, LinearLayout.LayoutParams(
                     maxOf(dp(26), (nextPositionPx - rulerPositionPx).coerceAtLeast(1)),
-                    dp(if (compactEditorLayout) 20 else 22)
+                    dp(if (compactEditorLayout) 18 else 22)
                 ))
                 rulerTimeMs = nextTimeMs
                 rulerPositionPx = nextPositionPx
@@ -2170,7 +2170,7 @@ class VideoEditorActivity : Activity() {
 
         val videoTrack = makeLane(
             "VIDEO",
-            if (keyboardLayoutActive) 18 else if (compactEditorLayout) 40 else 44
+            if (keyboardLayoutActive) 18 else if (compactEditorLayout) 36 else 44
         )
         if (clips.isEmpty()) {
             addBlock(videoTrack, "+ Video ekle", 5000L, Color.rgb(38, 105, 123), onClick = { chooseVideo(true) }, minimumWidthDp = 115)
@@ -2182,7 +2182,7 @@ class VideoEditorActivity : Activity() {
                 val width = widthBetween(videoOffsetMs, nextVideoOffsetMs).coerceAtLeast(1)
                 val compactToolPanel = compactEditorLayout &&
                     activeEditorPanel != null && activeEditorPanel != "clip"
-                val height = dp(if (keyboardLayoutActive) 18 else if (compactToolPanel) 24 else if (compactEditorLayout) 38 else 42)
+                val height = dp(if (keyboardLayoutActive) 18 else if (compactToolPanel) 24 else if (compactEditorLayout) 34 else 42)
                 val block = buildVideoClipFilmstrip(clip, index, width, height, index == selectedClipIndex)
                 // Widths use absolute boundaries, so fractional-pixel rounding cannot accumulate.
                 videoTrack.addView(block, LinearLayout.LayoutParams(width, height))

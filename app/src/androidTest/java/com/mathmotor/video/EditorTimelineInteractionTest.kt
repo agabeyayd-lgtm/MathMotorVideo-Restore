@@ -431,6 +431,13 @@ class EditorTimelineInteractionTest {
             "Trim-vs-scroll test requires the full 8-second source, got " + originalDurationMs + " ms",
             originalDurationMs in 7_800L..8_300L
         )
+        val previewBounds = requireObject(
+            device, By.desc("Düzenlenmiş video önizlemesi"), "compact video preview"
+        ).visibleBounds
+        assertTrue(
+            "Compact preview should be larger than the old quarter-screen stage: bounds=$previewBounds density=$density",
+            previewBounds.height() >= (180f * density).toInt()
+        )
         val laneSelector = By.desc("Zaman çizelgesi satırı: VIDEO")
         val laneBeforeZoom = requireObject(device, laneSelector, "VIDEO timeline lane before pinch")
         val compactLaneBounds = laneBeforeZoom.visibleBounds
