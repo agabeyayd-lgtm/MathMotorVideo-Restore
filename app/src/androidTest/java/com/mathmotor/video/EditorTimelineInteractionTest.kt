@@ -1940,7 +1940,11 @@ class EditorTimelineInteractionTest {
             }
             val rowBounds = fileRow.visibleBounds
             assertTrue("Audio fixture row has no visible hit target: $rowBounds", rowBounds.width() > 0 && rowBounds.height() > 0)
-            fileRow.click()
+            // DocumentsUI may replace accessibility nodes after bounds inspection; reacquire
+            // the row immediately before clicking so this test doesn't tap a stale node.
+            val freshFileRow = device.wait(Until.findObject(By.text(fileName)), 3_000)
+                ?: throw AssertionError("Audio fixture row disappeared before selection: $fileName")
+            freshFileRow.click()
 
             var effectAdded = device.wait(Until.hasObject(By.textContains(fileName)), 3_000)
             if (!effectAdded) {
@@ -3778,14 +3782,9 @@ class EditorTimelineInteractionTest {
         splitUndo.click()
         device.waitForIdle()
         // Clip tiles live in the horizontal clip carousel, not the vertical tool-panel ScrollView.
-        val restoredTitleVisible = UiScrollable(
-            UiSelector().className("android.widget.HorizontalScrollView")
-        ).setAsHorizontalList().scrollIntoView(UiSelector().text("SPLIT_RED_TO_LIME"))
+        // Verify the restored model through independent UI evidence first. A title can
+        // be outside the compact carousel's accessibility viewport.
         device.waitForIdle()
-        assertTrue(
-            "Undo did not restore the original unsplit clip title into the visible clip list",
-            restoredTitleVisible && device.wait(Until.hasObject(By.text("SPLIT_RED_TO_LIME")), 5_000)
-        )
         assertTrue(
             "Undo left split segment A in the clip list",
             !device.hasObject(By.textContains("SPLIT_RED_TO_LIME • A"))
@@ -3798,6 +3797,14 @@ class EditorTimelineInteractionTest {
         assertTrue(
             "Undo did not restore a single 4-second clip; matching lengths=${restoredWholeClipLengths.size}",
             restoredWholeClipLengths.isNotEmpty()
+        )
+        val restoredTitleVisible = UiScrollable(
+            UiSelector().className("android.widget.HorizontalScrollView")
+        ).setAsHorizontalList().scrollIntoView(UiSelector().text("SPLIT_RED_TO_LIME"))
+        device.waitForIdle()
+        assertTrue(
+            "Undo restored a 4-second clip but its original title was not exposed in the clip carousel",
+            restoredTitleVisible && device.wait(Until.hasObject(By.text("SPLIT_RED_TO_LIME")), 5_000)
         )
         android.util.Log.i(
             "SplitUndoRedoTest",
