@@ -2,6 +2,9 @@
 
 **Resume here; do not restart completed work.** Detailed checklist and evidence live in [README.md](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/blob/fix/editor-395-gate/README.md). Follow [VERIFICATION_ANTI_LOOP.md](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/blob/fix/editor-395-gate/VERIFICATION_ANTI_LOOP.md) before launching or changing a CI run.
 
+- Newest source change: [`e1604e4`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/e1604e4c072ab45739d5df0cd4e2e7e18ac9076d) simplifies the preview overlay and frees compact-phone vertical space. The prior #269 screenshots proved the need for this cleanup but did **not** prove CapCut-level similarity.
+- Current validation: [#272 — IN PROGRESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40684441566). Inspect its final result and new screenshot artifact before deciding whether this change passes. Do not repeat #269 unchanged.
+
 - Repository: `agabeyayd-lgtm/MathMotorVideo-Restore`
 - Active branch: `fix/editor-395-gate`; draft repair PR: [#8](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/pull/8).
 - Installed phone baseline: **versionCode 394 / build 61 (`app-v8.3-61`)**.
