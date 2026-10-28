@@ -3777,9 +3777,10 @@ class EditorTimelineInteractionTest {
         assertTrue("Undo was disabled immediately after splitting a clip", splitUndo.isEnabled)
         splitUndo.click()
         device.waitForIdle()
+        // Clip tiles live in the horizontal clip carousel, not the vertical tool-panel ScrollView.
         val restoredTitleVisible = UiScrollable(
-            UiSelector().className("android.widget.ScrollView")
-        ).setAsVerticalList().scrollIntoView(UiSelector().textContains("SPLIT_RED_TO_LIME"))
+            UiSelector().className("android.widget.HorizontalScrollView")
+        ).setAsHorizontalList().scrollIntoView(UiSelector().text("SPLIT_RED_TO_LIME"))
         device.waitForIdle()
         assertTrue(
             "Undo did not restore the original unsplit clip title into the visible clip list",

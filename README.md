@@ -8,7 +8,7 @@ A local-first Android video editor with a CapCut-inspired workflow. Editing and 
 
 ### 2026-10-28 — Single-clip timeline layout pass (verification pending)
 
-- #279: compact panel spacing changes stopped the previous 4 failures from recurring; 18/19 emulator tests passed. The remaining failure was the post-Undo assertion that could not see the original clip title. The test already checks that split A/B titles disappear and that a single 4-second clip returns, but the title assertion ran without first scrolling the clip list to that title. Next run scrolls the list to the original title and then verifies title + segment removal + 4-second duration. Do not mark Undo as verified until the workflow passes.
+- #280: 18/19 emulator tests passed. The only failure was still the post-Undo title visibility assertion. Inspection of VideoEditorActivity.kt confirms clipList is inside timelineClipCarousel (a HorizontalScrollView); the test incorrectly tried to reveal the title via a vertical ScrollView. Fixing the selector to scroll the horizontal clip carousel. Keep checks for A/B segment removal and the single 4-second clip; Undo remains unverified until a passing run.
 
 - Candidate source change: on compact phones the redundant single-clip chooser row is hidden, while the main filmstrip is increased to a 40 dp lane, text/music/effect tracks to 24 dp, and a shared time ruler is restored above the filmstrip with zoom-aware label spacing.
 - Multi-clip chooser behavior is retained, so the existing multi-clip selection/reorder route is not removed. Preview, trim, text, audio, Undo/Redo and export logic are untouched.
