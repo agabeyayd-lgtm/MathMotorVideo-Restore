@@ -40,6 +40,19 @@ if [ -d app/build/outputs/androidTest-results/connected/debug ]; then
   cp -R app/build/outputs/androidTest-results/connected/debug/. emulator-screenshots/android-test-results/ || true
 fi
 
+if [[ -f "$focused_test_file" && "$test_status" -eq 0 ]]; then
+  # A filtered task that silently ran zero/different tests must not be marked green.
+  while IFS= read -r selector; do
+    [[ -z "$selector" || "$selector" =~ ^[[:space:]]*# ]] && continue
+    selector="${selector#" ${selector%%[![:space:]]*}"}"
+    expected_method="${selector##*#}"
+    if ! grep -R -q --include='TEST-*.xml' "name=\"$expected_method\"" app/build/outputs/androidTest-results/connected/debug 2>/dev/null; then
+      echo "ERROR: focused selector did not appear in Android XML results: $selector" | tee -a emulator-screenshots/android-test-gradle.log
+      test_status=4
+    fi
+  done < "$focused_test_file"
+fi
+
 echo "connectedDebugAndroidTest exit code: $test_status"
 echo "--- Connected test output (last 220 lines) ---"
 tail -n 220 emulator-screenshots/android-test-gradle.log || true
