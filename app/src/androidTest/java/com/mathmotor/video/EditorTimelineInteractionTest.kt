@@ -3499,6 +3499,62 @@ class EditorTimelineInteractionTest {
                 "clipTiles=2 splitLengths=00:02.00,00:02.00"
         )
 
+        // Verify split is one undoable edit, and Redo restores the exact two-segment
+        // state before continuing to the already-verified exported MP4 seam assertions.
+        val splitUndo = requireObject(device, By.desc("Düzenleme geri al"), "Undo split operation")
+        assertTrue("Undo was disabled immediately after splitting a clip", splitUndo.isEnabled)
+        splitUndo.click()
+        device.waitForIdle()
+        assertTrue(
+            "Undo did not restore the original unsplit clip",
+            device.wait(Until.hasObject(By.textContains("SPLIT_RED_TO_LIME")), 5_000)
+        )
+        assertTrue(
+            "Undo left split segment A in the clip list",
+            !device.hasObject(By.textContains("SPLIT_RED_TO_LIME • A"))
+        )
+        assertTrue(
+            "Undo left split segment B in the clip list",
+            !device.hasObject(By.textContains("SPLIT_RED_TO_LIME • B"))
+        )
+        val restoredWholeClipLengths = device.findObjects(By.text("00:04.00"))
+        assertTrue(
+            "Undo did not restore a single 4-second clip; matching lengths=${restoredWholeClipLengths.size}",
+            restoredWholeClipLengths.isNotEmpty()
+        )
+        android.util.Log.i(
+            "SplitUndoRedoTest",
+            "stage=undo-verified originalTitle=true singleClipLength=00:04.00"
+        )
+
+        val splitRedo = requireObject(device, By.desc("Düzenleme yinele"), "Redo split operation")
+        assertTrue("Redo was disabled after undoing the split", splitRedo.isEnabled)
+        splitRedo.click()
+        device.waitForIdle()
+        assertTrue(
+            "Redo did not restore split segment A",
+            device.wait(Until.hasObject(By.textContains("SPLIT_RED_TO_LIME • A")), 5_000)
+        )
+        assertTrue(
+            "Redo did not restore split segment B",
+            device.wait(Until.hasObject(By.textContains("SPLIT_RED_TO_LIME • B")), 5_000)
+        )
+        val redoneSplitLengths = device.findObjects(By.text("00:02.00"))
+        assertTrue(
+            "Redo did not restore two 2-second split segments; matching lengths=${redoneSplitLengths.size}",
+            redoneSplitLengths.size >= 2
+        )
+        val playheadAfterSplitRedo = projectPositionMs(requireProjectTime(device))
+        assertTrue(
+            "Redo moved the split seam away from 2 seconds: $playheadAfterSplitRedo",
+            playheadAfterSplitRedo in 1_850L..2_150L
+        )
+        android.util.Log.i(
+            "SplitUndoRedoTest",
+            "stage=redo-verified segmentA=true segmentB=true lengths=00:02.00,00:02.00 " +
+                "playheadMs=$playheadAfterSplitRedo"
+        )
+
         (device.findObject(By.text("Dışa aktar ›"))
             ?: throw AssertionError("Could not open export tab for split boundary validation")).click()
         assertTrue("Split export panel did not open",
