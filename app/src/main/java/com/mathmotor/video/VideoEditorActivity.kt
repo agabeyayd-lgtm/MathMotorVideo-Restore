@@ -181,8 +181,7 @@ class VideoEditorActivity : Activity() {
     private var soundPreviewUri: Uri? = null
     private lateinit var playerView: PlayerView
     private lateinit var previewFrame: FrameLayout
-    private lateinit var previewFocusButton: Button
-    private var previewStageHeightDp = 340
+        private var previewStageHeightDp = 340
     private var previewDefaultStageHeightDp = 340
     private var previewHeightAutoSized = false
     private var compactEditorLayout = false
@@ -505,25 +504,7 @@ class VideoEditorActivity : Activity() {
             previewEmptyState,
             FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER)
         )
-        // Keep the preview canvas clean; the responsive layout controls its height.
-        val previewSizeControls = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            elevation = dp(12).toFloat()
-            setPadding(dp(3), 0, dp(3), 0)
-            background = android.graphics.drawable.GradientDrawable().apply {
-                setColor(Color.argb(165, 8, 15, 22))
-                cornerRadius = dp(9).toFloat()
-            }
-        }
-        previewFocusButton = miniButton("⛶") { togglePreviewFocusMode() }.apply {
-            textSize = 18f
-            contentDescription = "Videoyu geniş ekranda aç"
-        }
-        previewSizeControls.addView(previewFocusButton, LinearLayout.LayoutParams(dp(40), dp(40)))
-        previewFrame.addView(previewSizeControls, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT, dp(44), Gravity.TOP or Gravity.END
-        ).apply { topMargin = dp(6); rightMargin = dp(6) })
+        // No floating preview-size controls: keep the video canvas unobstructed.
         root.addView(previewFrame, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(previewStageHeightDp)
         ).apply { bottomMargin = dp(8) })
@@ -1636,40 +1617,6 @@ class VideoEditorActivity : Activity() {
 
     private fun adjustPreviewStageHeight(deltaDp: Int) {
         setPreviewStageHeight(previewStageHeightDp + deltaDp)
-    }
-
-    private fun togglePreviewFocusMode() {
-        val root = previewFrame.parent as? LinearLayout ?: return
-        previewFocusMode = !previewFocusMode
-        if (previewFocusMode) {
-            previewFocusOriginalVisibility.clear()
-            for (index in 0 until root.childCount) {
-                val child = root.getChildAt(index)
-                if (child !== previewFrame) {
-                    previewFocusOriginalVisibility[child] = child.visibility
-                    child.visibility = View.GONE
-                }
-            }
-            root.setPadding(dp(4), dp(4), dp(4), dp(4))
-            val params = previewFrame.layoutParams as LinearLayout.LayoutParams
-            params.height = 0
-            params.weight = 1f
-            previewFrame.layoutParams = params
-            previewFocusButton.text = "↙"
-            previewFocusButton.contentDescription = "Düzenleme ekranına dön"
-        } else {
-            previewFocusOriginalVisibility.forEach { (view, visibility) -> view.visibility = visibility }
-            previewFocusOriginalVisibility.clear()
-            root.setPadding(dp(8), dp(4), dp(8), dp(4))
-            val params = previewFrame.layoutParams as LinearLayout.LayoutParams
-            params.height = dp(previewStageHeightDp)
-            params.weight = 0f
-            previewFrame.layoutParams = params
-            previewFocusButton.text = "⛶"
-            previewFocusButton.contentDescription = "Videoyu geniş ekranda aç"
-        }
-        previewFrame.requestLayout()
-        updatePreviewCanvasSize()
     }
 
     /**
