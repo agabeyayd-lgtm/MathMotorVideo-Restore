@@ -44,6 +44,53 @@ class EmulatorScreenshotTest {
             device.wait(Until.hasObject(By.text("Düzenle")), 15_000)
         )
         device.waitForIdle()
+
+        // Visual acceptance gate for the supplied compact-editor reference:
+        // playback centered below the preview, Undo/Redo beside it, and all three
+        // controls above the timeline instead of consuming the bottom tool dock.
+        val preview = device.findObject(By.desc("Düzenlenmiş video önizlemesi"))
+            ?: throw AssertionError("Could not find the editor preview bounds")
+        val playback = device.findObject(By.desc("Önizlemeyi oynat veya duraklat"))
+            ?: throw AssertionError("Playback control is missing below the preview")
+        val undo = device.findObject(By.desc("Düzenleme geri al"))
+            ?: throw AssertionError("Undo is missing from the preview control row")
+        val redo = device.findObject(By.desc("Düzenleme yinele"))
+            ?: throw AssertionError("Redo is missing from the preview control row")
+        val timelineHeader = device.findObject(By.text("ZAMAN ÇİZELGESİ"))
+            ?: throw AssertionError("Timeline header did not appear below preview controls")
+        val clipTab = device.findObject(By.desc("Klip araçları sekmesi"))
+            ?: throw AssertionError("Edit tool tab is missing from the bottom dock")
+        assertTrue(
+            "Playback control should be below the preview",
+            playback.visibleBounds.top >= preview.visibleBounds.bottom
+        )
+        assertTrue(
+            "Playback row should sit above the timeline",
+            playback.visibleBounds.bottom <= timelineHeader.visibleBounds.top
+        )
+        assertTrue(
+            "Playback control should be centered below the preview",
+            kotlin.math.abs(playback.visibleBounds.centerX() - device.displayWidth / 2) <= device.displayWidth / 10
+        )
+        assertTrue(
+            "Undo/Redo should be above, not inside, the bottom tool dock",
+            undo.visibleBounds.bottom < clipTab.visibleBounds.top &&
+                redo.visibleBounds.bottom < clipTab.visibleBounds.top
+        )
+        assertTrue(
+            "Undo and Redo should be grouped at the right of the playback row",
+            undo.visibleBounds.left > playback.visibleBounds.centerX() &&
+                redo.visibleBounds.left > undo.visibleBounds.left
+        )
+        val audioTab = device.findObject(By.desc("Ses araçları sekmesi"))
+            ?: throw AssertionError("Audio tool tab is missing from the bottom dock")
+        val textTabForOrder = device.findObject(By.desc("Metin araçları sekmesi"))
+            ?: throw AssertionError("Text tool tab is missing from the bottom dock")
+        assertTrue(
+            "Bottom tool order should be Edit, Audio, Text, Export",
+            clipTab.visibleBounds.left < audioTab.visibleBounds.left &&
+                audioTab.visibleBounds.left < textTabForOrder.visibleBounds.left
+        )
         takeScreenshot(device, "editor-clip-panel.png")
 
         val textTab = device.findObject(By.text("T\nMetin"))
