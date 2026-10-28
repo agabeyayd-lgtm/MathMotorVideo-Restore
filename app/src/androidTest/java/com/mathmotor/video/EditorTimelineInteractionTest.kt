@@ -1980,41 +1980,76 @@ class EditorTimelineInteractionTest {
             device.swipe(
                 seekBounds.left + (seekBounds.width() * 0.12f).toInt(),
                 seekBounds.centerY(),
-                seekBounds.left + (seekBounds.width() * 0.56f).toInt(),
+                seekBounds.left + (seekBounds.width() * 0.46f).toInt(),
                 seekBounds.centerY(),
                 30
             )
             device.waitForIdle()
-            val changedStartLabel = requireObject(device, startLabelSelector, "changed sound-effect start-time label").text
+            val changedStartLabel = requireObject(device, startLabelSelector, "first changed effect start-time label").text
             assertTrue(
-                "Dragging the sound-effect start-time slider did not change the visible start time: " +
+                "First effect-start slider gesture did not change the visible time: " +
                     "$initialStartLabel -> $changedStartLabel",
                 changedStartLabel != initialStartLabel
             )
 
-            // One real slider gesture must be one history step; Undo/Redo restores its exact label.
+            // Two separate drag gestures must create two separate history entries.
+            device.swipe(
+                seekBounds.left + (seekBounds.width() * 0.46f).toInt(),
+                seekBounds.centerY(),
+                seekBounds.left + (seekBounds.width() * 0.76f).toInt(),
+                seekBounds.centerY(),
+                30
+            )
+            device.waitForIdle()
+            val secondChangedStartLabel =
+                requireObject(device, startLabelSelector, "second changed effect start-time label").text
+            assertTrue(
+                "Second distinct effect-start gesture did not create a new time: " +
+                    "$changedStartLabel -> $secondChangedStartLabel",
+                secondChangedStartLabel != changedStartLabel
+            )
+
+            // First Undo reverses only the second gesture, not both gestures at once.
             clipTab.click()
-            requireObject(device, By.desc("Düzenleme geri al"), "Undo sound-effect start-time gesture").click()
+            requireObject(device, By.desc("Düzenleme geri al"), "Undo second effect-start gesture").click()
             audioTab.click()
             assertTrue(
-                "Undo did not restore the original sound-effect start time",
-                panelScroll.scrollIntoView(UiSelector().text(initialStartLabel))
-            )
-            assertTrue(
-                "Undo restored a different sound-effect start-time value",
-                requireObject(device, By.text(initialStartLabel), "restored original effect start time").text == initialStartLabel
-            )
-            clipTab.click()
-            requireObject(device, By.desc("Düzenleme yinele"), "Redo sound-effect start-time gesture").click()
-            audioTab.click()
-            assertTrue(
-                "Redo did not restore the changed sound-effect start time",
+                "Undo of the second gesture did not restore the intermediate start time",
                 panelScroll.scrollIntoView(UiSelector().text(changedStartLabel))
             )
             assertTrue(
-                "Redo restored a different sound-effect start-time value",
-                requireObject(device, By.text(changedStartLabel), "redone effect start time").text == changedStartLabel
+                "Second-gesture Undo restored a value other than the intermediate state",
+                requireObject(device, By.text(changedStartLabel), "intermediate effect start time").text == changedStartLabel
             )
+
+            // The next Undo reverses the first gesture to the original value.
+            clipTab.click()
+            requireObject(device, By.desc("Düzenleme geri al"), "Undo first effect-start gesture").click()
+            audioTab.click()
+            assertTrue(
+                "Undo of the first gesture did not restore the original start time",
+                panelScroll.scrollIntoView(UiSelector().text(initialStartLabel))
+            )
+            requireObject(device, By.text(initialStartLabel), "original effect start time")
+
+            // Redo must replay each gesture independently and in the original order.
+            clipTab.click()
+            requireObject(device, By.desc("Düzenleme yinele"), "Redo first effect-start gesture").click()
+            audioTab.click()
+            assertTrue(
+                "Redo of the first gesture did not restore the intermediate start time",
+                panelScroll.scrollIntoView(UiSelector().text(changedStartLabel))
+            )
+            requireObject(device, By.text(changedStartLabel), "redone intermediate effect start time")
+
+            clipTab.click()
+            requireObject(device, By.desc("Düzenleme yinele"), "Redo second effect-start gesture").click()
+            audioTab.click()
+            assertTrue(
+                "Redo of the second gesture did not restore the final start time",
+                panelScroll.scrollIntoView(UiSelector().text(secondChangedStartLabel))
+            )
+            requireObject(device, By.text(secondChangedStartLabel), "redone final effect start time")
 
             // Removing the layer is independently undoable and redoable, preserving its
             // selected file and adjusted start time in the restored snapshot.
@@ -2032,7 +2067,7 @@ class EditorTimelineInteractionTest {
                 device.wait(Until.hasObject(By.textContains(fileName)), 4_000))
             assertTrue(
                 "Undo of removal did not restore the effect's adjusted start time",
-                panelScroll.scrollIntoView(UiSelector().text(changedStartLabel))
+                panelScroll.scrollIntoView(UiSelector().text(secondChangedStartLabel))
             )
             clipTab.click()
             requireObject(device, By.desc("Düzenleme yinele"), "Redo sound-effect removal").click()
@@ -2042,7 +2077,8 @@ class EditorTimelineInteractionTest {
             android.util.Log.i(
                 "SoundEffectHistoryTest",
                 "stage=verified addUndoRedo=true startTimeUndoRedo=true removeUndoRedo=true " +
-                    "startBefore=$initialStartLabel startAfter=$changedStartLabel"
+                    "startBefore=$initialStartLabel startIntermediate=$changedStartLabel " +
+                    "startAfter=$secondChangedStartLabel"
             )
         } finally {
             // Do not leave the system document picker on top if an assertion fails;
