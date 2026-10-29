@@ -1,12 +1,12 @@
 # Verification anti-loop protocol
 
-## 2026-10-29 — Visual artifact findings and active gates (do not infer results early)
+## Current handoff — #314 and signed update preflight #2
 
-- #308's actual image artifact was reviewed. Home/draft screenshots look coherent. The loaded-editor screenshot is premature: it was captured two seconds after clip insertion and exposes only two decoded-frame descriptions at that moment.
-- Later in the same passing #308 run, `filmstripLoadsFramesFromDistinctTimestamps` logged 12 frame requests from 0 to 8,000 ms and seven distinct pixel fingerprints. Therefore, do not change production thumbnail decoding based only on the early screenshot; update the capture script to wait for thumbnail readiness first.
-- [#310](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40875254969) is the expanded viewport test at 393×873, built on the 320×640 run; inspect its JUnit result and new `editor-phone-size.png` artifact before declaring responsive UI checked.
-- [Signed-update preflight #1](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40875538602) tests current versionCode 394 package/signature compatibility with build 61 and install-over/relaunch on API 35. It must remain non-publishing and must not bump to 395.
-- Emulator viewport tests are not equivalent to touching the user's real phone. Keep real-device tap-target/layout review as an explicit open gate. Do not sign or publish versionCode 395 without all product gates and explicit authorization.
+- Do not count #312 or #313 as product passes; both were cancelled while the new screenshot collector was being corrected. #311's JUnit was 20/20 green, but its screenshot artifact was missing `editor-phone-size.png`, and the pull log said `run-as: unknown package: com.mathmotor.video.next`.
+- Latest screenshot collector in commit `0b4bcc912fecaa025610f75455797fa43e4383e0` uses an instrumentation-APK cache, discovers the test package from `pm list packages`, and requires `editor-phone-size.png`. [#314](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40912243686) has passed unit tests, Debug APK build and deterministic fixture prep; emulator instrumentation is running. It also asserts the outer preview stage is at least 180dp high at 393×873. Inspect its real JUnit report and PNG artifact; a mere green build is insufficient.
+- Signed preflight [#1](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40875538602) passed APK package/version/certificate checks but failed during emulator-runner setup with ADB broken pipe after a very slow cold boot; the install script did not start. [Preflight #2](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40911413493) passed candidate signing/build and package/version/cert comparison and is currently in the install-baseline → update-over → relaunch step. Do not mark installation verified until the final step succeeds.
+- Quantitative export gain is closed by #291 (music ratio 0.34908 at 35%; effect ratio 0.59874 at 60%). Do not rerun #291 or #216 unchanged.
+- Still open: screenshot-backed tall-phone stage check, signed update-over/relaunch, and real physical-device visual/tap-target review. Keep versionCode 395 blocked; no release/tag/publish until all required gates and explicit user authorization.
 
 ## 2026-10-29 — #308 GREEN: 20/20 Android interaction tests passed
 
