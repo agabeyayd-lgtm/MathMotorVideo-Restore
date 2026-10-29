@@ -3998,28 +3998,38 @@ class EditorTimelineInteractionTest {
         val splitTimeBefore = projectPositionMs(requireProjectTime(device))
         assertTrue("Playhead was not at the 2 s split point: $splitTimeBefore", splitTimeBefore in 1_900L..2_100L)
 
-        // The compact editor may already have the Clip panel open after draft restore.
-        // Clicking an already-active dock tab toggles it closed, which made the following
-        // ScrollView lookup fail. Only open the panel when its scroll container is absent.
-        var panelScrollerObject = device.findObject(By.clazz("android.widget.ScrollView"))
-        if (panelScrollerObject == null) {
+        // ScrollView containers are not guaranteed to appear in UIAutomator's
+        // accessibility tree. Use the visible panel heading to determine whether the
+        // Clip tab is already open; checking the ScrollView class caused an active tab
+        // to be toggled closed on compact devices.
+        if (device.findObject(By.text("KLİP DÜZENLEME")) == null) {
             val clipTab = device.findObject(By.desc("Klip araçları sekmesi"))
                 ?: throw AssertionError("Clip tools tab is missing before split action")
             clipTab.click()
-            device.wait(Until.hasObject(By.clazz("android.widget.ScrollView")), 5_000)
+            assertTrue("Clip tools panel did not open",
+                device.wait(Until.hasObject(By.text("KLİP DÜZENLEME")), 5_000))
             device.waitForIdle()
-            panelScrollerObject = device.findObject(By.clazz("android.widget.ScrollView"))
         }
         var splitButton = device.findObject(By.text("Böl ✂"))
         if (splitButton == null) {
-            assertTrue("Clip tools panel did not expose its scroll container",
-                panelScrollerObject != null)
-            val panelScroller = UiScrollable(UiSelector().className("android.widget.ScrollView")).setAsVerticalList()
-            assertTrue("Could not reveal the Split at Playhead action",
-                panelScroller.scrollIntoView(UiSelector().text("Böl ✂")))
-            splitButton = device.findObject(By.text("Böl ✂"))
+            // Scroll the tool-panel viewport with real touch gestures. Do not depend on
+            // ScrollView being exposed as an accessibility node; the split button itself
+            // must still be found and clicked for the export assertions to run.
+            val panelHeading = requireObject(device, By.text("KLİP DÜZENLEME"), "Clip tools panel heading")
+            val headingBounds = panelHeading.visibleBounds
+            val swipeX = device.displayWidth / 2
+            val swipeStartY = (headingBounds.bottom + 18).coerceAtMost(device.displayHeight - 180)
+            val swipeEndY = (swipeStartY - (device.displayHeight * 0.20f).toInt())
+                .coerceAtLeast(headingBounds.bottom + 4)
+            for (attempt in 0 until 4) {
+                device.swipe(swipeX, swipeStartY, swipeX, swipeEndY, 25)
+                device.waitForIdle()
+                SystemClock.sleep(150)
+                splitButton = device.findObject(By.text("Böl ✂"))
+                if (splitButton != null) break
+            }
         }
-        (splitButton ?: throw AssertionError("Split at Playhead action was not exposed")).click()
+        (splitButton ?: throw AssertionError("Split at Playhead action was not exposed in the open Clip tools panel")).click()
         assertTrue("Editor did not confirm that the clip was split at the playhead",
             device.wait(Until.hasObject(By.textContains("Klip iki parçaya bölündü")), 8_000))
         assertTrue("First split clip tile was not visible", device.wait(Until.hasObject(By.text("KLİP 1")), 5_000))
