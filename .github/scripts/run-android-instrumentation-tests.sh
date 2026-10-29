@@ -15,7 +15,7 @@ fi
 # larger phone-sized responsive-layout checkpoint. The target app may be absent after
 # connectedDebugAndroidTest, so screenshots are saved under the instrumentation APK cache.
 mkdir -p emulator-screenshots/instrumentation-screenshots
-test_package="$(adb -s emulator-5554 shell pm list packages 2>/dev/null | tr -d '\r' | sed 's/^package://' | grep -E '^com[.]mathmotor[.]video([.]next)?[.]test
+test_package="$(adb -s emulator-5554 shell pm list packages 2>/dev/null | tr -d '\r' | sed 's/^package://' | grep -E '^com[.]mathmotor[.]video([.]next)?[.]test' | head -n 1 || true)"
 if [ -z "$test_package" ]; then
   echo "WARNING: could not discover the instrumentation test package."
   adb -s emulator-5554 shell pm list packages > emulator-screenshots/instrumentation-packages.txt 2>&1 || true
