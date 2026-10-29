@@ -4,7 +4,7 @@
 
 - User-requested UI cleanup on `fix/editor-395-gate`: replace the visible “Proje” prefix and second “Klip” clock with one readable `current time / total assembled video time` line; retain an accessibility description for instrumentation and screen readers.
 - Timeline lane names are now compact symbols in a 22 dp gutter, with the full lane name retained as the accessibility description. This recovers horizontal room for the thumbnails without removing the video, text, music, or effects tracks.
-- Increase the normal-size filmstrip frames from 42 dp to 48 dp and its lane from 44 dp to 50 dp. Keep compact/keyboard dimensions unchanged to protect the known-good small-screen tool-panel layout.
+- Increase the normal-size filmstrip frames from 42 dp to 48 dp and its lane from 44 dp to 50 dp. On compact phones, use a 108 dp / 10sp time display so it stays legible while preserving the responsive tool-panel layout; compact filmstrip height remains unchanged.
 - Hide the persistent gesture-help banner on both compact and regular layouts. Editing gestures remain available; their guidance is no longer taking a permanent timeline row.
 - The editable JSON project Save/Open actions, local draft autosave, and resume behavior are unchanged. No release version metadata changed.
 - Source and matching instrumentation selectors/assertions are updated; **this visual pass is not green-verified yet**. Review the workflow and fresh screenshot on this exact commit before calling the UI fix complete. Do not rerun #293 unchanged; it already verified one continuous text-timing drag as one Undo step.
