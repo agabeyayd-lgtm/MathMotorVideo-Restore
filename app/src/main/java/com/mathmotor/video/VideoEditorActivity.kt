@@ -2237,7 +2237,7 @@ class VideoEditorActivity : Activity() {
 
         val videoTrack = makeLane(
             "VIDEO",
-            if (keyboardLayoutActive) 18 else if (compactEditorLayout) 36 else 50
+            if (keyboardLayoutActive) 18 else if (compactEditorLayout) 40 else 50
         )
         if (clips.isEmpty()) {
             addBlock(videoTrack, "+ Video ekle", 5000L, Color.rgb(38, 105, 123), onClick = { chooseVideo(true) }, minimumWidthDp = 115)
@@ -2249,7 +2249,7 @@ class VideoEditorActivity : Activity() {
                 val width = widthBetween(videoOffsetMs, nextVideoOffsetMs).coerceAtLeast(1)
                 val compactToolPanel = compactEditorLayout &&
                     activeEditorPanel != null && activeEditorPanel != "clip"
-                val height = dp(if (keyboardLayoutActive) 18 else if (compactToolPanel) 24 else if (compactEditorLayout) 34 else 48)
+                val height = dp(if (keyboardLayoutActive) 18 else if (compactToolPanel) 24 else if (compactEditorLayout) 38 else 48)
                 val block = buildVideoClipFilmstrip(clip, index, width, height, index == selectedClipIndex)
                 // Widths use absolute boundaries, so fractional-pixel rounding cannot accumulate.
                 videoTrack.addView(block, LinearLayout.LayoutParams(width, height))
