@@ -286,8 +286,11 @@ class EditorTimelineInteractionTest {
         var restoreEndMs = projectPositionMs(requireProjectTime(device))
         for (attempt in 0 until 12) {
             if (restoreEndMs >= durationAfterRightTrimMs - 200L) break
+            // After trimming, the right handle can be visible near the lane's right edge.
+            // Start this viewport swipe inside the filmstrip body, not on that handle:
+            // a 90%-width start overlaps its 40 dp hit target and accidentally trims again.
             device.swipe(
-                laneLeft + laneWidth * 9 / 10,
+                laneLeft + laneWidth * 6 / 10,
                 swipeY,
                 laneLeft + laneWidth / 10,
                 swipeY,
@@ -341,8 +344,9 @@ class EditorTimelineInteractionTest {
         var startMs = projectPositionMs(requireProjectTime(device))
         for (attempt in 0 until 12) {
             if (startMs <= 200L) break
+            // Symmetrically keep the initial contact away from the left trim handle.
             device.swipe(
-                laneLeft + laneWidth / 10,
+                laneLeft + laneWidth * 4 / 10,
                 swipeY,
                 laneLeft + laneWidth * 9 / 10,
                 swipeY,
@@ -1674,13 +1678,17 @@ class EditorTimelineInteractionTest {
         val textAfterUndo = requireObject(
             device, By.desc("Metin katmanı metin girişi"), "text input after Undo"
         ).text
+        // UiAutomation exposes an empty EditText's hint through UiObject2.text on
+        // this API level. The hint is the default placeholder, not persisted layer content.
+        assertEquals(
+            "Undo should restore the empty field's placeholder rather than the typed text",
+            "Videoda görünecek yazı",
+            textAfterUndo
+        )
         android.util.Log.i(
             "UnifiedUndoRedoTest",
-            "stage=text-undo textAfterUndo='$textAfterUndo' typedOverlayVisible=${device.hasObject(By.text("UNDO REDO TEXT"))}"
-        )
-        assertTrue(
-            "Undo did not restore an empty text input; actual='$textAfterUndo'",
-            textAfterUndo.isEmpty()
+            "stage=text-undo fieldIsEmptyByPlaceholder=${textAfterUndo == "Videoda görünecek yazı"} " +
+                "typedOverlayVisible=${device.hasObject(By.text("UNDO REDO TEXT"))}"
         )
         assertTrue(
             "Undo of text entry left the typed overlay visible",
