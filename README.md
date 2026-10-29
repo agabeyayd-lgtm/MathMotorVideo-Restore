@@ -1,5 +1,13 @@
 # MathMotor Video
 
+## 2026-10-29 — #304 FAILED; three roots separated and corrections submitted
+
+- [Workflow #304 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40854078970), tested head [`15b4856`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/15b48569520e4ec0f22fb3964a4a5087dfe7c86b): unit tests and APK build passed; 17/20 emulator interaction tests passed; three assertions failed. [Diagnostic artifact 12889073869](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40854078970/artifacts/12889073869).
+- Root 1 — restored draft did not expose the Clip dock tab in accessibility. The failure's visible-button dump contains the editor toolbar/transport but not the bottom dock, so this is not just a bad selector. The next candidate starts a fresh editor window with IME state `SOFT_INPUT_STATE_ALWAYS_HIDDEN`; adding/focusing a text layer still opens the keyboard explicitly.
+- Root 2 — the right-edge viewport swipe after trimming started at 90% of the VIDEO lane, directly on the right trim handle. The gesture was interpreted as a trim drag (`downX=288`, `moveDelta=-218 px`, `upDelta=-223 px`) and clamped the clip to 500 ms before the test could reach the edge. The test now begins at 60% of lane width for right-edge scrolling and 40% for the mirrored left-edge scroll, away from trim handles.
+- Root 3 — history logs show Undo targeted an empty text layer (`targetText=`), with the typed overlay absent; Android UiAutomation returned the empty EditText's placeholder `Videoda görünecek yazı` via `UiObject2.text`. The test now expects that exact placeholder and separately verifies the typed overlay is absent, rather than incorrectly treating a hint as persisted text.
+- Candidate commits: [IME launch state `2134048`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/213404850b4bffbe4facab72d7048d15f1034343), [targeted test fixes `95c8d69`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/95c8d690be83ddc09ef658b25c4f53ebe0fb830f). These are hypotheses/corrections **pending fresh verification**; do not repeat #304 unchanged or weaken unrelated assertions. VersionCode 395 remains blocked.
+
 ## 2026-10-29 — #302 FAILED; focused corrections submitted, verification pending
 
 - [Workflow #302 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40843926462), tested head [`6accfe2`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/6accfe27dcedae88386ab9e287ca4bfe7302c336). Unit tests and Debug APK build passed; **17/20 Android interaction tests passed, 3 failed**. Diagnostic artifact: [12884344990](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40843926462/artifacts/12884344990).

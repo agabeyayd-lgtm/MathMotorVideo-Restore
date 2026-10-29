@@ -1,5 +1,12 @@
 # Verification anti-loop protocol
 
+## #304 — failed run diagnosed; current candidate awaits a fresh gate
+
+- [#304 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40854078970), exact test head [`15b4856`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/15b48569520e4ec0f22fb3964a4a5087dfe7c86b): 17/20 Android interaction tests passed, 3 failed; build and unit tests passed. Artifact [12889073869](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40854078970/artifacts/12889073869).
+- Evidence-based causes: dock was absent from the accessibility tree after draft restore; the test's scroll-to-right-edge gesture hit the trim handle (logged `-223 px`) and reduced the clip to 500 ms; Undo restored empty layer content but UiAutomation returned the hint as EditText text.
+- Current candidate: [`2134048`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/213404850b4bffbe4facab72d7048d15f1034343) sets initial IME state hidden; [`95c8d69`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/95c8d690be83ddc09ef658b25c4f53ebe0fb830f) moves viewport swipes away from trim handles and tests empty-text placeholder semantics while retaining the assertion that typed overlay is gone.
+- Do not repeat #304's exact head; check the next fresh run's compile, all 20 instrumentation tests, diagnostic XML/logcat and fresh screenshots. VersionCode 395 remains blocked until the required gates pass.
+
 ## #302 — failed run and current correction under verification
 
 - [#302 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40843926462) on exact head [`6accfe2`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/6accfe27dcedae88386ab9e287ca4bfe7302c336): unit/build passed; 17/20 emulator tests passed, 3 failed. Artifact [12884344990](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40843926462/artifacts/12884344990).
