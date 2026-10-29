@@ -1,5 +1,13 @@
 # Verification anti-loop protocol
 
+## #307 — fresh failure evidence and candidate correction
+
+- [#307 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40861773955): 17/20 Android interaction tests passed; the unit-test and debug-APK steps passed. Artifact [12892539275](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40861773955/artifacts/12892539275).
+- Do not preserve the #307 initial-Clip-panel change as-is: it caused a compact single-clip preview of only 111 px and made the split test toggle the panel closed before looking for its ScrollView.
+- The two-clip restored-draft case from #306 needs enough viewport for its extra 44 dp chooser row while the tools panel is closed. The next candidate uses a 154 dp compact multi-clip preview ceiling and re-applies the responsive preview height after clip-list changes; this is not yet verified.
+- Trim restoration logs prove the 60%-width swipe hits `edge=start` at rawX 204 rather than scrolling. The candidate test gesture moves to 80%→20% of lane width. Verify new logs show a VIDEO scroll/changed scrollX before declaring this resolved.
+- Run the new head once. If a failure remains, inspect that run's test XML and targeted logcat; do not repeat the previous gesture unchanged or weaken assertions. VersionCode 395 remains blocked.
+
 ## #306 — failure evidence and next root-cause boundary
 
 - [#306 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40857661864): 18/20 instrumentation tests passed; two failures remain. Artifact [12890519854](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40857661864/artifacts/12890519854).

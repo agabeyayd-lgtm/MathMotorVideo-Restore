@@ -286,13 +286,13 @@ class EditorTimelineInteractionTest {
         var restoreEndMs = projectPositionMs(requireProjectTime(device))
         for (attempt in 0 until 12) {
             if (restoreEndMs >= durationAfterRightTrimMs - 200L) break
-            // After trimming, the right handle can be visible near the lane's right edge.
-            // Start this viewport swipe inside the filmstrip body, not on that handle:
-            // a 90%-width start overlaps its 40 dp hit target and accidentally trims again.
+            // After trimming, the shortened clip's left edge sits under the fixed playhead.
+            // A previous 60%-width start hit the 40 dp left-trim handle (edge=start), not
+            // the scroll gesture. Start deeper inside the body and finish away from handles.
             device.swipe(
-                laneLeft + laneWidth * 6 / 10,
+                laneLeft + laneWidth * 8 / 10,
                 swipeY,
-                laneLeft + laneWidth / 10,
+                laneLeft + laneWidth * 2 / 10,
                 swipeY,
                 40
             )

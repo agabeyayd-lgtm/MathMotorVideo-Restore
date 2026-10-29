@@ -1506,14 +1506,11 @@ class VideoEditorActivity : Activity() {
                 previewStageHeightDp = previewDefaultStageHeightDp
                 previewHeightAutoSized = true
 
-                // On compact phones, keep the initial canvas focused on the preview and
-                // primary timeline. Clip actions remain available from the Klip dock tab;
-                // opening them on demand avoids squeezing the filmstrip and layer lanes.
+                // Compact phones start with tools closed so the preview and primary
+                // timeline remain readable. The dock stays available to open them; a
+                // multi-clip project separately reserves space for its chooser row.
                 if (compactEditorLayout && activeEditorPanel == "clip") {
-                    // This is initial responsive setup, not a user toggle. Calling toggle
-                    // while "clip" is already active closes the panel and removes its tab
-                    // from the accessible dock on compact phones.
-                    showEditorPanel("clip")
+                    toggleEditorPanel("clip")
                 }
 
                 // Reserve room for real tools and the multi-track timeline on shorter phones.
@@ -1522,7 +1519,7 @@ class VideoEditorActivity : Activity() {
                 }
                 val previewParams = previewFrame.layoutParams as? LinearLayout.LayoutParams
                 if (previewParams != null && !previewFocusMode) {
-                    previewParams.height = dp(previewStageHeightDp)
+                    previewParams.height = dp(effectivePreviewStageHeightDp())
                     previewParams.weight = 0f
                     previewFrame.layoutParams = previewParams
                 }
@@ -1710,12 +1707,15 @@ class VideoEditorActivity : Activity() {
      * the user's preferred preview height.
      */
     private fun effectivePreviewStageHeightDp(): Int {
-        // Every active tool panel needs usable vertical space, including clip tools.
-        // Previously the preview stayed at its preferred height on the Clip tab,
-        // leaving the panel only a few pixels tall on compact phones and hiding Split.
+        // Active tool panels must fit on compact phones. When the panel is closed,
+        // a multi-clip chooser row also needs room, so reserve its height without
+        // shrinking a single-clip preview that has no duplicate chooser row.
         val compactToolPanel = compactEditorLayout && activeEditorPanel != null
-        return if (compactToolPanel) minOf(previewStageHeightDp, 112).coerceAtLeast(104)
-        else previewStageHeightDp.coerceIn(150, 460)
+        return when {
+            compactToolPanel -> minOf(previewStageHeightDp, 112).coerceAtLeast(104)
+            compactEditorLayout && clips.size > 1 -> minOf(previewStageHeightDp, 154).coerceAtLeast(150)
+            else -> previewStageHeightDp.coerceIn(150, 460)
+        }
     }
 
     private fun updateClipCarouselVisibility() {
@@ -4217,7 +4217,7 @@ class VideoEditorActivity : Activity() {
             }
         }
         refreshTimelineTracks()
-        updateClipCarouselVisibility()
+        updateCompactToolPanelLayout()
     }
 
     private fun duplicateClipAt(index: Int) {

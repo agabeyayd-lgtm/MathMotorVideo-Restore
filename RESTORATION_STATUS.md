@@ -1,4 +1,13 @@
-# Restoration Status — 2026-10-28
+# Restoration Status — 2026-10-29
+
+## 2026-10-29 — #307 FAILED; focused layout and trim-gesture corrections
+
+- [Workflow #307 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40861773955), tested head [\`a269201\`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/a269201e0fcf564f8cf033d0abe09797c7385018): unit tests and Debug APK build passed; **17/20 Android interaction tests passed, 3 failed**. [Diagnostic artifact 12892539275](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40861773955/artifacts/12892539275).
+- Regression 1 — starting compact layout with the Clip panel open reduced the preview to 111 px high (test bounds `Rect(128, 104 - 191, 215)`). The single-clip filmstrip test expects at least 180 dp and compact mode is intended to open tools on demand. Candidate closes the panel on initial compact layout and applies the effective preview height during layout.
+- Regression 2 — `splitAtPlayheadExportsTwoOrderedSegmentsWithoutMovingAvSeam` clicked a Clip tab that was already active, toggling the panel closed; its subsequent ScrollView lookup failed. Starting with tools closed restores the intended compact interaction.
+- Multi-clip dock constraint — #306 showed the Clip tab outside the accessibility viewport after restoring a two-clip draft when tools were closed. Candidate reserves 44 dp for the extra clip-chooser row by capping the closed-panel multi-clip preview at 154 dp; clip-list refresh reapplies that responsive height. This adjustment is pending verification.
+- Trim restore root — #307 logcat reports `TimelineTrimDiag: phase=handle-down edge=start rawX=204.0 bounds=0..40` during a gesture intended to scroll to the shortened clip's right edge. The test's 60%-width start hit the left trim handle instead of scrolling. Candidate moves the scroll gesture to 80%→20% of the viewport, away from both handles.
+- These code/test changes are a **new candidate only**, awaiting a fresh workflow. Do not rerun #307 unchanged or weaken the assertions. VersionCode 395 remains blocked.
 
 ## 2026-10-29 — #306 FAILED; remaining two failures diagnosed
 
