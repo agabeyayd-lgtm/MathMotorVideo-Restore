@@ -73,17 +73,25 @@ class EditorTimelineInteractionTest {
         val initialMs = projectPositionMs(initialTime)
         android.util.Log.i("TimelineInteractionTest", "stage=initial-time value=$initialTime laneY=$laneY centerX=$centerX")
 
-        // Dragging the playhead handle must scroll the timeline under the stationary line.
+        // Swipe the filmstrip body away from the trim handles. On the first frame the
+        // fixed playhead and left trim handle share the center coordinate, so starting at
+        // centerX would accidentally shorten the clip instead of scrolling the timeline.
         val dragPx = (70f * density).toInt()
-        device.swipe(centerX, laneY, (centerX + dragPx).coerceAtMost(laneRight - 2), laneY, 35)
+        val dragStartX = laneLeft + laneWidth * 4 / 5
+        val dragEndX = (dragStartX - dragPx).coerceAtLeast(laneLeft + 2)
+        device.swipe(dragStartX, laneY, dragEndX, laneY, 35)
         device.waitForIdle()
         SystemClock.sleep(180)
         val afterPlayheadDrag = requireProjectTime(device)
         val afterPlayheadMs = projectPositionMs(afterPlayheadDrag)
-        android.util.Log.i("TimelineInteractionTest", "stage=after-playhead-drag value=$afterPlayheadDrag")
+        android.util.Log.i("TimelineInteractionTest", "stage=after-filmstrip-body-swipe value=$afterPlayheadDrag")
         assertTrue(
-            "Dragging the playhead did not change the project time: $initialTime -> $afterPlayheadDrag",
+            "Swiping the filmstrip body did not change the project time: $initialTime -> $afterPlayheadDrag",
             initialMs != afterPlayheadMs
+        )
+        assertTrue(
+            "A filmstrip-body swipe must not trim the source clip: $initialTime -> $afterPlayheadDrag",
+            abs(projectDurationMs(initialTime) - projectDurationMs(afterPlayheadDrag)) <= 100L
         )
 
         // A centered pinch should change clip scale while keeping the center time stable.
@@ -1482,17 +1490,18 @@ class EditorTimelineInteractionTest {
             "Could not find the text-strip start handle",
             device.wait(Until.hasObject(startHandleSelector), 5_000)
         )
-        val startHandle = requireObject(device, startHandleSelector, "text-strip start handle")
-        val startHandleBounds = startHandle.visibleBounds
-        assertTrue(
-            "Text-strip start handle has no usable hit target: $startHandleBounds",
-            startHandleBounds.width() > 0 && startHandleBounds.height() > 0
-        )
         assertTrue(
             "Could not bring the text start-time label back into view before strip drag",
             panelScroll.scrollIntoView(UiSelector().textContains("Yazı başlangıcı:"))
         )
         device.waitForIdle()
+        // Resolve the handle bounds only after the panel has finished scrolling/layout.
+        val startHandle = requireObject(device, startHandleSelector, "text-strip start handle")
+        val startHandleBounds = startHandle.visibleBounds
+        assertTrue(
+            "Text-strip start handle has no usable hit target after layout: $startHandleBounds",
+            startHandleBounds.width() > 0 && startHandleBounds.height() > 0
+        )
         val stripStartBefore = requireObject(
             device, By.textContains("Yazı başlangıcı:"), "start label before strip drag"
         ).text
