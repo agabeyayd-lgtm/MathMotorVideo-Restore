@@ -750,6 +750,7 @@ class VideoEditorActivity : Activity() {
             ellipsize = android.text.TextUtils.TruncateAt.END
             setPadding(dp(3), dp(2), dp(3), 0)
             contentDescription = "Klibe uzun basarak taşı, sil veya kopyala; kesmek için kenarları sürükle"
+            visibility = View.GONE
         }
         timelineCard.addView(timelineGestureHint, matchWrap())
 
@@ -758,7 +759,13 @@ class VideoEditorActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(3), dp(3), dp(3), 0)
         }
-        timelinePlayheadLabel = label("00:00.0 / 00:00.0", 9f, Color.rgb(225, 233, 237), true).apply { maxLines = 2; setLineSpacing(-dp(2).toFloat(), 1f) }
+        timelinePlayheadLabel = label("00:00.00 / 00:00.00", 11f, Color.rgb(225, 233, 237), true).apply {
+            maxLines = 1
+            setSingleLine(true)
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            includeFontPadding = false
+            contentDescription = "Oynatma zamanı ve toplam video süresi"
+        }
         playheadRow.addView(timelinePlayheadLabel, LinearLayout.LayoutParams(dp(128), ViewGroup.LayoutParams.WRAP_CONTENT))
         timelinePlayheadSeek = SeekBar(this).apply {
             max = 0
@@ -1517,6 +1524,7 @@ class VideoEditorActivity : Activity() {
                         timeLabelParams.width = dp(94)
                         timelinePlayheadLabel.layoutParams = timeLabelParams
                     }
+                    timelinePlayheadLabel.textSize = 8f
                     // Small phones need room for actual tool controls, not a persistent help banner.
                     timelineGestureHint.visibility = View.GONE
                     statusView.maxLines = 1
@@ -1533,7 +1541,8 @@ class VideoEditorActivity : Activity() {
                         child.minimumHeight = dp(46)
                     }
                 } else {
-                    timelineGestureHint.visibility = View.VISIBLE
+                    timelinePlayheadLabel.textSize = 11f
+                    timelineGestureHint.visibility = View.GONE
                     statusView.maxLines = 2
                     statusView.textSize = 11f
                     statusView.setPadding(dp(8), dp(5), dp(8), dp(5))
@@ -1831,13 +1840,22 @@ class VideoEditorActivity : Activity() {
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(3), dp(1), dp(3), dp(1))
             }
+            val laneSymbol = when {
+                tag == "SÜRE" -> "↔"
+                tag == "VIDEO" -> "▶"
+                tag == "METİN" || tag.startsWith("YAZI ") -> "T"
+                tag == "MÜZİK" -> "♫"
+                tag == "EFEKT" -> "✦"
+                else -> "•"
+            }
             row.addView(TextView(this).apply {
-                text = tag
-                textSize = 9f
+                text = laneSymbol
+                textSize = 11f
                 setTextColor(Color.rgb(166, 184, 201))
                 typeface = Typeface.DEFAULT_BOLD
-                gravity = Gravity.CENTER_VERTICAL
-            }, LinearLayout.LayoutParams(dp(54), ViewGroup.LayoutParams.MATCH_PARENT))
+                gravity = Gravity.CENTER
+                contentDescription = "Zaman çizelgesi etiketi: $tag"
+            }, LinearLayout.LayoutParams(dp(22), ViewGroup.LayoutParams.MATCH_PARENT))
 
             val scroll = android.widget.HorizontalScrollView(this).apply {
                 isHorizontalScrollBarEnabled = false
@@ -2218,7 +2236,7 @@ class VideoEditorActivity : Activity() {
 
         val videoTrack = makeLane(
             "VIDEO",
-            if (keyboardLayoutActive) 18 else if (compactEditorLayout) 36 else 44
+            if (keyboardLayoutActive) 18 else if (compactEditorLayout) 36 else 50
         )
         if (clips.isEmpty()) {
             addBlock(videoTrack, "+ Video ekle", 5000L, Color.rgb(38, 105, 123), onClick = { chooseVideo(true) }, minimumWidthDp = 115)
@@ -2230,7 +2248,7 @@ class VideoEditorActivity : Activity() {
                 val width = widthBetween(videoOffsetMs, nextVideoOffsetMs).coerceAtLeast(1)
                 val compactToolPanel = compactEditorLayout &&
                     activeEditorPanel != null && activeEditorPanel != "clip"
-                val height = dp(if (keyboardLayoutActive) 18 else if (compactToolPanel) 24 else if (compactEditorLayout) 34 else 42)
+                val height = dp(if (keyboardLayoutActive) 18 else if (compactToolPanel) 24 else if (compactEditorLayout) 34 else 48)
                 val block = buildVideoClipFilmstrip(clip, index, width, height, index == selectedClipIndex)
                 // Widths use absolute boundaries, so fractional-pixel rounding cannot accumulate.
                 videoTrack.addView(block, LinearLayout.LayoutParams(width, height))
@@ -2438,20 +2456,10 @@ class VideoEditorActivity : Activity() {
         if (!::timelinePlayheadLabel.isInitialized) return
         val totalMs = totalOutputDurationMs()
         val projectPositionMs = timelinePlayheadMs.coerceIn(0L, totalMs)
-        val projectText = "Proje ${formatTimelineMs(projectPositionMs)} / ${formatTimelineMs(totalMs)}"
-        val clip = selectedClip()
-        timelinePlayheadLabel.text = if (previewSingleClip && clip != null) {
-            val projectOffsetMs = clips.take(selectedClipIndex).sumOf {
-                (it.endMs - it.startMs).coerceAtLeast(0L)
-            }
-            val clipDurationMs = (clip.endMs - clip.startMs).coerceAtLeast(0L)
-            val clipPositionMs = (projectPositionMs - projectOffsetMs).coerceIn(0L, clipDurationMs)
-            // Lead with the combined project/output duration. The selected clip's
-            // local time is useful, but must not look like the final video duration.
-            "$projectText\nKlip ${formatTimelineMs(clipPositionMs)} / ${formatTimelineMs(clipDurationMs)}"
-        } else {
-            projectText
-        }
+        // Keep only the useful playhead position and the actual assembled video duration.
+        // The selected-clip clock duplicated this information and wasted vertical space.
+        timelinePlayheadLabel.text =
+            "${formatTimelineMs(projectPositionMs)} / ${formatTimelineMs(totalMs)}"
         updateTimelinePlayheadLine()
         updatePreviewTextOverlay()
     }
