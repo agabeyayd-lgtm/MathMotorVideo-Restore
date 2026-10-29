@@ -1,5 +1,13 @@
 # Restoration Status — 2026-10-28
 
+## 2026-10-29 — user-requested UI cleanup (verification pending)
+
+- Latest verified behavioral baseline remains #293 SUCCESS (20/20 instrumentation tests; one continuous text-timing drag is one Undo entry). Do not repeat that unchanged run.
+- New pending UI pass: one-line current/total time label without visible “Proje”/secondary “Klip” wording; 22 dp icon gutter instead of wide text lane labels; 48 dp regular filmstrip frames; persistent gesture-help row hidden.
+- Full lane names remain available through accessibility descriptions. Existing track content and gesture callbacks are preserved.
+- Project JSON Save/Open and local draft autosave/resume are untouched. Build/version metadata remains unchanged; no versionCode 395 release.
+- This source/test/documentation pass still needs a fresh workflow result and screenshot review on the exact new commit. Do not mark visual items complete before then.
+
 **Resume from the latest green checkpoint below. Do not repeat passing tests unchanged.**
 
 - **#293 SUCCESS** — [workflow](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40813692154), commit [`f5a578f`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/f5a578f685c4a6af724b0c536b30345360476f2b). Single continuous text-start slider drag passed: one Undo restored the pre-drag value and disabled Undo; Redo restored the post-drag value. Screenshot/diagnostic artifact [12872496234](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40813692154/artifacts/12872496234) uploaded. Do not rerun unchanged.
