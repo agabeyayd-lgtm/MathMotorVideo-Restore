@@ -1,5 +1,12 @@
 # MathMotor Video
 
+## Latest handoff — #316 root cause and correction (2026-10-29)
+
+- [Run #316 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40925533539), commit `694c2d31`. Unit tests and Debug APK build passed. The Android interaction suite reached 19/20; `EmulatorScreenshotTest.captureHomeEditorAndTextPanel` failed because the tall-phone preview stage measured only 112 px (`Rect(8, 93 - 385, 205)`) instead of the required 180 dp. The missing `editor-phone-size.png` in shared Downloads is a downstream symptom: the assertion fails before that screenshot is taken/published.
+- Corrective source commit: `a24c1a1a` excludes the Clip panel from the compact-tool-panel preview shrink rule. This is a source-level fix only until the new run proves the test passes; do not mark the preview/UI gate complete yet.
+- Next: run the focused emulator screenshot/interaction test on this exact commit, inspect the generated `editor-phone-size.png` and artifact, then continue remaining gates. Keep version 395 blocked; no version bump, signing, publication or updater offer.
+
+
 ## Current handoff — #315 screenshot test root cause and signed preflight #5
 
 - [Screenshot run #315 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40921663447), commit `c461141e50366b07e195e31d877f178cedc8ac19`. The workflow collected the regular home/editor screenshots and autosave checks, but connected instrumentation failed in `EmulatorScreenshotTest.captureHomeEditorAndTextPanel` before the tall-phone screenshot: `Could not create screenshot directory at /data/user/0/com.mathmotor.video.next.test/cache/emulator-screenshots`. It then correctly failed the missing-`editor-phone-size.png` gate. Do not count #315 as a product pass.
