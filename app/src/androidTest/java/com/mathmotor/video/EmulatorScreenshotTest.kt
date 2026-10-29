@@ -56,8 +56,24 @@ class EmulatorScreenshotTest {
             ?: throw AssertionError("Undo is missing from the preview control row")
         val redo = device.findObject(By.desc("Düzenleme yinele"))
             ?: throw AssertionError("Redo is missing from the preview control row")
-        val timeRuler = device.findObject(By.text("SÜRE"))
+        val timeRuler = device.findObject(By.desc("Zaman çizelgesi etiketi: SÜRE"))
             ?: throw AssertionError("Shared time ruler did not appear below preview controls")
+        val timeDisplay = device.findObject(By.desc("Oynatma zamanı ve toplam video süresi"))
+            ?: throw AssertionError("Single-line current/total time display is missing")
+        val density = instrumentation.targetContext.resources.displayMetrics.density
+        assertTrue(
+            "Timeline time display should remain a single clean line: ${timeDisplay.text}",
+            !timeDisplay.text.contains("Proje") && !timeDisplay.text.contains("Klip") &&
+                '\n' !in timeDisplay.text
+        )
+        assertTrue(
+            "Timeline left gutter should use a compact icon, bounds=${timeRuler.visibleBounds}",
+            timeRuler.visibleBounds.width() <= (28f * density).toInt()
+        )
+        assertTrue(
+            "Timeline time display should not wrap to multiple visual lines, bounds=${timeDisplay.visibleBounds}",
+            timeDisplay.visibleBounds.height() <= (24f * density).toInt()
+        )
         val clipTab = device.findObject(By.desc("Klip araçları sekmesi"))
             ?: throw AssertionError("Edit tool tab is missing from the bottom dock")
         assertTrue(
