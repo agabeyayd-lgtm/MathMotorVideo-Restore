@@ -200,11 +200,13 @@ class EmulatorScreenshotTest {
 
     private fun publishScreenshotToDownloads(name: String) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val testContext = instrumentation.context
-        val source = File(testContext.cacheDir, "emulator-screenshots/$name")
+        // Screenshot files are written directly into the target app's cache root;
+        // the emulator test APK's cache subdirectory is not reliably creatable on API 35.
+        val appContext = instrumentation.targetContext
+        val source = File(appContext.cacheDir, name)
         assertTrue("Cannot publish missing screenshot: ${source.absolutePath}", source.isFile)
 
-        val resolver = instrumentation.targetContext.contentResolver
+        val resolver = appContext.contentResolver
         val displayName = "mathmotor-$name"
         val relativePath = "${Environment.DIRECTORY_DOWNLOADS}/MathMotorTestScreenshots"
         val values = ContentValues().apply {
@@ -230,16 +232,12 @@ class EmulatorScreenshotTest {
     }
 
     private fun takeScreenshot(device: UiDevice, name: String) {
-        // Write into the instrumentation APK's private cache. The target app may be
-        // removed by the connected-test runner before the shell artifact-collection step.
-        // The collection script discovers the installed test package and pulls this cache.
-        val testContext = InstrumentationRegistry.getInstrumentation().context
-        val pictures = File(testContext.cacheDir, "emulator-screenshots")
-        assertTrue(
-            "Could not create screenshot directory at ${pictures.absolutePath}",
-            pictures.exists() || pictures.mkdirs()
-        )
-        val saved = device.takeScreenshot(File(pictures, name))
-        assertTrue("Screenshot was not saved: $name", saved)
+        // Use the target app's existing cache root directly. On the hosted API 35
+        // emulator, creating an extra subdirectory under the instrumentation APK cache
+        // failed before the screenshot could be captured.
+        val appContext = InstrumentationRegistry.getInstrumentation().targetContext
+        val destination = File(appContext.cacheDir, name)
+        val saved = device.takeScreenshot(destination)
+        assertTrue("Screenshot was not saved: ${destination.absolutePath}", saved)
     }
 }
