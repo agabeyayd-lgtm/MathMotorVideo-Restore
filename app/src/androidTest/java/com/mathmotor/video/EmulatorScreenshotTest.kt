@@ -119,6 +119,68 @@ class EmulatorScreenshotTest {
             device.wait(Until.hasObject(By.text("METİN KATMANLARI")), 8_000)
         )
         takeScreenshot(device, "editor-text-panel.png")
+
+        // Exercise the same editor at a taller phone-sized viewport. This strengthens
+        // responsive-layout coverage beyond the smallest 320x640 CI emulator; it is
+        // not a substitute for a real-device touch/visual review.
+        try {
+            device.executeShellCommand("wm size 393x873")
+            SystemClock.sleep(800)
+            device.waitForIdle()
+            val sizeOverride = device.executeShellCommand("wm size")
+            assertTrue(
+                "Could not apply the taller phone-sized viewport: $sizeOverride",
+                sizeOverride.contains("393x873")
+            )
+            assertTrue(
+                "UiDevice did not report the taller phone-sized viewport: " +
+                    "${device.displayWidth}x${device.displayHeight}",
+                device.displayWidth >= 390 && device.displayHeight >= 870
+            )
+
+            val largeClipTab = device.findObject(By.desc("Klip araçları sekmesi"))
+                ?: throw AssertionError("Clip tab disappeared at the taller phone size")
+            largeClipTab.click()
+            device.waitForIdle()
+            SystemClock.sleep(300)
+
+            val largePreview = device.findObject(By.desc("Düzenlenmiş video önizlemesi"))
+                ?: throw AssertionError("Preview disappeared at the taller phone size")
+            val largePlayback = device.findObject(By.desc("Önizlemeyi oynat veya duraklat"))
+                ?: throw AssertionError("Playback target disappeared at the taller phone size")
+            val largeRuler = device.findObject(By.desc("Zaman çizelgesi etiketi: SÜRE"))
+                ?: throw AssertionError("Shared ruler disappeared at the taller phone size")
+            val largeTimeDisplay = device.findObject(By.desc("Oynatma zamanı ve toplam video süresi"))
+                ?: throw AssertionError("Time display disappeared at the taller phone size")
+            val largeDensity = instrumentation.targetContext.resources.displayMetrics.density
+            assertTrue(
+                "Taller-phone preview is too short: ${largePreview.visibleBounds}",
+                largePreview.visibleBounds.height() >= (180f * largeDensity).toInt()
+            )
+            assertTrue(
+                "Taller-phone playback target is too small: ${largePlayback.visibleBounds}",
+                largePlayback.visibleBounds.height() >= (36f * largeDensity).toInt()
+            )
+            assertTrue(
+                "Taller-phone clip tab is below the 44dp touch-target minimum: ${largeClipTab.visibleBounds}",
+                largeClipTab.visibleBounds.height() >= (44f * largeDensity).toInt()
+            )
+            assertTrue(
+                "Taller-phone timeline gutter is no longer compact: ${largeRuler.visibleBounds}",
+                largeRuler.visibleBounds.width() <= (28f * largeDensity).toInt()
+            )
+            assertTrue(
+                "Taller-phone time display wrapped: ${largeTimeDisplay.text}",
+                '\\n' !in largeTimeDisplay.text &&
+                    largeTimeDisplay.visibleBounds.height() <= (24f * largeDensity).toInt()
+            )
+            takeScreenshot(device, "editor-phone-size.png")
+        } finally {
+            // The emulator is reused by the rest of the instrumentation suite.
+            device.executeShellCommand("wm size reset")
+            SystemClock.sleep(500)
+            device.waitForIdle()
+        }
     }
 
     private fun takeScreenshot(device: UiDevice, name: String) {

@@ -11,6 +11,25 @@ else
   test_status=$?
 fi
 
+# Always collect screenshots produced by EmulatorScreenshotTest, including the
+# larger phone-sized responsive-layout checkpoint. Do not mask the test exit status
+# if the optional screenshot archive cannot be pulled.
+mkdir -p emulator-screenshots/instrumentation-screenshots
+if timeout -k 2s 12s adb -s emulator-5554 shell -T \
+    "run-as com.mathmotor.video.next tar -C cache/emulator-screenshots -cf -" \
+    > emulator-screenshots/instrumentation-screenshots.tar 2>emulator-screenshots/instrumentation-screenshots-pull.txt; then
+  if tar -xf emulator-screenshots/instrumentation-screenshots.tar \
+      -C emulator-screenshots/instrumentation-screenshots; then
+    echo "Collected instrumentation screenshots:"
+    find emulator-screenshots/instrumentation-screenshots -maxdepth 1 -type f -print
+  else
+    echo "WARNING: instrumentation screenshot archive could not be extracted; test results remain authoritative."
+  fi
+else
+  echo "WARNING: could not pull instrumentation screenshots from app cache; test results remain authoritative."
+fi
+rm -f emulator-screenshots/instrumentation-screenshots.tar
+
 # Always collect these files, including on assertion failure or app/instrumentation crash.
 adb -s emulator-5554 logcat -d -b all -v threadtime > emulator-screenshots/after-instrumentation-logcat.txt 2>&1 || true
 mkdir -p emulator-screenshots/android-test-report emulator-screenshots/android-test-results
