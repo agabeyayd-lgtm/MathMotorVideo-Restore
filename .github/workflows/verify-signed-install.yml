@@ -180,7 +180,8 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
           emulator-boot-timeout: 900
           script: |
-            set -euo pipefail
+            # The emulator runner executes this block with /usr/bin/sh, not Bash.
+            set -eu
             BASELINE="$RUNNER_TEMP/MathMotorVideo-build61.apk"
             CANDIDATE="$RUNNER_TEMP/MathMotorVideo-candidate.apk"
             # Confirm the transport is live before touching the device; this job has

@@ -1,6 +1,9 @@
 package com.mathmotor.video
 
+import android.content.ContentValues
+import android.os.Environment
 import android.os.SystemClock
+import android.provider.MediaStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
@@ -186,11 +189,43 @@ class EmulatorScreenshotTest {
                     largeTimeDisplay.visibleBounds.height() <= (24f * largeDensity).toInt()
             )
             takeScreenshot(device, "editor-phone-size.png")
+            publishScreenshotToDownloads("editor-phone-size.png")
         } finally {
             // The emulator is reused by the rest of the instrumentation suite.
             device.executeShellCommand("wm size reset")
             SystemClock.sleep(500)
             device.waitForIdle()
+        }
+    }
+
+    private fun publishScreenshotToDownloads(name: String) {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val testContext = instrumentation.context
+        val source = File(testContext.cacheDir, "emulator-screenshots/$name")
+        assertTrue("Cannot publish missing screenshot: ${source.absolutePath}", source.isFile)
+
+        val resolver = instrumentation.targetContext.contentResolver
+        val displayName = "mathmotor-$name"
+        val relativePath = "${Environment.DIRECTORY_DOWNLOADS}/MathMotorTestScreenshots"
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
+            put(MediaStore.MediaColumns.MIME_TYPE, "image/png")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+        val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            ?: throw AssertionError("Could not create shared MediaStore screenshot")
+        try {
+            resolver.openOutputStream(uri)?.use { output ->
+                source.inputStream().use { input -> input.copyTo(output) }
+            } ?: throw AssertionError("Could not open shared screenshot output stream")
+            val completed = ContentValues().apply {
+                put(MediaStore.MediaColumns.IS_PENDING, 0)
+            }
+            resolver.update(uri, completed, null, null)
+        } catch (failure: Throwable) {
+            resolver.delete(uri, null, null)
+            throw failure
         }
     }
 

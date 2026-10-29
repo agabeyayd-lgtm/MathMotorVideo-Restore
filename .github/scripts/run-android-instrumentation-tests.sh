@@ -11,40 +11,27 @@ else
   test_status=$?
 fi
 
-# Always collect screenshots produced by EmulatorScreenshotTest, including the
-# larger phone-sized responsive-layout checkpoint. The target app may be absent after
-# connectedDebugAndroidTest, so screenshots are saved under the instrumentation APK cache.
+# The phone-size screenshot is published by instrumentation to MediaStore Downloads
+# before Gradle uninstalls the test APK. Pull the shared file after tests finish.
 mkdir -p emulator-screenshots/instrumentation-screenshots
-test_package="$(adb -s emulator-5554 shell pm list packages 2>/dev/null | tr -d '\r' | sed 's/^package://' | grep -E '^com[.]mathmotor[.]video([.]next)?[.]test' | head -n 1 || true)"
-if [ -z "$test_package" ]; then
-  echo "WARNING: could not discover the instrumentation test package."
-  adb -s emulator-5554 shell pm list packages > emulator-screenshots/instrumentation-packages.txt 2>&1 || true
-  echo "Test APK screenshot cache could not be collected; test result remains authoritative." \
-    | tee emulator-screenshots/instrumentation-screenshots-pull.txt
-  exit 14
-else
-  echo "Pulling screenshots from instrumentation package: $test_package"
-  if timeout -k 2s 12s adb -s emulator-5554 shell -T \
-      "run-as $test_package tar -C cache/emulator-screenshots -cf -" \
-      > emulator-screenshots/instrumentation-screenshots.tar 2>emulator-screenshots/instrumentation-screenshots-pull.txt; then
-    if tar -xf emulator-screenshots/instrumentation-screenshots.tar \
-        -C emulator-screenshots/instrumentation-screenshots; then
-      echo "Collected instrumentation screenshots:"
-      find emulator-screenshots/instrumentation-screenshots -maxdepth 1 -type f -print
-      test -s emulator-screenshots/instrumentation-screenshots/editor-phone-size.png || {
-        echo "WARNING: editor-phone-size.png is missing from the screenshot archive"
-        exit 14
-      }
-    else
-      echo "Could not extract instrumentation screenshot archive." >&2
-      exit 14
-    fi
+phone_screenshot="/sdcard/Download/MathMotorTestScreenshots/mathmotor-editor-phone-size.png"
+if timeout -k 2s 10s adb -s emulator-5554 shell test -s "$phone_screenshot"; then
+  if timeout -k 2s 12s adb -s emulator-5554 pull "$phone_screenshot" \
+      emulator-screenshots/instrumentation-screenshots/editor-phone-size.png \
+      > emulator-screenshots/instrumentation-screenshots-pull.txt 2>&1 &&
+      test -s emulator-screenshots/instrumentation-screenshots/editor-phone-size.png; then
+    echo "Collected editor-phone-size.png from shared MediaStore Downloads."
   else
-    echo "Could not pull instrumentation screenshots from $test_package" >&2
+    echo "Phone-size screenshot existed on device but could not be pulled." >&2
+    cat emulator-screenshots/instrumentation-screenshots-pull.txt || true
     exit 14
   fi
+else
+  echo "Required phone-size screenshot not found in shared Downloads." >&2
+  adb -s emulator-5554 shell ls -la /sdcard/Download/MathMotorTestScreenshots \
+    > emulator-screenshots/instrumentation-screenshots-pull.txt 2>&1 || true
+  exit 14
 fi
-rm -f emulator-screenshots/instrumentation-screenshots.tar
 
 # Always collect these files, including on assertion failure or app/instrumentation crash.
 adb -s emulator-5554 logcat -d -b all -v threadtime > emulator-screenshots/after-instrumentation-logcat.txt 2>&1 || true
