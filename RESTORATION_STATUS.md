@@ -150,3 +150,10 @@
 - #312 was cancelled after source review found the package-discovery grep/tr expression in the screenshot collection script had been over-escaped. This is a CI script correction, not an app test failure. Do not count #312 as a pass or as evidence that the taller phone screenshot was collected.
 - Commit `ca1cb8e2035455ee8d73511f12e413442262de66` replaces the escaped regex with a literal-character class package matcher and a single carriage-return escape. [#313](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40911812892) is now validating the latest script plus the outer preview-stage assertion; unit tests were in progress at last check.
 - Signed preflight #2 [run](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40911413493) passed signed build and package/version/certificate checks and reached the emulator install-over/relaunch step. It has not yet completed, so this gate remains open.
+
+
+## Follow-up status — corrected screenshot collector in #314 (2026-10-29)
+
+- #312 and #313 were cancelled during review of the newly added screenshot collector; neither produced a final product-test result. #312's shell regex had excessive escaping; the first follow-up attempt's line was truncated at the end anchor. The script has now been simplified to a prefix match with no end-anchor character, and the raw GitHub file was inspected to confirm the shell line is complete.
+- [#314](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40912243686) is queued with that corrected collector. It must pass unit/build, the preview-stage/393x873 assertion, the complete instrumentation suite, and artifact collection including `editor-phone-size.png`; only then inspect the actual image and close the tall-phone visual gate.
+- Signed preflight [#2](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40911413493) passed signed build and package/version/certificate comparison and remains in the emulator install-over/relaunch step at last check. No install result yet.
