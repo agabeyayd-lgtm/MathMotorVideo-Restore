@@ -199,3 +199,10 @@ Do not launch a duplicate source-audio run while #227 is in progress. FFmpeg ins
 - Signed preflight #1 passed package/version/signing-cert checks but failed before its shell script, when the emulator runner's post-boot ADB call returned a broken pipe after a long cold boot. This is not an app install assertion. Candidate `05863a0eb7ea8df93e34d79988f1dced46bf8512` increases the cold-boot bound, removes the redundant wipe on a new AVD, and replaces `am start -W` with foreground-window polling. [#2](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40911413493) was building the signed candidate at last check; no install-over/relaunch result yet.
 - Quantitative music/effect gain is closed by #291 (0.34908 at 35%; 0.59874 at 60%). Do not rerun unchanged.
 - Still-open release gates: actual tall-phone screenshot and outer-stage assertion; signed build-61 install → candidate update-over → relaunch; real physical-device visual/touch-target review. VersionCode 395 is blocked; do not publish/enable update without verified gates and explicit authorization.
+
+
+## Follow-up status — #312 superseded by corrected #313 (2026-10-29)
+
+- #312 was cancelled after source review found the package-discovery grep/tr expression in the screenshot collection script had been over-escaped. This is a CI script correction, not an app test failure. Do not count #312 as a pass or as evidence that the taller phone screenshot was collected.
+- Commit `ca1cb8e2035455ee8d73511f12e413442262de66` replaces the escaped regex with a literal-character class package matcher and a single carriage-return escape. [#313](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40911812892) is now validating the latest script plus the outer preview-stage assertion; unit tests were in progress at last check.
+- Signed preflight #2 [run](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40911413493) passed signed build and package/version/certificate checks and reached the emulator install-over/relaunch step. It has not yet completed, so this gate remains open.
