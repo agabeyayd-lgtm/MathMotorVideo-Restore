@@ -16,7 +16,7 @@ This is the concise handoff for ongoing CI debugging. Read it and the latest REA
 
 ## Latest known state (2026-10-29)
 
-- **#293 SUCCESS** — [workflow](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40813692154), commit `f5a578f`: continuous text-start SeekBar drag produced one Undo entry; Undo restored baseline and disabled further Undo; Redo restored post-drag value. Artifact [12872496234](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40813692154/artifacts/12872496234) uploaded. Do not rerun unchanged.
+- **#293 SUCCESS** — [workflow](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40813692154), commit `f5a578f`: JUnit 20/20 passed, 0 failures/errors/skips. Continuous text-start SeekBar drag produced one Undo entry; Undo restored baseline and disabled further Undo; Redo restored post-drag value. Artifact [12872496234](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40813692154/artifacts/12872496234) uploaded. Do not rerun unchanged.
 - **#292 SUCCESS** — [workflow](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40766099106), commit `4d4baf3`: distinct effect-volume slider gestures created separate history steps and Undo/Redo restored expected states. Do not rerun unchanged.
 - **#291 SUCCESS** — decoded AAC music/effect gain ratios passed: 0.34908 at 35% and 0.59874 at 60%. Artifact inspected. Keep versionCode 395 blocked.
 
