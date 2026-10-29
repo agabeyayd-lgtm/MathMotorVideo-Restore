@@ -222,3 +222,13 @@ Do not launch a duplicate source-audio run while #227 is in progress. FFmpeg ins
 - Signed preflight #2 passed signed build/package/version/certificate prechecks but failed during emulator setup with `adb: device offline` / settings-service broken pipe; the install script did not execute. Candidate `a601d489c47dad4998590a0ba8428953eb0116da` changes this install-only workflow to AOSP API 35, increases RAM/heap, and omits nonessential animation/spellchecker tweaks. #3 is running; require baseline install, same-signer candidate install-over and relaunch assertions before closing.
 - Quantitative audio gain is already closed in #291: measured ratios 0.34908 for 35% music and 0.59874 for 60% effects. Do not rerun unchanged.
 - Still open: tall-phone outer-stage assertion plus inspected screenshot; signed install/update/relaunch; real physical-device visual/touch-target review. VersionCode 395 remains blocked.
+
+
+## 2026-10-29 — CI corrections and latest retests
+
+- Commit `c461141e50366b07e195e31d877f178cedc8ac19` fixes two confirmed infrastructure defects: the signed install workflow ran `set -euo pipefail` under `/usr/bin/sh` (unsupported); it now uses POSIX `set -eu`. The screenshot test now publishes the 393x873 phone-size screenshot to shared MediaStore Downloads while instrumentation is installed, and the collection script pulls it after Gradle cleanup.
+- [Emulator #314](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40912243686) failed at screenshot collection with `could not discover the instrumentation test package`. It is not a verified pass; do not assume its test conclusion.
+- [Signed preflight #3](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40915776830) never reached baseline install because `/usr/bin/sh` rejected `pipefail`. Package/version/signer metadata had passed in the earlier preflight, but update-over/relaunch remains unverified.
+- Candidate retests on exact source commit `c461141e50366b07e195e31d877f178cedc8ac19`: [#315](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40921663447) and [signed preflight #4](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40921663407). They were running at the time of this entry; recheck final status, JUnit and screenshot artifact before marking a gate complete.
+- Quantitative audio gain is already closed by #291 (music ratio 0.34908 at 35%, effect ratio 0.59874 at 60%). Do not repeat that unchanged test.
+- Release 395 remains blocked. Current installed baseline stays at versionCode 394/build 61; physical-device visual/tap-target review and signed install-over/relaunch remain open.
