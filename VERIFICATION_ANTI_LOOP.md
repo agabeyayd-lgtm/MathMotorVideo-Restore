@@ -1,5 +1,12 @@
 # Verification anti-loop protocol
 
+## #306 — failure evidence and next root-cause boundary
+
+- [#306 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40857661864): 18/20 instrumentation tests passed; two failures remain. Artifact [12890519854](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40857661864/artifacts/12890519854).
+- Undo test now passes. Clip dock absence came from initialization incorrectly using the user-toggle function: `toggleEditorPanel("clip")` closes the active clip panel. Candidate [`a269201`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/a269201e0fcf564f8cf033d0abe09797c7385018) uses `showEditorPanel("clip")` for initial compact layout.
+- Trim restoration still reports 0 ms after viewport swipes. Next: inspect the VIDEO HorizontalScrollView's actual visible bounds, scrollX/maxScrollX and whether the queried “project position” is playhead position rather than right edge. Do not rerun #306 unchanged, do not weaken the trim assertion, and do not infer the production trim bug is fixed.
+- VersionCode 395 stays blocked pending fresh 20/20 interaction run and review of screenshots/logs.
+
 ## #304 — failed run diagnosed; current candidate awaits a fresh gate
 
 - [#304 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40854078970), exact test head [`15b4856`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/15b48569520e4ec0f22fb3964a4a5087dfe7c86b): 17/20 Android interaction tests passed, 3 failed; build and unit tests passed. Artifact [12889073869](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40854078970/artifacts/12889073869).

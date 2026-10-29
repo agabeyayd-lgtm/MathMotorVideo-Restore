@@ -1,5 +1,12 @@
 # MathMotor Video
 
+## 2026-10-29 — #306 FAILED; remaining two failures diagnosed
+
+- [Workflow #306 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40857661864), tested head [`95c8d69`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/95c8d690be83ddc09ef658b25c4f53ebe0fb830f): build/unit tests passed; 18/20 Android interaction tests passed; two failed. [Artifact 12890519854](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40857661864/artifacts/12890519854).
+- Text Undo is no longer failing in #306, confirming the placeholder-vs-empty-field test correction.
+- Clip dock failure root found in responsive initialization: when compact layout starts with `activeEditorPanel == "clip"`, code called `toggleEditorPanel("clip")`, which intentionally closes the already-active panel. Candidate [`a269201`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/a269201e0fcf564f8cf033d0abe09797c7385018) changes only this initialization path to `showEditorPanel("clip")`.
+- Remaining trim restoration test still fails with `Could not reach the trimmed right edge ... 0 ms`. The body swipes did not move the reported project position. This is **not resolved**; inspect timeline scroll bounds/scrollX and playhead-time label semantics before changing gesture direction or production trim logic. Do not repeat #306 unchanged. VersionCode 395 remains blocked.
+
 ## 2026-10-29 — #304 FAILED; three roots separated and corrections submitted
 
 - [Workflow #304 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40854078970), tested head [`15b4856`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/15b48569520e4ec0f22fb3964a4a5087dfe7c86b): unit tests and APK build passed; 17/20 emulator interaction tests passed; three assertions failed. [Diagnostic artifact 12889073869](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40854078970/artifacts/12889073869).
