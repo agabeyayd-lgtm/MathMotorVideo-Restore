@@ -14,10 +14,11 @@ This is the concise handoff for ongoing CI debugging. Read it and the latest REA
 - Record run number, failing step, evidence, root cause, fix commit, unique verification, and result in README and this file.
 - Keep versionCode 395 blocked. Do not change version metadata, sign/publish an APK, or enable in-app update without all release gates and explicit authorization.
 
-## Latest known state (2026-10-28)
+## Latest known state (2026-10-29)
 
-- **#291 SUCCESS** — [workflow](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40761920880), exact head `0c71177`, JUnit 19/19. Decoded AAC music gain ratio measured **0.34908** for 35% and effect gain ratio **0.59874** for 60%, within respective 0.30–0.40 and 0.55–0.65 tolerances. Effect timing and source preservation also passed; artifact `12850187563` inspected. Quantitative gain gate closed; do not rerun #291/#216 unchanged.
-- #290 SUCCESS, 19/19 instrumentation; compact UI/tool-panel regression closed and sound-effect lifecycle/history passed. Artifact `12846159763` inspected. Next: repeated-gesture history grouping, physical-device review, signed update/install. VersionCode 395 remains blocked.
+- **#293 QUEUED** — [workflow](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40813692154), commit `f5a578f`: single continuous text-start SeekBar drag must create one Undo entry; Undo restores baseline and disables further Undo; Redo restores post-drag value. Wait for this exact result; do not duplicate.
+- **#292 SUCCESS** — [workflow](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40766099106), commit `4d4baf3`: distinct effect-volume slider gestures created separate history steps and Undo/Redo restored expected states. Do not rerun unchanged.
+- **#291 SUCCESS** — decoded AAC music/effect gain ratios passed: 0.34908 at 35% and 0.59874 at 60%. Artifact inspected. Keep versionCode 395 blocked.
 
 - **#290 SUCCESS** — [workflow](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40757659686), exact head `0305073`; unit tests, Debug APK, emulator stage and screenshot upload passed. JUnit XML confirms 19 tests, 0 failures/errors/skips. The #288 compact tool-panel regression is closed by `50364be`; `soundEffectAddStartTimeRemoveAndUndoRedoWork` is also green. Artifact [12846159763](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40757659686/artifacts/12846159763) was downloaded and `editor.png` inspected. Do not rerun #288/#290 unchanged.
 - Next unique gates: repeated-gesture history grouping, physical-device review, then signed update/install. #291 quantitative decoded music/effect gain is closed. Keep versionCode 395 blocked.
