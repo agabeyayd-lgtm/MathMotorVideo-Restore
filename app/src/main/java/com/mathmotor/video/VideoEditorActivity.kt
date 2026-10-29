@@ -1510,7 +1510,10 @@ class VideoEditorActivity : Activity() {
                 // primary timeline. Clip actions remain available from the Klip dock tab;
                 // opening them on demand avoids squeezing the filmstrip and layer lanes.
                 if (compactEditorLayout && activeEditorPanel == "clip") {
-                    toggleEditorPanel("clip")
+                    // This is initial responsive setup, not a user toggle. Calling toggle
+                    // while "clip" is already active closes the panel and removes its tab
+                    // from the accessible dock on compact phones.
+                    showEditorPanel("clip")
                 }
 
                 // Reserve room for real tools and the multi-track timeline on shorter phones.
