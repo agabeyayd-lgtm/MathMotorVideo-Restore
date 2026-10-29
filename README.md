@@ -534,3 +534,11 @@ Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228
 - Fixed manual pinch anchoring and the fixed playhead to use the measured VIDEO viewport origin rather than a hard-coded `57dp` offset.
 - Added actionable trim-handle gesture diagnostics; tightened the draft-restore tab wait and changed Undo/Redo assertions to inspect the text lane/input while that panel is visible.
 - These changes are **pending a fresh emulator run**. Do not treat them as verified; versionCode 395 remains blocked until interaction checks pass.
+
+
+## 2026-10-29 — #311 viewport-test correction
+
+- [x] Workflow [#311](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40879271639) passed on commit `14d1e19a6013f925709f7830f68e30b3d800a74c`: unit tests, Debug APK build, and emulator UI/instrumentation job all succeeded.
+- [x] #310's taller-phone assertion was measuring the inner 9:16 PlayerView canvas, not the outer preview stage. #311 corrected the assertion to check the visible video canvas against a 100dp minimum.
+- [ ] This pass proves the adjusted canvas assertion and CI suite, **not** the full preview-stage height on a taller phone. Inspect the uploaded `editor-phone-size.png` and improve the test to target the actual stage container if accessibility hierarchy exposes it.
+- [ ] Physical-device visual/tap-target review and signed install-over/relaunch remain open. VersionCode 395 remains blocked; no release was published.
