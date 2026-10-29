@@ -21,7 +21,8 @@ concurrency:
 jobs:
   signed-update-smoke:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    # Allow for occasional very slow cold API 35 boot while keeping a bounded job.
+    timeout-minutes: 45
     steps:
       - name: Check out candidate source
         uses: actions/checkout@v4
@@ -172,31 +173,39 @@ jobs:
           emulator-port: 5554
           disable-animations: true
           disable-spellchecker: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -wipe-data
-          emulator-boot-timeout: 600
+          # force-avd-creation already gives this preflight a clean AVD; avoid a second wipe.
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          emulator-boot-timeout: 900
           script: |
             set -euo pipefail
             BASELINE="$RUNNER_TEMP/MathMotorVideo-build61.apk"
             CANDIDATE="$RUNNER_TEMP/MathMotorVideo-candidate.apk"
+            # Confirm the transport is live before touching the device; this job has
+            # previously seen a cold-boot ADB reset before the app script could start.
+            adb -s emulator-5554 wait-for-device
             adb -s emulator-5554 shell wm size 320x640
             adb -s emulator-5554 install "$BASELINE"
-            adb -s emulator-5554 shell am start -W -n com.mathmotor.video.next/com.mathmotor.video.MainActivity
-            for attempt in $(seq 1 15); do
-              if adb -s emulator-5554 shell pidof com.mathmotor.video.next >/dev/null 2>&1; then
+            adb -s emulator-5554 shell am start -n com.mathmotor.video.next/com.mathmotor.video.MainActivity
+            for attempt in $(seq 1 30); do
+              if adb -s emulator-5554 shell dumpsys window 2>/dev/null | grep -q "com.mathmotor.video.next"; then
                 break
               fi
+              echo "Waiting for the baseline activity to reach the foreground ($attempt/30)"
               sleep 1
             done
+            adb -s emulator-5554 shell dumpsys window | grep -m2 "com.mathmotor.video.next"
             adb -s emulator-5554 shell pidof com.mathmotor.video.next
             adb -s emulator-5554 install -r "$CANDIDATE"
             adb -s emulator-5554 shell am force-stop com.mathmotor.video.next
-            adb -s emulator-5554 shell am start -W -n com.mathmotor.video.next/com.mathmotor.video.MainActivity
-            for attempt in $(seq 1 15); do
-              if adb -s emulator-5554 shell pidof com.mathmotor.video.next >/dev/null 2>&1; then
+            adb -s emulator-5554 shell am start -n com.mathmotor.video.next/com.mathmotor.video.MainActivity
+            for attempt in $(seq 1 30); do
+              if adb -s emulator-5554 shell dumpsys window 2>/dev/null | grep -q "com.mathmotor.video.next"; then
                 break
               fi
+              echo "Waiting for the updated activity to reach the foreground ($attempt/30)"
               sleep 1
             done
+            adb -s emulator-5554 shell dumpsys window | grep -m2 "com.mathmotor.video.next"
             adb -s emulator-5554 shell pidof com.mathmotor.video.next
             adb -s emulator-5554 shell dumpsys package com.mathmotor.video.next > "$RUNNER_TEMP/package-after-update.txt"
             grep -m1 "versionCode=394" "$RUNNER_TEMP/package-after-update.txt"
