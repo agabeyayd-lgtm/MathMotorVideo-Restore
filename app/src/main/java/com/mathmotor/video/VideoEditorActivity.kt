@@ -1712,7 +1712,7 @@ class VideoEditorActivity : Activity() {
         // Active tool panels must fit on compact phones. When the panel is closed,
         // a multi-clip chooser row also needs room, so reserve its height without
         // shrinking a single-clip preview that has no duplicate chooser row.
-        val compactToolPanel = compactEditorLayout && activeEditorPanel != null
+        val compactToolPanel = compactEditorLayout && activeEditorPanel != null && activeEditorPanel != "clip"
         return when {
             compactToolPanel -> minOf(previewStageHeightDp, 112).coerceAtLeast(104)
             compactEditorLayout && clips.size > 1 -> minOf(previewStageHeightDp, 154).coerceAtLeast(150)
