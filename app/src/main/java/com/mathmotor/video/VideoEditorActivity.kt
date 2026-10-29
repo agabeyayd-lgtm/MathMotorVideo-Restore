@@ -600,7 +600,8 @@ class VideoEditorActivity : Activity() {
             pinchStartZoom = timelineZoom
             lastAppliedPinchZoom = timelineZoom
             val focusX = (event.getX(0) + event.getX(1)) / 2f
-            pinchFocusXInLanePx = focusX - dp(57)
+            // Events use timelineTracksFrame coordinates; use the real VIDEO viewport origin.
+            pinchFocusXInLanePx = focusX - timelineLaneViewportLeftPx()
             val viewportWidth = timelineLaneViewportWidthPx()
             val scrollX = timelineScrollViews.firstOrNull()?.scrollX ?: timelineHorizontalScrollX
             pinchAnchorTimeMs = TimelineScaleMath.timeAtViewportX(
@@ -609,7 +610,7 @@ class VideoEditorActivity : Activity() {
             android.util.Log.d(
                 "TimelinePinch",
                 "manual begin span=$pinchStartSpanPx zoom=$pinchStartZoom anchor=$pinchAnchorTimeMs " +
-                    "focusX=$pinchFocusXInLanePx viewport=$viewportWidth scroll=$scrollX"
+                    "focusX=$pinchFocusXInLanePx laneLeft=${timelineLaneViewportLeftPx()} viewport=$viewportWidth scroll=$scrollX"
             )
         }
 
@@ -2130,6 +2131,11 @@ class VideoEditorActivity : Activity() {
                             downRawX = event.rawX
                             initialStartMs = layer.startMs
                             initialEndMs = layer.endMs
+                            android.util.Log.i(
+                                "TextLayerTrimDiag",
+                                "phase=down layer=${layer.id} edge=${if (isStart) "start" else "end"} " +
+                                    "bounds=${view.width}x${view.height} range=$initialStartMs..$initialEndMs zoom=$timelineZoom"
+                            )
                             moved = false
                             player?.playWhenReady = false
                             view.parent?.requestDisallowInterceptTouchEvent(true)
@@ -2170,6 +2176,12 @@ class VideoEditorActivity : Activity() {
                                         totalMs
                                     )
                                 }
+                                android.util.Log.i(
+                                    "TextLayerTrimDiag",
+                                    "phase=up layer=${layer.id} edge=${if (isStart) "start" else "end"} " +
+                                        "deltaPx=$deltaPx deltaMs=$deltaMs before=$initialStartMs..$initialEndMs " +
+                                        "after=${layer.startMs}..${layer.endMs} total=$totalMs zoom=$timelineZoom"
+                                )
                                 layer.timingCustomized = true
                                 selectedTextLayerId = layer.id
                                 loadTextLayerIntoControls(layer)
@@ -2345,14 +2357,30 @@ class VideoEditorActivity : Activity() {
         updateTimelinePlayheadLine()
     }
 
+    /**
+     * Returns the VIDEO viewport's left edge in timelineTracksFrame coordinates.
+     * The lane symbol column and insets differ across responsive layouts.
+     */
+    private fun timelineLaneViewportLeftPx(): Int {
+        if (!::timelineTracksFrame.isInitialized) return dp(57)
+        val lane = timelineScrollViews.firstOrNull {
+            it.contentDescription?.toString() == "Zaman çizelgesi satırı: VIDEO" && it.width > 0
+        } ?: timelineScrollViews.firstOrNull { it.width > 0 } ?: return dp(57)
+        val frameLocation = IntArray(2)
+        val laneLocation = IntArray(2)
+        timelineTracksFrame.getLocationOnScreen(frameLocation)
+        lane.getLocationOnScreen(laneLocation)
+        return (laneLocation[0] - frameLocation[0]).coerceAtLeast(0)
+    }
+
     private fun timelineLaneViewportWidthPx(): Int =
-        timelineScrollViews.firstOrNull()?.width?.takeIf { it > 0 }
+        timelineScrollViews.firstOrNull { it.width > 0 }?.width
             ?: (timelineTracksFrame.width - dp(60)).coerceAtLeast(0)
 
     private fun updateTimelinePlayheadLine() {
         if (!::timelinePlayheadLine.isInitialized || !::timelineTracksFrame.isInitialized) return
         val viewportWidth = timelineLaneViewportWidthPx()
-        val timelineX = dp(57) + viewportWidth / 2
+        val timelineX = timelineLaneViewportLeftPx() + viewportWidth / 2
         timelinePlayheadLine.visibility = View.VISIBLE
         val params = timelinePlayheadLine.layoutParams as? FrameLayout.LayoutParams ?: return
         params.width = dp(28)
@@ -4567,6 +4595,13 @@ class VideoEditorActivity : Activity() {
                                 val newEnd = if (isStart) initialEndMs else {
                                     TimelineTrimMath.clampEnd(initialEndMs + deltaMs, initialStartMs, clip.durationMs)
                                 }
+                                android.util.Log.i(
+                                    "TimelineTrimDiag",
+                                    "phase=handle-up edge=${if (isStart) "start" else "end"} " +
+                                        "deltaPx=${event.rawX - downRawX} deltaMs=$deltaMs " +
+                                        "before=$initialStartMs..$initialEndMs after=$newStart..$newEnd " +
+                                        "source=${clip.durationMs} zoom=$timelineZoom"
+                                )
                                 if (newStart != initialStartMs || newEnd != initialEndMs) {
                                     if (isStart) clip.startMs = newStart else clip.endMs = newEnd
                                     selectedClipIndex = index

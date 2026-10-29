@@ -480,3 +480,10 @@ Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228
 - [x] Exact root cause from the step log: `command -v ffmpeg` returned exit code 1 because the Ubuntu runner did not have ffmpeg installed. This is a CI fixture-preparation dependency, not a production export failure and not an executed source-audio assertion.
 - [x] Corrected workflow to install ffmpeg/ffprobe on the runner when missing, then generate the audio-bearing fixture and print its stream metadata. This preserves deterministic fixture content and avoids rerunning the failing setup unchanged.
 - [ ] Complete the source-audio gain/mute gate in [#228](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40399875346): the second draft must restore and export; decoded 40% gain, muted `<0.08` ratio, late-window gain and unchanged source-file hash must all pass. Release 395 stays blocked.
+
+
+## 2026-10-29 — post-#301 correction candidate
+
+- Fixed manual pinch anchoring and the fixed playhead to use the measured VIDEO viewport origin rather than a hard-coded `57dp` offset.
+- Added actionable trim-handle gesture diagnostics; tightened the draft-restore tab wait and changed Undo/Redo assertions to inspect the text lane/input while that panel is visible.
+- These changes are **pending a fresh emulator run**. Do not treat them as verified; versionCode 395 remains blocked until interaction checks pass.

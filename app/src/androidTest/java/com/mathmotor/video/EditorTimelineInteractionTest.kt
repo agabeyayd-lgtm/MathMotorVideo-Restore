@@ -750,6 +750,10 @@ class EditorTimelineInteractionTest {
             "Restored editor did not expose its VIDEO timeline lane",
             device.wait(Until.hasObject(By.desc("Zaman çizelgesi satırı: VIDEO")), 10_000)
         )
+        assertTrue(
+            "Clip tools tab did not become accessible after draft restore",
+            device.wait(Until.hasObject(By.desc("Klip araçları sekmesi")), 5_000)
+        )
         requireObject(device, By.desc("Klip araçları sekmesi"), "clip tools tab").click()
         device.waitForIdle()
 
@@ -1648,29 +1652,42 @@ class EditorTimelineInteractionTest {
 
         undo.click()
         device.waitForIdle()
+        requireObject(device, By.desc("Metin araçları sekmesi"), "Metin tab after first Undo").click()
+        device.waitForIdle()
         assertTrue(
-            "Undo did not restore the blank text layer",
-            device.wait(Until.hasObject(By.text("YAZI 1")), 4_000)
+            "Undo did not keep the blank text layer in the timeline",
+            device.wait(Until.hasObject(By.desc("Zaman çizelgesi etiketi: YAZI 1")), 4_000)
+        )
+        assertTrue(
+            "Undo did not restore an empty text input",
+            requireObject(device, By.desc("Metin katmanı metin girişi"), "text input after Undo").text.isEmpty()
         )
         assertTrue(
             "Undo of text entry left the typed overlay visible",
             !device.hasObject(By.text("UNDO REDO TEXT"))
         )
 
-        undo.click()
+        requireObject(device, By.desc("Düzenleme geri al"), "global Undo after showing text tools").click()
         device.waitForIdle()
         assertTrue(
             "Undo did not remove the newly added text layer",
             device.wait(Until.hasObject(By.text("+ Metin ekle")), 4_000)
         )
+        assertTrue(
+            "Undo of Add Text left the text timeline lane",
+            !device.hasObject(By.desc("Zaman çizelgesi etiketi: YAZI 1"))
+        )
 
-        redo.click()
-        device.waitForIdle()
-        assertTrue("Redo did not restore the text layer", device.wait(Until.hasObject(By.text("YAZI 1")), 4_000))
-        redo.click()
+        requireObject(device, By.desc("Düzenleme yinele"), "global Redo after removing layer").click()
         device.waitForIdle()
         assertTrue(
-            "Redo did not restore edited text to the preview",
+            "Redo did not restore the blank text layer",
+            device.wait(Until.hasObject(By.desc("Zaman çizelgesi etiketi: YAZI 1")), 4_000)
+        )
+        requireObject(device, By.desc("Düzenleme yinele"), "global Redo after restoring blank layer").click()
+        device.waitForIdle()
+        assertTrue(
+            "Redo did not restore edited text to the input",
             device.wait(Until.hasObject(By.text("UNDO REDO TEXT")), 4_000)
         )
 

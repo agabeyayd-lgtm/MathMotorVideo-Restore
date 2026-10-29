@@ -129,3 +129,10 @@ Do not launch a duplicate source-audio run while #227 is in progress. FFmpeg ins
 - Existing #216 configures musicVolume=35 and soundVolume=60, but its assertions test tone magnitude windows for presence/timing, not measured 35%/60% gain ratios. Add a distinct quantitative gain check; do not rerun #216 unchanged.
 
 - **Latest candidate #268 result:** UI test code covers publishing a deterministic WAV, choosing it through DocumentsUI, changing effect start-time and add/remove Undo/Redo, but CI failed because the WAV did not appear in Downloads before those assertions. Instrumentation had 17/19 pass and two failures; the other failure was a seeded timed-text project not opening. First fix picker navigation and examine launch/task cleanup/isolation; then run the focused gate. Do not rerun #268 unchanged or repeat green #214/#216/#228/#236/#264/#265 gates.
+
+
+## 2026-10-29 — new correction candidate; verification pending
+
+- Root cause found in pinch/playhead geometry: a hard-coded `57dp` offset was used despite responsive lane layout; both now use the measured VIDEO viewport origin.
+- Added trim gesture diagnostics to the next test run. Fixed test timing/state visibility around the clip tab and text Undo/Redo rather than removing assertions.
+- Do not rerun #301 unchanged. The new commit must produce a fresh emulator result; 395 stays blocked meanwhile.

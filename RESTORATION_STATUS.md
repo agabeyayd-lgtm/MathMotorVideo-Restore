@@ -71,3 +71,11 @@
 - Already verified in the integrated candidate: #196 manual JSON save/reopen and baseline Undo/Redo interactions; #210 text-strip handle drags; #214 source-audio toggle/effect-volume Undo/Redo; #216 music looping and timed-effect window; #228 source-audio gain/mute with source preservation; #234 text seek/zoom; #236 A/V sync (75 ms); #238 split/export seam; #240's movement assertion failed; #241 passed body-swipe movement/duration, but the full-lane end-scroll gestures hit the right trim handle; #243 diagnostics measured the resulting 8,000→6,644 ms trim. #244 moves these gestures to the handle-free filmstrip body and adds duration invariance assertions. Do not rerun these unchanged.
 - Closed by current integrated branch: #264 multi-clip seek/reorder/trim/Undo/Redo; #265 split Undo/Redo. Historical #244/staging notes remain evidence of how those gates were built, not pending tasks. #214 source-audio toggle/effect-volume history, #216 timed music/effect presence, #228 source-audio gain/mute, #236 A/V sync, and manual JSON effect URI/start-time round-trip are already green. Still pending: repeated-gesture grouping, quantitative music/effect gain, physical-device review, signed update/install. UI-driven effect add/remove/start-time Undo/Redo was subsequently closed by #290 (19/19).
 - #216's effect/music test checks 35% music and 60% effect fixtures by presence/timing windows, not by expected output/input amplitude ratios. The numeric gain test remains a real gap, but #216 itself is not to be repeated unchanged.
+
+
+## 2026-10-29 — correction candidate after #301
+
+- Source change: pinch anchor and white playhead now share the measured VIDEO viewport origin, replacing fixed `57dp` geometry.
+- Added text/clip trim gesture logs to distinguish input interception, zero movement, clamping, and successful state changes on the next run.
+- Test changes: wait for the clip tab after draft restore; Undo/Redo checks now switch to the visible text panel and inspect the blank input/lane directly.
+- Status: **not verified yet**. A new workflow must pass before any 395 release gate is reconsidered.
