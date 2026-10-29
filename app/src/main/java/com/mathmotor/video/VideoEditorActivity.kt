@@ -1293,8 +1293,10 @@ class VideoEditorActivity : Activity() {
         }
         editorPanelScroll.addView(panelHolder)
         textInput.setOnFocusChangeListener { _, hasFocus ->
-            if (!loadingTextLayerControls && !isRestoringEditorSnapshot) {
-                if (hasFocus) beginEditorHistoryGesture() else finishEditorHistoryGesture()
+            // Focus alone is not an edit. A text history snapshot starts in beforeTextChanged,
+            // so Undo never accidentally consumes a focus-only snapshot instead of actual text.
+            if (!loadingTextLayerControls && !isRestoringEditorSnapshot && !hasFocus) {
+                finishEditorHistoryGesture()
             }
             if (hasFocus) {
                 textInput.post {
@@ -1581,6 +1583,10 @@ class VideoEditorActivity : Activity() {
             val imeVisible = (Build.VERSION.SDK_INT >= 30 &&
                 rootInsets?.isVisible(WindowInsets.Type.ime()) == true) ||
                 maxEditorViewportHeightPx - viewportHeight > dp(150)
+            // Keep fixed navigation and status accessible even if a prior layout transition
+            // hid them while the IME flag already reports its current value.
+            bottomDock.visibility = if (imeVisible) View.GONE else View.VISIBLE
+            statusView.visibility = if (imeVisible) View.GONE else View.VISIBLE
             if (imeVisible != keyboardLayoutActive) {
                 applyKeyboardMode(imeVisible, viewportHeight)
             } else if (!imeVisible && !previewFocusMode) {
@@ -2680,7 +2686,16 @@ class VideoEditorActivity : Activity() {
         val before = activeEditorGestureSnapshot ?: return
         activeEditorGestureSnapshot = null
         val after = captureEditorSnapshot()
-        if (!hasSameEditableContent(before, after)) pushEditorUndoSnapshot(before)
+        val changed = !hasSameEditableContent(before, after)
+        android.util.Log.i(
+            "EditorHistoryDiag",
+            "phase=finish changed=$changed beforeText=" +
+                before.textLayers.firstOrNull { it.id == before.selectedTextLayerId }?.text.orEmpty().take(40) +
+                " afterText=" +
+                after.textLayers.firstOrNull { it.id == after.selectedTextLayerId }?.text.orEmpty().take(40) +
+                " undoBefore=${undoEditorHistory.size} redoBefore=${redoEditorHistory.size}"
+        )
+        if (changed) pushEditorUndoSnapshot(before)
     }
 
     private fun finishTrimHistoryGesture() {
@@ -2712,6 +2727,14 @@ class VideoEditorActivity : Activity() {
         val current = captureEditorSnapshot()
         redoEditorHistory.add(current)
         val snapshot = undoEditorHistory.removeAt(undoEditorHistory.lastIndex)
+        android.util.Log.i(
+            "EditorHistoryDiag",
+            "phase=undo currentText=" +
+                current.textLayers.firstOrNull { it.id == current.selectedTextLayerId }?.text.orEmpty().take(40) +
+                " targetText=" +
+                snapshot.textLayers.firstOrNull { it.id == snapshot.selectedTextLayerId }?.text.orEmpty().take(40) +
+                " remaining=${undoEditorHistory.size} redo=${redoEditorHistory.size}"
+        )
         restoreEditorSnapshot(snapshot)
         status.text = "Son düzenleme geri alındı."
         updateHistoryButtons()
@@ -4551,6 +4574,7 @@ class VideoEditorActivity : Activity() {
                 }
                 addView(grip, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
                 var downRawX = 0f
+                var latestMoveDeltaPx = 0f
                 var initialStartMs = clip.startMs
                 var initialEndMs = clip.endMs
                 var moved = false
@@ -4558,16 +4582,24 @@ class VideoEditorActivity : Activity() {
                     when (event.actionMasked) {
                         android.view.MotionEvent.ACTION_DOWN -> {
                             downRawX = event.rawX
+                            latestMoveDeltaPx = 0f
                             initialStartMs = clip.startMs
                             initialEndMs = clip.endMs
                             moved = false
                             activeTrimHistorySnapshot = captureEditorSnapshot()
+                            android.util.Log.i(
+                                "TimelineTrimDiag",
+                                "phase=handle-down edge=${if (isStart) "start" else "end"} " +
+                                    "rawX=${event.rawX} bounds=${view.left}..${view.right} " +
+                                    "range=$initialStartMs..$initialEndMs source=${clip.durationMs}"
+                            )
                             player?.playWhenReady = false
                             view.parent?.requestDisallowInterceptTouchEvent(true)
                             true
                         }
                         android.view.MotionEvent.ACTION_MOVE -> {
                             val delta = event.rawX - downRawX
+                            latestMoveDeltaPx = delta
                             if (kotlin.math.abs(delta) > dp(2)) moved = true
                             val (minimumDeltaPx, maximumDeltaPx) = allowedDeltaPx(initialStartMs, initialEndMs)
                             // Keep the handle visible while the gesture crosses beyond the
@@ -4584,7 +4616,11 @@ class VideoEditorActivity : Activity() {
                         }
                         android.view.MotionEvent.ACTION_UP -> {
                             val (minimumDeltaPx, maximumDeltaPx) = allowedDeltaPx(initialStartMs, initialEndMs)
-                            val deltaPx = (event.rawX - downRawX).coerceIn(minimumDeltaPx, maximumDeltaPx)
+                            // Prefer the last MOVE coordinate. A translated handle can be re-laid
+                            // out beneath the pointer before ACTION_UP on compact layouts.
+                            val rawUpDeltaPx = event.rawX - downRawX
+                            val gestureDeltaPx = if (moved) latestMoveDeltaPx else rawUpDeltaPx
+                            val deltaPx = gestureDeltaPx.coerceIn(minimumDeltaPx, maximumDeltaPx)
                             val deltaMs = TimelineScaleMath.millisecondsForPixels(deltaPx, timelinePixelsPerSecond())
                             view.translationX = 0f
                             view.parent?.requestDisallowInterceptTouchEvent(false)
@@ -4598,7 +4634,8 @@ class VideoEditorActivity : Activity() {
                                 android.util.Log.i(
                                     "TimelineTrimDiag",
                                     "phase=handle-up edge=${if (isStart) "start" else "end"} " +
-                                        "deltaPx=${event.rawX - downRawX} deltaMs=$deltaMs " +
+                                        "downX=$downRawX moveDelta=$latestMoveDeltaPx upDelta=$rawUpDeltaPx " +
+                                        "usedDelta=$deltaPx deltaMs=$deltaMs " +
                                         "before=$initialStartMs..$initialEndMs after=$newStart..$newEnd " +
                                         "source=${clip.durationMs} zoom=$timelineZoom"
                                 )
