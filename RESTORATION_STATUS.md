@@ -1,5 +1,12 @@
 # Restoration Status — 2026-10-29
 
+## Latest handoff — #316 failure diagnosed (2026-10-29)
+
+- [Run #316 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40925533539), commit `694c2d31`. Unit tests and Debug APK build passed; Android instrumentation reached 19/20 tests. The screenshot test failed first at the tall-phone preview-stage assertion: height `112 px` versus required `180 dp`. `editor-phone-size.png` was consequently never created/published, so the shared-Downloads error is downstream, not the root cause.
+- Corrective source commit `a24c1a1a`: exclude the Clip panel from the compact-tool-panel preview shrink rule. Not yet verified by a passing run; leave UI/release gates open.
+- Next: run emulator screenshot/interaction verification on the correction, inspect the actual tall-phone PNG, then address any next distinct failure. Version 395 remains blocked; do not bump/sign/publish or offer update.
+
+
 
 ## Current handoff — #315 screenshot test root cause and signed preflight #5
 
