@@ -1,3 +1,10 @@
+## Current verification handoff — #320 superseded; runner cleanup included (2026-10-30)
+
+- Candidate [commit `03f4027`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/03f40274abd060b6d705a429ba30be19f8a0cac4) passed unit tests and the Debug APK build; FFmpeg/fixture preparation also passed. Its emulator result is **not accepted**: while that step was still running, review found an obsolete duplicate section after the intended end of `.github/scripts/run-android-instrumentation-tests.sh`. The orphaned pipe and duplicate screenshot-pull block could make an otherwise successful instrumentation run fail at the end.
+- The runner is now trimmed to its active MediaStore screenshot retrieval, log/report collection and explicit test-exit handling. The stale alternate `run-as` screenshot path was removed; no instrumentation assertions were changed or weakened.
+- The production fix for the #319 Clip-panel initialization race remains included: tool panels start hidden, the initial default is chosen after the first measured layout, compact phones start closed, and a user-selected panel is not toggled by a delayed layout callback.
+- A fresh workflow is required to verify both changes together. Do not count #320 as a pass or mark the panel issue closed until the new JUnit report and screenshot artifact are inspected. Version 395 remains blocked; installed baseline is 394/build 61.
+
 ## Latest verification handoff — emulator #318 (2026-10-29)
 
 - [#318 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40935790116): unit tests and Debug APK build passed; 19/20 emulator tests passed. The only failure was the split/export test's panel-navigation precondition: UIAutomator did not expose the Clip panel's ScrollView node.
