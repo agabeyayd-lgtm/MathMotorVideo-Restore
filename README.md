@@ -9,7 +9,7 @@ A local-first Android video editor with a CapCut-inspired workflow. Editing and 
 ### 2026-10-29 — #293 SUCCESS: continuous slider drag is one Undo step
 
 - [#293 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40813692154), exact tested head [`f5a578f`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/f5a578f685c4a6af724b0c536b30345360476f2b). Unit tests, Debug APK, emulator UI/interaction run, and screenshot/diagnostic artifact upload all passed.
-- The new `oneContinuousTextTimingDragCreatesOneUndoEntryAndRedoRestoresIt` assertion passed: one continuous text-start SeekBar drag changes the value, one Undo restores the exact pre-drag value and leaves Undo disabled (no extra history entries from intermediate progress callbacks), and Redo restores the post-drag value.
+- JUnit reports `tests=20 failures=0 errors=0 skipped=0`. The new `oneContinuousTextTimingDragCreatesOneUndoEntryAndRedoRestoresIt` assertion passed: one continuous text-start SeekBar drag changes the value, one Undo restores the exact pre-drag value and leaves Undo disabled (no extra history entries from intermediate progress callbacks), and Redo restores the post-drag value.
 - Artifact [`mathmotor-android-emulator-screenshots` #12872496234](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40813692154/artifacts/12872496234) uploaded successfully. Do not rerun #293 unchanged.
 - History grouping is now verified in both directions: #292 proves separate gestures produce separate history entries; #293 proves one continuous drag produces one entry. Next: physical-device UI/tap-target review, then signed update/install validation. Keep versionCode 395 blocked.
 
