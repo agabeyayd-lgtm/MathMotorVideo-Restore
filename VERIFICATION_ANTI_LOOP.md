@@ -14,6 +14,13 @@ This is the concise handoff for ongoing CI debugging. Read it and the latest REA
 - Record run number, failing step, evidence, root cause, fix commit, unique verification, and result in README and this file.
 - Keep versionCode 395 blocked. Do not change version metadata, sign/publish an APK, or enable in-app update without all release gates and explicit authorization.
 
+## New UI cleanup follow-up after #293 — verification pending (2026-10-29)
+
+- Source commits [1d1dca1](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/1d1dca184f4b3183dda88b093b38c631939744f5) and [b746967](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/b746967c69bcb24dbfe0d2751cad957ae17483a9) remove the visible “Proje” and second “Klip” time text, change lane labels to accessible compact symbols, hide persistent gesture help and enlarge the normal filmstrip. The 394 baseline and 395 release gate are unchanged.
+- UI automation selector updates: [4079f18](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/4079f18ec95081321c3a9a5e351a05664ff5e219) updates the interaction test; [b127f72](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/b127f7285d092b2cbe0d01e54a74bf7fed55f693) fixes the screenshot test's stale literal “SÜRE” selector and adds assertions for a clean one-line clock and compact lane gutter.
+- Documentation is current in README and RESTORATION_STATUS. The changed Android source/tests need a fresh run and screenshot review at the exact latest branch head before the visual pass can be marked complete. #293 remains valid evidence for its own tested head but does not verify these later changes.
+- Important monitoring limitation: the available workflow-run lookup only returns pull-request-triggered runs; an empty result is **not** evidence that the push-triggered emulator workflow did not start. Confirm the actual run/head in Actions before recording a pass or failure. Do not repeat #293 unchanged; versionCode 395 stays blocked.
+
 ## Latest known state (2026-10-29)
 
 - **#293 SUCCESS** — [workflow](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40813692154), commit `f5a578f`: JUnit 20/20 passed, 0 failures/errors/skips. Continuous text-start SeekBar drag produced one Undo entry; Undo restored baseline and disabled further Undo; Redo restored post-drag value. Artifact [12872496234](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40813692154/artifacts/12872496234) uploaded. Do not rerun unchanged.
