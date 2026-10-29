@@ -126,3 +126,11 @@
 - Added text/clip trim gesture logs to distinguish input interception, zero movement, clamping, and successful state changes on the next run.
 - Test changes: wait for the clip tab after draft restore; Undo/Redo checks now switch to the visible text panel and inspect the blank input/lane directly.
 - Status: **not verified yet**. A new workflow must pass before any 395 release gate is reconsidered.
+
+
+## Verification update — #311 (2026-10-29)
+
+- **#311 PASS** (commit `14d1e19a6013f925709f7830f68e30b3d800a74c`; [workflow](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40879271639)): unit tests, Debug APK, and emulator UI/instrumentation job completed successfully.
+- #310's failure was a test measurement mismatch: the selected accessibility node was the 9:16 PlayerView canvas rather than the surrounding preview stage. #311 lowers the canvas visibility threshold to 100dp and passes.
+- Caveat: this does not independently verify the full outer preview-stage height. Inspect `editor-phone-size.png` and, if possible, assert the actual stage container instead of relying only on the inner canvas.
+- Still open: physical-device visual/tap-target review; signed install-over and relaunch preflight (the earlier run failed during emulator startup). VersionCode 395 remains blocked; no release is authorized.
