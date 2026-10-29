@@ -12,21 +12,37 @@ else
 fi
 
 # Always collect screenshots produced by EmulatorScreenshotTest, including the
-# larger phone-sized responsive-layout checkpoint. Do not mask the test exit status
-# if the optional screenshot archive cannot be pulled.
+# larger phone-sized responsive-layout checkpoint. The target app may be absent after
+# connectedDebugAndroidTest, so screenshots are saved under the instrumentation APK cache.
 mkdir -p emulator-screenshots/instrumentation-screenshots
-if timeout -k 2s 12s adb -s emulator-5554 shell -T \
-    "run-as com.mathmotor.video.next tar -C cache/emulator-screenshots -cf -" \
-    > emulator-screenshots/instrumentation-screenshots.tar 2>emulator-screenshots/instrumentation-screenshots-pull.txt; then
-  if tar -xf emulator-screenshots/instrumentation-screenshots.tar \
-      -C emulator-screenshots/instrumentation-screenshots; then
-    echo "Collected instrumentation screenshots:"
-    find emulator-screenshots/instrumentation-screenshots -maxdepth 1 -type f -print
-  else
-    echo "WARNING: instrumentation screenshot archive could not be extracted; test results remain authoritative."
-  fi
+test_package="$(adb -s emulator-5554 shell pm list packages 2>/dev/null | tr -d '\\r' | sed 's/^package://' | grep -E '^com\\.mathmotor\\.video(\\.next)?\\.test$' | head -n 1 || true)"
+if [ -z "$test_package" ]; then
+  echo "WARNING: could not discover the instrumentation test package."
+  adb -s emulator-5554 shell pm list packages > emulator-screenshots/instrumentation-packages.txt 2>&1 || true
+  echo "Test APK screenshot cache could not be collected; test result remains authoritative." \
+    | tee emulator-screenshots/instrumentation-screenshots-pull.txt
+  exit 14
 else
-  echo "WARNING: could not pull instrumentation screenshots from app cache; test results remain authoritative."
+  echo "Pulling screenshots from instrumentation package: $test_package"
+  if timeout -k 2s 12s adb -s emulator-5554 shell -T \
+      "run-as $test_package tar -C cache/emulator-screenshots -cf -" \
+      > emulator-screenshots/instrumentation-screenshots.tar 2>emulator-screenshots/instrumentation-screenshots-pull.txt; then
+    if tar -xf emulator-screenshots/instrumentation-screenshots.tar \
+        -C emulator-screenshots/instrumentation-screenshots; then
+      echo "Collected instrumentation screenshots:"
+      find emulator-screenshots/instrumentation-screenshots -maxdepth 1 -type f -print
+      test -s emulator-screenshots/instrumentation-screenshots/editor-phone-size.png || {
+        echo "WARNING: editor-phone-size.png is missing from the screenshot archive"
+        exit 14
+      }
+    else
+      echo "Could not extract instrumentation screenshot archive." >&2
+      exit 14
+    fi
+  else
+    echo "Could not pull instrumentation screenshots from $test_package" >&2
+    exit 14
+  fi
 fi
 rm -f emulator-screenshots/instrumentation-screenshots.tar
 

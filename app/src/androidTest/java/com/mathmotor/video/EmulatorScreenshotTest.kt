@@ -141,19 +141,26 @@ class EmulatorScreenshotTest {
 
             val largeClipTab = device.findObject(By.desc("Klip araçları sekmesi"))
                 ?: throw AssertionError("Clip tab disappeared at the taller phone size")
+            val largeDensity = instrumentation.targetContext.resources.displayMetrics.density
             largeClipTab.click()
             device.waitForIdle()
             SystemClock.sleep(300)
 
+            val largePreviewStage = device.findObject(By.desc("Video önizleme alanı"))
+                ?: throw AssertionError("Outer preview stage is not exposed for responsive-layout checks")
+            assertTrue(
+                "Taller-phone preview stage is too short: ${largePreviewStage.visibleBounds}",
+                largePreviewStage.visibleBounds.height() >= (180f * largeDensity).toInt()
+            )
             val largePreview = device.findObject(By.desc("Düzenlenmiş video önizlemesi"))
-                ?: throw AssertionError("Preview disappeared at the taller phone size")
+                ?: throw AssertionError("Preview canvas disappeared at the taller phone size")
             val largePlayback = device.findObject(By.desc("Önizlemeyi oynat veya duraklat"))
                 ?: throw AssertionError("Playback target disappeared at the taller phone size")
             val largeRuler = device.findObject(By.desc("Zaman çizelgesi etiketi: SÜRE"))
                 ?: throw AssertionError("Shared ruler disappeared at the taller phone size")
             val largeTimeDisplay = device.findObject(By.desc("Oynatma zamanı ve toplam video süresi"))
                 ?: throw AssertionError("Time display disappeared at the taller phone size")
-            val largeDensity = instrumentation.targetContext.resources.displayMetrics.density
+
             assertTrue(
                 "Taller-phone video canvas is not sufficiently visible: ${largePreview.visibleBounds}",
                 // This accessibility node is PlayerView, whose bounds follow the source 9:16
@@ -188,10 +195,11 @@ class EmulatorScreenshotTest {
     }
 
     private fun takeScreenshot(device: UiDevice, name: String) {
-        // Write into the app-under-test's writable cache. The instrumentation APK's
-        // external files directory may be unavailable on headless API 35 emulators.
-        val targetContext = InstrumentationRegistry.getInstrumentation().targetContext
-        val pictures = File(targetContext.cacheDir, "emulator-screenshots")
+        // Write into the instrumentation APK's private cache. The target app may be
+        // removed by the connected-test runner before the shell artifact-collection step.
+        // The collection script discovers the installed test package and pulls this cache.
+        val testContext = InstrumentationRegistry.getInstrumentation().context
+        val pictures = File(testContext.cacheDir, "emulator-screenshots")
         assertTrue(
             "Could not create screenshot directory at ${pictures.absolutePath}",
             pictures.exists() || pictures.mkdirs()

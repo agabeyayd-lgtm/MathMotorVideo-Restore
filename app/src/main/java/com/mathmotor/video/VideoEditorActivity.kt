@@ -436,6 +436,8 @@ class VideoEditorActivity : Activity() {
         }
         previewFrame = FrameLayout(this).apply {
             setBackgroundColor(Color.rgb(5, 9, 15))
+            contentDescription = "Video önizleme alanı"
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
         }
         previewFrame.addView(
             playerView,
