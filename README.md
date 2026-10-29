@@ -1,3 +1,11 @@
+## Latest verification handoff — emulator #318 (2026-10-29)
+
+- [#318 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40935790116): unit tests and Debug APK build passed; 19/20 emulator tests passed. The only failure was the split/export test's panel-navigation precondition: UIAutomator did not expose the Clip panel's ScrollView node.
+- Root cause: a hidden/non-accessibility ScrollView was incorrectly used to decide whether the Clip tab was open. The test could toggle the already-open panel closed and fail before testing split/export.
+- Corrective candidate uses the visible `KLİP DÜZENLEME` heading to detect panel state and real swipe gestures to reveal `Böl ✂` when needed. Split/export output checks remain strict. This is pending fresh emulator verification; #318 is not green.
+- Signed preflight #6 passed signed candidate build, package/version/certificate comparison, install-over, and relaunch: [run](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40935803362). This does not authorize release 395.
+- Keep the installed baseline at 394/build 61. Inspect `editor-phone-size.png` from a successful run and complete physical-device visual/tap-target review before closing the remaining gates.
+
 ## Latest handoff — #317 and signed preflight #5 failures diagnosed (2026-10-29)
 
 - [Emulator run #317 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40931104323), source commit `a24c1a1a`. Unit tests and Debug APK build passed; 19/20 instrumentation tests passed. The sole failure is `splitAtPlayheadExportsTwoOrderedSegmentsWithoutMovingAvSeam`: `UiScrollable.scrollBackward` could not find an `android.widget.ScrollView`.
