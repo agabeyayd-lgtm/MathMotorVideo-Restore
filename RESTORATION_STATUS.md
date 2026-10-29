@@ -1,5 +1,11 @@
 # Restoration Status — 2026-10-28
 
+## 2026-10-29 — #301 failed (fresh test evidence)
+
+- [#301 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40836353868), exact tested head [\`6bb8b57\`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/6bb8b57fc5249d9fd835e69e7a9f65d774fc9140). Unit tests and Debug APK passed; 7/20 instrumentation tests failed. [Diagnostic artifact 12882170032](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40836353868/artifacts/12882170032) uploaded.
+- Failure evidence: fixed-playhead pinch anchoring changes the time (2910→1580 ms, 4070→2760 ms; another pinch changes 0→240 ms); clip tools tab inaccessible to one test; right-trim restore still stops at 500 ms; Undo does not restore the blank text layer; text-strip start remains 1.30 s after drag.
+- Do not repeat #301 unchanged. Investigate actual touch-coordinate conversion and scroll restoration for pinch, history snapshot lifecycle for text entry, and trim handle accessibility/range update before any new run. Candidate fix is not verified. VersionCode 395 remains blocked.
+
 ## 2026-10-29 — #299 failure diagnosis and corrective candidate (verification pending)
 
 - [#299 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40833680553), tested commit [`92e98ac`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/92e98ac29c4ea2e54ae32adc680cf85697630ebb): unit tests and Debug APK build passed; 8/20 Android interaction tests failed. Diagnostic artifact [12880686462](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40833680553/artifacts/12880686462) reviewed; do not repeat #299 unchanged.
