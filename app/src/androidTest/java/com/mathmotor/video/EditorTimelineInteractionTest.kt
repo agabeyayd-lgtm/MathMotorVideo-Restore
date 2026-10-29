@@ -51,18 +51,18 @@ class EditorTimelineInteractionTest {
 
         assertTrue(
             "Editor did not show the video lane",
-            device.wait(Until.hasObject(By.text("VIDEO")), 20_000)
+            device.wait(Until.hasObject(By.desc("Zaman çizelgesi etiketi: VIDEO")), 20_000)
         )
         assertTrue(
             "Project time label did not appear",
-            device.wait(Until.hasObject(By.textContains("Proje")), 20_000)
+            device.wait(Until.hasObject(By.desc("Oynatma zamanı ve toplam video süresi")), 20_000)
         )
         assertTrue("Sample clip was not loaded into the editor", awaitClipAdded(device))
         android.util.Log.i("TimelineInteractionTest", "stage=clip-loaded")
         device.waitForIdle()
         SystemClock.sleep(250)
 
-        val videoLaneLabel = requireObject(device, By.text("VIDEO"), "VIDEO lane label")
+        val videoLaneLabel = requireObject(device, By.desc("Zaman çizelgesi etiketi: VIDEO"), "VIDEO lane label")
         val laneLabelBounds = videoLaneLabel.visibleBounds
         val laneLeft = laneLabelBounds.right
         val laneRight = device.displayWidth - (4 * density).toInt()
@@ -125,7 +125,7 @@ class EditorTimelineInteractionTest {
 
         // Swiping the filmstrip itself must allow its HorizontalScrollView to take over,
         // rather than the clip view consuming the gesture as an in-clip scrub.
-        val afterZoomLabel = requireObject(device, By.text("VIDEO"), "VIDEO lane label after zoom")
+        val afterZoomLabel = requireObject(device, By.desc("Zaman çizelgesi etiketi: VIDEO"), "VIDEO lane label after zoom")
         val afterZoomBounds = afterZoomLabel.visibleBounds
         val scrollLeft = afterZoomBounds.right
         val scrollWidth = (laneRight - scrollLeft).coerceAtLeast(1)
@@ -199,21 +199,21 @@ class EditorTimelineInteractionTest {
         )
         assertTrue(
             "Editor did not show the video lane for trim test",
-            device.wait(Until.hasObject(By.text("VIDEO")), 20_000)
+            device.wait(Until.hasObject(By.desc("Zaman çizelgesi etiketi: VIDEO")), 20_000)
         )
         assertTrue(
             "Project time label did not appear for trim test",
-            device.wait(Until.hasObject(By.textContains("Proje")), 20_000)
+            device.wait(Until.hasObject(By.desc("Oynatma zamanı ve toplam video süresi")), 20_000)
         )
         assertTrue("Trim test sample clip was not loaded", awaitClipAdded(device))
         device.waitForIdle()
         SystemClock.sleep(300)
 
-        val projectLabel = requireObject(device, By.textContains("Proje"), "project-time label")
+        val projectLabel = requireObject(device, By.desc("Oynatma zamanı ve toplam video süresi"), "project-time label")
         val originalDurationMs = projectDurationMs(projectLabel.text)
         assertTrue("Fixture duration is unexpectedly short: $originalDurationMs ms", originalDurationMs >= 7_800L)
 
-        val laneLabel = requireObject(device, By.text("VIDEO"), "VIDEO lane label")
+        val laneLabel = requireObject(device, By.desc("Zaman çizelgesi etiketi: VIDEO"), "VIDEO lane label")
         val laneBounds = laneLabel.visibleBounds
         val laneLeft = laneBounds.right
         val laneRight = device.displayWidth - (4 * density).toInt()
@@ -415,11 +415,11 @@ class EditorTimelineInteractionTest {
         )
         assertTrue(
             "Editor did not show the VIDEO lane for trim-vs-scroll test",
-            device.wait(Until.hasObject(By.text("VIDEO")), 20_000)
+            device.wait(Until.hasObject(By.desc("Zaman çizelgesi etiketi: VIDEO")), 20_000)
         )
         assertTrue(
             "Project time label did not appear for trim-vs-scroll test",
-            device.wait(Until.hasObject(By.textContains("Proje")), 20_000)
+            device.wait(Until.hasObject(By.desc("Oynatma zamanı ve toplam video süresi")), 20_000)
         )
         assertTrue("Trim-vs-scroll fixture clip was not loaded", awaitClipAdded(device))
         device.waitForIdle()
@@ -445,7 +445,7 @@ class EditorTimelineInteractionTest {
             "Compact VIDEO filmstrip should be a readable primary lane, bounds=$compactLaneBounds density=$density",
             compactLaneBounds.height() >= (34f * density).toInt()
         )
-        assertTrue("Compact timeline is missing its shared time ruler", device.hasObject(By.text("SÜRE")))
+        assertTrue("Compact timeline is missing its shared time ruler", device.hasObject(By.desc("Zaman çizelgesi etiketi: SÜRE")))
         assertFalse(
             "Single-clip screen still shows a duplicate clip chooser row",
             device.hasObject(By.desc("Klip seçici satırı"))
@@ -1111,7 +1111,7 @@ class EditorTimelineInteractionTest {
         assertTrue("Text seek/zoom draft did not restore; markers=" + restoreMarkers, draftRestored)
         assertTrue(
             "Editor did not expose the VIDEO lane for text seek/zoom",
-            device.wait(Until.hasObject(By.text("VIDEO")), 12_000)
+            device.wait(Until.hasObject(By.desc("Zaman çizelgesi etiketi: VIDEO")), 12_000)
         )
         assertTrue(
             "Seeded text was not active at the 3-second playhead",
@@ -1218,7 +1218,7 @@ class EditorTimelineInteractionTest {
             device.wait(Until.hasObject(previewTextSelector), 5_000)
         )
 
-        val videoLaneLabel = requireObject(device, By.text("VIDEO"), "VIDEO lane label for text zoom")
+        val videoLaneLabel = requireObject(device, By.desc("Zaman çizelgesi etiketi: VIDEO"), "VIDEO lane label for text zoom")
         val laneLabelBounds = videoLaneLabel.visibleBounds
         val laneY = laneLabelBounds.centerY()
         val laneScroll = device.findObjects(By.clazz("android.widget.HorizontalScrollView"))
@@ -1350,11 +1350,11 @@ class EditorTimelineInteractionTest {
         )
         assertTrue(
             "Editor did not show the video lane for text test",
-            device.wait(Until.hasObject(By.text("VIDEO")), 20_000)
+            device.wait(Until.hasObject(By.desc("Zaman çizelgesi etiketi: VIDEO")), 20_000)
         )
         assertTrue(
             "Project time label did not appear for text test",
-            device.wait(Until.hasObject(By.textContains("Proje")), 20_000)
+            device.wait(Until.hasObject(By.desc("Oynatma zamanı ve toplam video süresi")), 20_000)
         )
         assertTrue("Text test sample clip was not loaded", awaitClipAdded(device))
         device.waitForIdle()
@@ -1601,7 +1601,7 @@ class EditorTimelineInteractionTest {
         )
         assertTrue(
             "Editor did not show the video lane for unified undo test",
-            device.wait(Until.hasObject(By.text("VIDEO")), 20_000)
+            device.wait(Until.hasObject(By.desc("Zaman çizelgesi etiketi: VIDEO")), 20_000)
         )
         assertTrue("Unified undo test clip was not loaded", awaitClipAdded(device))
         device.waitForIdle()
@@ -1723,7 +1723,7 @@ class EditorTimelineInteractionTest {
         )
         assertTrue(
             "Editor did not show the video lane for audio history test",
-            device.wait(Until.hasObject(By.text("VIDEO")), 20_000)
+            device.wait(Until.hasObject(By.desc("Zaman çizelgesi etiketi: VIDEO")), 20_000)
         )
         assertTrue("Audio history test clip was not loaded", awaitClipAdded(device))
         device.waitForIdle()
@@ -2044,7 +2044,7 @@ class EditorTimelineInteractionTest {
             )
             assertTrue(
                 "Editor did not open for sound-effect lifecycle test",
-                device.wait(Until.hasObject(By.text("VIDEO")), 20_000)
+                device.wait(Until.hasObject(By.desc("Zaman çizelgesi etiketi: VIDEO")), 20_000)
             )
             assertTrue("Sound-effect lifecycle test clip was not loaded", awaitClipAdded(device))
             device.waitForIdle()
@@ -2328,7 +2328,7 @@ class EditorTimelineInteractionTest {
         )
         assertTrue(
             "Saved draft did not restore the source video lane",
-            device.wait(Until.hasObject(By.text("VIDEO")), 8_000)
+            device.wait(Until.hasObject(By.desc("Zaman çizelgesi etiketi: VIDEO")), 8_000)
         )
         assertTrue(
             "Saved clip trim bounds were not restored (expected 7.02 s)",
@@ -3544,7 +3544,7 @@ class EditorTimelineInteractionTest {
                 draftRestored
             )
             assertTrue("Editor did not open for seeded source-audio project ($keepSourceAudio)",
-                device.wait(Until.hasObject(By.text("VIDEO")), 20_000))
+                device.wait(Until.hasObject(By.desc("Zaman çizelgesi etiketi: VIDEO")), 20_000))
             assertTrue("Editor export tab did not appear for source-audio validation",
                 device.wait(Until.hasObject(By.textContains("Dışa aktar")), 8_000))
 
@@ -3705,7 +3705,7 @@ class EditorTimelineInteractionTest {
         assertTrue("A/V test draft was not found; markers=" + restoreMarkers, draftFound)
         assertTrue("A/V test draft did not restore; markers=" + restoreMarkers, draftRestored)
         assertTrue("A/V test project did not expose the VIDEO lane",
-            device.wait(Until.hasObject(By.text("VIDEO")), 12_000))
+            device.wait(Until.hasObject(By.desc("Zaman çizelgesi etiketi: VIDEO")), 12_000))
 
         (device.findObject(By.text("Dışa aktar ›"))
             ?: throw AssertionError("Could not open export tab for A/V sync validation")).click()
@@ -3907,7 +3907,7 @@ class EditorTimelineInteractionTest {
         assertTrue("Split test draft was not found; markers=" + restoreMarkers, draftFound)
         assertTrue("Split test draft did not restore; markers=" + restoreMarkers, draftRestored)
         assertTrue("Split test project did not expose the VIDEO lane",
-            device.wait(Until.hasObject(By.text("VIDEO")), 12_000))
+            device.wait(Until.hasObject(By.desc("Zaman çizelgesi etiketi: VIDEO")), 12_000))
 
         fun seekPlayheadTo(targetMs: Long) {
             val seek = requireObject(
@@ -4182,11 +4182,11 @@ class EditorTimelineInteractionTest {
         )
         assertTrue(
             "Editor did not show the video lane for thumbnail test",
-            device.wait(Until.hasObject(By.text("VIDEO")), 20_000)
+            device.wait(Until.hasObject(By.desc("Zaman çizelgesi etiketi: VIDEO")), 20_000)
         )
         assertTrue(
             "Project time label did not appear for thumbnail test",
-            device.wait(Until.hasObject(By.textContains("Proje")), 20_000)
+            device.wait(Until.hasObject(By.desc("Oynatma zamanı ve toplam video süresi")), 20_000)
         )
         assertTrue("Thumbnail test sample clip was not loaded", awaitClipAdded(device))
         device.waitForIdle()
@@ -4378,7 +4378,7 @@ class EditorTimelineInteractionTest {
     }
 
     private fun projectDurationMs(label: String): Long {
-        val match = Regex("Proje\\s+\\d{2}:\\d{2}\\.\\d{2}\\s*/\\s*(\\d{2}):(\\d{2})\\.(\\d{2})")
+        val match = Regex("(?:Proje\\s+)?\\d{2}:\\d{2}\\.\\d{2}\\s*/\\s*(\\d{2}):(\\d{2})\\.(\\d{2})")
             .find(label) ?: throw AssertionError("Could not parse project duration from: $label")
         val minutes = match.groupValues[1].toLong()
         val seconds = match.groupValues[2].toLong()
@@ -4397,8 +4397,16 @@ class EditorTimelineInteractionTest {
         return false
     }
 
-    private fun requireProjectTime(device: UiDevice): String =
-        requireObject(device, By.textContains("Proje"), "project time label").text
+    private fun requireProjectTime(device: UiDevice): String {
+        val label = requireObject(
+            device, By.desc("Oynatma zamanı ve toplam video süresi"), "timeline time label"
+        ).text
+        assertTrue(
+            "Timeline time display should be one clean line without duplicate project/clip labels: $label",
+            !label.contains("Proje") && !label.contains("Klip") && '\n' !in label
+        )
+        return label
+    }
 
     private fun zoomPercent(description: CharSequence): Int {
         val match = Regex("(\\d+)%").find(description.toString())
@@ -4407,7 +4415,7 @@ class EditorTimelineInteractionTest {
     }
 
     private fun projectPositionMs(label: String): Long {
-        val match = Regex("Proje\\s+(\\d{2}):(\\d{2})\\.(\\d{2})").find(label)
+        val match = Regex("(?:Proje\\s+)?(\\d{2}):(\\d{2})\\.(\\d{2})").find(label)
             ?: throw AssertionError("Could not parse project time label: $label")
         val minutes = match.groupValues[1].toLong()
         val seconds = match.groupValues[2].toLong()
