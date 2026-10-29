@@ -307,10 +307,17 @@ class EditorTimelineInteractionTest {
         )
         val rightRestoreHandle = requireObject(device, rightSelector, "right trim handle for restoration")
         val rightRestoreBounds = rightRestoreHandle.visibleBounds
+        val rightRestoreTargetX = (rightRestoreBounds.centerX() + dragPx)
+            .coerceAtMost(device.displayWidth - 2)
+        android.util.Log.i(
+            "TimelineTrimInteractionTest",
+            "stage=restore-right-gesture bounds=$rightRestoreBounds startX=${rightRestoreBounds.centerX()} " +
+                "targetX=$rightRestoreTargetX displayWidth=${device.displayWidth} dragPx=$dragPx"
+        )
         device.swipe(
             rightRestoreBounds.centerX(),
             rightRestoreBounds.centerY(),
-            (rightRestoreBounds.centerX() + dragPx).coerceAtMost(device.displayWidth - 2),
+            rightRestoreTargetX,
             rightRestoreBounds.centerY(),
             30
         )
@@ -750,9 +757,15 @@ class EditorTimelineInteractionTest {
             "Restored editor did not expose its VIDEO timeline lane",
             device.wait(Until.hasObject(By.desc("Zaman çizelgesi satırı: VIDEO")), 10_000)
         )
+        val clipTabAccessible = device.wait(
+            Until.hasObject(By.desc("Klip araçları sekmesi")), 5_000
+        )
+        val accessibleButtons = device.findObjects(By.clazz("android.widget.Button")).joinToString {
+            "text=${it.text} desc=${it.contentDescription} bounds=${it.visibleBounds}"
+        }
         assertTrue(
-            "Clip tools tab did not become accessible after draft restore",
-            device.wait(Until.hasObject(By.desc("Klip araçları sekmesi")), 5_000)
+            "Clip tools tab did not become accessible after draft restore; buttons=$accessibleButtons",
+            clipTabAccessible
         )
         requireObject(device, By.desc("Klip araçları sekmesi"), "clip tools tab").click()
         device.waitForIdle()
@@ -1658,9 +1671,16 @@ class EditorTimelineInteractionTest {
             "Undo did not keep the blank text layer in the timeline",
             device.wait(Until.hasObject(By.desc("Zaman çizelgesi etiketi: YAZI 1")), 4_000)
         )
+        val textAfterUndo = requireObject(
+            device, By.desc("Metin katmanı metin girişi"), "text input after Undo"
+        ).text
+        android.util.Log.i(
+            "UnifiedUndoRedoTest",
+            "stage=text-undo textAfterUndo='$textAfterUndo' typedOverlayVisible=${device.hasObject(By.text("UNDO REDO TEXT"))}"
+        )
         assertTrue(
-            "Undo did not restore an empty text input",
-            requireObject(device, By.desc("Metin katmanı metin girişi"), "text input after Undo").text.isEmpty()
+            "Undo did not restore an empty text input; actual='$textAfterUndo'",
+            textAfterUndo.isEmpty()
         )
         assertTrue(
             "Undo of text entry left the typed overlay visible",
