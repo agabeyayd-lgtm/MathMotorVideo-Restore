@@ -1,5 +1,11 @@
 # MathMotor Video
 
+## 2026-10-29 — #301 failed; next diagnosis required
+
+- [#301 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40836353868), exact head [\`6bb8b57\`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/6bb8b57fc5249d9fd835e69e7a9f65d774fc9140). Unit tests and Debug APK passed, but 7/20 emulator interaction tests failed. Fresh diagnostic artifact: [12882170032](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40836353868/artifacts/12882170032).
+- New failures: centered pinch fails to preserve fixed-playhead time (2910→1580 ms and 4070→2760 ms; another pinch changed 0→240 ms); clip tools tab selector not found in multi-clip test; right trim cannot restore the edge beyond 500 ms; Undo does not restore the blank text layer; text-strip start drag leaves start time at 1.30 s.
+- Prior source/test changes did fix the old accidental start-handle swipe test path enough to expose deeper issues, but did not resolve the actual pinch anchoring, text Undo, trim restore or tab reachability. Do not rerun #301 unchanged. Next inspect pinch coordinate spaces/scroll math, history snapshot lifecycle and trim handle event routing from this artifact before editing. VersionCode 395 remains blocked.
+
 ## 2026-10-29 — #299 failure reviewed; corrective changes pending verification
 
 - [#299 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40833680553), tested commit [`92e98ac`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/92e98ac29c4ea2e54ae32adc680cf85697630ebb): unit tests and Debug APK build passed; 8/20 emulator interaction assertions failed. Artifact [12880686462](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40833680553/artifacts/12880686462) was inspected.
