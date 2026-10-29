@@ -3,7 +3,7 @@
 ## 2026-10-29 — user-requested UI cleanup (verification pending)
 
 - Latest verified behavioral baseline remains #293 SUCCESS (20/20 instrumentation tests; one continuous text-timing drag is one Undo entry). Do not repeat that unchanged run.
-- New pending UI pass: one-line current/total time label without visible “Proje”/secondary “Klip” wording; 22 dp icon gutter instead of wide text lane labels; 48 dp regular filmstrip frames; persistent gesture-help row hidden.
+- New pending UI pass: one-line current/total time label without visible “Proje”/secondary “Klip” wording; 22 dp icon gutter instead of wide text lane labels; 48 dp regular filmstrip frames; 108 dp / 10sp compact time display; persistent gesture-help row hidden.
 - Full lane names remain available through accessibility descriptions. Existing track content and gesture callbacks are preserved.
 - Project JSON Save/Open and local draft autosave/resume are untouched. Build/version metadata remains unchanged; no versionCode 395 release.
 - This source/test/documentation pass still needs a fresh workflow result and screenshot review on the exact new commit. Do not mark visual items complete before then.
