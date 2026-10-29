@@ -7,7 +7,7 @@
 - Increase the normal-size filmstrip frames from 42 dp to 48 dp and its lane from 44 dp to 50 dp. On compact phones, use a 108 dp / 10sp time display so it stays legible while preserving the responsive tool-panel layout; compact filmstrip height remains unchanged.
 - Hide the persistent gesture-help banner on both compact and regular layouts. Editing gestures remain available; their guidance is no longer taking a permanent timeline row.
 - The editable JSON project Save/Open actions, local draft autosave, and resume behavior are unchanged. No release version metadata changed.
-- Source and matching instrumentation selectors/assertions are updated; **this visual pass is not green-verified yet**. Review the workflow and fresh screenshot on this exact commit before calling the UI fix complete. Do not rerun #293 unchanged; it already verified one continuous text-timing drag as one Undo step.
+- The timeline interaction test selectors were updated. A follow-up audit found the screenshot test still searched for the now-hidden literal “SÜRE” lane title; it now uses the retained accessibility label and asserts that the time display stays one line and the lane gutter stays compact. **This visual pass is not green-verified yet**. Review the workflow and fresh screenshot on this exact commit before calling the UI fix complete. Do not rerun #293 unchanged; it already verified one continuous text-timing drag as one Undo step.
 - VersionCode 395 remains blocked pending all release gates and physical-device/signature-install checks.
 
 A local-first Android video editor with a CapCut-inspired workflow. Editing and export run on-device. Source videos must remain unchanged; finished edits are exported as new MP4 files.
