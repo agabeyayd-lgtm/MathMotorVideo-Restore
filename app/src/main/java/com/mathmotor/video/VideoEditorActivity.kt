@@ -315,7 +315,12 @@ class VideoEditorActivity : Activity() {
         super.onCreate(savedInstanceState)
         window.statusBarColor = Color.rgb(15, 31, 45)
         window.navigationBarColor = Color.rgb(15, 31, 45)
-        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        // Do not inherit a stale IME-open state when a fresh editor/draft activity starts.
+        // Text editing explicitly requests the keyboard after the user adds or focuses a layer.
+        window.setSoftInputMode(
+            WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or
+                WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN
+        )
         val requestedDraftId = intent.getStringExtra("draft_id")
             ?.takeIf { VideoProjectDraftStore.isValidId(it) }
         draftId = requestedDraftId ?: VideoProjectDraftStore.newId()
