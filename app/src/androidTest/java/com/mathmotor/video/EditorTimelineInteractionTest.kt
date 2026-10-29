@@ -1882,6 +1882,129 @@ class EditorTimelineInteractionTest {
 
 
     @Test
+    fun oneContinuousTextTimingDragCreatesOneUndoEntryAndRedoRestoresIt() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val device = UiDevice.getInstance(instrumentation)
+        val packageName = context.packageName
+        val fixture = java.io.File(context.filesDir, "editor-test-video.mp4")
+        assertTrue("Gesture-history fixture is missing", fixture.isFile && fixture.length() > 0L)
+
+        val draftId = java.util.UUID.randomUUID().toString()
+        val clip = org.json.JSONObject()
+            .put("uri", Uri.fromFile(fixture).toString())
+            .put("title", "GESTURE_HISTORY_FIXTURE")
+            .put("durationMs", 8_020L)
+            .put("startMs", 0L)
+            .put("endMs", 8_020L)
+        val textLayer = org.json.JSONObject()
+            .put("id", 975L)
+            .put("text", "GESTURE HISTORY")
+            .put("startMs", 1_000L)
+            .put("endMs", 6_000L)
+            .put("timingCustomized", true)
+            .put("position", "TOP")
+            .put("sizeSp", 32)
+            .put("xFraction", 0.5)
+            .put("yFraction", 0.16)
+            .put("colorPreset", "CYAN")
+            .put("isBold", false)
+        val project = org.json.JSONObject()
+            .put("format", "MathMotorVideoProject")
+            .put("version", 1)
+            .put("clips", org.json.JSONArray().put(clip))
+            .put("selectedClipIndex", 0)
+            .put("timelinePlayheadMs", 3_000L)
+            .put("timelineZoom", 1.0)
+            .put("timelineHorizontalScrollMs", 0L)
+            .put("textLayers", org.json.JSONArray().put(textLayer))
+            .put("selectedTextLayerId", 975L)
+            .put("sourceAudioVolume", 100)
+            .put("musicVolume", 45)
+            .put("soundVolume", 100)
+            .put("keepSourceAudio", true)
+        assertTrue(
+            "Could not seed continuous-gesture history project",
+            VideoProjectDraftStore.save(context, draftId, "Continuous gesture history", project)
+        )
+
+        device.executeShellCommand("logcat -c")
+        device.executeShellCommand(
+            "am start --activity-clear-task -n " + packageName +
+                "/com.mathmotor.video.EditorTestEntryActivity --es draft_id " + draftId
+        )
+        val restoreDeadline = SystemClock.uptimeMillis() + 20_000L
+        var restored = false
+        var restoreLog = ""
+        while (SystemClock.uptimeMillis() < restoreDeadline) {
+            restoreLog = device.executeShellCommand("logcat -d -s EditorSmokeTest:I").takeLast(1_800)
+            if (restoreLog.contains("EDITOR_SMOKE_DRAFT_RESTORED id=" + draftId)) {
+                restored = true
+                break
+            }
+            SystemClock.sleep(200)
+        }
+        assertTrue("Gesture-history draft was not restored: $restoreLog", restored)
+        assertTrue("Gesture-history preview text did not appear",
+            device.wait(Until.hasObject(By.text("GESTURE HISTORY")), 8_000))
+
+        val textTab = device.findObject(By.text("T\nMetin"))
+            ?: device.findObject(By.clazz("android.widget.Button").textContains("Metin"))
+            ?: throw AssertionError("Could not open the Metin tab for gesture-history test")
+        textTab.click()
+        val panelScroll = UiScrollable(UiSelector().className("android.widget.ScrollView")).setAsVerticalList()
+        assertTrue(
+            "Could not reveal the text start-time slider for gesture-history test",
+            panelScroll.scrollIntoView(UiSelector().description("Yazı başlangıç zamanı"))
+        )
+        device.waitForIdle()
+        val startSeek = requireObject(device, By.desc("Yazı başlangıç zamanı"), "gesture-history text start slider")
+        val startBounds = startSeek.visibleBounds
+        assertTrue("Text start slider has no usable drag target: $startBounds", startBounds.width() > 100)
+        val startLabel = requireObject(device, By.textContains("Yazı başlangıcı:"), "initial text start label")
+        val before = startLabel.text
+        assertTrue("Seeded text start time was not 1 second: $before", before.contains("00:01"))
+
+        // One continuous drag intentionally crosses several SeekBar progress values.
+        device.swipe(
+            startBounds.left + 4,
+            startBounds.centerY(),
+            startBounds.left + (startBounds.width() * 0.42f).toInt(),
+            startBounds.centerY(),
+            35
+        )
+        device.waitForIdle()
+        SystemClock.sleep(250)
+        val after = requireObject(device, By.textContains("Yazı başlangıcı:"), "text start after continuous drag").text
+        assertTrue("Continuous drag did not change the start time: $before -> $after", before != after)
+        android.util.Log.i("GestureHistoryTest", "stage=drag before=$before after=$after")
+
+        val undo = requireObject(device, By.desc("Düzenleme geri al"), "Undo after one continuous drag")
+        assertTrue("Undo was not enabled after the continuous drag", undo.isEnabled)
+        undo.click()
+        device.waitForIdle()
+        SystemClock.sleep(200)
+        val restoredBefore = requireObject(device, By.textContains("Yazı başlangıcı:"), "text start after Undo").text
+        assertEquals("One Undo should restore the value from before the drag", before, restoredBefore)
+        assertFalse(
+            "One continuous drag created multiple Undo entries",
+            requireObject(device, By.desc("Düzenleme geri al"), "Undo after reverting the drag").isEnabled
+        )
+
+        val redo = requireObject(device, By.desc("Düzenleme yinele"), "Redo after one continuous drag")
+        assertTrue("Redo was not enabled after Undo", redo.isEnabled)
+        redo.click()
+        device.waitForIdle()
+        SystemClock.sleep(200)
+        val restoredAfter = requireObject(device, By.textContains("Yazı başlangıcı:"), "text start after Redo").text
+        assertEquals("Redo should restore the value from after the drag", after, restoredAfter)
+        android.util.Log.i(
+            "GestureHistoryTest",
+            "stage=verified oneGestureOneUndo=true before=$before after=$after redo=$restoredAfter"
+        )
+    }
+
+    @Test
     fun soundEffectAddStartTimeRemoveAndUndoRedoWork() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
