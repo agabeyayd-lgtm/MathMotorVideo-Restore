@@ -1,12 +1,13 @@
 # Verification anti-loop protocol
 
-## Current handoff — #314 and signed update preflight #2
 
-- Do not count #312 or #313 as product passes; both were cancelled while the new screenshot collector was being corrected. #311's JUnit was 20/20 green, but its screenshot artifact was missing `editor-phone-size.png`, and the pull log said `run-as: unknown package: com.mathmotor.video.next`.
-- Latest screenshot collector in commit `0b4bcc912fecaa025610f75455797fa43e4383e0` uses an instrumentation-APK cache, discovers the test package from `pm list packages`, and requires `editor-phone-size.png`. [#314](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40912243686) has passed unit tests, Debug APK build and deterministic fixture prep; emulator instrumentation is running. It also asserts the outer preview stage is at least 180dp high at 393×873. Inspect its real JUnit report and PNG artifact; a mere green build is insufficient.
-- Signed preflight [#1](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40875538602) passed APK package/version/certificate checks but failed during emulator-runner setup with ADB broken pipe after a very slow cold boot; the install script did not start. [Preflight #2](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40911413493) passed candidate signing/build and package/version/cert comparison and is currently in the install-baseline → update-over → relaunch step. Do not mark installation verified until the final step succeeds.
-- Quantitative export gain is closed by #291 (music ratio 0.34908 at 35%; effect ratio 0.59874 at 60%). Do not rerun #291 or #216 unchanged.
-- Still open: screenshot-backed tall-phone stage check, signed update-over/relaunch, and real physical-device visual/tap-target review. Keep versionCode 395 blocked; no release/tag/publish until all required gates and explicit user authorization.
+## Current handoff — signed update preflight #4 root cause and corrective retest
+
+- [Signed preflight #4 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40921663407), tested commit `c461141e50366b07e195e31d877f178cedc8ac19`. Signing setup, candidate build, package/version checks, and matching signing certificate all passed. Emulator booted, but baseline install received an empty path (`adb: filename doesn't end .apk or .apex:`); therefore update-over/relaunch was **not reached**. This is a workflow action/path handoff failure, not a proven app install failure.
+- The next candidate passes the baseline and candidate APK paths as explicit step-level environment variables (`BASELINE_APK_PATH`, `CANDIDATE_APK_PATH`), tests that both files exist and are non-empty, then installs using those variables. Fresh preflight evidence is required; don't rerun #4 unchanged.
+- [Screenshot run #315](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40921663447) was still running on the previous candidate at the last check. Inspect its final JUnit result and confirm the actual `editor-phone-size.png` artifact before closing the screenshot/preview-stage gate.
+- Export gain remains verified by #291 (music ratio 0.34908 at 35%; effect ratio 0.59874 at 60%). Don't repeat unchanged.
+- Physical-device visual/tap-target review remains open. Installed baseline remains versionCode 394/build 61. VersionCode 395 is blocked; no tag, publish, updater enablement, or release.
 
 ## 2026-10-29 — #308 GREEN: 20/20 Android interaction tests passed
 

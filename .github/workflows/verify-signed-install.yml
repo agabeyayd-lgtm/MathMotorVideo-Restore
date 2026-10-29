@@ -162,6 +162,11 @@ jobs:
 
       - name: Install baseline, replace it with candidate, and relaunch
         uses: reactivecircus/android-emulator-runner@v2
+        env:
+          # Explicit step-level paths are inherited by the action's command runner;
+          # don't rely on shell-local assignments surviving its command execution.
+          BASELINE_APK_PATH: ${{ runner.temp }}/MathMotorVideo-build61.apk
+          CANDIDATE_APK_PATH: ${{ runner.temp }}/MathMotorVideo-candidate.apk
         with:
           api-level: 35
           # This gate only installs and launches the app; Google Play services are unnecessary.
@@ -182,13 +187,15 @@ jobs:
           script: |
             # The emulator runner executes this block with /usr/bin/sh, not Bash.
             set -eu
-            BASELINE="$RUNNER_TEMP/MathMotorVideo-build61.apk"
-            CANDIDATE="$RUNNER_TEMP/MathMotorVideo-candidate.apk"
+            test -s "$BASELINE_APK_PATH"
+            test -s "$CANDIDATE_APK_PATH"
+            printf 'Baseline APK file is present: %s\n' "$BASELINE_APK_PATH"
+            printf 'Candidate APK file is present: %s\n' "$CANDIDATE_APK_PATH"
             # Confirm the transport is live before touching the device; this job has
             # previously seen a cold-boot ADB reset before the app script could start.
             adb -s emulator-5554 wait-for-device
             adb -s emulator-5554 shell wm size 320x640
-            adb -s emulator-5554 install "$BASELINE"
+            adb -s emulator-5554 install "$BASELINE_APK_PATH"
             adb -s emulator-5554 shell am start -n com.mathmotor.video.next/com.mathmotor.video.MainActivity
             for attempt in $(seq 1 30); do
               if adb -s emulator-5554 shell dumpsys window 2>/dev/null | grep -q "com.mathmotor.video.next"; then
@@ -199,7 +206,7 @@ jobs:
             done
             adb -s emulator-5554 shell dumpsys window | grep -m2 "com.mathmotor.video.next"
             adb -s emulator-5554 shell pidof com.mathmotor.video.next
-            adb -s emulator-5554 install -r "$CANDIDATE"
+            adb -s emulator-5554 install -r "$CANDIDATE_APK_PATH"
             adb -s emulator-5554 shell am force-stop com.mathmotor.video.next
             adb -s emulator-5554 shell am start -n com.mathmotor.video.next/com.mathmotor.video.MainActivity
             for attempt in $(seq 1 30); do

@@ -1,13 +1,12 @@
 # MathMotor Video
 
-## 2026-10-29 — latest CI corrections in progress
+## Current handoff — signed update preflight #4 root cause and corrective retest
 
-- Commit [`c461141`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/c461141e50366b07e195e31d877f178cedc8ac19) fixes two confirmed test-infrastructure defects: the signed-update workflow's embedded script used Bash-only `set -euo pipefail` under `/usr/bin/sh`, and the tall-phone screenshot collector looked for the test package only after Gradle had removed it. The signed script now uses POSIX `set -eu`; the screenshot is published to MediaStore Downloads while instrumentation is installed, then pulled from the shared path.
-- [Emulator run #314](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40912243686) failed after the screenshot collector could not discover the instrumentation package. It did not provide a complete green verification; do not infer the test result from that run.
-- [Signed preflight #3](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40915776830) stopped before baseline install because `/usr/bin/sh` rejected `pipefail`. The signed APK's package/version/signer checks had passed on the earlier attempt, but install-over/relaunch remain unverified.
-- Current retests on commit [`c461141`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/c461141e50366b07e195e31d877f178cedc8ac19): [#315 emulator/instrumentation + screenshot](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40921663447) and [signed preflight #4](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40921663407). Both were running at last check; verify final conclusions and artifact contents before calling either gate green.
-- Quantitative export gain is already verified in [#291](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40760398772): music ratio 0.34908 at configured 35%, effect ratio 0.59874 at 60%. Do not rerun unchanged.
-- Installed baseline remains versionCode 394/build 61. Physical-device review and successful signed update-over/relaunch are open; versionCode 395 remains blocked and no release was published.
+- [Signed preflight #4 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40921663407), tested commit `c461141e50366b07e195e31d877f178cedc8ac19`. Signing setup, candidate build, package/version checks, and matching signing certificate all passed. Emulator booted, but baseline install received an empty path (`adb: filename doesn't end .apk or .apex:`); therefore update-over/relaunch was **not reached**. This is a workflow action/path handoff failure, not a proven app install failure.
+- The next candidate passes the baseline and candidate APK paths as explicit step-level environment variables (`BASELINE_APK_PATH`, `CANDIDATE_APK_PATH`), tests that both files exist and are non-empty, then installs using those variables. Fresh preflight evidence is required; don't rerun #4 unchanged.
+- [Screenshot run #315](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40921663447) was still running on the previous candidate at the last check. Inspect its final JUnit result and confirm the actual `editor-phone-size.png` artifact before closing the screenshot/preview-stage gate.
+- Export gain remains verified by #291 (music ratio 0.34908 at 35%; effect ratio 0.59874 at 60%). Don't repeat unchanged.
+- Physical-device visual/tap-target review remains open. Installed baseline remains versionCode 394/build 61. VersionCode 395 is blocked; no tag, publish, updater enablement, or release.
 
 ## 2026-10-29 — #308 GREEN: 20/20 Android interaction tests passed
 
