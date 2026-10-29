@@ -443,7 +443,7 @@ class EditorTimelineInteractionTest {
         val compactLaneBounds = laneBeforeZoom.visibleBounds
         assertTrue(
             "Compact VIDEO filmstrip should be a readable primary lane, bounds=$compactLaneBounds density=$density",
-            compactLaneBounds.height() >= (34f * density).toInt()
+            compactLaneBounds.height() >= (38f * density).toInt()
         )
         assertTrue("Compact timeline is missing its shared time ruler", device.hasObject(By.desc("Zaman çizelgesi etiketi: SÜRE")))
         assertFalse(
