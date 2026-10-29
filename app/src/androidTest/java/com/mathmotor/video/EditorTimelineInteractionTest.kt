@@ -3998,12 +3998,22 @@ class EditorTimelineInteractionTest {
         val splitTimeBefore = projectPositionMs(requireProjectTime(device))
         assertTrue("Playhead was not at the 2 s split point: $splitTimeBefore", splitTimeBefore in 1_900L..2_100L)
 
-        // Compact layout intentionally starts with tool panels closed; open the clip tools
-        // before searching the scrollable panel for the split action.
-        device.findObject(By.desc("Klip araçları sekmesi"))?.click()
-        device.waitForIdle()
+        // The compact editor may already have the Clip panel open after draft restore.
+        // Clicking an already-active dock tab toggles it closed, which made the following
+        // ScrollView lookup fail. Only open the panel when its scroll container is absent.
+        var panelScrollerObject = device.findObject(By.clazz("android.widget.ScrollView"))
+        if (panelScrollerObject == null) {
+            val clipTab = device.findObject(By.desc("Klip araçları sekmesi"))
+                ?: throw AssertionError("Clip tools tab is missing before split action")
+            clipTab.click()
+            device.wait(Until.hasObject(By.clazz("android.widget.ScrollView")), 5_000)
+            device.waitForIdle()
+            panelScrollerObject = device.findObject(By.clazz("android.widget.ScrollView"))
+        }
         var splitButton = device.findObject(By.text("Böl ✂"))
         if (splitButton == null) {
+            assertTrue("Clip tools panel did not expose its scroll container",
+                panelScrollerObject != null)
             val panelScroller = UiScrollable(UiSelector().className("android.widget.ScrollView")).setAsVerticalList()
             assertTrue("Could not reveal the Split at Playhead action",
                 panelScroller.scrollIntoView(UiSelector().text("Böl ✂")))
