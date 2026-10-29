@@ -6,17 +6,23 @@ A local-first Android video editor with a CapCut-inspired workflow. Editing and 
 
 **Continue from this checkpoint. Do not restart completed work or repeat passing tests unless a related source change requires it. Keep the current release gate and record the exact failing assertion before changing code.**
 
+### 2026-10-29 — #292 SUCCESS; #293 verifies one continuous drag = one Undo
+
+- [#292 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40766099106), exact head [`4d4baf3`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/4d4baf383507e899e6f60ecb9dc9ffd2bd3f25cd): the distinct-gesture history test passed. Two separate effect-volume slider gestures produced two history steps; one Undo restored the prior committed value and a second Undo restored baseline, with Redo restoring the correct states. Do not rerun #292 unchanged.
+- [#293 — QUEUED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40813692154), exact test commit [`f5a578f`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/f5a578f685c4a6af724b0c536b30345360476f2b): complementary edge case for one continuous text-start SeekBar drag. It verifies one Undo returns to the pre-drag value, Undo then disables (no extra history entry from intermediate progress callbacks), and Redo restores the post-drag value. Wait for this unique run; don't start another while queued/in progress.
+- #291 quantitative audio-gain gate is green: music ratio 0.34908 at 35%, effect ratio 0.59874 at 60%. Remaining after #293: physical-device layout/tap-target review and signed update/install validation. VersionCode 395 remains blocked.
+
 ### 2026-10-28 — #291 SUCCESS: decoded music/effect gain verified
 
 - [#291 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40761920880), exact head [`0c71177`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/0c711779a816162921c2e894f6402466f8b46604). Unit tests, Debug APK, emulator setup, screenshot/interaction step all passed; JUnit reports `tests=19 failures=0 errors=0 skipped=0`. The new quantitative decoded-AAC assertions passed along with existing timing, loop and source-preservation checks.
 - Measured decoded tone amplitudes: music source amplitude 12,000 at configured 35% produced amplitude 4,188 and ratio **0.34908** (accepted 0.30–0.40); effect source amplitude 8,000 at configured 60% produced amplitude 4,789 and ratio **0.59874** (accepted 0.55–0.65). Effect tone was absent before/after its interval; original video fixture remained unchanged.
 - Artifact [`12850187563`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40761920880/artifacts/12850187563) was downloaded and its JUnit/logcat inspected. Do not rerun #291 or #216 unchanged.
-- Next unique gate: repeated gesture/history grouping (one Undo entry per continuous drag/slider gesture, with Undo/Redo restoring the correct before/after values). Physical-device layout/tap-target review and signed update/install validation remain open. VersionCode 395 remains blocked.
+- Distinct gesture history grouping passed in #292; #293 is checking the complementary single-continuous-drag case. Physical-device layout/tap-target review and signed update/install validation remain open. VersionCode 395 remains blocked.
 
 ### 2026-10-28 — Quantitative music/effect gain gate added; #291 verified
 
 - Test commit [`0c71177`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/0c711779a816162921c2e894f6402466f8b46604) extends the existing deterministic audio-export test with decoded AAC amplitude ratios: 35% music must measure 0.30–0.40 against the 12,000-amplitude WAV source; 60% effect must measure 0.55–0.65 against the 8,000-amplitude WAV source. These bounds retain codec tolerance while detecting a wrong gain multiplier. Existing timing/presence/source-preservation assertions remain unchanged.
-- [#291 — QUEUED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40761920880) is the unique verification for this new assertion. Do not repeat #216 or #290 unchanged; wait for #291 and inspect the exact quantitative-gain result. VersionCode 395 remains blocked.
+- [#291 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40761920880) confirmed the quantitative assertions; see the current handoff above. Do not repeat #216/#291 unchanged.
 
 ### 2026-10-28 — #290 SUCCESS: compact layout correction and all 19 editor tests green
 
