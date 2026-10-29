@@ -1,3 +1,12 @@
+## Latest handoff — #317 and signed preflight #5 failures diagnosed (2026-10-29)
+
+- [Emulator run #317 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40931104323), source commit `a24c1a1a`. Unit tests and Debug APK build passed; 19/20 instrumentation tests passed. The sole failure is `splitAtPlayheadExportsTwoOrderedSegmentsWithoutMovingAvSeam`: `UiScrollable.scrollBackward` could not find an `android.widget.ScrollView`.
+- Root cause from the test source and earlier regression notes: the test unconditionally clicks the Clip dock tab before searching for the Split action. If the Clip panel is already active after draft restore, clicking it toggles the panel closed, so no ScrollView remains. Test commit `7332d54c` now checks for the scroll container first and only clicks the Clip tab when the panel is absent; it does not weaken split/export assertions.
+- [Signed preflight #5 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40925163490). Signed build, package/version/certificate comparison, and baseline APK installation passed. The action's shell runner dispatched the multiline `for` block as a standalone `/usr/bin/sh -c` command, causing `Syntax error: end of file unexpected (expecting "done")`. This is test workflow syntax, not an app install failure. Workflow commit `bdc6c00f` removes both multiline loops and uses a short wait followed by explicit foreground assertions.
+- New pushes should launch fresh emulator verification and signed preflight. Inspect both results before marking either gate green; the signed install-over/relaunch has not yet been proven.
+- Screenshot artifact from #317: [artifact 12924271416](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40931104323/artifacts/12924271416). The preview-height assertion was passed far enough to reach the later split test, but inspect the artifact and verify `editor-phone-size.png` exists before closing the visual gate.
+- Installed baseline remains 394/build 61. VersionCode 395 stays blocked; no release/tag/publication or updater enablement.
+
 # Restoration Status — 2026-10-29
 
 ## Latest handoff — #316 failure diagnosed (2026-10-29)
