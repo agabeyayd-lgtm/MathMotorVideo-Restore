@@ -1521,10 +1521,11 @@ class VideoEditorActivity : Activity() {
                 if (compactEditorLayout) {
                     val timeLabelParams = timelinePlayheadLabel.layoutParams as? LinearLayout.LayoutParams
                     if (timeLabelParams != null) {
-                        timeLabelParams.width = dp(94)
+                        // The slimmer icon gutter frees space; use it for a more legible time display.
+                        timeLabelParams.width = dp(108)
                         timelinePlayheadLabel.layoutParams = timeLabelParams
                     }
-                    timelinePlayheadLabel.textSize = 8f
+                    timelinePlayheadLabel.textSize = 10f
                     // Small phones need room for actual tool controls, not a persistent help banner.
                     timelineGestureHint.visibility = View.GONE
                     statusView.maxLines = 1
