@@ -6,11 +6,18 @@ A local-first Android video editor with a CapCut-inspired workflow. Editing and 
 
 **Continue from this checkpoint. Do not restart completed work or repeat passing tests unless a related source change requires it. Keep the current release gate and record the exact failing assertion before changing code.**
 
+### 2026-10-29 — #293 SUCCESS: continuous slider drag is one Undo step
+
+- [#293 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40813692154), exact tested head [`f5a578f`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/f5a578f685c4a6af724b0c536b30345360476f2b). Unit tests, Debug APK, emulator UI/interaction run, and screenshot/diagnostic artifact upload all passed.
+- The new `oneContinuousTextTimingDragCreatesOneUndoEntryAndRedoRestoresIt` assertion passed: one continuous text-start SeekBar drag changes the value, one Undo restores the exact pre-drag value and leaves Undo disabled (no extra history entries from intermediate progress callbacks), and Redo restores the post-drag value.
+- Artifact [`mathmotor-android-emulator-screenshots` #12872496234](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40813692154/artifacts/12872496234) uploaded successfully. Do not rerun #293 unchanged.
+- History grouping is now verified in both directions: #292 proves separate gestures produce separate history entries; #293 proves one continuous drag produces one entry. Next: physical-device UI/tap-target review, then signed update/install validation. Keep versionCode 395 blocked.
+
 ### 2026-10-29 — #292 SUCCESS; #293 verifies one continuous drag = one Undo
 
 - [#292 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40766099106), exact head [`4d4baf3`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/4d4baf383507e899e6f60ecb9dc9ffd2bd3f25cd): the distinct-gesture history test passed. Two separate effect-volume slider gestures produced two history steps; one Undo restored the prior committed value and a second Undo restored baseline, with Redo restoring the correct states. Do not rerun #292 unchanged.
-- [#293 — QUEUED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40813692154), exact test commit [`f5a578f`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/f5a578f685c4a6af724b0c536b30345360476f2b): complementary edge case for one continuous text-start SeekBar drag. It verifies one Undo returns to the pre-drag value, Undo then disables (no extra history entry from intermediate progress callbacks), and Redo restores the post-drag value. Wait for this unique run; don't start another while queued/in progress.
-- #291 quantitative audio-gain gate is green: music ratio 0.34908 at 35%, effect ratio 0.59874 at 60%. Remaining after #293: physical-device layout/tap-target review and signed update/install validation. VersionCode 395 remains blocked.
+- [#293 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40813692154), exact test commit [`f5a578f`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/f5a578f685c4a6af724b0c536b30345360476f2b): one continuous text-start SeekBar drag produced exactly one Undo entry; Undo restored the pre-drag value and disabled further Undo; Redo restored the post-drag value. Do not rerun unchanged.
+- #291 quantitative audio-gain gate is green: music ratio 0.34908 at 35%, effect ratio 0.59874 at 60%. After #293 passed, remaining gates are physical-device layout/tap-target review and signed update/install validation. VersionCode 395 remains blocked.
 
 ### 2026-10-28 — #291 SUCCESS: decoded music/effect gain verified
 
