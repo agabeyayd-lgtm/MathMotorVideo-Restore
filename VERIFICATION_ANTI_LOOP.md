@@ -183,3 +183,10 @@ Do not launch a duplicate source-audio run while #227 is in progress. FFmpeg ins
 - Root cause found in pinch/playhead geometry: a hard-coded `57dp` offset was used despite responsive lane layout; both now use the measured VIDEO viewport origin.
 - Added trim gesture diagnostics to the next test run. Fixed test timing/state visibility around the clip tab and text Undo/Redo rather than removing assertions.
 - Do not rerun #301 unchanged. The new commit must produce a fresh emulator result; 395 stays blocked meanwhile.
+
+
+## #311 result — 2026-10-29
+
+- #311 is **green** on `14d1e19a6013f925709f7830f68e30b3d800a74c`: unit tests, Debug APK build, and emulator UI/instrumentation job passed. [Run #311](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40879271639).
+- #310 was a false-positive test threshold: the queried node was the 9:16 video canvas, not the full preview stage. #311 tests canvas visibility at a 100dp minimum. Do not claim this alone proves the outer stage's height; inspect `editor-phone-size.png` and target the real stage container if the hierarchy allows.
+- Do not rerun #310 unchanged. Next: inspect #311 screenshot/artifact and refine the stage-level assertion if possible. Physical-device review and signed install-over/relaunch are still unverified. VersionCode 395 remains blocked.
