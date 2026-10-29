@@ -1,3 +1,10 @@
+## Latest handoff — #322 exposed panel selection/visibility desync (2026-10-30)
+
+- [Run #322 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40965799400), commit `a4215bb`. Unit tests, Debug APK build, FFmpeg setup, and MP4 fixture generation passed; instrumentation reported 19/20 tests passed. The only failure remained `splitAtPlayheadExportsTwoOrderedSegmentsWithoutMovingAvSeam`: the dock tab was present, but `KLİP DÜZENLEME` did not become visible after the tap. The test did not reach split/export assertions, so do not count export validation as passed.
+- Removing automatic first-layout panel selection did not resolve it. The failure's visible hierarchy showed the Clip tab at `Rect(8, 568 - 81, 614)` while its panel heading was absent; shell/emulator shutdown messages are not the root cause.
+- Next production candidate makes `toggleEditorPanel` check both `activeEditorPanel` and the real panel visibility before treating a tap as a close action. It adds one diagnostic log line for the selected tab/state so the next run distinguishes a stale state marker from a click not being delivered. No split/export assertions are loosened.
+- Fresh emulator run required. Version 395 remains blocked; installed baseline is 394/build 61.
+
 ## Latest handoff — #321 exposed remaining first-panel race (2026-10-30)
 
 - [Run #321 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40960359163), commit `3d178d6`. Unit tests, Debug APK build, FFmpeg setup and MP4 fixture generation passed. Android instrumentation reported 19/20 tests passed; the split/export test failed because the Clip panel heading was still absent after tapping the dock tab.

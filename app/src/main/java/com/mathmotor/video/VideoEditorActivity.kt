@@ -1797,7 +1797,15 @@ class VideoEditorActivity : Activity() {
 
     /** Tapping the currently selected tool a second time closes its panel. */
     private fun toggleEditorPanel(name: String) {
-        if (activeEditorPanel != name) {
+        val panelIsActuallyVisible = editorPanels[name]?.visibility == View.VISIBLE
+        android.util.Log.i(
+            "EditorPanel",
+            "dock tap=$name active=$activeEditorPanel visible=$panelIsActuallyVisible"
+        )
+        // Restoring a draft or resizing a compact layout can leave the selection marker
+        // out of sync with the panel's actual visibility. Never interpret the user's
+        // first tap as "close" when the requested panel is currently hidden.
+        if (activeEditorPanel != name || !panelIsActuallyVisible) {
             showEditorPanel(name)
             return
         }
