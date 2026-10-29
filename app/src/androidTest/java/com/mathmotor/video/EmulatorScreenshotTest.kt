@@ -1,5 +1,6 @@
 package com.mathmotor.video
 
+import android.os.SystemClock
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
@@ -171,7 +172,7 @@ class EmulatorScreenshotTest {
             )
             assertTrue(
                 "Taller-phone time display wrapped: ${largeTimeDisplay.text}",
-                '\\n' !in largeTimeDisplay.text &&
+                '\n' !in largeTimeDisplay.text &&
                     largeTimeDisplay.visibleBounds.height() <= (24f * largeDensity).toInt()
             )
             takeScreenshot(device, "editor-phone-size.png")
