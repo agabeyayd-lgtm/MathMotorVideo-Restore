@@ -1,5 +1,13 @@
 # Restoration Status — 2026-10-29
 
+## 2026-10-29 — #308 GREEN: 20/20 Android interaction tests passed
+
+- [Workflow #308 succeeded](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40865678910), commit [\`817fc74\`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/817fc747d414f10abb194f09646e06ae915961bf).
+- Verified: unit tests passed; Debug APK built; connected emulator instrumentation **20/20 passed, 0 failed, 0 skipped**. Workflow log says “Connected Android instrumentation tests passed.”
+- This verifies the compact preview/panel initialization, two-clip compact layout, split interaction and trim-edge restoration regression tests included in this run.
+- Emulator screenshot/diagnostic artifact: [mathmotor-android-emulator-screenshots](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40865678910/artifacts/12894244245).
+- This is a successful verification checkpoint, not a release: versionCode 395 remains blocked until the remaining product issues are addressed and the user authorizes a release. Keep installed baseline at 394 build 61.
+
 ## 2026-10-29 — #307 FAILED; focused layout and trim-gesture corrections
 
 - [Workflow #307 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40861773955), tested head [\`a269201\`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/a269201e0fcf564f8cf033d0abe09797c7385018): unit tests and Debug APK build passed; **17/20 Android interaction tests passed, 3 failed**. [Diagnostic artifact 12892539275](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40861773955/artifacts/12892539275).
