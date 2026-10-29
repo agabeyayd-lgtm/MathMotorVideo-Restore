@@ -766,7 +766,7 @@ class VideoEditorActivity : Activity() {
             includeFontPadding = false
             contentDescription = "Oynatma zamanı ve toplam video süresi"
         }
-        playheadRow.addView(timelinePlayheadLabel, LinearLayout.LayoutParams(dp(128), ViewGroup.LayoutParams.WRAP_CONTENT))
+        playheadRow.addView(timelinePlayheadLabel, LinearLayout.LayoutParams(dp(110), ViewGroup.LayoutParams.WRAP_CONTENT))
         timelinePlayheadSeek = SeekBar(this).apply {
             max = 0
             progress = 0
@@ -775,9 +775,9 @@ class VideoEditorActivity : Activity() {
         }
         playheadRow.addView(timelinePlayheadSeek, LinearLayout.LayoutParams(0, dp(34), 1f))
         playheadRow.addView(miniButton("−") { adjustTimelineZoom(0.75f) },
-            LinearLayout.LayoutParams(dp(42), dp(38)).apply { leftMargin = dp(3) })
+            LinearLayout.LayoutParams(dp(34), dp(38)).apply { leftMargin = dp(3) })
         playheadRow.addView(miniButton("+") { adjustTimelineZoom(1.35f) },
-            LinearLayout.LayoutParams(dp(42), dp(38)).apply { leftMargin = dp(2) })
+            LinearLayout.LayoutParams(dp(34), dp(38)).apply { leftMargin = dp(2) })
         timelineCard.addView(playheadRow, matchWrap())
         installTimelinePlayheadListeners()
         root.addView(timelineCard, matchWrap())
@@ -1073,7 +1073,15 @@ class VideoEditorActivity : Activity() {
         })
         textPanel.addView(textSizeSeek, matchWrap())
         textInput.addTextChangedListener(object : android.text.TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {
+                // Treat a whole typing session as one Undo step. Capture the layer before the
+                // EditText changes so Undo restores its previous text (including a blank layer).
+                if (!loadingTextLayerControls && selectedTextLayer() != null &&
+                    (count != after || count > 0)
+                ) {
+                    beginEditorHistoryGesture()
+                }
+            }
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                 if (loadingTextLayerControls) return
                 if (selectedTextLayer() == null && !s.isNullOrBlank()) {
@@ -1935,12 +1943,12 @@ class VideoEditorActivity : Activity() {
             val responsiveLaneHeight = when {
                 keyboardLayoutActive -> 18
                 compactToolPanel -> when (tag) {
-                    "VIDEO" -> 26
+                    "VIDEO" -> 32
                     "SÜRE" -> 16
                     else -> 20
                 }
                 compactEditorLayout -> when (tag) {
-                    "VIDEO" -> 36
+                    "VIDEO" -> 40
                     "SÜRE" -> 18
                     else -> 24
                 }
@@ -4790,6 +4798,9 @@ class VideoEditorActivity : Activity() {
         }
         refreshClipList()
         loadTrimControls()
+        // Trimming defers lane rebuilds while the finger is down. Rebuild now so the
+        // filmstrip width and both edge handles match the committed source-time range.
+        refreshTimelineTracks()
         updateTimelinePlayheadLabel()
         status.text = "Kesme aralığı güncellendi."
     }
