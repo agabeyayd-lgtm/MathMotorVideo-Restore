@@ -1,5 +1,11 @@
 # Verification anti-loop protocol
 
+## #301 failure — do not repeat unchanged
+
+- [#301 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40836353868), tested head [\`6bb8b57\`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/6bb8b57fc5249d9fd835e69e7a9f65d774fc9140); unit tests/build passed but 7/20 emulator interaction tests failed. Artifact [12882170032](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40836353868/artifacts/12882170032).
+- New evidence: fixed-playhead pinch anchor shifts time; clip tab not found; right trim cannot restore edge; text Undo fails to restore blank layer; text-strip start handle drag does not update time. These are not emulator shutdown errors.
+- Next: inspect coordinate spaces and scroll state in manual pinch handlers, capture/commit history around EditText focus/IME/tab change, and verify trim hit targets after rebuilding lanes. Do not weaken assertions or queue the same run unchanged. VersionCode 395 remains blocked.
+
 ## #299 — failed interaction run; fix candidate now submitted, verification required
 
 - Evidence: [workflow #299](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40833680553), tested head [`92e98ac`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/92e98ac29c4ea2e54ae32adc680cf85697630ebb). Unit tests and Debug APK passed, but 8/20 emulator interaction checks failed. Diagnostics artifact [12880686462](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40833680553/artifacts/12880686462) was inspected.
