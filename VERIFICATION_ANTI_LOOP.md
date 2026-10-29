@@ -1,5 +1,13 @@
 # Verification anti-loop protocol
 
+## 2026-10-29 — Visual artifact findings and active gates (do not infer results early)
+
+- #308's actual image artifact was reviewed. Home/draft screenshots look coherent. The loaded-editor screenshot is premature: it was captured two seconds after clip insertion and exposes only two decoded-frame descriptions at that moment.
+- Later in the same passing #308 run, `filmstripLoadsFramesFromDistinctTimestamps` logged 12 frame requests from 0 to 8,000 ms and seven distinct pixel fingerprints. Therefore, do not change production thumbnail decoding based only on the early screenshot; update the capture script to wait for thumbnail readiness first.
+- [#310](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40875254969) is the expanded viewport test at 393×873, built on the 320×640 run; inspect its JUnit result and new `editor-phone-size.png` artifact before declaring responsive UI checked.
+- [Signed-update preflight #1](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40875538602) tests current versionCode 394 package/signature compatibility with build 61 and install-over/relaunch on API 35. It must remain non-publishing and must not bump to 395.
+- Emulator viewport tests are not equivalent to touching the user's real phone. Keep real-device tap-target/layout review as an explicit open gate. Do not sign or publish versionCode 395 without all product gates and explicit authorization.
+
 ## 2026-10-29 — #308 GREEN: 20/20 Android interaction tests passed
 
 - [Workflow #308 succeeded](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40865678910), commit [\`817fc74\`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/817fc747d414f10abb194f09646e06ae915961bf).

@@ -1,5 +1,13 @@
 # Restoration Status — 2026-10-29
 
+## 2026-10-29 — Visual artifact review; viewport and signed-update verification in progress
+
+- Inspected the actual #308 images: `home.png`, `editor-empty.png`, `editor.png`, and `home-with-drafts.png`. Home and draft-resume screens appear coherent; the editor preview/transport/time display fit the 320×640 screenshot. Do not label this a physical-device review.
+- `editor.png` was captured two seconds after `EDITOR_SMOKE_CLIP_ADDED`, before all asynchronous filmstrip thumbnails were ready. At capture time the accessibility hierarchy shows two decoded frame descriptions. Later, the passing `filmstripLoadsFramesFromDistinctTimestamps` test logged 12 sample timestamps spanning 0–8,000 ms, with seven distinct pixel fingerprints. Fix the capture timing before using that early screenshot to assess final filmstrip density.
+- [#310](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40875254969) adds a 393×873 phone-sized layout pass and captures `editor-phone-size.png`; its exact run result and screenshot still need inspection.
+- [Signed-update preflight #1](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40875538602) is building the current versionCode 394 candidate and checking release-certificate compatibility, install-over and relaunch on an API 35 emulator. It cannot publish or tag a release and is not a version 395 build.
+- Real physical-device visual/tap-target inspection remains open because the automated runner has only emulators. VersionCode 395 remains blocked pending the actual phone review, verified screenshot/test reports, signed-install outcome and explicit release authorization.
+
 ## 2026-10-29 — #308 GREEN: 20/20 Android interaction tests passed
 
 - [Workflow #308 succeeded](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40865678910), commit [\`817fc74\`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/817fc747d414f10abb194f09646e06ae915961bf).

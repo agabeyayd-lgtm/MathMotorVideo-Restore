@@ -1,5 +1,13 @@
 # MathMotor Video
 
+## 2026-10-29 — Visual artifact review; phone-size and signed-update checks running
+
+- Reviewed the actual images in [#308's emulator artifact](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40865678910/artifacts/12894244245): home, empty editor, loaded-video editor and autosaved-draft home. The home/draft flow is coherent, and the empty-editor state is visible; the loaded-video editor still needs a later-frame capture before judging filmstrip density.
+- The current loaded-editor screenshot was captured only two seconds after the clip-added marker. Its UI hierarchy shows just two decoded-frame descriptions at capture time. This is a premature screenshot, not proof that filmstrip decoding is broken: the later passing `filmstripLoadsFramesFromDistinctTimestamps` test logged 12 timestamps from 0 to 8,000 ms and seven distinct frame fingerprints. The capture script needs to wait for asynchronous thumbnail readiness before taking the review screenshot.
+- Commit [`fd1d9d4`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/fd1d9d4a54f25bdf9ce2eb5f71a1c7e5096ee59b) adds a responsive editor check at 393×873 in addition to 320×640, asserts preview/control/gutter bounds and saves `editor-phone-size.png` into the test artifact. [Workflow #310 is running](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40875254969); do not mark it complete before its test report and screenshot artifact are inspected.
+- Added isolated [signed-update preflight workflow](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/blob/fix/editor-395-gate/.github/workflows/verify-signed-install.yml) in [`3d61348`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/3d613482d19a363420ee435f8bc7559c97c69063). Run [#1](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40875538602) builds with the current versionCode 394, compares package/certificate with released build 61, and tests install-over/relaunch on a clean API 35 emulator. It has no publish, release-tag, or version-bump step; it must not be treated as a release.
+- CI on a taller emulator is not a physical-device review. Real-phone visual/tap-target usability remains an external gate, and versionCode 395 remains blocked. Do not sign/publish a 395 build until product gates are closed and the user authorizes release.
+
 ## 2026-10-29 — #308 GREEN: 20/20 Android interaction tests passed
 
 - [Workflow #308 succeeded](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40865678910), commit [\`817fc74\`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/817fc747d414f10abb194f09646e06ae915961bf).
