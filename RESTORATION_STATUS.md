@@ -1,5 +1,12 @@
 # Restoration Status — 2026-10-28
 
+## 2026-10-29 — #302 FAILED; focused corrections submitted, verification pending
+
+- [Workflow #302 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40843926462), tested head [`6accfe2`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/6accfe27dcedae88386ab9e287ca4bfe7302c336). Unit tests and Debug APK build passed; **17/20 Android interaction tests passed, 3 failed**. Diagnostic artifact: [12884344990](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40843926462/artifacts/12884344990).
+- Exact remaining assertions: restored multi-clip draft cannot find the Clip tools tab by accessibility description; right-trim restoration sends a `-223 px` gesture and collapses the clip to the 500 ms minimum; Undo does not restore blank text after typing. The emulator shutdown `stop: Not implemented` message is cleanup noise, not the cause.
+- Submitted corrective candidate on current branch: [source commit `cd09e8d`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/cd09e8dd0fc15178d589fabefce20fb73e775ce3) and [test diagnostics `15b4856`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/15b48569520e4ec0f22fb3964a4a5087dfe7c86b). Changes synchronize dock/status visibility at every root layout, start text-edit history on actual content edits rather than focus alone, commit trim using the last MOVE delta, and capture UI bounds plus before/move/up/history diagnostics.
+- **Not verified yet:** these are hypotheses/corrections awaiting a fresh workflow. Read the new diagnostics before any further trim/history changes; do not rerun #302 unchanged or weaken assertions. VersionCode 395 remains blocked until the full required gates pass.
+
 ## 2026-10-29 — #301 failed (fresh test evidence)
 
 - [#301 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40836353868), exact tested head [\`6bb8b57\`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/6bb8b57fc5249d9fd835e69e7a9f65d774fc9140). Unit tests and Debug APK passed; 7/20 instrumentation tests failed. [Diagnostic artifact 12882170032](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40836353868/artifacts/12882170032) uploaded.

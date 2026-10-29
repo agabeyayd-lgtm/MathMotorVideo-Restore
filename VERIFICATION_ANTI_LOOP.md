@@ -1,5 +1,12 @@
 # Verification anti-loop protocol
 
+## #302 — failed run and current correction under verification
+
+- [#302 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40843926462) on exact head [`6accfe2`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/6accfe27dcedae88386ab9e287ca4bfe7302c336): unit/build passed; 17/20 emulator tests passed, 3 failed. Artifact [12884344990](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40843926462/artifacts/12884344990).
+- Failures: Clip tools tab missing from accessibility query after draft restore; right-trim restore was delivered as `-223 px` (ends at 500 ms); text Undo did not restore empty input. This is more specific than the earlier #301 set; #302 no longer reports the earlier fixed-playhead pinch assertion.
+- Candidate is now on branch in [`cd09e8d`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/cd09e8dd0fc15178d589fabefce20fb73e775ce3) + [`15b4856`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/15b48569520e4ec0f22fb3964a4a5087dfe7c86b): sync fixed dock visibility at each layout pass; base text history on actual text changes; use last MOVE coordinate on trim release; log gesture coordinates/history and dump visible buttons on tab failure.
+- These changes are not yet verified. Do not repeat #302's head unchanged, don't soften the assertions, and keep VersionCode 395 blocked until all required checks and screenshots are reviewed.
+
 ## #301 failure — do not repeat unchanged
 
 - [#301 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40836353868), tested head [\`6bb8b57\`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/6bb8b57fc5249d9fd835e69e7a9f65d774fc9140); unit tests/build passed but 7/20 emulator interaction tests failed. Artifact [12882170032](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40836353868/artifacts/12882170032).
