@@ -164,15 +164,18 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
-          target: google_apis
+          # This gate only installs and launches the app; Google Play services are unnecessary.
+          # The smaller AOSP image avoids the Google APIs image download that previously failed
+          # with "Error on ZipFile unknown archive" in the hosted runner.
+          target: default
           arch: x86_64
           cores: 2
-          ram-size: 2048M
-          heap-size: 512M
+          ram-size: 3072M
+          heap-size: 768M
           force-avd-creation: true
           emulator-port: 5554
-          disable-animations: true
-          disable-spellchecker: true
+          # Keep post-boot settings writes minimal: the system server/ADB transport broke
+          # immediately after the animation/timeout setup on the previous two attempts.
           # force-avd-creation already gives this preflight a clean AVD; avoid a second wipe.
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
           emulator-boot-timeout: 900
