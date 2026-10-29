@@ -6,7 +6,7 @@
 - New pending UI pass: one-line current/total time label without visible “Proje”/secondary “Klip” wording; 22 dp icon gutter instead of wide text lane labels; 48 dp regular filmstrip frames; 108 dp / 10sp compact time display; persistent gesture-help row hidden.
 - Full lane names remain available through accessibility descriptions. Existing track content and gesture callbacks are preserved.
 - Project JSON Save/Open and local draft autosave/resume are untouched. Build/version metadata remains unchanged; no versionCode 395 release.
-- This source/test/documentation pass still needs a fresh workflow result and screenshot review on the exact new commit. Do not mark visual items complete before then.
+- A follow-up audit found the screenshot test still searched for the hidden visible-word label “SÜRE”; it now queries the retained accessibility description and checks single-line time text plus a compact gutter. The source/test/documentation pass still needs a fresh workflow result and screenshot review on the exact new commit. Do not mark visual items complete before then.
 
 **Resume from the latest green checkpoint below. Do not repeat passing tests unchanged.**
 
