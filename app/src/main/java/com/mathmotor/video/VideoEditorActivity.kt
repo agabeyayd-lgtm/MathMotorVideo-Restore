@@ -1575,13 +1575,10 @@ class VideoEditorActivity : Activity() {
                         child.minimumHeight = dp(52)
                     }
                 }
-                // Select a default panel only after responsive sizing is known. If a user has
-                // already opened a tool while the first layout was settling, preserve it.
-                if (activeEditorPanel == null && !compactEditorLayout) {
-                    showEditorPanel("clip")
-                } else {
-                    updateCompactToolPanelLayout()
-                }
+                // Keep every tool panel closed until the user selects a dock tab.
+                // Automatic first-layout selection can race the user's first tap on compact
+                // screens and close the panel immediately after it opens.
+                updateCompactToolPanelLayout()
                 rulerAwareTimelineRefresh()
             }
             if (!keyboardLayoutActive && viewportHeight > maxEditorViewportHeightPx) {

@@ -1,3 +1,10 @@
+## Latest handoff — #321 exposed remaining first-panel race (2026-10-30)
+
+- [Run #321 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40960359163), commit `3d178d6`. Unit tests, Debug APK build, FFmpeg setup and MP4 fixture generation passed. Android instrumentation reported 19/20 tests passed; the split/export test failed because the Clip panel heading was still absent after tapping the dock tab.
+- Shutdown messages (`stop: Not implemented`, Netsim cancellation, audio I/O warnings) are teardown noise, not the failure cause. The JUnit XML explicitly records `Clip tools panel did not open after tapping the tab`.
+- The first candidate still auto-opened Clip on non-compact layouts after the first measured layout. This can race a user's first tap: the panel may be auto-selected and then toggled closed. The next candidate removes automatic initial tool selection on every layout; panels remain closed until the user selects a dock tab. This keeps the real panel-open and split/export assertions unchanged.
+- Runner cleanup from commit `3d178d6` remains included. Verification is pending a fresh run on the new commit. Version 395 stays blocked; installed baseline is 394/build 61.
+
 ## Current verification handoff — #320 superseded; runner cleanup included (2026-10-30)
 
 - Candidate [commit `03f4027`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/commit/03f40274abd060b6d705a429ba30be19f8a0cac4) passed unit tests and the Debug APK build; FFmpeg/fixture preparation also passed. Its emulator result is **not accepted**: while that step was still running, review found an obsolete duplicate section after the intended end of `.github/scripts/run-android-instrumentation-tests.sh`. The orphaned pipe and duplicate screenshot-pull block could make an otherwise successful instrumentation run fail at the end.
