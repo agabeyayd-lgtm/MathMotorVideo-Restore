@@ -1294,8 +1294,10 @@ class VideoEditorActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(4), dp(2), dp(4), dp(4))
         }
-        editorPanels.values.forEachIndexed { index, panel ->
-            panel.visibility = if (index == 0) View.VISIBLE else View.GONE
+        editorPanels.values.forEach { panel ->
+            // Defer the initial tool selection until the first measured viewport is known.
+            // This prevents the first compact-layout callback from racing a user's first tap.
+            panel.visibility = View.GONE
             panelHolder.addView(panel, matchWrap())
         }
         editorPanelScroll.addView(panelHolder)
@@ -1361,7 +1363,8 @@ class VideoEditorActivity : Activity() {
         root.addView(dock, matchWrap())
 
         setContentView(root)
-        showEditorPanel("clip")
+        // Initial panel selection is deferred to the first measured layout below:
+        // compact phones start with tools closed, regular layouts open Clip.
         refreshTextLayerList()
         refreshTimelineTracks()
         installResponsiveEditorLayout(
@@ -1508,12 +1511,9 @@ class VideoEditorActivity : Activity() {
                 previewStageHeightDp = previewDefaultStageHeightDp
                 previewHeightAutoSized = true
 
-                // Compact phones start with tools closed so the preview and primary
-                // timeline remain readable. The dock stays available to open them; a
-                // multi-clip project separately reserves space for its chooser row.
-                if (compactEditorLayout && activeEditorPanel == "clip") {
-                    toggleEditorPanel("clip")
-                }
+                // Do not toggle a panel from a layout callback. The initial state is applied
+                // only after measuring the viewport, so an early user tap cannot be undone by
+                // a delayed first-layout toggle. Compact phones remain closed by default.
 
                 // Reserve room for real tools and the multi-track timeline on shorter phones.
                 if (compactEditorLayout) {
@@ -1574,6 +1574,13 @@ class VideoEditorActivity : Activity() {
                         }
                         child.minimumHeight = dp(52)
                     }
+                }
+                // Select a default panel only after responsive sizing is known. If a user has
+                // already opened a tool while the first layout was settling, preserve it.
+                if (activeEditorPanel == null && !compactEditorLayout) {
+                    showEditorPanel("clip")
+                } else {
+                    updateCompactToolPanelLayout()
                 }
                 rulerAwareTimelineRefresh()
             }

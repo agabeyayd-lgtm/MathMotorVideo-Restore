@@ -4006,8 +4006,19 @@ class EditorTimelineInteractionTest {
             val clipTab = device.findObject(By.desc("Klip araçları sekmesi"))
                 ?: throw AssertionError("Clip tools tab is missing before split action")
             clipTab.click()
-            assertTrue("Clip tools panel did not open",
-                device.wait(Until.hasObject(By.text("KLİP DÜZENLEME")), 5_000))
+            val clipPanelOpened = device.wait(
+                Until.hasObject(By.text("KLİP DÜZENLEME")), 5_000
+            )
+            if (!clipPanelOpened) {
+                val visibleTextViews = device.findObjects(By.clazz("android.widget.TextView"))
+                    .joinToString(" | ") {
+                        "text=${it.text} desc=${it.contentDescription} bounds=${it.visibleBounds}"
+                    }
+                throw AssertionError(
+                    "Clip tools panel did not open after tapping the tab; " +
+                        "tabBounds=${clipTab.visibleBounds}; visibleTextViews=$visibleTextViews"
+                )
+            }
             device.waitForIdle()
         }
         var splitButton = device.findObject(By.text("Böl ✂"))

@@ -17,6 +17,15 @@
 
 # MathMotor Video
 
+## Latest handoff — #319 failure diagnosed; initial panel race removed (2026-10-30)
+
+- [Emulator run #319 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40942235073). Unit tests and Debug APK build passed; the interaction suite failed in `splitAtPlayheadExportsTwoOrderedSegmentsWithoutMovingAvSeam` with `Clip tools panel did not open`.
+- Root-cause evidence: on compact layouts, `buildUi()` showed the Clip panel before the viewport was measured, then the first root layout callback could toggle it closed. The test's heading-based state check could race this transition; diagnostics show repeated layout requests around the failed tap. This is an initialization race, not the FFmpeg audio warnings at emulator shutdown.
+- Candidate fix on `fix/editor-395-gate`: tool panels now start hidden, and the default panel is selected only after the first responsive measurement. Compact phones remain closed by default; regular layouts open Clip; any panel the user opens during initialization is preserved. The layout callback no longer toggles a user-selected panel.
+- The split test retains its real panel-open and split/export assertions. Its failure message now captures visible TextView labels, accessibility descriptions, and bounds to make any recurrence actionable.
+- **Verification pending:** this is source/test code only until a fresh CI run passes the interaction suite. Check the exact new workflow run and artifact before closing the issue. Installed baseline stays at 394/build 61; version 395 remains blocked, with no version bump or release APK.
+
+
 ## Latest handoff — #316 root cause and correction (2026-10-29)
 
 - [Run #316 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40925533539), commit `694c2d31`. Unit tests and Debug APK build passed. The Android interaction suite reached 19/20; `EmulatorScreenshotTest.captureHomeEditorAndTextPanel` failed because the tall-phone preview stage measured only 112 px (`Rect(8, 93 - 385, 205)`) instead of the required 180 dp. The missing `editor-phone-size.png` in shared Downloads is a downstream symptom: the assertion fails before that screenshot is taken/published.
