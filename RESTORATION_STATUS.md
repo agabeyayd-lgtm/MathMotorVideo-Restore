@@ -96,3 +96,13 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 - This validates the previously failing right-edge trim and playhead-drag regression paths in the automated emulator suite. It does not replace physical-device validation or close unrelated editor requirements.
 - Emulator shutdown warnings after successful instrumentation are cleanup noise; the job concluded successfully.
 - Version 395 remains blocked. Do not change version metadata, sign/publish an APK, or enable the updater until every release gate is implemented and verified and the user authorizes release.
+
+
+## Candidate run #337 — 2026-10-30
+
+- Run [#337 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41058278720) passed unit tests, Debug APK build and Android instrumentation: **20/20 tests, 0 failures, 0 skips**. The log confirms `connectedDebugAndroidTest exit code: 0` and `Connected Android instrumentation tests passed.`
+- Candidate head: `649cf70799cff4012c7cea2318cd8eed8e95c202`.
+- Filmstrip density implementation: thumbnail slot changed from 14 dp to 22 dp, matching the default 22 dp/second timeline scale to target roughly one readable thumbnail per second.
+- The `filmstripLoadsFramesFromDistinctTimestamps` instrumentation test now additionally checks that the 8-second fixture has 6–10 visible loaded thumbnails; existing distinct-timestamp and distinct-frame checks remain.
+- Emulator screenshots/diagnostics: [artifact 12978811772](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41058278720/artifacts/12978811772).
+- Evidence is limited to this automated emulator scenario. Physical-device thumbnail readability/performance and the wider user-facing checklist remain open. Version 395 remains blocked; do not change version metadata, sign/publish an APK, or enable the updater.
