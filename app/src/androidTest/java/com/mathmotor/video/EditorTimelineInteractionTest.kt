@@ -4596,7 +4596,7 @@ class EditorTimelineInteractionTest {
         )
         assertTrue(
             "Could not return the shared timeline to its origin after pinch",
-            videoLaneAfterPinch.scroll(androidx.test.uiautomator.Direction.RIGHT, 1.0f)
+            videoLaneAfterPinch.scroll(androidx.test.uiautomator.Direction.LEFT, 1.0f)
         )
         device.waitForIdle()
         SystemClock.sleep(250)
