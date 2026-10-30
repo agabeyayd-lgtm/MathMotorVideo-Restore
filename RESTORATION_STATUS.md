@@ -1,3 +1,11 @@
+## Latest handoff — #325 failure diagnosed; compact-panel follow-up (2026-10-30)
+
+- [Emulator #325 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40999099733), commit `4198c87ac376122e1099e946544b453e70afb81f`. Unit tests, Debug APK, FFmpeg and fixture setup passed. Android instrumentation completed 20 tests with 3 failures.
+- Clip split test: the panel itself now opens (`show post`: panel 259 px, ScrollView 116 px), but the split button remained below the visible viewport. The split/export assertions did not run. Follow-up moves the split action to the top of the Clip panel; no split logic or assertion is weakened.
+- Manual JSON Save As: the DocumentsUI picker created the file under Downloads, but the app's `PROJE KAYDEDİLDİ` confirmation was not visible. The compact-layout patch had hidden the status TextView that carries this confirmation. Follow-up keeps the status message visible; only the separate compact status strip remains hidden.
+- Text timing: the strip drag itself succeeded (`1300..6500` became `3345..6500`), but updating the selected layer reopened the keyboard while the text input retained stale focus, hiding the timing label. Follow-up clears stale focus before rebinding text when the keyboard is not active; active text entry with the keyboard open is unchanged.
+- The three failures are being corrected at the UI behavior level. #325 remains red; do not infer split/export or Save As round-trip passed. VersionCode 395 remains blocked pending fresh emulator verification and the other release gates.
+
 ## Latest handoff — #324 root cause isolated; short-screen tool layout corrected (2026-10-30)
 
 - [Emulator #324 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40977739949), tested commit `0153ce8b0d049a196ad06a70f8080d0804e62a37`. Unit tests, Debug APK, FFmpeg and fixture preparation passed; 19/20 Android interaction tests passed. The sole failure occurred in the Clip-panel-open precondition of `splitAtPlayheadExportsTwoOrderedSegmentsWithoutMovingAvSeam`, before the split/export assertions ran.
