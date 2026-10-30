@@ -1452,7 +1452,7 @@ class VideoEditorActivity : Activity() {
                 // active; the main timeline is already hidden on compact phones.
                 updateClipCarouselVisibility()
                 bottomDock.visibility = if (imeVisible) View.GONE else View.VISIBLE
-                statusView.visibility = if (imeVisible || (shortCompactEditorLayout && activeEditorPanel != null)) View.GONE else View.VISIBLE
+                statusView.visibility = if (imeVisible) View.GONE else View.VISIBLE
                 if (topBar.childCount > 2) {
                     val topAction = topBar.getChildAt(2) as? Button
                     if (topAction != null) {
@@ -1601,7 +1601,7 @@ class VideoEditorActivity : Activity() {
             // Keep fixed navigation and status accessible even if a prior layout transition
             // hid them while the IME flag already reports its current value.
             bottomDock.visibility = if (imeVisible) View.GONE else View.VISIBLE
-            statusView.visibility = if (imeVisible || (shortCompactEditorLayout && activeEditorPanel != null)) View.GONE else View.VISIBLE
+            statusView.visibility = if (imeVisible) View.GONE else View.VISIBLE
             if (imeVisible != keyboardLayoutActive) {
                 applyKeyboardMode(imeVisible, viewportHeight)
             } else if (!imeVisible && !previewFocusMode) {
