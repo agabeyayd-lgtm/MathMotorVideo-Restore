@@ -11,27 +11,30 @@ else
   test_status=$?
 fi
 
-# The phone-size screenshot is published by instrumentation to MediaStore Downloads
-# before Gradle uninstalls the test APK. Pull the shared file after tests finish.
+# Instrumentation publishes screenshots to MediaStore Downloads before Gradle
+# removes the test APK. Pull both empty-editor and loaded-video tall-viewport images.
 mkdir -p emulator-screenshots/instrumentation-screenshots
-phone_screenshot="/sdcard/Download/MathMotorTestScreenshots/mathmotor-editor-phone-size.png"
-if timeout -k 2s 10s adb -s emulator-5554 shell test -s "$phone_screenshot"; then
-  if timeout -k 2s 12s adb -s emulator-5554 pull "$phone_screenshot" \
-      emulator-screenshots/instrumentation-screenshots/editor-phone-size.png \
-      > emulator-screenshots/instrumentation-screenshots-pull.txt 2>&1 &&
-      test -s emulator-screenshots/instrumentation-screenshots/editor-phone-size.png; then
-    echo "Collected editor-phone-size.png from shared MediaStore Downloads."
-  else
-    echo "Phone-size screenshot existed on device but could not be pulled." >&2
-    cat emulator-screenshots/instrumentation-screenshots-pull.txt || true
-    exit 14
+pull_required_screenshot() {
+  local name="$1"
+  local remote="/sdcard/Download/MathMotorTestScreenshots/mathmotor-$name"
+  local local_file="emulator-screenshots/instrumentation-screenshots/$name"
+  if ! timeout -k 2s 10s adb -s emulator-5554 shell test -s "$remote"; then
+    echo "Required screenshot not found: $remote" >&2
+    adb -s emulator-5554 shell ls -la /sdcard/Download/MathMotorTestScreenshots \
+      > emulator-screenshots/instrumentation-screenshots-pull.txt 2>&1 || true
+    return 1
   fi
-else
-  echo "Required phone-size screenshot not found in shared Downloads." >&2
-  adb -s emulator-5554 shell ls -la /sdcard/Download/MathMotorTestScreenshots \
-    > emulator-screenshots/instrumentation-screenshots-pull.txt 2>&1 || true
-  exit 14
-fi
+  if ! timeout -k 2s 12s adb -s emulator-5554 pull "$remote" "$local_file" \
+      >> emulator-screenshots/instrumentation-screenshots-pull.txt 2>&1 ||
+      ! test -s "$local_file"; then
+    echo "Required screenshot existed on device but could not be pulled: $name" >&2
+    cat emulator-screenshots/instrumentation-screenshots-pull.txt || true
+    return 1
+  fi
+  echo "Collected $name from shared MediaStore Downloads."
+}
+pull_required_screenshot "editor-phone-size.png" || exit 14
+pull_required_screenshot "editor-phone-size-loaded.png" || exit 14
 
 # Always collect these files, including on assertion failure or app/instrumentation crash.
 adb -s emulator-5554 logcat -d -b all -v threadtime > emulator-screenshots/after-instrumentation-logcat.txt 2>&1 || true
