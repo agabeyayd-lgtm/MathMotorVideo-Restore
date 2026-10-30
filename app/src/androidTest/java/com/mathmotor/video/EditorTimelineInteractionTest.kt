@@ -26,8 +26,8 @@ import org.junit.runner.RunWith
 import kotlin.math.abs
 
 /**
- * Runs against the deterministic 8-second fixture copied into the app's private files directory
- * by capture-emulator-screenshots.sh before connectedDebugAndroidTest starts.
+ * Existing scenarios use the deterministic 8-second fixture; the exact-10-second seek test
+ * receives its dedicated MP4 through the instrumentation APK assets in focused CI runs.
  */
 @RunWith(AndroidJUnit4::class)
 class EditorTimelineInteractionTest {
@@ -1043,6 +1043,11 @@ class EditorTimelineInteractionTest {
         val device = UiDevice.getInstance(instrumentation)
         val packageName = context.packageName
         val fixture = java.io.File(context.filesDir, "editor-test-video-10s.mp4")
+        // The CI setup places the generated MP4 in the instrumentation APK's assets.
+        // Copy it from the test APK into the app sandbox so the editor exercises a real file URI.
+        instrumentation.context.assets.open("editor-test-video-10s.mp4").use { input ->
+            fixture.outputStream().use { output -> input.copyTo(output) }
+        }
         assertTrue("Exact 10-second timeline fixture is missing", fixture.isFile && fixture.length() > 0L)
 
         val retriever = MediaMetadataRetriever()
