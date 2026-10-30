@@ -171,3 +171,10 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 - Next work, in order: (1) finish four-item dock and empty-editor panel polish without adding unsupported tools; (2) visually verify shared video/text/music/effect lane alignment and adaptive ruler readability at zoom extremes; (3) verify keyboard-open editing on a short viewport; (4) perform physical-device visual/touch/performance smoke testing; (5) run signed build-61 install → current-mainline candidate update-over → relaunch verification.
 - Signed preflight #9 passed on the older `fix/editor-395-gate` branch, but that branch is diverged and its `VideoEditorActivity.kt` and `TimelineScaleMath.kt` differ from current mainline. Do not transfer its result to PR #10; repeat the no-publish preflight on current mainline.
 - Keep versionCode 394/build 61 unchanged. Version 395 remains blocked until all product/release gates pass and the user authorizes release.
+
+
+### Shared-lane alignment test #375 — failure triage
+
+- #375 failed at `zoomed text start differs: actual=0 expected=171`; unit tests, Debug APK and default-zoom lane assertions passed.
+- Diagnosis: `UiObject2.visibleBounds` clips the text block at the viewport boundary after the pinch keeps the playhead at 2.75 s. This is a test-observation error, not proof that the underlying timeline positions are wrong.
+- The focused test now scrolls the synchronized lanes to the timeline origin after validating playhead stability, then measures zoomed bounds. No product source was changed for this correction. Keep the gate open until a targeted rerun passes.
