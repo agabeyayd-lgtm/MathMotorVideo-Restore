@@ -76,3 +76,13 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 - Added interaction assertions verify that the right trim handle receives ACTION_DOWN and ACTION_UP before checking that project duration changes.
 - Source commit: cbe72383fd080989563e70e6bd184e4f84ec6c9a. Test commit: b2bcdee7c598fe380adbc668cb43667943fa566d.
 - Status distinction: fix is in candidate source; automated verification and physical-device verification are still pending. Keep affected items open. Version 395 remains blocked.
+
+
+## Follow-up after candidate run #332 — 2026-10-30
+
+- Run [#332](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41051140320) completed with unit tests and Debug APK build passing; emulator instrumentation failed 1 of 20 tests.
+- The failing test was `multiClipReorderTrimUndoRedoAndSeekStayCorrectAcrossZoomLevels`: its first direct playhead drag attempted to seek to 1,000 ms but remained at 0 ms.
+- The right-trim touch-routing regression checks did not report failures; the failure occurred earlier in the same multi-clip test during playhead seeking.
+- Cause: the test helper grabbed the vertical playhead overlay at the vertical center of the entire timeline. At the initial 0 ms position, the first clip's right trim handle can occupy that same screen coordinate, so the new correct trim-handle priority makes that ambiguous touch go to the trim handle.
+- Test correction committed as `c8680d730de125793e7cb694888c98ba998679cc`: start the playhead drag on its distinct small top head, which is the intended unambiguous playhead grab target, rather than the line where it can overlap a trim handle.
+- This is a test-coordinate correction, not a claim that the source fix has passed. A new PR-triggered emulator run is required; keep both playhead and trim acceptance gates open until it passes.
