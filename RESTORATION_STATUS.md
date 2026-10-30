@@ -14,10 +14,11 @@ MathMotor Video is a local Android video editor with a CapCut-inspired workflow.
 
 ## Evidence-backed status — 2026-10-30
 
-### Latest completed full-suite and focused verification
+### Latest completed full-suite, focused and phone-layout verification
 
 - [Run #341 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41083942621), candidate commit `e94fc618a1c149368eea6bf76677e65e11240c81`: unit tests, Debug APK build, fixture preparation, Android instrumentation (**20/20, 0 failures, 0 skips**) and screenshot artifact upload all passed.
 - Artifact [12991473031](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41083942621/artifacts/12991473031) contains empty-editor and loaded-video 393×873 captures. Emulator screenshot collection is complete for both states; manual comparison with the user's target and physical-device validation remain open.
+- [Run #371 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41096422450), current candidate commit `45e34f74650a6a7c2b02593b1f3ef15e7aac3283`: unit tests, Debug APK, fixture preparation, focused screenshot instrumentation (1/1), screenshot pulls and artifact upload passed. Artifact [12997315254](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41096422450/artifacts/12997315254) contains the empty and loaded 393×873 screenshots.
 - [Run #340 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41066572996) passed 20/20 instrumentation tests, covering the detailed editor interactions and home/editor layout checks.
 - [Run #337 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41058278720) passed 20/20; its 8-second filmstrip fixture showed 6–10 thumbnails from distinct timestamps.
 
@@ -61,12 +62,12 @@ The automated scenarios above have passed on the emulator. The following items r
 
 1. Physical-device smoke test on the actual installed phone; emulator success does not prove touch comfort, frame pacing, memory behaviour or OEM-specific playback/export.
 2. No open focused seek-test gap remains: exact 10-second single-clip seeking at 0 / 5,000 / 9,500 ms across zoom levels passed in #362 and #366. Multi-clip reorder/trim/seek/history/export passed separately in #340; these are separate evidence sets, not one combined exact-10-second multi-clip test.
-3. Visual inspection of the uploaded #340 screenshots against the supplied target UI reference. Uploading screenshots is not the same as reviewing them.
+3. Major 393×873 target comparison is now complete in #371: preview height and portrait-canvas scale match the reference more closely, and the redundant single-clip chooser row is gone. Remaining visual polish is the four-item dock and the empty-editor clip-panel copy; physical-device comparison is still required.
 4. Confirm the shared ruler and video/text/music/effect lanes remain visibly aligned after scroll, pinch, seek, clip edits and save/reopen. Shared time-to-pixel math has unit tests; the full visible lane alignment still needs an end-to-end visual acceptance pass.
 5. Inspect adaptive ruler label spacing/readability on an actual device at both zoom extremes. The ruler-interval calculation has unit-test coverage.
 6. Check keyboard-open editing and panel reachability on a short phone viewport. #340 covers a 393×873 emulator viewport, not the full keyboard interaction.
 7. Confirm filmstrip thumbnail size/readability and loading/scroll performance on the user's phone; #337/#340 establish distinct frames and the 8-second emulator density scenario, not physical-device performance.
-8. Finish visual polish of the home screen, clip-add/join affordance, redundant icons/labels and tool-panel presentation against the user's target reference; existing screenshots and interaction checks cover only the assertions named above.
+8. Finish remaining visual polish of the home screen, clip-add/join affordance, redundant icons/labels, four-item dock and empty-editor panel presentation against the user's target reference; do not add unsupported/inert tools.
 
 ## Shared timeline architecture requirement
 
@@ -79,8 +80,8 @@ The automated scenarios above have passed on the emulator. The following items r
 - Unit tests cover timeline scale/time-pixel mapping, zoom-anchor preservation, ruler interval selection, thumbnail work ordering, trim bounds/playhead mapping, and text timing boundaries.
 - The #340 candidate emulator suite passed 20/20 (19 interaction tests plus the home/editor screenshot test). It exercises gesture/trim, multi-clip edits, text/audio, Undo/Redo, project save/reopen, export and screenshot layout scenarios. The exact test method names and run details are recorded in README.md.
 - The emulator tests use deterministic media fixtures; the main interaction and filmstrip fixtures are about 8 seconds. The separate exact 10-second single-clip seek test passed in #362 and #366.
-- Screenshot diagnostics are uploaded. The #340 screenshots were visually inspected, and #341 added the loaded-video 393×873 capture; the #341 pair still needs comparison against the user's target UI. Physical-device smoke testing remains required.
-- Do not rerun already-green #337/#340/#341/#362/#366 scenarios unchanged. If a new failure occurs, inspect its exact assertion/log first and fix the root cause before a targeted rerun.
+- Screenshot diagnostics are uploaded. #371's 393×873 empty/loaded pair was inspected against the target: major preview-size and single-clip-row differences are addressed on the emulator. The four-item dock/empty-editor panel still need polish, and physical-device smoke testing remains required.
+- Do not rerun already-green #337/#340/#341/#362/#366/#371 scenarios unchanged. If a new failure occurs, inspect its exact assertion/log first and fix the root cause before a targeted rerun.
 
 ## Release gate
 
@@ -164,9 +165,9 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 ## Current handoff — 2026-10-30
 
 - Working branch: `fix/editor-395-mainline`; open draft PR: [#10](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/pull/10).
-- Latest full interaction suite: #341 (20/20), with empty and loaded 393×873 emulator screenshots.
+- Latest full interaction suite: #341 (20/20). Latest focused phone-layout test: #371 (1/1), with empty and loaded 393×873 screenshots; artifact [12997315254](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41096422450/artifacts/12997315254).
 - Exact 10-second seek gate: #362 and #366 both passed the one focused method (1/1). #358 was a shell-wrapper failure and #360 was cancelled before JUnit; both are superseded.
 - No-repeat rule: do not rerun #337/#340/#341/#362/#366 unchanged. Exact 10-second single-clip seeking and separate multi-clip editing/export are covered; do not claim a combined exact-10-second multi-clip test.
-- Next work, in order: (1) inspect the #341 empty/loaded screenshots against the user's target UI; (2) visually verify shared video/text/music/effect lane alignment and adaptive ruler readability at zoom extremes; (3) verify keyboard-open editing on a short viewport; (4) perform physical-device visual/touch/performance smoke testing; (5) run signed build-61 install → current-mainline candidate update-over → relaunch verification.
+- Next work, in order: (1) finish four-item dock and empty-editor panel polish without adding unsupported tools; (2) visually verify shared video/text/music/effect lane alignment and adaptive ruler readability at zoom extremes; (3) verify keyboard-open editing on a short viewport; (4) perform physical-device visual/touch/performance smoke testing; (5) run signed build-61 install → current-mainline candidate update-over → relaunch verification.
 - Signed preflight #9 passed on the older `fix/editor-395-gate` branch, but that branch is diverged and its `VideoEditorActivity.kt` and `TimelineScaleMath.kt` differ from current mainline. Do not transfer its result to PR #10; repeat the no-publish preflight on current mainline.
 - Keep versionCode 394/build 61 unchanged. Version 395 remains blocked until all product/release gates pass and the user authorizes release.
