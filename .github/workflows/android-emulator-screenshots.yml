@@ -38,7 +38,10 @@ permissions:
 
 concurrency:
   group: android-emulator-screenshots-${{ github.ref }}
-  cancel-in-progress: true
+  # PR synchronize events can arrive for documentation commits while the emulator
+  # job is running. Keep the active validation alive; only the newest pending run
+  # in this group may replace an older pending run.
+  cancel-in-progress: false
 
 jobs:
   emulator-ui:
