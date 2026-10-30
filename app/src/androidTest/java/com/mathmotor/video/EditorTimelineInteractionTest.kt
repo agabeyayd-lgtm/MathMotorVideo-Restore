@@ -4387,6 +4387,210 @@ class EditorTimelineInteractionTest {
     private data class DecodedAudioChunk(val firstSampleIndex: Long, val samples: ShortArray)
     private data class DecodedMonoAudio(val sampleRate: Int, val chunks: List<DecodedAudioChunk>)
 
+
+    @Test
+    fun sharedTimelineVideoTextMusicEffectLanesStayAlignedAcrossZoomLevels() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val device = UiDevice.getInstance(instrumentation)
+        val packageName = context.packageName
+        val videoFixture = java.io.File(context.filesDir, "editor-test-video.mp4")
+        instrumentation.context.assets.open("editor-test-video.mp4").use { input ->
+            videoFixture.outputStream().use { output -> input.copyTo(output) }
+        }
+        assertTrue(
+            "Shared-timeline video fixture was not copied into the target app",
+            videoFixture.isFile && videoFixture.length() > 0L
+        )
+
+        val musicFile = java.io.File(context.filesDir, "shared-timeline-music.wav")
+        val effectFile = java.io.File(context.filesDir, "shared-timeline-effect.wav")
+        writeToneWav(musicFile, 44_100, 8_020, 440.0, 9_000)
+        writeToneWav(effectFile, 44_100, 8_020, 880.0, 8_000)
+
+        val clip = org.json.JSONObject()
+            .put("uri", Uri.fromFile(videoFixture).toString())
+            .put("title", "SHARED_SCALE_VIDEO")
+            .put("durationMs", 8_020L)
+            .put("startMs", 0L)
+            .put("endMs", 8_020L)
+        val textLayer = org.json.JSONObject()
+            .put("id", 971L)
+            .put("text", "SHARED_SCALE_TEXT")
+            .put("startMs", 1_250L)
+            .put("endMs", 5_750L)
+            .put("timingCustomized", true)
+            .put("position", "TOP")
+            .put("sizeSp", 32)
+            .put("xFraction", 0.5)
+            .put("yFraction", 0.16)
+            .put("colorPreset", "CYAN")
+            .put("isBold", false)
+        val project = org.json.JSONObject()
+            .put("format", "MathMotorVideoProject")
+            .put("version", 1)
+            .put("clips", org.json.JSONArray().put(clip))
+            .put("selectedClipIndex", 0)
+            .put("timelinePlayheadMs", 2_750L)
+            .put("timelineZoom", 1.0)
+            .put("timelineHorizontalScrollMs", 2_750L)
+            .put("textLayers", org.json.JSONArray().put(textLayer))
+            .put("selectedTextLayerId", 971L)
+            .put("sourceAudioVolume", 100)
+            .put("musicUri", Uri.fromFile(musicFile).toString())
+            .put("musicTitle", "SHARED_SCALE_MUSIC")
+            .put("musicVolume", 35)
+            .put("soundUri", Uri.fromFile(effectFile).toString())
+            .put("soundTitle", "SHARED_SCALE_EFFECT")
+            .put("soundDurationMs", 1_500L)
+            .put("soundStartMs", 2_500L)
+            .put("soundVolume", 60)
+            .put("keepSourceAudio", false)
+        val draftId = java.util.UUID.randomUUID().toString()
+        assertTrue(
+            "Could not seed shared timeline alignment project",
+            VideoProjectDraftStore.save(context, draftId, "Shared timeline alignment", project)
+        )
+
+        device.executeShellCommand("logcat -c")
+        device.executeShellCommand(
+            "am start --activity-clear-task -n " + packageName +
+                "/com.mathmotor.video.EditorTestEntryActivity --es draft_id " + draftId
+        )
+        val restoreDeadline = SystemClock.uptimeMillis() + 20_000L
+        var entryStarted = false
+        var draftFound = false
+        var draftRestored = false
+        var restoreMarkers = ""
+        while (SystemClock.uptimeMillis() < restoreDeadline) {
+            val logs = device.executeShellCommand("logcat -d -s EditorSmokeTest:I")
+            restoreMarkers = logs.takeLast(1_600)
+            if (logs.contains("EDITOR_SMOKE_ENTRY_STARTED") && logs.contains("hasDraft=true")) {
+                entryStarted = true
+            }
+            if (logs.contains("EDITOR_SMOKE_DRAFT_LOOKUP id=" + draftId + " found=true")) {
+                draftFound = true
+            }
+            if (logs.contains("EDITOR_SMOKE_DRAFT_RESTORED id=" + draftId)) {
+                draftRestored = true
+                break
+            }
+            if (logs.contains("EDITOR_SMOKE_DRAFT_LOOKUP id=" + draftId + " found=false")) break
+            SystemClock.sleep(200)
+        }
+        assertTrue("Shared-timeline editor entry did not start; markers=$restoreMarkers", entryStarted)
+        assertTrue("Shared-timeline draft was not found; markers=$restoreMarkers", draftFound)
+        assertTrue("Shared-timeline draft did not restore; markers=$restoreMarkers", draftRestored)
+
+        val laneTags = listOf("VIDEO", "YAZI 1", "MÜZİK", "EFEKT")
+        laneTags.forEach { tag ->
+            assertTrue(
+                "Shared timeline did not expose the $tag lane",
+                device.wait(Until.hasObject(By.desc("Zaman çizelgesi satırı: $tag")), 8_000)
+            )
+        }
+
+        val videoSelector = By.descContains("Klip 1: SHARED_SCALE_VIDEO")
+        val textSelector = By.descContains("Yazı katmanı 1:")
+        val musicSelector = By.text("♫ SHARED_SCALE_MUSIC")
+        val effectSelector = By.text("♪ SHARED_SCALE_EFFECT")
+        assertTrue("Video filmstrip was not visible", device.wait(Until.hasObject(videoSelector), 8_000))
+        assertTrue("Timed text block was not visible", device.wait(Until.hasObject(textSelector), 8_000))
+        assertTrue("Music block was not visible", device.wait(Until.hasObject(musicSelector), 8_000))
+        assertTrue("Timed effect block was not visible", device.wait(Until.hasObject(effectSelector), 8_000))
+
+        fun assertNear(actual: Int, expected: Int, tolerance: Int, label: String) {
+            assertTrue(
+                "$label differs: actual=$actual expected=$expected tolerance=$tolerance",
+                abs(actual - expected) <= tolerance
+            )
+        }
+
+        fun verifyLaneAlignment(stage: String) {
+            device.waitForIdle()
+            val zoomLabel = requireObject(
+                device, By.descContains("Zaman çizelgesi yakınlaştırma"), "$stage zoom indicator"
+            ).contentDescription
+            val zoom = zoomPercent(zoomLabel).coerceAtLeast(1) / 100f
+            val density = context.resources.displayMetrics.density
+            val pixelsPerSecond = 22f * density * zoom
+
+            val viewports = laneTags.map { tag ->
+                tag to requireObject(
+                    device, By.desc("Zaman çizelgesi satırı: $tag"), "$stage $tag lane viewport"
+                ).visibleBounds
+            }
+            val videoViewport = viewports.first { it.first == "VIDEO" }.second
+            viewports.forEach { (tag, bounds) ->
+                assertNear(bounds.left, videoViewport.left, 2, "$stage $tag viewport left")
+                assertNear(bounds.right, videoViewport.right, 2, "$stage $tag viewport right")
+            }
+
+            val videoBounds = requireObject(device, videoSelector, "$stage video block").visibleBounds
+            val textBounds = requireObject(device, textSelector, "$stage text block").visibleBounds
+            val musicBounds = requireObject(device, musicSelector, "$stage music block").visibleBounds
+            val effectBounds = requireObject(device, effectSelector, "$stage effect block").visibleBounds
+
+            val expectedTextStart = Math.round(1_250f / 1_000f * pixelsPerSecond)
+            val expectedTextWidth =
+                Math.round(5_750f / 1_000f * pixelsPerSecond) -
+                    Math.round(1_250f / 1_000f * pixelsPerSecond)
+            val expectedEffectStart = Math.round(2_500f / 1_000f * pixelsPerSecond)
+            val expectedEffectWidth =
+                Math.round(4_000f / 1_000f * pixelsPerSecond) -
+                    Math.round(2_500f / 1_000f * pixelsPerSecond)
+
+            // Video and music both span the full assembled sequence from t=0.
+            assertNear(videoBounds.left, musicBounds.left, 3, "$stage VIDEO/MUSIC start")
+            assertNear(videoBounds.width(), musicBounds.width(), 3, "$stage VIDEO/MUSIC duration")
+            // Text and effect start offsets are measured from that same t=0 origin.
+            assertNear(textBounds.left - musicBounds.left, expectedTextStart, 5, "$stage text start")
+            assertNear(textBounds.width(), expectedTextWidth, 5, "$stage text duration")
+            assertNear(effectBounds.left - musicBounds.left, expectedEffectStart, 5, "$stage effect start")
+            assertNear(effectBounds.width(), expectedEffectWidth, 5, "$stage effect duration")
+
+            android.util.Log.i(
+                "SharedTimelineLaneAlignmentTest",
+                "stage=$stage zoom=$zoom pps=$pixelsPerSecond video=$videoBounds " +
+                    "text=$textBounds music=$musicBounds effect=$effectBounds"
+            )
+        }
+
+        // Keep the project time at 2.75 s so the whole text and effect blocks remain
+        // visible while both the 1x and zoomed filmstrips are measured.
+        seekPlayheadByDragging(device, 2_750L, 8_020L, 150L, "shared-lane default zoom")
+        verifyLaneAlignment("default")
+
+        val videoLane = requireObject(
+            device, By.desc("Zaman çizelgesi satırı: VIDEO"), "VIDEO lane for shared-lane pinch"
+        )
+        val zoomBefore = zoomPercent(
+            requireObject(device, By.descContains("Zaman çizelgesi yakınlaştırma"), "zoom before pinch")
+                .contentDescription
+        )
+        val timeBeforePinch = projectPositionMs(requireProjectTime(device))
+        videoLane.pinchOpen(0.85f, 60)
+        device.waitForIdle()
+        SystemClock.sleep(350)
+        val zoomAfter = zoomPercent(
+            requireObject(device, By.descContains("Zaman çizelgesi yakınlaştırma"), "zoom after pinch")
+                .contentDescription
+        )
+        val timeAfterPinch = projectPositionMs(requireProjectTime(device))
+        assertTrue("Shared timeline pinch did not increase zoom: $zoomBefore -> $zoomAfter", zoomAfter > zoomBefore)
+        assertTrue(
+            "Shared timeline pinch moved the fixed playhead: $timeBeforePinch -> $timeAfterPinch",
+            abs(timeBeforePinch - timeAfterPinch) <= 150L
+        )
+        verifyLaneAlignment("zoomed")
+
+        android.util.Log.i(
+            "SharedTimelineLaneAlignmentTest",
+            "stage=verified zoomBefore=$zoomBefore zoomAfter=$zoomAfter " +
+                "playheadBefore=$timeBeforePinch playheadAfter=$timeAfterPinch"
+        )
+    }
+
     private fun writeToneWav(
         file: java.io.File, sampleRate: Int, durationMs: Int, frequencyHz: Double, amplitude: Int
     ) {
