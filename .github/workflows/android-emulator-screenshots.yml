@@ -15,6 +15,7 @@ on:
       - ".github/workflows/android-emulator-screenshots.yml"
       - ".github/scripts/capture-emulator-screenshots.sh"
       - ".github/scripts/run-android-instrumentation-tests.sh"
+      - ".github/scripts/prepare-focused-timeline-test.sh"
   push:
     branches:
       - main
