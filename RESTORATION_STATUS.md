@@ -44,6 +44,12 @@ See the detailed, release-blocking checklist in README.md. The active list is:
 16. Timeline thumbnails need more visible width, clearer frame content and faster prioritized loading/caching.
 17. Simplify the two-video join/add-clip area visually while preserving the actual add/order/join behavior.
 
+## Shared timeline architecture requirement
+
+- All editor content must use the same timeline time coordinate system and adaptive ruler: video clips, text overlays, music, sound effects, playhead and trim boundaries.
+- Text/audio lanes must align to the same timestamps and respond to timeline scroll/zoom without changing their actual start/end times. Do not create independent time scales for individual tools.
+- Text and audio placement, preview and playback synchronization must be verified at multiple zoom levels and after project save/reopen. These are requirements, not yet device-verified results.
+
 ## Verification gaps
 
 - Unit tests cover some timeline time/pixel mapping, clip trim bounds, playhead-to-clip mapping and text timing boundaries.
