@@ -202,6 +202,19 @@ class EmulatorScreenshotTest {
             device.waitForIdle()
             SystemClock.sleep(300)
 
+            val tallEmptyAddVideo = device.findObject(By.desc("Klip düzenlemek için video ekle"))
+                ?: throw AssertionError("Tall-phone empty editor lost its primary add-video action")
+            assertTrue(
+                "Tall-phone empty-editor action is clipped or too small: \${tallEmptyAddVideo.visibleBounds}",
+                tallEmptyAddVideo.visibleBounds.height() >= (44f * largeDensity).toInt() &&
+                    tallEmptyAddVideo.visibleBounds.width() >= (120f * largeDensity).toInt()
+            )
+            assertTrue(
+                "Tall-phone empty-editor action must remain fully above the bottom dock: " +
+                    "action=\${tallEmptyAddVideo.visibleBounds} dock=\${largeClipTab.visibleBounds}",
+                tallEmptyAddVideo.visibleBounds.bottom <= largeClipTab.visibleBounds.top
+            )
+
             val largePreviewStage = device.findObject(By.desc("Video önizleme alanı"))
                 ?: throw AssertionError("Outer preview stage is not exposed for responsive-layout checks")
             assertTrue(
