@@ -21,12 +21,13 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - Do not bump `versionCode` or `versionName` during this work until the release gate is met and the user explicitly authorizes the release.
 - A successful source build is not the same as a tested, published APK. Keep the original media safe; export to a new file.
 
-## Current verification state — 2026-10-30 (full suite #341 green; focused 10-second tests #362 and #366 green)
+## Current verification state — 2026-10-30 (full suite #341; focused #362/#366; phone layout #371 all green)
 
 ### Latest completed green evidence
 
 - [Run #341 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41083942621), candidate commit `e94fc618a1c149368eea6bf76677e65e11240c81`: unit tests, Debug APK build, fixture preparation, Android instrumentation (**20/20 tests, 0 failures, 0 skips**) and artifact upload all passed.
 - The #341 artifact [12991473031](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41083942621/artifacts/12991473031) contains both the empty-editor and loaded-video 393×873 phone-sized emulator captures, including `editor-phone-size-loaded.png`. This closes the tall-screen emulator screenshot collection gate, not physical-device acceptance.
+- [Run #371 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41096422450), current candidate commit `45e34f74650a6a7c2b02593b1f3ef15e7aac3283`: unit tests, Debug APK, fixture preparation, the focused `EmulatorScreenshotTest#captureHomeEditorAndTextPanel` test (1/1), both screenshot pulls and artifact upload passed. Artifact [12997315254](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41096422450/artifacts/12997315254) includes `editor-phone-size.png` and `editor-phone-size-loaded.png` at 393×873.
 - [Run #340 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41066572996): 20/20 instrumentation tests passed, covering the 19 listed editing interactions plus the editor/home layout test. Artifact [12984726239](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41066572996/artifacts/12984726239).
 - [Run #337 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41058278720): 20/20 passed; the 8-second fixture loaded 6–10 thumbnails from distinct timestamps.
 
@@ -43,9 +44,10 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 ### What the green emulator evidence closes — and what it does not
 
 - Existing green tests already cover timeline pinch/scroll/trim/playhead interactions, multi-clip reorder and history, text timing/size/preview, audio/effect history and export, source-audio gain/mute, A/V seam alignment, split/export, draft and JSON save/reopen, and distinct filmstrip timestamps. Do not recreate these checks unchanged.
+- #371's 393×873 screenshots were inspected against the user's supplied target: the loaded-video preview stage is about 392 px high (about 45% of the 873 px viewport), and the portrait canvas is about 221×392 px. The redundant single-clip `Klip 1` chooser row is absent. This closes the major preview-size and duplicate-row visual gaps on the emulator only; the target's wider tool dock and the empty-editor clip-panel copy still need visual polish.
 - The #341 tall-screen screenshots are emulator captures, not a physical phone test; they do not prove touch comfort, performance, OEM-specific behavior or keyboard-open editing.
 - The deterministic filmstrip density fixture is 8 seconds; the separate exact 10-second seek scenario is now verified by #362 and #366. The exact 10-second test is single-clip; multi-clip behavior has separate #340 coverage.
-- Remaining acceptance work: visually compare the #341 loaded/empty screenshots with the supplied target UI; inspect shared video/text/music/effect lane alignment and adaptive ruler readability at multiple zoom levels; test text-panel access with the software keyboard open on a short viewport; perform physical-phone visual/touch/performance smoke testing; and run signed install-over/relaunch verification on the current `fix/editor-395-mainline` branch.
+- Remaining acceptance work: finish visual polish of the four-item dock and empty-editor clip panel against the supplied target; inspect shared video/text/music/effect lane alignment and adaptive ruler readability at multiple zoom levels; test text-panel access with the software keyboard open on a short viewport; perform physical-phone visual/touch/performance smoke testing; and run signed install-over/relaunch verification on the current `fix/editor-395-mainline` branch.
 - Version 395 remains blocked. The working installed baseline remains **versionCode 394 / build 61**. Do not bump version metadata, sign or publish a release APK, or activate the updater until all required gates pass and the user explicitly authorizes release.
 
 ## Current baseline capabilities (present in source; not all are proven reliable)
@@ -123,7 +125,8 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - [x] Save/reopen emulator scenarios passed in #340 for local draft restoration and manual JSON save-close-reopen project state. Physical-device persistence remains unverified.
 - [x] Reviewed the #340 screenshots (`home.png`, `editor.png`, `editor-empty.png`, `editor-phone-size.png`); its 393×873 capture was the empty-editor state.
 - [x] #341 captured both empty-editor and loaded-video states at 393×873; artifact [12991473031](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41083942621/artifacts/12991473031) contains `editor-phone-size-loaded.png`.
-- [ ] Visually compare the #341 captures against the user's target UI and complete physical-phone review.
+- [x] Compared the #371 empty/loaded 393×873 screenshots against the user's target for preview size and the redundant single-clip chooser row. Artifact [12997315254](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41096422450/artifacts/12997315254).
+- [ ] Complete remaining dock/empty-state visual polish and physical-phone review.
 - [ ] Perform a final physical-device smoke test when possible.
 - [ ] Only after every required item is complete and verified, prepare version 395. Until then, do not bump the app version or publish an APK.
 
@@ -204,3 +207,19 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - #358 (shell wrapper failure) and #360 (cancelled before a JUnit result) remain historical failed/cancelled attempts; they are superseded by #362/#366.
 - Coverage boundary: exact 10-second seeking is proven on one clip; multi-clip workflows are proven separately in #340. No combined exact-10-second multi-clip scenario is claimed.
 - Do not rerun this focused test unchanged. Version remains 394/build 61; version 395 remains blocked.
+
+
+## Candidate run #369 and correction — 2026-10-30
+
+- [#369 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41094950771): unit tests and Debug APK passed; the focused screenshot test failed its new tall-preview assertion because the test resized the emulator from 320×640 to 393×873 while keeping the same editor Activity alive. The app caches its short-screen classification at Activity creation, so the existing Activity retained the 180 dp short-preview layout. This did not test a fresh 393×873 launch and is not evidence of a failure on a real 393×873 first launch.
+- The test now returns to Home, applies the 393×873 size, and launches a fresh editor Activity before measuring the preview. The test also packages the deterministic sample clip in androidTest assets and copies it to the target app's private files directory, so the focused test does not depend on the full-suite ADB fixture-push script.
+- #370 was cancelled by the newer PR update and is not product-test evidence.
+
+## Candidate run #371 — 393×873 target-layout check PASSED
+
+- [#371 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41096422450), head commit `45e34f74650a6a7c2b02593b1f3ef15e7aac3283`: unit tests, Debug APK build, deterministic fixture preparation, the focused screenshot test (1/1), screenshot collection and artifact upload all passed.
+- Artifact [12997315254](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41096422450/artifacts/12997315254) contains both 393×873 screenshots: `editor-phone-size.png` and `editor-phone-size-loaded.png`.
+- The automated test requires the outer preview stage to be at least 320 dp in both empty and loaded states and asserts that the loaded single-clip editor does not expose the redundant `Klip seçici satırı`.
+- Visual inspection against the user's target confirms a roughly 392 px / 45% tall preview stage and a roughly 221×392 px portrait canvas on the 393×873 emulator. The duplicate `Klip 1` chooser row is gone.
+- Remaining visual polish: the app still exposes four supported bottom actions rather than the reference's wider tool dock, and the empty-editor view still displays a `KLİP DÜZENLEME` / `Henüz video eklenmedi` panel. Do not add inert tools merely to match the reference.
+- This is emulator screenshot and layout evidence, not a physical-phone acceptance test. Keep the real-device review open.
