@@ -10,6 +10,12 @@ on:
       - fix/editor-395-gate
     paths:
       - ".github/workflows/verify-signed-install.yml"
+      - "app/**"
+      - "gradle/**"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - "gradle.properties"
+      - "gradlew"
 
 permissions:
   contents: read
