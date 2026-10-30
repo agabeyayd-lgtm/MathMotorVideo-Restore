@@ -5072,7 +5072,11 @@ class VideoEditorActivity : Activity() {
     private fun loadTrimControls() {
         val clip = selectedClip()
         if (clip == null) {
+            // With no imported clip, the primary add-video action is the useful empty
+            // state. Hiding the redundant status sentence gives it enough vertical
+            // room to remain fully visible above the fixed status row and bottom dock.
             selectedClipLabel.text = if (clips.isEmpty()) "Henüz video eklenmedi." else "Düzenlemek için zaman çizelgesinden klip seç."
+            selectedClipLabel.visibility = if (clips.isEmpty()) View.GONE else View.VISIBLE
             clipEditingControls.visibility = View.GONE
             emptyClipPanelAction.visibility = View.VISIBLE
             startSeek.max = 1
@@ -5084,6 +5088,7 @@ class VideoEditorActivity : Activity() {
             updateTrimLabels()
             return
         }
+        selectedClipLabel.visibility = View.VISIBLE
         clipEditingControls.visibility = View.VISIBLE
         emptyClipPanelAction.visibility = View.GONE
         startSeek.isEnabled = true
