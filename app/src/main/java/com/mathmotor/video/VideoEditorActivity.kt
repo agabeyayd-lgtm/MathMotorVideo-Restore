@@ -185,6 +185,7 @@ class VideoEditorActivity : Activity() {
     private var previewDefaultStageHeightDp = 340
     private var previewHeightAutoSized = false
     private var compactEditorLayout = false
+    private var shortCompactEditorLayout = false
     private var previewFocusMode = false
     private val previewFocusOriginalVisibility = linkedMapOf<View, Int>()
     private lateinit var previewTextOverlay: TextView
@@ -1449,7 +1450,7 @@ class VideoEditorActivity : Activity() {
                 // active; the main timeline is already hidden on compact phones.
                 updateClipCarouselVisibility()
                 bottomDock.visibility = if (imeVisible) View.GONE else View.VISIBLE
-                statusView.visibility = if (imeVisible) View.GONE else View.VISIBLE
+                statusView.visibility = if (imeVisible || (shortCompactEditorLayout && activeEditorPanel != null)) View.GONE else View.VISIBLE
                 if (topBar.childCount > 2) {
                     val topAction = topBar.getChildAt(2) as? Button
                     if (topAction != null) {
@@ -1505,6 +1506,7 @@ class VideoEditorActivity : Activity() {
                 val density = resources.displayMetrics.density.coerceAtLeast(1f)
                 val viewportDp = (viewportHeight / density).toInt()
                 compactEditorLayout = viewportDp < 820
+                shortCompactEditorLayout = viewportDp < 700
                 updateClipCarouselVisibility()
                 val previewRatio = if (viewportDp < 650) 0.31f else 0.30f
                 previewDefaultStageHeightDp = (viewportDp * previewRatio).toInt().coerceIn(150, 340)
@@ -1597,7 +1599,7 @@ class VideoEditorActivity : Activity() {
             // Keep fixed navigation and status accessible even if a prior layout transition
             // hid them while the IME flag already reports its current value.
             bottomDock.visibility = if (imeVisible) View.GONE else View.VISIBLE
-            statusView.visibility = if (imeVisible) View.GONE else View.VISIBLE
+            statusView.visibility = if (imeVisible || (shortCompactEditorLayout && activeEditorPanel != null)) View.GONE else View.VISIBLE
             if (imeVisible != keyboardLayoutActive) {
                 applyKeyboardMode(imeVisible, viewportHeight)
             } else if (!imeVisible && !previewFocusMode) {
@@ -1713,11 +1715,13 @@ class VideoEditorActivity : Activity() {
      * the user's preferred preview height.
      */
     private fun effectivePreviewStageHeightDp(): Int {
-        // Active tool panels must fit on compact phones. When the panel is closed,
-        // a multi-clip chooser row also needs room, so reserve its height without
-        // shrinking a single-clip preview that has no duplicate chooser row.
+        // A short phone cannot fit the full multi-lane timeline and a usable tool drawer
+        // at the same time. Keep the preview legible at 180dp while the Clip drawer is open;
+        // text/audio/export drawers use the existing compact preview allowance.
+        val shortClipToolPanel = shortCompactEditorLayout && activeEditorPanel == "clip"
         val compactToolPanel = compactEditorLayout && activeEditorPanel != null && activeEditorPanel != "clip"
         return when {
+            shortClipToolPanel -> 180
             compactToolPanel -> minOf(previewStageHeightDp, 112).coerceAtLeast(104)
             compactEditorLayout && clips.size > 1 -> minOf(previewStageHeightDp, 154).coerceAtLeast(150)
             else -> previewStageHeightDp.coerceIn(150, 460)
@@ -1771,6 +1775,12 @@ class VideoEditorActivity : Activity() {
             button.setTextColor(if (selected) Color.rgb(5, 25, 29) else Color.rgb(220, 231, 240))
         }
         updateCompactToolPanelLayout()
+        if (::timelineTracks.isInitialized) refreshTimelineTracks()
+        if (::status.isInitialized) {
+            status.visibility = if (
+                keyboardLayoutActive || (shortCompactEditorLayout && activeEditorPanel != null)
+            ) View.GONE else View.VISIBLE
+        }
         val selectedPanel = editorPanels[name]
         android.util.Log.i(
             "EditorPanel",
@@ -1837,6 +1847,12 @@ class VideoEditorActivity : Activity() {
             button.setTextColor(Color.rgb(220, 231, 240))
         }
         updateCompactToolPanelLayout()
+        if (::timelineTracks.isInitialized) refreshTimelineTracks()
+        if (::status.isInitialized) {
+            status.visibility = if (
+                keyboardLayoutActive || (shortCompactEditorLayout && activeEditorPanel != null)
+            ) View.GONE else View.VISIBLE
+        }
         val focused = currentFocus
         val keyboard = getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
             as? android.view.inputmethod.InputMethodManager
@@ -1893,6 +1909,14 @@ class VideoEditorActivity : Activity() {
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(3), dp(1), dp(3), dp(1))
             }
+            val focusedShortScreenTimeline = shortCompactEditorLayout && activeEditorPanel != null
+            val laneRelevantToTool = when (activeEditorPanel) {
+                "clip", "export" -> tag == "SÜRE" || tag == "VIDEO"
+                "text" -> tag == "SÜRE" || tag == "VIDEO" || tag == "METİN" || tag.startsWith("YAZI ")
+                "audio" -> tag == "SÜRE" || tag == "VIDEO" || tag == "MÜZİK" || tag == "EFEKT"
+                else -> true
+            }
+            if (focusedShortScreenTimeline && !laneRelevantToTool) row.visibility = View.GONE
             val laneSymbol = when {
                 tag == "SÜRE" -> "↔"
                 tag == "VIDEO" -> "▶"
@@ -2365,6 +2389,7 @@ class VideoEditorActivity : Activity() {
         // off-screen. Size the frame from the actual timeline lanes instead.
         val laneContentHeight = (0 until timelineTracks.childCount).sumOf { index ->
             val row = timelineTracks.getChildAt(index) as? LinearLayout ?: return@sumOf 0
+            if (row.visibility != View.VISIBLE) return@sumOf 0
             val lane = row.getChildAt(1)
             val laneHeight = lane?.layoutParams?.height?.takeIf { it > 0 } ?: dp(24)
             laneHeight + row.paddingTop + row.paddingBottom

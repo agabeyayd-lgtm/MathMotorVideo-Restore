@@ -1,3 +1,12 @@
+## Latest handoff — #324 root cause isolated; short-screen tool layout corrected (2026-10-30)
+
+- [Emulator #324 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40977739949), tested commit `0153ce8b0d049a196ad06a70f8080d0804e62a37`. Unit tests, Debug APK, FFmpeg and fixture preparation passed; 19/20 Android interaction tests passed. The sole failure occurred in the Clip-panel-open precondition of `splitAtPlayheadExportsTwoOrderedSegmentsWithoutMovingAvSeam`, before the split/export assertions ran.
+- Exact #324 diagnostics: after the dock tap, `show complete` reported `panelVisibility=0`, but `scrollHeight=0` with `scrollParentHeight=640`; on the posted frame, the selected panel measured 259 px while the ScrollView remained 0 px high. The 640 value is the full parent/root height, **not** the panel viewport. The fixed preview, transport row, multi-lane timeline, status strip and dock had consumed the short screen's available vertical space.
+- Corrective source candidate: on measured viewports below 700dp, an open tool drawer now focuses the timeline on the matching tracks while preserving the shared ruler and VIDEO lane: Clip/Export keep ruler+VIDEO; Text keeps ruler+VIDEO+text lanes; Audio keeps ruler+VIDEO+music+effect lanes. Unrelated tracks are hidden only while that drawer is open and return on tool switch/close; project data and track editing logic are retained.
+- The short-screen Clip drawer now caps the preview stage at 180dp. The transient status strip is hidden only while the short-screen drawer is open. Panel selection/close rebuilds the track layout, and the measured timeline-frame height excludes hidden lanes.
+- The split test's real panel-open, split, ordered-segment, exported-MP4 duration, video/audio seam, and original-source-preservation assertions are unchanged. This is a new candidate pending a fresh workflow; do not count #324 as green or infer split/export passed from it.
+- Installed baseline remains 394/build 61. VersionCode 395 and release remain blocked until the new emulator run and all other open release gates pass.
+
 ## Latest handoff — #323 confirms dock tap but panel state still unresolved (2026-10-30)
 
 - [Run #323 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40974440915), commit `33e87f8`. Unit tests, Debug APK, FFmpeg and fixture setup passed. Instrumentation: 19/20 passed; `splitAtPlayheadExportsTwoOrderedSegmentsWithoutMovingAvSeam` still failed before split/export assertions because the Clip heading was not found.
