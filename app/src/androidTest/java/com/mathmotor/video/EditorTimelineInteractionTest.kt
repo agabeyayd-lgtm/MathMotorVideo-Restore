@@ -423,6 +423,115 @@ class EditorTimelineInteractionTest {
     }
 
     @Test
+    fun compactPhoneKeyboardKeepsTextFieldEditableAndRestoresEditor() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val device = UiDevice.getInstance(instrumentation)
+        val packageName = context.packageName
+        val fixture = java.io.File(context.filesDir, "editor-test-video.mp4")
+
+        // Use a deterministic short-phone viewport; restore the hosted emulator even on failure.
+        device.executeShellCommand("wm size 360x640")
+        device.executeShellCommand("wm density 160")
+        try {
+            instrumentation.context.assets.open("editor-test-video.mp4").use { input ->
+                fixture.outputStream().use { output -> input.copyTo(output) }
+            }
+            assertTrue("Compact keyboard fixture is missing", fixture.isFile && fixture.length() > 0L)
+            val fixtureUri = Uri.fromFile(fixture).toString()
+            val draftId = java.util.UUID.randomUUID().toString()
+            device.executeShellCommand("logcat -c")
+            device.executeShellCommand(
+                "am start --activity-clear-task -n " + packageName +
+                    "/com.mathmotor.video.EditorTestEntryActivity --es video_uri " +
+                    fixtureUri + " --es draft_id " + draftId
+            )
+            assertTrue(
+                "Editor did not open at the compact phone viewport",
+                device.wait(Until.hasObject(By.desc("Zaman çizelgesi etiketi: VIDEO")), 20_000)
+            )
+            assertTrue("Compact keyboard fixture clip was not loaded", awaitClipAdded(device))
+            device.waitForIdle()
+
+            val textTab = requireObject(
+                device, By.desc("Metin araçları sekmesi"), "Text tools tab on compact phone"
+            )
+            textTab.click()
+            val addText = requireObject(
+                device, By.desc("Yeni metin katmanı ekle"), "Add text action on compact phone"
+            )
+            addText.click()
+
+            val inputSelector = By.desc("Metin katmanı metin girişi")
+            assertTrue(
+                "Text field did not remain in the accessibility tree after the keyboard opened",
+                device.wait(Until.hasObject(inputSelector), 12_000)
+            )
+            val input = requireObject(device, inputSelector, "text input with IME open")
+            val inputBounds = input.visibleBounds
+            assertTrue(
+                "Text input has no visible touch target while the keyboard is open: $inputBounds",
+                inputBounds.width() > 40 && inputBounds.height() > 20 &&
+                    inputBounds.top >= 0 && inputBounds.bottom <= device.displayHeight
+            )
+
+            fun imeIsShown(): Boolean {
+                val dump = device.executeShellCommand("dumpsys input_method")
+                return Regex("mInputShown=(true|false)").find(dump)?.groupValues?.get(1) == "true" ||
+                    Regex("mShowRequested=(true|false)").find(dump)?.groupValues?.get(1) == "true"
+            }
+            val imeDeadline = SystemClock.uptimeMillis() + 12_000L
+            while (SystemClock.uptimeMillis() < imeDeadline && !imeIsShown()) {
+                SystemClock.sleep(200)
+            }
+            assertTrue("Software keyboard did not actually open on the compact viewport", imeIsShown())
+
+            val typedText = "Klavye kucuk ekran testi"
+            input.text = typedText
+            device.waitForIdle()
+            assertEquals(
+                "Text entry was not retained while the keyboard was open",
+                typedText,
+                requireObject(device, inputSelector, "editable text field").text
+            )
+
+            val done = requireObject(device, By.text("Bitti ✓"), "keyboard Done action")
+            done.click()
+            val hideDeadline = SystemClock.uptimeMillis() + 12_000L
+            while (SystemClock.uptimeMillis() < hideDeadline && imeIsShown()) {
+                SystemClock.sleep(200)
+            }
+            assertTrue("Done action did not close the software keyboard", !imeIsShown())
+            device.waitForIdle()
+
+            assertTrue(
+                "Text input disappeared after the keyboard closed",
+                device.wait(Until.hasObject(inputSelector), 8_000)
+            )
+            assertTrue(
+                "Text size control was not restored after the keyboard closed",
+                device.wait(Until.hasObject(By.desc("Yazı boyutu")), 8_000)
+            )
+            assertTrue(
+                "Timeline did not return after the keyboard closed",
+                device.wait(Until.hasObject(By.desc("Zaman çizelgesi etiketi: VIDEO")), 8_000)
+            )
+            assertEquals(
+                "Typed text was lost when the keyboard closed",
+                typedText,
+                requireObject(device, inputSelector, "restored text input").text
+            )
+            android.util.Log.i(
+                "EditorImeLayoutTest",
+                "PASS viewport=360x640 density=160 imeOpened=true textRetained=true controlsRestored=true"
+            )
+        } finally {
+            device.executeShellCommand("wm size reset")
+            device.executeShellCommand("wm density reset")
+        }
+    }
+
+    @Test
     fun filmstripScrollDoesNotTrimAndTrimHandleDoesNotBecomeScroll() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

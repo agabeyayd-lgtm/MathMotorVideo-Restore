@@ -182,7 +182,7 @@ jobs:
           script: |
             bash .github/scripts/run-focused-or-full-emulator-validation.sh
         env:
-          INSTRUMENTATION_TEST_FILTER: com.mathmotor.video.EditorTimelineInteractionTest#filmstripScrollDoesNotTrimAndTrimHandleDoesNotBecomeScroll
+          INSTRUMENTATION_TEST_FILTER: com.mathmotor.video.EditorTimelineInteractionTest#compactPhoneKeyboardKeepsTextFieldEditableAndRestoresEditor
 
       - name: Upload emulator screenshots and diagnostics
         if: always()
