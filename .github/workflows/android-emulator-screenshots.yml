@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - fix/editor-395-gate
+      - fix/editor-395-mainline
     paths:
       - "app/build.gradle.kts"
       - "app/src/main/**"
