@@ -126,3 +126,12 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 - Emulator screenshots/diagnostics were uploaded as [artifact 12984726239](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41066572996/artifacts/12984726239).
 - Emulator shutdown emitted the familiar `stop: Not implemented` / Netsim cleanup warnings after the instrumentation command succeeded; they did not fail the workflow.
 - Broader timeline, text/audio, Undo/Redo, export, save/reopen, and physical-device acceptance items remain open. Version 395 remains blocked; do not bump version metadata, sign/publish a release APK, or enable the updater.
+
+
+## Candidate run #341 — 2026-10-30
+
+- Run [#341 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41083942621) passed unit tests, Debug APK build, fixture preparation, Android instrumentation (**20/20, 0 failures, 0 skips**) and artifact upload on candidate commit `e94fc618a1c149368eea6bf76677e65e11240c81`.
+- The loaded-video 393×873 layout check passed and `editor-phone-size-loaded.png` is present in artifact [12991473031](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41083942621/artifacts/12991473031). Together with the prior empty-editor capture, both tall-screen states have emulator screenshot evidence.
+- Close the loaded-video tall-screen emulator gate. Physical-device validation remains open. Do not rerun unchanged #341 scenarios.
+- Next distinct check is an exact 10-second fixture across beginning/middle/end and multiple zoom levels. Before implementing, inspect existing instrumentation methods and extend only the uncovered case; do not repeat the existing 8-second filmstrip, trim, seek, multi-clip, export, undo/redo, or save/reopen tests.
+- Version 395 remains blocked; version metadata remains 394/build 61.
