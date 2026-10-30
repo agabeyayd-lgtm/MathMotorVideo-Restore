@@ -140,3 +140,12 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - Cause: the test helper grabbed the vertical playhead overlay at the vertical center of the entire timeline. At the initial 0 ms position, the first clip's right trim handle can occupy that same screen coordinate, so the new correct trim-handle priority makes that ambiguous touch go to the trim handle.
 - Test correction committed as `c8680d730de125793e7cb694888c98ba998679cc`: start the playhead drag on its distinct small top head, which is the intended unambiguous playhead grab target, rather than the line where it can overlap a trim handle.
 - This is a test-coordinate correction, not a claim that the source fix has passed. A new PR-triggered emulator run is required; keep both playhead and trim acceptance gates open until it passes.
+
+
+## Candidate run #334 — 2026-10-30
+
+- Run [#334 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41053725921) executed against PR #10's merge ref, including candidate head `452aa32c5812e203ba60abc581c53fde55cd0042`.
+- Unit tests passed, Debug APK built successfully, and Android instrumentation completed **20/20 tests with 0 failures and 0 skips**. The CI log reports `connectedDebugAndroidTest exit code: 0`, `BUILD SUCCESSFUL`, and `Connected Android instrumentation tests passed.` The emulator screenshot/diagnostic artifact was uploaded [here](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41053725921/artifacts/12976766821).
+- This closes the specific automated regression check for right-edge trim touch routing and the multi-clip test's playhead drag helper correction within this emulator suite. It is automated emulator evidence, not a physical-phone confirmation.
+- Emulator shutdown messages such as `stop: Not implemented` and Netsim Wifi stream cancellation occurred after the instrumentation command exited successfully; they did not fail the job.
+- Keep the broader editor acceptance checklist open: this run does not prove all user-facing timeline, text/audio, global Undo/Redo, export, save/reopen, or physical-device requirements. Version 395 remains blocked; do not bump version metadata, sign/publish a release APK, or enable the updater.
