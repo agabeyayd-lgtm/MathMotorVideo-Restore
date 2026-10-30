@@ -229,6 +229,18 @@ class EmulatorScreenshotTest {
             publishScreenshotToDownloads("editor-phone-size.png")
 
             // Repeat the tall-phone layout check with a real decoded test clip loaded.
+            // Package the deterministic video into the instrumentation APK assets and
+            // copy it into the target app's private files directory. A focused screenshot
+            // run must not depend on the full-suite ADB fixture-push script.
+            val loadedFixture = File(instrumentation.targetContext.filesDir, "editor-test-video.mp4")
+            instrumentation.context.assets.open("editor-test-video.mp4").use { input ->
+                loadedFixture.outputStream().use { output -> input.copyTo(output) }
+            }
+            assertTrue(
+                "Focused screenshot test fixture was not copied into the target app",
+                loadedFixture.isFile && loadedFixture.length() > 0L
+            )
+
             // The earlier screenshot above is intentionally the empty-editor state;
             // this second capture closes the gap between empty and populated layouts.
             device.executeShellCommand("logcat -c")
