@@ -239,3 +239,13 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - [#378](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41106717136) passed unit tests, Debug APK, fixture preparation and emulator startup, then failed in the focused test with `UiAutomator StaleObjectException` at the post-pinch VIDEO-lane scroll.
 - Diagnosis: pinch rebuilds the timeline row; the test reused the pre-pinch `UiObject2` handle. This is a stale test handle, not evidence of a timeline product defect.
 - Test-only correction committed as `1a096d229ceca77a06ac9f2a53018c25d02c47bd`: reacquire the current VIDEO row after pinch before scrolling to origin. Product source remains unchanged. Keep the shared-lane gate open until this exact focused test passes.
+
+
+## Shared-lane alignment #381 — confirmed assertion failure and next correction
+
+- [#379](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41111773339) was cancelled during ffmpeg setup; no emulator assertion ran.
+- [#381](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41111834964) completed setup, unit tests, Debug APK, fixtures and emulator launch. The focused test failed at zoomed text start: `actual=0 expected=171`.
+- The #378 stale-object issue is resolved: reacquiring the VIDEO lane allowed the test to reach the zoomed alignment assertion.
+- Diagnosis from the test flow: the test called `UiObject2.scroll(Direction.RIGHT)` while intending to return to the timeline origin. Emulator accessibility events show the VIDEO lane scrollX increased (390 → 496), moving farther from origin. Corrected the direction to `LEFT` so the viewport moves back toward the start. This remains a test-harness correction; do not change product code unless a correctly measured run demonstrates misalignment.
+- CI reliability correction: the workflow previously used `cancel-in-progress: true`. Multiple PR synchronize events on the same pull request ref cancelled the active emulator run while later commits arrived. Set it to false so an active validation is not cancelled by a newer PR update; a newer pending run may replace an older pending one.
+- Targeted rerun required. Shared-lane gate remains open; no release/version bump.
