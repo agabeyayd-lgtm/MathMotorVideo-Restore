@@ -211,6 +211,79 @@ class EmulatorScreenshotTest {
             )
             takeScreenshot(device, "editor-phone-size.png")
             publishScreenshotToDownloads("editor-phone-size.png")
+
+            // Repeat the tall-phone layout check with a real decoded test clip loaded.
+            // The earlier screenshot above is intentionally the empty-editor state;
+            // this second capture closes the gap between empty and populated layouts.
+            device.executeShellCommand("logcat -c")
+            device.executeShellCommand(
+                "am start -n com.mathmotor.video.next/com.mathmotor.video.EditorTestEntryActivity " +
+                    "--es video_uri file:///data/user/0/com.mathmotor.video.next/files/editor-test-video.mp4 " +
+                    "--es draft_id 44444444-4444-4444-8444-444444444444"
+            )
+            assertTrue(
+                "Loaded-video editor did not expose its VIDEO timeline lane at 393x873",
+                device.wait(Until.hasObject(By.desc("Zaman çizelgesi etiketi: VIDEO")), 20_000)
+            )
+            var loadedClipConfirmed = false
+            val clipDeadline = SystemClock.uptimeMillis() + 25_000L
+            while (SystemClock.uptimeMillis() < clipDeadline) {
+                val markerLog = device.executeShellCommand("logcat -d -s EditorSmokeTest:I")
+                if (markerLog.contains("EDITOR_SMOKE_CLIP_ADDED")) {
+                    loadedClipConfirmed = true
+                    break
+                }
+                if (markerLog.contains("EDITOR_SMOKE_CLIP_REJECTED")) break
+                SystemClock.sleep(400)
+            }
+            assertTrue(
+                "The deterministic sample video was not confirmed as added to the timeline",
+                loadedClipConfirmed
+            )
+            device.waitForIdle()
+            SystemClock.sleep(500)
+
+            val loadedPreviewStage = device.findObject(By.desc("Video önizleme alanı"))
+                ?: throw AssertionError("Loaded-video preview stage is missing at 393x873")
+            val loadedPreview = device.findObject(By.desc("Düzenlenmiş video önizlemesi"))
+                ?: throw AssertionError("Loaded-video preview canvas is missing at 393x873")
+            val loadedPlayback = device.findObject(By.desc("Önizlemeyi oynat veya duraklat"))
+                ?: throw AssertionError("Playback control is missing with a video loaded")
+            val loadedRuler = device.findObject(By.desc("Zaman çizelgesi etiketi: SÜRE"))
+                ?: throw AssertionError("Shared ruler is missing with a video loaded")
+            val loadedVideoLane = device.findObject(By.desc("Zaman çizelgesi etiketi: VIDEO"))
+                ?: throw AssertionError("VIDEO lane is missing with a video loaded")
+            val loadedTime = device.findObject(By.desc("Oynatma zamanı ve toplam video süresi"))
+                ?: throw AssertionError("Current/total time is missing with a video loaded")
+
+            assertTrue(
+                "Loaded-video preview stage is too short: ${loadedPreviewStage.visibleBounds}",
+                loadedPreviewStage.visibleBounds.height() >= (180f * largeDensity).toInt()
+            )
+            assertTrue(
+                "Loaded-video canvas is too small: ${loadedPreview.visibleBounds}",
+                loadedPreview.visibleBounds.height() >= (100f * largeDensity).toInt()
+            )
+            assertTrue(
+                "Playback control is not below the loaded-video preview",
+                loadedPlayback.visibleBounds.top >= loadedPreviewStage.visibleBounds.bottom
+            )
+            assertTrue(
+                "Timeline ruler is not below playback controls",
+                loadedRuler.visibleBounds.top >= loadedPlayback.visibleBounds.bottom
+            )
+            assertTrue(
+                "VIDEO lane is clipped or hidden: ${loadedVideoLane.visibleBounds}",
+                loadedVideoLane.visibleBounds.height() >= (18f * largeDensity).toInt()
+            )
+            assertTrue(
+                "Loaded-video time readout wrapped or duplicated: ${loadedTime.text}",
+                '\\n' !in loadedTime.text && !loadedTime.text.contains("Proje") &&
+                    !loadedTime.text.contains("Klip") &&
+                    loadedTime.visibleBounds.height() <= (24f * largeDensity).toInt()
+            )
+            takeScreenshot(device, "editor-phone-size-loaded.png")
+            publishScreenshotToDownloads("editor-phone-size-loaded.png")
         } finally {
             // The emulator is reused by the rest of the instrumentation suite.
             device.executeShellCommand("wm size reset")
