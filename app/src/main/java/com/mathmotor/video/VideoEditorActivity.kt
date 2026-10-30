@@ -1522,11 +1522,11 @@ class VideoEditorActivity : Activity() {
             if (!previewHeightAutoSized && !keyboardLayoutActive) {
                 val density = resources.displayMetrics.density.coerceAtLeast(1f)
                 val viewportDp = (viewportHeight / density).toInt()
-                compactEditorLayout = viewportDp < 820
+                compactEditorLayout = viewportDp < 900
                 shortCompactEditorLayout = viewportDp < 700
                 updateClipCarouselVisibility()
-                val previewRatio = if (viewportDp < 650) 0.31f else 0.30f
-                previewDefaultStageHeightDp = (viewportDp * previewRatio).toInt().coerceIn(150, 340)
+                val previewRatio = if (viewportDp < 650) 0.40f else 0.45f
+                previewDefaultStageHeightDp = (viewportDp * previewRatio).toInt().coerceIn(150, 400)
                 previewStageHeightDp = previewDefaultStageHeightDp
                 previewHeightAutoSized = true
 
