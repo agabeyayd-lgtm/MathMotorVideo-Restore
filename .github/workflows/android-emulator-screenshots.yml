@@ -16,6 +16,7 @@ on:
       - ".github/scripts/capture-emulator-screenshots.sh"
       - ".github/scripts/run-android-instrumentation-tests.sh"
       - ".github/scripts/prepare-focused-timeline-test.sh"
+      - ".github/scripts/run-focused-or-full-emulator-validation.sh"
   push:
     branches:
       - main
@@ -30,6 +31,7 @@ on:
       - ".github/scripts/capture-emulator-screenshots.sh"
       - ".github/scripts/run-android-instrumentation-tests.sh"
       - ".github/scripts/prepare-focused-timeline-test.sh"
+      - ".github/scripts/run-focused-or-full-emulator-validation.sh"
 
 permissions:
   contents: read
@@ -175,12 +177,7 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -wipe-data
           emulator-boot-timeout: 600
           script: |
-            if [ -n "${INSTRUMENTATION_TEST_FILTER:-}" ]; then
-              bash .github/scripts/prepare-focused-timeline-test.sh
-            else
-              bash .github/scripts/capture-emulator-screenshots.sh
-            fi
-            bash .github/scripts/run-android-instrumentation-tests.sh
+            bash .github/scripts/run-focused-or-full-emulator-validation.sh
         env:
           INSTRUMENTATION_TEST_FILTER: com.mathmotor.video.EditorTimelineInteractionTest#tenSecondFixtureSeeksBeginningMiddleAndEndAcrossZoomLevels
 
