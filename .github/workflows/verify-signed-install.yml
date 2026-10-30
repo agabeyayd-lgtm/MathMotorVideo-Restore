@@ -165,6 +165,8 @@ jobs:
             echo "Signature and package metadata match. No release or tag was created."
           } | tee "$RUNNER_TEMP/signed-preflight-report.txt"
           cp "$RUNNER_TEMP/signed-preflight-report.txt" "$GITHUB_WORKSPACE/signed-preflight-report.txt"
+          # Keep a verified, same-certificate 394 candidate available for owner-only device review.
+          cp "$CANDIDATE" "$GITHUB_WORKSPACE/MathMotorVideo-394-device-review.apk"
 
       - name: Install baseline, replace it with candidate, and relaunch
         uses: reactivecircus/android-emulator-runner@v2
@@ -233,3 +235,12 @@ jobs:
             signed-update-smoke/
           if-no-files-found: warn
           retention-days: 14
+
+      - name: Upload signed 394 APK for physical-device review
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MathMotorVideo-394-device-review
+          path: MathMotorVideo-394-device-review.apk
+          if-no-files-found: error
+          retention-days: 7
