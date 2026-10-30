@@ -66,3 +66,13 @@ See the detailed, release-blocking checklist in README.md. The active list is:
 ## Recovery background
 
 Some older physics/scenario-related source and tests remain as reconstruction leftovers; they are outside the active video-editing workflow. The original complete V7 source tree was not recoverable.
+
+
+## Latest technical update — 2026-10-30
+
+- Candidate run #329 passed unit tests and the Debug APK build, then failed 2 of 20 emulator interaction tests. Both failures were attempts to shorten an 8,000 ms clip by dragging its right trim handle; the measured duration stayed 8,000 ms.
+- Root cause: the centered fixed playhead overlay is 40 dp wide, elevated above the timeline tracks, and brought to front. When the clip's right edge is centered under the playhead, it intercepts the touch before the underlying trim handle can receive ACTION_DOWN.
+- Candidate source fix: playhead dispatch now passes the initial touch through when its screen coordinate is inside a visible left/right clip trim handle. This preserves playhead drag behavior outside trim-handle bounds.
+- Added interaction assertions verify that the right trim handle receives ACTION_DOWN and ACTION_UP before checking that project duration changes.
+- Source commit: cbe72383fd080989563e70e6bd184e4f84ec6c9a. Test commit: b2bcdee7c598fe380adbc668cb43667943fa566d.
+- Status distinction: fix is in candidate source; automated verification and physical-device verification are still pending. Keep affected items open. Version 395 remains blocked.
