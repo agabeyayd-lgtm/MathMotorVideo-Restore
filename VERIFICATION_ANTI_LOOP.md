@@ -1,7 +1,22 @@
 # Verification anti-loop protocol
 
+## Current handoff — 2026-10-30 after candidate #340
 
-## Current handoff — #315 screenshot test root cause and signed preflight #5
+- Current candidate branch: `fix/editor-395-mainline`. The previous handoff text below that references `fix/editor-395-gate` and #315 is historical; do not resume from that old branch by default.
+- Latest successful candidate evidence: [#340](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41066572996), with unit tests and Debug APK build passing and connected emulator instrumentation **20/20, 0 failures, 0 skips**. The fixture preparation, emulator interaction and artifact-upload steps all completed successfully.
+- #340 covers: one-finger filmstrip scroll, centered two-finger pinch, start/end reachability, both trim handles and restoring source footage, multi-clip reorder/trim/seek/Undo/Redo, text timing/size/preview, text/audio Undo/Redo and gesture grouping, sound-effect lifecycle/history, draft reopen, JSON save-close-reopen, multi-clip/split MP4 export, timed styled text, music/effect/source-audio output and A/V seam alignment, plus distinct-timestamp thumbnails.
+- The 20th test checks home/editor/text-panel layout, single time/ruler presentation, empty-editor add-video state and the 393×873 emulator viewport. Artifact [12984726239](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41066572996/artifacts/12984726239).
+- [#337](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41058278720) separately passed the 8-second fixture filmstrip density/distinct-frame test (6–10 loaded frames).
+- Do not rerun these green tests unchanged. Add or rerun only a test tied to a new code change or a specific regression.
+- Remaining unique gates: inspect #340 screenshots visually; run the exact 10-second beginning/middle/end scenario; validate visible video/text/audio lane alignment and adaptive ruler readability; check keyboard/small-screen behaviour; perform a physical-device smoke test.
+- The current fixture is about 8 seconds, so do not describe the 10-second acceptance case as complete. Emulator evidence is not physical-device evidence.
+- Keep installed baseline at versionCode 394 / build 61. Version 395 remains blocked; do not bump version metadata, sign/publish a release APK, enable the updater, or merge/release without the remaining gates and explicit user authorization.
+
+## Historical notes
+
+
+
+## Historical handoff — #315 screenshot test root cause and signed preflight #5 (superseded)
 
 - [Screenshot run #315 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40921663447), commit `c461141e50366b07e195e31d877f178cedc8ac19`. The workflow collected the regular home/editor screenshots and autosave checks, but connected instrumentation failed in `EmulatorScreenshotTest.captureHomeEditorAndTextPanel` before the tall-phone screenshot: `Could not create screenshot directory at /data/user/0/com.mathmotor.video.next.test/cache/emulator-screenshots`. It then correctly failed the missing-`editor-phone-size.png` gate. Do not count #315 as a product pass.
 - Root correction: stop creating a nested folder inside the instrumentation APK's cache. Save the PNG directly to the target app's existing cache root, then publish that same file through the target app's MediaStore resolver. The next screenshot run must pass the complete 20-test suite, collect `editor-phone-size.png`, and permit inspection of the actual PNG before the preview-stage gate is closed.
@@ -63,7 +78,7 @@
 This is the concise handoff for ongoing CI debugging. Read it and the latest README entry before changing code or starting a run.
 
 ## Mandatory rules
-- Continue from branch `fix/editor-395-gate`; do not restart from scratch.
+- Continue from branch `fix/editor-395-mainline`; do not switch to an older branch or restart from scratch without an explicit reason.
 - Do not queue a duplicate run while the latest relevant workflow is queued/in progress. Inspect that run first.
 - Classify each failure: source/app defect, test/API compile defect, emulator/CI preflight defect, assertion failure, or artifact/release defect.
 - Read the exact failing step and log/diagnostic artifact before editing. Make one root-cause change at a time and record its commit SHA.
