@@ -149,3 +149,13 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - This closes the specific automated regression check for right-edge trim touch routing and the multi-clip test's playhead drag helper correction within this emulator suite. It is automated emulator evidence, not a physical-phone confirmation.
 - Emulator shutdown messages such as `stop: Not implemented` and Netsim Wifi stream cancellation occurred after the instrumentation command exited successfully; they did not fail the job.
 - Keep the broader editor acceptance checklist open: this run does not prove all user-facing timeline, text/audio, global Undo/Redo, export, save/reopen, or physical-device requirements. Version 395 remains blocked; do not bump version metadata, sign/publish a release APK, or enable the updater.
+
+
+## Candidate run #337 — 2026-10-30
+
+- Run [#337 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41058278720) completed on `fix/editor-395-mainline`, candidate head `649cf70799cff4012c7cea2318cd8eed8e95c202`.
+- Unit tests passed, Debug APK built successfully, and Android instrumentation completed **20/20 tests with 0 failures and 0 skips**. The workflow log confirms `connectedDebugAndroidTest exit code: 0`, `BUILD SUCCESSFUL`, and `Connected Android instrumentation tests passed.`
+- The filmstrip density change uses a 22 dp thumbnail slot at the default 22 dp/second timeline scale, targeting roughly one readable frame per second rather than overly narrow slivers. The instrumentation check in `filmstripLoadsFramesFromDistinctTimestamps` verifies the 8-second fixture displays 6–10 loaded thumbnails while retaining the distinct-timestamp/frame checks.
+- Emulator screenshots/diagnostics were uploaded as [artifact 12978811772](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41058278720/artifacts/12978811772).
+- This closes the automated emulator check for the targeted filmstrip density and distinct-frame behavior in this test scenario. It does **not** establish physical-device readability, thumbnail loading performance on a phone, or completion of the broader timeline/UI checklist.
+- Version 395 remains blocked. No version bump, signed release APK, publication, or updater offer.
