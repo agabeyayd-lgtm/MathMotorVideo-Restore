@@ -249,3 +249,10 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - Diagnosis from the test flow: the test called `UiObject2.scroll(Direction.RIGHT)` while intending to return to the timeline origin. Emulator accessibility events show the VIDEO lane scrollX increased (390 → 496), moving farther from origin. Corrected the direction to `LEFT` so the viewport moves back toward the start. This remains a test-harness correction; do not change product code unless a correctly measured run demonstrates misalignment.
 - CI reliability correction: the workflow previously used `cancel-in-progress: true`. Multiple PR synchronize events on the same pull request ref cancelled the active emulator run while later commits arrived. Set it to false so an active validation is not cancelled by a newer PR update; a newer pending run may replace an older pending one.
 - Targeted rerun required. Shared-lane gate remains open; no release/version bump.
+
+## Shared-lane alignment #382 — refined zoom fixture
+
+- [#382](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41115009608) passed unit tests, Debug APK build and deterministic fixture setup, then failed its only instrumentation test at `Could not find zoomed-at-origin effect block`.
+- The failure followed a maximum-scale pinch and a return-to-origin scroll. At that zoom, the effect strip was clipped outside the visible viewport; UiAutomator therefore did not expose its text node. This is a test-visibility/measurement issue, not evidence that the app deleted or misaligned the effect.
+- Test-only correction `6759e65a41544b7212341f1161c4f7d382585d8e`: use a modest pinch that still increases zoom, keep the playhead at 2.75 s, explicitly require both text/effect strips to remain visible, then measure lane alignment. No production source changed.
+- A focused validation of this correction is required. Keep the shared-lane gate open and 395 blocked until its JUnit result passes.
