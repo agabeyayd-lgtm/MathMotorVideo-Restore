@@ -302,3 +302,10 @@ Do not launch a duplicate source-audio run while #227 is in progress. FFmpeg ins
 - The test then scrolled in the wrong direction: it used `Direction.RIGHT` while intending to return to origin. Accessibility events show scrollX moving 390 → 496, farther from origin. Corrected to `Direction.LEFT`; verify the resulting scroll position and all lane measurements on the next run.
 - Workflow concurrency changed from `cancel-in-progress: true` to false so subsequent PR synchronize events cannot terminate an active emulator run.
 - No product source changes justified by this test yet. Do not rerun older suites or release 395; run only the focused shared-lane check after these corrections.
+
+## #382 shared-lane alignment — visible-node failure and test correction
+
+- #382 run `41115009608` completed the unit-test, Debug APK and fixture steps successfully. Its only JUnit failure was `Could not find zoomed-at-origin effect block` in `sharedTimelineVideoTextMusicEffectLanesStayAlignedAcrossZoomLevels`.
+- Logcat shows the zoom gesture reached a very high scale; after the return-to-origin scroll the effect block was outside the visible viewport, so `UiObject2` could not find its text node. This does not prove a product effect-lane defect.
+- Test-only correction `6759e65a41544b7212341f1161c4f7d382585d8e`: use a moderate pinch, keep the playhead at 2.75 s, assert text/effect nodes remain visible, then measure lane bounds. No app production code changed.
+- Run only this focused test for the next verification. Do not rerun the already-green unrelated suites; keep the shared-lane gate open and 395 blocked until the JUnit pass is conclusive.
