@@ -123,6 +123,17 @@ jobs:
           ffprobe -v error -show_entries format=duration:stream=codec_type,codec_name,r_frame_rate,sample_rate \
             -of default=noprint_wrappers=1 app/build/test-fixtures/editor-av-sync-video.mp4
 
+          # Dedicated exactly-10-second source for the missing start/middle/end seek coverage.
+          ffmpeg -nostdin -hide_banner -loglevel error -y \
+            -f lavfi -i "testsrc2=size=320x180:rate=30:duration=10" \
+            -map 0:v:0 -an -t 10 -c:v libx264 -preset ultrafast -pix_fmt yuv420p \
+            -r 30 -g 30 -keyint_min 30 -sc_threshold 0 -movflags +faststart \
+            app/build/test-fixtures/editor-test-video-10s.mp4
+          test -s app/build/test-fixtures/editor-test-video-10s.mp4
+          ten_second_duration=$(ffprobe -v error -show_entries format=duration \
+            -of default=noprint_wrappers=1:nokey=1 app/build/test-fixtures/editor-test-video-10s.mp4)
+          python3 -c 'import sys; d=float(sys.argv[1]); assert abs(d-10.0) < 0.001, f"10-second fixture duration is {d}"' "$ten_second_duration"
+
           echo "Fixture sizes:"
           wc -c app/build/test-fixtures/editor-test-video.mp4 app/build/test-fixtures/editor-test-video-second.mp4 app/build/test-fixtures/editor-test-video-with-audio.mp4 app/build/test-fixtures/editor-av-sync-video.mp4
           echo "Fixture stream metadata:"
@@ -162,8 +173,14 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -wipe-data
           emulator-boot-timeout: 600
           script: |
-            bash .github/scripts/capture-emulator-screenshots.sh
+            if [ -n "${INSTRUMENTATION_TEST_FILTER:-}" ]; then
+              bash .github/scripts/prepare-focused-timeline-test.sh
+            else
+              bash .github/scripts/capture-emulator-screenshots.sh
+            fi
             bash .github/scripts/run-android-instrumentation-tests.sh
+        env:
+          INSTRUMENTATION_TEST_FILTER: com.mathmotor.video.EditorTimelineInteractionTest#tenSecondFixtureSeeksBeginningMiddleAndEndAcrossZoomLevels
 
       - name: Upload emulator screenshots and diagnostics
         if: always()
