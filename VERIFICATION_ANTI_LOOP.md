@@ -285,3 +285,11 @@ Do not launch a duplicate source-audio run while #227 is in progress. FFmpeg ins
 - [#375](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41099038593) passed unit tests, Debug APK, fixture preparation, default-zoom four-lane bounds and pinch/playhead-stability assertions; it failed only at zoomed text start (`actual=0 expected=171`).
 - Root cause: `UiObject2.visibleBounds` returns clipped visible bounds. At a fixed playhead of 2.75 s, the text block beginning at 1.25 s is legitimately outside the left edge after zoom, so its visible left edge is clipped and cannot be used as its timeline coordinate.
 - Test-only correction committed as `0b5bbeaf521c8ebee596635f898d940fab603e8a`: after confirming the playhead remains stable, scroll the synchronized VIDEO lane to the timeline origin and then measure zoomed lane bounds. Do not change product timeline code based on this assertion alone. Do not mark the shared-lane gate green until the targeted rerun passes.
+
+
+## #378 stale UiObject2 failure and correction — 2026-10-30
+
+- #376 was cancelled before fixture preparation/emulator execution; it is not a test result.
+- #378 passed unit tests, Debug APK, fixture setup and emulator startup, then failed because the focused test scrolled a pre-pinch `UiObject2` after the timeline rows had been rebuilt.
+- Corrected the test to reacquire the VIDEO row after pinch before scrolling. Commit: `1a096d229ceca77a06ac9f2a53018c25d02c47bd`.
+- Product timeline code was not changed. Do not mark the shared-lane gate green until the focused rerun completes successfully.
