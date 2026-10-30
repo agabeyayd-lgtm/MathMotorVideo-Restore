@@ -106,3 +106,13 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 - The `filmstripLoadsFramesFromDistinctTimestamps` instrumentation test now additionally checks that the 8-second fixture has 6–10 visible loaded thumbnails; existing distinct-timestamp and distinct-frame checks remain.
 - Emulator screenshots/diagnostics: [artifact 12978811772](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41058278720/artifacts/12978811772).
 - Evidence is limited to this automated emulator scenario. Physical-device thumbnail readability/performance and the wider user-facing checklist remain open. Version 395 remains blocked; do not change version metadata, sign/publish an APK, or enable the updater.
+
+
+## Candidate run #340 — 2026-10-30
+
+- Run [#340 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41066572996) completed on `fix/editor-395-mainline`, candidate source commit `388b4be0be7f2c3bb64f03c988565cc618bc9cdb` (with instrumentation test commit `6f18d6c14fcd6586f3205791baf68f4539960220`).
+- Unit tests passed, Debug APK build passed, and Android instrumentation completed **20/20 tests, 0 failures, 0 skips**. The job concluded successfully and the log reports `BUILD SUCCESSFUL` and `Connected Android instrumentation tests passed.`
+- The targeted empty-editor state check passed in this run: when no video is loaded, the panel exposes the add-video action and hides clip-only editing controls. This is automated emulator evidence for the tested empty state, not a full usability or physical-device sign-off.
+- Emulator screenshots/diagnostics were uploaded as [artifact 12984726239](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41066572996/artifacts/12984726239).
+- Emulator shutdown emitted the familiar `stop: Not implemented` / Netsim cleanup warnings after the instrumentation command succeeded; they did not fail the workflow.
+- Broader timeline, text/audio, Undo/Redo, export, save/reopen, and physical-device acceptance items remain open. Version 395 remains blocked; do not bump version metadata, sign/publish a release APK, or enable the updater.
