@@ -36,6 +36,12 @@ See the detailed, release-blocking checklist in README.md. The active list is:
 8. Undo/Redo may not work; current known implementation records clip edits only and does not include text/audio in one global history.
 9. Home screen has redundant explanatory copy/menus and needs a simpler professional layout.
 10. Scissors icons are overused; cut/split/trim/delete actions need distinct, restrained controls.
+11. The redundant bottom timeline strip (duration + green slider + +/- controls) should be removed; time should appear once and zoom should use two-finger pinch gestures.
+12. Remove "Klip 1" / "Klip 2" labels and give the reclaimed space to a larger video preview; retain clip selection and boundaries without the labels.
+13. Green arrow buttons and oversized controls should be made compact without losing accessible touch targets or functionality.
+14. Bottom tool navigation should swap the four-item dock for the selected tool's controls in the same bottom panel, then restore the four-item dock on back/confirm; tool panels must not hide underneath the preview.
+15. Timeline thumbnails need more visible width, clearer frame content and faster prioritized loading/caching.
+16. Simplify the two-video join/add-clip area visually while preserving the actual add/order/join behavior.
 
 ## Verification gaps
 
