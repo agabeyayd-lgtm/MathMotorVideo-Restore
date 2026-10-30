@@ -12,6 +12,18 @@ MathMotor Video is a local Android video editor with a CapCut-inspired workflow.
 - README checklist and source commits do not mean the behavior is fixed or included in the installed APK.
 - Existing repository release notes may lag the user's installed version; use the user's confirmed 394/build 61 as the working baseline.
 
+## Latest focused regression — fixed-playhead pinch zoom #396 PASSED (2026-10-30)
+
+## Fixed-playhead pinch zoom #396 — PASSED (2026-10-30)
+
+- [Run #396 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41129149733) completed on PR #10 / branch `fix/editor-395-mainline`, candidate commit `7c4c526540524c9582685d3bb2575fa1b0336921`.
+- Unit tests, Debug APK build, deterministic MP4 fixture preparation, emulator launch, the focused Android instrumentation test, and screenshot/diagnostic artifact upload all passed.
+- The focused method was `EditorTimelineInteractionTest#filmstripScrollDoesNotTrimAndTrimHandleDoesNotBecomeScroll` (one test). It explicitly verifies that pinch zoom changes the zoom level while the fixed-playhead time moves no more than 150 ms; it then checks that a filmstrip-body swipe scrolls without trimming the clip.
+- The product fix anchors pinch zoom to the time under the fixed center playhead, rather than the moving midpoint between the two fingers. The test now copies its checked-in 8-second MP4 fixture into the app's test files directory, so it does not depend on a pre-existing local fixture.
+- Emulator artifact: [13012197695](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41129149733/artifacts/13012197695).
+- This closes the automated fixed-playhead pinch/filmstrip-scroll regression gate for this tested path. It does not replace short-viewport/keyboard-open testing, physical-phone smoke testing, or signed install → update-over → relaunch preflight.
+- PR #10 remains open and draft. Installed baseline remains versionCode 394/build 61. Version 395 is still blocked; do not bump metadata, sign/publish a release APK, or enable the updater until the remaining gates pass and the user authorizes release.
+
 ## Evidence-backed status — 2026-10-30
 
 ### Latest completed full-suite, focused and phone-layout verification

@@ -21,7 +21,17 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - Do not bump `versionCode` or `versionName` during this work until the release gate is met and the user explicitly authorizes the release.
 - A successful source build is not the same as a tested, published APK. Keep the original media safe; export to a new file.
 
-## Current verification state — 2026-10-30 (latest focused shared-lane check #388 green; full suite #341; focused #362/#366; phone layout #371)
+## Current verification state — 2026-10-30 (fixed-playhead pinch/filmstrip regression #396 green; shared-lane #388; full suite #341; focused #362/#366; phone layout #371)
+
+## Fixed-playhead pinch zoom #396 — PASSED (2026-10-30)
+
+- [Run #396 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41129149733) completed on PR #10 / branch `fix/editor-395-mainline`, candidate commit `7c4c526540524c9582685d3bb2575fa1b0336921`.
+- Unit tests, Debug APK build, deterministic MP4 fixture preparation, emulator launch, the focused Android instrumentation test, and screenshot/diagnostic artifact upload all passed.
+- The focused method was `EditorTimelineInteractionTest#filmstripScrollDoesNotTrimAndTrimHandleDoesNotBecomeScroll` (one test). It explicitly verifies that pinch zoom changes the zoom level while the fixed-playhead time moves no more than 150 ms; it then checks that a filmstrip-body swipe scrolls without trimming the clip.
+- The product fix anchors pinch zoom to the time under the fixed center playhead, rather than the moving midpoint between the two fingers. The test now copies its checked-in 8-second MP4 fixture into the app's test files directory, so it does not depend on a pre-existing local fixture.
+- Emulator artifact: [13012197695](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41129149733/artifacts/13012197695).
+- This closes the automated fixed-playhead pinch/filmstrip-scroll regression gate for this tested path. It does not replace short-viewport/keyboard-open testing, physical-phone smoke testing, or signed install → update-over → relaunch preflight.
+- PR #10 remains open and draft. Installed baseline remains versionCode 394/build 61. Version 395 is still blocked; do not bump metadata, sign/publish a release APK, or enable the updater until the remaining gates pass and the user authorizes release.
 
 ### Latest completed green evidence
 
