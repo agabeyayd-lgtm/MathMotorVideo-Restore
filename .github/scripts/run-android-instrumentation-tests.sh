@@ -38,7 +38,7 @@ pull_required_screenshot() {
   fi
   echo "Collected $name from shared MediaStore Downloads."
 }
-if [ -z "${INSTRUMENTATION_TEST_FILTER:-}" ]; then
+if [ -z "${INSTRUMENTATION_TEST_FILTER:-}" ] || [[ "${INSTRUMENTATION_TEST_FILTER:-}" == *"EmulatorScreenshotTest"* ]]; then
   pull_required_screenshot "editor-phone-size.png" || exit 14
   pull_required_screenshot "editor-phone-size-loaded.png" || exit 14
 else
