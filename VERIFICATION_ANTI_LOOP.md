@@ -247,3 +247,12 @@ Do not launch a duplicate source-audio run while #227 is in progress. FFmpeg ins
 - Candidate retests on exact source commit `c461141e50366b07e195e31d877f178cedc8ac19`: [#315](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40921663447) and [signed preflight #4](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40921663407). They were running at the time of this entry; recheck final status, JUnit and screenshot artifact before marking a gate complete.
 - Quantitative audio gain is already closed by #291 (music ratio 0.34908 at 35%, effect ratio 0.59874 at 60%). Do not repeat that unchanged test.
 - Release 395 remains blocked. Current installed baseline stays at versionCode 394/build 61; physical-device visual/tap-target review and signed install-over/relaunch remain open.
+
+
+## Candidate run #341 — 2026-10-30
+
+- [#341](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41083942621) passed unit tests, Debug APK build, fixture preparation, emulator instrumentation (**20/20, 0 failures, 0 skips**) and screenshot artifact upload on `e94fc618a1c149368eea6bf76677e65e11240c81`.
+- The added loaded-video 393×873 layout assertion passed. Artifact [12991473031](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41083942621/artifacts/12991473031) includes `editor-phone-size-loaded.png`; empty-editor tall-screen capture is also present.
+- Mark loaded-video tall-screen emulator capture complete. This is not a physical-device test. Do not rerun this scenario unchanged.
+- Next: inspect existing instrumentation coverage, then add only a missing exact-10-second fixture check for start/middle/end seek at multiple zoom levels. Existing 8-second filmstrip, clip trim, multi-clip, export, Undo/Redo and save/reopen scenarios are already green; do not repeat them without a regression reason.
+- Keep 395 blocked and version metadata at 394/build 61 until the remaining distinct gates are verified and release is authorized.
