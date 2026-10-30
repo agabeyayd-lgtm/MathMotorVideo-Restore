@@ -284,3 +284,12 @@
 - **Signed preflight #7 FAIL:** signed release candidate built; package, versionCode 394, and signing certificate matched the current build 61. Baseline install and launch command succeeded, but after 3 seconds only the splash screen remained and pidof com.mathmotor.video.next returned 1. The failing assertion ran before logcat collection, so the app-crash cause is not yet proven. Emulator termination/Netsim messages are cleanup output, not the root failure.
 - Diagnostic workflow change committed: 6d2da9db24edec5b5221a8bda9584db23114d5cb. It records baseline and candidate logcat, window state and process ID before assertions, waits 10 seconds and uses am start -W. [Preflight #8](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41018383645) is running; use its diagnostic artifact to identify the next correction.
 - Still open: signed install-over/relaunch, physical-device visual/touch-target review and user acceptance. VersionCode 395 remains blocked; no release/tag/publication/updater enablement has occurred. Current baseline remains 394/build 61.
+
+
+## Signed update preflight #8 — PASS (2026-10-30)
+
+- [x] [Run #8](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41018383645) succeeded on commit 6d2da9db24edec5b5221a8bda9584db23114d5cb.
+- [x] Signed candidate build, package/versionCode 394 and signing-certificate match passed.
+- [x] Existing signed baseline build 61 installed; candidate installed over it; app relaunch and process-alive assertion passed.
+- [x] Diagnostic logcat/window/process records and preflight report uploaded.
+- Remaining: physical-device review and user acceptance. VersionCode 395 and any release/tag/publication/updater enablement remain blocked. Current installed baseline is still 394/build 61.
