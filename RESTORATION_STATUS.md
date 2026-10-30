@@ -42,7 +42,7 @@ MathMotor Video is a local Android video editor with a CapCut-inspired workflow.
 - JSON project save/load and local draft autosave, including playhead time, zoom and horizontal scroll.
 - Responsive preview/timeline layout, reduced keyboard mode and compact dock.
 
-## Remaining product acceptance gaps after #340
+## Remaining product acceptance gaps after #341 and focused #360
 
 The automated scenarios above have passed on the emulator. The following items remain open because they are broader than those scenarios, require visual/physical-device acceptance, or are not directly covered:
 
@@ -146,3 +146,12 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 - The conditional now lives in .github/scripts/run-focused-or-full-emulator-validation.sh, executed by one simple Bash command from the emulator action. INSTRUMENTATION_TEST_FILTER selects only EditorTimelineInteractionTest#tenSecondFixtureSeeksBeginningMiddleAndEndAcrossZoomLevels; screenshot smoke tests and the prior 20 interaction tests are deliberately excluded from this focused run.
 - Focused retest [#360](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41090016116) is in progress. Unit tests, Debug APK build, FFmpeg setup, fixture generation and emulator setup have passed; the emulator/instrumentation step has not yet reported a conclusion. Keep this acceptance gate open until the targeted method itself passes. Do not rerun green scenarios unchanged.
 - Version remains 394/build 61. Version 395 remains blocked.
+
+
+## Current handoff — 2026-10-30
+
+- Working branch: `fix/editor-395-mainline`; draft PR: [#10](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/pull/10).
+- Latest completed green run: #341 (20/20); latest focused exact-10-second attempt: #360 (cancelled without a test result).
+- Current source has the dedicated 10-second fixture/test and the Bash workflow wrapper. Its behavior is not yet verified because #360 was cancelled.
+- Next work, in order: (1) rerun only the focused 10-second test to a recorded pass/fail; (2) inspect #341 screenshots against the user's reference and review common ruler/lane alignment at zoom extremes; (3) verify keyboard-open editing on a short viewport; (4) run a physical-device smoke test; (5) finish signed build-61 install → candidate update-over → relaunch verification.
+- Do not re-run green #337/#340/#341 scenarios unchanged. Keep versionCode 394/build 61 unchanged. Version 395 is blocked pending all release gates and explicit authorization.
