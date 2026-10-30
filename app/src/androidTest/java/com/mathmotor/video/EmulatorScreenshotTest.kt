@@ -278,7 +278,7 @@ class EmulatorScreenshotTest {
             )
             assertTrue(
                 "Loaded-video time readout wrapped or duplicated: ${loadedTime.text}",
-                '\\n' !in loadedTime.text && !loadedTime.text.contains("Proje") &&
+                '\n' !in loadedTime.text && !loadedTime.text.contains("Proje") &&
                     !loadedTime.text.contains("Klip") &&
                     loadedTime.visibleBounds.height() <= (24f * largeDensity).toInt()
             )
