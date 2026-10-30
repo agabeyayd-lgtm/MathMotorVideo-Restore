@@ -113,7 +113,7 @@ The 2026-10-28 progress note below is superseded: the candidate now has a substa
 - [ ] Test with an exact 10-second video and a multi-clip sequence; check beginning, middle and end at multiple zoom levels. Current deterministic fixture is about 8 seconds, although multi-clip scenarios are already tested.
 - [x] MP4 export scenarios passed in #340: two clips in order, timed styled text, looped music/timed effect levels, source-audio volume/mute, A/V seam alignment and split-at-playhead segment order. Keep the broader exact 10-second export case open.
 - [x] Save/reopen emulator scenarios passed in #340 for local draft restoration and manual JSON save-close-reopen project state. Physical-device persistence remains unverified.
-- [ ] Visually inspect the #340 screenshot artifact on the candidate UI and record the result; workflow/log success and screenshot upload alone are not a visual review.
+- [x] Reviewed #340 screenshots (`home.png`, `editor.png`, `editor-empty.png`, `editor-phone-size.png`). The loaded-video editor capture is 320×640; the 393×873 capture is the empty-editor state. Main controls fit in the tall empty-editor capture, but a loaded-video 393×873 screenshot and physical-phone visual check remain open.
 - [ ] Perform a final physical-device smoke test when possible.
 - [ ] Only after every required item is complete and verified, prepare version 395. Until then, do not bump the app version or publish an APK.
 
