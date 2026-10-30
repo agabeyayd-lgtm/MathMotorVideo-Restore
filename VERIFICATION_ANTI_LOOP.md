@@ -8,7 +8,7 @@
 - The 20th test checks home/editor/text-panel layout, single time/ruler presentation, empty-editor add-video state and the 393×873 emulator viewport. Artifact [12984726239](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41066572996/artifacts/12984726239).
 - [#337](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41058278720) separately passed the 8-second fixture filmstrip density/distinct-frame test (6–10 loaded frames).
 - Do not rerun these green tests unchanged. Add or rerun only a test tied to a new code change or a specific regression.
-- Remaining unique gates: inspect #340 screenshots visually; run the exact 10-second beginning/middle/end scenario; validate visible video/text/audio lane alignment and adaptive ruler readability; check keyboard/small-screen behaviour; perform a physical-device smoke test.
+- Remaining unique gates: capture/review the loaded-video editor at 393×873; run the exact 10-second beginning/middle/end scenario; validate visible video/text/audio lane alignment and adaptive ruler readability; check keyboard/small-screen behaviour; perform a physical-device smoke test. The currently uploaded images were inspected: 320×640 shows a loaded video; 393×873 shows the empty editor only.
 - The current fixture is about 8 seconds, so do not describe the 10-second acceptance case as complete. Emulator evidence is not physical-device evidence.
 - Keep installed baseline at versionCode 394 / build 61. Version 395 remains blocked; do not bump version metadata, sign/publish a release APK, enable the updater, or merge/release without the remaining gates and explicit user authorization.
 
