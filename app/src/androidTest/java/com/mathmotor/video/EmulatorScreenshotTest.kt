@@ -145,10 +145,16 @@ class EmulatorScreenshotTest {
         )
         takeScreenshot(device, "editor-text-panel.png")
 
-        // Exercise the same editor at a taller phone-sized viewport. This strengthens
-        // responsive-layout coverage beyond the smallest 320x640 CI emulator; it is
-        // not a substitute for a real-device touch/visual review.
+        // Recreate the editor after changing the emulator size. The earlier editor
+        // was initialized at 320x640 and intentionally caches its short-screen layout
+        // classification; resizing that same Activity would not represent a real 393x873
+        // first launch. A fresh editor instance must measure the larger viewport itself.
         try {
+            device.pressBack()
+            assertTrue(
+                "Could not return to the home screen before the tall-phone layout check",
+                device.wait(Until.hasObject(By.text("Videoların")), 8_000)
+            )
             device.executeShellCommand("wm size 393x873")
             SystemClock.sleep(800)
             device.waitForIdle()
@@ -162,6 +168,16 @@ class EmulatorScreenshotTest {
                     "${device.displayWidth}x${device.displayHeight}",
                 device.displayWidth >= 390 && device.displayHeight >= 870
             )
+
+            val tallOpenEditor = device.findObject(
+                By.clazz("android.widget.Button").textContains("Boş proje oluştur")
+            ) ?: throw AssertionError("Could not find the empty-editor action after viewport resize")
+            tallOpenEditor.click()
+            assertTrue(
+                "A fresh editor instance did not open after the 393x873 viewport was applied",
+                device.wait(Until.hasObject(By.desc("Düzenlenmiş video önizlemesi")), 15_000)
+            )
+            device.waitForIdle()
 
             val largeClipTab = device.findObject(By.desc("Klip araçları sekmesi"))
                 ?: throw AssertionError("Clip tab disappeared at the taller phone size")
