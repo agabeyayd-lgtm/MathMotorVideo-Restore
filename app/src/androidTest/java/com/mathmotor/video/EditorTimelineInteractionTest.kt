@@ -269,6 +269,15 @@ class EditorTimelineInteractionTest {
         )
         device.waitForIdle()
         SystemClock.sleep(450)
+        val rightHandleEvents = device.executeShellCommand("logcat -d -s TimelineTrimDiag:I")
+        assertTrue(
+            "The centered playhead intercepted the right trim handle touch; no end-handle DOWN reached the clip",
+            rightHandleEvents.contains("phase=handle-down edge=end")
+        )
+        assertTrue(
+            "The right trim handle did not complete its drag gesture",
+            rightHandleEvents.contains("phase=handle-up edge=end")
+        )
         val durationAfterRightTrimMs = projectDurationMs(requireProjectTime(device))
         android.util.Log.i(
             "TimelineTrimInteractionTest",
@@ -645,6 +654,15 @@ class EditorTimelineInteractionTest {
         )
         device.waitForIdle()
         SystemClock.sleep(450)
+        val rightHandleEvents = device.executeShellCommand("logcat -d -s TimelineTrimDiag:I")
+        assertTrue(
+            "The centered playhead intercepted the right trim handle touch; no end-handle DOWN reached the clip",
+            rightHandleEvents.contains("phase=handle-down edge=end")
+        )
+        assertTrue(
+            "The right trim handle did not complete its drag gesture",
+            rightHandleEvents.contains("phase=handle-up edge=end")
+        )
 
         val durationAfterHandleDragMs = projectDurationMs(requireProjectTime(device))
         val positionAfterHandleDragMs = projectPositionMs(requireProjectTime(device))
