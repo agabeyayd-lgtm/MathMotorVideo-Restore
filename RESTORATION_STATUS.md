@@ -66,7 +66,7 @@ The automated scenarios above have passed on the emulator. The following items r
 - Unit tests cover timeline scale/time-pixel mapping, zoom-anchor preservation, ruler interval selection, thumbnail work ordering, trim bounds/playhead mapping, and text timing boundaries.
 - The #340 candidate emulator suite passed 20/20 (19 interaction tests plus the home/editor screenshot test). It exercises gesture/trim, multi-clip edits, text/audio, Undo/Redo, project save/reopen, export and screenshot layout scenarios. The exact test method names and run details are recorded in README.md.
 - The emulator tests use deterministic media fixtures; the primary video fixture is about 8 seconds. A separate exact 10-second test remains open.
-- Screenshot diagnostics are uploaded, but the current release gate still requires a human visual inspection of the screenshots and a physical-device smoke test.
+- Screenshot diagnostics are uploaded and the #340 screenshots have been visually inspected. A loaded-video 393×873 screenshot and physical-device smoke test are still required.
 - Do not rerun already-green #340 scenarios without a code change or a specific regression reason. If a new failure occurs, inspect its exact assertion/log first and fix the root cause before a targeted rerun.
 
 ## Release gate
