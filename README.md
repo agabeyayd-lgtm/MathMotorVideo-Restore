@@ -120,3 +120,13 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - The current emulator screenshot workflow builds a debug APK and captures screens, but its script does not by itself prove all touch gestures, exports, Undo/Redo or save/reopen flows work. Add/run interaction-level tests rather than treating screenshots alone as acceptance.
 - Record a checkbox as complete only after the corresponding behavior is implemented and its relevant test passes. If a test cannot be run, leave the item unchecked and say so.
 - This repository is a reconstruction from recoverable project files, not an exact recovery of the old V7 source tree.
+
+
+## Latest technical update — 2026-10-30
+
+- Fresh mainline candidate run [#329](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41040492815) completed with unit tests and Debug APK build passing, but the emulator interaction suite failed 2 of 20 tests. Both failures were right-edge trim gestures that left the project at 8,000 ms.
+- Root cause identified from the view hierarchy and failed interaction path: the fixed playhead is a 40 dp-wide overlay brought to the front above the timeline lanes. When the clip's right edge is centered beneath the playhead, the overlay receives the touch before the right trim handle, so the trim handler never gets ACTION_DOWN.
+- Source fix committed to the candidate branch: the playhead overlay now yields an initial touch to a visible clip trim handle when the touch point falls inside that handle's on-screen bounds. Playhead dragging remains unchanged elsewhere.
+- Added instrumentation assertions to both right-trim interaction paths. They now verify that the trim handle receives both its DOWN and UP events before verifying the duration change; this distinguishes touch routing from trim math.
+- Candidate commits: source fix `cbe72383fd080989563e70e6bd184e4f84ec6c9a`; interaction assertions `b2bcdee7c598fe380adbc668cb43667943fa566d`.
+- The fix is **implemented in candidate source but not yet verified by a fresh CI run or physical-device test**. Keep the corresponding checklist items open until the new emulator run passes. Version 395 remains blocked; do not change version metadata, sign or publish an APK, or enable the updater.
