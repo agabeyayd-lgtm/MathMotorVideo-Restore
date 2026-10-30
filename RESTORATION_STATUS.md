@@ -12,6 +12,25 @@ MathMotor Video is a local Android video editor with a CapCut-inspired workflow.
 - README checklist and source commits do not mean the behavior is fixed or included in the installed APK.
 - Existing repository release notes may lag the user's installed version; use the user's confirmed 394/build 61 as the working baseline.
 
+## Evidence-backed status — 2026-10-30
+
+### Latest successful candidate run
+
+- [Run #340 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41066572996): unit tests and Debug APK build passed; connected Android instrumentation passed **20/20, 0 failures, 0 skips**. Job steps for unit tests, debug build, deterministic fixture preparation, emulator interaction and artifact upload all completed successfully.
+- The 19 interaction tests cover timeline swipe/centered pinch, trim-handle hit routing and source-footage restoration, clip reorder/trim/Undo/Redo/seek, text timing/size/preview, text/audio history, sound-effect lifecycle/history, draft and JSON project reopen, multi-clip/split MP4 export, timed text/music/effect/source audio, A/V seam alignment, and distinct filmstrip timestamps.
+- The separate screenshot test checks home/editor/text panels, the empty-editor add-video state, single time/ruler presentation and responsive layout at 393×873. Screenshot/diagnostic artifact: [12984726239](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41066572996/artifacts/12984726239).
+- [Run #337 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41058278720) also passed the 8-second filmstrip density/distinct-frame scenario (6–10 loaded thumbnails from distinct timestamps).
+- These are verified emulator scenarios, not physical-device approval. The tested video fixture is about 8 seconds; the exact 10-second case is not yet verified. Do not rerun the same green #340 scenarios unchanged.
+
+### Already covered by automated evidence — do not classify as “not implemented”
+
+- Timeline pinch zoom and keeping the centered time anchor stable; one-finger filmstrip scroll; both trim edges and restoration; timeline start/end reachability.
+- Multi-clip selection/reordering, trim, seek, Undo/Redo and split-at-playhead export.
+- Text timing/size/preview after seeking and zooming; unified text/audio history; continuous timing-drag grouping; sound-effect add/start/remove/Undo/Redo.
+- Local draft and manual JSON save-close-reopen scenarios.
+- MP4 cases for two clips in order, timed/styled text, looped music, timed sound effect, source audio gain/mute and audio/video seam alignment.
+- Timestamp-distinct filmstrip frames and the compact home/editor/text-panel emulator layout.
+
 ## Current source functionality (implementation exists; reliability still needs testing)
 
 - Home screen with gallery import, empty-editor action, recent outputs and local drafts.
@@ -23,26 +42,18 @@ MathMotor Video is a local Android video editor with a CapCut-inspired workflow.
 - JSON project save/load and local draft autosave, including playhead time, zoom and horizontal scroll.
 - Responsive preview/timeline layout, reduced keyboard mode and compact dock.
 
-## User-reported problems for the next release (all remain open)
+## Remaining product acceptance gaps after #340
 
-See the detailed, release-blocking checklist in README.md. The active list is:
-1. One-finger timeline gestures and two-finger zoom are not usable/reliable.
-2. Timeline appears locked to the left and cannot be moved freely.
-3. Timeline filmstrip thumbnails are too small and too sparse.
-4. Thumbnails repeat the same frame and initially show black before resolving.
-5. The red playhead does not behave like CapCut's playhead; time, preview, playback and split position must stay aligned.
-6. Text start/end timing cannot be set reliably and text size is not adjustable as expected.
-7. A separate project-duration control is confusing or conflicts with actual timeline duration; use one unified timeline track/ruler and one source of truth for total duration.
-8. Timeline ruler labels must automatically adapt to pinch zoom: coarser minute/large-interval labels when zoomed out, seconds when zoomed in, and finer second spacing at close zoom.
-9. Undo/Redo may not work; current known implementation records clip edits only and does not include text/audio in one global history.
-10. Home screen has redundant explanatory copy/menus and needs a simpler professional layout.
-11. Scissors icons are overused; cut/split/trim/delete actions need distinct, restrained controls.
-12. The redundant bottom timeline strip (duration + green slider + +/- controls) should be removed; keep one unified timeline/ruler, show time once, and zoom with two-finger pinch gestures.
-13. Remove "Klip 1" / "Klip 2" labels and give the reclaimed space to a larger video preview; retain clip selection and boundaries without the labels.
-14. Remove timeline navigation/scroll/zoom arrow buttons entirely; use direct touch gestures (one-finger drag/swipe, two-finger pinch, tap-to-select and draggable trim handles) rather than arrow buttons. Keep only functional affordances such as the playhead and trim handles.
-15. Bottom tool navigation should swap the four-item dock for the selected tool's controls in the same bottom panel, then restore the four-item dock on back/confirm; tool panels must not hide underneath the preview.
-16. Timeline thumbnails need more visible width, clearer frame content and faster prioritized loading/caching.
-17. Simplify the two-video join/add-clip area visually while preserving the actual add/order/join behavior.
+The automated scenarios above have passed on the emulator. The following items remain open because they are broader than those scenarios, require visual/physical-device acceptance, or are not directly covered:
+
+1. Physical-device smoke test on the actual installed phone; emulator success does not prove touch comfort, frame pacing, memory behaviour or OEM-specific playback/export.
+2. Exact 10-second video scenario at the beginning, middle and end, on multiple zoom levels. Current deterministic fixture is about 8 seconds; multi-clip editing/export already has emulator coverage.
+3. Visual inspection of the uploaded #340 screenshots against the supplied target UI reference. Uploading screenshots is not the same as reviewing them.
+4. Confirm the shared ruler and video/text/music/effect lanes remain visibly aligned after scroll, pinch, seek, clip edits and save/reopen. Shared time-to-pixel math has unit tests; the full visible lane alignment still needs an end-to-end visual acceptance pass.
+5. Inspect adaptive ruler label spacing/readability on an actual device at both zoom extremes. The ruler-interval calculation has unit-test coverage.
+6. Check keyboard-open editing and panel reachability on a short phone viewport. #340 covers a 393×873 emulator viewport, not the full keyboard interaction.
+7. Confirm filmstrip thumbnail size/readability and loading/scroll performance on the user's phone; #337/#340 establish distinct frames and the 8-second emulator density scenario, not physical-device performance.
+8. Finish visual polish of the home screen, clip-add/join affordance, redundant icons/labels and tool-panel presentation against the user's target reference; existing screenshots and interaction checks cover only the assertions named above.
 
 ## Shared timeline architecture requirement
 
@@ -52,12 +63,11 @@ See the detailed, release-blocking checklist in README.md. The active list is:
 
 ## Verification gaps
 
-- Unit tests cover some timeline time/pixel mapping, clip trim bounds, playhead-to-clip mapping and text timing boundaries.
-- CI currently builds and captures screenshots, but does not fully exercise timeline gestures, all text/audio edits, global Undo/Redo, export, or save/reopen end-to-end.
-- Test export with multiple clips, trim boundaries, timed text, music and sound effects. Verify output duration, frame content and audio sync; confirm the original input is unchanged.
-- Test project save/reopen and verify clips, text, audio, duration, zoom and scroll position.
-- Run an interactive Android emulator test and review logs/screenshots. Perform a physical-device smoke test when possible.
-- Leave every checkbox in README.md unchecked until the corresponding behavior is implemented and its relevant test passes. If a test cannot be run, report that limitation.
+- Unit tests cover timeline scale/time-pixel mapping, zoom-anchor preservation, ruler interval selection, thumbnail work ordering, trim bounds/playhead mapping, and text timing boundaries.
+- The #340 candidate emulator suite passed 20/20 (19 interaction tests plus the home/editor screenshot test). It exercises gesture/trim, multi-clip edits, text/audio, Undo/Redo, project save/reopen, export and screenshot layout scenarios. The exact test method names and run details are recorded in README.md.
+- The emulator tests use deterministic media fixtures; the primary video fixture is about 8 seconds. A separate exact 10-second test remains open.
+- Screenshot diagnostics are uploaded, but the current release gate still requires a human visual inspection of the screenshots and a physical-device smoke test.
+- Do not rerun already-green #340 scenarios without a code change or a specific regression reason. If a new failure occurs, inspect its exact assertion/log first and fix the root cause before a targeted rerun.
 
 ## Release gate
 
