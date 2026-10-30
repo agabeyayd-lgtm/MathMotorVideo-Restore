@@ -4413,9 +4413,14 @@ class EditorTimelineInteractionTest {
             }
             val bounds = playhead.visibleBounds
             val fromX = bounds.centerX()
+            // Start on the small playhead head at the top of the lane, not on the
+            // vertical line where it can coincide with a clip's trim handle.
+            // The top head is the unambiguous playhead grab target.
+            val playheadHeadY = (bounds.top + (4f * density).toInt())
+                .coerceAtMost(bounds.bottom - 1)
             val toX = (fromX + delta).coerceIn(3, device.displayWidth - 3)
             assertTrue("$stage playhead drag has no horizontal travel: $bounds -> $toX", fromX != toX)
-            device.swipe(fromX, bounds.centerY(), toX, bounds.centerY(), 30)
+            device.swipe(fromX, playheadHeadY, toX, playheadHeadY, 30)
             device.waitForIdle()
             SystemClock.sleep(250)
             actual = projectPositionMs(requireProjectTime(device))
