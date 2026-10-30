@@ -5,14 +5,19 @@ mkdir -p emulator-screenshots
 test_status=0
 
 echo "Run connected Android instrumentation tests and retain diagnostics"
-if gradle --no-daemon connectedDebugAndroidTest > emulator-screenshots/android-test-gradle.log 2>&1; then
+gradle_args=(--no-daemon connectedDebugAndroidTest)
+if [ -n "${INSTRUMENTATION_TEST_FILTER:-}" ]; then
+  gradle_args+=("-Pandroid.testInstrumentationRunnerArguments.class=$INSTRUMENTATION_TEST_FILTER")
+  echo "Running focused instrumentation selection: $INSTRUMENTATION_TEST_FILTER"
+fi
+if gradle "${gradle_args[@]}" > emulator-screenshots/android-test-gradle.log 2>&1; then
   test_status=0
 else
   test_status=$?
 fi
 
-# Instrumentation publishes screenshots to MediaStore Downloads before Gradle
-# removes the test APK. Pull both empty-editor and loaded-video tall-viewport images.
+# The focused 10-second test deliberately excludes the already-green screenshot
+# class. Preserve the existing screenshot requirements for normal full-suite runs.
 mkdir -p emulator-screenshots/instrumentation-screenshots
 pull_required_screenshot() {
   local name="$1"
@@ -33,8 +38,12 @@ pull_required_screenshot() {
   fi
   echo "Collected $name from shared MediaStore Downloads."
 }
-pull_required_screenshot "editor-phone-size.png" || exit 14
-pull_required_screenshot "editor-phone-size-loaded.png" || exit 14
+if [ -z "${INSTRUMENTATION_TEST_FILTER:-}" ]; then
+  pull_required_screenshot "editor-phone-size.png" || exit 14
+  pull_required_screenshot "editor-phone-size-loaded.png" || exit 14
+else
+  echo "Skipping screenshot pull because the focused instrumentation selection excludes screenshot tests."
+fi
 
 # Always collect these files, including on assertion failure or app/instrumentation crash.
 adb -s emulator-5554 logcat -d -b all -v threadtime > emulator-screenshots/after-instrumentation-logcat.txt 2>&1 || true
