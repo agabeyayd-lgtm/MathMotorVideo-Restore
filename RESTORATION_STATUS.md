@@ -32,16 +32,17 @@ See the detailed, release-blocking checklist in README.md. The active list is:
 4. Thumbnails repeat the same frame and initially show black before resolving.
 5. The red playhead does not behave like CapCut's playhead; time, preview, playback and split position must stay aligned.
 6. Text start/end timing cannot be set reliably and text size is not adjustable as expected.
-7. A separate project-duration control is confusing or conflicts with actual timeline duration.
-8. Undo/Redo may not work; current known implementation records clip edits only and does not include text/audio in one global history.
-9. Home screen has redundant explanatory copy/menus and needs a simpler professional layout.
-10. Scissors icons are overused; cut/split/trim/delete actions need distinct, restrained controls.
-11. The redundant bottom timeline strip (duration + green slider + +/- controls) should be removed; time should appear once and zoom should use two-finger pinch gestures.
-12. Remove "Klip 1" / "Klip 2" labels and give the reclaimed space to a larger video preview; retain clip selection and boundaries without the labels.
-13. Green arrow buttons and oversized controls should be made compact without losing accessible touch targets or functionality.
-14. Bottom tool navigation should swap the four-item dock for the selected tool's controls in the same bottom panel, then restore the four-item dock on back/confirm; tool panels must not hide underneath the preview.
-15. Timeline thumbnails need more visible width, clearer frame content and faster prioritized loading/caching.
-16. Simplify the two-video join/add-clip area visually while preserving the actual add/order/join behavior.
+7. A separate project-duration control is confusing or conflicts with actual timeline duration; use one unified timeline track/ruler and one source of truth for total duration.
+8. Timeline ruler labels must automatically adapt to pinch zoom: coarser minute/large-interval labels when zoomed out, seconds when zoomed in, and finer second spacing at close zoom.
+9. Undo/Redo may not work; current known implementation records clip edits only and does not include text/audio in one global history.
+10. Home screen has redundant explanatory copy/menus and needs a simpler professional layout.
+11. Scissors icons are overused; cut/split/trim/delete actions need distinct, restrained controls.
+12. The redundant bottom timeline strip (duration + green slider + +/- controls) should be removed; keep one unified timeline/ruler, show time once, and zoom with two-finger pinch gestures.
+13. Remove "Klip 1" / "Klip 2" labels and give the reclaimed space to a larger video preview; retain clip selection and boundaries without the labels.
+14. Remove timeline navigation/scroll/zoom arrow buttons entirely; use direct touch gestures (one-finger drag/swipe, two-finger pinch, tap-to-select and draggable trim handles) rather than arrow buttons. Keep only functional affordances such as the playhead and trim handles.
+15. Bottom tool navigation should swap the four-item dock for the selected tool's controls in the same bottom panel, then restore the four-item dock on back/confirm; tool panels must not hide underneath the preview.
+16. Timeline thumbnails need more visible width, clearer frame content and faster prioritized loading/caching.
+17. Simplify the two-video join/add-clip area visually while preserving the actual add/order/join behavior.
 
 ## Verification gaps
 
