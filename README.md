@@ -172,3 +172,13 @@ The 2026-10-28 progress note below is superseded: the candidate now has a substa
 - Emulator screenshots/diagnostics were uploaded as [artifact 12984726239](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41066572996/artifacts/12984726239).
 - Emulator shutdown emitted the familiar `stop: Not implemented` / Netsim cleanup warnings after the instrumentation command succeeded; they did not fail the workflow.
 - Broader timeline, text/audio, Undo/Redo, export, save/reopen, and physical-device acceptance items remain open. Version 395 remains blocked; do not bump version metadata, sign/publish a release APK, or enable the updater.
+
+
+## Candidate run #341 — 2026-10-30
+
+- Run [#341 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41083942621) completed on `fix/editor-395-mainline`, candidate commit `e94fc618a1c149368eea6bf76677e65e11240c81`.
+- Unit tests, Debug APK build, fixture preparation, Android instrumentation and screenshot/diagnostic artifact upload all passed. Instrumentation: **20/20 tests, 0 failures, 0 skips**.
+- Added loaded-video 393×873 layout assertion and capture `editor-phone-size-loaded.png`; artifact [12991473031](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41083942621/artifacts/12991473031) contains the capture. The tall-screen empty-editor and loaded-video states are now both covered by emulator evidence.
+- This closes the loaded-video tall-screen emulator capture gate only. It is not a physical-device sign-off. Do not rerun #341 unchanged.
+- Next distinct validation: add an exact 10-second deterministic fixture test for beginning/middle/end seeking at different zoom levels, after checking existing coverage to avoid duplicating the 8-second fixture scenarios. Then review shared ruler/lane alignment and text/audio time labels only where current assertions do not already cover them.
+- Version remains 394/build 61. Version 395 remains blocked; no version bump, signed release APK, publication or updater enablement.
