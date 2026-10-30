@@ -642,3 +642,13 @@ Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228
 - [x] #310's taller-phone assertion was measuring the inner 9:16 PlayerView canvas, not the outer preview stage. #311 corrected the assertion to check the visible video canvas against a 100dp minimum.
 - [ ] This pass proves the adjusted canvas assertion and CI suite, **not** the full preview-stage height on a taller phone. Inspect the uploaded `editor-phone-size.png` and improve the test to target the actual stage container if accessibility hierarchy exposes it.
 - [ ] Physical-device visual/tap-target review and signed install-over/relaunch remain open. VersionCode 395 remains blocked; no release was published.
+
+
+## 2026-10-30 — #327 editor gate passed; signed preflight #7 isolated to startup check
+
+- [x] [Editor emulator #327](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41008440350) passed 20/20 tests (0 failures/errors/skips), including split/export A/V seam, JSON Save As reopen/restore, timeline gestures, trim, text timing/size, music/effect, source audio, and unified Undo/Redo. Phone-size screenshot at 393x873 was collected and inspected; outer preview stage and touch-target assertions passed.
+- [x] Signed preflight #7 built the signed candidate successfully; package name, unchanged versionCode 394, and release certificate SHA-256 matched build 61.
+- [x] [#7 failed at the baseline launch process assertion](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41017197291): baseline APK install and am start returned success, but after 3 seconds only the splash window was visible and pidof com.mathmotor.video.next returned exit 1. The later emulator Terminate Emulator / Netsim cancellation lines are cleanup noise. Candidate replacement was not reached. Root cause of the missing process is not yet known; the failed run did not capture logcat because capture was placed after the failing assertion.
+- [x] Workflow correction committed as 6d2da9db24edec5b5221a8bda9584db23114d5cb: collect baseline and candidate logcat/window/process diagnostics before asserting, use am start -W, and allow 10 seconds for startup. This is diagnostic hardening, not a claim that app startup is fixed.
+- [ ] Signed preflight [#8](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41018383645) is running on the diagnostic workflow. Inspect its artifacts/logcat to distinguish an app crash from emulator/launch timing, then make only the evidence-supported correction.
+- [ ] Physical-device visual/touch-target review remains open. VersionCode 395, release APK, tag, publication, and updater enablement remain blocked; installed baseline is 394/build 61.
