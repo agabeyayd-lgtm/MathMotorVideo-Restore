@@ -64,6 +64,8 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 ### Thumbnails
 
 - [ ] Increase thumbnail height/visibility and use enough thumbnails to visually cover the clip; for a 10-second clip, aim for a dense, evenly spaced filmstrip comparable to common mobile editors, not a fixed arbitrary count.
+- [ ] Increase the visible width/size of timeline thumbnails so the action in each frame is understandable; prioritize the visible viewport and avoid overly narrow frame tiles.
+- [ ] Improve thumbnail generation/loading latency: prioritize frames currently on screen, prepare nearby frames next, cache results and keep scrolling/gestures responsive while extraction continues.
 - [ ] Ensure each thumbnail is extracted from its own timestamp so consecutive thumbnails do not all show the same frame.
 - [ ] Reduce black placeholders and loading delay; show a useful loading state and replace placeholders promptly as frames become available.
 - [ ] Cache/reuse extracted frames and avoid blocking timeline scrolling or editing while thumbnails are prepared.
@@ -77,6 +79,14 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - [ ] Ensure undo/redo restores both timeline state and preview consistently.
 
 ### UI and controls
+
+- [ ] Remove the entire separate bottom timeline-control strip that contains the duplicate duration readout, green zoom slider and +/- zoom buttons; keep time information in one clear timeline location.
+- [ ] Implement CapCut-style pinch gestures: two fingers spread to zoom in and pinch together to zoom out. Zoom must operate on the actual timeline/filmstrip, preserve a sensible gesture anchor and remain smooth; do not rely on a visible zoom slider or +/- buttons.
+- [ ] Remove the visible "Klip 1" / "Klip 2" labels from the timeline; use the reclaimed space to enlarge the video preview area where possible. Preserve clear clip boundaries and clip selection without those labels.
+- [ ] Reduce oversized green arrow buttons and other oversized controls/icons; use compact, balanced controls while retaining accessible touch targets and all existing actions.
+- [ ] When a bottom tool such as Edit, Audio, Text or Export is selected, replace the four-item bottom dock with that tool's own controls in the same bottom panel. Do not open the tool menu underneath/behind the preview. Provide a clear back/confirm route to restore the four-item dock when the task is finished.
+- [ ] Make the two-video join/add-clip area visually clear and uncluttered after removing the large arrows and clip labels; do not remove or change the underlying add, order or join functionality.
+- [ ] Give the preview the space reclaimed from redundant labels and oversized controls; keep the preview and timeline responsive on small screens.
 
 - [ ] Simplify the home screen: remove redundant menus and explanatory clutter; prioritize choosing/opening a video and entering the editor.
 - [ ] Make the home screen and editor responsive to small screens, available height and the software keyboard; controls must remain reachable and not overlap.
