@@ -14,13 +14,14 @@ MathMotor Video is a local Android video editor with a CapCut-inspired workflow.
 
 ## Latest focused regression — fixed-playhead pinch zoom #396 PASSED (2026-10-30)
 
-## Short-viewport keyboard test — focused follow-up (2026-10-31)
+## Short-viewport keyboard test — PASSED (#399, 2026-10-31)
 
 - PR #10 added `EditorTimelineInteractionTest#compactPhoneKeyboardKeepsTextFieldEditableAndRestoresEditor`, using a deterministic 360×640 dp emulator viewport and the checked-in 8-second MP4 fixture.
-- [Run #398 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41132536004) reached the final text-size-control assertion: keyboard open, text entry, keyboard dismissal, input persistence and timeline restoration had already passed. The failure was that the test queried the lower text-size SeekBar without scrolling the text tool panel to it; the SeekBar is intentionally below the initially visible panel area. This is a test reachability assertion, not evidence of a production layout regression.
-- The focused test is being tightened to verify the actual 360×640 dp viewport, keyboard-visible responsive state (timeline/dock hidden, compact preview), text input positioned above the IME, and restored timeline/dock/text controls after dismissal. It scrolls the panel before checking the lower size control.
-- This is the short-screen keyboard gate only. It does not replace physical-phone interaction/performance checks or signed install → update-over → relaunch preflight.
-- Version remains 394/build 61. Version 395 remains blocked; no version metadata bump, release signing, publishing, or updater activation is permitted before all gates pass and the user authorizes release.
+- [Run #398 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41132536004) reached the final text-size-control assertion: keyboard open, text entry, keyboard dismissal, input persistence and timeline restoration had already passed. The failure was that the test queried the lower text-size SeekBar without scrolling the text tool panel to it; the SeekBar is intentionally below the initially visible panel area. This was a test reachability assertion, not evidence of a production layout regression.
+- [Run #399 — SUCCESS (attempt 2)](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41133544846) completed successfully on commit `cdde7caaec50d5ba60137e9062b36dd62b2f72af`; the `emulator-ui` job concluded `success`. The first attempt encountered a Maven Central HTTP 429 before emulator validation; the successful retry completed the focused emulator workflow.
+- The corrected focused test verifies the 360×640 dp viewport, keyboard-visible responsive state (timeline/dock hidden, compact preview), text input above the IME, text entry persistence, restored timeline/dock after dismissal, and access to the lower text-size control after scrolling the panel.
+- This closes the automated short-screen keyboard gate for the tested emulator path only. It does not replace physical-phone interaction/performance checks or signed install → update-over → relaunch preflight.
+- Version remains 394/build 61. Version 395 remains blocked; no version metadata bump, release signing, publishing, or updater activation is permitted before all remaining gates pass and the user authorizes release.
 
 ## Fixed-playhead pinch zoom #396 — PASSED (2026-10-30)
 
