@@ -29,6 +29,7 @@ on:
       - ".github/workflows/android-emulator-screenshots.yml"
       - ".github/scripts/capture-emulator-screenshots.sh"
       - ".github/scripts/run-android-instrumentation-tests.sh"
+      - ".github/scripts/prepare-focused-timeline-test.sh"
 
 permissions:
   contents: read
@@ -136,7 +137,7 @@ jobs:
           python3 -c 'import sys; d=float(sys.argv[1]); assert abs(d-10.0) < 0.001, f"10-second fixture duration is {d}"' "$ten_second_duration"
 
           echo "Fixture sizes:"
-          wc -c app/build/test-fixtures/editor-test-video.mp4 app/build/test-fixtures/editor-test-video-second.mp4 app/build/test-fixtures/editor-test-video-with-audio.mp4 app/build/test-fixtures/editor-av-sync-video.mp4
+          wc -c app/build/test-fixtures/editor-test-video.mp4 app/build/test-fixtures/editor-test-video-second.mp4 app/build/test-fixtures/editor-test-video-with-audio.mp4 app/build/test-fixtures/editor-av-sync-video.mp4 app/build/test-fixtures/editor-test-video-10s.mp4
           echo "Fixture stream metadata:"
           for f in app/build/test-fixtures/editor-test-video.mp4 app/build/test-fixtures/editor-test-video-second.mp4; do
             printf '%s: ' "$f"
