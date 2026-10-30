@@ -174,7 +174,7 @@ class EmulatorScreenshotTest {
                 ?: throw AssertionError("Outer preview stage is not exposed for responsive-layout checks")
             assertTrue(
                 "Taller-phone preview stage is too short: ${largePreviewStage.visibleBounds}",
-                largePreviewStage.visibleBounds.height() >= (180f * largeDensity).toInt()
+                largePreviewStage.visibleBounds.height() >= (320f * largeDensity).toInt()
             )
             val largePreview = device.findObject(By.desc("Düzenlenmiş video önizlemesi"))
                 ?: throw AssertionError("Preview canvas disappeared at the taller phone size")
@@ -239,6 +239,10 @@ class EmulatorScreenshotTest {
                 "The deterministic sample video was not confirmed as added to the timeline",
                 loadedClipConfirmed
             )
+            assertTrue(
+                "A single clip should use the main VIDEO filmstrip, not a duplicate Klip 1 chooser row",
+                !device.hasObject(By.desc("Klip seçici satırı"))
+            )
             device.waitForIdle()
             SystemClock.sleep(500)
 
@@ -257,7 +261,7 @@ class EmulatorScreenshotTest {
 
             assertTrue(
                 "Loaded-video preview stage is too short: ${loadedPreviewStage.visibleBounds}",
-                loadedPreviewStage.visibleBounds.height() >= (180f * largeDensity).toInt()
+                loadedPreviewStage.visibleBounds.height() >= (320f * largeDensity).toInt()
             )
             assertTrue(
                 "Loaded-video canvas is too small: ${loadedPreview.visibleBounds}",
