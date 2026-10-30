@@ -14,20 +14,24 @@ MathMotor Video is a local Android video editor with a CapCut-inspired workflow.
 
 ## Evidence-backed status — 2026-10-30
 
-### Latest completed green candidate
+### Latest completed full-suite and focused verification
 
 - [Run #341 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41083942621), candidate commit `e94fc618a1c149368eea6bf76677e65e11240c81`: unit tests, Debug APK build, fixture preparation, Android instrumentation (**20/20, 0 failures, 0 skips**) and screenshot artifact upload all passed.
-- Artifact [12991473031](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41083942621/artifacts/12991473031) contains empty-editor and loaded-video 393×873 captures. Loaded-video tall-screen emulator screenshot collection is closed; physical-device validation is not.
-- [Run #340 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41066572996) passed 20/20 instrumentation tests, covering the detailed editing interactions and home/editor layout checks.
+- Artifact [12991473031](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41083942621/artifacts/12991473031) contains empty-editor and loaded-video 393×873 captures. Emulator screenshot collection is complete for both states; manual comparison with the user's target and physical-device validation remain open.
+- [Run #340 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41066572996) passed 20/20 instrumentation tests, covering the detailed editor interactions and home/editor layout checks.
 - [Run #337 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41058278720) passed 20/20; its 8-second filmstrip fixture showed 6–10 thumbnails from distinct timestamps.
 
-### Focused exact-10-second seek test — open
+### Exact 10-second focused seek test — PASSED
 
-- Added a generated 10-second / 30 fps MP4 fixture. FFprobe validates the container duration; Android metadata is independently asserted to be 10,000 ms.
-- Added `tenSecondFixtureSeeksBeginningMiddleAndEndAcrossZoomLevels`: seek at 0 ms, 5,000 ms and 9,500 ms across zoom changes, with fixed-playhead stability and 10,000 ms duration assertions.
-- [#358](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41089252672) did not reach the app test: a multiline workflow conditional was interpreted by `/usr/bin/sh`. The logic was moved into a Bash wrapper.
-- [#360](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41090016116) was cancelled after emulator boot, fixture packaging and focused test selection. The log states `The operation was canceled`; no JUnit result or assertion outcome exists. Treat it as **unverified**, not a pass and not an app-test failure. The log does not establish the cancellation cause.
-- Next: execute only this focused test to a conclusive JUnit result. Do not repeat the already-green full interaction suite unchanged.
+- A generated 10-second / 30 fps MP4 fixture is independently validated by FFprobe and Android metadata as exactly 10,000 ms.
+- Focused method `tenSecondFixtureSeeksBeginningMiddleAndEndAcrossZoomLevels` seeks at 0, 5,000 and 9,500 ms across two zoom changes and checks fixed-playhead stability and total duration.
+- [#362 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41090771580), source commit `04a0284e8750d37930ec1c6e8eb190f7bf4bc8d7`: unit tests, Debug APK, fixture preparation and the single focused Android instrumentation test all passed. Artifact [12992984047](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41090771580/artifacts/12992984047).
+- [#366 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41091787906), current PR head `c4b13e3e5ceb8094ef269a2c1c56cb8a7956e2a4`: the same focused method passed again (1/1); unit tests, Debug APK build, fixture preparation and artifact upload also succeeded. Artifact [12994413275](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41091787906/artifacts/12994413275).
+- #358 was a shell-wrapper failure before the app test; #360 was cancelled before a JUnit result. Both are historical attempts superseded by #362/#366.
+- **Coverage boundary:** exact-10-second seeking is verified on one source clip. Multi-clip reorder/trim/seek/history/export scenarios passed separately in #340; no combined exact-10-second multi-clip scenario is claimed.
+- Do not rerun this focused test unchanged. Rerun only for a relevant code change or a specific regression.
+
+### Already covered by green emulator evidence — keep closed
 
 ### Already covered by green emulator evidence — keep closed
 
@@ -51,12 +55,12 @@ MathMotor Video is a local Android video editor with a CapCut-inspired workflow.
 - JSON project save/load and local draft autosave, including playhead time, zoom and horizontal scroll.
 - Responsive preview/timeline layout, reduced keyboard mode and compact dock.
 
-## Remaining product acceptance gaps after #341 and focused #360
+## Remaining product acceptance gaps after #341, #362 and #366
 
 The automated scenarios above have passed on the emulator. The following items remain open because they are broader than those scenarios, require visual/physical-device acceptance, or are not directly covered:
 
 1. Physical-device smoke test on the actual installed phone; emulator success does not prove touch comfort, frame pacing, memory behaviour or OEM-specific playback/export.
-2. Exact 10-second video scenario at the beginning, middle and end, on multiple zoom levels. Current deterministic fixture is about 8 seconds; multi-clip editing/export already has emulator coverage.
+2. No open focused seek-test gap remains: exact 10-second single-clip seeking at 0 / 5,000 / 9,500 ms across zoom levels passed in #362 and #366. Multi-clip reorder/trim/seek/history/export passed separately in #340; these are separate evidence sets, not one combined exact-10-second multi-clip test.
 3. Visual inspection of the uploaded #340 screenshots against the supplied target UI reference. Uploading screenshots is not the same as reviewing them.
 4. Confirm the shared ruler and video/text/music/effect lanes remain visibly aligned after scroll, pinch, seek, clip edits and save/reopen. Shared time-to-pixel math has unit tests; the full visible lane alignment still needs an end-to-end visual acceptance pass.
 5. Inspect adaptive ruler label spacing/readability on an actual device at both zoom extremes. The ruler-interval calculation has unit-test coverage.
@@ -74,9 +78,9 @@ The automated scenarios above have passed on the emulator. The following items r
 
 - Unit tests cover timeline scale/time-pixel mapping, zoom-anchor preservation, ruler interval selection, thumbnail work ordering, trim bounds/playhead mapping, and text timing boundaries.
 - The #340 candidate emulator suite passed 20/20 (19 interaction tests plus the home/editor screenshot test). It exercises gesture/trim, multi-clip edits, text/audio, Undo/Redo, project save/reopen, export and screenshot layout scenarios. The exact test method names and run details are recorded in README.md.
-- The emulator tests use deterministic media fixtures; the primary video fixture is about 8 seconds. A separate exact 10-second test remains open.
-- Screenshot diagnostics are uploaded and the #340 screenshots have been visually inspected. A loaded-video 393×873 screenshot and physical-device smoke test are still required.
-- Do not rerun already-green #340 scenarios without a code change or a specific regression reason. If a new failure occurs, inspect its exact assertion/log first and fix the root cause before a targeted rerun.
+- The emulator tests use deterministic media fixtures; the main interaction and filmstrip fixtures are about 8 seconds. The separate exact 10-second single-clip seek test passed in #362 and #366.
+- Screenshot diagnostics are uploaded. The #340 screenshots were visually inspected, and #341 added the loaded-video 393×873 capture; the #341 pair still needs comparison against the user's target UI. Physical-device smoke testing remains required.
+- Do not rerun already-green #337/#340/#341/#362/#366 scenarios unchanged. If a new failure occurs, inspect its exact assertion/log first and fix the root cause before a targeted rerun.
 
 ## Release gate
 
@@ -159,8 +163,10 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 
 ## Current handoff — 2026-10-30
 
-- Working branch: `fix/editor-395-mainline`; draft PR: [#10](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/pull/10).
-- Latest completed green run: #341 (20/20); latest focused exact-10-second attempt: #360 (cancelled without a test result).
-- Current source has the dedicated 10-second fixture/test and the Bash workflow wrapper. Its behavior is not yet verified because #360 was cancelled.
-- Next work, in order: (1) rerun only the focused 10-second test to a recorded pass/fail; (2) inspect #341 screenshots against the user's reference and review common ruler/lane alignment at zoom extremes; (3) verify keyboard-open editing on a short viewport; (4) run a physical-device smoke test; (5) finish signed build-61 install → candidate update-over → relaunch verification.
-- Do not re-run green #337/#340/#341 scenarios unchanged. Keep versionCode 394/build 61 unchanged. Version 395 is blocked pending all release gates and explicit authorization.
+- Working branch: `fix/editor-395-mainline`; open draft PR: [#10](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/pull/10).
+- Latest full interaction suite: #341 (20/20), with empty and loaded 393×873 emulator screenshots.
+- Exact 10-second seek gate: #362 and #366 both passed the one focused method (1/1). #358 was a shell-wrapper failure and #360 was cancelled before JUnit; both are superseded.
+- No-repeat rule: do not rerun #337/#340/#341/#362/#366 unchanged. Exact 10-second single-clip seeking and separate multi-clip editing/export are covered; do not claim a combined exact-10-second multi-clip test.
+- Next work, in order: (1) inspect the #341 empty/loaded screenshots against the user's target UI; (2) visually verify shared video/text/music/effect lane alignment and adaptive ruler readability at zoom extremes; (3) verify keyboard-open editing on a short viewport; (4) perform physical-device visual/touch/performance smoke testing; (5) run signed build-61 install → current-mainline candidate update-over → relaunch verification.
+- Signed preflight #9 passed on the older `fix/editor-395-gate` branch, but that branch is diverged and its `VideoEditorActivity.kt` and `TimelineScaleMath.kt` differ from current mainline. Do not transfer its result to PR #10; repeat the no-publish preflight on current mainline.
+- Keep versionCode 394/build 61 unchanged. Version 395 remains blocked until all product/release gates pass and the user authorizes release.
