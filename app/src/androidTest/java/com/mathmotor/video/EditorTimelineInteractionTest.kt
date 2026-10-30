@@ -1037,6 +1037,158 @@ class EditorTimelineInteractionTest {
     }
 
     @Test
+    fun tenSecondFixtureSeeksBeginningMiddleAndEndAcrossZoomLevels() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val device = UiDevice.getInstance(instrumentation)
+        val packageName = context.packageName
+        val fixture = java.io.File(context.filesDir, "editor-test-video-10s.mp4")
+        assertTrue("Exact 10-second timeline fixture is missing", fixture.isFile && fixture.length() > 0L)
+
+        val retriever = MediaMetadataRetriever()
+        val fixtureDurationMs = try {
+            retriever.setDataSource(fixture.absolutePath)
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+                ?: throw AssertionError("Could not read exact 10-second fixture duration")
+        } finally {
+            retriever.release()
+        }
+        assertEquals("Dedicated timeline fixture must be exactly 10 seconds", 10_000L, fixtureDurationMs)
+
+        val clip = org.json.JSONObject()
+            .put("uri", Uri.fromFile(fixture).toString())
+            .put("title", "TEN_SECOND_FIXTURE")
+            .put("durationMs", fixtureDurationMs)
+            .put("startMs", 0L)
+            .put("endMs", fixtureDurationMs)
+        val project = org.json.JSONObject()
+            .put("format", "MathMotorVideoProject")
+            .put("version", 1)
+            .put("clips", org.json.JSONArray().put(clip))
+            .put("selectedClipIndex", 0)
+            .put("timelinePlayheadMs", 0L)
+            .put("timelineZoom", 1.0)
+            .put("timelineHorizontalScrollMs", 0L)
+            .put("textLayers", org.json.JSONArray())
+            .put("sourceAudioVolume", 100)
+            .put("musicVolume", 0)
+            .put("soundVolume", 100)
+            .put("keepSourceAudio", true)
+        val draftId = java.util.UUID.randomUUID().toString()
+        assertTrue(
+            "Could not seed exact 10-second timeline project",
+            VideoProjectDraftStore.save(context, draftId, "10-second timeline seek validation", project)
+        )
+
+        device.executeShellCommand("logcat -c")
+        device.executeShellCommand(
+            "am start --activity-clear-task -n " + packageName +
+                "/com.mathmotor.video.EditorTestEntryActivity --es draft_id " + draftId
+        )
+        val restoreDeadline = SystemClock.uptimeMillis() + 20_000L
+        var entryStarted = false
+        var draftFound = false
+        var draftRestored = false
+        var restoreMarkers = ""
+        while (SystemClock.uptimeMillis() < restoreDeadline) {
+            val logs = device.executeShellCommand("logcat -d -s EditorSmokeTest:I")
+            restoreMarkers = logs.takeLast(1_600)
+            if (logs.contains("EDITOR_SMOKE_ENTRY_STARTED") && logs.contains("hasDraft=true")) entryStarted = true
+            if (logs.contains("EDITOR_SMOKE_DRAFT_LOOKUP id=" + draftId + " found=true")) draftFound = true
+            if (logs.contains("EDITOR_SMOKE_DRAFT_RESTORED id=" + draftId)) {
+                draftRestored = true
+                break
+            }
+            if (logs.contains("EDITOR_SMOKE_DRAFT_LOOKUP id=" + draftId + " found=false")) break
+            SystemClock.sleep(200)
+        }
+        assertTrue("10-second editor entry did not start; markers=$restoreMarkers", entryStarted)
+        assertTrue("10-second draft was not found; markers=$restoreMarkers", draftFound)
+        assertTrue("10-second draft did not restore; markers=$restoreMarkers", draftRestored)
+        assertTrue(
+            "Restored 10-second editor did not expose its VIDEO lane",
+            device.wait(Until.hasObject(By.desc("Zaman çizelgesi satırı: VIDEO")), 10_000)
+        )
+        requireObject(device, By.desc("Klip araçları sekmesi"), "10-second clip tools tab").click()
+        device.waitForIdle()
+
+        val totalDurationMs = projectDurationMs(requireProjectTime(device))
+        assertEquals("Timeline duration must display the exact 10-second source duration", 10_000L, totalDurationMs)
+        val initialPositionMs = projectPositionMs(requireProjectTime(device))
+        assertTrue("New 10-second project should open at its beginning, got $initialPositionMs ms",
+            initialPositionMs <= 100L)
+
+        fun timelineScrollViewport(stage: String): UiObject2 {
+            val laneBounds = requireObject(
+                device, By.desc("Zaman çizelgesi satırı: VIDEO"), "$stage VIDEO lane"
+            ).visibleBounds
+            return device.findObjects(By.clazz("android.widget.HorizontalScrollView"))
+                .firstOrNull {
+                    val bounds = it.visibleBounds
+                    bounds.top <= laneBounds.centerY() && bounds.bottom >= laneBounds.centerY() &&
+                        bounds.left >= laneBounds.left - 2
+                } ?: throw AssertionError("$stage could not find VIDEO timeline scroll viewport; lane=$laneBounds")
+        }
+
+        fun assertSeek(targetMs: Long, stage: String) {
+            seekPlayheadByDragging(device, targetMs, totalDurationMs, 220L, stage)
+            val actualMs = projectPositionMs(requireProjectTime(device))
+            assertTrue(
+                "$stage expected $targetMs ms but timeline reports $actualMs ms",
+                kotlin.math.abs(actualMs - targetMs) <= 220L
+            )
+            assertEquals("$stage changed the 10-second project duration",
+                10_000L, projectDurationMs(requireProjectTime(device)))
+        }
+
+        val initialZoomLabel = requireObject(
+            device, By.descContains("Zaman çizelgesi yakınlaştırma"), "initial 10-second timeline zoom"
+        ).contentDescription
+        val initialZoom = zoomPercent(initialZoomLabel)
+
+        // The initial playhead position is the beginning check at the default scale.
+        // Zoom once, confirm the fixed playhead stays at the same timestamp, then seek the middle.
+        timelineScrollViewport("before first 10-second zoom").pinchOpen(0.85f, 60)
+        device.waitForIdle()
+        SystemClock.sleep(300)
+        val firstZoomLabel = requireObject(
+            device, By.descContains("Zaman çizelgesi yakınlaştırma"), "first 10-second timeline zoom"
+        ).contentDescription
+        val firstZoom = zoomPercent(firstZoomLabel)
+        assertTrue("First pinch did not increase the 10-second timeline zoom: $initialZoomLabel -> $firstZoomLabel",
+            firstZoom > initialZoom)
+        assertTrue(
+            "First zoom moved the beginning playhead unexpectedly",
+            projectPositionMs(requireProjectTime(device)) <= 100L
+        )
+        assertSeek(5_000L, "10-second middle at first zoom")
+
+        // Increase scale again before seeking near the source end.
+        val timeBeforeSecondZoomMs = projectPositionMs(requireProjectTime(device))
+        timelineScrollViewport("before second 10-second zoom").pinchOpen(0.85f, 60)
+        device.waitForIdle()
+        SystemClock.sleep(300)
+        val secondZoomLabel = requireObject(
+            device, By.descContains("Zaman çizelgesi yakınlaştırma"), "second 10-second timeline zoom"
+        ).contentDescription
+        val secondZoom = zoomPercent(secondZoomLabel)
+        assertTrue("Second pinch did not increase the 10-second timeline zoom: $firstZoomLabel -> $secondZoomLabel",
+            secondZoom > firstZoom)
+        val timeAfterSecondZoomMs = projectPositionMs(requireProjectTime(device))
+        assertTrue(
+            "Second zoom moved the middle playhead: $timeBeforeSecondZoomMs -> $timeAfterSecondZoomMs ms",
+            kotlin.math.abs(timeBeforeSecondZoomMs - timeAfterSecondZoomMs) <= 150L
+        )
+        assertSeek(9_500L, "10-second end at second zoom")
+
+        android.util.Log.i(
+            "TenSecondTimelineTest",
+            "stage=verified durationMs=$fixtureDurationMs positions=0,5000,9500 " +
+                "zoomLevels=$initialZoom->$firstZoom->$secondZoom"
+        )
+    }
+
+    @Test
     fun textPreviewAndSettingsRemainStableAfterTimelineSeekAndZoom() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
