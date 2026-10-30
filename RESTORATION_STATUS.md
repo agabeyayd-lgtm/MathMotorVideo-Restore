@@ -276,3 +276,11 @@
 - Candidate retests on exact source commit `c461141e50366b07e195e31d877f178cedc8ac19`: [#315](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40921663447) and [signed preflight #4](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40921663407). They were running at the time of this entry; recheck final status, JUnit and screenshot artifact before marking a gate complete.
 - Quantitative audio gain is already closed by #291 (music ratio 0.34908 at 35%, effect ratio 0.59874 at 60%). Do not repeat that unchanged test.
 - Release 395 remains blocked. Current installed baseline stays at versionCode 394/build 61; physical-device visual/tap-target review and signed install-over/relaunch remain open.
+
+
+## Verification update — 2026-10-30 (#327 and signed preflight #7/#8)
+
+- **Editor gate #327 PASS:** 20/20 tests, no failures/errors/skips. Verified split into ordered segments and MP4 export with 50 ms A/V seam delta, Undo/Redo, Save As JSON close/reopen restoration (clips, playhead, zoom/scroll, timed text, music/effect and levels), trim/timeline gestures, text preview/export, and audio checks. The 393x873 phone screenshot and responsive preview/tap-target assertions were inspected and passed.
+- **Signed preflight #7 FAIL:** signed release candidate built; package, versionCode 394, and signing certificate matched the current build 61. Baseline install and launch command succeeded, but after 3 seconds only the splash screen remained and pidof com.mathmotor.video.next returned 1. The failing assertion ran before logcat collection, so the app-crash cause is not yet proven. Emulator termination/Netsim messages are cleanup output, not the root failure.
+- Diagnostic workflow change committed: 6d2da9db24edec5b5221a8bda9584db23114d5cb. It records baseline and candidate logcat, window state and process ID before assertions, waits 10 seconds and uses am start -W. [Preflight #8](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41018383645) is running; use its diagnostic artifact to identify the next correction.
+- Still open: signed install-over/relaunch, physical-device visual/touch-target review and user acceptance. VersionCode 395 remains blocked; no release/tag/publication/updater enablement has occurred. Current baseline remains 394/build 61.
