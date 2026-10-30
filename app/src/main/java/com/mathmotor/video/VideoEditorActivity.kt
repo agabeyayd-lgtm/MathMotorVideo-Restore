@@ -810,7 +810,27 @@ class VideoEditorActivity : Activity() {
         clipPanel.addView(label("KLİP DÜZENLEME", 13f, Color.rgb(121, 202, 218), true))
         selectedClipLabel = label("Henüz video eklenmedi.", 12f, Color.WHITE, true)
         clipPanel.addView(selectedClipLabel)
-        emptyClipPanelAction = miniButton("＋ Video ekle") { chooseVideo(true) }.apply {
+        emptyClipPanelAction = miniButton("＋  Video ekle") { chooseVideo(true) }.apply {
+            // Make the first meaningful action unmistakable without adding fake editor tools.
+            minHeight = dp(46)
+            minimumHeight = dp(46)
+            minWidth = dp(132)
+            minimumWidth = dp(132)
+            textSize = 13f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(5, 25, 29))
+            setPadding(dp(14), 0, dp(14), 0)
+            val primaryShape = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.rgb(57, 220, 190))
+                cornerRadius = dp(10).toFloat()
+                setStroke(dp(1), Color.rgb(100, 245, 218))
+            }
+            background = android.graphics.drawable.RippleDrawable(
+                android.content.res.ColorStateList.valueOf(Color.rgb(31, 165, 146)),
+                primaryShape,
+                null
+            )
             contentDescription = "Klip düzenlemek için video ekle"
         }
         clipPanel.addView(emptyClipPanelAction)
@@ -1361,7 +1381,12 @@ class VideoEditorActivity : Activity() {
         val dock = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setPadding(0, dp(5), 0, 0)
+            setPadding(dp(2), dp(5), dp(2), dp(2))
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.rgb(16, 26, 39))
+                cornerRadius = dp(15).toFloat()
+                setStroke(dp(1), Color.rgb(43, 61, 79))
+            }
         }
         listOf(
             Triple("clip", "Düzenle", "✂"),
@@ -1369,9 +1394,34 @@ class VideoEditorActivity : Activity() {
             Triple("text", "Metin", "T"),
             Triple("export", "Dışa aktar", "⇧")
         ).forEach { (key, title, symbol) ->
-            val tab = miniButton("$symbol\n$title") { toggleEditorPanel(key) }.apply {
+            val tabText = android.text.SpannableString("$symbol\n$title").apply {
+                setSpan(
+                    android.text.style.RelativeSizeSpan(1.35f),
+                    0,
+                    symbol.length,
+                    android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+                setSpan(
+                    android.text.style.StyleSpan(Typeface.BOLD),
+                    0,
+                    symbol.length,
+                    android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+                setSpan(
+                    android.text.style.RelativeSizeSpan(0.88f),
+                    symbol.length + 1,
+                    length,
+                    android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+            }
+            val tab = miniButton(tabText.toString()) { toggleEditorPanel(key) }.apply {
+                text = tabText
                 textSize = 10f
+                gravity = Gravity.CENTER
+                includeFontPadding = false
+                setLineSpacing(dp(1).toFloat(), 1f)
                 minHeight = dp(52)
+                minimumHeight = dp(52)
                 setPadding(dp(1), dp(2), dp(1), dp(2))
                 maxLines = 2
                 contentDescription = when (key) {
@@ -1383,7 +1433,8 @@ class VideoEditorActivity : Activity() {
             }
             editorTabButtons[key] = tab
             dock.addView(tab, LinearLayout.LayoutParams(0, dp(52), 1f).apply {
-                if (key != "clip") leftMargin = dp(4)
+                leftMargin = dp(3)
+                rightMargin = dp(3)
             })
         }
         root.addView(dock, matchWrap())
