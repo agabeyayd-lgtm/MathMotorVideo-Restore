@@ -4558,7 +4558,10 @@ class VideoEditorActivity : Activity() {
             setBackgroundColor(Color.rgb(26, 37, 51))
         }
         // Cap decode work per clip to keep long timelines responsive and avoid a stale queue.
-        val thumbnailCount = (width / dp(14)).coerceIn(3, 40)
+        // Aim for roughly ten readable frames across a ten-second clip at the default 1x scale.
+        // A 22 dp slot matches the timeline's 22 dp/second base scale, avoiding a filmstrip
+        // made of overly narrow slivers while still increasing density naturally when zoomed in.
+        val thumbnailCount = (width / dp(22)).coerceIn(3, 40)
         repeat(thumbnailCount) { slot ->
             val frameTime = if (thumbnailCount <= 1) clip.startMs else {
                 clip.startMs + (durationMs * slot.toLong() / (thumbnailCount - 1L))
