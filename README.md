@@ -21,24 +21,25 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - Do not bump `versionCode` or `versionName` during this work until the release gate is met and the user explicitly authorizes the release.
 - A successful source build is not the same as a tested, published APK. Keep the original media safe; export to a new file.
 
-## Progress reality check — 2026-10-28
+## Current verification state — 2026-10-30 (candidate run #340)
 
-**Honest assessment: recent work has not yet produced a newly verified, user-facing improvement that we can confidently call finished.** The project is not starting from zero: editing/export code and earlier focused checks exist. But repeated CI/emulator failures mean we have spent too much time cycling through test failures without closing the main phone-use problems. From the user's perspective, progress has therefore felt stalled; that concern is justified.
+The 2026-10-28 progress note below is superseded: the candidate now has a substantial automated emulator suite, and the project is **not** at the starting line.
 
-### What the latest runs actually prove
+### Latest verified candidate evidence
 
-- Run [#269 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40680915280) on `fix/editor-395-gate`, head `8c78d8e`: unit tests, Debug APK build, and all **19 Android instrumentation tests** passed; emulator screenshots/diagnostics were uploaded as [artifact 12813448192](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40680915280/artifacts/12813448192). This is real automated interaction-test progress on the candidate branch, but it does not by itself prove the interface visually matches CapCut or replace a physical-phone review.
-- Run [#270 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40682611758) on separate branch `work/focused-instrumentation-gates`: unit tests and Debug APK build passed, but emulator interaction failed with `androidx.test.uiautomator.StaleObjectException`. It is a test failure to investigate on that branch, not a release-candidate failure and not proof by itself that an editor feature is broken or fixed.
-- Keep the distinction clear: #269 is a successful candidate-branch automated test run; visual CapCut resemblance and physical-device usability remain unverified. Version 395 remains blocked.
+- [Run #340 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41066572996), on `fix/editor-395-mainline`: unit tests passed, Debug APK build passed, and connected Android instrumentation completed **20/20 tests with 0 failures and 0 skips**. The workflow log confirms `connectedDebugAndroidTest exit code: 0`, `BUILD SUCCESSFUL`, and `Connected Android instrumentation tests passed.`
+- The 19 interaction tests in `EditorTimelineInteractionTest` cover fixed-playhead scrolling and centered pinch, left/right trim and source-footage restoration, filmstrip scroll versus trim, multi-clip reorder/trim/Undo/Redo/seek, text preview after seek/zoom, text timing and size, unified text/audio Undo/Redo, continuous text timing gesture grouping, sound-effect add/start/remove/history, draft reopen, manual JSON save-close-reopen, two-clip MP4 output, timed styled text export, looped music and timed effects, source-audio volume/mute, audio/video seam alignment, split-at-playhead export, and distinct-timestamp filmstrip frames.
+- The 20th instrumentation test checks the home/editor/text-panel layout and a taller 393×873 phone-sized emulator viewport. It verifies the single time display/ruler, directly draggable playhead target, compact layout bounds, empty-editor add-video action, and text panel presence.
+- [Run #337 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41058278720) separately verified the filmstrip density scenario: the 8-second fixture loads 6–10 frames from distinct timestamps. This is an emulator fixture result, not a physical-phone readability or performance guarantee.
+- #340 screenshots/diagnostics were uploaded as [artifact 12984726239](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41066572996/artifacts/12984726239).
 
-### How progress will be counted from here
+### What this evidence closes — and what it does not
 
-- Report three states separately: **implemented in source**, **automated test passed**, and **verified in actual device use**.
-- A test-harness fix or a passing build is engineering progress, but it does not close a user-facing editor requirement.
-- Before rerunning a red test, inspect its failing assertion/log and compare with prior failures. Fix the identified cause first; avoid rerunning the same unchanged failure just to get another result.
-- After each fix, record the exact behavior changed, the specific test evidence, and what remains unverified. Do not mark a feature done from screenshots or source presence alone.
-- The next meaningful milestone is not “more green CI”: it is a repeatable, evidenced interaction/export/save-reopen flow that closes at least one of the open user-facing blockers listed below.
-- Version 395 remains blocked. No version bump, signed release APK, publication, or update offer until the release gate passes and the user authorizes it.
+- The tested emulator scenarios above are **already automated and green**. Do not recreate or rerun those same checks without a new code change or a specific regression reason.
+- Source implementation, emulator test success, and physical-device acceptance are separate states. A green #340 does not prove the installed 394 APK contains these candidate changes, nor that every screen/touch target feels right on the user's phone.
+- The deterministic video fixture is about 8 seconds, not a 10-second acceptance clip. Multi-clip ordering/export is tested; the exact 10-second beginning/middle/end scenario is still open.
+- Remaining acceptance work is focused: inspect the uploaded screenshots visually; test on a real phone (including keyboard/small-screen handling, timeline readability and pinch/drag comfort); verify a 10-second clip at multiple zoom levels; and specifically review shared video/text/audio lane alignment and adaptive ruler readability in the actual UI. Avoid repeating the green #340 tests unchanged.
+- Version 395 remains blocked. Do not bump version metadata, sign/publish a release APK, or enable the updater until the remaining acceptance gates pass and the user explicitly authorizes release.
 
 ## Current baseline capabilities (present in source; not all are proven reliable)
 
@@ -51,6 +52,8 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - [ ] These checkmarks describe existing code paths only; they do **not** certify that the current build behaves correctly on a device. See the required verification checklist below.
 
 ## Required work for the next release (395) — NOT DONE until verified
+
+**Checklist interpretation:** items already covered by a specific green emulator/unit test are recorded as such in the evidence section above. Unchecked items below are remaining acceptance gaps or broader requirements not fully proved by that test; they do not mean the source feature is absent. Do not rerun a passed scenario unchanged.
 
 ### Timeline touch, scrolling and playhead
 
@@ -105,12 +108,12 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 
 ### Required validation before version 395
 
-- [ ] Run unit tests for timeline mapping, trim bounds, playhead-to-clip mapping and text timing.
-- [ ] Run an interactive Android emulator test covering one-finger scroll/trim, two-finger zoom, playhead scrubbing/sync, thumbnail variety/loading, text timing/size, undo/redo and home-screen navigation.
-- [ ] Test with a 10-second video and a multi-clip sequence; check the beginning, middle and end of the timeline at multiple zoom levels.
-- [ ] Export an MP4 and verify video, text, audio, duration and playhead cut position; confirm the original input video is unchanged.
-- [ ] Save a project, close/reopen it and verify clips, text, audio, duration, zoom and timeline position.
-- [ ] Review emulator screenshots and logs; fix regressions and rerun failed checks.
+- [x] Unit tests for timeline scale/mapping, zoom anchor, ruler interval, thumbnail work order and text timing passed in candidate run #340.
+- [x] Candidate #340 emulator suite passed 20/20, covering one-finger timeline scroll/trim, two-finger pinch, playhead seek, thumbnail timestamp variety, text timing/size, text/audio/clip Undo/Redo, project reopen, MP4 export, and home/editor navigation/layout checks. The precise tested scenarios are listed above.
+- [ ] Test with an exact 10-second video and a multi-clip sequence; check beginning, middle and end at multiple zoom levels. Current deterministic fixture is about 8 seconds, although multi-clip scenarios are already tested.
+- [x] MP4 export scenarios passed in #340: two clips in order, timed styled text, looped music/timed effect levels, source-audio volume/mute, A/V seam alignment and split-at-playhead segment order. Keep the broader exact 10-second export case open.
+- [x] Save/reopen emulator scenarios passed in #340 for local draft restoration and manual JSON save-close-reopen project state. Physical-device persistence remains unverified.
+- [ ] Visually inspect the #340 screenshot artifact on the candidate UI and record the result; workflow/log success and screenshot upload alone are not a visual review.
 - [ ] Perform a final physical-device smoke test when possible.
 - [ ] Only after every required item is complete and verified, prepare version 395. Until then, do not bump the app version or publish an APK.
 
