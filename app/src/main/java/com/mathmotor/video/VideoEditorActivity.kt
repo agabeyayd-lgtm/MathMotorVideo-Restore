@@ -601,7 +601,6 @@ class VideoEditorActivity : Activity() {
         var pinchStartSpanPx = 0f
         var pinchStartZoom = 1.0f
         var pinchAnchorTimeMs = 0L
-        var pinchFocusXInLanePx = 0f
         var lastAppliedPinchZoom = 1.0f
 
         fun pointerSpan(event: android.view.MotionEvent): Float {
@@ -615,18 +614,16 @@ class VideoEditorActivity : Activity() {
             pinchStartSpanPx = pointerSpan(event).coerceAtLeast(1f)
             pinchStartZoom = timelineZoom
             lastAppliedPinchZoom = timelineZoom
-            val focusX = (event.getX(0) + event.getX(1)) / 2f
-            // Events use timelineTracksFrame coordinates; use the real VIDEO viewport origin.
-            pinchFocusXInLanePx = focusX - timelineLaneViewportLeftPx()
-            val viewportWidth = timelineLaneViewportWidthPx()
+            // The white playhead is fixed at the VIDEO viewport center. Pinch zoom must
+            // preserve the time under that playhead, not the fingers' moving midpoint.
             val scrollX = timelineScrollViews.firstOrNull()?.scrollX ?: timelineHorizontalScrollX
-            pinchAnchorTimeMs = TimelineScaleMath.timeAtViewportX(
-                scrollX, pinchFocusXInLanePx, viewportWidth, timelinePixelsPerSecond()
+            pinchAnchorTimeMs = TimelineScaleMath.timeForCenteredScroll(
+                scrollX, timelinePixelsPerSecond()
             ).coerceIn(0L, totalOutputDurationMs())
             android.util.Log.d(
                 "TimelinePinch",
-                "manual begin span=$pinchStartSpanPx zoom=$pinchStartZoom anchor=$pinchAnchorTimeMs " +
-                    "focusX=$pinchFocusXInLanePx laneLeft=${timelineLaneViewportLeftPx()} viewport=$viewportWidth scroll=$scrollX"
+                "manual begin span=$pinchStartSpanPx zoom=$pinchStartZoom " +
+                    "centerPlayheadTime=$pinchAnchorTimeMs scroll=$scrollX"
             )
         }
 
@@ -638,11 +635,8 @@ class VideoEditorActivity : Activity() {
 
             timelineZoom = nextZoom
             lastAppliedPinchZoom = nextZoom
-            val viewportWidth = timelineLaneViewportWidthPx()
-            val nextScrollX = TimelineScaleMath.scrollForAnchorTime(
+            val nextScrollX = TimelineScaleMath.scrollForCenteredTime(
                 pinchAnchorTimeMs,
-                pinchFocusXInLanePx,
-                viewportWidth,
                 timelinePixelsPerSecond()
             )
             timelineHorizontalScrollX = nextScrollX
@@ -653,7 +647,7 @@ class VideoEditorActivity : Activity() {
             android.util.Log.d(
                 "TimelinePinch",
                 "manual move span=$span startSpan=$pinchStartSpanPx zoom=$nextZoom " +
-                    "scroll=$nextScrollX anchor=$pinchAnchorTimeMs"
+                    "scroll=$nextScrollX centerPlayheadTime=$pinchAnchorTimeMs"
             )
             // Coalesce frequent MOVE events into at most one track rebuild per frame.
             timelineHandler.removeCallbacks(timelinePinchRefreshTask)

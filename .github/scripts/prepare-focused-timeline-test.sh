@@ -4,7 +4,7 @@ set -euo pipefail
 asset_dir="app/src/androidTest/assets"
 mkdir -p "$asset_dir"
 
-if [[ "${INSTRUMENTATION_TEST_FILTER:-}" == *"EmulatorScreenshotTest"* || "${INSTRUMENTATION_TEST_FILTER:-}" == *"sharedTimelineVideoTextMusicEffectLanesStayAlignedAcrossZoomLevels"* ]]; then
+if [[ "${INSTRUMENTATION_TEST_FILTER:-}" == *"EmulatorScreenshotTest"* || "${INSTRUMENTATION_TEST_FILTER:-}" == *"sharedTimelineVideoTextMusicEffectLanesStayAlignedAcrossZoomLevels"* || "${INSTRUMENTATION_TEST_FILTER:-}" == *"filmstripScrollDoesNotTrimAndTrimHandleDoesNotBecomeScroll"* ]]; then
   # The focused screenshot test imports a real sample clip after the viewport
   # restart. Package the checked-in deterministic source so the test can copy
   # it into the target app's private files directory without depending on the

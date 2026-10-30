@@ -430,6 +430,9 @@ class EditorTimelineInteractionTest {
         val device = UiDevice.getInstance(instrumentation)
         val packageName = context.packageName
         val fixture = java.io.File(context.filesDir, "editor-test-video.mp4")
+        instrumentation.context.assets.open("editor-test-video.mp4").use { input ->
+            fixture.outputStream().use { output -> input.copyTo(output) }
+        }
         assertTrue("Trim-vs-scroll fixture is missing", fixture.isFile && fixture.length() > 0L)
         val originalHash = sha256(fixture)
         val fixtureUri = Uri.fromFile(fixture).toString()
