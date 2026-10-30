@@ -4588,9 +4588,15 @@ class EditorTimelineInteractionTest {
         // of the viewport after zooming, so its visible left edge equals the
         // viewport edge rather than its true timeline coordinate. Return every
         // synchronized lane to the timeline origin before comparing block bounds.
+        // Pinch causes the timeline rows to be rebuilt; the UiObject2 captured
+        // before the gesture is stale. Reacquire the current VIDEO row before
+        // asking UiAutomator to scroll the synchronized timeline.
+        val videoLaneAfterPinch = requireObject(
+            device, By.desc("Zaman çizelgesi satırı: VIDEO"), "VIDEO lane after shared-lane pinch"
+        )
         assertTrue(
             "Could not return the shared timeline to its origin after pinch",
-            videoLane.scroll(androidx.test.uiautomator.Direction.RIGHT, 1.0f)
+            videoLaneAfterPinch.scroll(androidx.test.uiautomator.Direction.RIGHT, 1.0f)
         )
         device.waitForIdle()
         SystemClock.sleep(250)
