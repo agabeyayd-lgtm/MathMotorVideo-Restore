@@ -195,3 +195,10 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 - The #378 stale `UiObject2` issue is no longer blocking. The remaining mismatch follows the test's wrong scroll direction: it requested `Direction.RIGHT` while trying to return to origin; accessibility scroll events show scrollX increasing from 390 to 496. Test now uses `Direction.LEFT`.
 - Workflow concurrency was also corrected: `cancel-in-progress: false` prevents later PR synchronize events from cancelling an already-running emulator validation.
 - Product source unchanged. Keep the four-lane alignment gate open until a conclusive targeted pass.
+
+### Shared-lane alignment #382 — failure classified and test refined
+
+- #382 passed unit tests, Debug APK and fixture preparation; the focused instrumentation test failed because the zoomed-at-origin effect strip was not present in UiAutomator's visible tree.
+- The maximum pinch made the measured blocks too wide/off-screen after the test scrolled back to the timeline origin. The failure does not establish a product lane-alignment regression.
+- Test-only follow-up `6759e65a41544b7212341f1161c4f7d382585d8e` reduces the pinch distance, leaves the 2.75 s playhead anchored, checks both timed strips remain visible, and compares their bounds at the second zoom level. Production code unchanged.
+- Shared-lane alignment remains unverified pending the focused run; do not repeat unrelated green suites. Version 395 remains blocked.
