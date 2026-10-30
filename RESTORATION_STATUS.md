@@ -135,3 +135,14 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 - Close the loaded-video tall-screen emulator gate. Physical-device validation remains open. Do not rerun unchanged #341 scenarios.
 - Next distinct check is an exact 10-second fixture across beginning/middle/end and multiple zoom levels. Before implementing, inspect existing instrumentation methods and extend only the uncovered case; do not repeat the existing 8-second filmstrip, trim, seek, multi-clip, export, undo/redo, or save/reopen tests.
 - Version 395 remains blocked; version metadata remains 394/build 61.
+
+
+## Exact 10-second timeline seek gate — 2026-10-30 (focused CI pending)
+
+- Coverage audit confirmed the existing editor interaction fixtures are approximately 8 seconds; no test asserted beginning/middle/end seeking on an exact 10,000 ms source across multiple zoom levels. Existing 8-second trim, filmstrip, multi-clip, text/audio, export, Undo/Redo and persistence tests remain closed and are not being repeated.
+- Added a dedicated generated 10-second, 30 fps MP4 fixture. CI checks the container duration with FFprobe; the instrumentation test independently checks Android metadata is exactly 10,000 ms.
+- Added one focused interaction test: initial playhead at 0 ms/default zoom, seek to 5,000 ms after first pinch zoom, then seek to 9,500 ms after a second pinch zoom. It also checks zoom does not move the fixed playhead and project duration remains 10,000 ms.
+- First focused run [#358](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41089252672) failed before the app test started: the emulator runner invoked a multiline conditional through /usr/bin/sh, which exited with a syntax error expecting fi. Unit tests and Debug APK build had already passed; no timeline assertion ran. This is CI wrapper failure, not an app/test failure.
+- The conditional now lives in .github/scripts/run-focused-or-full-emulator-validation.sh, executed by one simple Bash command from the emulator action. INSTRUMENTATION_TEST_FILTER selects only EditorTimelineInteractionTest#tenSecondFixtureSeeksBeginningMiddleAndEndAcrossZoomLevels; screenshot smoke tests and the prior 20 interaction tests are deliberately excluded from this focused run.
+- Focused retest [#360](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41090016116) is in progress. Unit tests, Debug APK build, FFmpeg setup, fixture generation and emulator setup have passed; the emulator/instrumentation step has not yet reported a conclusion. Keep this acceptance gate open until the targeted method itself passes. Do not rerun green scenarios unchanged.
+- Version remains 394/build 61. Version 395 remains blocked.
