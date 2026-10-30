@@ -23,6 +23,14 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 
 ## Current verification state — 2026-10-30 (fixed-playhead pinch/filmstrip regression #396 green; shared-lane #388; full suite #341; focused #362/#366; phone layout #371)
 
+## Short-viewport keyboard test — focused follow-up (2026-10-31)
+
+- PR #10 added `EditorTimelineInteractionTest#compactPhoneKeyboardKeepsTextFieldEditableAndRestoresEditor`, using a deterministic 360×640 dp emulator viewport and the checked-in 8-second MP4 fixture.
+- [Run #398 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41132536004) reached the final text-size-control assertion: keyboard open, text entry, keyboard dismissal, input persistence and timeline restoration had already passed. The failure was that the test queried the lower text-size SeekBar without scrolling the text tool panel to it; the SeekBar is intentionally below the initially visible panel area. This is a test reachability assertion, not evidence of a production layout regression.
+- The focused test is being tightened to verify the actual 360×640 dp viewport, keyboard-visible responsive state (timeline/dock hidden, compact preview), text input positioned above the IME, and restored timeline/dock/text controls after dismissal. It scrolls the panel before checking the lower size control.
+- This is the short-screen keyboard gate only. It does not replace physical-phone interaction/performance checks or signed install → update-over → relaunch preflight.
+- Version remains 394/build 61. Version 395 remains blocked; no version metadata bump, release signing, publishing, or updater activation is permitted before all gates pass and the user authorizes release.
+
 ## Fixed-playhead pinch zoom #396 — PASSED (2026-10-30)
 
 - [Run #396 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41129149733) completed on PR #10 / branch `fix/editor-395-mainline`, candidate commit `7c4c526540524c9582685d3bb2575fa1b0336921`.

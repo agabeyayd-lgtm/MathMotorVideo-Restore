@@ -430,10 +430,14 @@ class EditorTimelineInteractionTest {
         val packageName = context.packageName
         val fixture = java.io.File(context.filesDir, "editor-test-video.mp4")
 
-        // Use a deterministic short-phone viewport; restore the hosted emulator even on failure.
-        device.executeShellCommand("wm size 360x640")
-        device.executeShellCommand("wm density 160")
         try {
+            // Model a short 360 x 640 dp phone, not a scaled-down high-density screenshot.
+            device.executeShellCommand("wm size 360x640")
+            device.executeShellCommand("wm density 160")
+            SystemClock.sleep(500)
+            assertEquals("Short viewport width override was not applied", 360, device.displayWidth)
+            assertEquals("Short viewport height override was not applied", 640, device.displayHeight)
+
             instrumentation.context.assets.open("editor-test-video.mp4").use { input ->
                 fixture.outputStream().use { output -> input.copyTo(output) }
             }
@@ -467,13 +471,6 @@ class EditorTimelineInteractionTest {
                 "Text field did not remain in the accessibility tree after the keyboard opened",
                 device.wait(Until.hasObject(inputSelector), 12_000)
             )
-            val input = requireObject(device, inputSelector, "text input with IME open")
-            val inputBounds = input.visibleBounds
-            assertTrue(
-                "Text input has no visible touch target while the keyboard is open: $inputBounds",
-                inputBounds.width() > 40 && inputBounds.height() > 20 &&
-                    inputBounds.top >= 0 && inputBounds.bottom <= device.displayHeight
-            )
 
             fun imeIsShown(): Boolean {
                 val dump = device.executeShellCommand("dumpsys input_method")
@@ -485,6 +482,45 @@ class EditorTimelineInteractionTest {
                 SystemClock.sleep(200)
             }
             assertTrue("Software keyboard did not actually open on the compact viewport", imeIsShown())
+            assertTrue(
+                "Keyboard-open Done action was not shown",
+                device.wait(Until.hasObject(By.text("Bitti ✓")), 8_000)
+            )
+            assertTrue(
+                "The multi-lane timeline should hide while typing on a short viewport",
+                device.wait(Until.gone(By.desc("Zaman çizelgesi etiketi: VIDEO")), 8_000)
+            )
+            assertTrue(
+                "The bottom dock should hide while the keyboard is open",
+                device.wait(Until.gone(By.desc("Metin araçları sekmesi")), 8_000)
+            )
+
+            val previewBounds = requireObject(
+                device, By.desc("Düzenlenmiş video önizlemesi"), "compact preview with keyboard open"
+            ).visibleBounds
+            assertTrue(
+                "Preview did not shrink to the keyboard-safe compact height: $previewBounds",
+                previewBounds.height() in 80..120
+            )
+
+            val input = requireObject(device, inputSelector, "text input with IME open")
+            val inputBounds = input.visibleBounds
+            val imeWindowBounds = listOf(
+                "com.google.android.inputmethod.latin",
+                "com.android.inputmethod.latin"
+            ).flatMap { imePackage ->
+                device.findObjects(By.pkg(imePackage)).map { it.visibleBounds }
+            }.filter { bounds ->
+                bounds.width() >= (device.displayWidth * 0.75f).toInt() &&
+                    bounds.height() >= 100 && bounds.top >= device.displayHeight / 3
+            }
+            val imeTop = imeWindowBounds.minOfOrNull { it.top }
+                ?: (device.displayHeight * 0.62f).toInt()
+            assertTrue(
+                "Text input is not a visible touch target above the keyboard: input=$inputBounds imeTop=$imeTop",
+                inputBounds.width() > 40 && inputBounds.height() > 20 &&
+                    inputBounds.top >= 0 && inputBounds.bottom < imeTop
+            )
 
             val typedText = "Klavye kucuk ekran testi"
             input.text = typedText
@@ -509,21 +545,40 @@ class EditorTimelineInteractionTest {
                 device.wait(Until.hasObject(inputSelector), 8_000)
             )
             assertTrue(
-                "Text size control was not restored after the keyboard closed",
-                device.wait(Until.hasObject(By.desc("Yazı boyutu")), 8_000)
-            )
-            assertTrue(
                 "Timeline did not return after the keyboard closed",
                 device.wait(Until.hasObject(By.desc("Zaman çizelgesi etiketi: VIDEO")), 8_000)
+            )
+            assertTrue(
+                "Bottom dock did not return after the keyboard closed",
+                device.wait(Until.hasObject(By.desc("Metin araçları sekmesi")), 8_000)
             )
             assertEquals(
                 "Typed text was lost when the keyboard closed",
                 typedText,
                 requireObject(device, inputSelector, "restored text input").text
             )
+
+            // The size SeekBar is lower in the scrollable text panel. Scroll it into
+            // view before asserting reachability; merely checking hasObject() at the
+            // current scroll offset caused the first run's false-negative failure.
+            val panelScroll = UiScrollable(UiSelector().className("android.widget.ScrollView"))
+            assertTrue(
+                "Text size control could not be reached after the keyboard closed",
+                panelScroll.scrollIntoView(UiSelector().description("Yazı boyutu"))
+            )
+            val sizeControl = requireObject(device, By.desc("Yazı boyutu"), "restored text-size control")
+            assertTrue(
+                "Restored text-size control has no visible touch target: ${sizeControl.visibleBounds}",
+                sizeControl.visibleBounds.width() > 80 && sizeControl.visibleBounds.height() > 20
+            )
+            assertTrue(
+                "Export action did not return after the keyboard closed",
+                device.wait(Until.hasObject(By.text("Dışa aktar ›")), 8_000)
+            )
             android.util.Log.i(
                 "EditorImeLayoutTest",
-                "PASS viewport=360x640 density=160 imeOpened=true textRetained=true controlsRestored=true"
+                "PASS viewport=360x640 density=160 imeOpened=true inputAboveIme=true " +
+                    "timelineHidden=true dockHidden=true textRetained=true controlsRestored=true"
             )
         } finally {
             device.executeShellCommand("wm size reset")
