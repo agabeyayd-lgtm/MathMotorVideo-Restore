@@ -68,6 +68,9 @@ import java.io.FileOutputStream
 import java.lang.ref.WeakReference
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.PriorityBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.ceil
 
 @OptIn(UnstableApi::class)
@@ -203,7 +206,11 @@ class VideoEditorActivity : Activity() {
     private var deferTimelineRefresh = false
     private val timelineThumbnailCache = object : android.util.LruCache<String, Bitmap>(384) {}
     private val pendingTimelineThumbnails = mutableMapOf<String, MutableList<WeakReference<ImageView>>>()
-    private val timelineThumbnailExecutor = java.util.concurrent.Executors.newFixedThreadPool(2)
+    private val timelineThumbnailSequence = AtomicLong(0L)
+    // A priority queue keeps on-screen frames ahead of nearby and distant off-screen frames.
+    private val timelineThumbnailExecutor = ThreadPoolExecutor(
+        2, 2, 0L, TimeUnit.MILLISECONDS, PriorityBlockingQueue<Runnable>()
+    )
     private lateinit var timelinePlayheadLabel: TextView
     private var timelinePlayheadMs = 0L
     private var timelineScrubStartRawX = 0f
@@ -4838,8 +4845,16 @@ class VideoEditorActivity : Activity() {
             return
         }
         pendingTimelineThumbnails[key] = mutableListOf(WeakReference(target))
-        try {
-            timelineThumbnailExecutor.execute {
+        // Post after the track hierarchy is attached so visibility can be measured accurately.
+        timelineHandler.post {
+            if (isFinishing || isDestroyed) {
+                pendingTimelineThumbnails.remove(key)
+                return@post
+            }
+            val priority = timelineThumbnailPriority(target)
+            val order = TimelineThumbnailWorkOrder(priority, timelineThumbnailSequence.getAndIncrement())
+            try {
+                timelineThumbnailExecutor.execute(TimelineThumbnailDecodeTask(order) {
                 var result: Bitmap? = null
                 try {
                     val original = decodeTimelineFrame(uri, timestampMs)
@@ -4882,10 +4897,44 @@ class VideoEditorActivity : Activity() {
                         decoded?.recycle()
                     }
                 }
+                })
+            } catch (_: java.util.concurrent.RejectedExecutionException) {
+                pendingTimelineThumbnails.remove(key)
             }
-        } catch (_: java.util.concurrent.RejectedExecutionException) {
-            pendingTimelineThumbnails.remove(key)
         }
+    }
+
+    /**
+     * 0 = currently visible, 1 = within 220 dp of the visible timeline, 2 = farther away.
+     * The short look-ahead band starts nearby frames before work further down the timeline.
+     */
+    private fun timelineThumbnailPriority(target: ImageView): Int {
+        val viewport = android.graphics.Rect()
+        if (!timelineTracksFrame.getGlobalVisibleRect(viewport)) return 2
+
+        val visible = android.graphics.Rect()
+        if (target.isAttachedToWindow && target.getGlobalVisibleRect(visible) &&
+            visible.width() > 0 && visible.height() > 0
+        ) return 0
+
+        val location = IntArray(2)
+        target.getLocationOnScreen(location)
+        val targetLeft = location[0]
+        val targetTop = location[1]
+        val targetRight = targetLeft + target.width
+        val targetBottom = targetTop + target.height
+        val horizontalDistance = when {
+            targetRight < viewport.left -> viewport.left - targetRight
+            targetLeft > viewport.right -> targetLeft - viewport.right
+            else -> 0
+        }
+        val verticalDistance = when {
+            targetBottom < viewport.top -> viewport.top - targetBottom
+            targetTop > viewport.bottom -> targetTop - viewport.bottom
+            else -> 0
+        }
+        val distance = maxOf(horizontalDistance, verticalDistance)
+        return if (distance <= dp(220)) 1 else 2
     }
 
     private fun finishTrimControlGesture() {
