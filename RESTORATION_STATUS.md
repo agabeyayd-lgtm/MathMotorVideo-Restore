@@ -178,3 +178,11 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 - #375 failed at `zoomed text start differs: actual=0 expected=171`; unit tests, Debug APK and default-zoom lane assertions passed.
 - Diagnosis: `UiObject2.visibleBounds` clips the text block at the viewport boundary after the pinch keeps the playhead at 2.75 s. This is a test-observation error, not proof that the underlying timeline positions are wrong.
 - The focused test now scrolls the synchronized lanes to the timeline origin after validating playhead stability, then measures zoomed bounds. No product source was changed for this correction. Keep the gate open until a targeted rerun passes.
+
+
+### Shared-lane alignment test #378 — second failure triage
+
+- #376 was cancelled during fixture-tool setup before the emulator test; no JUnit result was produced.
+- #378 passed build and fixture preparation, then failed at the post-pinch scroll with `androidx.test.uiautomator.StaleObjectException` on the VIDEO lane handle.
+- Pinch rebuilds the timeline row, invalidating the previously captured `UiObject2`. The test now reacquires the VIDEO row after pinch before scrolling.
+- Test-only correction commit: `1a096d229ceca77a06ac9f2a53018c25d02c47bd`. Product code unchanged. Gate remains open pending a conclusive targeted pass.
