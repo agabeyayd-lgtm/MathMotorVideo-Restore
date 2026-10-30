@@ -2,11 +2,23 @@ name: Android emulator screenshots
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened]
+    paths:
+      - "app/build.gradle.kts"
+      - "app/src/main/**"
+      - "app/src/debug/**"
+      - "app/src/test/**"
+      - "app/src/androidTest/**"
+      - ".github/workflows/android-emulator-screenshots.yml"
+      - ".github/scripts/capture-emulator-screenshots.sh"
+      - ".github/scripts/run-android-instrumentation-tests.sh"
   push:
     branches:
       - main
       - fix/editor-395-gate
-      - fix/editor-395-mainline
     paths:
       - "app/build.gradle.kts"
       - "app/src/main/**"
