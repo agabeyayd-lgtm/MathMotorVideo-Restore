@@ -273,6 +273,8 @@ class VideoEditorActivity : Activity() {
     private var activeEditorPanel: String? = null
     private var textOverlayEditingEnabled: Boolean = false
     private lateinit var selectedClipLabel: TextView
+    private lateinit var clipEditingControls: LinearLayout
+    private lateinit var emptyClipPanelAction: Button
     private lateinit var startLabel: TextView
     private lateinit var endLabel: TextView
     private lateinit var startSeek: SeekBar
@@ -806,8 +808,14 @@ class VideoEditorActivity : Activity() {
 
         val clipPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         clipPanel.addView(label("KLİP DÜZENLEME", 13f, Color.rgb(121, 202, 218), true))
-        selectedClipLabel = label("Önce bir video seç.", 12f, Color.WHITE, true)
+        selectedClipLabel = label("Henüz video eklenmedi.", 12f, Color.WHITE, true)
         clipPanel.addView(selectedClipLabel)
+        emptyClipPanelAction = miniButton("＋ Video ekle") { chooseVideo(true) }.apply {
+            contentDescription = "Klip düzenlemek için video ekle"
+        }
+        clipPanel.addView(emptyClipPanelAction)
+        // Clip-only controls stay out of the way until a source video exists.
+        clipEditingControls = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         // Keep the most important editing action directly below the clip heading.
         // On short phones the panel viewport can be smaller than its full content.
         val clipActions2 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
@@ -817,7 +825,7 @@ class VideoEditorActivity : Activity() {
             LinearLayout.LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(4) })
         clipActions2.addView(miniButton("Sona al →") { moveSelectedClip(1) },
             LinearLayout.LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(4) })
-        clipPanel.addView(clipActions2)
+        clipEditingControls.addView(clipActions2)
         val clipActions1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         clipActions1.addView(miniButton("Önizle") { previewSelectedClip() },
             LinearLayout.LayoutParams(0, dp(46), 1f))
@@ -830,7 +838,10 @@ class VideoEditorActivity : Activity() {
         }, LinearLayout.LayoutParams(0, dp(46), 1f).apply { leftMargin = dp(4) })
         clipActions1.addView(miniButton("Klibi kaldır") { removeSelectedClip() },
             LinearLayout.LayoutParams(0, dp(46), 1f).apply { leftMargin = dp(4) })
-        clipPanel.addView(clipActions1)
+        clipEditingControls.addView(clipActions1)
+        clipPanel.addView(clipEditingControls)
+        clipEditingControls.visibility = if (clips.isEmpty()) View.GONE else View.VISIBLE
+        emptyClipPanelAction.visibility = if (clips.isEmpty()) View.VISIBLE else View.GONE
         // Create the global history controls without attaching them to a temporary row.
         // They are attached once to the persistent bottom dock in buildUi().
         undoClipButton = miniButton("↶ Geri al") { undoEditorEdit() }.apply {
@@ -907,13 +918,13 @@ class VideoEditorActivity : Activity() {
         )
 
         startLabel = label("Başlangıç: 00:00", 12f, Color.rgb(225, 233, 237), true)
-        clipPanel.addView(startLabel)
+        clipEditingControls.addView(startLabel)
         startSeek = SeekBar(this)
-        clipPanel.addView(startSeek, matchWrap())
+        clipEditingControls.addView(startSeek, matchWrap())
         endLabel = label("Bitiş: 00:00", 12f, Color.rgb(225, 233, 237), true)
-        clipPanel.addView(endLabel)
+        clipEditingControls.addView(endLabel)
         endSeek = SeekBar(this)
-        clipPanel.addView(endSeek, matchWrap())
+        clipEditingControls.addView(endSeek, matchWrap())
         installTrimListeners()
 
         textPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -5015,7 +5026,9 @@ class VideoEditorActivity : Activity() {
     private fun loadTrimControls() {
         val clip = selectedClip()
         if (clip == null) {
-            selectedClipLabel.text = "Önce bir video seç."
+            selectedClipLabel.text = if (clips.isEmpty()) "Henüz video eklenmedi." else "Düzenlemek için zaman çizelgesinden klip seç."
+            clipEditingControls.visibility = View.GONE
+            emptyClipPanelAction.visibility = View.VISIBLE
             startSeek.max = 1
             endSeek.max = 1
             startSeek.progress = 0
@@ -5025,6 +5038,8 @@ class VideoEditorActivity : Activity() {
             updateTrimLabels()
             return
         }
+        clipEditingControls.visibility = View.VISIBLE
+        emptyClipPanelAction.visibility = View.GONE
         startSeek.isEnabled = true
         endSeek.isEnabled = true
         val durationProgressMax = TimelineTrimMath.progressMax(clip.durationMs)
