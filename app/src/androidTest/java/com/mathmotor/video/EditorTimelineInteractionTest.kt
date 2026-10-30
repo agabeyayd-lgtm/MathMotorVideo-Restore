@@ -4219,6 +4219,11 @@ class EditorTimelineInteractionTest {
             "Too few loaded thumbnails are exposed in the visible filmstrip: ${loadedImages.size}",
             loadedImages.size >= 3
         )
+        assertTrue(
+            "The 8-second fixture should show a readable filmstrip near one frame per second; " +
+                "expected 6-10 visible thumbnails but found ${loadedImages.size}",
+            loadedImages.size in 6..10
+        )
     }
 
 
