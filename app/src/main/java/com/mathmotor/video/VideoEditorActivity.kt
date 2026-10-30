@@ -2361,6 +2361,7 @@ class VideoEditorActivity : Activity() {
                 val nextPositionPx = TimelineScaleMath.pixelsForTime(nextTimeMs, pxPerSecond)
                 val tick = TextView(this).apply {
                     text = formatMs(rulerTimeMs) + " ┆"
+                    contentDescription = "Zaman çizelgesi işareti: ${formatMs(rulerTimeMs)}; aralık ${rulerStepMs} ms"
                     textSize = if (compactEditorLayout) 8f else 9f
                     setTextColor(Color.rgb(166, 184, 201))
                     gravity = Gravity.CENTER_VERTICAL or Gravity.START
