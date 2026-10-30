@@ -267,3 +267,13 @@ Do not launch a duplicate source-audio run while #227 is in progress. FFmpeg ins
 - The conditional now lives in .github/scripts/run-focused-or-full-emulator-validation.sh, executed by one simple Bash command from the emulator action. INSTRUMENTATION_TEST_FILTER selects only EditorTimelineInteractionTest#tenSecondFixtureSeeksBeginningMiddleAndEndAcrossZoomLevels; screenshot smoke tests and the prior 20 interaction tests are deliberately excluded from this focused run.
 - Focused retest [#360](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41090016116) is in progress. Unit tests, Debug APK build, FFmpeg setup, fixture generation and emulator setup have passed; the emulator/instrumentation step has not yet reported a conclusion. Keep this acceptance gate open until the targeted method itself passes. Do not rerun green scenarios unchanged.
 - Version remains 394/build 61. Version 395 remains blocked.
+
+
+## Latest no-repeat handoff — 2026-10-30
+
+- Latest full green candidate is #341: 20/20 instrumentation tests plus loaded-video 393×873 screenshot artifact. Do not repeat the green #337/#340/#341 scenarios unchanged.
+- Dedicated exact-10-second fixture and method `tenSecondFixtureSeeksBeginningMiddleAndEndAcrossZoomLevels` have been added. #358 was a shell-wrapper failure before the app test. The Bash wrapper correction is in commit `d41d26ca107beaa7aa30ff501996eb6c9a17444a`.
+- Focused run #360 was cancelled after emulator boot/fixture packaging/test selection; logs contain no JUnit assertion outcome. Treat as **unverified**, not green and not an app failure.
+- Next unique test: execute only the exact-10-second focused method to a conclusive JUnit result. If it fails, inspect its actual assertion and diagnostics before changing code. Do not trigger the full 20-test suite for this single acceptance gap.
+- After that, remaining distinct acceptance tasks are screenshot comparison with the target reference, visible shared ruler/lane alignment at zoom extremes, keyboard-open short-screen text editing, physical-device smoke test, and signed build-61 install/update/relaunch.
+- Keep 394/build 61 as baseline; no version 395 bump or release until the release checklist is fully verified and explicitly authorized.
