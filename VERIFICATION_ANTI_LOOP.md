@@ -293,3 +293,12 @@ Do not launch a duplicate source-audio run while #227 is in progress. FFmpeg ins
 - #378 passed unit tests, Debug APK, fixture setup and emulator startup, then failed because the focused test scrolled a pre-pinch `UiObject2` after the timeline rows had been rebuilt.
 - Corrected the test to reacquire the VIDEO row after pinch before scrolling. Commit: `1a096d229ceca77a06ac9f2a53018c25d02c47bd`.
 - Product timeline code was not changed. Do not mark the shared-lane gate green until the focused rerun completes successfully.
+
+
+## #381 alignment assertion and CI cancellation prevention — 2026-10-30
+
+- #379 was cancelled during ffmpeg setup; do not count it as a test failure or pass.
+- #381 reached JUnit and failed at zoomed text start (`actual=0 expected=171`). The stale-object issue from #378 was bypassed by reacquiring the VIDEO lane after pinch.
+- The test then scrolled in the wrong direction: it used `Direction.RIGHT` while intending to return to origin. Accessibility events show scrollX moving 390 → 496, farther from origin. Corrected to `Direction.LEFT`; verify the resulting scroll position and all lane measurements on the next run.
+- Workflow concurrency changed from `cancel-in-progress: true` to false so subsequent PR synchronize events cannot terminate an active emulator run.
+- No product source changes justified by this test yet. Do not rerun older suites or release 395; run only the focused shared-lane check after these corrections.
