@@ -235,3 +235,12 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 - Emulator ADB startup/cleanup warnings appeared in the log, but the focused instrumentation command exited 0 and the workflow concluded successfully; they did not fail #388.
 - Do not rerun #388 unchanged. Next distinct acceptance work: inspect the latest artifact/screenshots and finish visual polish of the four-item dock/empty-editor panel; then check adaptive ruler readability at zoom extremes and keyboard-open editing on a short viewport; then physical-phone smoke testing and current-branch signed install/update-over/relaunch preflight.
 - Version remains 394/build 61. Version 395 remains blocked; do not bump version metadata, sign/publish a release APK, or enable the updater until all gates pass and the user authorizes release.
+
+
+### Empty-editor tall-phone action visibility — targeted validation queued (2026-10-31)
+
+- Source change `4e285f09f8c16d981b6447ca0fc937564131fc90` hides the redundant empty-state status sentence while no clip is loaded and restores it when a clip is selected, preserving the primary add-video action in the compact tool panel.
+- Instrumentation assertion added in `EmulatorScreenshotTest#captureHomeEditorAndTextPanel` requires the add-video action to meet the 44dp/120dp touch target and remain fully above the dock at 393×873.
+- [Run #402 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41143199557) ran only `EditorTimelineInteractionTest#compactPhoneKeyboardKeepsTextFieldEditableAndRestoresEditor`; it confirms the short-screen keyboard gate, **not** the new 393×873 empty-editor assertion. The screenshot assertion remains pending a targeted run.
+- The screenshot workflow filter now targets `EmulatorScreenshotTest#captureHomeEditorAndTextPanel`; validate the new assertion and inspect the resulting artifact before closing this gate.
+- Version remains 394/build 61. Version 395 remains blocked; no version bump, signing, publishing, or updater activation.
