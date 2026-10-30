@@ -201,25 +201,27 @@ jobs:
             # previously seen a cold-boot ADB reset before the app script could start.
             adb -s emulator-5554 wait-for-device
             adb -s emulator-5554 shell wm size 320x640
+            mkdir -p "$GITHUB_WORKSPACE/signed-update-smoke"
             adb -s emulator-5554 install "$BASELINE_APK_PATH"
-            adb -s emulator-5554 shell am start -n com.mathmotor.video.next/com.mathmotor.video.MainActivity
-            # The emulator-runner script input is dispatched line-by-line by this action.
-            # Avoid multiline shell control structures here; wait, then assert foreground state.
-            sleep 3
-            adb -s emulator-5554 shell dumpsys window | grep -m2 "com.mathmotor.video.next"
-            adb -s emulator-5554 shell pidof com.mathmotor.video.next
+            adb -s emulator-5554 logcat -c
+            adb -s emulator-5554 shell am start -W -n com.mathmotor.video.next/com.mathmotor.video.MainActivity
+            sleep 10
+            adb -s emulator-5554 shell dumpsys window > "$GITHUB_WORKSPACE/signed-update-smoke/baseline-window.txt"
+            adb -s emulator-5554 shell pidof com.mathmotor.video.next > "$GITHUB_WORKSPACE/signed-update-smoke/baseline-pid.txt" || true
+            adb -s emulator-5554 logcat -d -b all -v threadtime > "$GITHUB_WORKSPACE/signed-update-smoke/baseline-logcat.txt"
             adb -s emulator-5554 install -r "$CANDIDATE_APK_PATH"
             adb -s emulator-5554 shell am force-stop com.mathmotor.video.next
-            adb -s emulator-5554 shell am start -n com.mathmotor.video.next/com.mathmotor.video.MainActivity
-            sleep 3
-            adb -s emulator-5554 shell dumpsys window | grep -m2 "com.mathmotor.video.next"
-            adb -s emulator-5554 shell pidof com.mathmotor.video.next
+            adb -s emulator-5554 logcat -c
+            adb -s emulator-5554 shell am start -W -n com.mathmotor.video.next/com.mathmotor.video.MainActivity
+            sleep 10
+            adb -s emulator-5554 shell dumpsys window > "$GITHUB_WORKSPACE/signed-update-smoke/candidate-window.txt"
+            adb -s emulator-5554 shell pidof com.mathmotor.video.next > "$GITHUB_WORKSPACE/signed-update-smoke/candidate-pid.txt" || true
+            adb -s emulator-5554 logcat -d -b all -v threadtime > "$GITHUB_WORKSPACE/signed-update-smoke/candidate-logcat.txt"
             adb -s emulator-5554 shell dumpsys package com.mathmotor.video.next > "$RUNNER_TEMP/package-after-update.txt"
+            cp "$RUNNER_TEMP/package-after-update.txt" "$GITHUB_WORKSPACE/signed-update-smoke/package-after-update.txt"
             grep -m1 "versionCode=394" "$RUNNER_TEMP/package-after-update.txt"
-            mkdir -p "$GITHUB_WORKSPACE/signed-update-smoke"
-            adb -s emulator-5554 logcat -d -b all -v threadtime > "$GITHUB_WORKSPACE/signed-update-smoke/logcat.txt"
-            adb -s emulator-5554 shell dumpsys package com.mathmotor.video.next > "$GITHUB_WORKSPACE/signed-update-smoke/package-after-update.txt"
-            echo "Baseline install succeeded; same-signer candidate replaced it and launched. No publish/tag/upload-release step exists."
+            test -s "$GITHUB_WORKSPACE/signed-update-smoke/candidate-pid.txt"
+            echo "Baseline and candidate launch diagnostics captured; candidate process remained alive. No publish/tag/upload-release step exists."
 
       - name: Upload non-sensitive preflight report
         if: always()
