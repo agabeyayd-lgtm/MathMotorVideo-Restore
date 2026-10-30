@@ -278,3 +278,10 @@ Do not launch a duplicate source-audio run while #227 is in progress. FFmpeg ins
 - Next unique test: execute only the exact-10-second focused method to a conclusive JUnit result. If it fails, inspect its actual assertion and diagnostics before changing code. Do not trigger the full 20-test suite for this single acceptance gap.
 - After that, remaining distinct acceptance tasks are screenshot comparison with the target reference, visible shared ruler/lane alignment at zoom extremes, keyboard-open short-screen text editing, physical-device smoke test, and signed build-61 install/update/relaunch.
 - Keep 394/build 61 as baseline; no version 395 bump or release until the release checklist is fully verified and explicitly authorized.
+
+
+## #375 failure triage and corrected measurement — 2026-10-30
+
+- [#375](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41099038593) passed unit tests, Debug APK, fixture preparation, default-zoom four-lane bounds and pinch/playhead-stability assertions; it failed only at zoomed text start (`actual=0 expected=171`).
+- Root cause: `UiObject2.visibleBounds` returns clipped visible bounds. At a fixed playhead of 2.75 s, the text block beginning at 1.25 s is legitimately outside the left edge after zoom, so its visible left edge is clipped and cannot be used as its timeline coordinate.
+- Test-only correction committed as `0b5bbeaf521c8ebee596635f898d940fab603e8a`: after confirming the playhead remains stable, scroll the synchronized VIDEO lane to the timeline origin and then measure zoomed lane bounds. Do not change product timeline code based on this assertion alone. Do not mark the shared-lane gate green until the targeted rerun passes.
