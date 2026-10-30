@@ -121,6 +121,17 @@ class EmulatorScreenshotTest {
             clipTab.visibleBounds.left < audioTab.visibleBounds.left &&
                 audioTab.visibleBounds.left < textTabForOrder.visibleBounds.left
         )
+        clipTab.click()
+        assertTrue(
+            "Empty clip panel should offer a direct add-video action",
+            device.wait(Until.hasObject(By.desc("Klip düzenlemek için video ekle")), 5_000)
+        )
+        assertTrue(
+            "Clip editing and trim controls should stay hidden until a video is added",
+            device.findObject(By.text("Böl ✂")) == null &&
+                device.findObject(By.text("Kopyala")) == null &&
+                device.findObject(By.text("Klibi kaldır")) == null
+        )
         takeScreenshot(device, "editor-clip-panel.png")
 
         val textTab = device.findObject(By.text("T\nMetin"))
