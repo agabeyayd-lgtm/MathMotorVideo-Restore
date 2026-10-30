@@ -222,7 +222,7 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - Artifact [12997315254](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41096422450/artifacts/12997315254) contains both 393×873 screenshots: `editor-phone-size.png` and `editor-phone-size-loaded.png`.
 - The automated test requires the outer preview stage to be at least 320 dp in both empty and loaded states and asserts that the loaded single-clip editor does not expose the redundant `Klip seçici satırı`.
 - Visual inspection against the user's target confirms a roughly 392 px / 45% tall preview stage and a roughly 221×392 px portrait canvas on the 393×873 emulator. The duplicate `Klip 1` chooser row is gone.
-- Remaining visual polish: the app still exposes four supported bottom actions rather than the reference's wider tool dock, and the empty-editor view still displays a `KLİP DÜZENLEME` / `Henüz video eklenmedi` panel. Do not add inert tools merely to match the reference.
+- At the time of #371, the four supported actions and empty-editor panel still needed visual polish; that follow-up is now implemented in source commit `fd6fc18dd56ae958c27d37334c62f28b922b3a54` (cohesive dock surface, clearer icon/label hierarchy, prominent primary add-video action). Post-change validation is run #390; do not count the polish as verified until that run passes.
 - This is emulator screenshot and layout evidence, not a physical-phone acceptance test. Keep the real-device review open.
 
 
