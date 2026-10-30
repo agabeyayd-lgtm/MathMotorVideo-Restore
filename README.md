@@ -231,3 +231,11 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - [#375 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41099038593): unit tests and Debug APK passed; the focused emulator test passed its default-zoom lane measurements and pinch/playhead-stability checks, then failed only at the zoomed text-start assertion: `actual=0 expected=171`.
 - Root cause is the test measurement, not yet a demonstrated product alignment defect: it used `UiObject2.visibleBounds`, which clips an off-screen child to the viewport. With the playhead anchored at 2.75 s after zoom, the text block starting at 1.25 s is correctly left of the viewport, so its reported visible left edge is clipped to the same viewport edge as the music lane.
 - Corrected the focused test to scroll the synchronized VIDEO lane back to the timeline origin after confirming the pinch preserved the playhead, then measure all four lanes at that zoom. This preserves the actual multi-lane/zoom check while avoiding clipped bounds. Product code is unchanged; await the targeted rerun before marking the gate complete.
+
+
+## Shared-lane alignment rerun #378 — 2026-10-30
+
+- [#376](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41106652639) was cancelled before emulator setup completed; it produced no JUnit result and is neither a pass nor a product failure.
+- [#378](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41106717136) passed unit tests, Debug APK, fixture preparation and emulator startup, then failed in the focused test with `UiAutomator StaleObjectException` at the post-pinch VIDEO-lane scroll.
+- Diagnosis: pinch rebuilds the timeline row; the test reused the pre-pinch `UiObject2` handle. This is a stale test handle, not evidence of a timeline product defect.
+- Test-only correction committed as `1a096d229ceca77a06ac9f2a53018c25d02c47bd`: reacquire the current VIDEO row after pinch before scrolling to origin. Product source remains unchanged. Keep the shared-lane gate open until this exact focused test passes.
