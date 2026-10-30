@@ -186,3 +186,12 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 - #378 passed build and fixture preparation, then failed at the post-pinch scroll with `androidx.test.uiautomator.StaleObjectException` on the VIDEO lane handle.
 - Pinch rebuilds the timeline row, invalidating the previously captured `UiObject2`. The test now reacquires the VIDEO row after pinch before scrolling.
 - Test-only correction commit: `1a096d229ceca77a06ac9f2a53018c25d02c47bd`. Product code unchanged. Gate remains open pending a conclusive targeted pass.
+
+
+### Shared-lane alignment #381 — assertion diagnosis and next run
+
+- #379 cancelled during ffmpeg setup before emulator execution; no JUnit result.
+- #381 passed unit tests, Debug APK, ffmpeg fixture preparation, emulator startup and the earlier post-pinch row reacquisition. It failed only at `zoomed-at-origin text start differs: actual=0 expected=171`.
+- The #378 stale `UiObject2` issue is no longer blocking. The remaining mismatch follows the test's wrong scroll direction: it requested `Direction.RIGHT` while trying to return to origin; accessibility scroll events show scrollX increasing from 390 to 496. Test now uses `Direction.LEFT`.
+- Workflow concurrency was also corrected: `cancel-in-progress: false` prevents later PR synchronize events from cancelling an already-running emulator validation.
+- Product source unchanged. Keep the four-lane alignment gate open until a conclusive targeted pass.
