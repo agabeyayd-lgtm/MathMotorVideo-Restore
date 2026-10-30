@@ -694,7 +694,19 @@ class VideoEditorActivity : Activity() {
             timelineTracks,
             FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         )
-        timelinePlayheadLine = FrameLayout(this).apply {
+        timelinePlayheadLine = object : FrameLayout(this) {
+            override fun dispatchTouchEvent(event: android.view.MotionEvent): Boolean {
+                // The fixed playhead is drawn above every lane. When a clip edge is
+                // centered under it, let the trim handle receive the gesture instead
+                // of stealing the touch for playhead scrubbing.
+                if (event.actionMasked == android.view.MotionEvent.ACTION_DOWN &&
+                    isPointInsideVisibleClipTrimHandle(event.rawX, event.rawY)
+                ) {
+                    return false
+                }
+                return super.dispatchTouchEvent(event)
+            }
+        }.apply {
             isClickable = true
             elevation = dp(4).toFloat()
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
@@ -2416,6 +2428,35 @@ class VideoEditorActivity : Activity() {
     private fun timelineLaneViewportWidthPx(): Int =
         timelineScrollViews.firstOrNull { it.width > 0 }?.width
             ?: (timelineTracksFrame.width - dp(60)).coerceAtLeast(0)
+
+    private fun isPointInsideVisibleClipTrimHandle(screenX: Float, screenY: Float): Boolean {
+        if (!::timelineTracks.isInitialized) return false
+
+        fun containsPoint(view: View): Boolean {
+            val description = view.contentDescription?.toString().orEmpty()
+            val isTrimHandle = description.startsWith("Sol tutamaç:") ||
+                description.startsWith("Sağ tutamaç:")
+            if (isTrimHandle && view.isShown && view.width > 0 && view.height > 0) {
+                val location = IntArray(2)
+                view.getLocationOnScreen(location)
+                val right = location[0] + view.width
+                val bottom = location[1] + view.height
+                if (screenX >= location[0] && screenX < right &&
+                    screenY >= location[1] && screenY < bottom
+                ) {
+                    return true
+                }
+            }
+
+            val group = view as? ViewGroup ?: return false
+            for (index in 0 until group.childCount) {
+                if (containsPoint(group.getChildAt(index))) return true
+            }
+            return false
+        }
+
+        return containsPoint(timelineTracks)
+    }
 
     private fun updateTimelinePlayheadLine() {
         if (!::timelinePlayheadLine.isInitialized || !::timelineTracksFrame.isInitialized) return
