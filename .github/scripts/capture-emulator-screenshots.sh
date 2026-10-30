@@ -159,15 +159,17 @@ recover_system_anr() {
     if [ ! -s "$xml" ] || ! grep -Eiq "isn.t responding|not responding" "$xml"; then
       return 0
     fi
-    # Recover Android's own system-server/System UI dialog, but do not hide
-    # an ANR raised by MathMotor itself: that must fail the smoke test.
-    if ! grep -Eiq "(Process system|System UI).*isn.t responding" "$xml"; then
+    # Recover Android-owned system, System UI, or Pixel/Nexus Launcher ANR dialogs.
+    # Do not dismiss a dialog raised by MathMotor itself; application ANRs must fail the smoke test.
+    if ! grep -Eiq "(Process system|System UI|Pixel Launcher|Nexus Launcher|com\\.google\\.android\\.apps\\.nexuslauncher).*isn.t responding" "$xml"; then
       echo "Application-level ANR detected in $xml; refusing to dismiss it as emulator noise"
       return 1
     fi
 
-    local wait_coords
-    wait_coords="$(python3 - "$xml" <<'PY'
+    # Preserve both button coordinates from the last valid hierarchy before
+    # tapping Wait: a wedged launcher can make the next uiautomator dump fail.
+    local wait_coords close_coords
+    IFS='|' read -r wait_coords close_coords < <(python3 - "$xml" <<'PY'
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -177,15 +179,21 @@ try:
 except (OSError, ET.ParseError):
     raise SystemExit(0)
 
+coords = {}
 for node in root.iter("node"):
-    if node.attrib.get("text", "").strip().lower() == "wait":
-        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
-        if match:
-            x1, y1, x2, y2 = map(int, match.groups())
-            print((x1 + x2) // 2, (y1 + y2) // 2)
-            break
+    label = node.attrib.get("text", "").strip().lower()
+    if label not in {"wait", "close app", "force close"}:
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        x1, y1, x2, y2 = map(int, match.groups())
+        coords["wait" if label == "wait" else "close"] = "%d %d" % ((x1+x2)//2, (y1+y2)//2)
+# Use an explicit non-whitespace separator: Bash must keep each x/y pair intact.
+print(coords.get("wait", "NONE"), coords.get("close", "NONE"), sep="|")
 PY
-)"
+)
+    [ "$wait_coords" = "NONE" ] && wait_coords=""
+    [ "$close_coords" = "NONE" ] && close_coords=""
     if [ -z "$wait_coords" ]; then
       echo "System ANR dialog detected but its Wait button could not be located in $xml"
       return 1
@@ -198,8 +206,23 @@ PY
     dump_hierarchy "$remote_name" "$xml" || true
   done
 
-  if [ -s "$xml" ] && grep -Eiq "(Process system|System UI).*isn.t responding" "$xml"; then
-    echo "System ANR dialog is still present after recovery attempts"
+  if [ -s "$xml" ] && grep -Eiq "(Process system|System UI|Pixel Launcher|Nexus Launcher|com\\.google\\.android\\.apps\\.nexuslauncher).*isn.t responding" "$xml"; then
+    # If a system launcher remains ANR after repeated Wait taps, close that
+    # Android-owned launcher process to clear its modal dialog. The MathMotor
+    # activity has already been launched and is the intended foreground screen.
+    # Never use this fallback for an ANR whose title belongs to MathMotor.
+    if [ -n "$close_coords" ]; then
+      echo "System launcher ANR persisted after Wait; dismissing only the Android-owned launcher at $close_coords"
+      timeout -k 2s 8s adb -s emulator-5554 shell input tap $close_coords || true
+      sleep 3
+      dump_hierarchy "$remote_name" "$xml" || true
+      if [ ! -s "$xml" ] || ! grep -Eiq "isn.t responding|not responding" "$xml"; then
+        SYSTEM_ANR_RECOVERED=true
+        echo "Android-owned launcher ANR dialog cleared; continuing with MathMotor UI checks"
+        return 0
+      fi
+    fi
+    echo "System ANR dialog is still present after Wait and Close-app recovery attempts"
     return 1
   fi
   return 0
@@ -304,6 +327,48 @@ if ! timeout -k 2s 30s adb -s emulator-5554 shell -T \
 fi
 timeout -k 2s 8s adb -s emulator-5554 shell run-as com.mathmotor.video.next ls -l files/editor-test-video.mp4 2>&1 | tee -a emulator-screenshots/video-fixture-private-copy.txt
 
+second_fixture="app/build/test-fixtures/editor-test-video-second.mp4"
+if [ ! -s "$second_fixture" ]; then
+  echo "Missing generated second test fixture: $second_fixture"
+  exit 3
+fi
+second_app_internal_video="/data/user/0/com.mathmotor.video.next/files/editor-test-video-second.mp4"
+if ! timeout -k 2s 30s adb -s emulator-5554 shell -T \
+  "run-as com.mathmotor.video.next sh -c 'mkdir -p files && cat > files/editor-test-video-second.mp4'" \
+  < "$second_fixture" 2>&1 | tee emulator-screenshots/video-fixture-second-private-copy.txt; then
+  echo "Streaming the second test fixture into the app sandbox failed; preserving diagnostics"
+  timeout -k 2s 8s adb -s emulator-5554 shell run-as com.mathmotor.video.next id > emulator-screenshots/run-as-second-preflight.txt 2>&1 || true
+  exit 10
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell run-as com.mathmotor.video.next ls -l files/editor-test-video-second.mp4 2>&1 | tee -a emulator-screenshots/video-fixture-second-private-copy.txt
+
+audio_fixture="app/build/test-fixtures/editor-test-video-with-audio.mp4"
+if [ ! -s "$audio_fixture" ]; then
+  echo "Missing generated audio-bearing video fixture: $audio_fixture"
+  exit 3
+fi
+if ! timeout -k 2s 30s adb -s emulator-5554 shell -T \
+  "run-as com.mathmotor.video.next sh -c 'mkdir -p files && cat > files/editor-test-video-with-audio.mp4'" \
+  < "$audio_fixture" 2>&1 | tee emulator-screenshots/video-fixture-audio-private-copy.txt; then
+  echo "Streaming the audio-bearing fixture into the app sandbox failed; preserving diagnostics"
+  timeout -k 2s 8s adb -s emulator-5554 shell run-as com.mathmotor.video.next id > emulator-screenshots/run-as-audio-preflight.txt 2>&1 || true
+  exit 10
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell run-as com.mathmotor.video.next ls -l files/editor-test-video-with-audio.mp4 2>&1 | tee -a emulator-screenshots/video-fixture-audio-private-copy.txt
+
+av_sync_fixture="app/build/test-fixtures/editor-av-sync-video.mp4"
+if [ ! -s "$av_sync_fixture" ]; then
+  echo "Missing deterministic A/V synchronization fixture: $av_sync_fixture"
+  exit 3
+fi
+if ! timeout -k 2s 30s adb -s emulator-5554 shell -T \
+  "run-as com.mathmotor.video.next sh -c 'mkdir -p files && cat > files/editor-av-sync-video.mp4'" \
+  < "$av_sync_fixture" 2>&1 | tee emulator-screenshots/video-fixture-av-sync-private-copy.txt; then
+  echo "Streaming the A/V sync fixture into the app sandbox failed; preserving diagnostics"
+  timeout -k 2s 8s adb -s emulator-5554 shell run-as com.mathmotor.video.next id > emulator-screenshots/run-as-av-sync-preflight.txt 2>&1 || true
+  exit 10
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell run-as com.mathmotor.video.next ls -l files/editor-av-sync-video.mp4 2>&1 | tee -a emulator-screenshots/video-fixture-av-sync-private-copy.txt
 
 timeout -k 2s 8s adb -s emulator-5554 shell am force-stop com.mathmotor.video.next || true
 # Avoid -W for the same slow-emulator first-frame wait that affected the home launch.

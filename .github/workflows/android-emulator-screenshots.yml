@@ -5,11 +5,16 @@ on:
   push:
     branches:
       - main
+      - fix/editor-395-gate
     paths:
       - "app/build.gradle.kts"
       - "app/src/main/**"
+      - "app/src/debug/**"
+      - "app/src/test/**"
+      - "app/src/androidTest/**"
       - ".github/workflows/android-emulator-screenshots.yml"
       - ".github/scripts/capture-emulator-screenshots.sh"
+      - ".github/scripts/run-android-instrumentation-tests.sh"
 
 permissions:
   contents: read
@@ -37,24 +42,82 @@ jobs:
         with:
           gradle-version: "8.11.1"
 
+      - name: Run unit tests
+        run: gradle --no-daemon testDebugUnitTest
+
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
 
-      - name: Generate a deterministic sample video for editor smoke tests
+      - name: Install ffmpeg for deterministic audio fixture
+        # The Azure Ubuntu mirror throttled the 62.8 MB dependency set until
+        # the install hit its timeout. Switch to Ubuntu's primary archive mirror
+        # before refreshing package indexes; keep bounded retries and timeouts.
+        timeout-minutes: 16
         run: |
-          if ! command -v ffmpeg >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install -y ffmpeg
+          set -euo pipefail
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+            # GitHub-hosted Ubuntu runners use mirror+file URIs that resolve
+            # through this file, so editing ubuntu.sources alone can leave Azure active.
+            if [ -f /etc/apt/apt-mirrors.txt ]; then
+              sudo sed -i 's|azure.archive.ubuntu.com/ubuntu|archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt
+              cat /etc/apt/apt-mirrors.txt
+            fi
+            if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
+              sudo sed -i 's|azure.archive.ubuntu.com/ubuntu|archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources
+            fi
+            timeout 240s sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 -qq
+            timeout 660s sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 install -y --no-install-recommends ffmpeg
           fi
+          command -v ffmpeg
+          command -v ffprobe
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+
+      - name: Prepare deterministic MP4 fixtures
+        run: |
+          set -euo pipefail
           mkdir -p app/build/test-fixtures
-          ffmpeg -hide_banner -loglevel error -y \
-            -f lavfi -i "testsrc2=size=360x640:rate=24" \
-            -f lavfi -i "sine=frequency=440:sample_rate=44100" \
-            -t 8 -c:v mpeg4 -q:v 5 -pix_fmt yuv420p \
-            -c:a aac -b:a 64k -shortest \
-            app/build/test-fixtures/editor-test-video.mp4
+          echo "Decoding checked-in offline fixture payloads"
+          base64 --decode ci-fixtures/editor-test-video.mp4.b64 > app/build/test-fixtures/editor-test-video.mp4
+          base64 --decode ci-fixtures/editor-test-video-second.mp4.b64 > app/build/test-fixtures/editor-test-video-second.mp4
           test -s app/build/test-fixtures/editor-test-video.mp4
-          ls -lh app/build/test-fixtures/editor-test-video.mp4
+          test -s app/build/test-fixtures/editor-test-video-second.mp4
+          command -v ffmpeg
+          command -v ffprobe
+          # Add a deterministic 220 Hz source-audio track to the existing offline video.
+          # 4x the sine filter's default 1/8 amplitude makes the 40% gain measurable.
+          ffmpeg -nostdin -hide_banner -loglevel error -y \
+            -i app/build/test-fixtures/editor-test-video.mp4 \
+            -f lavfi -i "sine=frequency=220:sample_rate=44100:duration=8.02" \
+            -map 0:v:0 -map 1:a:0 -c:v copy -af "volume=4.0" \
+            -c:a aac -b:a 192k -shortest \
+            app/build/test-fixtures/editor-test-video-with-audio.mp4
+          test -s app/build/test-fixtures/editor-test-video-with-audio.mp4
+          ffprobe -v error -show_entries stream=codec_type,codec_name,sample_rate,channels \
+            -of default=noprint_wrappers=1 app/build/test-fixtures/editor-test-video-with-audio.mp4
+          # A/V sync fixture: red video for the first 2 s, lime video after 2 s,
+          # and a 997 Hz source-audio tone delayed to exactly the same 2 s boundary.
+          ffmpeg -nostdin -hide_banner -loglevel error -y \
+            -f lavfi -i "color=c=red:s=320x180:r=30:d=2" \
+            -f lavfi -i "color=c=lime:s=320x180:r=30:d=2" \
+            -f lavfi -i "sine=frequency=997:sample_rate=48000:duration=2" \
+            -filter_complex "[0:v][1:v]concat=n=2:v=1:a=0[v];[2:a]adelay=2000,volume=2.0[a]" \
+            -map "[v]" -map "[a]" -t 4.0 \
+            -c:v libx264 -preset ultrafast -pix_fmt yuv420p -r 30 -g 30 -keyint_min 30 -sc_threshold 0 \
+            -c:a aac -b:a 192k -movflags +faststart \
+            app/build/test-fixtures/editor-av-sync-video.mp4
+          test -s app/build/test-fixtures/editor-av-sync-video.mp4
+          ffprobe -v error -show_entries format=duration:stream=codec_type,codec_name,r_frame_rate,sample_rate \
+            -of default=noprint_wrappers=1 app/build/test-fixtures/editor-av-sync-video.mp4
+
+          echo "Fixture sizes:"
+          wc -c app/build/test-fixtures/editor-test-video.mp4 app/build/test-fixtures/editor-test-video-second.mp4 app/build/test-fixtures/editor-test-video-with-audio.mp4 app/build/test-fixtures/editor-av-sync-video.mp4
+          echo "Fixture stream metadata:"
+          for f in app/build/test-fixtures/editor-test-video.mp4 app/build/test-fixtures/editor-test-video-second.mp4; do
+            printf '%s: ' "$f"
+            head -c 12 "$f" | od -An -tx1
+          done
+          echo "Both deterministic fixtures are ready without external downloads"
 
       - name: Enable KVM acceleration for the emulator
         run: |
@@ -68,7 +131,7 @@ jobs:
             echo "WARNING: /dev/kvm is unavailable; emulator may run without hardware acceleration"
           fi
 
-      - name: Launch app and capture screen without instrumentation
+      - name: Launch app, capture screens, and run interaction tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -85,7 +148,9 @@ jobs:
           disable-spellchecker: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -wipe-data
           emulator-boot-timeout: 600
-          script: bash .github/scripts/capture-emulator-screenshots.sh
+          script: |
+            bash .github/scripts/capture-emulator-screenshots.sh
+            bash .github/scripts/run-android-instrumentation-tests.sh
 
       - name: Upload emulator screenshots and diagnostics
         if: always()

@@ -1,0 +1,246 @@
+name: Signed APK update preflight (no publish)
+
+# This is an isolated preflight only: it never tags, uploads, or publishes an APK.
+# It verifies that the current source can be signed with the existing release key
+# and can replace the currently released build on a clean Android emulator.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - fix/editor-395-gate
+    paths:
+      - ".github/workflows/verify-signed-install.yml"
+      - "app/**"
+      - "gradle/**"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - "gradle.properties"
+      - "gradlew"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: signed-install-preflight
+  cancel-in-progress: false
+
+jobs:
+  signed-update-smoke:
+    runs-on: ubuntu-24.04
+    # Allow for occasional very slow cold API 35 boot while keeping a bounded job.
+    timeout-minutes: 45
+    steps:
+      - name: Check out candidate source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+
+      - name: Restore release signing key (never print credentials)
+        id: signing
+        env:
+          MMV_SIGNING_BUNDLE_B64: ${{ secrets.MMV_SIGNING_BUNDLE_B64 }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/mmv-signing"
+          if [ -n "$MMV_SIGNING_BUNDLE_B64" ]; then
+            printf '%s' "$MMV_SIGNING_BUNDLE_B64" | base64 --decode > "$RUNNER_TEMP/mmv-signing/bundle.zip"
+            unzip -oq "$RUNNER_TEMP/mmv-signing/bundle.zip" -d "$RUNNER_TEMP/mmv-signing"
+          elif [ -n "$ANDROID_KEYSTORE_BASE64" ] && [ -n "$ANDROID_KEYSTORE_PASSWORD" ] && [ -n "$ANDROID_KEY_ALIAS" ] && [ -n "$ANDROID_KEY_PASSWORD" ]; then
+            printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/mmv-signing/release.p12"
+            {
+              printf 'storeFile=release.p12\n'
+              printf 'storeType=PKCS12\n'
+              printf 'storePassword=%s\n' "$ANDROID_KEYSTORE_PASSWORD"
+              printf 'keyAlias=%s\n' "$ANDROID_KEY_ALIAS"
+              printf 'keyPassword=%s\n' "$ANDROID_KEY_PASSWORD"
+            } > "$RUNNER_TEMP/mmv-signing/keystore.properties"
+          else
+            echo "::error::Release signing secrets are not configured for this workflow."
+            exit 1
+          fi
+          test -s "$RUNNER_TEMP/mmv-signing/release.p12"
+          test -s "$RUNNER_TEMP/mmv-signing/keystore.properties"
+
+          python3 - "$RUNNER_TEMP/mmv-signing/keystore.properties" <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          lines = path.read_text(encoding="ISO-8859-1").splitlines(keepends=True)
+
+          def raw_value(prefix):
+              for line in lines:
+                  if line.startswith(prefix):
+                      return line[len(prefix):].rstrip("\r\n")
+              return None
+
+          if (raw_value("storeType=") or "PKCS12").strip().upper() == "PKCS12":
+              store_password = raw_value("storePassword=")
+              if store_password is None:
+                  raise SystemExit("Signing configuration is missing storePassword.")
+              output = []
+              replaced = False
+              for line in lines:
+                  if line.startswith("keyPassword="):
+                      ending = "\r\n" if line.endswith("\r\n") else ("\n" if line.endswith("\n") else "")
+                      output.append("keyPassword=" + store_password + ending)
+                      replaced = True
+                  else:
+                      output.append(line)
+              if not replaced:
+                  output.append("keyPassword=" + store_password + "\n")
+              path.write_text("".join(output), encoding="ISO-8859-1")
+          PY
+          echo "MMV_SIGNING_PROPERTIES=$RUNNER_TEMP/mmv-signing/keystore.properties" >> "$GITHUB_ENV"
+          echo "Signing configuration restored without printing credential values."
+
+      - name: Download the current signed baseline (build 61)
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --retry-delay 2 \
+            "https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/releases/download/app-v8.3-61/MathMotorVideo.apk" \
+            --output "$RUNNER_TEMP/MathMotorVideo-build61.apk"
+          test -s "$RUNNER_TEMP/MathMotorVideo-build61.apk"
+
+      - name: Build signed candidate without publishing
+        run: |
+          set -euo pipefail
+          gradle --no-daemon testDebugUnitTest assembleRelease
+          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/MathMotorVideo-candidate.apk"
+          test -s "$RUNNER_TEMP/MathMotorVideo-candidate.apk"
+
+      - name: Verify package, unchanged version code, and matching signing certificate
+        id: verify-apks
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          test -n "$SDK_ROOT"
+          APKSIGNER="$(find "$SDK_ROOT/build-tools" -maxdepth 2 -type f -name apksigner -print | sort -V | tail -n 1)"
+          AAPT="$(find "$SDK_ROOT/build-tools" -maxdepth 2 -type f -name aapt -print | sort -V | tail -n 1)"
+          test -x "$APKSIGNER"
+          test -x "$AAPT"
+
+          BASELINE="$RUNNER_TEMP/MathMotorVideo-build61.apk"
+          CANDIDATE="$RUNNER_TEMP/MathMotorVideo-candidate.apk"
+          "$APKSIGNER" verify --verbose --print-certs "$BASELINE" > "$RUNNER_TEMP/baseline-certificate.txt"
+          "$APKSIGNER" verify --verbose --print-certs "$CANDIDATE" > "$RUNNER_TEMP/candidate-certificate.txt"
+          "$AAPT" dump badging "$BASELINE" > "$RUNNER_TEMP/baseline-badging.txt"
+          "$AAPT" dump badging "$CANDIDATE" > "$RUNNER_TEMP/candidate-badging.txt"
+
+          base_package="$(sed -n "s/^package: name='\([^']*\)'.*/\1/p" "$RUNNER_TEMP/baseline-badging.txt" | head -n 1)"
+          candidate_package="$(sed -n "s/^package: name='\([^']*\)'.*/\1/p" "$RUNNER_TEMP/candidate-badging.txt" | head -n 1)"
+          base_code="$(sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p" "$RUNNER_TEMP/baseline-badging.txt" | head -n 1)"
+          candidate_code="$(sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p" "$RUNNER_TEMP/candidate-badging.txt" | head -n 1)"
+          base_cert="$(sed -n 's/.*certificate SHA-256 digest: //p' "$RUNNER_TEMP/baseline-certificate.txt" | head -n 1 | tr '[:upper:]' '[:lower:]')"
+          candidate_cert="$(sed -n 's/.*certificate SHA-256 digest: //p' "$RUNNER_TEMP/candidate-certificate.txt" | head -n 1 | tr '[:upper:]' '[:lower:]')"
+
+          test "$base_package" = "com.mathmotor.video.next"
+          test "$candidate_package" = "$base_package"
+          test "$base_code" = "394"
+          # Do not permit this preflight to become a 395 release attempt.
+          test "$candidate_code" = "$base_code"
+          test -n "$base_cert"
+          test "$candidate_cert" = "$base_cert"
+
+          {
+            echo "Baseline package: $base_package"
+            echo "Baseline versionCode: $base_code (build 61 release)"
+            echo "Candidate package: $candidate_package"
+            echo "Candidate versionCode: $candidate_code (no version bump)"
+            echo "Baseline certificate SHA-256: $base_cert"
+            echo "Candidate certificate SHA-256: $candidate_cert"
+            echo "Signature and package metadata match. No release or tag was created."
+          } | tee "$RUNNER_TEMP/signed-preflight-report.txt"
+          cp "$RUNNER_TEMP/signed-preflight-report.txt" "$GITHUB_WORKSPACE/signed-preflight-report.txt"
+          # Keep a verified, same-certificate 394 candidate available for owner-only device review.
+          cp "$CANDIDATE" "$GITHUB_WORKSPACE/MathMotorVideo-394-device-review.apk"
+
+      - name: Install baseline, replace it with candidate, and relaunch
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          # Explicit step-level paths are inherited by the action's command runner;
+          # don't rely on shell-local assignments surviving its command execution.
+          BASELINE_APK_PATH: ${{ runner.temp }}/MathMotorVideo-build61.apk
+          CANDIDATE_APK_PATH: ${{ runner.temp }}/MathMotorVideo-candidate.apk
+        with:
+          api-level: 35
+          # This gate only installs and launches the app; Google Play services are unnecessary.
+          # The smaller AOSP image avoids the Google APIs image download that previously failed
+          # with "Error on ZipFile unknown archive" in the hosted runner.
+          target: default
+          arch: x86_64
+          cores: 2
+          ram-size: 3072M
+          heap-size: 768M
+          force-avd-creation: true
+          emulator-port: 5554
+          # Keep post-boot settings writes minimal: the system server/ADB transport broke
+          # immediately after the animation/timeout setup on the previous two attempts.
+          # force-avd-creation already gives this preflight a clean AVD; avoid a second wipe.
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          emulator-boot-timeout: 900
+          script: |
+            # The emulator runner executes this block with /usr/bin/sh, not Bash.
+            set -eu
+            test -s "$BASELINE_APK_PATH"
+            test -s "$CANDIDATE_APK_PATH"
+            printf 'Baseline APK file is present: %s\n' "$BASELINE_APK_PATH"
+            printf 'Candidate APK file is present: %s\n' "$CANDIDATE_APK_PATH"
+            # Confirm the transport is live before touching the device; this job has
+            # previously seen a cold-boot ADB reset before the app script could start.
+            adb -s emulator-5554 wait-for-device
+            adb -s emulator-5554 shell wm size 320x640
+            mkdir -p "$GITHUB_WORKSPACE/signed-update-smoke"
+            adb -s emulator-5554 install "$BASELINE_APK_PATH"
+            adb -s emulator-5554 logcat -c
+            adb -s emulator-5554 shell am start -W -n com.mathmotor.video.next/com.mathmotor.video.MainActivity
+            sleep 10
+            adb -s emulator-5554 shell dumpsys window > "$GITHUB_WORKSPACE/signed-update-smoke/baseline-window.txt"
+            adb -s emulator-5554 shell pidof com.mathmotor.video.next > "$GITHUB_WORKSPACE/signed-update-smoke/baseline-pid.txt" || true
+            adb -s emulator-5554 logcat -d -b all -v threadtime > "$GITHUB_WORKSPACE/signed-update-smoke/baseline-logcat.txt"
+            adb -s emulator-5554 install -r "$CANDIDATE_APK_PATH"
+            adb -s emulator-5554 shell am force-stop com.mathmotor.video.next
+            adb -s emulator-5554 logcat -c
+            adb -s emulator-5554 shell am start -W -n com.mathmotor.video.next/com.mathmotor.video.MainActivity
+            sleep 10
+            adb -s emulator-5554 shell dumpsys window > "$GITHUB_WORKSPACE/signed-update-smoke/candidate-window.txt"
+            adb -s emulator-5554 shell pidof com.mathmotor.video.next > "$GITHUB_WORKSPACE/signed-update-smoke/candidate-pid.txt" || true
+            adb -s emulator-5554 logcat -d -b all -v threadtime > "$GITHUB_WORKSPACE/signed-update-smoke/candidate-logcat.txt"
+            adb -s emulator-5554 shell dumpsys package com.mathmotor.video.next > "$RUNNER_TEMP/package-after-update.txt"
+            cp "$RUNNER_TEMP/package-after-update.txt" "$GITHUB_WORKSPACE/signed-update-smoke/package-after-update.txt"
+            grep -m1 "versionCode=394" "$RUNNER_TEMP/package-after-update.txt"
+            test -s "$GITHUB_WORKSPACE/signed-update-smoke/candidate-pid.txt"
+            echo "Baseline and candidate launch diagnostics captured; candidate process remained alive. No publish/tag/upload-release step exists."
+
+      - name: Upload non-sensitive preflight report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mathmotor-signed-update-preflight
+          path: |
+            signed-preflight-report.txt
+            signed-update-smoke/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload signed 394 APK for physical-device review
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MathMotorVideo-394-device-review
+          path: MathMotorVideo-394-device-review.apk
+          if-no-files-found: error
+          retention-days: 7
