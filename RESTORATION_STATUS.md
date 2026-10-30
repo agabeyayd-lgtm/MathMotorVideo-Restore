@@ -202,3 +202,14 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 - The maximum pinch made the measured blocks too wide/off-screen after the test scrolled back to the timeline origin. The failure does not establish a product lane-alignment regression.
 - Test-only follow-up `6759e65a41544b7212341f1161c4f7d382585d8e` reduces the pinch distance, leaves the 2.75 s playhead anchored, checks both timed strips remain visible, and compares their bounds at the second zoom level. Production code unchanged.
 - Shared-lane alignment remains unverified pending the focused run; do not repeat unrelated green suites. Version 395 remains blocked.
+
+
+## Shared timeline lane alignment #388 — PASSED (2026-10-30)
+
+- [Run #388 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41116127578) completed on PR #10 / branch `fix/editor-395-mainline`, candidate head `8cc976d6fc21eaf3c81250642cc3c50bf242b673`.
+- Unit tests and Debug APK builds passed. The focused Android instrumentation method `EditorTimelineInteractionTest#sharedTimelineVideoTextMusicEffectLanesStayAlignedAcrossZoomLevels` passed; the log reports `connectedDebugAndroidTest exit code: 0`, `BUILD SUCCESSFUL`, and `Connected Android instrumentation tests passed.` The focused gate is therefore closed for the tested zoom/scroll scenario.
+- The test-only refinement after #382 used a modest pinch, preserved the playhead at 2.75 s, required the text and effect strips to remain visible, and then measured the shared video/text/music/effect lane alignment. This is automated emulator evidence; it does not prove every zoom extreme, save/reopen state, or physical-device behavior.
+- Emulator screenshot/diagnostic artifact: [13007025200](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41116127578/artifacts/13007025200).
+- Emulator ADB startup/cleanup warnings appeared in the log, but the focused instrumentation command exited 0 and the workflow concluded successfully; they did not fail #388.
+- Do not rerun #388 unchanged. Next distinct acceptance work: inspect the latest artifact/screenshots and finish visual polish of the four-item dock/empty-editor panel; then check adaptive ruler readability at zoom extremes and keyboard-open editing on a short viewport; then physical-phone smoke testing and current-branch signed install/update-over/relaunch preflight.
+- Version remains 394/build 61. Version 395 remains blocked; do not bump version metadata, sign/publish a release APK, or enable the updater until all gates pass and the user authorizes release.
