@@ -218,8 +218,7 @@ class EmulatorScreenshotTest {
             device.executeShellCommand("logcat -c")
             device.executeShellCommand(
                 "am start -n com.mathmotor.video.next/com.mathmotor.video.EditorTestEntryActivity " +
-                    "--es video_uri file:///data/user/0/com.mathmotor.video.next/files/editor-test-video.mp4 " +
-                    "--es draft_id 44444444-4444-4444-8444-444444444444"
+                    "--es video_uri file:///data/user/0/com.mathmotor.video.next/files/editor-test-video.mp4"
             )
             assertTrue(
                 "Loaded-video editor did not expose its VIDEO timeline lane at 393x873",
