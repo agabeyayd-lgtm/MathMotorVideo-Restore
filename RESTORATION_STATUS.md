@@ -86,3 +86,13 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 - Cause: the test helper grabbed the vertical playhead overlay at the vertical center of the entire timeline. At the initial 0 ms position, the first clip's right trim handle can occupy that same screen coordinate, so the new correct trim-handle priority makes that ambiguous touch go to the trim handle.
 - Test correction committed as `c8680d730de125793e7cb694888c98ba998679cc`: start the playhead drag on its distinct small top head, which is the intended unambiguous playhead grab target, rather than the line where it can overlap a trim handle.
 - This is a test-coordinate correction, not a claim that the source fix has passed. A new PR-triggered emulator run is required; keep both playhead and trim acceptance gates open until it passes.
+
+
+## Candidate run #334 — 2026-10-30
+
+- Run [#334 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41053725921) completed on PR #10's merge ref (candidate head `452aa32c5812e203ba60abc581c53fde55cd0042`).
+- Unit tests passed; Debug APK build passed; Android instrumentation passed **20/20 tests, 0 failures, 0 skips**. The log confirms `connectedDebugAndroidTest exit code: 0` and `Connected Android instrumentation tests passed.`
+- Uploaded emulator screenshots/diagnostics: [artifact 12976766821](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41053725921/artifacts/12976766821).
+- This validates the previously failing right-edge trim and playhead-drag regression paths in the automated emulator suite. It does not replace physical-device validation or close unrelated editor requirements.
+- Emulator shutdown warnings after successful instrumentation are cleanup noise; the job concluded successfully.
+- Version 395 remains blocked. Do not change version metadata, sign/publish an APK, or enable the updater until every release gate is implemented and verified and the user authorizes release.
