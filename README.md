@@ -67,7 +67,7 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - #371's 393×873 screenshots were inspected against the user's supplied target: the loaded-video preview stage is about 392 px high (about 45% of the 873 px viewport), and the portrait canvas is about 221×392 px. The redundant single-clip `Klip 1` chooser row is absent. This closes the major preview-size and duplicate-row visual gaps on the emulator only; the target's wider tool dock and the empty-editor clip-panel copy still need visual polish.
 - The #341 tall-screen screenshots are emulator captures, not a physical phone test; they do not prove touch comfort, performance or OEM-specific behavior. The separate short-viewport keyboard scenario is now covered by #399 on the emulator.
 - The deterministic filmstrip density fixture is 8 seconds; the separate exact 10-second seek scenario is now verified by #362 and #366. The exact 10-second test is single-clip; multi-clip behavior has separate #340 coverage.
-- Remaining acceptance work: finish visual polish of the four-item dock and empty-editor clip panel against the supplied target; inspect adaptive ruler readability at multiple zoom levels (the shared-lane alignment scenario passed in #388); perform physical-phone visual/touch/performance smoke testing; and run signed install-over/relaunch verification on the current `fix/editor-395-mainline` branch.
+- Remaining acceptance work: review the fresh 393×873 empty/loaded editor screenshots after the targeted screenshot test; inspect adaptive ruler readability at multiple zoom levels (the shared-lane alignment scenario passed in #388); perform physical-phone visual/touch/performance smoke testing; and run signed install-over/relaunch verification on the current `fix/editor-395-mainline` branch.
 - Version 395 remains blocked. The working installed baseline remains **versionCode 394 / build 61**. Do not bump version metadata, sign or publish a release APK, or activate the updater until all required gates pass and the user explicitly authorizes release.
 
 ## Current baseline capabilities (present in source; not all are proven reliable)
@@ -286,3 +286,12 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - Emulator ADB startup/cleanup warnings appeared in the log, but the focused instrumentation command exited 0 and the workflow concluded successfully; they did not fail #388.
 - Do not rerun #388 unchanged. Next distinct acceptance work: inspect the latest artifact/screenshots and finish visual polish of the four-item dock/empty-editor panel; then check adaptive ruler readability at zoom extremes and keyboard-open editing on a short viewport; then physical-phone smoke testing and current-branch signed install/update-over/relaunch preflight.
 - Version remains 394/build 61. Version 395 remains blocked; do not bump version metadata, sign/publish a release APK, or enable the updater until all gates pass and the user authorizes release.
+
+
+## Empty-editor tall-phone action visibility — targeted validation queued (2026-10-31)
+
+- Source change `4e285f09f8c16d981b6447ca0fc937564131fc90` hides the redundant empty-state status sentence while no clip is loaded and restores it when a clip is selected, preserving the primary add-video action in the compact tool panel.
+- Instrumentation assertion added in `EmulatorScreenshotTest#captureHomeEditorAndTextPanel` requires the add-video action to meet the 44dp/120dp touch target and remain fully above the dock at 393×873.
+- [Run #402 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41143199557) ran only `EditorTimelineInteractionTest#compactPhoneKeyboardKeepsTextFieldEditableAndRestoresEditor`; it confirms the short-screen keyboard gate, **not** the new 393×873 empty-editor assertion. The screenshot assertion remains pending a targeted run.
+- Workflow filter is now directed at the screenshot test so the next PR run validates the actual empty/loaded phone layouts. Do not count this visual gate as passed until that run succeeds and the artifact is inspected.
+- Version remains 394/build 61. Version 395 remains blocked; no version bump, signing, publishing, or updater activation.
