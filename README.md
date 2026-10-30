@@ -652,3 +652,12 @@ Run: https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40228
 - [x] Workflow correction committed as 6d2da9db24edec5b5221a8bda9584db23114d5cb: collect baseline and candidate logcat/window/process diagnostics before asserting, use am start -W, and allow 10 seconds for startup. This is diagnostic hardening, not a claim that app startup is fixed.
 - [ ] Signed preflight [#8](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41018383645) is running on the diagnostic workflow. Inspect its artifacts/logcat to distinguish an app crash from emulator/launch timing, then make only the evidence-supported correction.
 - [ ] Physical-device visual/touch-target review remains open. VersionCode 395, release APK, tag, publication, and updater enablement remain blocked; installed baseline is 394/build 61.
+
+
+## 2026-10-30 — signed update preflight #8 PASS
+
+- [x] [Signed APK update preflight #8](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41018383645) completed successfully on commit 6d2da9db24edec5b5221a8bda9584db23114d5cb.
+- [x] Signed candidate build passed; package name, unchanged versionCode 394, and signing certificate matched.
+- [x] Existing signed baseline build 61 installed, candidate installed over it, and post-update app launch/process assertion passed.
+- [x] Baseline/candidate startup diagnostics and non-sensitive report uploaded by workflow.
+- [ ] Physical-device review and user acceptance remain open. VersionCode 395/release/tag/publication/updater enablement remain blocked pending those gates. Baseline remains 394/build 61.
