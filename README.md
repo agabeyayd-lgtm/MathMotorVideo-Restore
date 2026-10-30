@@ -1,3 +1,11 @@
+## Latest handoff — #323 confirms dock tap but panel state still unresolved (2026-10-30)
+
+- [Run #323 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40974440915), commit `33e87f8`. Unit tests, Debug APK, FFmpeg and fixture setup passed. Instrumentation: 19/20 passed; `splitAtPlayheadExportsTwoOrderedSegmentsWithoutMovingAvSeam` still failed before split/export assertions because the Clip heading was not found.
+- The #323 log proves the dock click reaches the activity: `EditorPanel: dock tap=clip active=null visible=false`. The panel is hidden before the tap; no fatal exception appears in the test log. The failure is after click delivery, not a missing tab or shell shutdown.
+- A separate screenshot test later rendered the Clip panel, but that does not prove the failing split-test activity opened it at the required moment.
+- Next diagnostic records panel visibility and measured panel/scroll/parent heights immediately after `showEditorPanel` and on the next posted frame. Use this evidence to determine whether visibility is reset, layout height collapses, or accessibility fails to expose the heading. Do not weaken split/export assertions.
+- Version 395 remains blocked; installed baseline is 394/build 61.
+
 ## Latest handoff — #322 exposed panel selection/visibility desync (2026-10-30)
 
 - [Run #322 FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40965799400), commit `a4215bb`. Unit tests, Debug APK build, FFmpeg setup, and MP4 fixture generation passed; instrumentation reported 19/20 tests passed. The only failure remained `splitAtPlayheadExportsTwoOrderedSegmentsWithoutMovingAvSeam`: the dock tab was present, but `KLİP DÜZENLEME` did not become visible after the tap. The test did not reach split/export assertions, so do not count export validation as passed.

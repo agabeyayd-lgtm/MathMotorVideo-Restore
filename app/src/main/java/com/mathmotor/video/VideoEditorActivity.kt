@@ -1771,6 +1771,21 @@ class VideoEditorActivity : Activity() {
             button.setTextColor(if (selected) Color.rgb(5, 25, 29) else Color.rgb(220, 231, 240))
         }
         updateCompactToolPanelLayout()
+        val selectedPanel = editorPanels[name]
+        android.util.Log.i(
+            "EditorPanel",
+            "show complete name=$name panelVisibility=${selectedPanel?.visibility} " +
+                "panelHeight=${selectedPanel?.height} panelParentHeight=${(selectedPanel?.parent as? View)?.height} " +
+                "scrollVisibility=${editorPanelScroll.visibility} scrollHeight=${editorPanelScroll.height} " +
+                "scrollParentHeight=${(editorPanelScroll.parent as? View)?.height} active=$activeEditorPanel"
+        )
+        editorPanelScroll.post {
+            android.util.Log.i(
+                "EditorPanel",
+                "show post name=$name panelVisibility=${selectedPanel?.visibility} " +
+                    "panelHeight=${selectedPanel?.height} scrollHeight=${editorPanelScroll.height} active=$activeEditorPanel"
+            )
+        }
         if (name == "export") status.text = "Projeyi kaydedebilir veya MP4 olarak dışa aktarabilirsin."
     }
 
