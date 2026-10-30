@@ -116,15 +116,31 @@ class EmulatorScreenshotTest {
             ?: throw AssertionError("Audio tool tab is missing from the bottom dock")
         val textTabForOrder = device.findObject(By.desc("Metin araçları sekmesi"))
             ?: throw AssertionError("Text tool tab is missing from the bottom dock")
+        val exportTab = device.findObject(By.desc("Dışa aktarma sekmesi"))
+            ?: throw AssertionError("Export tool tab is missing from the bottom dock")
         assertTrue(
             "Bottom tool order should be Edit, Audio, Text, Export",
             clipTab.visibleBounds.left < audioTab.visibleBounds.left &&
-                audioTab.visibleBounds.left < textTabForOrder.visibleBounds.left
+                audioTab.visibleBounds.left < textTabForOrder.visibleBounds.left &&
+                textTabForOrder.visibleBounds.left < exportTab.visibleBounds.left
         )
+        listOf(clipTab, audioTab, textTabForOrder, exportTab).forEachIndexed { index, tab ->
+            assertTrue(
+                "Bottom dock tab $index is below the 44dp touch-target minimum: ${tab.visibleBounds}",
+                tab.visibleBounds.height() >= (44f * density).toInt()
+            )
+        }
         clipTab.click()
         assertTrue(
             "Empty clip panel should offer a direct add-video action",
             device.wait(Until.hasObject(By.desc("Klip düzenlemek için video ekle")), 5_000)
+        )
+        val emptyAddVideo = device.findObject(By.desc("Klip düzenlemek için video ekle"))
+            ?: throw AssertionError("Primary empty-editor add-video action disappeared")
+        assertTrue(
+            "Empty-editor primary action is too small: ${emptyAddVideo.visibleBounds}",
+            emptyAddVideo.visibleBounds.width() >= (120f * density).toInt() &&
+                emptyAddVideo.visibleBounds.height() >= (44f * density).toInt()
         )
         assertTrue(
             "Clip editing and trim controls should stay hidden until a video is added",
@@ -315,6 +331,65 @@ class EmulatorScreenshotTest {
             )
             takeScreenshot(device, "editor-phone-size-loaded.png")
             publishScreenshotToDownloads("editor-phone-size-loaded.png")
+
+            // Exercise the actual ruler labels at both zoom clamps. The ruler is built
+            // from the same adaptive interval math as the timeline; verify that visible
+            // labels remain present, spaced and carry the expected time interval.
+            fun currentZoomPercent(): Int {
+                val zoom = device.findObject(By.descContains("Zaman çizelgesi yakınlaştırma"))
+                    ?: throw AssertionError("Timeline zoom indicator disappeared during ruler test")
+                return Regex("(\\d+)%").find(zoom.contentDescription?.toString().orEmpty())
+                    ?.groupValues?.get(1)?.toInt()
+                    ?: throw AssertionError("Could not parse timeline zoom: ${zoom.contentDescription}")
+            }
+
+            fun zoomToClamp(targetPercent: Int) {
+                var actual = currentZoomPercent()
+                for (attempt in 0 until 12) {
+                    if (actual == targetPercent) break
+                    val videoViewport = device.findObject(By.desc("Zaman çizelgesi satırı: VIDEO"))
+                        ?: throw AssertionError("VIDEO lane disappeared during zoom endpoint test")
+                    if (actual < targetPercent) videoViewport.pinchOpen(0.80f, 50)
+                    else videoViewport.pinchClose(0.80f, 50)
+                    device.waitForIdle()
+                    SystemClock.sleep(250)
+                    actual = currentZoomPercent()
+                }
+                assertTrue(
+                    "Timeline zoom did not reach requested clamp $targetPercent%; actual=$actual%",
+                    actual == targetPercent
+                )
+            }
+
+            fun assertVisibleRulerTicks(expectedIntervalMs: Long, minimumCount: Int, stage: String) {
+                val visibleTicks = device.findObjects(By.descContains("Zaman çizelgesi işareti:"))
+                    .filter { it.visibleBounds.width() > 0 && it.visibleBounds.height() > 0 }
+                assertTrue(
+                    "$stage ruler exposed too few visible labels: ${visibleTicks.map { it.contentDescription }}",
+                    visibleTicks.size >= minimumCount
+                )
+                val intervals = visibleTicks.mapNotNull { tick ->
+                    Regex("aralık (\\d+) ms").find(tick.contentDescription?.toString().orEmpty())
+                        ?.groupValues?.get(1)?.toLong()
+                }
+                assertTrue(
+                    "$stage ruler labels did not expose interval metadata: $intervals",
+                    intervals.size >= minimumCount && intervals.all { it == expectedIntervalMs }
+                )
+                val minimumGapPx = (32f * largeDensity).toInt()
+                val centers = visibleTicks.map { it.visibleBounds.centerX() }.sorted()
+                for (index in 1 until centers.size) {
+                    assertTrue(
+                        "$stage ruler labels are too tightly packed: centers=$centers minimumGap=$minimumGapPx",
+                        centers[index] - centers[index - 1] >= minimumGapPx
+                    )
+                }
+            }
+
+            zoomToClamp(50)
+            assertVisibleRulerTicks(expectedIntervalMs = 5_000L, minimumCount = 2, stage = "minimum zoom")
+            zoomToClamp(800)
+            assertVisibleRulerTicks(expectedIntervalMs = 250L, minimumCount = 4, stage = "maximum zoom")
         } finally {
             // The emulator is reused by the rest of the instrumentation suite.
             device.executeShellCommand("wm size reset")
