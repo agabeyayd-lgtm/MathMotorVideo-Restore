@@ -4582,7 +4582,19 @@ class EditorTimelineInteractionTest {
             "Shared timeline pinch moved the fixed playhead: $timeBeforePinch -> $timeAfterPinch",
             abs(timeBeforePinch - timeAfterPinch) <= 150L
         )
-        verifyLaneAlignment("zoomed")
+
+        // UiObject2.visibleBounds reports the clipped portion of a child. At a
+        // fixed playhead of 2.75 s, the 1.25 s text block is legitimately left
+        // of the viewport after zooming, so its visible left edge equals the
+        // viewport edge rather than its true timeline coordinate. Return every
+        // synchronized lane to the timeline origin before comparing block bounds.
+        assertTrue(
+            "Could not return the shared timeline to its origin after pinch",
+            videoLane.scroll(androidx.test.uiautomator.Direction.RIGHT, 1.0f)
+        )
+        device.waitForIdle()
+        SystemClock.sleep(250)
+        verifyLaneAlignment("zoomed-at-origin")
 
         android.util.Log.i(
             "SharedTimelineLaneAlignmentTest",
