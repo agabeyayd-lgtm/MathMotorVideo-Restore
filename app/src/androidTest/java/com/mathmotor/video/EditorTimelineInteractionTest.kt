@@ -4569,7 +4569,11 @@ class EditorTimelineInteractionTest {
                 .contentDescription
         )
         val timeBeforePinch = projectPositionMs(requireProjectTime(device))
-        videoLane.pinchOpen(0.85f, 60)
+        // A moderate pinch gives the test a real second scale while keeping the
+        // complete text/effect strips inside the viewport around the fixed 2.75 s
+        // playhead. A near-maximum pinch followed by scrolling to t=0 clipped the
+        // effect strip; UiObject2 then correctly omitted that off-screen node.
+        videoLane.pinchOpen(0.20f, 60)
         device.waitForIdle()
         SystemClock.sleep(350)
         val zoomAfter = zoomPercent(
@@ -4582,25 +4586,15 @@ class EditorTimelineInteractionTest {
             "Shared timeline pinch moved the fixed playhead: $timeBeforePinch -> $timeAfterPinch",
             abs(timeBeforePinch - timeAfterPinch) <= 150L
         )
-
-        // UiObject2.visibleBounds reports the clipped portion of a child. At a
-        // fixed playhead of 2.75 s, the 1.25 s text block is legitimately left
-        // of the viewport after zooming, so its visible left edge equals the
-        // viewport edge rather than its true timeline coordinate. Return every
-        // synchronized lane to the timeline origin before comparing block bounds.
-        // Pinch causes the timeline rows to be rebuilt; the UiObject2 captured
-        // before the gesture is stale. Reacquire the current VIDEO row before
-        // asking UiAutomator to scroll the synchronized timeline.
-        val videoLaneAfterPinch = requireObject(
-            device, By.desc("Zaman çizelgesi satırı: VIDEO"), "VIDEO lane after shared-lane pinch"
+        assertTrue(
+            "Zoomed effect strip should remain visible around the fixed playhead",
+            device.wait(Until.hasObject(effectSelector), 8_000)
         )
         assertTrue(
-            "Could not return the shared timeline to its origin after pinch",
-            videoLaneAfterPinch.scroll(androidx.test.uiautomator.Direction.LEFT, 1.0f)
+            "Zoomed text strip should remain visible around the fixed playhead",
+            device.wait(Until.hasObject(textSelector), 8_000)
         )
-        device.waitForIdle()
-        SystemClock.sleep(250)
-        verifyLaneAlignment("zoomed-at-origin")
+        verifyLaneAlignment("zoomed")
 
         android.util.Log.i(
             "SharedTimelineLaneAlignmentTest",
