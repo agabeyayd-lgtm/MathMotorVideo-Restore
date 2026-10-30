@@ -2423,8 +2423,10 @@ class VideoEditorActivity : Activity() {
         val timelineX = timelineLaneViewportLeftPx() + viewportWidth / 2
         timelinePlayheadLine.visibility = View.VISIBLE
         val params = timelinePlayheadLine.layoutParams as? FrameLayout.LayoutParams ?: return
-        params.width = dp(28)
-        params.leftMargin = timelineX - dp(14)
+        // Keep the full playhead drag target comfortably reachable after every
+        // scroll, pinch, lane rebuild and responsive-layout refresh.
+        params.width = dp(40)
+        params.leftMargin = timelineX - dp(20)
         timelinePlayheadLine.layoutParams = params
         timelinePlayheadLine.bringToFront()
     }
