@@ -113,6 +113,7 @@ class TimelineScaleMathTest {
         assertEquals(5_000L, TimelineScaleMath.rulerIntervalMs(11f, 36f, 8_020L, 16f))
         assertEquals(2_000L, TimelineScaleMath.rulerIntervalMs(22f, 36f, 8_020L, 16f))
         assertEquals(500L, TimelineScaleMath.rulerIntervalMs(88f, 36f, 8_020L, 16f))
+        assertEquals(250L, TimelineScaleMath.rulerIntervalMs(176f, 36f, 8_020L, 16f))
         assertEquals(15_000L, TimelineScaleMath.rulerIntervalMs(11f, 36f, 300_000L, 16f))
         assertEquals(60_000L, TimelineScaleMath.rulerIntervalMs(11f, 36f, 720_000L, 16f))
     }
