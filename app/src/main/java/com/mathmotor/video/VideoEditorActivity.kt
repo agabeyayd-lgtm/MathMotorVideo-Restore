@@ -1792,15 +1792,7 @@ class VideoEditorActivity : Activity() {
             val lane=makeLane("VIDEO",if(keyboardLayoutActive||compactEditorLayout)18 else 44)
             addBlock(lane,"+ Video ekle",5000L,Color.rgb(38,105,123),onClick={chooseVideo(true)},minimumWidthDp=115)
         } else {
-            val lanes=mutableListOf<MutableList<Int>>()
-            clips.indices.sortedWith(compareBy<Int>{clips[it].timelineStartMs}.thenBy{it}).forEach { index ->
-                val clip=clips[index]
-                val row=lanes.indexOfFirst { rowIndices ->
-                    val previous=clips[rowIndices.last()]
-                    previous.timelineStartMs+(previous.endMs-previous.startMs).coerceAtLeast(0L)<=clip.timelineStartMs
-                }.takeIf{it>=0} ?: lanes.size.also{lanes.add(mutableListOf())}
-                lanes[row].add(index)
-            }
+            val lanes=TimelineVideoMath.assignLanes(videoTimelineSegments())
             lanes.forEachIndexed { row,indices ->
                 val lane=makeLane(if(row==0)"VIDEO" else "",if(keyboardLayoutActive||compactEditorLayout)18 else 44)
                 var cursor=0L
