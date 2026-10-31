@@ -63,14 +63,16 @@ class TimelineScaleMathTest {
             gripAndLabelGutterPx
         )
 
+        val trailingRowInsetPx = 3
         val endSpacerPx = TimelineScaleMath.endSpacerWidthForCenteredPlayhead(
             frameWidthPx,
-            gripAndLabelGutterPx
+            gripAndLabelGutterPx,
+            trailingRowInsetPx
         )
-        val scrollViewportWidthPx = frameWidthPx - gripAndLabelGutterPx
+        val scrollViewportWidthPx = frameWidthPx - gripAndLabelGutterPx - trailingRowInsetPx
 
         assertEquals(103, originSpacerPx)
-        assertEquals(160, endSpacerPx)
+        assertEquals(157, endSpacerPx)
         assertEquals(scrollViewportWidthPx, originSpacerPx + endSpacerPx)
         assertEquals(frameWidthPx / 2, gripAndLabelGutterPx + originSpacerPx)
         assertEquals(
