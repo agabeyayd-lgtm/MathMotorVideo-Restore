@@ -403,7 +403,7 @@ forward_start="$((clip_x2 - swipe_inset))"
 forward_end="$((clip_x1 + swipe_inset))"
 forward_distance="$((forward_start - forward_end))"
 if [ "$forward_distance" -lt 80 ]; then
-  echo "The visible filmstrip range is too small for a meaningful scrub (\${clip_width}px wide; \${forward_distance}px usable after \${swipe_inset}px insets)."
+  echo "The visible filmstrip range is too small for a meaningful scrub (${clip_width}px wide; ${forward_distance}px usable after ${swipe_inset}px insets)."
   collect_capture_diagnostics filmstrip-scrub-distance-too-small
   exit 18
 fi
@@ -469,7 +469,7 @@ reverse_start="$((reverse_x1 + reverse_inset))"
 reverse_end="$((reverse_x2 - reverse_inset))"
 reverse_distance="$((reverse_end - reverse_start))"
 if [ "$reverse_distance" -lt 80 ]; then
-  echo "The visible filmstrip range became too small for the reverse scrub (\${reverse_width}px wide; \${reverse_distance}px usable after \${reverse_inset}px insets)."
+  echo "The visible filmstrip range became too small for the reverse scrub (${reverse_width}px wide; ${reverse_distance}px usable after ${reverse_inset}px insets)."
   collect_capture_diagnostics filmstrip-scrub-reverse-distance-too-small
   exit 23
 fi
