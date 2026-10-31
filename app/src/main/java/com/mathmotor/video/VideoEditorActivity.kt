@@ -2114,22 +2114,46 @@ class VideoEditorActivity : Activity() {
         // all synchronized lanes by the elapsed-time pixel distance.
         timelineScrollViews.forEach { laneScroll ->
             val laneTrack = laneScroll.getChildAt(0) as? LinearLayout ?: return@forEach
-            val originWidth = ((laneScroll.width.takeIf { it > 0 }
-                ?: (resources.displayMetrics.widthPixels - dp(57))).coerceAtLeast(dp(2))) / 2
-            val first = laneTrack.getChildAt(0)
-            if (first?.tag != "timeline-origin-spacer") {
+            fun updateLaneOriginSpacer(viewportWidth: Int) {
+                if (viewportWidth <= 0 || laneTrack.childCount == 0) return
+                // The scroll viewport can be measured after the timeline is first built,
+                // and can change again when the keyboard or phone width changes. Keep
+                // both spacers tied to the actual viewport so project time zero/end stay
+                // reachable exactly beneath the stationary center playhead.
+                val originWidth = (viewportWidth / 2).coerceAtLeast(dp(1))
+                val first = laneTrack.getChildAt(0)
+                if (first?.tag == "timeline-origin-spacer") {
+                    val params = first.layoutParams as? LinearLayout.LayoutParams
+                    if (params == null || params.width != originWidth) {
+                        first.layoutParams = LinearLayout.LayoutParams(originWidth, dp(24))
+                    }
+                }
+                val last = laneTrack.getChildAt(laneTrack.childCount - 1)
+                if (last?.tag == "timeline-end-spacer") {
+                    val params = last.layoutParams as? LinearLayout.LayoutParams
+                    if (params == null || params.width != originWidth) {
+                        last.layoutParams = LinearLayout.LayoutParams(originWidth, dp(24))
+                    }
+                }
+            }
+            val originWidth = (laneScroll.width.takeIf { it > 0 }
+                ?: (resources.displayMetrics.widthPixels - dp(57))).coerceAtLeast(dp(2)) / 2
+            if (laneTrack.getChildAt(0)?.tag != "timeline-origin-spacer") {
                 val originSpacer = View(this).apply { tag = "timeline-origin-spacer" }
                 laneTrack.addView(originSpacer, 0, LinearLayout.LayoutParams(originWidth, dp(24)))
-            } else {
-                first.layoutParams = LinearLayout.LayoutParams(originWidth, dp(24))
             }
-            val last = laneTrack.getChildAt(laneTrack.childCount - 1)
-            if (last?.tag != "timeline-end-spacer") {
+            if (laneTrack.getChildAt(laneTrack.childCount - 1)?.tag != "timeline-end-spacer") {
                 val endSpacer = View(this).apply { tag = "timeline-end-spacer" }
                 laneTrack.addView(endSpacer, LinearLayout.LayoutParams(originWidth, dp(24)))
-            } else {
-                last.layoutParams = LinearLayout.LayoutParams(originWidth, dp(24))
             }
+            // Recalculate after measurement and on responsive viewport changes.
+            laneScroll.addOnLayoutChangeListener { view, left, top, right, bottom,
+                                                   oldLeft, oldTop, oldRight, oldBottom ->
+                if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) {
+                    updateLaneOriginSpacer(view.width)
+                }
+            }
+            laneScroll.post { updateLaneOriginSpacer(laneScroll.width) }
         }
         // The matching end spacer lets the final frame reach the center playhead too.
         // A MATCH_PARENT playhead inside a WRAP_CONTENT FrameLayout would let
