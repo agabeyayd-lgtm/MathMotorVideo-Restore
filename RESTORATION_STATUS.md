@@ -95,7 +95,7 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 - [ ] Verify exported audio start/end, repeat behavior, silence outside the segment and source-video preservation in a real MP4.
 - [ ] Verify project save/reopen retains edited music/effect positions and durations.
 - [ ] Verify independently positioned/trimmable video clips on-device. The implementation now stores independent positions, supports body drag and edge trim, persists positions, and flattens overlaps for preview/export; automated/device acceptance is still pending.
-- [ ] Add source-in/source-out selection for music; current music block repeats the full source within its timeline range.
+- [x] Implement source-in/source-out selection for music, separate from its project-timeline range; automated and device validation remains pending.
 - [ ] Verify overlapping layers in both live preview and MP4 export.
 - [ ] Verify thumbnail sharpness, distinct timestamps, load priority and memory behavior on a physical device.
 - [ ] Complete full interaction, small-screen and keyboard tests.
@@ -127,9 +127,9 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 - [x] Make live music preview seek/loop only inside the selected source range.
 - [x] Make MP4 export repeat only the selected source range, with silence outside the music item's timeline window.
 - [x] Add unit tests for source-range normalization, minimum span, boundaries and looping.
-- [ ] Confirm PR-head CI run #146 passes unit tests and Debug APK assembly.
+- [ ] Confirm latest PR-head CI run #147 passes unit tests and Debug APK assembly.
 - [ ] Verify source-range controls and preview audio on a physical phone or reliable emulator.
 - [ ] Verify exported MP4 uses the selected source in/out and project save/reopen preserves it.
 - [ ] Keep version 395 blocked until all device, interaction, export and persistence acceptance checks are complete.
 
-**Current limitation:** implementation has been committed to PR #11, but CI #146 is still running and no physical-device validation has been performed. This is not a signed release or an installable OTA update.
+**Current limitation:** implementation has been committed to PR #11, but CI #147 is still running and no physical-device validation has been performed. This is not a signed release or an installable OTA update.
