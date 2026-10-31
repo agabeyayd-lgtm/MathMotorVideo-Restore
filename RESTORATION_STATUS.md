@@ -594,3 +594,17 @@ This is a layout target, not a claim that all behaviors are implemented. Gesture
 - [ ] Video preview drag/pinch/rotate transforms are not yet implemented for video clips; existing preview gesture support is for text overlays. Keep this separate from timeline selection/trim acceptance.
 - [ ] Verify timeline scrub stays within actual video segments and preview never shows black frames outside valid clip ranges.
 - PR #11 remains draft/unmerged. Installed version 394/build 61 remains unchanged. Do not create or publish version 395.
+
+
+## PR #11 validation results — 2026-10-31 (head `1e6ef499d952a588fcafff7846947d8e849f63aa`)
+
+- [x] Verify Android build #303 passed.
+- [x] APK build #378 passed and produced debug artifact `MathMotorVideo-restored-debug`.
+- [x] Emulator screenshot/smoke workflow #548 passed and uploaded screenshots/diagnostics.
+- [x] Timeline playback synchronization smoke check passed: 19 samples, player position advanced 195→4967 ms, timeline lanes synchronized, ruler/filmstrip scroll followed playhead time without negative scroll, fixed playhead and Play center aligned at x=160, and ruler/first-video-frame zero edges aligned.
+- [ ] Visual screenshot review is not acceptance of all requested gestures. Captured editor screenshots show the test fixture's color-bar video; the empty editor also shows the standalone add-video plus. Need inspect layout density and confirm the plus position on a real phone.
+- [ ] Explicit clip tap selection, white outline, handles hidden before selection, blank-space deselection, contextual panel, trim/extend, long-press move/reorder, and independence of other tracks still need targeted interaction verification.
+- [ ] Whole-second ruler intervals need direct zoom-level and on-device readability verification; current unit tests cover whole-second step selection.
+- [ ] Preview video drag/pinch/rotate remains unimplemented; text overlay preview gestures do not satisfy this requirement.
+- [ ] Save/reopen, export parity, keyboard-open layout and physical-device acceptance remain separate gates.
+- PR #11 remains draft/unmerged. Installed version 394/build 61 is unchanged. Do not create or publish version 395.
