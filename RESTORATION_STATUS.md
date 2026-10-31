@@ -392,3 +392,11 @@ The screenshot supplied by the user on 2026-10-31 is the **single, exact, non-ne
 
 This is a layout target, not a claim that all behaviors are implemented. Gesture, independent trim/move, preview synchronization, keyboard, save/reopen and export checks remain separate verification gates. PR #11 stays draft; version 395 stays blocked until all gates pass and the user explicitly authorizes it.
 
+
+
+### Fixed playhead and live time readout — 2026-10-31
+- Play/Pause stays centered on the phone viewport.
+- The white vertical playhead stays fixed while the synchronized ruler and all timeline strips scroll beneath it during playback and scrubbing.
+- The elapsed/total time readout is directly below Play, centered, and updates as the playhead advances; it is above the ruler and tracks.
+- This is a source/layout change only; do not treat it as visually verified until the small-screen emulator screenshot check passes.
+- Version 395 remains blocked; no release/version bump is authorized.
