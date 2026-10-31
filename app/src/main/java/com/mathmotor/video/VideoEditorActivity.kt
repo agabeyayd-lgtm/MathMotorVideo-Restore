@@ -604,9 +604,8 @@ class VideoEditorActivity : Activity() {
             isEnabled = false
             contentDescription = "Zaman çizelgesinde oynatma noktası"
         }
-        root.addView(playheadRow, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(26)
-        ))
+        // The live time readout is displayed in the ruler's left header cell,
+        // not as a separate row beneath the Play button.
         installTimelinePlayheadListeners()
         val clipScroll = android.widget.HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
@@ -1639,7 +1638,13 @@ class VideoEditorActivity : Activity() {
                     "$tag şeridi. Tutup yukarı veya aşağı sürükleyerek yerini değiştir."
                 } else tag
             }
-            row.addView(grip, LinearLayout.LayoutParams(dp(54), ViewGroup.LayoutParams.MATCH_PARENT))
+            if (reorderable) {
+                row.addView(grip, LinearLayout.LayoutParams(dp(54), ViewGroup.LayoutParams.MATCH_PARENT))
+            } else {
+                timelinePlayheadLabel.gravity = Gravity.CENTER_VERTICAL or Gravity.START
+                timelinePlayheadLabel.setPadding(dp(4), 0, dp(2), 0)
+                row.addView(timelinePlayheadLabel, LinearLayout.LayoutParams(dp(104), ViewGroup.LayoutParams.MATCH_PARENT))
+            }
 
             if (reorderable) {
                 var downRawY = 0f
@@ -2011,7 +2016,7 @@ class VideoEditorActivity : Activity() {
         }
 
         if (!keyboardLayoutActive) {
-            val ruler = makeLane("SÜRE", 26, "__ruler__", reorderable = false)
+            val ruler = makeLane("", 26, "__ruler__", reorderable = false)
             val rulerEndMs = (((totalMs + 4999L) / 5000L).coerceAtLeast(1L)) * 5000L
             var rulerTimeMs = 0L
             var rulerPositionPx = 0
