@@ -693,3 +693,15 @@ No version change. PR #11 remains draft/unmerged; installed 394/build 61 is unch
 - [ ] Verify two-finger zoom/pan and one-finger clip drag/trim remain distinct; do not mark pinch complete from source inspection alone.
 
 PR #11 remains draft and unmerged. Installed versionCode 394 / build 61 is unchanged. Version 395 remains blocked.
+
+
+## Pinch gesture isolation — 2026-11-01
+
+- [x] Make empty non-clickable track portions respond to taps for clip-selection clearing (source commit `75885369fdb3f136abb451ae6e8fb135e2d413cd`).
+- [x] On a second-finger pinch inside the timeline, cancel the active one-finger child gesture before capturing the pinch at Activity level.
+- [x] Keep the captured pinch owned by the Activity until all fingers lift; retain anchored timeline zoom math.
+- [ ] Verify compile/unit checks on this source head.
+- [ ] Verify pinch zoom/pan on emulator/phone and prove the first finger cannot drag/trim a clip during the pinch.
+- [ ] Regression-check one-finger clip drag/trim and empty-area deselection on multiple lanes.
+
+No release created. PR #11 remains draft/unmerged. Installed versionCode 394 / build 61 is unchanged. Version 395 remains blocked.
