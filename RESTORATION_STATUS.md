@@ -193,3 +193,11 @@ New visual requirement; this is a documentation record, not a claim that the UI 
 - **Existing groundwork confirmed:** filmstrip thumbnail count is calculated from clip pixel width, so the number of decoded frames changes with zoom scale. It is not yet accepted as complete adaptive filmstrip behavior.
 - **Not yet verified:** CI for the new code is running; physical-device/emulator checks for scrolling, playback-follow, touch seeking, zoom anchoring and small-screen layout remain pending.
 - Keep the PR draft and version 395 blocked until the relevant CI and device acceptance checks pass.
+
+
+## Anchored zoom start-boundary correction — 2026-10-31
+
+- Previous Verify run failed at `TimelineScaleMathTest.zoomAnchorClampsAtTimelineStart`; 45 tests ran and only this test failed. Main Kotlin compilation succeeded.
+- Cause: zero-time anchor plus a viewport x inside the fixed 57 px label gutter yielded a positive scroll offset.
+- Fixed by returning zero scroll for a non-positive anchor timestamp in `scrollForAnchoredZoom`.
+- This corrects the pure math helper only. Pinch gesture wiring and device validation are still pending. Re-run CI on the fix; keep PR #11 draft and version 395 blocked.
