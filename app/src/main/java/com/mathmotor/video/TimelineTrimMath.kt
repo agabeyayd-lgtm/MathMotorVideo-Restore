@@ -70,6 +70,40 @@ internal object TimelineTrimMath {
 }
 
 
+/** Source in/out points for a music file; the selected source range may loop on the project timeline. */
+internal data class MusicSourceRange(val startMs: Long, val endMs: Long) {
+    val durationMs: Long get() = (endMs - startMs).coerceAtLeast(0L)
+}
+
+/** Keeps a music source selection ordered and inside the original file. */
+internal object MusicSourceRangeMath {
+    fun normalize(range: MusicSourceRange, sourceDurationMs: Long): MusicSourceRange {
+        val duration = sourceDurationMs.coerceAtLeast(0L)
+        val start = range.startMs.coerceIn(0L, duration)
+        val end = range.endMs.coerceIn(start, duration)
+        return MusicSourceRange(start, end)
+    }
+
+    fun start(range: MusicSourceRange, requestedStartMs: Long, sourceDurationMs: Long): MusicSourceRange {
+        val safe = normalize(range, sourceDurationMs)
+        val minimum = minOf(100L, safe.durationMs)
+        return safe.copy(startMs = requestedStartMs.coerceIn(0L, (safe.endMs - minimum).coerceAtLeast(0L)))
+    }
+
+    fun end(range: MusicSourceRange, requestedEndMs: Long, sourceDurationMs: Long): MusicSourceRange {
+        val safe = normalize(range, sourceDurationMs)
+        val minimum = minOf(100L, (sourceDurationMs - safe.startMs).coerceAtLeast(0L))
+        return safe.copy(endMs = requestedEndMs.coerceIn((safe.startMs + minimum).coerceAtMost(sourceDurationMs), sourceDurationMs.coerceAtLeast(0L)))
+    }
+
+    /** Source position at a project-time offset, repeating only the selected in/out range. */
+    fun sourcePosition(range: MusicSourceRange, projectOffsetMs: Long, sourceDurationMs: Long): Long {
+        val safe = normalize(range, sourceDurationMs)
+        if (safe.durationMs <= 0L) return safe.startMs
+        return safe.startMs + (projectOffsetMs.coerceAtLeast(0L) % safe.durationMs)
+    }
+}
+
 /** A sound item with independent source and project-timeline boundaries. */
 internal data class TimelineAudioSegment(
     val timelineStartMs: Long,
