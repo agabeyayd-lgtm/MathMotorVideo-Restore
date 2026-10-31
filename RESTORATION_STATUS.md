@@ -427,3 +427,11 @@ This is a layout target, not a claim that all behaviors are implemented. Gesture
 - [ ] Check thumbnail uniqueness, decode stability and memory/scroll performance on short and long clips.
 - [ ] Continue interaction/keyboard/save-reopen/export acceptance; these are not covered by the filmstrip change.
 - PR #11 remains draft and unmerged. Version 395 is blocked; do not bump or publish it.
+
+
+## 2026-10-31 — video trim handle visual cleanup
+
+- [x] Replaced the turquoise video-clip edge blocks and `❮` / `❯` arrow glyphs with slim white CapCut-style vertical trim markers. The existing wide transparent touch targets and trim drag logic are preserved.
+- Source commit: `ccbece8c3ee0fc1171dcf0689a699f4fb1766eda`.
+- [ ] Fresh PR-head compile/unit and emulator screenshot checks must confirm no regression in hit targets, trim gestures, or clip filmstrip visibility.
+- PR #11 remains draft and unmerged. Version 395 remains blocked.
