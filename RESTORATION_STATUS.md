@@ -548,3 +548,14 @@ This is a layout target, not a claim that all behaviors are implemented. Gesture
 - The measured forward range on the captured 144 px node is now 116 px, so the test can proceed to the actual gesture assertions.
 - [ ] Run fresh PR-head emulator verification and confirm forward scrub advances the shared playhead, reverse scrub moves it backward, playback stays synchronized, and draft save/resume passes. The failed #532 run did not perform either swipe, so scrubbing is not yet accepted.
 - PR #11 remains draft and unmerged. Version 395 remains blocked; installed 394/build 61 is unchanged.
+
+
+## Emulator #536 — reverse scrub gesture hit the fixed playhead (2026-10-31)
+
+- [x] Inspected the complete failed job log and uploaded emulator artifact. Exit code 22 is the test's explicit `filmstrip-scrub-reverse-not-reversed` assertion, not an emulator shutdown failure.
+- [x] Forward filmstrip drag passed: playhead advanced to 842 ms and both synchronized lanes reported scrollX=101.
+- [x] Reverse drag exposed a test-coordinate collision: the gesture began at x=93 and crossed the fixed playhead centered at x=160. Its 28dp touch target intercepted the drag as direct playhead seeking; the resulting sample was 1500 ms / scrollX=180. This is why the log said reverse was not reversed.
+- [x] Updated the emulator script to read the fixed playhead center from the synchronization sample and start reverse dragging at least 20 px to its right, keeping the gesture in the filmstrip's scrollable area and away from the playhead overlay.
+- Emulator shutdown messages (`stop: Not implemented`, Netsim Wifi stream removed) occur after the script has already exited 22 and are cleanup noise, not the root failure.
+- [ ] Re-run emulator UI validation to confirm reverse scrub decreases playhead time, then continue playback synchronization and draft save/resume checks.
+- PR #11 remains draft/unmerged; version 395 remains blocked.
