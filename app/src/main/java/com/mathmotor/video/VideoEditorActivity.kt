@@ -98,6 +98,8 @@ class VideoEditorActivity : Activity() {
     private var musicTitle: String? = null
     private var soundUri: Uri? = null
     private var soundTitle: String? = null
+    private var soundSourceDurationMs: Long = 0L
+    private var soundSourceStartMs: Long = 0L
     private var soundDurationMs: Long = 0L
     private var soundStartMs: Long = 0L
     private var textStartMs: Long = 0L
@@ -885,6 +887,8 @@ class VideoEditorActivity : Activity() {
         soundActions.addView(miniButton("Efekti kaldır") {
             soundUri = null
             soundTitle = null
+            soundSourceDurationMs = 0L
+            soundSourceStartMs = 0L
             soundDurationMs = 0L
             soundStartMs = 0L
             soundLabel.text = "Ses efekti seçilmedi."
@@ -899,8 +903,8 @@ class VideoEditorActivity : Activity() {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
                 val total = totalOutputDurationMs()
-                soundStartMs = TimelineTrimMath.timeForProgress(progress, total)
-                    .coerceAtMost((total - 1L).coerceAtLeast(0L))
+                val latestStart = (total - soundDurationMs).coerceAtLeast(0L)
+                soundStartMs = TimelineTrimMath.timeForProgress(progress, latestStart)
                 updateSoundControls()
                 if (!deferTimelineRefresh) refreshTimelineTracks()
             }
@@ -1815,14 +1819,17 @@ class VideoEditorActivity : Activity() {
 
         val effectTrack = makeLane("EFEKT", 24)
         if (soundUri != null && totalMs > 0L) {
-            val startMs = soundStartMs.coerceIn(0L, totalMs)
-            val duration = soundDurationMs.coerceAtMost((totalMs - startMs).coerceAtLeast(0L))
-            val endMs = (startMs + duration).coerceAtMost(totalMs)
-            addSpacer(effectTrack, 0L, startMs)
-            addBlock(
-                effectTrack, "♪ ${soundTitle ?: "Ses efekti"}", duration, Color.rgb(166, 102, 40),
-                onClick = { showEditorPanel("audio") }, startMs = startMs
+            val segment = TimelineAudioMath.normalize(
+                TimelineAudioSegment(soundStartMs, soundSourceStartMs, soundDurationMs),
+                soundSourceDurationMs,
+                totalMs
             )
+            soundStartMs = segment.timelineStartMs
+            soundSourceStartMs = segment.sourceStartMs
+            soundDurationMs = segment.durationMs
+            val endMs = segment.timelineStartMs + segment.durationMs
+            addSpacer(effectTrack, 0L, segment.timelineStartMs)
+            addSoundEffectTimelineBlock(effectTrack, totalMs)
             addSpacer(effectTrack, endMs, totalMs)
         } else {
             addBlock(effectTrack, "+ Ses efekti ekle", totalMs.coerceAtLeast(5000L), Color.rgb(96, 68, 41),
@@ -1849,6 +1856,202 @@ class VideoEditorActivity : Activity() {
             laneScroll.post { laneScroll.scrollTo(restoreScrollX, 0) }
         }
         updateTimelinePlayheadLine()
+    }
+
+
+    private fun addSoundEffectTimelineBlock(track: LinearLayout, totalMs: Long) {
+        val normalized = TimelineAudioMath.normalize(
+            TimelineAudioSegment(soundStartMs, soundSourceStartMs, soundDurationMs),
+            soundSourceDurationMs,
+            totalMs
+        )
+        soundStartMs = normalized.timelineStartMs
+        soundSourceStartMs = normalized.sourceStartMs
+        soundDurationMs = normalized.durationMs
+        if (normalized.durationMs <= 0L) return
+
+        val pixelsPerSecond = timelinePixelsPerSecond()
+        val blockWidth = maxOf(
+            dp(38),
+            TimelineScaleMath.widthBetween(
+                normalized.timelineStartMs,
+                normalized.timelineStartMs + normalized.durationMs,
+                pixelsPerSecond
+            ).coerceAtLeast(1)
+        )
+        val frame = FrameLayout(this).apply {
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.rgb(166, 102, 40))
+                cornerRadius = dp(5).toFloat()
+                setStroke(dp(1), Color.rgb(214, 157, 84))
+            }
+            clipToOutline = true
+            contentDescription = "Ses efekti: ortasından taşı, kenarlarından kırp"
+        }
+        val body = TextView(this).apply {
+            text = "♪ \${soundTitle ?: "Ses efekti"}"
+            textSize = 9f
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER_VERTICAL
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(dp(7), 0, dp(7), 0)
+        }
+        frame.addView(body, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+
+        var bodyDownX = 0f
+        var bodyMoved = false
+        var bodyInitial = normalized
+        body.setOnTouchListener { view, event ->
+            when (event.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    bodyDownX = event.rawX
+                    bodyInitial = TimelineAudioSegment(soundStartMs, soundSourceStartMs, soundDurationMs)
+                    bodyMoved = false
+                    player?.playWhenReady = false
+                    view.parent?.requestDisallowInterceptTouchEvent(true)
+                    true
+                }
+                android.view.MotionEvent.ACTION_MOVE -> {
+                    val deltaPx = event.rawX - bodyDownX
+                    if (kotlin.math.abs(deltaPx) > android.view.ViewConfiguration.get(this).scaledTouchSlop) {
+                        bodyMoved = true
+                        val minPx = -bodyInitial.timelineStartMs / 1000f * pixelsPerSecond
+                        val maxPx = (totalMs - bodyInitial.timelineStartMs - bodyInitial.durationMs)
+                            .coerceAtLeast(0L) / 1000f * pixelsPerSecond
+                        frame.translationX = deltaPx.coerceIn(minPx, maxPx)
+                    }
+                    true
+                }
+                android.view.MotionEvent.ACTION_UP -> {
+                    val deltaPx = event.rawX - bodyDownX
+                    frame.translationX = 0f
+                    view.parent?.requestDisallowInterceptTouchEvent(false)
+                    if (bodyMoved) {
+                        val deltaMs = TimelineScaleMath.millisecondsForPixels(deltaPx, pixelsPerSecond)
+                        val moved = TimelineAudioMath.move(
+                            bodyInitial,
+                            bodyInitial.timelineStartMs + deltaMs,
+                            soundSourceDurationMs,
+                            totalMs
+                        )
+                        soundStartMs = moved.timelineStartMs
+                        soundSourceStartMs = moved.sourceStartMs
+                        soundDurationMs = moved.durationMs
+                        updateSoundControls()
+                        status.text = "Ses efekti zaman çizelgesinde taşındı."
+                        refreshTimelineTracks()
+                    } else {
+                        showEditorPanel("audio")
+                        view.performClick()
+                    }
+                    true
+                }
+                android.view.MotionEvent.ACTION_CANCEL -> {
+                    frame.translationX = 0f
+                    view.parent?.requestDisallowInterceptTouchEvent(false)
+                    true
+                }
+                else -> true
+            }
+        }
+
+        fun addTrimHandle(isStart: Boolean) {
+            val handleWidth = minOf(dp(16), (blockWidth / 3).coerceAtLeast(dp(7)))
+            val handle = TextView(this).apply {
+                text = if (isStart) "‹" else "›"
+                textSize = 12f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(Color.WHITE)
+                gravity = Gravity.CENTER
+                setBackgroundColor(Color.rgb(116, 65, 25))
+                elevation = dp(3).toFloat()
+                contentDescription = if (isStart) "Efekt başlangıç tutamacı" else "Efekt bitiş tutamacı"
+            }
+            var downRawX = 0f
+            var initial = normalized
+            var moved = false
+            handle.setOnTouchListener { view, event ->
+                when (event.actionMasked) {
+                    android.view.MotionEvent.ACTION_DOWN -> {
+                        downRawX = event.rawX
+                        initial = TimelineAudioSegment(soundStartMs, soundSourceStartMs, soundDurationMs)
+                        moved = false
+                        player?.playWhenReady = false
+                        view.parent?.requestDisallowInterceptTouchEvent(true)
+                        true
+                    }
+                    android.view.MotionEvent.ACTION_MOVE -> {
+                        val deltaPx = event.rawX - downRawX
+                        if (kotlin.math.abs(deltaPx) > android.view.ViewConfiguration.get(this).scaledTouchSlop) {
+                            moved = true
+                        }
+                        val deltaMs = TimelineScaleMath.millisecondsForPixels(deltaPx, pixelsPerSecond)
+                        val lowerDeltaMs: Long
+                        val upperDeltaMs: Long
+                        if (isStart) {
+                            lowerDeltaMs = -minOf(initial.timelineStartMs, initial.sourceStartMs)
+                            upperDeltaMs = (initial.durationMs - 100L).coerceAtLeast(0L)
+                        } else {
+                            val maximumDuration = minOf(
+                                (soundSourceDurationMs - initial.sourceStartMs).coerceAtLeast(0L),
+                                (totalMs - initial.timelineStartMs).coerceAtLeast(0L)
+                            )
+                            lowerDeltaMs = 100L - initial.durationMs
+                            upperDeltaMs = (maximumDuration - initial.durationMs).coerceAtLeast(0L)
+                        }
+                        val minPx = lowerDeltaMs / 1000f * pixelsPerSecond
+                        val maxPx = upperDeltaMs / 1000f * pixelsPerSecond
+                        view.translationX = deltaPx.coerceIn(minPx, maxPx)
+                        true
+                    }
+                    android.view.MotionEvent.ACTION_UP -> {
+                        val deltaPx = event.rawX - downRawX
+                        val deltaMs = TimelineScaleMath.millisecondsForPixels(deltaPx, pixelsPerSecond)
+                        view.translationX = 0f
+                        view.parent?.requestDisallowInterceptTouchEvent(false)
+                        if (moved) {
+                            val updated = if (isStart) {
+                                TimelineAudioMath.trimStart(
+                                    initial, deltaMs, soundSourceDurationMs, totalMs
+                                )
+                            } else {
+                                TimelineAudioMath.trimEnd(
+                                    initial, deltaMs, soundSourceDurationMs, totalMs
+                                )
+                            }
+                            soundStartMs = updated.timelineStartMs
+                            soundSourceStartMs = updated.sourceStartMs
+                            soundDurationMs = updated.durationMs
+                            updateSoundControls()
+                            status.text = if (isStart) "Ses efektinin başlangıcı kırpıldı." else "Ses efektinin bitişi kırpıldı."
+                            refreshTimelineTracks()
+                        } else {
+                            showEditorPanel("audio")
+                        }
+                        true
+                    }
+                    android.view.MotionEvent.ACTION_CANCEL -> {
+                        view.translationX = 0f
+                        view.parent?.requestDisallowInterceptTouchEvent(false)
+                        true
+                    }
+                    else -> true
+                }
+            }
+            frame.addView(handle, FrameLayout.LayoutParams(
+                handleWidth,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                if (isStart) Gravity.START else Gravity.END
+            ))
+        }
+
+        addTrimHandle(isStart = true)
+        addTrimHandle(isStart = false)
+        track.addView(frame, LinearLayout.LayoutParams(blockWidth, dp(24)))
     }
 
     private fun updateTimelinePlayheadLine() {
@@ -2665,7 +2868,7 @@ class VideoEditorActivity : Activity() {
             val insideEffect = videoIsPlaying && outputTimeMs >= effectStart &&
                 outputTimeMs < effectEnd && soundDurationMs > 0L
             if (insideEffect) {
-                val target = (outputTimeMs - effectStart).coerceAtLeast(0L)
+                val target = soundSourceStartMs + (outputTimeMs - effectStart).coerceAtLeast(0L)
                 if (kotlin.math.abs(sound.currentPosition - target) > 400L) sound.seekTo(target)
                 sound.playWhenReady = true
             } else {
@@ -2820,6 +3023,8 @@ class VideoEditorActivity : Activity() {
             put("soundUri", soundUri?.toString() ?: JSONObject.NULL)
             put("soundTitle", soundTitle ?: JSONObject.NULL)
             put("soundDurationMs", soundDurationMs)
+            put("soundSourceDurationMs", soundSourceDurationMs)
+            put("soundSourceStartMs", soundSourceStartMs)
             put("soundStartMs", soundStartMs)
             put("text", textInput.text?.toString().orEmpty())
             put("textColorPreset", textColorPreset.name)
@@ -2908,8 +3113,23 @@ class VideoEditorActivity : Activity() {
         musicTitle = json.optString("musicTitle").takeIf { it.isNotBlank() && it != "null" }
         soundUri = json.optString("soundUri").takeIf { it.isNotBlank() && it != "null" }?.let(Uri::parse)
         soundTitle = json.optString("soundTitle").takeIf { it.isNotBlank() && it != "null" }
-        soundDurationMs = json.optLong("soundDurationMs", 0L).coerceAtLeast(0L)
+        val legacySoundDurationMs = json.optLong("soundDurationMs", 0L).coerceAtLeast(0L)
+        soundSourceDurationMs = json.optLong("soundSourceDurationMs", legacySoundDurationMs)
+            .coerceAtLeast(0L)
+        soundSourceStartMs = json.optLong("soundSourceStartMs", 0L)
+            .coerceIn(0L, soundSourceDurationMs)
+        soundDurationMs = legacySoundDurationMs.coerceAtMost(
+            (soundSourceDurationMs - soundSourceStartMs).coerceAtLeast(0L)
+        )
         soundStartMs = json.optLong("soundStartMs", 0L).coerceAtLeast(0L)
+        val restoredSound = TimelineAudioMath.normalize(
+            TimelineAudioSegment(soundStartMs, soundSourceStartMs, soundDurationMs),
+            soundSourceDurationMs,
+            totalOutputDurationMs()
+        )
+        soundStartMs = restoredSound.timelineStartMs
+        soundSourceStartMs = restoredSound.sourceStartMs
+        soundDurationMs = restoredSound.durationMs
         textStartMs = json.optLong("textStartMs", 0L).coerceAtLeast(0L)
         textEndMs = json.optLong("textEndMs", totalOutputDurationMs()).coerceAtLeast(0L)
         textTimingCustomized = json.optBoolean("textTimingCustomized", false)
@@ -3126,6 +3346,8 @@ class VideoEditorActivity : Activity() {
                         } else {
                             soundUri = uri
                             soundTitle = title
+                            soundSourceDurationMs = duration
+                            soundSourceStartMs = 0L
                             soundDurationMs = duration
                             soundStartMs = 0L
                             soundLabel.text = "Ses/efekt: ${title} • ${formatMs(duration)}"
@@ -3986,11 +4208,23 @@ class VideoEditorActivity : Activity() {
     private fun updateSoundControls() {
         if (!::soundStartSeek.isInitialized || !::soundStartLabel.isInitialized) return
         val total = totalOutputDurationMs()
-        soundStartSeek.max = TimelineTrimMath.progressMax(total)
-        soundStartMs = soundStartMs.coerceAtMost((total - 1L).coerceAtLeast(0L))
-        soundStartSeek.progress = TimelineTrimMath.progressForTime(soundStartMs, total)
+        if (soundUri != null) {
+            val segment = TimelineAudioMath.normalize(
+                TimelineAudioSegment(soundStartMs, soundSourceStartMs, soundDurationMs),
+                soundSourceDurationMs,
+                total
+            )
+            soundStartMs = segment.timelineStartMs
+            soundSourceStartMs = segment.sourceStartMs
+            soundDurationMs = segment.durationMs
+        }
+        val latestStart = (total - soundDurationMs).coerceAtLeast(0L)
+        soundStartSeek.max = TimelineTrimMath.progressMax(latestStart)
+        soundStartMs = soundStartMs.coerceIn(0L, latestStart)
+        soundStartSeek.progress = TimelineTrimMath.progressForTime(soundStartMs, latestStart)
         soundStartSeek.isEnabled = soundUri != null && total > 0L
-        soundStartLabel.text = "Ses başlangıcı: ${formatTimelineMs(soundStartMs)}"
+        val soundEndMs = soundStartMs + soundDurationMs
+        soundStartLabel.text = "Ses: ${formatTimelineMs(soundStartMs)} – ${formatTimelineMs(soundEndMs)}"
     }
 
     private fun previewSelectedClip() {
@@ -4118,12 +4352,15 @@ class VideoEditorActivity : Activity() {
             val offsetMs = soundStartMs.coerceAtMost((outputDurationMs - 1L).coerceAtLeast(0L))
             val remainingMs = (outputDurationMs - offsetMs).coerceAtLeast(1L)
             val soundLengthMs = soundDurationMs.coerceAtLeast(1L).coerceAtMost(remainingMs)
+            val safeSourceStartMs = soundSourceStartMs.coerceAtMost(
+                (soundSourceDurationMs - soundLengthMs).coerceAtLeast(0L)
+            )
             val soundMediaItem = MediaItem.Builder()
                 .setUri(uri)
                 .setClippingConfiguration(
                     MediaItem.ClippingConfiguration.Builder()
-                        .setStartPositionMs(0L)
-                        .setEndPositionMs(soundLengthMs)
+                        .setStartPositionMs(safeSourceStartMs)
+                        .setEndPositionMs(safeSourceStartMs + soundLengthMs)
                         .build()
                 )
                 .build()
