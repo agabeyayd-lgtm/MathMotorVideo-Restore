@@ -244,3 +244,12 @@ These are new release-blocking UI/interaction requirements. They are recorded as
 - [ ] Verify thumbnail timestamps/order, no black/duplicate frames, scrolling, pinch zoom, body drag, edge trim and save/reopen on a real device or reliable emulator.
 
 **Status:** newly recorded design/acceptance requirement only. Existing thumbnail decode/cache work does not prove the final CapCut-style adaptive filmstrip behavior. Leave unchecked until implementation and relevant device verification pass.
+
+
+### Fixed-center playhead implementation — 2026-10-31
+
+- Added the first production-code step toward the confirmed CapCut-style timeline: the red playhead is positioned at the center of the visible timeline viewport rather than following its absolute time coordinate across the screen.
+- During full-timeline and single-clip preview playback, the shared timeline lanes are programmatically scrolled to keep the current time beneath the fixed playhead.
+- Manual horizontal scrolling of the primary lane updates the project time beneath the center guide and seeks the preview; the existing lane-scroll synchronization keeps the other lanes aligned.
+- The filmstrip thumbnail slot count already derives from rendered clip width, so it increases with zoom-in and decreases with zoom-out. This is adaptive density groundwork; the full gesture/visual acceptance is still pending.
+- Verification: PR-head Android build and unit-test workflows are running for the implementation commits. Do not mark the behavior complete until CI succeeds and center-follow, manual-scroll scrubbing, zoom, and small-screen behavior are checked on a device/emulator.
