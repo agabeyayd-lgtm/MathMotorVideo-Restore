@@ -527,3 +527,5 @@ This is a layout target, not a claim that all behaviors are implemented. Gesture
 
 - Commit `f700d0017aced27600dc218bb6a39c6a5fd23d3a` removes the conditional that omitted the ruler row while the keyboard was open. The ruler now remains in the timeline stack and uses the compact lane height already applied for IME mode.
 - Fresh emulator screenshot review is required to confirm the ruler remains visible and readable with the keyboard open, without hiding the filmstrip or pinned tool dock.
+
+- Commit `67af75472c2452234fffc3ec7221cd8598ce3af8` resets the horizontal timeline offset and playhead to project time zero when opening/replacing with a fresh main video. This prevents a previous session's scroll position from shifting the new video's first frame away from the ruler's zero point.
