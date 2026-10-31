@@ -147,9 +147,9 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 ### Verification
 
 - PR check #137 for the preceding head `20dd0757dff7f85bfb47acc1578a5bae5ab5bef3` **passed**: `testDebugUnitTest`, Kotlin compilation, `packageDebug` and `assembleDebug`.
-- Follow-up commits now align overlapping clip row stacking with preview/export layer priority and add unit tests for that rule. Those new commits still need their own CI result; the earlier green run does not cover them.
-- The check built a Debug APK on the CI runner; it did not upload an APK artifact. No release or version 395 was created.
-- Device-level touch gestures, actual audio preview/export playback, project save/reopen with edited music, and audio sync remain unverified on a physical phone or reliable emulator.
+- Latest PR-head check [#140 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41167186839) on `23c67766983eb53527b005ed7546fb26c855a9aa` passed the unit-test and Debug APK build job, including the new video lane/layer-priority tests.
+- The workflow has one job (`test-and-build`); all steps completed successfully. It did not upload an APK artifact. No signed release or version 395 was created.
+- This is source/unit-test/build verification only. Device-level touch gestures, actual audio/video preview and MP4 export, project save/reopen, and audio sync remain unverified on a physical phone or reliable emulator.
 
 ### Still open
 
