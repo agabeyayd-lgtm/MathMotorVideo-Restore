@@ -295,3 +295,12 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - [Run #402 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41143199557) ran only `EditorTimelineInteractionTest#compactPhoneKeyboardKeepsTextFieldEditableAndRestoresEditor`; it confirms the short-screen keyboard gate, **not** the new 393×873 empty-editor assertion. The screenshot assertion remains pending a targeted run.
 - Workflow filter is now directed at the screenshot test so the next PR run validates the actual empty/loaded phone layouts. Do not count this visual gate as passed until that run succeeds and the artifact is inspected.
 - Version remains 394/build 61. Version 395 remains blocked; no version bump, signing, publishing, or updater activation.
+
+
+### Short-phone dock visibility — #403 failure classified and compact preview adjusted (2026-10-31)
+
+- [Run #403 — FAILURE](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41144466141): unit tests and Debug APK build passed; the focused `EmulatorScreenshotTest#captureHomeEditorAndTextPanel` started on a 320×640 emulator and failed its first dock touch-target assertion. The first dock tab was only 31 px high (visible bounds `Rect(13, 609 - 82, 640)`) against the required 44dp minimum.
+- The reported missing PNG was secondary: the instrumentation test had already failed before publishing screenshots, but the runner attempted to pull required images before preserving the real test report. The runner now captures logs/XML and exits with the instrumentation failure before attempting screenshot collection.
+- Compact preview sizing changed from 40% to 34% of the measured viewport below 650dp, reserving enough vertical space for the fixed status row and full-height bottom dock. This is a targeted layout adjustment, not a verified pass.
+- Next gate: inspect the next run's actual XML and screenshots. Confirm all four dock tabs meet 44dp, the empty-editor add-video action remains fully above the dock at 393×873, and loaded-video layout plus ruler zoom checks pass.
+- Version remains 394/build 61. Version 395 remains blocked; no version bump, signing, publishing, or updater activation.
