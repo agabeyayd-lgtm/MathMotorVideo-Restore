@@ -312,7 +312,8 @@ timeout -k 2s 5s adb -s emulator-5554 logcat -c || true
 timeout -k 2s 15s adb -s emulator-5554 shell am start \
   -n com.mathmotor.video.next/com.mathmotor.video.EditorTestEntryActivity \
   --es video_uri "file://$app_internal_video" \
-  --es draft_id "11111111-1111-4111-8111-111111111111" | tee emulator-screenshots/editor-video-launch.txt
+  --es draft_id "11111111-1111-4111-8111-111111111111" \
+  --ez timeline_sync_test true | tee emulator-screenshots/editor-video-launch.txt
 
 # Do not assert that a filename appears in uiautomator XML: on these images
 # uiautomator frequently fails, and the editor is free to display a friendly
@@ -362,7 +363,54 @@ fi
 # clip is inserted into the timeline, so inaccessible UI hierarchy is diagnostic
 # only and does not turn a successful import into a false failure.
 
-echo "Step 8/9: validate automatic draft save and resume list"
+echo "Step 8/10: exercise live playback and validate ruler/filmstrip synchronization"
+dump_hierarchy timeline-play-button.xml emulator-screenshots/timeline-play-button.xml || true
+play_coords="$(python3 - emulator-screenshots/timeline-play-button.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+try:
+    root = ET.parse(sys.argv[1]).getroot()
+except (OSError, ET.ParseError):
+    raise SystemExit(0)
+
+for node in root.iter("node"):
+    description = node.attrib.get("content-desc", "")
+    bounds = node.attrib.get("bounds", "")
+    if "Önizlemeyi oynat" in description:
+        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", bounds)
+        if match:
+            x1, y1, x2, y2 = map(int, match.groups())
+            print((x1 + x2) // 2, (y1 + y2) // 2)
+            break
+PY
+)"
+if [ -z "$play_coords" ]; then
+  echo "Could not locate the editor's accessible Play button; refusing to infer a tap coordinate."
+  collect_capture_diagnostics timeline-play-button-missing
+  exit 14
+fi
+echo "Tapping the real editor Play button at $play_coords"
+timeout -k 2s 8s adb -s emulator-5554 logcat -c || true
+if ! timeout -k 2s 8s adb -s emulator-5554 shell input tap $play_coords; then
+  echo "Could not tap the editor Play button."
+  collect_capture_diagnostics timeline-play-tap-failed
+  exit 15
+fi
+sleep 4
+if ! take_screen emulator-screenshots/editor-playing.png; then
+  collect_capture_diagnostics timeline-playing-capture-failure
+  exit 6
+fi
+timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime > emulator-screenshots/timeline-sync-logcat.txt 2>&1 || true
+if ! python3 .github/scripts/assert-timeline-sync.py emulator-screenshots/timeline-sync-logcat.txt 2>&1 | tee emulator-screenshots/timeline-sync-validation.txt; then
+  echo "Live playback/timeline synchronization assertions failed."
+  collect_capture_diagnostics timeline-sync-assertion-failure
+  exit 16
+fi
+
+echo "Step 9/10: validate automatic draft save and resume list"
 timeout -k 2s 8s adb -s emulator-5554 shell input keyevent 4 || true
 sleep 3
 timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime > emulator-screenshots/draft-autosave-logcat.txt 2>&1 || true
@@ -395,5 +443,7 @@ timeout -k 2s 8s adb -s emulator-5554 logcat -d > emulator-screenshots/logcat.tx
 test -s emulator-screenshots/home.png
 test -s emulator-screenshots/editor-empty.png
 test -s emulator-screenshots/editor.png
+test -s emulator-screenshots/editor-playing.png
+test -s emulator-screenshots/timeline-sync-validation.txt
 test -s emulator-screenshots/home-with-drafts.png
-echo "Home, empty editor, sample-video editor, and autosaved-draft home screenshots captured. Editor auto-save verified."
+echo "Home, empty editor, initial and playing editor, live timeline sync, and autosaved-draft home screenshots captured."
