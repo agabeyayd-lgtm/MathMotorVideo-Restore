@@ -30,6 +30,15 @@ A change is **not accepted** merely because it compiles, passes unit tests, or l
 **Scope guard:** Do not introduce a second competing editor design or ask the user to choose between layouts. Work only toward this reference. Version 395 remains blocked until all implementation and verification gates pass and the user explicitly authorizes release.
 
 
+## Single px/sec timeline scale — 2026-10-31
+
+- Replaced the live zoom multiplier with one authoritative `timelinePxPerSec` value. Pinch zoom changes it; selecting or moving a clip only scrolls the timeline.
+- New project saves persist direct px/sec; old project files migrate from their saved `timelineZoom` multiplier.
+- Added deterministic `Sığdır` calculation based on the available timeline width and total project duration; a visible button is added in the playback header in the next UI pass.
+- [ ] Verify repeated fit actions return the same px/sec and selection/move never changes it.
+- [ ] Verify ruler, playhead readout and clip geometry share the same conversion at multiple scales.
+- PR #11 remains draft; version 395 remains blocked.
+
 ## Filmstrip scrubbing and preview seek coalescing — 2026-10-31
 
 - Confirmed source cause: the primary lane's horizontal-scroll callback was calling Media3 `seekTo` for every scroll update. The 250 ms player-sync task could also write the previous paused player position back into the timeline during a manual scrub.

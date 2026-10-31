@@ -1,5 +1,14 @@
 # MathMotor Video — current project status
 
+## Single px/sec timeline scale — 2026-10-31
+
+- Replaced the live zoom multiplier with one authoritative `timelinePxPerSec` value. Pinch zoom changes it; selecting or moving a clip only scrolls the timeline.
+- New project saves persist direct px/sec; old project files migrate from their saved `timelineZoom` multiplier.
+- Added deterministic `Sığdır` calculation based on the available timeline width and total project duration; a visible button is added in the playback header in the next UI pass.
+- [ ] Verify repeated fit actions return the same px/sec and selection/move never changes it.
+- [ ] Verify ruler, playhead readout and clip geometry share the same conversion at multiple scales.
+- PR #11 remains draft; version 395 remains blocked.
+
 ## Filmstrip scrub / preview synchronization correction — 2026-10-31
 
 - Source-level cause verified in PR #11: the primary horizontal-scroll listener sent a Media3 `seekTo` on every small scroll event; the periodic sync task also polled paused playback and could restore an earlier player position over the manual scrub.

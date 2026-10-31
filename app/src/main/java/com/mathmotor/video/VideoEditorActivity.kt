@@ -191,7 +191,8 @@ class VideoEditorActivity : Activity() {
     private var autoScrollingTimeline = false
     private var timelineHorizontalScrollX = 0
     private var pendingTimelineScrollX: Int? = null
-    private var timelineZoom = 1.0f
+    // Single authoritative timeline scale in physical pixels per second.
+    private var timelinePxPerSec = 0f
     private var timelineScaleGestureActive = false
     private var timelineScaleAnchorTimeMs = 0L
     private var timelineScaleAnchorViewportX = 0f
@@ -219,9 +220,10 @@ class VideoEditorActivity : Activity() {
                 val location = IntArray(2)
                 lane.getLocationOnScreen(location)
                 val anchorViewportX = detector.focusX - location[0]
-                val newZoom = (timelineZoom * detector.scaleFactor).coerceIn(0.5f, 8.0f)
-                if (newZoom == timelineZoom) return true
-                timelineZoom = newZoom
+                val newPxPerSec = (timelinePixelsPerSecond() * detector.scaleFactor)
+                    .coerceIn(dp(11).toFloat(), dp(176).toFloat())
+                if (newPxPerSec == timelinePixelsPerSecond()) return true
+                timelinePxPerSec = newPxPerSec
                 pendingTimelineScrollX = TimelineScaleMath.scrollForAnchoredZoom(
                     timelineScaleAnchorTimeMs,
                     anchorViewportX,
@@ -2742,7 +2744,34 @@ class VideoEditorActivity : Activity() {
         return super.dispatchTouchEvent(event)
     }
 
-    private fun timelinePixelsPerSecond(): Float = dp(22).toFloat() * timelineZoom
+    private fun timelinePixelsPerSecond(): Float {
+        if (!timelinePxPerSec.isFinite() || timelinePxPerSec <= 0f) {
+            timelinePxPerSec = dp(22).toFloat().coerceAtLeast(1f)
+        }
+        return timelinePxPerSec
+    }
+
+    private fun fitTimelineToProject() {
+        val totalMs = totalOutputDurationMs()
+        if (totalMs <= 0L) return
+        val frameWidth = timelineTracksFrame.width.takeIf { it > 0 }
+            ?: resources.displayMetrics.widthPixels
+        val availableWidth = (frameWidth - dp(57) - dp(3)).coerceAtLeast(dp(80))
+        timelinePxPerSec = (availableWidth.toDouble() * 1000.0 / totalMs.toDouble())
+            .toFloat().coerceIn(dp(11).toFloat(), dp(176).toFloat())
+        pendingTimelineScrollX = 0
+        timelineHorizontalScrollX = 0
+        refreshTimelineTracks()
+        timelineScrollViews.forEach { lane ->
+            lane.post {
+                autoScrollingTimeline = true
+                syncingTimelineScroll = true
+                try { timelineScrollViews.forEach { it.scrollTo(0, 0) } }
+                finally { syncingTimelineScroll = false; autoScrollingTimeline = false }
+            }
+        }
+        updateTimelinePlayheadLabel()
+    }
 
     /** Width of the leading blank time-zero spacer inside each horizontally scrolling lane. */
     private fun timelineFrameWidth(viewportWidth: Int): Int {
@@ -2770,14 +2799,7 @@ class VideoEditorActivity : Activity() {
         val durationMs = (clip.endMs - clip.startMs).coerceAtLeast(0L)
         if (durationMs <= 0L) return false
 
-        // Keep a touch target for both trim edges, even after a clip is shortened to 0.5 s.
-        val basePixelsPerSecond = dp(22).toFloat().coerceAtLeast(1f)
-        val requiredZoom = (dp(80).toDouble() * 1000.0 /
-            (durationMs.toDouble() * basePixelsPerSecond.toDouble())).toFloat().coerceIn(0.5f, 8.0f)
-        val targetZoom = maxOf(timelineZoom, requiredZoom).coerceIn(0.5f, 8.0f)
-        val zoomChanged = targetZoom != timelineZoom
-        timelineZoom = targetZoom
-
+        // Selection may scroll the clip into view, but must never change px/sec.
         // Always bring the selected clip into view, even when the current zoom already
         // provides sufficient handle width. This avoids selection on a far-right clip
         // leaving both edges outside the viewport.
@@ -2785,15 +2807,16 @@ class VideoEditorActivity : Activity() {
         val clipStartPx = TimelineScaleMath.pixelsForTime(projectOffsetMs, timelinePixelsPerSecond())
         pendingTimelineScrollX = (clipStartPx - dp(8)).coerceAtLeast(0)
         timelineHorizontalScrollX = pendingTimelineScrollX ?: 0
-        return zoomChanged || pendingTimelineScrollX != null
+        return pendingTimelineScrollX != null
     }
 
     private fun adjustTimelineZoom(factor: Float) {
-        val newZoom = (timelineZoom * factor).coerceIn(0.5f, 8.0f)
-        if (newZoom == timelineZoom) return
-        timelineZoom = newZoom
+        val newPxPerSec = (timelinePixelsPerSecond() * factor)
+            .coerceIn(dp(11).toFloat(), dp(176).toFloat())
+        if (newPxPerSec == timelinePixelsPerSecond()) return
+        timelinePxPerSec = newPxPerSec
         refreshTimelineTracks()
-        status.text = "Zaman çizelgesi yakınlaştırma: " + timelineZoom.toString() + "×. Kırmızı çizgiyi sürükleyebilir veya video karelerine dokunabilirsin."
+        status.text = "Zaman çizelgesi yakınlaştırıldı."
     }
 
     private fun seekFromTimelineFrameX(frameX: Float) {
@@ -3797,7 +3820,9 @@ class VideoEditorActivity : Activity() {
             put("clips", clipArray)
             put("selectedClipIndex", selectedClipIndex)
             put("timelinePlayheadMs", timelinePlayheadMs.coerceIn(0L, totalOutputDurationMs()))
-            put("timelineZoom", timelineZoom)
+            put("timelinePxPerSec", timelinePixelsPerSecond())
+            // Backward compatibility for older project files.
+            put("timelineZoom", timelinePixelsPerSecond() / dp(22).toFloat().coerceAtLeast(1f))
             put("timelineLaneOrder", JSONArray().apply {
                 timelineLaneOrder.forEach { put(it) }
             })
@@ -3875,8 +3900,13 @@ class VideoEditorActivity : Activity() {
                 if (key != null && key !in timelineLaneOrder) timelineLaneOrder.add(key)
             }
         }
-        timelineZoom = json.optDouble("timelineZoom", timelineZoom.toDouble())
-            .toFloat().takeIf { it.isFinite() }?.coerceIn(0.5f, 8.0f) ?: 1.0f
+        val legacyZoom = json.optDouble("timelineZoom", 1.0).toFloat()
+            .takeIf { it.isFinite() }?.coerceIn(0.5f, 8.0f) ?: 1.0f
+        timelinePxPerSec = json.optDouble(
+            "timelinePxPerSec", (dp(22).toFloat() * legacyZoom).toDouble()
+        ).toFloat().takeIf { it.isFinite() }?.coerceIn(
+            dp(11).toFloat(), dp(176).toFloat()
+        ) ?: dp(22).toFloat()
         val savedTimelineScrollMs: Long? = when {
             json.has("timelineHorizontalScrollMs") ->
                 json.optLong("timelineHorizontalScrollMs", 0L).coerceAtLeast(0L)
