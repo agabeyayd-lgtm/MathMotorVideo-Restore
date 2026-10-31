@@ -4105,9 +4105,17 @@ class VideoEditorActivity : Activity() {
                     return@runOnUiThread
                 }
                 recordClipEdit()
+                val startsFreshTimeline = replaceExisting || clips.isEmpty()
                 if (replaceExisting) {
                     clips.clear()
                     selectedClipIndex = -1
+                }
+                if (startsFreshTimeline) {
+                    // A newly opened video must begin at project time zero even if
+                    // the previous editor session was scrolled to a later timestamp.
+                    timelineHorizontalScrollX = 0
+                    pendingTimelineScrollX = 0
+                    timelinePlayheadMs = 0L
                 }
                 var appendAtMs=totalOutputDurationMs()
                 val positioned=ready.map { item ->
