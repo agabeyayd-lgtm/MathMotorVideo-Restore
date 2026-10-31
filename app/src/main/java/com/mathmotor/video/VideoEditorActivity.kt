@@ -2117,9 +2117,24 @@ class VideoEditorActivity : Activity() {
         }
 
         if (clips.isEmpty()) {
-            val lane = makeLane("Video", if (keyboardLayoutActive || compactEditorLayout) 18 else 44, "video")
-            addBlock(lane, "+ Video ekle", 5000L, Color.rgb(38, 105, 123),
-                onClick = { chooseVideo(true) }, minimumWidthDp = 115)
+            // Keep the empty-state add action in the video lane as a floating,
+            // transparent plus. Do not create a fake 5-second timeline block.
+            val lane = makeLane("Video", if (keyboardLayoutActive || compactEditorLayout) 44 else 60, "video")
+            val addVideoButton = TextView(this).apply {
+                text = "＋"
+                textSize = 30f
+                gravity = Gravity.CENTER
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(Color.rgb(57, 220, 190))
+                background = android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
+                minWidth = dp(48)
+                minHeight = dp(44)
+                contentDescription = "Galeriden video ekle"
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { chooseVideo(true) }
+            }
+            lane.addView(addVideoButton, LinearLayout.LayoutParams(dp(52), ViewGroup.LayoutParams.MATCH_PARENT))
         } else {
             // CapCut-style main video strip: one VIDEO lane, one shared time axis.
             // Clips retain their real project start/end positions; overlaps are
@@ -2129,7 +2144,13 @@ class VideoEditorActivity : Activity() {
             val furthestClipEndPx = placements.maxOfOrNull {
                 widthBetween(0L, it.timelineEndMs)
             } ?: 0
-            val stripWidth = maxOf(widthBetween(0L, totalMs), furthestClipEndPx)
+            // Reserve room for the floating add button immediately after the
+            // last video clip. The button is visual only: it has no timeline
+            // timestamp, does not create a placeholder clip, and never shifts
+            // the shared ruler/playhead coordinate mapping.
+            val addButtonLeft = furthestClipEndPx + dp(8)
+            val addButtonRight = addButtonLeft + dp(48)
+            val stripWidth = maxOf(widthBetween(0L, totalMs), furthestClipEndPx, addButtonRight)
                 .coerceAtLeast(dp(115))
             val strip = FrameLayout(this).apply {
                 setBackgroundColor(Color.rgb(16, 25, 36))
@@ -2154,7 +2175,28 @@ class VideoEditorActivity : Activity() {
                     gravity = Gravity.TOP or Gravity.LEFT
                 })
             }
-            val videoTrack = makeLane("Video", if (keyboardLayoutActive) 28 else 60, "video")
+            val addVideoButton = TextView(this).apply {
+                text = "＋"
+                textSize = 30f
+                gravity = Gravity.CENTER
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(Color.rgb(57, 220, 190))
+                background = android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
+                minWidth = dp(48)
+                minHeight = dp(44)
+                contentDescription = "Galeriden videonun sonuna klip ekle"
+                isClickable = true
+                isFocusable = true
+                elevation = dp(2).toFloat()
+                setOnClickListener { chooseVideo(true) }
+            }
+            strip.addView(addVideoButton, FrameLayout.LayoutParams(
+                dp(48), ViewGroup.LayoutParams.MATCH_PARENT
+            ).apply {
+                leftMargin = addButtonLeft
+                gravity = Gravity.TOP or Gravity.LEFT
+            })
+            val videoTrack = makeLane("Video", if (keyboardLayoutActive) 44 else 60, "video")
             videoTrack.addView(strip, LinearLayout.LayoutParams(stripWidth, stripHeight))
         }
 
