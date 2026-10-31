@@ -1629,7 +1629,9 @@ class VideoEditorActivity : Activity() {
             val grip = TextView(this).apply {
                 // Layer rows are deliberately not named by media type. The user can
                 // arrange any strip above or below another strip with this handle.
-                text = if (reorderable) "⠿" else tag
+                text = if (reorderable && tag == "Video") {
+                    if (keepSourceAudio.isChecked) "🔊" else "🔇"
+                } else if (reorderable) "⠿" else tag
                 textSize = if (reorderable) 18f else 9f
                 setTextColor(Color.rgb(166, 184, 201))
                 typeface = Typeface.DEFAULT_BOLD
@@ -1640,6 +1642,19 @@ class VideoEditorActivity : Activity() {
             }
             if (reorderable) {
                 row.addView(grip, LinearLayout.LayoutParams(dp(54), ViewGroup.LayoutParams.MATCH_PARENT))
+            if (reorderable && tag == "Video") {
+                grip.contentDescription = if (keepSourceAudio.isChecked) {
+                    "Video sesini kapat"
+                } else "Video sesini aç"
+                grip.setOnClickListener {
+                    keepSourceAudio.isChecked = !keepSourceAudio.isChecked
+                    player?.volume = if (keepSourceAudio.isChecked) sourceAudioVolume / 100f else 0f
+                    grip.text = if (keepSourceAudio.isChecked) "🔊" else "🔇"
+                    grip.contentDescription = if (keepSourceAudio.isChecked) {
+                        "Video sesini kapat"
+                    } else "Video sesini aç"
+                }
+            }
             } else {
                 timelinePlayheadLabel.gravity = Gravity.CENTER_VERTICAL or Gravity.START
                 timelinePlayheadLabel.setPadding(dp(4), 0, dp(2), 0)
