@@ -46,12 +46,52 @@ class TimelineScaleMathTest {
         val oldScale = 22f
         val newScale = 44f
         val scrollX = 320
-        val midpointX = 186f
-        val gutter = 57f
-        val anchorTime = TimelineScaleMath.timeAtViewportX(scrollX, midpointX, gutter, oldScale)
-        val newScroll = TimelineScaleMath.scrollForAnchoredZoom(anchorTime, midpointX, gutter, newScale)
-        val timeAfterZoom = TimelineScaleMath.timeAtViewportX(newScroll, midpointX, gutter, newScale)
+        val midpointX = 103f
+        val originSpacer = 103f
+        val anchorTime = TimelineScaleMath.timeAtViewportX(scrollX, midpointX, originSpacer, oldScale)
+        val newScroll = TimelineScaleMath.scrollForAnchoredZoom(anchorTime, midpointX, originSpacer, newScale)
+        val timeAfterZoom = TimelineScaleMath.timeAtViewportX(newScroll, midpointX, originSpacer, newScale)
         assertEquals(anchorTime, timeAfterZoom)
+    }
+
+    @Test
+    fun timeZeroAndFirstVideoFrameShareTheFullPlayCenter() {
+        val frameWidthPx = 320
+        val gripAndLabelGutterPx = 57
+        val originSpacerPx = TimelineScaleMath.originSpacerWidthForCenteredPlayhead(
+            frameWidthPx,
+            gripAndLabelGutterPx
+        )
+
+        assertEquals(103, originSpacerPx)
+        assertEquals(frameWidthPx / 2, gripAndLabelGutterPx + originSpacerPx)
+        assertEquals(
+            0L,
+            TimelineScaleMath.timeAtViewportX(
+                scrollX = 0,
+                viewportX = originSpacerPx.toFloat(),
+                originSpacerPx = originSpacerPx.toFloat(),
+                pixelsPerSecond = 22f
+            )
+        )
+    }
+
+    @Test
+    fun playbackScrollMovesBothRulerAndVideoUnderTheSameFixedCenter() {
+        val frameWidthPx = 320
+        val gutterPx = 57
+        val originSpacerPx = TimelineScaleMath.originSpacerWidthForCenteredPlayhead(frameWidthPx, gutterPx)
+        val pixelsPerSecond = 22f
+        val elapsedMs = 2_000L
+        val scrollPx = TimelineScaleMath.pixelsForTime(elapsedMs, pixelsPerSecond)
+
+        val timeUnderPlayhead = TimelineScaleMath.timeAtViewportX(
+            scrollX = scrollPx,
+            viewportX = originSpacerPx.toFloat(),
+            originSpacerPx = originSpacerPx.toFloat(),
+            pixelsPerSecond = pixelsPerSecond
+        )
+        assertEquals(elapsedMs, timeUnderPlayhead)
     }
 
     @Test
