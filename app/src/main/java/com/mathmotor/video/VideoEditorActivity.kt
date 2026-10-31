@@ -3599,7 +3599,8 @@ class VideoEditorActivity : Activity() {
                 showSingleClipPreview()
                 player?.setMediaItem(MediaItem.fromUri(uri))
                 player?.prepare()
-                player?.playWhenReady = true
+                // Keep the imported clip paused so the user can align the initial frame, ruler and fixed playhead.
+                player?.playWhenReady = false
                 refreshClipList()
                 loadTrimControls()
                 refreshTimelineTracks()
