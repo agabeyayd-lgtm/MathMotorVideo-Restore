@@ -282,3 +282,17 @@ These are new release-blocking UI/interaction requirements. They are recorded as
 - Removed the old assignLanes() helper and replaced tests that asserted multi-row behavior with tests for one-strip placement, exact timeline-range preservation, overlap order and fully covered clips.
 - **Verification pending:** run PR-head unit tests/Kotlin compilation/debug APK build. Then test the single strip on the phone with sequential clips, gaps, partially overlapping clips and fully overlapping clips; check frame continuity, clip selection, body drag, both trim edges, pinch zoom and synchronized lane scrolling. Do not mark device acceptance complete until those checks pass.
 - PR #11 remains draft; version 395 remains blocked; installed version 394/build 61 stays unchanged.
+
+
+## Centered playback and fixed playhead control — implementation added (2026-10-31)
+
+- [x] Remove the playback button from the timeline title/header row; keep one Play/Pause control only.
+- [x] Place the single Play/Pause control on the timeline center axis, aligned with the stationary red playhead (not over the video preview).
+- [x] Keep the red vertical playhead fixed at the center time axis while the timeline lanes scroll underneath it.
+- [x] Remove the visible horizontal seek slider and +/- zoom buttons; timeline scrubbing and two-finger pinch remain the intended gestures.
+- [x] Reduce the visible time display to one project-position / total-duration readout.
+- [ ] Confirm PR-head unit tests, Kotlin compilation and Debug APK build.
+- [ ] Inspect an emulator/phone screenshot to confirm the Play/Pause button and red playhead share the exact center axis and stay fixed while playback scrolls the lanes.
+- [ ] Verify play/pause icon state updates correctly during playback, pause, seek and preview rebuild.
+
+**Status:** source implementation committed to PR #11; visual/device verification is pending. Version 395 remains blocked and the installed 394/build 61 baseline is unchanged.
