@@ -649,7 +649,24 @@ class VideoEditorActivity : Activity() {
         timelineTracksFrame.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
             updateTimelinePlayheadLine()
         }
-        timelineCard.addView(timelineTracksFrame, matchWrap())
+        val timelineTracksScroll = ScrollView(this).apply {
+            isFillViewport = false
+            isVerticalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            clipToPadding = false
+        }
+        timelineTracksScroll.addView(
+            timelineTracksFrame,
+            ScrollView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        )
+        // The card owns a bounded track viewport. Extra layers scroll vertically
+        // instead of pushing the preview or bottom tool dock off-screen.
+        timelineCard.addView(timelineTracksScroll, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
          val playheadRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
@@ -2104,7 +2121,7 @@ class VideoEditorActivity : Activity() {
             val laneHeight = lane?.layoutParams?.height?.takeIf { it > 0 } ?: dp(24)
             laneHeight + row.paddingTop + row.paddingBottom
         }.coerceAtLeast(dp(24))
-        (timelineTracksFrame.layoutParams as? LinearLayout.LayoutParams)?.let { params ->
+        (timelineTracksFrame.layoutParams as? ScrollView.LayoutParams)?.let { params ->
             if (params.height != laneContentHeight) {
                 params.height = laneContentHeight
                 timelineTracksFrame.layoutParams = params
@@ -2112,9 +2129,9 @@ class VideoEditorActivity : Activity() {
         }
         // Size the timeline card from its real track content instead of reserving
         // a large fixed empty panel on small phones. Each added layer earns its own row.
-        (timelineTracksFrame.parent as? LinearLayout)?.let { card ->
+        (timelineTracksFrame.parent?.parent as? LinearLayout)?.let { card ->
             val desiredHeight = if (keyboardLayoutActive) {
-                (laneContentHeight + dp(72)).coerceIn(dp(112), dp(170))
+                (laneContentHeight + dp(112)).coerceIn(dp(148), dp(194))
             } else {
                 (laneContentHeight + dp(116)).coerceIn(dp(190), dp(360))
             }
