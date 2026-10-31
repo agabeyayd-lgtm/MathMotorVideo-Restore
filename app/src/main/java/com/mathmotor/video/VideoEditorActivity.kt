@@ -24,6 +24,8 @@ import android.text.style.BackgroundColorSpan
 import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
 import android.view.Gravity
+import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
@@ -187,6 +189,66 @@ class VideoEditorActivity : Activity() {
     private var timelineHorizontalScrollX = 0
     private var pendingTimelineScrollX: Int? = null
     private var timelineZoom = 1.0f
+    private var timelineScaleGestureActive = false
+    private var timelineScaleAnchorTimeMs = 0L
+    private var timelineScaleAnchorViewportX = 0f
+    private val timelineScaleGestureDetector by lazy {
+        ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
+                val lane = timelineScrollViews.firstOrNull() ?: return false
+                if (lane.width <= 0 || !isScreenPointInsideTimeline(detector.focusX, detector.focusY)) return false
+                val location = IntArray(2)
+                lane.getLocationOnScreen(location)
+                timelineScaleAnchorViewportX = detector.focusX - location[0]
+                timelineScaleAnchorTimeMs = TimelineScaleMath.timeAtViewportX(
+                    lane.scrollX,
+                    timelineScaleAnchorViewportX,
+                    dp(57).toFloat(),
+                    timelinePixelsPerSecond()
+                ).coerceIn(0L, totalOutputDurationMs())
+                timelineScaleGestureActive = true
+                return true
+            }
+
+            override fun onScale(detector: ScaleGestureDetector): Boolean {
+                if (!timelineScaleGestureActive) return false
+                val lane = timelineScrollViews.firstOrNull() ?: return false
+                val location = IntArray(2)
+                lane.getLocationOnScreen(location)
+                val anchorViewportX = detector.focusX - location[0]
+                val newZoom = (timelineZoom * detector.scaleFactor).coerceIn(0.5f, 8.0f)
+                if (newZoom == timelineZoom) return true
+                timelineZoom = newZoom
+                pendingTimelineScrollX = TimelineScaleMath.scrollForAnchoredZoom(
+                    timelineScaleAnchorTimeMs,
+                    anchorViewportX,
+                    dp(57).toFloat(),
+                    timelinePixelsPerSecond()
+                )
+                timelineHorizontalScrollX = pendingTimelineScrollX ?: 0
+                refreshTimelineTracks()
+                timelineScrollViews.forEach { scroll ->
+                    scroll.post {
+                        val target = pendingTimelineScrollX ?: timelineHorizontalScrollX
+                        autoScrollingTimeline = true
+                        syncingTimelineScroll = true
+                        try {
+                            timelineHorizontalScrollX = target
+                            timelineScrollViews.forEach { it.scrollTo(target, 0) }
+                        } finally {
+                            syncingTimelineScroll = false
+                            autoScrollingTimeline = false
+                        }
+                    }
+                }
+                return true
+            }
+
+            override fun onScaleEnd(detector: ScaleGestureDetector) {
+                timelineScaleGestureActive = false
+            }
+        })
+    }
     private var deferTimelineRefresh = false
     private val timelineThumbnailCache = object : android.util.LruCache<String, Bitmap>(16 * 1024 * 1024) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount.coerceAtLeast(1)
@@ -2402,6 +2464,24 @@ class VideoEditorActivity : Activity() {
             autoScrollingTimeline = false
         }
         updateTimelinePlayheadLine()
+    }
+
+    private fun isScreenPointInsideTimeline(screenX: Float, screenY: Float): Boolean {
+        if (!::timelineTracksFrame.isInitialized) return false
+        val location = IntArray(2)
+        timelineTracksFrame.getLocationOnScreen(location)
+        return screenX >= location[0] && screenX <= location[0] + timelineTracksFrame.width &&
+            screenY >= location[1] && screenY <= location[1] + timelineTracksFrame.height
+    }
+
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        timelineScaleGestureDetector.onTouchEvent(event)
+        if (timelineScaleGestureActive && event.pointerCount >= 2) return true
+        if (event.actionMasked == MotionEvent.ACTION_CANCEL ||
+            event.actionMasked == MotionEvent.ACTION_UP) {
+            timelineScaleGestureActive = false
+        }
+        return super.dispatchTouchEvent(event)
     }
 
     private fun timelinePixelsPerSecond(): Float = dp(22).toFloat() * timelineZoom
