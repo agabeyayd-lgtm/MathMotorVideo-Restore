@@ -471,3 +471,15 @@ This is a layout target, not a claim that all behaviors are implemented. Gesture
 - [ ] Confirm first-frame left boundary cannot pass the centered playhead; ruler and filmstrip move together.
 - [ ] Inspect thumbnail width/shape and measure initial/full thumbnail generation time.
 - PR #11 remains draft. Do not create version 395; installed baseline remains 394/build 61.
+
+## 2026-10-31 — Shared ruler/video time origin (PR #11)
+
+- [x] Corrected the ruler's left gutter to match the 54dp video/audio/text lane grip. The previous wider ruler header displaced its zero point relative to the filmstrip.
+- [x] Moved the live `current / total` time readout into the Play control header; the ruler now has no wider special header that can shift its time axis.
+- [x] Replaced five-second ruler labels with one-second labels (`0, 1, 2, 3…`). Each cell width is derived from the common time-to-pixel scale.
+- [x] Changed the first filmstrip thumbnail sample to the clip's actual source start frame; later samples advance evenly through the clip.
+- [x] Accounted for one-pixel separators within the available thumbnail width so they do not push the final cells beyond the clip edge.
+- [ ] Verify the PR-head build/unit workflows and inspect fresh emulator screenshots for ruler visibility, zero alignment, scrolling synchronization, and compact/keyboard layouts.
+- [ ] Confirm on the user's phone that the first frame and ruler zero remain directly under the stationary playhead, and that no thumbnail/time exists to its left before playback advances.
+- PR #11 remains open and draft. No merge or version 395 release is authorized.
+- Source commit for this pass: `ec6dcb9567c50650b58ab0aede58858a98c87745`.
