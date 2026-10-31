@@ -296,3 +296,14 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 - Remaining gates: (1) physical-phone visual/touch/performance review, including keyboard-open text editing, timeline gestures, thumbnail loading/readability and export playback; (2) inspect and execute only the current-branch no-publish signed build-61 install → candidate update-over → relaunch preflight, after confirming it cannot bump version metadata or publish/activate an updater.
 - The old #9 signed preflight result on the diverged fix/editor-395-gate branch is not evidence for current mainline; do not transfer it.
 - Installed baseline remains versionCode 394 / build 61. Version 395 remains blocked. Do not bump version metadata, sign/publish a release APK, or enable the updater until every gate passes and the user explicitly authorizes release.
+
+
+## Signed update preflight — 2026-10-31 (#10 PASS)
+
+- [Run #10](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41152584045) completed successfully on fix/editor-395-mainline at 72d9f8ea6829152121baad2550344af227386ced.
+- Inspected signed-preflight report: baseline and candidate package IDs match (com.mathmotor.video.next), versionCode remains 394 for both, and certificate SHA-256 matches exactly (2a7b6b544f9b4240a25b6619794f31d561ca8792c45a88f7cc701e6d4502b26f).
+- Emulator installed signed baseline, performed candidate update-over without uninstall, relaunched app, and captured post-update package metadata. Post-update package dump confirms versionCode 394 and the expected launcher activity.
+- No release or tag was created. Signed candidate APK is in artifact MathMotorVideo-394-device-review (ID 13023768940, expires 2026-11-07); report is in mathmotor-signed-update-preflight (ID 13023714183, expires 2026-11-14).
+- Mark the current-branch emulator signed install/update-over/relaunch gate PASS. Physical-phone acceptance remains OPEN: keyboard-open editing, touch gestures/timeline trim-scroll-pinch, thumbnail readability/loading, preview/dock usability, and export playback/output.
+- In-app updater delivery is not proven by this install-over test. Keep that separate gate open.
+- VersionCode 394 / build 61 remains the baseline. Version 395 remains blocked; do not bump version metadata, publish, tag, or activate updater until all remaining gates pass and the user explicitly authorizes release.
