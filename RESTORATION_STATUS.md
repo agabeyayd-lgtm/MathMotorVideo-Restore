@@ -458,3 +458,16 @@ This is a layout target, not a claim that all behaviors are implemented. Gesture
 - [ ] Re-run compiler/unit, debug APK, emulator launch and fixture import on the new fix commit; inspect screenshot after repeated responsive layout refreshes.
 - [ ] Check fixed playhead, Play/Pause, ruler and time-readout alignment; keep all interaction/device acceptance items pending.
 - PR #11 remains draft and unmerged. Version 395 remains blocked; installed 394/build 61 remains unchanged.
+
+## Timeline / playhead / filmstrip decisions — 2026-10-31
+
+- User-confirmed geometry: Play control above ruler; ruler shows 0, 1, 2, 3…; fixed white playhead is centered below Play. On editor entry, video first frame, ruler 0, time readout 00:00 and playhead must coincide; playback starts paused.
+- The thumbnail filmstrip itself is the moving video content. It must not look like a separate background/path moving independently; ruler and filmstrip share the same scroll offset/time mapping beneath the stationary playhead.
+- The first video frame is anchored at zero under the playhead. Horizontal movement toward later time is allowed; movement beyond the first frame into negative time is clamped.
+- Commit `56ddc2dff0085bb215aed9a5cd082a1c4fa72def` widens thumbnail cells from 12dp slivers to near-52dp cells, evenly filling the clip width and limiting count to 32. This is not yet visually accepted.
+- Thumbnail latency is still unresolved: each thumbnail request currently creates its own MediaMetadataRetriever / decoder path, with two worker threads. Optimize after measuring; preserve UI responsiveness and preview startup.
+- [ ] Run fresh verification, APK build and emulator screenshot workflows for the new PR head.
+- [ ] Confirm physical-device entry is paused at 00:00 with first frame/zero/playhead aligned.
+- [ ] Confirm first-frame left boundary cannot pass the centered playhead; ruler and filmstrip move together.
+- [ ] Inspect thumbnail width/shape and measure initial/full thumbnail generation time.
+- PR #11 remains draft. Do not create version 395; installed baseline remains 394/build 61.
