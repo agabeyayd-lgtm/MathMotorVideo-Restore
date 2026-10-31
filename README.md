@@ -133,3 +133,14 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - The current emulator screenshot workflow builds a debug APK and captures screens, but its script does not by itself prove all touch gestures, exports, Undo/Redo or save/reopen flows work. Add/run interaction-level tests rather than treating screenshots alone as acceptance.
 - Record a checkbox as complete only after the corresponding behavior is implemented and its relevant test passes. If a test cannot be run, leave the item unchecked and say so.
 - This repository is a reconstruction from recoverable project files, not an exact recovery of the old V7 source tree.
+
+## Latest editor work — 2026-10-31 (PR #11, still open)
+
+- The redundant clip title/card strip is hidden; the underlying clip model and selection state are retained.
+- Filmstrip decode now requests **192×108** directly from Android's scaled-frame API, with the Media3 fallback configured for 108px height. This replaces the prior 96×54 decode that was being enlarged afterward.
+- Thumbnail caching is now bounded by **16 MiB of bitmap allocation memory**, rather than by a count of 384 entries.
+- Filmstrip density remains approximately one frame per second at the default timeline scale (22 dp/s with a 24 dp frame slot); it adapts with zoom and is capped to avoid flooding the decoder queue.
+- These are source changes only. They have not yet been verified on a physical phone or in a new APK.
+- **Still open:** independently draggable/movable video, text, music and sound-effect items with separate start/end times; overlap; end-to-end preview/export/save-reopen verification. Text already has its own drag/trim path, but video clips are still represented as a sequential playlist and audio blocks are not independently draggable/trimmable.
+
+The PR's current branch has no CI result attached. The repository's verify-android-build workflow is configured for pushes to main or manual dispatch, while the debug APK build is manual-only. Do not interpret the absence of checks as a pass. Version 395 remains blocked.
