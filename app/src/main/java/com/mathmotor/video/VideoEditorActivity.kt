@@ -515,8 +515,10 @@ class VideoEditorActivity : Activity() {
         previewFrame.addView(previewFocusButton, FrameLayout.LayoutParams(
             dp(42), dp(40), Gravity.TOP or Gravity.END
         ).apply { topMargin = dp(6); rightMargin = dp(6) })
+        // The preview flexes into the space left between contextual settings,
+        // the content-sized timeline and the fixed bottom tool dock.
         root.addView(previewFrame, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(previewStageHeightDp)
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
         ).apply { bottomMargin = dp(8) })
         previewFrame.addOnLayoutChangeListener { view, _, _, _, _, _, _, _, _ ->
             updatePreviewCanvasSize()
@@ -1242,33 +1244,11 @@ class VideoEditorActivity : Activity() {
             keyboardLayoutActive = imeVisible
             applyingResponsiveLayout = true
             try {
-                val timelineParams = timelineCard.layoutParams as? LinearLayout.LayoutParams
-                if (timelineParams != null) {
-                    val density = resources.displayMetrics.density.coerceAtLeast(1f)
-                    val viewportDp = (availableHeight / density).toInt()
-                    timelineParams.height = dp(
-                        when {
-                            imeVisible -> 152
-                            viewportDp < 650 -> 196
-                            else -> 252
-                        }
-                    )
-                    timelineParams.weight = 0f
-                    timelineCard.layoutParams = timelineParams
-                }
-
+                // Track rows determine the timeline card height. Keep the preview
+                // flexible so the tool dock remains visible when settings or the IME open.
                 val previewParams = previewFrame.layoutParams as LinearLayout.LayoutParams
-                if (previewFocusMode) {
-                    previewParams.height = 0
-                    previewParams.weight = 1f
-                } else {
-                    previewParams.height = if (imeVisible) {
-                        (availableHeight * 0.21f).toInt().coerceIn(dp(82), dp(112))
-                    } else {
-                        dp(previewStageHeightDp).coerceIn(dp(150), dp(460))
-                    }
-                    previewParams.weight = 0f
-                }
+                previewParams.height = 0
+                previewParams.weight = 1f
                 previewFrame.layoutParams = previewParams
 
                 if (::editorPanelScroll.isInitialized && editorPanelScroll.visibility == View.VISIBLE) {
@@ -1335,16 +1315,15 @@ class VideoEditorActivity : Activity() {
                 val density = resources.displayMetrics.density.coerceAtLeast(1f)
                 val viewportDp = (viewportHeight / density).toInt()
                 compactEditorLayout = viewportDp < 820
-                // Give the preview the dominant upper canvas area, while reserving
-                // enough height for the shared timeline and the fixed bottom tool dock.
-                val previewRatio = if (viewportDp < 650) 0.40f else 0.46f
-                previewDefaultStageHeightDp = (viewportDp * previewRatio).toInt().coerceIn(190, 390)
+                // The preview receives whatever height remains after the real
+                // timeline rows, status strip and pinned bottom dock are measured.
+                previewDefaultStageHeightDp = (viewportDp * 0.42f).toInt().coerceIn(190, 390)
                 previewStageHeightDp = previewDefaultStageHeightDp
-                val timelineParams = timelineCard.layoutParams as? LinearLayout.LayoutParams
-                if (timelineParams != null) {
-                    timelineParams.height = dp(if (viewportDp < 650) 196 else 252)
-                    timelineParams.weight = 0f
-                    timelineCard.layoutParams = timelineParams
+                val previewParams = previewFrame.layoutParams as? LinearLayout.LayoutParams
+                if (previewParams != null) {
+                    previewParams.height = 0
+                    previewParams.weight = 1f
+                    previewFrame.layoutParams = previewParams
                 }
                 previewHeightAutoSized = true
 
@@ -1392,12 +1371,11 @@ class VideoEditorActivity : Activity() {
             if (imeVisible != keyboardLayoutActive) {
                 applyKeyboardMode(imeVisible, viewportHeight)
             } else if (!imeVisible && !previewFocusMode) {
-                val normalHeight = dp(previewStageHeightDp).coerceIn(dp(150), dp(460))
                 val params = previewFrame.layoutParams as? LinearLayout.LayoutParams
-                if (params != null && (params.height != normalHeight || params.weight != 0f)) {
+                if (params != null && (params.height != 0 || params.weight != 1f)) {
                     applyingResponsiveLayout = true
-                    params.height = normalHeight
-                    params.weight = 0f
+                    params.height = 0
+                    params.weight = 1f
                     previewFrame.layoutParams = params
                     applyingResponsiveLayout = false
                 }
@@ -1499,8 +1477,8 @@ class VideoEditorActivity : Activity() {
             previewFocusOriginalVisibility.clear()
             root.setPadding(dp(8), dp(4), dp(8), dp(4))
             val params = previewFrame.layoutParams as LinearLayout.LayoutParams
-            params.height = dp(previewStageHeightDp)
-            params.weight = 0f
+            params.height = 0
+            params.weight = 1f
             previewFrame.layoutParams = params
             previewFocusButton.text = "⛶"
             previewFocusButton.contentDescription = "Videoyu geniş ekranda aç"
@@ -2135,7 +2113,11 @@ class VideoEditorActivity : Activity() {
         // Size the timeline card from its real track content instead of reserving
         // a large fixed empty panel on small phones. Each added layer earns its own row.
         (timelineTracksFrame.parent as? LinearLayout)?.let { card ->
-            val desiredHeight = (laneContentHeight + dp(128)).coerceIn(dp(206), dp(360))
+            val desiredHeight = if (keyboardLayoutActive) {
+                (laneContentHeight + dp(72)).coerceIn(dp(112), dp(170))
+            } else {
+                (laneContentHeight + dp(116)).coerceIn(dp(190), dp(360))
+            }
             val cardParams = card.layoutParams as? LinearLayout.LayoutParams
             if (cardParams != null && cardParams.height != desiredHeight) {
                 cardParams.height = desiredHeight
