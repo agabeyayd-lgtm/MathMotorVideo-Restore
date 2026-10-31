@@ -4591,57 +4591,97 @@ class VideoEditorActivity : Activity() {
             isClickable = true
             isFocusable = true
             setOnClickListener { selectTimelineClip(index) }
-            var filmstripTouchActive=false
-            var filmstripMoved=false
-            var filmstripLongPressed=false
-            var downRawX=0f
-            var initialStartMs=clip.timelineStartMs
-            val longPressAction=Runnable{if(filmstripTouchActive&&!filmstripMoved)filmstripLongPressed=performLongClick()}
-            setOnTouchListener{view,event->
-                when(event.actionMasked){
-                    android.view.MotionEvent.ACTION_DOWN->{
-                        filmstripTouchActive=true;filmstripMoved=false;filmstripLongPressed=false
-                        downRawX=event.rawX;initialStartMs=clip.timelineStartMs;pauseActivePreview()
-                        view.parent?.requestDisallowInterceptTouchEvent(true)
-                        timelineHandler.postDelayed(longPressAction,android.view.ViewConfiguration.getLongPressTimeout().toLong())
+            var filmstripTouchActive = false
+            var filmstripMoved = false
+            var filmstripLongPressed = false
+            var downRawX = 0f
+            var initialStartMs = clip.timelineStartMs
+            val longPressAction = Runnable {
+                if (filmstripTouchActive && !filmstripMoved) filmstripLongPressed = true
+            }
+            setOnTouchListener { view, event ->
+                when (event.actionMasked) {
+                    android.view.MotionEvent.ACTION_DOWN -> {
+                        filmstripTouchActive = true
+                        filmstripMoved = false
+                        filmstripLongPressed = false
+                        downRawX = event.rawX
+                        initialStartMs = clip.timelineStartMs
+                        pauseActivePreview()
+                        // Do not steal the horizontal gesture from the parent lane:
+                        // an ordinary drag scrubs; a hold-then-drag moves the clip.
+                        view.parent?.requestDisallowInterceptTouchEvent(false)
+                        timelineHandler.postDelayed(
+                            longPressAction,
+                            android.view.ViewConfiguration.getLongPressTimeout().toLong()
+                        )
                         true
                     }
-                    android.view.MotionEvent.ACTION_MOVE->{
-                        val dx=event.rawX-downRawX
-                        if(kotlin.math.abs(dx)>android.view.ViewConfiguration.get(this@VideoEditorActivity).scaledTouchSlop){
-                            filmstripMoved=true;timelineHandler.removeCallbacks(longPressAction)
-                            if(!filmstripLongPressed){
-                                val minimumPx=-TimelineScaleMath.pixelsForTime(initialStartMs,timelinePixelsPerSecond())
-                                // The leading clip is anchored at project time zero; it may not
-                                // be dragged right and create an unintended empty opening gap.
+                    android.view.MotionEvent.ACTION_MOVE -> {
+                        val dx = event.rawX - downRawX
+                        if (kotlin.math.abs(dx) >
+                            android.view.ViewConfiguration.get(this@VideoEditorActivity).scaledTouchSlop
+                        ) {
+                            filmstripMoved = true
+                            timelineHandler.removeCallbacks(longPressAction)
+                            if (filmstripLongPressed) {
+                                view.parent?.requestDisallowInterceptTouchEvent(true)
+                                val minimumPx = -TimelineScaleMath.pixelsForTime(
+                                    initialStartMs, timelinePixelsPerSecond()
+                                )
+                                // A clip already at zero cannot create a leading blank gap.
                                 val boundedDelta = if (initialStartMs == 0L) minOf(0f, dx) else dx
-                                view.translationX=maxOf(minimumPx.toFloat(),boundedDelta)
+                                view.translationX = maxOf(minimumPx.toFloat(), boundedDelta)
+                            } else {
+                                // Let HorizontalScrollView take over this gesture and scrub.
+                                view.parent?.requestDisallowInterceptTouchEvent(false)
                             }
                         }
                         true
                     }
-                    android.view.MotionEvent.ACTION_UP->{
-                        timelineHandler.removeCallbacks(longPressAction);filmstripTouchActive=false
-                        view.parent?.requestDisallowInterceptTouchEvent(false);view.translationX=0f
-                        if(filmstripMoved&&!filmstripLongPressed){
-                            val rawDeltaPx = event.rawX-downRawX
+                    android.view.MotionEvent.ACTION_UP -> {
+                        timelineHandler.removeCallbacks(longPressAction)
+                        filmstripTouchActive = false
+                        view.parent?.requestDisallowInterceptTouchEvent(false)
+                        view.translationX = 0f
+                        if (filmstripLongPressed && filmstripMoved) {
+                            val rawDeltaPx = event.rawX - downRawX
                             val allowedDeltaPx = if (initialStartMs == 0L) minOf(0f, rawDeltaPx) else rawDeltaPx
-                            val delta=TimelineScaleMath.millisecondsForPixels(allowedDeltaPx,timelinePixelsPerSecond())
-                            val nextStart=if (initialStartMs == 0L) 0L else (initialStartMs+delta).coerceAtLeast(0L)
-                            if(nextStart!=initialStartMs){
-                                recordClipEdit();clip.timelineStartMs=nextStart;selectedClipIndex=index;timelinePlayheadMs=nextStart
-                                timelinePreviewLoaded=false;previewSingleClip=false
-                                refreshClipList();loadTrimControls();ensureTimelinePreviewLoaded();seekTimelinePreview(nextStart);updateTimelinePlayheadLabel()
-                                status.text="Video klibi bağımsız olarak taşındı."
+                            val delta = TimelineScaleMath.millisecondsForPixels(
+                                allowedDeltaPx, timelinePixelsPerSecond()
+                            )
+                            val nextStart = if (initialStartMs == 0L) 0L
+                                else (initialStartMs + delta).coerceAtLeast(0L)
+                            if (nextStart != initialStartMs) {
+                                recordClipEdit()
+                                clip.timelineStartMs = nextStart
+                                selectedClipIndex = index
+                                timelinePlayheadMs = nextStart
+                                timelinePreviewLoaded = false
+                                previewSingleClip = false
+                                refreshClipList()
+                                loadTrimControls()
+                                ensureTimelinePreviewLoaded()
+                                seekTimelinePreview(nextStart)
+                                updateTimelinePlayheadLabel()
+                                status.text = "Video klibi bağımsız olarak taşındı."
                             }
-                        }else if(!filmstripLongPressed)view.performClick()
+                        } else if (filmstripLongPressed) {
+                            // A stationary long press still opens the clip context menu.
+                            view.performLongClick()
+                        } else if (!filmstripMoved) {
+                            view.performClick()
+                        }
                         true
                     }
-                    android.view.MotionEvent.ACTION_CANCEL->{
-                        timelineHandler.removeCallbacks(longPressAction);filmstripTouchActive=false;view.translationX=0f
-                        view.parent?.requestDisallowInterceptTouchEvent(false);true
+                    android.view.MotionEvent.ACTION_CANCEL -> {
+                        timelineHandler.removeCallbacks(longPressAction)
+                        filmstripTouchActive = false
+                        view.translationX = 0f
+                        view.parent?.requestDisallowInterceptTouchEvent(false)
+                        true
                     }
-                    else->true
+                    else -> true
                 }
             }
             setOnLongClickListener {
