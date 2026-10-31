@@ -1938,12 +1938,31 @@ class VideoEditorActivity : Activity() {
                     if (musicSourceEndMs <= 0L) musicSourceEndMs = duration
                     musicSourceStartMs = musicSourceStartMs.coerceIn(0L, duration)
                     musicSourceEndMs = musicSourceEndMs.coerceIn(musicSourceStartMs, duration)
+                    updateMusicSourceRangeControls()
                     if (musicDurationMs <= 0L) musicDurationMs = totalOutputDurationMs()
                     updateMusicTimingLabel()
                     refreshTimelineTracks()
                 }
             }
         }.start()
+    }
+
+    private fun updateMusicSourceRangeControls() {
+        if (!::musicSourceRangeLabel.isInitialized) return
+        val duration = musicSourceDurationMs
+        val range = MusicSourceRangeMath.normalize(
+            MusicSourceRange(musicSourceStartMs, musicSourceEndMs.takeIf { it > 0L } ?: duration),
+            duration
+        )
+        musicSourceStartMs = range.startMs
+        musicSourceEndMs = range.endMs
+        musicSourceRangeLabel.text = if (duration > 0L) {
+            "Dosya içi: ${formatTimelineMs(range.startMs)} – ${formatTimelineMs(range.endMs)}"
+        } else "Müzik kaynak aralığı okunuyor…"
+        if (duration > 0L) {
+            musicSourceStartSeek.progress = (range.startMs * 1000L / duration).toInt().coerceIn(0, 1000)
+            musicSourceEndSeek.progress = (range.endMs * 1000L / duration).toInt().coerceIn(0, 1000)
+        }
     }
 
     private fun updateMusicTimingLabel() {
@@ -3436,6 +3455,7 @@ class VideoEditorActivity : Activity() {
         musicStartMs = json.optLong("musicStartMs", 0L).coerceAtLeast(0L)
         musicDurationMs = json.optLong("musicDurationMs", totalOutputDurationMs()).coerceAtLeast(0L)
         musicSourceEndMs = MusicSourceRangeMath.normalize(MusicSourceRange(musicSourceStartMs, musicSourceEndMs), musicSourceDurationMs).endMs
+        updateMusicSourceRangeControls()
         musicUri?.let { ensureMusicSourceDuration(it) }
         soundUri = json.optString("soundUri").takeIf { it.isNotBlank() && it != "null" }?.let(Uri::parse)
         soundTitle = json.optString("soundTitle").takeIf { it.isNotBlank() && it != "null" }
@@ -3667,6 +3687,7 @@ class VideoEditorActivity : Activity() {
                             musicSourceDurationMs = duration
                             musicSourceStartMs = 0L
                             musicSourceEndMs = duration
+                            updateMusicSourceRangeControls()
                             musicStartMs = 0L
                             if (::musicSourceStartSeek.isInitialized) musicSourceStartSeek.progress = 0
                             if (::musicSourceEndSeek.isInitialized) musicSourceEndSeek.progress = 1000
