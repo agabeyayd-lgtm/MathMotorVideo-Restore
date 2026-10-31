@@ -181,3 +181,12 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - Added pure unit tests for source range normalization, boundary handling and selected-range looping.
 - CI run #146 checked the implementation commit; latest documentation-updated PR head is being checked by run #147 (pending). Do not mark tests passed until GitHub reports success.
 - Physical-device checks of both source-range controls, preview seeking, exported MP4 audio and save/reopen remain required. Version 395 remains blocked.
+
+
+### CI failure diagnosis and targeted correction — 2026-10-31
+
+- PR-head CI run #148 failed in `testDebugUnitTest`: 43 tests completed, 1 failed. Kotlin compilation completed successfully; the failure was not an emulator or APK packaging error.
+- Failing test: `MusicSourceRangeMathTest.sourceRangeIsClampedAndRemainsOrdered`. The test supplied an invalid range `(-5, 20,000)` for a 10,000 ms source but incorrectly expected the unrelated range `(2,000, 8,000)`.
+- Corrected the test to expect the actual clamp result `(0, 10,000)` and added a separate assertion that a valid `(2,000, 8,000)` range remains unchanged.
+- Correction commit: `1ac2eff891af503fe0083b33f46d6478128ea6c6`. The corrected PR head still requires a fresh CI result; do not mark verification passed until it completes successfully.
+- No production timing implementation was changed for this failure. Version 395 remains blocked.
