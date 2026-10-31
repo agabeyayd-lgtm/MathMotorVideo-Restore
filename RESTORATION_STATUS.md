@@ -559,3 +559,13 @@ This is a layout target, not a claim that all behaviors are implemented. Gesture
 - Emulator shutdown messages (`stop: Not implemented`, Netsim Wifi stream removed) occur after the script has already exited 22 and are cleanup noise, not the root failure.
 - [ ] Re-run emulator UI validation to confirm reverse scrub decreases playhead time, then continue playback synchronization and draft save/resume checks.
 - PR #11 remains draft/unmerged; version 395 remains blocked.
+
+
+## Emulator #538 — playback origin assertion correction (2026-10-31)
+
+- [x] Confirmed the bidirectional filmstrip test now passes: left drag advanced to 800 ms; right drag returned to 83 ms.
+- [x] Diagnosed the subsequent playback assertion failure. During playback the fixed playhead remains at x=160 while the time-zero edge correctly moves off-screen (sample origins: -1, -32, -63…); the old assertion incorrectly rejected every negative screen coordinate.
+- [x] Changed the debug log's missing-origin marker from `-1` to the unambiguous `Int.MIN_VALUE` sentinel.
+- [x] Updated `assert-timeline-sync.py` to reject only that explicit missing-view sentinel and to continue checking `originRightX + scrollX == fixedPlayheadCenter`. Negative screen coordinates are now valid when the origin is off-screen.
+- [ ] Fresh PR-head Verify, APK build, and emulator playback/timeline synchronization run must pass before accepting this change.
+- PR #11 remains draft/unmerged. Version 395 remains blocked.
