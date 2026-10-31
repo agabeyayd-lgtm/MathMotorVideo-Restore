@@ -1694,6 +1694,8 @@ class VideoEditorActivity : Activity() {
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(3), dp(1), dp(3), dp(1))
                 this.tag = if (reorderable) laneKey else "__ruler__"
+                isClickable = true
+                setOnClickListener { clearTimelineClipSelection() }
             }
             val grip = TextView(this).apply {
                 // Layer rows are deliberately not named by media type. The user can
@@ -1795,6 +1797,8 @@ class VideoEditorActivity : Activity() {
             val scroll = android.widget.HorizontalScrollView(this).apply {
                 isHorizontalScrollBarEnabled = false
                 overScrollMode = View.OVER_SCROLL_NEVER
+                isClickable = true
+                setOnClickListener { clearTimelineClipSelection() }
             }
             timelineScrollViews.add(scroll)
             scroll.setOnScrollChangeListener { view, scrollX, _, _, _ ->
@@ -3412,12 +3416,13 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun clearTimelineClipSelection() {
-        if (!clipHandlesVisible) return
+        if (!clipHandlesVisible && selectedClipIndex < 0) return
         clipHandlesVisible = false
+        selectedClipIndex = -1
         if (activeEditorPanel == "clip") toggleEditorPanel("clip")
         updateClipTransformTouchAvailability()
         refreshTimelineTracks()
-        status.text = "Klip seçimi kaldırıldı."
+        updateTimelinePlayheadLabel()
     }
 
     private fun captureClipEditSnapshot(): ClipEditSnapshot = ClipEditSnapshot(
