@@ -50,6 +50,15 @@ See the detailed, release-blocking checklist in README.md. The active list is:
 - Text/audio lanes must align to the same timestamps and respond to timeline scroll/zoom without changing their actual start/end times. Do not create independent time scales for individual tools.
 - Text and audio placement, preview and playback synchronization must be verified at multiple zoom levels and after project save/reopen. These are requirements, not yet device-verified results.
 
+
+
+## Newly confirmed editor requirements (2026-10-31)
+
+- User confirmed that all timeline content must be independent and freely positionable: video clips, text layers, music and sound effects each need separate start/end positions. Moving or trimming one item must not alter another unless the user explicitly groups/links them.
+- User confirmed the editor screen should be simplified at the same time: remove “Video 1/Video 2” / “Klip 1/Klip 2” text headers and redundant visual clutter; preserve clip boundaries and selection without those labels.
+- Video thumbnails should form a clear, continuous filmstrip with a visible join seam; thumbnail extraction should prioritize visible frames and avoid delayed/black/repeated frames.
+- These are newly confirmed requirements, not completed work. No source behavior is marked fixed by this status update.
+
 ## Verification gaps
 
 - Unit tests cover some timeline time/pixel mapping, clip trim bounds, playhead-to-clip mapping and text timing boundaries.
