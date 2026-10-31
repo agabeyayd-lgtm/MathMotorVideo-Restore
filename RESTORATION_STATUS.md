@@ -93,7 +93,7 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 - [ ] Verify music/sound-effect drag and trim gestures plus live audio sync on an actual phone or reliable emulator.
 - [ ] Verify exported audio start/end, repeat behavior, silence outside the segment and source-video preservation in a real MP4.
 - [ ] Verify project save/reopen retains edited music/effect positions and durations.
-- [ ] Implement independently positioned/trimmable video clips instead of the current sequential playlist.
+- [ ] Verify independently positioned/trimmable video clips on-device. The implementation now stores independent positions, supports body drag and edge trim, persists positions, and flattens overlaps for preview/export; automated/device acceptance is still pending.
 - [ ] Add source-in/source-out selection for music; current music block repeats the full source within its timeline range.
 - [ ] Verify overlapping layers in both live preview and MP4 export.
 - [ ] Verify thumbnail sharpness, distinct timestamps, load priority and memory behavior on a physical device.
@@ -105,6 +105,7 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 - Each video clip stores an independent project start separate from source in/out trim.
 - New project JSON persists positions; old version-1 files without the field restore sequentially.
 - Overlapping clips render on separate rows. Filmstrip body drag moves only one clip; edge trim keeps source/project boundaries aligned.
+- Timeline row assignment now follows the same layer priority as preview/export: the highest-index overlapping clip is placed in the uppermost available row; non-overlapping clips can share a row. Two unit tests were added for this contract; the latest CI result is pending.
 - Preview and Transformer export share one flattened stream. Highest layer order wins overlap intervals; empty intervals are black/silent.
 - Current overlap behavior is top-layer occlusion, not blending, crossfade or picture-in-picture.
 - CI and emulator/phone validation of drag/trim, overlap preview/export, MP4 correctness and save/reopen remain required.
