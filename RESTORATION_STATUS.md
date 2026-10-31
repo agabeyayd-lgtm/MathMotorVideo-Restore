@@ -647,3 +647,23 @@ This section is the authoritative current checkpoint and supersedes older pendin
 - [ ] Persistence verification remains open: save/reopen transformed projects and load older version-1 projects with identity defaults.
 - [ ] The generated APK is a **debug APK**, not a signed release/update package. Do not treat it as an in-app update for installed version 394/build 61.
 - PR #11 remains draft and unmerged. Installed baseline remains versionCode 394 / build 61. Version 395 must not be created, signed, published, or offered until all release gates pass and the user explicitly authorizes it.
+
+## User-reported editor issue backlog — 2026-10-31
+
+User reviewed the current editor against the real CapCut reference and reported the following open issues. These are not marked fixed merely by documenting them:
+
+- [ ] Remove unintended gray gaps between adjacent video clips; retain gaps only when deliberately created by the user.
+- [ ] Keep current/total duration labels fully visible; improve timeline workspace sizing and reliable two-finger pinch zoom.
+- [ ] Remove the persistent, unnecessary “Taslak açıldı” notification.
+- [ ] Match the supplied CapCut workspace reference: give the timeline sufficient space, adaptive frame-level ruler, concise time display, undo/redo, keyframes, and selected-clip contextual actions (split, volume, duplicate, delete, sound effect); remove redundant permanent tool/hint rows.
+- [ ] Tapping outside all timeline lanes clears selection and hides handles/context actions.
+- [ ] Make two-finger timeline navigation/zoom reliable and independent from one-finger clip move/trim gestures.
+- [ ] Improve thumbnail generation/caching and scrub-to-preview latency; preview should follow the playhead responsively.
+- [ ] Preserve full source-frame composition in thumbnails instead of aggressive center cropping.
+- [ ] Make the filmstrip visually continuous without boxed separators; show frame-level ruler detail at close zoom and prevent half-clipped first/last thumbnails.
+
+### Verification rule
+For every item, track separately: source implementation, focused automated test result, emulator screenshot/interaction result, and real-device acceptance. Do not mark complete from compilation or source inspection alone. Inspect prior failure logs before rerunning; do not repeat unchanged failing tests.
+
+### Release guard
+PR #11 remains draft and unmerged. Installed baseline remains versionCode 394 / build 61. Version 395 must not be created, signed, published, or offered until all required work and verification gates pass and the user explicitly authorizes it.
