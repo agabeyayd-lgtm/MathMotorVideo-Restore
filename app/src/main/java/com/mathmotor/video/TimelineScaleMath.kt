@@ -28,4 +28,28 @@ internal object TimelineScaleMath {
         return ((offsetPixels.toDouble() / pixelsPerSecond.toDouble()) * 1000.0)
             .roundToLong()
     }
+
+
+    /** Time at a screen-space anchor, accounting for the fixed track-label gutter. */
+    fun timeAtViewportX(
+        scrollX: Int,
+        viewportX: Float,
+        labelGutterPx: Float,
+        pixelsPerSecond: Float
+    ): Long {
+        val contentOffset = scrollX.toFloat() + viewportX - labelGutterPx
+        return millisecondsForPixels(contentOffset.coerceAtLeast(0f), pixelsPerSecond)
+    }
+
+    /** Scroll offset that keeps [anchorTimeMs] under the same viewport x after zoom. */
+    fun scrollForAnchoredZoom(
+        anchorTimeMs: Long,
+        viewportX: Float,
+        labelGutterPx: Float,
+        newPixelsPerSecond: Float
+    ): Int {
+        if (!newPixelsPerSecond.isFinite() || newPixelsPerSecond <= 0f) return 0
+        val contentX = pixelsForTime(anchorTimeMs, newPixelsPerSecond).toFloat()
+        return (contentX - (viewportX - labelGutterPx)).roundToInt().coerceAtLeast(0)
+    }
 }
