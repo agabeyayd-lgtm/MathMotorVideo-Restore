@@ -21,7 +21,7 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - Do not bump `versionCode` or `versionName` during this work until the release gate is met and the user explicitly authorizes the release.
 - A successful source build is not the same as a tested, published APK. Keep the original media safe; export to a new file.
 
-## Current verification state — 2026-10-30 (fixed-playhead pinch/filmstrip regression #396 green; shared-lane #388; full suite #341; focused #362/#366; phone layout #371)
+## Current verification state — 2026-10-31 (#413 PR-head emulator screenshot test green; #10 signed install/update-over/relaunch emulator preflight green; physical-phone acceptance and in-app updater delivery still open)
 
 ## Short-viewport keyboard test — PASSED (#399, 2026-10-31)
 
@@ -67,7 +67,7 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - #371's 393×873 screenshots were inspected against the user's supplied target: the loaded-video preview stage is about 392 px high (about 45% of the 873 px viewport), and the portrait canvas is about 221×392 px. The redundant single-clip `Klip 1` chooser row is absent. This closes the major preview-size and duplicate-row visual gaps on the emulator only; the target's wider tool dock and the empty-editor clip-panel copy still need visual polish.
 - The #341 tall-screen screenshots are emulator captures, not a physical phone test; they do not prove touch comfort, performance or OEM-specific behavior. The separate short-viewport keyboard scenario is now covered by #399 on the emulator.
 - The deterministic filmstrip density fixture is 8 seconds; the separate exact 10-second seek scenario is now verified by #362 and #366. The exact 10-second test is single-clip; multi-clip behavior has separate #340 coverage.
-- Remaining acceptance work: review the fresh 393×873 empty/loaded editor screenshots after the targeted screenshot test; inspect adaptive ruler readability at multiple zoom levels (the shared-lane alignment scenario passed in #388); perform physical-phone visual/touch/performance smoke testing; and run signed install-over/relaunch verification on the current `fix/editor-395-mainline` branch.
+- Remaining acceptance work: perform physical-phone visual/touch/performance smoke testing (keyboard-open editing, timeline touch/trim/scroll/pinch, thumbnail loading/readability, preview/dock usability and export playback/output) and separately verify in-app updater delivery. The current-branch signed install/update-over/relaunch emulator preflight passed in #10; it does not prove in-app updater delivery.
 - Version 395 remains blocked. The working installed baseline remains **versionCode 394 / build 61**. Do not bump version metadata, sign or publish a release APK, or activate the updater until all required gates pass and the user explicitly authorizes release.
 
 ## Current baseline capabilities (present in source; not all are proven reliable)
@@ -146,6 +146,8 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - [x] Reviewed the #340 screenshots (`home.png`, `editor.png`, `editor-empty.png`, `editor-phone-size.png`); its 393×873 capture was the empty-editor state.
 - [x] #341 captured both empty-editor and loaded-video states at 393×873; artifact [12991473031](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41083942621/artifacts/12991473031) contains `editor-phone-size-loaded.png`.
 - [x] Compared the #371 empty/loaded 393×873 screenshots against the user's target for preview size and the redundant single-clip chooser row. Artifact [12997315254](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41096422450/artifacts/12997315254).
+- [x] Current-branch signed build-61 install → candidate update-over → relaunch preflight passed in #10 on the emulator with matching package, versionCode 394 and signing certificate; this is not physical-phone acceptance.
+- [ ] Verify in-app updater delivery separately through the app's own update flow; the signed install-over preflight does not exercise it.
 - [ ] Complete remaining dock/empty-state visual polish and physical-phone review.
 - [ ] Perform a final physical-device smoke test when possible.
 - [ ] Only after every required item is complete and verified, prepare version 395. Until then, do not bump the app version or publish an APK.
@@ -364,3 +366,13 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - This is a successful run of the Android emulator screenshot workflow after the #408 tall-phone layout evidence and the #10 signed update preflight. It adds workflow confirmation only; it does not replace physical-phone acceptance or prove in-app updater delivery.
 - Do not rerun the same screenshot assertions unchanged. Continue with physical-device acceptance on the user's phone: keyboard-open editing, timeline touch/trim/scroll/pinch, thumbnail readability/loading, preview/dock usability, and export playback/output.
 - Keep installed baseline at versionCode 394 / build 61. Version 395 remains blocked; no version bump, release, publishing, merge, or updater activation without the remaining gates and explicit user authorization.
+
+## Current PR-head emulator screenshot workflow #413 — PASSED (2026-10-31)
+
+- [Run #413 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41154681626) completed on PR #10 / `fix/editor-395-mainline`, tested code head `9f6d08d2a4aa95e02d27269bb8a61ef18ea4510b`; the `emulator-ui` job concluded `success`.
+- Unit tests, Debug APK build, deterministic MP4 fixture preparation, emulator launch, `EmulatorScreenshotTest#captureHomeEditorAndTextPanel` (one focused connected instrumentation test), screenshot/diagnostic collection and artifact upload all completed successfully. The log reports `BUILD SUCCESSFUL` and `Connected Android instrumentation tests passed.`
+- Emulator screenshot/diagnostic artifact: [13024842776](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41154681626/artifacts/13024842776).
+- The log contains transient emulator setup/cleanup messages (ADB startup retries, emulator-console/GPU initialization warnings, then `stop: Not implemented` / Netsim cleanup warnings). The connected instrumentation step subsequently passed and the workflow concluded successfully; no failed assertion is reported.
+- #413 ran the same focused screenshot method as #412. It confirms that method is still green on the tested code head but adds no new scenario; do not rerun it unchanged. Later README/status commits from this check are documentation-only.
+- This remains emulator evidence only. Physical-phone acceptance is still OPEN, and the signed install-over preflight does not prove in-app updater delivery; verify the updater through its own in-app flow separately.
+- PR #10 remains open and draft. Installed baseline remains versionCode 394 / build 61. Version 395 remains blocked; no merge, version bump, release, APK publication or updater activation without all remaining acceptance gates and explicit user authorization.
