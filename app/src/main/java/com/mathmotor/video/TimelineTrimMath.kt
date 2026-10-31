@@ -159,3 +159,66 @@ internal object TimelineAudioMath {
         return safe.copy(durationMs = requested.coerceIn(minimum, maximumDuration))
     }
 }
+
+
+/** A movable and trimmable item positioned on the project timeline. */
+internal data class TimelineRange(
+    val startMs: Long,
+    val durationMs: Long
+)
+
+/** Independent project-time positioning for music and other non-source-trimmed timeline items. */
+internal object TimelineRangeMath {
+    const val MIN_DURATION_MS = 100L
+
+    fun normalize(range: TimelineRange, timelineDurationMs: Long): TimelineRange {
+        val timelineDuration = timelineDurationMs.coerceAtLeast(0L)
+        val start = range.startMs.coerceIn(0L, timelineDuration)
+        val maximumDuration = (timelineDuration - start).coerceAtLeast(0L)
+        return TimelineRange(
+            startMs = start,
+            durationMs = range.durationMs.coerceIn(0L, maximumDuration)
+        )
+    }
+
+    fun move(
+        range: TimelineRange,
+        requestedStartMs: Long,
+        timelineDurationMs: Long
+    ): TimelineRange {
+        val safe = normalize(range, timelineDurationMs)
+        val latestStart = (timelineDurationMs - safe.durationMs).coerceAtLeast(0L)
+        return safe.copy(startMs = requestedStartMs.coerceIn(0L, latestStart))
+    }
+
+    fun trimStart(
+        range: TimelineRange,
+        deltaMs: Long,
+        timelineDurationMs: Long,
+        minimumDurationMs: Long = MIN_DURATION_MS
+    ): TimelineRange {
+        val safe = normalize(range, timelineDurationMs)
+        if (safe.durationMs <= 0L) return safe
+        val minimum = minimumDurationMs.coerceAtLeast(1L).coerceAtMost(safe.durationMs)
+        val delta = deltaMs.coerceIn(-safe.startMs, (safe.durationMs - minimum).coerceAtLeast(0L))
+        return TimelineRange(
+            startMs = safe.startMs + delta,
+            durationMs = safe.durationMs - delta
+        )
+    }
+
+    fun trimEnd(
+        range: TimelineRange,
+        deltaMs: Long,
+        timelineDurationMs: Long,
+        minimumDurationMs: Long = MIN_DURATION_MS
+    ): TimelineRange {
+        val safe = normalize(range, timelineDurationMs)
+        if (safe.durationMs <= 0L) return safe
+        val maximumDuration = (timelineDurationMs - safe.startMs).coerceAtLeast(0L)
+        val minimum = minimumDurationMs.coerceAtLeast(1L).coerceAtMost(maximumDuration)
+        return safe.copy(
+            durationMs = (safe.durationMs + deltaMs).coerceIn(minimum, maximumDuration)
+        )
+    }
+}

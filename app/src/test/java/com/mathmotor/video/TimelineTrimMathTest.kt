@@ -124,3 +124,56 @@ class TimelineAudioMathTest {
         )
     }
 }
+
+
+class TimelineRangeMathTest {
+    @Test
+    fun movingMusicChangesOnlyItsOwnTimelineStart() {
+        val original = TimelineRange(2_000L, 5_000L)
+        assertEquals(
+            TimelineRange(4_000L, 5_000L),
+            TimelineRangeMath.move(original, 4_000L, 10_000L)
+        )
+        assertEquals(
+            TimelineRange(5_000L, 5_000L),
+            TimelineRangeMath.move(original, 99_000L, 10_000L)
+        )
+    }
+
+    @Test
+    fun leftAndRightTrimAdjustTheMusicItemRange() {
+        val original = TimelineRange(2_000L, 6_000L)
+        assertEquals(
+            TimelineRange(3_000L, 5_000L),
+            TimelineRangeMath.trimStart(original, 1_000L, 10_000L)
+        )
+        assertEquals(
+            TimelineRange(2_000L, 4_000L),
+            TimelineRangeMath.trimEnd(original, -2_000L, 10_000L)
+        )
+    }
+
+    @Test
+    fun musicRangeCannotMoveOrExtendOutsideTheVideoTimeline() {
+        assertEquals(
+            TimelineRange(8_000L, 2_000L),
+            TimelineRangeMath.normalize(TimelineRange(20_000L, 8_000L), 10_000L)
+        )
+        assertEquals(
+            TimelineRange(0L, 10_000L),
+            TimelineRangeMath.move(TimelineRange(2_000L, 8_000L), -5_000L, 10_000L)
+        )
+    }
+
+    @Test
+    fun trimmingCannotInvertOrEmptyAnExistingMusicRange() {
+        assertEquals(
+            TimelineRange(7_900L, 100L),
+            TimelineRangeMath.trimStart(TimelineRange(2_000L, 6_000L), 99_000L, 10_000L)
+        )
+        assertEquals(
+            TimelineRange(2_000L, 100L),
+            TimelineRangeMath.trimEnd(TimelineRange(2_000L, 6_000L), -99_000L, 10_000L)
+        )
+    }
+}

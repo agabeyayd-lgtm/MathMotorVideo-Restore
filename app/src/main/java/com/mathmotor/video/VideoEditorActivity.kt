@@ -96,6 +96,9 @@ class VideoEditorActivity : Activity() {
     private var selectedClipIndex = -1
     private var musicUri: Uri? = null
     private var musicTitle: String? = null
+    private var musicSourceDurationMs: Long = 0L
+    private var musicStartMs: Long = 0L
+    private var musicDurationMs: Long = 0L
     private var soundUri: Uri? = null
     private var soundTitle: String? = null
     private var soundSourceDurationMs: Long = 0L
@@ -864,6 +867,9 @@ class VideoEditorActivity : Activity() {
         musicActions.addView(miniButton("Müziği kaldır") {
             musicUri = null
             musicTitle = null
+            musicSourceDurationMs = 0L
+            musicStartMs = 0L
+            musicDurationMs = 0L
             musicLabel.text = "Müzik seçilmedi."
             refreshTimelineTracks()
         }, LinearLayout.LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(5) })
@@ -1807,11 +1813,16 @@ class VideoEditorActivity : Activity() {
         }
 
         val musicTrack = makeLane("MÜZİK", 24)
-        if (musicUri != null) {
-            addBlock(
-                musicTrack, "♫ ${musicTitle ?: "Müzik"}", totalMs, Color.rgb(46, 125, 85),
-                onClick = { showEditorPanel("audio") }
+        if (musicUri != null && totalMs > 0L) {
+            val musicRange = TimelineRangeMath.normalize(
+                TimelineRange(musicStartMs, musicDurationMs),
+                totalMs
             )
+            musicStartMs = musicRange.startMs
+            musicDurationMs = musicRange.durationMs
+            addSpacer(musicTrack, 0L, musicRange.startMs)
+            addMusicTimelineBlock(musicTrack, totalMs)
+            addSpacer(musicTrack, musicRange.startMs + musicRange.durationMs, totalMs)
         } else {
             addBlock(musicTrack, "+ Müzik ekle", totalMs.coerceAtLeast(5000L), Color.rgb(42, 78, 63),
                 onClick = { chooseAudio(true) }, minimumWidthDp = 115)
@@ -1858,6 +1869,224 @@ class VideoEditorActivity : Activity() {
         updateTimelinePlayheadLine()
     }
 
+
+
+    private fun ensureMusicSourceDuration(uri: Uri) {
+        if (musicSourceDurationMs > 0L) return
+        Thread {
+            val duration = runCatching {
+                val retriever = MediaMetadataRetriever()
+                try {
+                    retriever.setDataSource(this, uri)
+                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                } finally {
+                    retriever.release()
+                }
+            }.getOrDefault(0L)
+            runOnUiThread {
+                if (musicUri == uri && duration > 0L) {
+                    musicSourceDurationMs = duration
+                    if (musicDurationMs <= 0L) musicDurationMs = totalOutputDurationMs()
+                    updateMusicTimingLabel()
+                    refreshTimelineTracks()
+                }
+            }
+        }.start()
+    }
+
+    private fun updateMusicTimingLabel() {
+        if (!::musicLabel.isInitialized) return
+        val title = musicTitle
+        if (musicUri == null || title == null) {
+            musicLabel.text = "Müzik seçilmedi."
+            return
+        }
+        val endMs = musicStartMs + musicDurationMs
+        musicLabel.text = "Müzik: " + title + " • " +
+            formatTimelineMs(musicStartMs) + " – " + formatTimelineMs(endMs) + " • döngü"
+    }
+
+    private fun addMusicTimelineBlock(track: LinearLayout, totalMs: Long) {
+        val normalized = TimelineRangeMath.normalize(
+            TimelineRange(musicStartMs, musicDurationMs),
+            totalMs
+        )
+        musicStartMs = normalized.startMs
+        musicDurationMs = normalized.durationMs
+        if (normalized.durationMs <= 0L) return
+
+        val pixelsPerSecond = timelinePixelsPerSecond()
+        val blockWidth = maxOf(
+            dp(38),
+            TimelineScaleMath.widthBetween(
+                normalized.startMs,
+                normalized.startMs + normalized.durationMs,
+                pixelsPerSecond
+            ).coerceAtLeast(1)
+        )
+        val frame = FrameLayout(this).apply {
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.rgb(46, 125, 85))
+                cornerRadius = dp(5).toFloat()
+                setStroke(dp(1), Color.rgb(93, 190, 127))
+            }
+            clipToOutline = true
+            contentDescription = "Müzik: ortasından taşı, kenarlarından süreyi ayarla"
+        }
+        val body = TextView(this).apply {
+            text = "♫ " + (musicTitle ?: "Müzik")
+            textSize = 9f
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER_VERTICAL
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(dp(7), 0, dp(7), 0)
+        }
+        frame.addView(body, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+
+        var bodyDownX = 0f
+        var bodyMoved = false
+        var bodyInitial = normalized
+        body.setOnTouchListener { view, event ->
+            when (event.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    bodyDownX = event.rawX
+                    bodyInitial = TimelineRange(musicStartMs, musicDurationMs)
+                    bodyMoved = false
+                    player?.playWhenReady = false
+                    view.parent?.requestDisallowInterceptTouchEvent(true)
+                    true
+                }
+                android.view.MotionEvent.ACTION_MOVE -> {
+                    val deltaPx = event.rawX - bodyDownX
+                    if (kotlin.math.abs(deltaPx) > android.view.ViewConfiguration.get(this).scaledTouchSlop) {
+                        bodyMoved = true
+                        val minPx = -bodyInitial.startMs / 1000f * pixelsPerSecond
+                        val maxPx = (totalMs - bodyInitial.startMs - bodyInitial.durationMs)
+                            .coerceAtLeast(0L) / 1000f * pixelsPerSecond
+                        frame.translationX = deltaPx.coerceIn(minPx, maxPx)
+                    }
+                    true
+                }
+                android.view.MotionEvent.ACTION_UP -> {
+                    val deltaPx = event.rawX - bodyDownX
+                    frame.translationX = 0f
+                    view.parent?.requestDisallowInterceptTouchEvent(false)
+                    if (bodyMoved) {
+                        val deltaMs = TimelineScaleMath.millisecondsForPixels(deltaPx, pixelsPerSecond)
+                        val moved = TimelineRangeMath.move(
+                            bodyInitial,
+                            bodyInitial.startMs + deltaMs,
+                            totalMs
+                        )
+                        musicStartMs = moved.startMs
+                        musicDurationMs = moved.durationMs
+                        updateMusicTimingLabel()
+                        status.text = "Müzik zaman çizelgesinde taşındı."
+                        refreshTimelineTracks()
+                    } else {
+                        showEditorPanel("audio")
+                        view.performClick()
+                    }
+                    true
+                }
+                android.view.MotionEvent.ACTION_CANCEL -> {
+                    frame.translationX = 0f
+                    view.parent?.requestDisallowInterceptTouchEvent(false)
+                    true
+                }
+                else -> true
+            }
+        }
+
+        fun addMusicTrimHandle(isStart: Boolean) {
+            val handleWidth = minOf(dp(16), (blockWidth / 3).coerceAtLeast(dp(7)))
+            val handle = TextView(this).apply {
+                text = if (isStart) "‹" else "›"
+                textSize = 12f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(Color.WHITE)
+                gravity = Gravity.CENTER
+                setBackgroundColor(Color.rgb(27, 91, 57))
+                elevation = dp(3).toFloat()
+                contentDescription = if (isStart) "Müzik başlangıç tutamacı" else "Müzik bitiş tutamacı"
+            }
+            var downRawX = 0f
+            var initial = normalized
+            var moved = false
+            handle.setOnTouchListener { view, event ->
+                when (event.actionMasked) {
+                    android.view.MotionEvent.ACTION_DOWN -> {
+                        downRawX = event.rawX
+                        initial = TimelineRange(musicStartMs, musicDurationMs)
+                        moved = false
+                        player?.playWhenReady = false
+                        view.parent?.requestDisallowInterceptTouchEvent(true)
+                        true
+                    }
+                    android.view.MotionEvent.ACTION_MOVE -> {
+                        val deltaPx = event.rawX - downRawX
+                        if (kotlin.math.abs(deltaPx) > android.view.ViewConfiguration.get(this).scaledTouchSlop) {
+                            moved = true
+                        }
+                        val deltaMs = TimelineScaleMath.millisecondsForPixels(deltaPx, pixelsPerSecond)
+                        val lowerDeltaMs: Long
+                        val upperDeltaMs: Long
+                        if (isStart) {
+                            lowerDeltaMs = -initial.startMs
+                            upperDeltaMs = (initial.durationMs - TimelineRangeMath.MIN_DURATION_MS).coerceAtLeast(0L)
+                        } else {
+                            lowerDeltaMs = TimelineRangeMath.MIN_DURATION_MS - initial.durationMs
+                            upperDeltaMs = (totalMs - initial.startMs - initial.durationMs).coerceAtLeast(0L)
+                        }
+                        val minPx = lowerDeltaMs / 1000f * pixelsPerSecond
+                        val maxPx = upperDeltaMs / 1000f * pixelsPerSecond
+                        view.translationX = deltaPx.coerceIn(minPx, maxPx)
+                        true
+                    }
+                    android.view.MotionEvent.ACTION_UP -> {
+                        val deltaPx = event.rawX - downRawX
+                        val deltaMs = TimelineScaleMath.millisecondsForPixels(deltaPx, pixelsPerSecond)
+                        view.translationX = 0f
+                        view.parent?.requestDisallowInterceptTouchEvent(false)
+                        if (moved) {
+                            val updated = if (isStart) {
+                                TimelineRangeMath.trimStart(initial, deltaMs, totalMs)
+                            } else {
+                                TimelineRangeMath.trimEnd(initial, deltaMs, totalMs)
+                            }
+                            musicStartMs = updated.startMs
+                            musicDurationMs = updated.durationMs
+                            updateMusicTimingLabel()
+                            status.text = if (isStart) "Müzik başlangıcı ayarlandı." else "Müzik bitişi ayarlandı."
+                            refreshTimelineTracks()
+                        } else {
+                            showEditorPanel("audio")
+                        }
+                        true
+                    }
+                    android.view.MotionEvent.ACTION_CANCEL -> {
+                        view.translationX = 0f
+                        view.parent?.requestDisallowInterceptTouchEvent(false)
+                        true
+                    }
+                    else -> true
+                }
+            }
+            frame.addView(handle, FrameLayout.LayoutParams(
+                handleWidth,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                if (isStart) Gravity.START else Gravity.END
+            ))
+        }
+
+        addMusicTrimHandle(isStart = true)
+        addMusicTrimHandle(isStart = false)
+        track.addView(frame, LinearLayout.LayoutParams(blockWidth, dp(24)))
+    }
 
     private fun addSoundEffectTimelineBlock(track: LinearLayout, totalMs: Long) {
         val normalized = TimelineAudioMath.normalize(
@@ -2847,12 +3076,15 @@ class VideoEditorActivity : Activity() {
 
         musicPreviewPlayer?.let { music ->
             music.volume = musicVolume / 100f
-            if (!videoIsPlaying) {
+            val musicEndMs = (musicStartMs + musicDurationMs).coerceAtMost(totalOutputDurationMs())
+            val insideMusic = videoIsPlaying && musicDurationMs > 0L &&
+                outputTimeMs >= musicStartMs && outputTimeMs < musicEndMs
+            if (!insideMusic) {
                 music.playWhenReady = false
             } else {
-                val duration = music.duration
-                if (duration > 0L && duration != androidx.media3.common.C.TIME_UNSET) {
-                    val target = outputTimeMs % duration
+                val sourceDuration = music.duration
+                if (sourceDuration > 0L && sourceDuration != androidx.media3.common.C.TIME_UNSET) {
+                    val target = (outputTimeMs - musicStartMs) % sourceDuration
                     if (kotlin.math.abs(music.currentPosition - target) > 400L) music.seekTo(target)
                 }
                 music.playWhenReady = true
@@ -3020,6 +3252,9 @@ class VideoEditorActivity : Activity() {
             ).coerceAtLeast(0L))
             put("musicUri", musicUri?.toString() ?: JSONObject.NULL)
             put("musicTitle", musicTitle ?: JSONObject.NULL)
+            put("musicSourceDurationMs", musicSourceDurationMs)
+            put("musicStartMs", musicStartMs)
+            put("musicDurationMs", musicDurationMs)
             put("soundUri", soundUri?.toString() ?: JSONObject.NULL)
             put("soundTitle", soundTitle ?: JSONObject.NULL)
             put("soundDurationMs", soundDurationMs)
@@ -3111,6 +3346,10 @@ class VideoEditorActivity : Activity() {
         }
         musicUri = json.optString("musicUri").takeIf { it.isNotBlank() && it != "null" }?.let(Uri::parse)
         musicTitle = json.optString("musicTitle").takeIf { it.isNotBlank() && it != "null" }
+        musicSourceDurationMs = json.optLong("musicSourceDurationMs", 0L).coerceAtLeast(0L)
+        musicStartMs = json.optLong("musicStartMs", 0L).coerceAtLeast(0L)
+        musicDurationMs = json.optLong("musicDurationMs", totalOutputDurationMs()).coerceAtLeast(0L)
+        musicUri?.let { ensureMusicSourceDuration(it) }
         soundUri = json.optString("soundUri").takeIf { it.isNotBlank() && it != "null" }?.let(Uri::parse)
         soundTitle = json.optString("soundTitle").takeIf { it.isNotBlank() && it != "null" }
         val legacySoundDurationMs = json.optLong("soundDurationMs", 0L).coerceAtLeast(0L)
@@ -3203,8 +3442,9 @@ class VideoEditorActivity : Activity() {
             1080 -> 303
             else -> 301
         })
-        musicLabel.text = musicTitle?.let { "Müzik: $it • video boyunca döngü" } ?: "Müzik seçilmedi."
+        updateMusicTimingLabel()
         soundLabel.text = soundTitle?.let { "Ses/efekt: $it • ${formatMs(soundDurationMs)}" } ?: "Ses veya efekt seçilmedi."
+        updateMusicTimingLabel()
         musicVolumeSeek.progress = musicVolume
         musicVolumeLabel.text = "Müzik ses seviyesi: $musicVolume%"
         soundVolumeSeek.progress = soundVolume
@@ -3321,11 +3561,33 @@ class VideoEditorActivity : Activity() {
                 }.onFailure { status.text = "Proje açılamadı: ${it.message}" }
             }
             REQUEST_MUSIC -> {
-                musicUri = uri
-                musicTitle = queryDisplayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Müzik"
-                musicLabel.text = "Müzik: ${musicTitle} • video boyunca döngü"
-                refreshTimelineTracks()
-                status.text = "Müzik katmanı eklendi. Video süresi boyunca çalar."
+                status.text = "Müzik dosyasının süresi okunuyor…"
+                Thread {
+                    val duration = runCatching {
+                        val retriever = MediaMetadataRetriever()
+                        try {
+                            retriever.setDataSource(this, uri)
+                            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                        } finally {
+                            retriever.release()
+                        }
+                    }.getOrDefault(0L)
+                    val title = queryDisplayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Müzik"
+                    runOnUiThread {
+                        if (duration <= 0L) {
+                            status.text = "Müzik dosyasının süresi okunamadı. Başka bir ses dosyası seç."
+                        } else {
+                            musicUri = uri
+                            musicTitle = title
+                            musicSourceDurationMs = duration
+                            musicStartMs = 0L
+                            musicDurationMs = totalOutputDurationMs().takeIf { it > 0L } ?: duration
+                            updateMusicTimingLabel()
+                            refreshTimelineTracks()
+                            status.text = "Müzik eklendi. Zaman çizelgesinde sürükleyip başlangıç ve bitişini ayarlayabilirsin."
+                        }
+                    }
+                }.start()
             }
             REQUEST_SOUND -> {
                 status.text = "Ses dosyasının süresi okunuyor…"
@@ -4339,13 +4601,48 @@ class VideoEditorActivity : Activity() {
         val videoSequence = EditedMediaItemSequence.Builder(videoItems).build()
         val compositionSequences = mutableListOf(videoSequence)
         musicUri?.let { uri ->
-            val musicItem = EditedMediaItem.Builder(MediaItem.fromUri(uri))
-                .setRemoveVideo(true)
-                .setEffects(Effects(audioEffects(musicVolume), emptyList()))
-                .build()
-            compositionSequences.add(
-                EditedMediaItemSequence.Builder(listOf(musicItem)).setIsLooping(true).build()
+            val outputDurationMs = totalOutputDurationMs()
+            val musicRange = TimelineRangeMath.normalize(
+                TimelineRange(musicStartMs, musicDurationMs),
+                outputDurationMs
             )
+            val sourceDurationMs = musicSourceDurationMs
+            if (musicRange.durationMs > 0L && sourceDurationMs <= 0L) {
+                exporting = false
+                exportButton.isEnabled = true
+                status.text = "Müzik dosyasının süresi okunamadı. Projeyi yeniden açıp tekrar dene."
+                return
+            }
+            if (musicRange.durationMs > 0L) {
+                val sequenceBuilder = EditedMediaItemSequence.Builder(
+                    setOf(androidx.media3.common.C.TRACK_TYPE_AUDIO)
+                ).experimentalSetForceAudioTrack(true)
+                if (musicRange.startMs > 0L) sequenceBuilder.addGap(musicRange.startMs * 1000L)
+                var remainingMs = musicRange.durationMs
+                while (remainingMs > 0L) {
+                    val chunkMs = minOf(sourceDurationMs, remainingMs)
+                    val musicItem = MediaItem.Builder()
+                        .setUri(uri)
+                        .setClippingConfiguration(
+                            MediaItem.ClippingConfiguration.Builder()
+                                .setStartPositionMs(0L)
+                                .setEndPositionMs(chunkMs)
+                                .build()
+                        )
+                        .build()
+                    sequenceBuilder.addItem(
+                        EditedMediaItem.Builder(musicItem)
+                            .setRemoveVideo(true)
+                            .setEffects(Effects(audioEffects(musicVolume), emptyList()))
+                            .build()
+                    )
+                    remainingMs -= chunkMs
+                }
+                val trailingGapMs = (outputDurationMs - musicRange.startMs - musicRange.durationMs)
+                    .coerceAtLeast(0L)
+                if (trailingGapMs > 0L) sequenceBuilder.addGap(trailingGapMs * 1000L)
+                compositionSequences.add(sequenceBuilder.build())
+            }
         }
         soundUri?.let { uri ->
             val outputDurationMs = totalOutputDurationMs()
