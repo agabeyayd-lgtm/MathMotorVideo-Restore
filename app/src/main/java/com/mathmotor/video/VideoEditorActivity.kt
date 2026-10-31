@@ -3187,11 +3187,16 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun normalizeClipTransform(clip: Clip) {
-        clip.transformScale = clip.transformScale.takeIf { it.isFinite() }?.coerceIn(0.25f, 4f) ?: 1f
-        val rotation = clip.transformRotationDegrees.takeIf { it.isFinite() } ?: 0f
-        clip.transformRotationDegrees = ((rotation + 180f) % 360f + 360f) % 360f - 180f
-        clip.transformTranslateX = clip.transformTranslateX.takeIf { it.isFinite() }?.coerceIn(-2f, 2f) ?: 0f
-        clip.transformTranslateY = clip.transformTranslateY.takeIf { it.isFinite() }?.coerceIn(-2f, 2f) ?: 0f
+        val normalized = ClipTransformMath.normalize(
+            clip.transformScale,
+            clip.transformRotationDegrees,
+            clip.transformTranslateX,
+            clip.transformTranslateY
+        )
+        clip.transformScale = normalized.scale
+        clip.transformRotationDegrees = normalized.rotationDegrees
+        clip.transformTranslateX = normalized.translateX
+        clip.transformTranslateY = normalized.translateY
     }
 
     private fun updateClipTransformTouchAvailability() {
@@ -5504,15 +5509,15 @@ class VideoEditorActivity : Activity() {
         ) {
             listOf<androidx.media3.common.Effect>(
                 MatrixTransformation { _ ->
-                    val radians = Math.toRadians(-transformRotationDegrees.toDouble())
-                    val cosine = kotlin.math.cos(radians).toFloat() * transformScale
-                    val sine = kotlin.math.sin(radians).toFloat() * transformScale
                     Matrix().apply {
                         // Media3 uses normalized device coordinates (-1..1); positive Y is up.
-                        setValues(floatArrayOf(
-                            cosine, -sine, transformTranslateX,
-                            sine, cosine, -transformTranslateY,
-                            0f, 0f, 1f
+                        setValues(ClipTransformMath.matrixValues(
+                            ClipTransformValues(
+                                transformScale,
+                                transformRotationDegrees,
+                                transformTranslateX,
+                                transformTranslateY
+                            )
                         ))
                     }
                 }
