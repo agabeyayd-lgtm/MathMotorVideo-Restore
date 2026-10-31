@@ -26,6 +26,19 @@ MathMotor Video is a local Android video editor with a CapCut-inspired workflow.
 
 Do not mark these as device-accepted from source changes or a green build alone. PR #11 remains draft. Version 395 remains blocked; installed 394/build 61 is unchanged.
 
+## Emulator screenshot review — 2026-10-31
+
+- PR-head emulator workflow #427 completed successfully and uploaded screenshots.
+- Screenshot review confirms the editor launches and the bottom tool dock remains visible. The captured timeline card stretched through most of the remaining screen, leaving excessive empty vertical space around the single visible clip strip. This is a visual acceptance failure despite the green workflow.
+- Applied a focused layout correction in commit `a708a64877d1059373738144b5b39866cff101f3`: the timeline card now uses a compact responsive height (224 dp on compact phones, 252 dp otherwise) instead of a weighted height that expands into unused space.
+- The captured preview frame is black in the screenshot; logs confirm the fixture video was imported, but a green emulator job does not establish decoded-frame visibility. This remains an open preview-render verification item.
+- [ ] Re-run PR-head build/unit tests after the timeline-height change.
+- [ ] Re-run emulator screenshot and inspect the updated layout.
+- [ ] Confirm visible video frames after the composition player is prepared, not only that the clip metadata loaded.
+- [ ] Validate multiple independent strips, gestures, text keyboard layout and save/reopen; these are not accepted by screenshot #427.
+
+PR #11 remains draft. Version 395 remains blocked; do not change version metadata or publish a release.
+
 ## Version and release boundary
 
 - User-confirmed installed baseline: versionCode 394, release/build 61 (`app-v8.3-61`).
