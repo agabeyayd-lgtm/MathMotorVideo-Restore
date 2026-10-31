@@ -441,8 +441,20 @@ This is a layout target, not a claim that all behaviors are implemented. Gesture
 
 - [x] Inspected emulator #477 job logs and uploaded diagnostics. APK build succeeded; emulator launch failed because the editor activity crashed before fixture import.
 - [x] Root cause confirmed from the stack trace: `IllegalStateException: The specified child already has a parent` in `VideoEditorActivity.refreshTimelineTracks$makeLane` at line 1646.
-- [x] Removed the obsolete `playheadRow.addView(timelinePlayheadLabel)` attachment. The live time label is now created detached and only attached to the ruler lane, which owns it during timeline refreshes.
+- [x] Removed the obsolete `playheadRow.addView(timelinePlayheadLabel)` attachment in the first fix. A subsequent responsive relayout then exposed that the same persistent label also needed detaching from the previous ruler row before another refresh.
 - Fix commit: `fef3116d0eb6c9394915b9663f82efda5406ef5e`.
 - [ ] Run targeted compile/unit verification and a fresh emulator launch + fixture import on the fix commit. The previous emulator failure is not a pass.
 - [ ] Review the fresh screenshot for time label position, audio toggle placement and filmstrip appearance.
 - PR #11 remains draft and unmerged. Version 395 remains blocked.
+
+
+## 2026-10-31 — ruler label reparenting on repeated responsive refresh
+
+- [x] Inspected latest emulator run `41192048687`: the app launch succeeded, then fixture import crashed in `refreshTimelineTracks$makeLane` at line 1653 with `IllegalStateException: The specified child already has a parent`.
+- [x] Confirmed the second root cause: `refreshTimelineTracks()` cleared old timeline rows while the persistent time label remained parented to the old ruler row; the next responsive layout rebuild attempted to add it again.
+- [x] Fixed by detaching `timelinePlayheadLabel` from its current `ViewGroup` parent before `timelineTracks.removeAllViews()`.
+- Fix commit: `4c1e9cd71af19f5e90d13b33b27e3a633d99f90f`.
+- Parent-commit checks: APK build `41192048694` and Verify/unit/build `41192048740` passed; emulator run `41192048687` failed on the issue above. Do not count these as checks on the new fix commit.
+- [ ] Re-run compiler/unit, debug APK, emulator launch and fixture import on the new fix commit; inspect screenshot after repeated responsive layout refreshes.
+- [ ] Check fixed playhead, Play/Pause, ruler and time-readout alignment; keep all interaction/device acceptance items pending.
+- PR #11 remains draft and unmerged. Version 395 remains blocked; installed 394/build 61 remains unchanged.
