@@ -1775,7 +1775,7 @@ class VideoEditorActivity : Activity() {
                     } finally {
                         syncingTimelineScroll = false
                     }
-                    if (!autoScrollingTimeline && view === timelineScrollViews.firstOrNull() && view.width > 0) {
+                    if (!autoScrollingTimeline && view.width > 0) {
                         // The fixed center playhead stays still while the filmstrip moves
                         // underneath it. Update the visible time immediately on every drag.
                         val originPx = timelineOriginSpacerWidth(view.width).toFloat()
