@@ -468,3 +468,11 @@ This is a layout target, not a claim that all behaviors are implemented. Gesture
 - This closes a source-level gap in the earlier centered-origin pass, where a lane first measured at zero width could retain a fallback spacer width after its real viewport was laid out.
 - The change is not yet accepted: wait for fresh PR-head CI and inspect the new emulator screenshots. Verify time-zero under the center playhead, final-frame reachability, ruler/track alignment, playback auto-scroll, scrubbing and pinch zoom after a viewport resize.
 - PR #11 remains draft. Version 395 remains blocked.
+
+
+## Filmstrip visual refinement — 2026-10-31 (PR #11)
+
+- User confirmed the generated CapCut-style editor mockup as the exact visual direction; the supplied real-editor screenshot remains the source for timeline proportions and interaction behavior.
+- Targeted source change `a0212de8fb79c25c17e5ca59c2264158602d1d2d` increases filmstrip sampling density from one thumbnail slot per 24dp to one per 12dp (bounded to 3–48 frames per clip). This is intended to make short clips read as a continuous, detailed filmstrip instead of a sparse row of a few large thumbnails.
+- This change is not visually accepted until fresh unit/build and emulator screenshot workflows complete and the resulting phone screenshot is inspected. Confirm thumbnails are distinct, stable, and do not overload decoding or memory.
+- PR #11 remains draft. Version 395 remains blocked.
