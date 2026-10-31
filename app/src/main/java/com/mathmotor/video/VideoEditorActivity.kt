@@ -99,6 +99,8 @@ class VideoEditorActivity : Activity() {
     private var undoClipButton: Button? = null
     private var redoClipButton: Button? = null
     private var selectedClipIndex = -1
+    // Timeline trim chrome is shown only after an explicit clip selection tap.
+    private var clipHandlesVisible = false
     private var musicUri: Uri? = null
     private var musicTitle: String? = null
     private var musicSourceDurationMs: Long = 0L
@@ -2157,6 +2159,8 @@ class VideoEditorActivity : Activity() {
                 layoutDirection = View.LAYOUT_DIRECTION_LTR
                 clipChildren = true
                 clipToPadding = true
+                isClickable = true
+                setOnClickListener { clearTimelineClipSelection() }
             }
 
             // Placement order is layer order: later clips draw above earlier ones,
@@ -2168,7 +2172,7 @@ class VideoEditorActivity : Activity() {
                 val width = widthBetween(placement.timelineStartMs, placement.timelineEndMs)
                     .coerceAtLeast(dp(1))
                 val clipView = buildVideoClipFilmstrip(
-                    clip, index, width, stripHeight, index == selectedClipIndex
+                    clip, index, width, stripHeight, index == selectedClipIndex && clipHandlesVisible
                 )
                 strip.addView(clipView, FrameLayout.LayoutParams(width, stripHeight).apply {
                     leftMargin = left
@@ -3151,14 +3155,24 @@ class VideoEditorActivity : Activity() {
 
     private fun selectTimelineClip(index:Int){
         if(index !in clips.indices)return
+        clipHandlesVisible = true
         timelinePreviewLoaded=false;previewSingleClip=false
         selectedClipIndex=index;timelinePlayheadMs=clips[index].timelineStartMs
         ensureTrimHandlesReachable(index)
         val clip=clips[index]
         refreshClipList();loadTrimControls();refreshTimelineTracks()
         ensureTimelinePreviewLoaded();seekTimelinePreview(timelinePlayheadMs)
-        status.text="Seçili klip: ${clip.title}. Gövdesini sürükleyerek taşı."
+        showEditorPanel("clip")
+        status.text="Seçili klip: ${clip.title}. Kenar tutamaçları yalnızca seçimden sonra görünür; basılı tutup sürükleyerek taşı."
         updateTimelinePlayheadLabel()
+    }
+
+    private fun clearTimelineClipSelection() {
+        if (!clipHandlesVisible) return
+        clipHandlesVisible = false
+        if (activeEditorPanel == "clip") toggleEditorPanel("clip")
+        refreshTimelineTracks()
+        status.text = "Klip seçimi kaldırıldı."
     }
 
     private fun captureClipEditSnapshot(): ClipEditSnapshot = ClipEditSnapshot(
@@ -3842,6 +3856,7 @@ class VideoEditorActivity : Activity() {
                 val timelineStartMs=totalOutputDurationMs()
                 clips.add(Clip(uri,title,duration,0L,duration,timelineStartMs))
                 selectedClipIndex = clips.lastIndex
+                clipHandlesVisible = false
                 showSingleClipPreview()
                 player?.setMediaItem(MediaItem.fromUri(uri))
                 player?.prepare()
@@ -4378,6 +4393,7 @@ class VideoEditorActivity : Activity() {
                 }
                 clips.addAll(positioned)
                 selectedClipIndex=clips.lastIndex
+                clipHandlesVisible = false
                 timelinePreviewLoaded = false
                 previewSingleClip = true
                 timelinePlayheadMs = clips[selectedClipIndex].timelineStartMs
@@ -4450,6 +4466,7 @@ class VideoEditorActivity : Activity() {
                     isClickable = true
                     isFocusable = true
                     setOnClickListener {
+                        clipHandlesVisible = true
                         selectedClipIndex = index
                         timelinePreviewLoaded = false
                         previewSingleClip = true
@@ -4463,6 +4480,7 @@ class VideoEditorActivity : Activity() {
                         player?.setMediaItem(clippedMediaItem(clip))
                         player?.prepare()
                         player?.playWhenReady = true
+                        showEditorPanel("clip")
                         status.text = "Klip ${index + 1} seçildi: ${clip.title}"
                     }
                 }
@@ -4631,7 +4649,7 @@ class VideoEditorActivity : Activity() {
                 setColor(Color.TRANSPARENT)
                 cornerRadius = dp(4).toFloat()
                 setStroke(dp(if (selected) 2 else 1),
-                    if (selected) Color.rgb(117, 240, 221) else Color.rgb(61, 79, 99))
+                    if (selected) Color.WHITE else Color.rgb(61, 79, 99))
             }
             clipToOutline = true
             // Keep the selected clip reachable even when it overlaps another clip.
@@ -4645,7 +4663,10 @@ class VideoEditorActivity : Activity() {
             var downRawX = 0f
             var initialStartMs = clip.timelineStartMs
             val longPressAction = Runnable {
-                if (filmstripTouchActive && !filmstripMoved) filmstripLongPressed = true
+                if (filmstripTouchActive && !filmstripMoved) {
+                    filmstripLongPressed = true
+                    animate().scaleX(0.88f).scaleY(0.88f).setDuration(120L).start()
+                }
             }
             setOnTouchListener { view, event ->
                 when (event.actionMasked) {
@@ -4692,6 +4713,7 @@ class VideoEditorActivity : Activity() {
                         filmstripTouchActive = false
                         view.parent?.requestDisallowInterceptTouchEvent(false)
                         view.translationX = 0f
+                        view.animate().scaleX(1f).scaleY(1f).setDuration(100L).start()
                         if (filmstripLongPressed && filmstripMoved) {
                             val rawDeltaPx = event.rawX - downRawX
                             val allowedDeltaPx = if (initialStartMs == 0L) minOf(0f, rawDeltaPx) else rawDeltaPx
@@ -4704,6 +4726,7 @@ class VideoEditorActivity : Activity() {
                                 recordClipEdit()
                                 clip.timelineStartMs = nextStart
                                 selectedClipIndex = index
+                                clipHandlesVisible = true
                                 timelinePlayheadMs = nextStart
                                 timelinePreviewLoaded = false
                                 previewSingleClip = false
@@ -4726,6 +4749,7 @@ class VideoEditorActivity : Activity() {
                         timelineHandler.removeCallbacks(longPressAction)
                         filmstripTouchActive = false
                         view.translationX = 0f
+                        view.animate().scaleX(1f).scaleY(1f).setDuration(100L).start()
                         view.parent?.requestDisallowInterceptTouchEvent(false)
                         true
                     }
@@ -4810,6 +4834,7 @@ class VideoEditorActivity : Activity() {
 
         // Larger, high-contrast touch targets make the trim edges easy to find and drag.
         fun addTrimHandle(isStart: Boolean) {
+            if (!selected) return
             // Bound handle travel by source-time limits, not rendered clip width.
             // Otherwise short trimmed clips cannot be expanded back toward the source boundaries.
             val handleWidth = minOf(dp(40), (width / 2).coerceAtLeast(1))
