@@ -476,3 +476,9 @@ This is a layout target, not a claim that all behaviors are implemented. Gesture
 - Targeted source change `a0212de8fb79c25c17e5ca59c2264158602d1d2d` increases filmstrip sampling density from one thumbnail slot per 24dp to one per 12dp (bounded to 3–48 frames per clip). This is intended to make short clips read as a continuous, detailed filmstrip instead of a sparse row of a few large thumbnails.
 - This change is not visually accepted until fresh unit/build and emulator screenshot workflows complete and the resulting phone screenshot is inspected. Confirm thumbnails are distinct, stable, and do not overload decoding or memory.
 - PR #11 remains draft. Version 395 remains blocked.
+
+
+## Video trim handle visual cleanup — 2026-10-31
+
+- Replaced the oversized turquoise arrow-shaped video trim handles with slim white vertical markers, matching the supplied CapCut reference more closely. The larger transparent touch targets and existing trim gesture behavior remain intact.
+- Source commit: `ccbece8c3ee0fc1171dcf0689a699f4fb1766eda`. Await fresh PR-head CI and emulator screenshot inspection before visual acceptance. PR #11 stays draft; version 395 stays blocked.
