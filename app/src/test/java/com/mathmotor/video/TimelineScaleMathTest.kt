@@ -39,6 +39,29 @@ class TimelineScaleMathTest {
         }
     }
 
+
+
+    @Test
+    fun zoomAnchorKeepsTheSameTimestampUnderTheSameFingerMidpoint() {
+        val oldScale = 22f
+        val newScale = 44f
+        val scrollX = 320
+        val midpointX = 186f
+        val gutter = 57f
+        val anchorTime = TimelineScaleMath.timeAtViewportX(scrollX, midpointX, gutter, oldScale)
+        val newScroll = TimelineScaleMath.scrollForAnchoredZoom(anchorTime, midpointX, gutter, newScale)
+        val timeAfterZoom = TimelineScaleMath.timeAtViewportX(newScroll, midpointX, gutter, newScale)
+        assertEquals(anchorTime, timeAfterZoom)
+    }
+
+    @Test
+    fun zoomAnchorClampsAtTimelineStart() {
+        assertEquals(
+            0,
+            TimelineScaleMath.scrollForAnchoredZoom(0L, 20f, 57f, 44f)
+        )
+    }
+
     @Test
     fun invalidScaleAndNegativeTimeAreSafe() {
         assertEquals(0, TimelineScaleMath.pixelsForTime(-100L, 22f))
