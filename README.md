@@ -356,3 +356,11 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - Workflow explicitly reports no release or tag created. Candidate signed APK is retained in artifact MathMotorVideo-394-device-review (artifact ID 13023768940; expires 2026-11-07); preflight report artifact ID 13023714183 (expires 2026-11-14).
 - This closes the current-branch signed install/update-over/relaunch gate for the tested emulator. It does NOT close physical-phone acceptance or prove in-app updater delivery. Physical phone keyboard/touch/timeline/thumbnail/export review remains open.
 - Installed baseline/version remains 394 / build 61. Do not create version 395, publish, tag, or activate updater until remaining acceptance gates pass and the user explicitly authorizes release.
+
+
+## Current-branch emulator screenshot verification — #412 PASS (2026-10-31)
+
+- [Run #412 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41153766693) on `fix/editor-395-mainline`; the `emulator-ui` job completed successfully.
+- This is a successful run of the Android emulator screenshot workflow after the #408 tall-phone layout evidence and the #10 signed update preflight. It adds workflow confirmation only; it does not replace physical-phone acceptance or prove in-app updater delivery.
+- Do not rerun the same screenshot assertions unchanged. Continue with physical-device acceptance on the user's phone: keyboard-open editing, timeline touch/trim/scroll/pinch, thumbnail readability/loading, preview/dock usability, and export playback/output.
+- Keep installed baseline at versionCode 394 / build 61. Version 395 remains blocked; no version bump, release, publishing, merge, or updater activation without the remaining gates and explicit user authorization.
