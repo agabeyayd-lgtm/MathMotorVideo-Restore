@@ -315,3 +315,22 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 - This confirms the current screenshot workflow is green. It is not physical-device acceptance and does not prove in-app updater delivery.
 - No unchanged screenshot test rerun is needed. Next acceptance work is on the actual phone: keyboard-open editing, timeline touch/trim/scroll/pinch, thumbnail readability/loading, preview/dock usability, and export playback/output.
 - Version remains 394 / build 61; 395 remains blocked. No merge, version bump, release, publishing, or updater activation without the remaining gates and explicit user authorization.
+
+## Current PR-head emulator screenshot workflow #413 — PASSED (2026-10-31)
+
+- [Run #413 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41154681626) completed on PR #10 / `fix/editor-395-mainline`, tested code head `9f6d08d2a4aa95e02d27269bb8a61ef18ea4510b`; the `emulator-ui` job concluded `success`.
+- Unit tests, Debug APK build, deterministic MP4 fixture preparation, emulator launch, `EmulatorScreenshotTest#captureHomeEditorAndTextPanel` (one focused connected instrumentation test), screenshot/diagnostic collection and artifact upload all completed successfully. The log reports `BUILD SUCCESSFUL` and `Connected Android instrumentation tests passed.`
+- Emulator screenshot/diagnostic artifact: [13024842776](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41154681626/artifacts/13024842776).
+- The log contains transient emulator setup/cleanup messages (ADB startup retries, emulator-console/GPU initialization warnings, then `stop: Not implemented` / Netsim cleanup warnings). The connected instrumentation step subsequently passed and the workflow concluded successfully; no failed assertion is reported.
+- #413 ran the same focused screenshot method as #412. It confirms that method is still green on the tested code head but adds no new scenario; do not rerun it unchanged. The README/status commits made during this check are documentation-only.
+- Physical-phone acceptance remains OPEN: keyboard-open text editing, timeline touch/trim/scroll/pinch, thumbnail readability/loading, preview/dock usability and export playback/output. The signed install/update-over/relaunch test #10 passed on the emulator only; in-app updater delivery remains a separate OPEN gate and must be exercised through the app's own update flow.
+- PR #10 remains open and draft. Installed baseline remains versionCode 394 / build 61. Version 395 remains blocked; do not merge, bump version metadata, create/release 395, publish an APK or activate the updater without all remaining acceptance gates and explicit user authorization.
+
+## Current handoff — 2026-10-31 (#413 verified)
+
+- Current work remains on `fix/editor-395-mainline`, draft PR [#10](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/pull/10).
+- Latest observed PR-triggered workflow is [#413 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41154681626), tested code head `9f6d08d2a4aa95e02d27269bb8a61ef18ea4510b`. It passed unit tests, Debug APK build, deterministic fixture setup, the focused screenshot instrumentation test and artifact upload.
+- No new failed workflow run appeared after #412. Earlier #405–#407 failures remain historical and are superseded for their specific emulator paths by #408; do not repeat green assertions unchanged.
+- Current-branch signed install → update-over → relaunch preflight #10 is PASS on emulator. It is not physical-device acceptance and does not validate in-app updater delivery.
+- Next acceptance is on the actual phone: keyboard-open editing, timeline gestures/trim/scroll/pinch, thumbnail readability/loading, preview/dock usability and exported-video playback/output. Separately test delivery through the in-app updater flow.
+- Installed baseline remains versionCode 394 / build 61. Version 395 remains blocked. Do not merge PR #10, bump versionCode/versionName, create or publish 395, publish an APK, tag a release or activate the updater unless all required gates pass and the user explicitly authorizes release.
