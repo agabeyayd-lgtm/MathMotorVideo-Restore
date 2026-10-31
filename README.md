@@ -639,3 +639,20 @@ This is a layout target, not a claim that all behaviors are implemented. Gesture
 - [ ] Preview video drag/pinch/rotate remains unimplemented; text overlay preview gestures do not satisfy this requirement.
 - [ ] Save/reopen, export parity, keyboard-open layout and physical-device acceptance remain separate gates.
 - PR #11 remains draft/unmerged. Installed version 394/build 61 is unchanged. Do not create or publish version 395.
+
+
+## Per-clip video transform gestures — implementation added, verification pending (2026-10-31)
+
+- [x] Add independent scale, rotation and X/Y position to each video clip; transforms are part of clip state and clip undo snapshots.
+- [x] Add a transparent preview gesture surface that activates only while a video clip is selected in its contextual clip panel.
+- [x] One-finger drag changes only the selected clip's position; two-finger pinch changes its scale and finger-angle movement changes its rotation.
+- [x] Persist the four transform values in the existing editable project JSON. Older version-1 projects without these optional fields load with an identity transform.
+- [x] Apply a Media3 `MatrixTransformation` to each clipped `EditedMediaItem`. The same flattened video sequence is used by CompositionPlayer preview and Transformer export.
+- [x] Keep clip selection/trim preview on the shared composition path after transform edits so the visible preview does not silently fall back to an untransformed single-clip player.
+- [ ] Verify Kotlin compilation and unit tests for the new source commit.
+- [ ] Verify touch behavior on a small-screen emulator/phone: drag, pinch, rotate, pointer-up re-anchoring and cancel.
+- [ ] Verify each clip keeps its own transform when the playhead crosses clip boundaries and when clips overlap.
+- [ ] Export a multi-clip MP4 and compare transformed output frames against the live preview; confirm text overlays remain at their intended project positions.
+- [ ] Save and reopen a project; verify per-clip transforms persist and old version-1 projects still open.
+
+This is an implementation change, not device acceptance. PR #11 remains draft. Installed version 394/build 61 remains unchanged; version 395 stays blocked.
