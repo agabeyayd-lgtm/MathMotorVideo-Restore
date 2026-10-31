@@ -18,7 +18,7 @@ MathMotor Video is a local Android video editor with a CapCut-inspired workflow.
 ### Current verification state
 
 - [ ] PR-head unit tests, Kotlin compilation and Debug APK build for the new layout/duration changes.
-- [ ] Inspect run #416 emulator screenshot output and verify that preview / middle timeline / bottom dock and optional top panel appear in the intended order.
+- [ ] Inspect rerun #419 emulator screenshot output and verify that preview / middle timeline / bottom dock and optional top panel appear in the intended order.
 - [ ] Verify vertical grip drag persists after project save/reopen and doesn't interfere with horizontal lane scrolling.
 - [ ] Verify one-finger scrub/clip move/trim, two-finger pinch, playhead center alignment and shared time position across every reordered strip.
 - [ ] Verify timeline grows/shrinks with the furthest active layer and that preview/export duration matches the ruler.
@@ -62,7 +62,7 @@ See the detailed, release-blocking checklist in README.md. The active list is:
 12. The redundant bottom timeline strip (duration + green slider + +/- controls) should be removed; keep one unified timeline/ruler, show time once, and zoom with two-finger pinch gestures.
 13. Remove "Klip 1" / "Klip 2" labels and give the reclaimed space to a larger video preview; retain clip selection and boundaries without the labels.
 14. Remove timeline navigation/scroll/zoom arrow buttons entirely; use direct touch gestures (one-finger drag/swipe, two-finger pinch, tap-to-select and draggable trim handles) rather than arrow buttons. Keep only functional affordances such as the playhead and trim handles.
-15. Bottom tool navigation should swap the four-item dock for the selected tool's controls in the same bottom panel, then restore the four-item dock on back/confirm; tool panels must not hide underneath the preview.
+15. Keep the tool dock fixed at the bottom. A tapped tool/item opens its contextual settings panel at the top over/above the preview; the panel must never occupy the timeline area or be inserted between timeline and bottom dock.
 16. Timeline thumbnails need more visible width, clearer frame content and faster prioritized loading/caching.
 17. Simplify the two-video join/add-clip area visually while preserving the actual add/order/join behavior.
 
