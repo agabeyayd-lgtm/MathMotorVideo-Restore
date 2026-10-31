@@ -516,8 +516,8 @@ class VideoEditorActivity : Activity() {
         }
         clipScroll.addView(clipList)
         timelineCard.addView(clipScroll, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(58)
-        ))
+            ViewGroup.LayoutParams.MATCH_PARENT, 0
+        ).apply { visibility = View.GONE })
         timelineTracksFrame = FrameLayout(this)
         timelineTracks = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         timelineTracksFrame.addView(
