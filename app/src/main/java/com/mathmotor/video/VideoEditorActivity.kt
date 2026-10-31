@@ -1286,8 +1286,8 @@ class VideoEditorActivity : Activity() {
                 clipScroll.visibility = if (imeVisible) View.GONE else View.VISIBLE
                 bottomDock.visibility = if (imeVisible) View.GONE else View.VISIBLE
                 statusView.visibility = if (imeVisible) View.GONE else View.VISIBLE
-                if (topBar.childCount > 2) {
-                    val topAction = topBar.getChildAt(2) as? Button
+                if (topBar.childCount > 4) {
+                    val topAction = topBar.getChildAt(4) as? Button
                     if (topAction != null) {
                         topAction.visibility = View.VISIBLE
                         if (imeVisible) {
