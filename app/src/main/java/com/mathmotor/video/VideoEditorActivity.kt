@@ -1160,9 +1160,10 @@ class VideoEditorActivity : Activity() {
                 }
             }
         }
+        editorPanelScroll.visibility = View.GONE
         root.addView(editorPanelScroll, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(168)
-        ).apply { visibility = View.GONE })
+        ))
 
         status = TextView(this).apply {
             text = "Hazır. Zaman çizelgesine video ekleyebilirsin."
@@ -1205,7 +1206,8 @@ class VideoEditorActivity : Activity() {
         root.removeView(editorPanelScroll)
         root.addView(editorPanelScroll, 1, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(168)
-        ).apply { visibility = View.GONE })
+        ))
+        editorPanelScroll.visibility = View.GONE
 
         setContentView(root)
         refreshTextLayerList()
