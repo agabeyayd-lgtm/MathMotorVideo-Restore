@@ -336,3 +336,15 @@ These are new release-blocking UI/interaction requirements. They are recorded as
 - The first visual defect found in source was a hard-coded 180dp PlayerView width. Commit 74829abf93ae8a16541bb0c5d057f44b0c3f159e changes the preview player to fill the preview frame width.
 - This is only the first layout correction, not CapCut parity or acceptance. The rest of the screen hierarchy, bottom dock, contextual panels, gestures and editing behavior still require implementation and emulator/device review.
 - Keep PR #11 draft. Do not create, sign or publish version 395 until implementation and interaction/export/persistence acceptance gates pass.
+
+
+## Editor workspace layout pass — implementation awaiting device review (2026-10-31)
+
+- [x] Remove the hard-coded 180dp PlayerView width and keep the preview player MATCH_PARENT in the preview frame (`74829abf93ae8a16541bb0c5d057f44b0c3f159e`).
+- [x] Remove the later aspect-ratio sizing code that shrank the entire PlayerView to the calculated portrait-video width; set Media3 FIT mode so the source aspect ratio is retained inside the full-width preview canvas (`0cf5f0f1faeecbf21cc48af331dcd4072a75886b`).
+- [x] Increase the preview stage share on regular-height phones and increase the timeline workspace height, with a smaller allocation on short screens.
+- [x] Reduce timeline workspace height while the keyboard is visible so text editing has room.
+- [ ] Confirm compilation and unit tests on the new PR head.
+- [ ] Inspect fresh emulator captures on a portrait phone and a smaller viewport. Confirm preview width, crop/letterboxing, visible timeline rows, bottom dock anchoring and contextual panel position.
+- [ ] Interactively test touch/zoom/scroll and verify no timeline gestures regressed due to responsive sizing.
+- These layout changes are not yet visually accepted by the user and are not device-verified. Keep PR #11 in draft; version 395 remains blocked.
