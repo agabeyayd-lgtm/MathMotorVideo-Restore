@@ -2816,17 +2816,34 @@ class VideoEditorActivity : Activity() {
         if (!::timelinePlayheadLine.isInitialized || firstLane.width <= 0) return
 
         val pixelsPerSecond = timelinePixelsPerSecond()
-        val playheadCenterPx = timelinePlayheadLine.left + timelinePlayheadLine.width / 2
-        val expectedCenterPx = timelineTracksFrame.width / 2
+        val playheadLocation = IntArray(2)
+        val playButtonLocation = IntArray(2)
+        val frameLocation = IntArray(2)
+        timelinePlayheadLine.getLocationOnScreen(playheadLocation)
+        timelinePlayButton.getLocationOnScreen(playButtonLocation)
+        timelineTracksFrame.getLocationOnScreen(frameLocation)
+        val playheadCenterPx = playheadLocation[0] + timelinePlayheadLine.width / 2
+        val playButtonCenterPx = playButtonLocation[0] + timelinePlayButton.width / 2
+        val expectedCenterPx = frameLocation[0] + timelineTracksFrame.width / 2
         val expectedScrollPx = TimelineScaleMath.pixelsForTime(timelinePlayheadMs, pixelsPerSecond)
         val laneScrolls = timelineScrollViews.joinToString(",") { it.scrollX.toString() }
+        val originScreenXs = timelineScrollViews.joinToString(",") { lane ->
+            val track = lane.getChildAt(0) as? LinearLayout
+            val origin = track?.getChildAt(0)
+            if (origin == null) "-1"
+            else {
+                val location = IntArray(2)
+                origin.getLocationOnScreen(location)
+                location[0].toString()
+            }
+        }
         android.util.Log.i(
             "TimelineSyncTest",
             "TIMELINE_SYNC_SAMPLE playing=${composition.isPlaying} " +
                 "playerMs=${composition.currentPosition} playheadMs=$timelinePlayheadMs " +
-                "scrollXs=$laneScrolls pxPerSecond=$pixelsPerSecond " +
+                "scrollXs=$laneScrolls originXs=$originScreenXs pxPerSecond=$pixelsPerSecond " +
                 "expectedScrollPx=$expectedScrollPx playheadCenterPx=$playheadCenterPx " +
-                "expectedCenterPx=$expectedCenterPx"
+                "playButtonCenterPx=$playButtonCenterPx expectedCenterPx=$expectedCenterPx"
         )
     }
 
