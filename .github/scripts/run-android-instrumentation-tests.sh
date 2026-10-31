@@ -16,15 +16,41 @@ else
   test_status=$?
 fi
 
-# The focused 10-second test deliberately excludes the already-green screenshot
-# class. Preserve the existing screenshot requirements for normal full-suite runs.
+# Preserve the actual instrumentation result before attempting optional screenshot
+# collection. A failed assertion must never be hidden by a secondary missing-image
+# error from the artifact-pull step.
+adb -s emulator-5554 logcat -d -b all -v threadtime > emulator-screenshots/after-instrumentation-logcat.txt 2>&1 || true
+mkdir -p emulator-screenshots/android-test-report emulator-screenshots/android-test-results
+if [ -d app/build/reports/androidTests/connected/debug ]; then
+  cp -R app/build/reports/androidTests/connected/debug/. emulator-screenshots/android-test-report/ || true
+fi
+if [ -d app/build/outputs/androidTest-results/connected/debug ]; then
+  cp -R app/build/outputs/androidTest-results/connected/debug/. emulator-screenshots/android-test-results/ || true
+fi
+
+echo "connectedDebugAndroidTest exit code: $test_status"
+echo "--- Connected test output (last 220 lines) ---"
+tail -n 220 emulator-screenshots/android-test-gradle.log || true
+if [ "$test_status" -ne 0 ]; then
+  echo "--- Relevant Android/runtime/test failure lines ---"
+  grep -E "TimelineInteractionTest|EditorTimelineInteractionTest|EmulatorScreenshotTest|FATAL EXCEPTION|AndroidRuntime|AssertionError|FAILED|INSTRUMENTATION_RESULT|Process crashed" \
+    emulator-screenshots/after-instrumentation-logcat.txt | tail -n 220 || true
+  echo "--- Test report files ---"
+  find emulator-screenshots/android-test-report emulator-screenshots/android-test-results -type f -maxdepth 4 -print || true
+  grep -R -n -E "failure|error|stacktrace|Expected|AssertionError|Process crashed" \
+    emulator-screenshots/android-test-report emulator-screenshots/android-test-results 2>/dev/null | tail -n 180 || true
+  exit "$test_status"
+fi
+
+# Screenshot files are required only after the instrumentation test itself passes.
+# Focused tests that exclude the screenshot class do not publish these files.
 mkdir -p emulator-screenshots/instrumentation-screenshots
 pull_required_screenshot() {
   local name="$1"
   local remote="/sdcard/Download/MathMotorTestScreenshots/mathmotor-$name"
   local local_file="emulator-screenshots/instrumentation-screenshots/$name"
   if ! timeout -k 2s 10s adb -s emulator-5554 shell test -s "$remote"; then
-    echo "Required screenshot not found: $remote" >&2
+    echo "Required screenshot not found after a passing screenshot test: $remote" >&2
     adb -s emulator-5554 shell ls -la /sdcard/Download/MathMotorTestScreenshots \
       > emulator-screenshots/instrumentation-screenshots-pull.txt 2>&1 || true
     return 1
@@ -43,30 +69,6 @@ if [ -z "${INSTRUMENTATION_TEST_FILTER:-}" ] || [[ "${INSTRUMENTATION_TEST_FILTE
   pull_required_screenshot "editor-phone-size-loaded.png" || exit 14
 else
   echo "Skipping screenshot pull because the focused instrumentation selection excludes screenshot tests."
-fi
-
-# Always collect these files, including on assertion failure or app/instrumentation crash.
-adb -s emulator-5554 logcat -d -b all -v threadtime > emulator-screenshots/after-instrumentation-logcat.txt 2>&1 || true
-mkdir -p emulator-screenshots/android-test-report emulator-screenshots/android-test-results
-if [ -d app/build/reports/androidTests/connected/debug ]; then
-  cp -R app/build/reports/androidTests/connected/debug/. emulator-screenshots/android-test-report/ || true
-fi
-if [ -d app/build/outputs/androidTest-results/connected/debug ]; then
-  cp -R app/build/outputs/androidTest-results/connected/debug/. emulator-screenshots/android-test-results/ || true
-fi
-
-echo "connectedDebugAndroidTest exit code: $test_status"
-echo "--- Connected test output (last 220 lines) ---"
-tail -n 220 emulator-screenshots/android-test-gradle.log || true
-if [ "$test_status" -ne 0 ]; then
-  echo "--- Relevant Android/runtime/test failure lines ---"
-  grep -E "TimelineInteractionTest|EditorTimelineInteractionTest|FATAL EXCEPTION|AndroidRuntime|AssertionError|FAILED|INSTRUMENTATION_RESULT|Process crashed" \
-    emulator-screenshots/after-instrumentation-logcat.txt | tail -n 220 || true
-  echo "--- Test report files ---"
-  find emulator-screenshots/android-test-report emulator-screenshots/android-test-results -type f -maxdepth 4 -print || true
-  grep -R -n -E "failure|error|stacktrace|Expected|AssertionError|Process crashed" \
-    emulator-screenshots/android-test-report emulator-screenshots/android-test-results 2>/dev/null | tail -n 180 || true
-  exit "$test_status"
 fi
 
 echo "Connected Android instrumentation tests passed."
