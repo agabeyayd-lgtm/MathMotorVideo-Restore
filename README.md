@@ -663,3 +663,18 @@ This is an implementation change, not device acceptance. PR #11 remains draft. I
 - [x] Extract transform normalization and 3×3 matrix-value generation into pure `ClipTransformMath`.
 - [x] Add unit tests for identity, combined scale/rotation/translation, boundary normalization, non-finite values and rotation scale preservation.
 - [ ] Run the new transform unit tests on the current PR head. Earlier green Verify #309 predates this helper/test extraction and does not verify these new tests.
+
+
+## Latest verified checkpoint — 2026-10-31 (PR #11)
+
+This section is the authoritative current checkpoint and supersedes older pending statements above when they refer to the same transform-math verification.
+
+- PR #11 head verified: `87ad3d9e830a31322242ef0e1f68f65e30e9966d`.
+- [x] Verify workflow #311 passed on this PR head, including Kotlin compilation and unit tests. This run includes the extracted `ClipTransformMath` helper and its five unit tests (identity; combined scale/rotation/translation; clamping and rotation normalization; non-finite inputs; rotation-matrix scale preservation).
+- [x] Debug APK workflow #386 passed on the same PR head and produced artifact `MathMotorVideo-restored-debug` (artifact ID `13051529764`).
+- [ ] Emulator screenshot workflow #556 was **cancelled** during deterministic sample-video generation, before app launch. It is not a pass and provides no gesture or visual acceptance evidence.
+- [ ] Physical/emulator interaction verification remains open: one-finger drag; two-finger pinch/rotate; pointer-up re-anchoring and cancel; per-clip transform isolation across clip boundaries/overlap.
+- [ ] Export verification remains open: export a multi-clip MP4 and compare transformed frames against live preview; confirm text overlays retain intended project coordinates.
+- [ ] Persistence verification remains open: save/reopen transformed projects and load older version-1 projects with identity defaults.
+- [ ] The generated APK is a **debug APK**, not a signed release/update package. Do not treat it as an in-app update for installed version 394/build 61.
+- PR #11 remains draft and unmerged. Installed baseline remains versionCode 394 / build 61. Version 395 must not be created, signed, published, or offered until all release gates pass and the user explicitly authorizes it.
