@@ -356,3 +356,11 @@ New visual requirement; this is a documentation record, not a claim that the UI 
 - CI Verify, debug APK and emulator screenshot workflows were triggered for this exact commit. Do not infer success until all three finish and the actual screenshot is inspected.
 - Keep PR #11 draft. Do not create, sign, publish or offer version 395.
 
+
+
+## CapCut reference layout — top action bar and preview controls (2026-10-31)
+
+- Commit `1dec375a99d117d766b4923ef8cc51609bc60013` replaces the generic “Geri / Video Projesi / Dışa aktar” header with the reference hierarchy: close and media-search actions on the left, resolution selector and cyan Dışa Aktar action on the right.
+- The Play/Pause control is centered beneath the preview independently of the timeline's centered white playhead; it is no longer horizontally offset to follow the timeline gutter.
+- The top-bar search affordance opens the phone video picker. The resolution affordance opens the existing export/resolution panel; export opens the same panel.
+- These controls are source changes, not visual acceptance. Verify the actual screenshot for spacing, touch targets, export action and small-screen fit.
