@@ -307,3 +307,11 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 - Mark the current-branch emulator signed install/update-over/relaunch gate PASS. Physical-phone acceptance remains OPEN: keyboard-open editing, touch gestures/timeline trim-scroll-pinch, thumbnail readability/loading, preview/dock usability, and export playback/output.
 - In-app updater delivery is not proven by this install-over test. Keep that separate gate open.
 - VersionCode 394 / build 61 remains the baseline. Version 395 remains blocked; do not bump version metadata, publish, tag, or activate updater until all remaining gates pass and the user explicitly authorizes release.
+
+
+## Current-branch emulator screenshot workflow #412 — PASSED (2026-10-31)
+
+- [Run #412 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41153766693) on `fix/editor-395-mainline`; `emulator-ui` completed successfully.
+- This confirms the current screenshot workflow is green. It is not physical-device acceptance and does not prove in-app updater delivery.
+- No unchanged screenshot test rerun is needed. Next acceptance work is on the actual phone: keyboard-open editing, timeline touch/trim/scroll/pinch, thumbnail readability/loading, preview/dock usability, and export playback/output.
+- Version remains 394 / build 61; 395 remains blocked. No merge, version bump, release, publishing, or updater activation without the remaining gates and explicit user authorization.
