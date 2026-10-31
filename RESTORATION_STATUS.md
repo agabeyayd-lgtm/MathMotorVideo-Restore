@@ -682,3 +682,14 @@ Commit `90a877d7836df45adb27c5ced7f308d5ff210cce`:
 - [ ] Remaining two-finger zoom/pan, tap-empty-to-deselect, frame ruler, preview latency and contextual toolbar requirements remain open.
 
 No version change. PR #11 remains draft/unmerged; installed 394/build 61 is unchanged. Version 395 remains blocked.
+
+
+## Empty timeline selection correction — 2026-11-01
+
+- [x] Route taps on empty timeline lane-row and horizontal-scroll viewport areas to clip-selection clearing (source commit `6e3d68fea241b0855ffaec349a1f65e0e27570d1`).
+- [x] Clear selected clip index, handles and contextual clip panel; avoid a persistent selection-cleared status message.
+- [ ] Verify compile/unit tests on the updated PR head.
+- [ ] Verify empty-area deselection on emulator/phone, including taps outside the video strip and within other lanes.
+- [ ] Verify two-finger zoom/pan and one-finger clip drag/trim remain distinct; do not mark pinch complete from source inspection alone.
+
+PR #11 remains draft and unmerged. Installed versionCode 394 / build 61 is unchanged. Version 395 remains blocked.
