@@ -205,7 +205,7 @@ class VideoEditorActivity : Activity() {
                 timelineScaleAnchorTimeMs = TimelineScaleMath.timeAtViewportX(
                     lane.scrollX,
                     timelineScaleAnchorViewportX,
-                    dp(57).toFloat(),
+                    timelineOriginSpacerWidth(lane.width).toFloat(),
                     timelinePixelsPerSecond()
                 ).coerceIn(0L, totalOutputDurationMs())
                 timelineScaleGestureActive = true
@@ -224,7 +224,7 @@ class VideoEditorActivity : Activity() {
                 pendingTimelineScrollX = TimelineScaleMath.scrollForAnchoredZoom(
                     timelineScaleAnchorTimeMs,
                     anchorViewportX,
-                    dp(57).toFloat(),
+                    timelineOriginSpacerWidth(lane.width).toFloat(),
                     timelinePixelsPerSecond()
                 )
                 timelineHorizontalScrollX = pendingTimelineScrollX ?: 0
@@ -2132,18 +2132,19 @@ class VideoEditorActivity : Activity() {
             addSoundEffectTimelineBlock(effectTrack, totalMs)
             addSpacer(effectTrack, endMs, totalMs)
         }
-        // Give every lane the same half-viewport time-zero origin. With the shared
-        // 57dp row gutter (3dp row padding + 54dp header/grip), t=0 in the ruler
-        // and the first video frame occupy the exact same fixed-playhead coordinate.
+        // All lane origins are offset from the 57dp label/grip gutter so time zero
+        // lands on the full timeline/Play center, not the center of the smaller
+        // scroll viewport to the right of that gutter. This keeps ruler, filmstrip
+        // and the stationary playhead on one vertical axis.
         timelineScrollViews.forEach { laneScroll ->
             val laneTrack = laneScroll.getChildAt(0) as? LinearLayout ?: return@forEach
             fun updateLaneOriginSpacer(viewportWidth: Int) {
                 if (viewportWidth <= 0 || laneTrack.childCount == 0) return
                 // The scroll viewport can be measured after the timeline is first built,
                 // and can change again when the keyboard or phone width changes. Keep
-                // both spacers tied to the actual viewport so project time zero/end stay
-                // reachable exactly beneath the stationary center playhead.
-                val originWidth = (viewportWidth / 2).coerceAtLeast(dp(1))
+                // both spacers tied to the full track frame, not just the scroll
+                // viewport (which starts to the right of the 57dp label/grip gutter).
+                val originWidth = timelineOriginSpacerWidth(viewportWidth)
                 val first = laneTrack.getChildAt(0)
                 if (first?.tag == "timeline-origin-spacer") {
                     val params = first.layoutParams as? LinearLayout.LayoutParams
@@ -2159,8 +2160,7 @@ class VideoEditorActivity : Activity() {
                     }
                 }
             }
-            val originWidth = (laneScroll.width.takeIf { it > 0 }
-                ?: (resources.displayMetrics.widthPixels - dp(57))).coerceAtLeast(dp(2)) / 2
+            val originWidth = timelineOriginSpacerWidth(laneScroll.width)
             if (laneTrack.getChildAt(0)?.tag != "timeline-origin-spacer") {
                 val originSpacer = View(this).apply { tag = "timeline-origin-spacer" }
                 laneTrack.addView(originSpacer, 0, LinearLayout.LayoutParams(originWidth, dp(24)))
@@ -2654,11 +2654,9 @@ class VideoEditorActivity : Activity() {
 
     private fun updateTimelinePlayheadLine() {
         if (!::timelinePlayheadLine.isInitialized || !::timelineTracksFrame.isInitialized) return
-        val firstLane = timelineScrollViews.firstOrNull()
-        val centerX = if (firstLane != null && firstLane.width > 0)
-            dp(57) + firstLane.width / 2
-        else
-            timelineTracksFrame.width / 2
+        // Match the Play control's center in the full editor content area. Do not
+        // center relative to the narrower scroll viewport after its 57dp grip gutter.
+        val centerX = timelineTracksFrame.width / 2
         timelinePlayheadLine.visibility = View.VISIBLE
         val params = timelinePlayheadLine.layoutParams as? FrameLayout.LayoutParams ?: return
         params.width = dp(28)
@@ -2711,6 +2709,15 @@ class VideoEditorActivity : Activity() {
 
     private fun timelinePixelsPerSecond(): Float = dp(22).toFloat() * timelineZoom
 
+    /** Width of the leading blank time-zero spacer inside each horizontally scrolling lane. */
+    private fun timelineOriginSpacerWidth(viewportWidth: Int = 0): Int {
+        val gutterPx = dp(57)
+        val frameWidth = timelineTracksFrame.width.takeIf { it > 0 }
+            ?: if (viewportWidth > 0) viewportWidth + gutterPx
+            else resources.displayMetrics.widthPixels
+        return (frameWidth / 2 - gutterPx).coerceAtLeast(dp(1))
+    }
+
     private fun ensureTrimHandlesReachable(index: Int): Boolean {
         val clip = clips.getOrNull(index) ?: return false
         val durationMs = (clip.endMs - clip.startMs).coerceAtLeast(0L)
@@ -2746,8 +2753,8 @@ class VideoEditorActivity : Activity() {
         if (clips.isEmpty()) return
         val scrollX = timelineScrollViews.firstOrNull()?.scrollX ?: 0
         val timelineContentX = frameX + scrollX
-        val videoStartX = dp(57).toFloat()
-        val offsetPixels = (timelineContentX - videoStartX).coerceAtLeast(0f)
+        val timeZeroContentX = timelineTracksFrame.width / 2f
+        val offsetPixels = (timelineContentX - timeZeroContentX).coerceAtLeast(0f)
         val requestedMs = TimelineScaleMath.millisecondsForPixels(offsetPixels, timelinePixelsPerSecond())
         seekTimelinePreview(requestedMs.coerceIn(0L, totalOutputDurationMs()))
     }
@@ -2810,7 +2817,7 @@ class VideoEditorActivity : Activity() {
 
         val pixelsPerSecond = timelinePixelsPerSecond()
         val playheadCenterPx = timelinePlayheadLine.left + timelinePlayheadLine.width / 2
-        val expectedCenterPx = dp(57) + firstLane.width / 2
+        val expectedCenterPx = timelineTracksFrame.width / 2
         val expectedScrollPx = TimelineScaleMath.pixelsForTime(timelinePlayheadMs, pixelsPerSecond)
         val laneScrolls = timelineScrollViews.joinToString(",") { it.scrollX.toString() }
         android.util.Log.i(
