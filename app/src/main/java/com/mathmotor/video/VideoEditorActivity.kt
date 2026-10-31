@@ -657,7 +657,7 @@ class VideoEditorActivity : Activity() {
         }
         timelineTracksScroll.addView(
             timelineTracksFrame,
-            ScrollView.LayoutParams(
+            FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             )
@@ -1352,12 +1352,6 @@ class VideoEditorActivity : Activity() {
                 // Reserve room for real tools and the multi-track timeline on shorter phones.
                 if (compactEditorLayout) {
                     view.setPadding(dp(4), dp(2), dp(4), dp(2))
-                }
-                val previewParams = previewFrame.layoutParams as? LinearLayout.LayoutParams
-                if (previewParams != null && !previewFocusMode) {
-                    previewParams.height = dp(previewStageHeightDp)
-                    previewParams.weight = 0f
-                    previewFrame.layoutParams = previewParams
                 }
                 val clipParams = clipScroll.layoutParams as? LinearLayout.LayoutParams
                 if (clipParams != null) {
@@ -2123,7 +2117,7 @@ class VideoEditorActivity : Activity() {
             val laneHeight = lane?.layoutParams?.height?.takeIf { it > 0 } ?: dp(24)
             laneHeight + row.paddingTop + row.paddingBottom
         }.coerceAtLeast(dp(24))
-        (timelineTracksFrame.layoutParams as? ScrollView.LayoutParams)?.let { params ->
+        (timelineTracksFrame.layoutParams as? FrameLayout.LayoutParams)?.let { params ->
             if (params.height != laneContentHeight) {
                 params.height = laneContentHeight
                 timelineTracksFrame.layoutParams = params
