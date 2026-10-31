@@ -133,3 +133,12 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 - [ ] Keep version 395 blocked until all device, interaction, export and persistence acceptance checks are complete.
 
 **Current limitation:** implementation has been committed to PR #11, but CI #147 is still running and no physical-device validation has been performed. This is not a signed release or an installable OTA update.
+
+
+## CI #148 diagnosis and correction — 2026-10-31
+
+- [x] Inspected the failed workflow job log: Kotlin compilation succeeded; 43 unit tests ran and one assertion failed in `MusicSourceRangeMathTest.sourceRangeIsClampedAndRemainsOrdered`.
+- [x] Identified the test-data mismatch: normalizing input `(-5, 20,000)` against a 10,000 ms source must produce `(0, 10,000)`; the old expected value `(2,000, 8,000)` was unrelated to the supplied input.
+- [x] Corrected the clamp expectation and added a separate valid-range preservation assertion in commit `1ac2eff891af503fe0083b33f46d6478128ea6c6`.
+- [ ] Await fresh PR-head CI for the corrected test. Do not treat the correction as verified until unit tests and Debug APK assembly pass.
+- [ ] Physical-device preview/export, gestures and project persistence remain unverified. Version 395 remains blocked.
