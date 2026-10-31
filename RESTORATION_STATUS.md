@@ -1,5 +1,17 @@
 # MathMotor Video — current project status
 
+## Latest UI rebuild — 2026-10-31
+
+- Verified previous PR-head run set: Verify #185, APK #260 and emulator screenshots #429 all completed successfully.
+- Visual review of #429 showed the test video actually decoded and appeared in the preview, correcting the earlier #427 black-frame concern for this fixture/run. However, the UI was still rejected: compact mode made timeline ruler/filmstrip lanes only 18dp high and left a large empty fixed-height card.
+- Committed focused layout correction 92e9acdc02682211ff2852020fe5c1be770fcd5c: meaningful compact-screen lane heights, visible ruler on small screens, taller video filmstrip, content-sized timeline card, larger preview allocation, removal of preview +/-/reset clutter and redundant timeline help text.
+- [ ] Verify Kotlin compilation/unit tests and Debug APK build on the new PR head.
+- [ ] Review the new emulator screenshots on the same small-screen profile; do not accept based on green CI alone.
+- [ ] Continue full CapCut-style interaction acceptance: one-finger select/drag/trim/scrub, two-finger zoom, shared playhead, contextual panels, text/audio placement, save/reopen and export parity.
+
+PR #11 stays draft. Version 395 stays blocked; installed version 394/build 61 remains unchanged.
+
+
 ## Current direction
 
 MathMotor Video is a local Android video editor with a CapCut-inspired workflow. Normal editing should work on-device without a cloud account or paid AI service.
