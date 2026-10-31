@@ -9,6 +9,10 @@ import kotlin.math.roundToLong
  * rounding differences when many clips or tracks are placed consecutively.
  */
 internal object TimelineScaleMath {
+    /** Leading spacer that places time zero beneath the full timeline/Play center. */
+    fun originSpacerWidthForCenteredPlayhead(frameWidthPx: Int, gutterPx: Int): Int =
+        (frameWidthPx.coerceAtLeast(0) / 2 - gutterPx.coerceAtLeast(0)).coerceAtLeast(1)
+
     fun pixelsForTime(timeMs: Long, pixelsPerSecond: Float): Int {
         if (timeMs <= 0L || !pixelsPerSecond.isFinite() || pixelsPerSecond <= 0f) return 0
         return ((timeMs.toDouble() / 1000.0) * pixelsPerSecond.toDouble())
