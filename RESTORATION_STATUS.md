@@ -90,6 +90,7 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 - [x] Save/restore music source duration and project-time range; old project files default to full-video music duration.
 - [x] Add pure unit tests for sound-effect source trim and music timeline move/trim boundaries.
 - [x] Enable PR-triggered verification workflow; commit `1ea29d100a1c01cdfa801f9d520ee0aa446ff4c1` passed unit tests, Kotlin compilation and Debug APK assembly.
+- [x] Latest PR #11 head `23c67766983eb53527b005ed7546fb26c855a9aa` passed CI run [#140](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41167186839): unit tests (including lane/layer-priority tests), Kotlin compilation and Debug APK assembly.
 - [ ] Verify music/sound-effect drag and trim gestures plus live audio sync on an actual phone or reliable emulator.
 - [ ] Verify exported audio start/end, repeat behavior, silence outside the segment and source-video preservation in a real MP4.
 - [ ] Verify project save/reopen retains edited music/effect positions and durations.
@@ -105,7 +106,7 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 - Each video clip stores an independent project start separate from source in/out trim.
 - New project JSON persists positions; old version-1 files without the field restore sequentially.
 - Overlapping clips render on separate rows. Filmstrip body drag moves only one clip; edge trim keeps source/project boundaries aligned.
-- Timeline row assignment now follows the same layer priority as preview/export: the highest-index overlapping clip is placed in the uppermost available row; non-overlapping clips can share a row. Two unit tests were added for this contract; the latest CI result is pending.
+- Timeline row assignment now follows the same layer priority as preview/export: the highest-index overlapping clip is placed in the uppermost available row; non-overlapping clips can share a row. Two unit tests cover this contract; PR-head CI #140 passed.
 - Preview and Transformer export share one flattened stream. Highest layer order wins overlap intervals; empty intervals are black/silent.
 - Current overlap behavior is top-layer occlusion, not blending, crossfade or picture-in-picture.
 - CI and emulator/phone validation of drag/trim, overlap preview/export, MP4 correctness and save/reopen remain required.
