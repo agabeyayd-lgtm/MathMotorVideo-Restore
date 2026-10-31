@@ -594,8 +594,9 @@ class VideoEditorActivity : Activity() {
             timelinePlayButton,
             FrameLayout.LayoutParams(dp(46), dp(42), Gravity.CENTER)
         )
-        // Timeline lanes reserve a 57 dp label gutter before the time axis.
-        timelinePlayButton.translationX = dp(57) / 2f
+        centeredPlaybackRow.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            updateTimelinePlayheadLine()
+        }
         timelineCard.addView(centeredPlaybackRow, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(44)
         ))
@@ -662,6 +663,9 @@ class VideoEditorActivity : Activity() {
             timelinePlayheadLine,
             FrameLayout.LayoutParams(dp(28), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.TOP or Gravity.START)
         )
+        timelineTracksFrame.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            updateTimelinePlayheadLine()
+        }
         timelineCard.addView(timelineTracksFrame, matchWrap())
         timelineCard.addView(label("Uzun bas: klibi taşı / sil / kopyala  •  Kenarlardan: kes", 9f, Color.rgb(180, 202, 216), false).apply {
             maxLines = 1
@@ -2480,6 +2484,13 @@ class VideoEditorActivity : Activity() {
         // The red playhead is a viewport guide, not a moving timeline item.
         params.leftMargin = centerX - dp(14)
         timelinePlayheadLine.layoutParams = params
+        if (::timelinePlayButton.isInitialized) {
+            val playbackRow = timelinePlayButton.parent as? View
+            if (playbackRow != null && playbackRow.width > 0) {
+                // Use the exact same measured center as the red line, including lane gutters.
+                timelinePlayButton.translationX = centerX - playbackRow.width / 2f
+            }
+        }
         timelinePlayheadLine.bringToFront()
     }
 
