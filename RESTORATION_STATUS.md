@@ -291,3 +291,13 @@ New visual requirement; this is a documentation record, not a claim that the UI 
 - [ ] Separate APK workflow #250 and emulator screenshot workflow #419 were still running at this update; inspect their final results.
 - [ ] Inspect a successful emulator screenshot and perform real UI gesture, preview/export and save/reopen acceptance.
 - No physical-device acceptance is claimed. PR #11 remains draft; version 395 remains blocked; installed version 394/build 61 stays unchanged.
+
+
+## CapCut mobile editor parity target — user-confirmed (2026-10-31)
+
+- The user's acceptance target is a CapCut-like mobile editing workflow and screen structure, not merely a loosely inspired editor. Reproduce the recognizable layout and interaction model as closely as the app architecture allows; do not copy CapCut branding or proprietary assets.
+- Main screen priorities: full-width video preview at the top, one shared layered timeline as the central work surface, and a persistent bottom tool dock. Selected-item settings should appear contextually above the preview rather than taking over the timeline.
+- Keep one shared time ruler, one center-fixed playhead, one Play/Pause control and one time readout. All tracks scroll and zoom together; every clip/layer retains independent start/end positions unless explicitly grouped.
+- The first visual defect found in source was a hard-coded 180dp PlayerView width. Commit 74829abf93ae8a16541bb0c5d057f44b0c3f159e changes the preview player to fill the preview frame width.
+- This is only the first layout correction, not CapCut parity or acceptance. The rest of the screen hierarchy, bottom dock, contextual panels, gestures and editing behavior still require implementation and emulator/device review.
+- Keep PR #11 draft. Do not create, sign or publish version 395 until implementation and interaction/export/persistence acceptance gates pass.
