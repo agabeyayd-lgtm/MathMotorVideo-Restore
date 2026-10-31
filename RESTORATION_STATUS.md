@@ -284,3 +284,15 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 - Mark the specific #405/#406 tall-phone clipping gate and #407 pinch dead-zone gate as **passed in emulator** by #408. Do not continue rerunning those same assertions without a new regression or code change.
 - Remaining gates: review the editor on the user's physical phone (including keyboard-open text editing, touch gestures and timeline interactions); verify full-size preview/thumbnail/trim/undo behavior and export output; then run current-branch signed install/update-over/relaunch preflight. The #408 screenshot test alone does not establish those untested product acceptance items.
 - Version remains 394/build 61. Version 395 remains blocked; no version bump, signing, publishing, or updater activation until remaining gates pass and the user authorizes release.
+
+
+## Current handoff — 2026-10-31 (#408 verified)
+
+- Active work remains on fix/editor-395-mainline, draft PR [#10](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/pull/10). Do not merge or create release 395 as part of this work.
+- Latest focused run [#408 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41151378476), commit dc554242968fc3984ada592475c94feadf738009: unit tests, Debug APK, fixture setup, emulator launch, focused instrumentation and artifact upload all passed. JUnit: EmulatorScreenshotTest#captureHomeEditorAndTextPanel, 1 test / 0 failures.
+- #408 proves the 393×873 empty-editor add-video action is visible above the dock, loaded-video timeline layout is present, pinch zoom reaches 50% and 800%, and ruler intervals are 5,000 ms and 250 ms at those endpoints. The screenshots were inspected. This closes the #405/#406 clipping and #407 pinch-boundary failures for the tested emulator path.
+- Short-viewport keyboard editing is independently passed in #399 (360×640 dp), including keyboard-visible text entry, persistence after dismissal, timeline/dock restoration and access to the lower text-size control after scrolling the tool panel.
+- No-repeat: do not rerun #399 or #408 unchanged, nor the earlier already-green interaction/filmstrip/shared-lane/10-second scenarios without a relevant code change or a specific regression.
+- Remaining gates: (1) physical-phone visual/touch/performance review, including keyboard-open text editing, timeline gestures, thumbnail loading/readability and export playback; (2) inspect and execute only the current-branch no-publish signed build-61 install → candidate update-over → relaunch preflight, after confirming it cannot bump version metadata or publish/activate an updater.
+- The old #9 signed preflight result on the diverged fix/editor-395-gate branch is not evidence for current mainline; do not transfer it.
+- Installed baseline remains versionCode 394 / build 61. Version 395 remains blocked. Do not bump version metadata, sign/publish a release APK, or enable the updater until every gate passes and the user explicitly authorizes release.
