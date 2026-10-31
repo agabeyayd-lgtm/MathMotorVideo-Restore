@@ -400,7 +400,7 @@ class VideoEditorActivity : Activity() {
         val savedDraft = requestedDraftId?.let { VideoProjectDraftStore.load(this, it) }
         if (savedDraft != null) {
             runCatching { applyProjectJson(savedDraft) }
-                .onSuccess { status.text = "Taslak açıldı. Düzenlemeye kaldığın yerden devam edebilirsin." }
+                .onSuccess { /* Opening a saved draft is silent; no persistent status message. */ }
                 .onFailure {
                     status.text = "Taslak açılamadı: ${it.message ?: "proje verisi okunamadı"}"
                     if (!incoming.isNullOrBlank()) addClip(Uri.parse(incoming), false)
@@ -2975,7 +2975,7 @@ class VideoEditorActivity : Activity() {
         val totalMs = totalOutputDurationMs()
         val projectPositionMs = timelinePlayheadMs.coerceIn(0L, totalMs)
         timelinePlayheadLabel.text =
-            "${formatTimelineMs(projectPositionMs)} / ${formatTimelineMs(totalMs)}"
+            "${formatMs(projectPositionMs)} / ${formatMs(totalMs)}"
         updateTimelinePlayheadLine()
         updatePreviewTextOverlay()
     }
@@ -4094,7 +4094,9 @@ class VideoEditorActivity : Activity() {
                 }
                 timelinePreviewLoaded = false
                 previewSingleClip = true
-                val timelineStartMs=totalOutputDurationMs()
+                // Append after the furthest VIDEO clip, not after a longer music/text layer.
+                // This prevents unrelated tracks from creating a gray gap before a new clip.
+                val timelineStartMs = TimelineVideoMath.totalDuration(videoTimelineSegments())
                 clips.add(Clip(uri,title,duration,0L,duration,timelineStartMs))
                 selectedClipIndex = clips.lastIndex
                 clipHandlesVisible = false
@@ -5056,20 +5058,20 @@ class VideoEditorActivity : Activity() {
         val targetThumbnailWidth = dp(52).coerceAtLeast(1)
         val thumbnailCount = kotlin.math.ceil(width.toDouble() / targetThumbnailWidth)
             .toInt().coerceIn(1, 256)
-        val separatorWidth = dp(1) * (thumbnailCount - 1)
-        val availableCellWidth = (width - separatorWidth).coerceAtLeast(thumbnailCount)
+        val separatorWidth = 0
+        val availableCellWidth = width.coerceAtLeast(thumbnailCount)
         val baseCellWidth = (availableCellWidth / thumbnailCount).coerceAtLeast(1)
         val extraPixels = availableCellWidth % thumbnailCount
         val sampleSpanMs = (durationMs - 1L).coerceAtLeast(0L)
         repeat(thumbnailCount) { slot ->
             val image = ImageView(this).apply {
-                scaleType = ImageView.ScaleType.CENTER_CROP
+                scaleType = ImageView.ScaleType.FIT_CENTER
                 setBackgroundColor(Color.rgb(31, 46, 59))
                 contentDescription = "Klip karesi"
             }
             val cellWidth = baseCellWidth + if (slot < extraPixels) 1 else 0
             filmstrip.addView(image, LinearLayout.LayoutParams(cellWidth, ViewGroup.LayoutParams.MATCH_PARENT).apply {
-                if (slot < thumbnailCount - 1) rightMargin = dp(1)
+                if (slot < thumbnailCount - 1) rightMargin = 0
             })
             // The first thumbnail is the actual first source frame, not a later
             // preview sample. Every subsequent sample advances along that same clip.
@@ -5304,15 +5306,20 @@ class VideoEditorActivity : Activity() {
                         if (attempt < 2) Thread.sleep(120L * (attempt + 1))
                     }
                     if (original != null && !original.isRecycled && original.width > 0 && original.height > 0) {
-                        val scale = maxOf(192f / original.width, 108f / original.height)
-                        val scaledWidth = (original.width * scale).toInt().coerceAtLeast(192)
-                        val scaledHeight = (original.height * scale).toInt().coerceAtLeast(108)
+                        val scale = minOf(192f / original.width, 108f / original.height)
+                        val scaledWidth = (original.width * scale).toInt().coerceAtLeast(1)
+                        val scaledHeight = (original.height * scale).toInt().coerceAtLeast(1)
                         val scaled = Bitmap.createScaledBitmap(original, scaledWidth, scaledHeight, true)
                         if (scaled !== original && !original.isRecycled) original.recycle()
-                        val left = ((scaled.width - 192) / 2).coerceAtLeast(0)
-                        val top = ((scaled.height - 108) / 2).coerceAtLeast(0)
-                        result = Bitmap.createBitmap(scaled, left, top, 192, 108)
-                        if (result !== scaled && !scaled.isRecycled) scaled.recycle()
+                        // Letterbox instead of center-cropping: keep the whole scene visible.
+                        val framed = Bitmap.createBitmap(192, 108, Bitmap.Config.ARGB_8888)
+                        val canvas = android.graphics.Canvas(framed)
+                        canvas.drawColor(Color.rgb(12, 18, 28))
+                        val left = (192 - scaled.width) / 2f
+                        val top = (108 - scaled.height) / 2f
+                        canvas.drawBitmap(scaled, left, top, android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG or android.graphics.Paint.FILTER_BITMAP_FLAG))
+                        if (!scaled.isRecycled) scaled.recycle()
+                        result = framed
                     } else {
                         original?.let { if (!it.isRecycled) it.recycle() }
                     }
