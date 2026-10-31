@@ -709,3 +709,13 @@ Commit `90a877d7836df45adb27c5ced7f308d5ff210cce` makes a first small correction
 - Thumbnail cells no longer add 1dp separator gaps, so the filmstrip reads as a continuous strip.
 
 **Not yet verified:** Kotlin compilation, unit tests, APK build, emulator screenshots, actual two-clip gap behavior, thumbnail performance, and visual comparison on a phone. These source changes must not be described as device-accepted until those checks pass. The other reported gesture, selection, zoom, frame-ruler and contextual-toolbar issues remain open.
+
+
+## Empty timeline selection correction — 2026-11-01 (source only; verification pending)
+
+Commit `6e3d68fea241b0855ffaec349a1f65e0e27570d1`:
+- Empty portions of timeline lane rows and their horizontal scroll viewports now route taps to clip-selection clearing, rather than relying only on the video filmstrip background.
+- Clearing selection now resets the selected video clip index, hides clip handles/contextual clip panel, refreshes the timeline and updates the playhead readout without leaving a persistent status message.
+- Two-finger timeline zoom routing was inspected and retained; it already uses the activity-level ScaleGestureDetector and fixed-time anchoring. This source review is not proof of gesture acceptance.
+
+**Pending:** compile/unit verification, emulator tap-outside-lane interaction, two-finger zoom/pan behavior, and regression checks for clip selection/trim.
