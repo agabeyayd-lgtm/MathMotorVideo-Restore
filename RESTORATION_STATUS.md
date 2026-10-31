@@ -4,6 +4,28 @@
 
 MathMotor Video is a local Android video editor with a CapCut-inspired workflow. Normal editing should work on-device without a cloud account or paid AI service.
 
+## CapCut-style layout, movable strips and shared project duration — 2026-10-31
+
+**Latest code changes committed to PR #11; acceptance is still pending.**
+
+- Context panel placement: moved the contextual settings ScrollView above the preview in the root layout. It starts hidden, appears when a tool/item is selected, and is hidden when the active tool is closed. The bottom dock remains at the bottom; the timeline remains in the middle.
+- Layer rows: replaced visible fixed type captions on each lane with a neutral drag grip. Each existing text layer, active music item and active sound-effect item receives its own row; empty unused text/music/effect placeholder rows are no longer shown. The main video sequence stays in one continuous filmstrip.
+- Vertical ordering: dragging a row's grip up/down reorders that strip. The chosen order is persisted as `timelineLaneOrder` in the existing editable project JSON (old project files without the field use the default order). All rows continue to share the same horizontal scroll position, pinch zoom and absolute time coordinate system.
+- Shared project duration: `TimelineProjectDurationMath` now returns the furthest end among the video sequence, all text layers, music and sound effect. A later-ending active strip extends the ruler; removing/shortening the furthest item lets the ruler contract to the next furthest item. Overlaps do not add durations together.
+- Music selection: the initial timeline segment now uses the full selected source in/out range. If the source extends beyond the video, the shared project duration extends accordingly; user trimming can shorten it.
+- Added unit coverage for project duration growing to the furthest layer, shrinking after removal, and non-negative values.
+
+### Current verification state
+
+- [ ] PR-head unit tests, Kotlin compilation and Debug APK build for the new layout/duration changes.
+- [ ] Inspect run #416 emulator screenshot output and verify that preview / middle timeline / bottom dock and optional top panel appear in the intended order.
+- [ ] Verify vertical grip drag persists after project save/reopen and doesn't interfere with horizontal lane scrolling.
+- [ ] Verify one-finger scrub/clip move/trim, two-finger pinch, playhead center alignment and shared time position across every reordered strip.
+- [ ] Verify timeline grows/shrinks with the furthest active layer and that preview/export duration matches the ruler.
+- [ ] Verify text-edit panel with software keyboard open on a small screen.
+
+Do not mark these as device-accepted from source changes or a green build alone. PR #11 remains draft. Version 395 remains blocked; installed 394/build 61 is unchanged.
+
 ## Version and release boundary
 
 - User-confirmed installed baseline: versionCode 394, release/build 61 (`app-v8.3-61`).
