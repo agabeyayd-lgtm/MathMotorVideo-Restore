@@ -144,3 +144,9 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - **Still open:** independently draggable/movable video, text, music and sound-effect items with separate start/end times; overlap; end-to-end preview/export/save-reopen verification. Text already has its own drag/trim path, but video clips are still represented as a sequential playlist and audio blocks are not independently draggable/trimmable.
 
 The verify-android-build workflow now also triggers for pull requests targeting main (added on this branch). At the latest check, GitHub had not reported a workflow run or commit status for PR #11 yet, so build/test remains unverified. The debug APK build remains manual-only. Do not interpret the absence of checks as a pass. Version 395 remains blocked.
+
+### Multi-track implementation constraint checked against Media3 1.10.1
+
+- Transformer Composition can combine separate media sequences that overlap in time, including layered video and audio sequences.
+- The real-time CompositionPlayer preview API is still marked early/experimental; its documented supported cases include a single video sequence plus an audio sequence. Multi-video-sequence preview is listed as active development, so export support must not be mistaken for a proven live-preview path.
+- Before enabling video overlap in the UI, the implementation must demonstrate matching Composition export and preview behavior; otherwise the app could show a timeline it cannot accurately preview.
