@@ -31,6 +31,7 @@ A change is **not accepted** merely because it compiles, passes unit tests, or l
 
 
 ## Playback state and fit control — 2026-10-31
+- CI caught one incorrect expected value in the new ruler-step unit test: at 22 px/sec and 48 px minimum label spacing the next readable interval is 5 seconds. Corrected the assertion; production Kotlin compilation had succeeded on the preceding run.
 
 - Added the visible Sığdır control to the playback header; it invokes the deterministic fit calculation based on project duration and the available timeline width.
 - Player errors use explicit player-error wording and a distinct error button state; thumbnail decode failures remain isolated to thumbnail rendering.
