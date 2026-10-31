@@ -99,6 +99,8 @@ class VideoEditorActivity : Activity() {
     private var musicUri: Uri? = null
     private var musicTitle: String? = null
     private var musicSourceDurationMs: Long = 0L
+    private var musicSourceStartMs: Long = 0L
+    private var musicSourceEndMs: Long = 0L
     private var musicStartMs: Long = 0L
     private var musicDurationMs: Long = 0L
     private var soundUri: Uri? = null
@@ -872,6 +874,8 @@ class VideoEditorActivity : Activity() {
             musicUri = null
             musicTitle = null
             musicSourceDurationMs = 0L
+            musicSourceStartMs = 0L
+            musicSourceEndMs = 0L
             musicStartMs = 0L
             musicDurationMs = 0L
             musicLabel.text = "Müzik seçilmedi."
@@ -1897,6 +1901,9 @@ class VideoEditorActivity : Activity() {
             runOnUiThread {
                 if (musicUri == uri && duration > 0L) {
                     musicSourceDurationMs = duration
+                    if (musicSourceEndMs <= 0L) musicSourceEndMs = duration
+                    musicSourceStartMs = musicSourceStartMs.coerceIn(0L, duration)
+                    musicSourceEndMs = musicSourceEndMs.coerceIn(musicSourceStartMs, duration)
                     if (musicDurationMs <= 0L) musicDurationMs = totalOutputDurationMs()
                     updateMusicTimingLabel()
                     refreshTimelineTracks()
@@ -3128,7 +3135,8 @@ class VideoEditorActivity : Activity() {
             } else {
                 val sourceDuration = music.duration
                 if (sourceDuration > 0L && sourceDuration != androidx.media3.common.C.TIME_UNSET) {
-                    val target = (outputTimeMs - musicStartMs) % sourceDuration
+                    val sourceRange = MusicSourceRangeMath.normalize(MusicSourceRange(musicSourceStartMs, musicSourceEndMs.takeIf { it > 0L } ?: sourceDuration), sourceDuration)
+                    val target = MusicSourceRangeMath.sourcePosition(sourceRange, outputTimeMs - musicStartMs, sourceDuration)
                     if (kotlin.math.abs(music.currentPosition - target) > 400L) music.seekTo(target)
                 }
                 music.playWhenReady = true
@@ -3300,6 +3308,8 @@ class VideoEditorActivity : Activity() {
             put("musicUri", musicUri?.toString() ?: JSONObject.NULL)
             put("musicTitle", musicTitle ?: JSONObject.NULL)
             put("musicSourceDurationMs", musicSourceDurationMs)
+            put("musicSourceStartMs", musicSourceStartMs)
+            put("musicSourceEndMs", musicSourceEndMs)
             put("musicStartMs", musicStartMs)
             put("musicDurationMs", musicDurationMs)
             put("soundUri", soundUri?.toString() ?: JSONObject.NULL)
@@ -3387,8 +3397,11 @@ class VideoEditorActivity : Activity() {
         musicUri = json.optString("musicUri").takeIf { it.isNotBlank() && it != "null" }?.let(Uri::parse)
         musicTitle = json.optString("musicTitle").takeIf { it.isNotBlank() && it != "null" }
         musicSourceDurationMs = json.optLong("musicSourceDurationMs", 0L).coerceAtLeast(0L)
+        musicSourceStartMs = json.optLong("musicSourceStartMs", 0L).coerceAtLeast(0L)
+        musicSourceEndMs = json.optLong("musicSourceEndMs", musicSourceDurationMs).coerceAtLeast(musicSourceStartMs)
         musicStartMs = json.optLong("musicStartMs", 0L).coerceAtLeast(0L)
         musicDurationMs = json.optLong("musicDurationMs", totalOutputDurationMs()).coerceAtLeast(0L)
+        musicSourceEndMs = MusicSourceRangeMath.normalize(MusicSourceRange(musicSourceStartMs, musicSourceEndMs), musicSourceDurationMs).endMs
         musicUri?.let { ensureMusicSourceDuration(it) }
         soundUri = json.optString("soundUri").takeIf { it.isNotBlank() && it != "null" }?.let(Uri::parse)
         soundTitle = json.optString("soundTitle").takeIf { it.isNotBlank() && it != "null" }
@@ -3618,6 +3631,8 @@ class VideoEditorActivity : Activity() {
                             musicUri = uri
                             musicTitle = title
                             musicSourceDurationMs = duration
+                            musicSourceStartMs = 0L
+                            musicSourceEndMs = duration
                             musicStartMs = 0L
                             musicDurationMs = totalOutputDurationMs().takeIf { it > 0L } ?: duration
                             updateMusicTimingLabel()
