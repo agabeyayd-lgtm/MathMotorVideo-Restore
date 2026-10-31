@@ -59,7 +59,7 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - [ ] Fix the timeline appearing locked to the left; allow moving across the full timeline in both directions and reaching the beginning/end after zooming.
 - [ ] Make the playhead behave like CapCut: timeline moves beneath a stationary playhead during scrubbing; preview follows the exact time; playback stays synchronized; split uses the playhead time.
 - [ ] Keep time-to-pixel mapping correct after scroll, zoom, trim, clip reorder and multi-clip edits.
-- [ ] Keep one unified timeline track/ruler only; do not show a duplicate second timeline or a separate duration/zoom strip. The assembled clip sequence is the single source of truth for total duration.
+- [ ] Keep one unified timeline ruler and time-to-pixel scale. The project duration is the furthest end among the main video sequence and every active independent layer (text, music, sound/effect), not the sum of overlapping durations. Extending the longest strip extends the ruler; shortening/removing it lets the ruler shrink to the next furthest end.
 - [ ] Make ruler labels adapt automatically to pinch zoom: show coarser minute/large-interval marks when zoomed out, switch to seconds as the user zooms in, and increase second-level spacing/detail at closer zoom levels. Keep labels readable, evenly spaced and synchronized with the actual time-to-pixel scale; do not require manual unit selection.
 - [ ] Remove or simplify the separate “project duration” UI if it duplicates/conflicts with the actual timeline; preserve any technical export limit only if genuinely needed and explain it clearly.
 
@@ -94,7 +94,7 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - [ ] Remove the visible "Klip 1" / "Klip 2" labels from the timeline; use the reclaimed space to enlarge the video preview area where possible. Preserve clear clip boundaries and clip selection without those labels.
 - [ ] Remove timeline navigation/scroll/zoom arrow buttons entirely. Follow CapCut's direct-touch approach: one-finger drag/swipe for timeline interaction, pinch with two fingers to zoom, tap to select clips, and drag trim handles. Keep only functional visual affordances such as the playhead and trim handles; do not replace the arrows with another row of navigation buttons.
 - [ ] Keep controls compact and balanced while retaining accessible touch targets and all existing actions.
-- [ ] When a bottom tool such as Edit, Audio, Text or Export is selected, replace the four-item bottom dock with that tool's own controls in the same bottom panel. Do not open the tool menu underneath/behind the preview. Provide a clear back/confirm route to restore the four-item dock when the task is finished.
+- [ ] Keep the compact tool dock anchored at the bottom. Tapping a tool or timeline item opens only its contextual settings panel at the top, over/above the preview region; it must not insert a panel between the timeline and bottom dock. Closing the panel restores the clean preview at the top, shared timeline in the middle and dock at the bottom.
 - [ ] Make the two-video join/add-clip area visually clear and uncluttered after removing timeline arrow buttons and clip labels; do not remove or change the underlying add, order or join functionality.
 - [ ] Give the preview the space reclaimed from redundant labels and oversized controls; keep the preview and timeline responsive on small screens.
 
@@ -120,12 +120,22 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 
 - [ ] Remove the visible per-clip header labels (including “Video 1” / “Video 2” or “Klip 1” / “Klip 2”); retain clip boundaries and selection visually without text headers.
 - [ ] Keep the timeline visually minimal: remove redundant explanatory labels, duplicate duration/zoom controls and decorative controls; retain only controls needed for the current selection.
-- [ ] Make every timeline element independently movable: video clips, each text layer, music and each sound effect have their own lane item and independently editable start/end times.
+- [ ] Make every timeline element independently movable: video, each text layer, music and each sound/effect item has its own horizontal strip and independently editable start/end times. Strips are not locked to permanent 'text', 'music' or 'effect' row positions: the user can drag a strip vertically to reorder where it sits, and drag it horizontally to set its project-time position.
 - [ ] Moving, trimming, selecting or deleting one element must not move or modify other elements. Only an explicit multi-select/group/link action may affect multiple elements.
 - [ ] Allow timeline elements to overlap in time; all lanes share the same ruler, zoom and horizontal scroll coordinate system.
 - [ ] Keep clip thumbnails visible as a continuous filmstrip across the clip; show a clear seam between adjacent clips without separate “Video 1/2” headers.
 - [ ] Keep editing controls contextual: show only the selected element's relevant actions; return to a compact tool dock when selection is cleared or the tool is closed.
 - [ ] Verify independent placement, overlap, trim and save/reopen for two video clips, two text layers, music and a sound effect. Confirm moving one item leaves all others unchanged.
+
+## CapCut-style editor layout and layer ordering — implementation added to PR #11 (2026-10-31)
+
+- The contextual tool panel has been moved above the preview region and is hidden until a tool/item is tapped. The bottom tool dock remains at the bottom; the timeline remains in the middle.
+- Timeline strips now use neutral drag handles rather than permanent visible type headings. The user can drag a strip vertically to change its order; its order is saved in the editable project JSON. Every strip still uses the same synchronized horizontal ruler and time scale.
+- Empty placeholder rows for unused text/music/effect tools are removed. A strip appears when its corresponding item exists; text layers each have an independent strip, and the main video sequence remains one continuous filmstrip.
+- Project duration is now calculated from the furthest end of the video sequence, text layers, music and sound effect. Extending the furthest item extends the shared ruler; shortening/removing it allows the project duration to shrink to the next furthest item.
+- Selecting a music source initially uses its full source range as the timeline item duration, so a source longer than the current video extends the project ruler until the user trims it.
+- Added pure unit tests for shared project-duration expansion, shrinkage and non-negative bounds.
+- **Not yet device-accepted:** touch-driven vertical strip reorder, one-finger horizontal movement/scrub, two-finger pinch, panel placement with keyboard open, synchronized preview/export and save/reopen still require the current PR-head CI and emulator/phone review.
 
 ## Verification boundaries
 
