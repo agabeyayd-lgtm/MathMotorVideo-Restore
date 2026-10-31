@@ -599,3 +599,14 @@ This is a layout target, not a claim that all behaviors are implemented. Gesture
 - [x] Updated `assert-timeline-sync.py` to reject only that explicit missing-view sentinel and to continue checking `originRightX + scrollX == fixedPlayheadCenter`. Negative screen coordinates are now valid when the origin is off-screen.
 - [ ] Fresh PR-head Verify, APK build, and emulator playback/timeline synchronization run must pass before accepting this change.
 - PR #11 remains draft/unmerged. Version 395 remains blocked.
+
+
+## Floating add-video control (2026-10-31)
+
+- [ ] Remove the old visible "+ Video ekle" timeline placeholder block; do not represent the add action as a fake 5-second clip.
+- [ ] Show a transparent, standalone plus control at the right end of the main video filmstrip, matching the CapCut interaction pattern.
+- [ ] Keep the plus visually outside the clip thumbnails and do not give it a timestamp, clip duration, or selectable clip state.
+- [ ] Tapping the plus must open the existing gallery video picker and append/import the selected video without changing existing clip ranges, other layer positions, ruler mapping, or playhead time.
+- [ ] Verify the plus placement at the beginning, middle and end of a horizontally scrolled timeline, with keyboard-open and compact-height layouts.
+- [ ] Verify the empty-project state uses the same restrained plus affordance in the video lane.
+- Source implementation added on PR #11 head commit `d61f7851aa4c6cff59505c38d598a5b22a219505`; this is implementation only. Leave all acceptance items unchecked until fresh build and interaction-level verification pass.
