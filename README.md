@@ -460,3 +460,11 @@ This is a layout target, not a claim that all behaviors are implemented. Gesture
 - Source commit `693b49af2964fae5150d0e45d9fab4182212dc2e` changed scroll-to-time mapping so elapsed project time maps directly to horizontal scroll distance.
 - Source commit `1faa0aa25fbf3a2d5e1cdba51cd2a57730c86a46` adds a shared half-viewport leading origin and matching trailing space to each lane: time zero begins at the center playhead, and the end of the timeline can also reach the playhead.
 - This is implementation, not acceptance. PR-head unit/build and emulator screenshot runs are in progress; visually verify start/end alignment, scrubbing, playback, zoom, and every synchronized lane before marking complete. PR #11 stays draft; version 395 stays blocked.
+
+
+## Center-origin responsive viewport follow-up — 2026-10-31
+
+- Commit `0771c298bb2f2e8b65c7c741ef2ce4ad4a3424c9` keeps each lane's leading and trailing time-zero spacers synchronized with the **measured** horizontal-scroll viewport width, including later layout changes caused by keyboard/screen resizing.
+- This closes a source-level gap in the earlier centered-origin pass, where a lane first measured at zero width could retain a fallback spacer width after its real viewport was laid out.
+- The change is not yet accepted: wait for fresh PR-head CI and inspect the new emulator screenshots. Verify time-zero under the center playhead, final-frame reachability, ruler/track alignment, playback auto-scroll, scrubbing and pinch zoom after a viewport resize.
+- PR #11 remains draft. Version 395 remains blocked.
