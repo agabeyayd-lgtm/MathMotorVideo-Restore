@@ -364,7 +364,7 @@ class VideoEditorActivity : Activity() {
         }
     }
 
-    // CapCut-reference workspace: preview, centered playback, left time readout, shared timeline, pinned dock.
+    // CapCut-reference workspace: preview, fixed centered playback, live centered time readout, scrolling shared timeline, pinned dock.
     private fun buildUi() {
         editorPanels.clear()
         editorTabButtons.clear()
@@ -543,7 +543,7 @@ class VideoEditorActivity : Activity() {
             setPadding(0, dp(3), 0, dp(3))
             setBackgroundColor(Color.rgb(8, 12, 18))
         }
-        // One playback control, fixed on the same center axis as the stationary red playhead.
+        // One playback control, fixed to the phone's horizontal center axis.
         val centeredPlaybackRow = FrameLayout(this)
         timelinePlayButton = miniButton("▶") {
             if (clips.isEmpty()) {
@@ -580,6 +580,34 @@ class VideoEditorActivity : Activity() {
             ViewGroup.LayoutParams.MATCH_PARENT, dp(48)
         ))
 
+         val playheadRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(dp(3), dp(3), dp(3), 0)
+        }
+        timelinePlayheadLabel = label("00:00.0 / 00:00.0", 10f, Color.rgb(225, 233, 237), true).apply {
+            maxLines = 1
+            gravity = Gravity.CENTER
+            setSingleLine(true)
+        }
+        playheadRow.gravity = Gravity.CENTER
+        timelinePlayheadLabel.gravity = Gravity.CENTER
+        timelinePlayheadLabel.setPadding(0, 0, 0, 0)
+        playheadRow.addView(timelinePlayheadLabel, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+        // Keep the legacy seek model detached: the visible horizontal scrubber and zoom
+        // buttons are removed. Timeline gestures now move the lanes under the fixed playhead.
+        timelinePlayheadSeek = SeekBar(this).apply {
+            max = 0
+            progress = 0
+            isEnabled = false
+            contentDescription = "Zaman çizelgesinde oynatma noktası"
+        }
+        root.addView(playheadRow, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(26)
+        ))
+        installTimelinePlayheadListeners()
         val clipScroll = android.widget.HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
             overScrollMode = View.OVER_SCROLL_NEVER
@@ -663,34 +691,6 @@ class VideoEditorActivity : Activity() {
         timelineCard.addView(timelineTracksScroll, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
         ))
-         val playheadRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            setPadding(dp(3), dp(3), dp(3), 0)
-        }
-        timelinePlayheadLabel = label("00:00.0 / 00:00.0", 10f, Color.rgb(225, 233, 237), true).apply {
-            maxLines = 1
-            gravity = Gravity.CENTER
-            setSingleLine(true)
-        }
-        playheadRow.gravity = Gravity.CENTER_VERTICAL or Gravity.START
-        timelinePlayheadLabel.gravity = Gravity.CENTER_VERTICAL or Gravity.START
-        timelinePlayheadLabel.setPadding(dp(8), 0, 0, 0)
-        playheadRow.addView(timelinePlayheadLabel, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
-        // Keep the legacy seek model detached: the visible horizontal scrubber and zoom
-        // buttons are removed. Timeline gestures now move the lanes under the fixed playhead.
-        timelinePlayheadSeek = SeekBar(this).apply {
-            max = 0
-            progress = 0
-            isEnabled = false
-            contentDescription = "Zaman çizelgesinde oynatma noktası"
-        }
-        root.addView(playheadRow, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(26)
-        ))
-        installTimelinePlayheadListeners()
         // Keep the shared timeline compact and content-focused instead of stretching
         // its empty background to consume every remaining pixel on short phones.
         // The track rows scroll horizontally; the editor shell keeps its own height.
@@ -2592,10 +2592,10 @@ class VideoEditorActivity : Activity() {
         timelinePlayheadLine.visibility = View.VISIBLE
         val params = timelinePlayheadLine.layoutParams as? FrameLayout.LayoutParams ?: return
         params.width = dp(28)
-        // The red playhead is a viewport guide, not a moving timeline item.
+        // The white playhead is a stationary viewport guide; timeline content moves beneath it.
         params.leftMargin = centerX - dp(14)
         timelinePlayheadLine.layoutParams = params
-        // Playback remains centered under the preview; the timeline playhead is a separate guide.
+        // Playback and the white playhead remain fixed while the time readout updates.
         timelinePlayheadLine.bringToFront()
     }
 
