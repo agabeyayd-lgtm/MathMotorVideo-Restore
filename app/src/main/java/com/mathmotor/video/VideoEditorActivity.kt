@@ -5490,22 +5490,28 @@ class VideoEditorActivity : Activity() {
 
         val audio = if (keepSourceAudio.isChecked) audioEffects(sourceAudioVolume) else emptyList()
         normalizeClipTransform(clip)
+        // Capture immutable values for this composition. Gesture-time preview uses a
+        // temporary view transform; rebuilding then installs the committed Media3 effect.
+        val transformScale = clip.transformScale
+        val transformRotationDegrees = clip.transformRotationDegrees
+        val transformTranslateX = clip.transformTranslateX
+        val transformTranslateY = clip.transformTranslateY
         val videoEffects = if (
-            clip.transformScale != 1f ||
-            clip.transformRotationDegrees != 0f ||
-            clip.transformTranslateX != 0f ||
-            clip.transformTranslateY != 0f
+            transformScale != 1f ||
+            transformRotationDegrees != 0f ||
+            transformTranslateX != 0f ||
+            transformTranslateY != 0f
         ) {
             listOf<androidx.media3.common.Effect>(
                 MatrixTransformation { _ ->
-                    val radians = Math.toRadians(-clip.transformRotationDegrees.toDouble())
-                    val cosine = kotlin.math.cos(radians).toFloat() * clip.transformScale
-                    val sine = kotlin.math.sin(radians).toFloat() * clip.transformScale
+                    val radians = Math.toRadians(-transformRotationDegrees.toDouble())
+                    val cosine = kotlin.math.cos(radians).toFloat() * transformScale
+                    val sine = kotlin.math.sin(radians).toFloat() * transformScale
                     Matrix().apply {
                         // Media3 uses normalized device coordinates (-1..1); positive Y is up.
                         setValues(floatArrayOf(
-                            cosine, -sine, clip.transformTranslateX,
-                            sine, cosine, -clip.transformTranslateY,
+                            cosine, -sine, transformTranslateX,
+                            sine, cosine, -transformTranslateY,
                             0f, 0f, 1f
                         ))
                     }
