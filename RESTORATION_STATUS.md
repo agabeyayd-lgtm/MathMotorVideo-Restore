@@ -489,3 +489,9 @@ This is a layout target, not a claim that all behaviors are implemented. Gesture
 - [x] Removed the IME condition that skipped creation of the ruler row. The ruler is now present during keyboard-open editing and uses the compact lane height.
 - [ ] Verify on a fresh emulator screenshot that the ruler stays visible/readable with the keyboard open and that video thumbnails, playhead, and bottom dock remain accessible.
 - Source commit: `f700d0017aced27600dc218bb6a39c6a5fd23d3a`.
+
+### Fresh video import start position
+
+- [x] When a new main video replaces the current video, reset `timelineHorizontalScrollX`, pending scroll restoration, and the playhead to `0 ms` before rebuilding the lanes. An old session's offset can no longer make the new video appear to start at a later time.
+- [ ] Verify fresh import at `00:00` on the emulator and physical phone.
+- Source commit: `67af75472c2452234fffc3ec7221cd8598ce3af8`.
