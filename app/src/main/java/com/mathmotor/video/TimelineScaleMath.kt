@@ -48,6 +48,20 @@ internal object TimelineScaleMath {
             .roundToLong()
     }
 
+    /** Deterministic fit scale for a project duration and measured timeline width. */
+    fun fitPixelsPerSecond(
+        durationMs: Long,
+        availableWidthPx: Int,
+        minimumPxPerSecond: Float,
+        maximumPxPerSecond: Float
+    ): Float {
+        if (durationMs <= 0L || availableWidthPx <= 0) return minimumPxPerSecond.coerceAtLeast(0f)
+        val raw = availableWidthPx.toDouble() * 1000.0 / durationMs.toDouble()
+        val minimum = minimumPxPerSecond.coerceAtLeast(0f)
+        val maximum = maximumPxPerSecond.coerceAtLeast(minimum)
+        return raw.toFloat().coerceIn(minimum, maximum)
+    }
+
     /** Select a readable ruler step from the current physical px/sec scale. */
     fun rulerStepMs(pixelsPerSecond: Float, minimumLabelSpacingPx: Float): Long {
         if (!pixelsPerSecond.isFinite() || pixelsPerSecond <= 0f) return 1_000L

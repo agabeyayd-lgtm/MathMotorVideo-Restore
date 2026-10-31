@@ -2786,16 +2786,27 @@ class VideoEditorActivity : Activity() {
         val frameWidth = timelineTracksFrame.width.takeIf { it > 0 }
             ?: resources.displayMetrics.widthPixels
         val availableWidth = (frameWidth - dp(57) - dp(3)).coerceAtLeast(dp(80))
-        timelinePxPerSec = (availableWidth.toDouble() * 1000.0 / totalMs.toDouble())
-            .toFloat().coerceIn(dp(11).toFloat(), dp(176).toFloat())
-        pendingTimelineScrollX = 0
-        timelineHorizontalScrollX = 0
+        timelinePxPerSec = TimelineScaleMath.fitPixelsPerSecond(
+            durationMs = totalMs,
+            availableWidthPx = availableWidth,
+            minimumPxPerSecond = dp(11).toFloat(),
+            maximumPxPerSecond = dp(176).toFloat()
+        )
+        // Preserve the current time under the fixed center playhead after fitting.
+        val fitScrollX = TimelineScaleMath.pixelsForTime(
+            timelinePlayheadMs.coerceIn(0L, totalMs), timelinePixelsPerSecond()
+        )
+        pendingTimelineScrollX = fitScrollX
+        timelineHorizontalScrollX = fitScrollX
         refreshTimelineTracks()
         timelineScrollViews.forEach { lane ->
             lane.post {
                 autoScrollingTimeline = true
                 syncingTimelineScroll = true
-                try { timelineScrollViews.forEach { it.scrollTo(0, 0) } }
+                try {
+                    val target = pendingTimelineScrollX ?: timelineHorizontalScrollX
+                    timelineScrollViews.forEach { it.scrollTo(target, 0) }
+                }
                 finally { syncingTimelineScroll = false; autoScrollingTimeline = false }
             }
         }
@@ -2905,7 +2916,8 @@ class VideoEditorActivity : Activity() {
 
     private fun updateTimelinePlayButtonState() {
         if (!::timelinePlayButton.isInitialized) return
-        val playing = timelineCompositionPlayer?.isPlaying == true
+        val current = timelineCompositionPlayer
+        val playing = current?.isPlaying == true || current?.playWhenReady == true
         if (playing) timelinePlaybackState = TimelinePlaybackState.PLAYING
         else if (timelinePlaybackState != TimelinePlaybackState.ERROR) {
             timelinePlaybackState = TimelinePlaybackState.PAUSED

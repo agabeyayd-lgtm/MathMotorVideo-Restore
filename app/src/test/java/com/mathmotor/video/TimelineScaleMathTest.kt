@@ -202,6 +202,20 @@ class TimelineScaleMathTest {
     }
 
     @Test
+    fun fitScaleIsDeterministicForSameProjectAndViewport() {
+        val first = TimelineScaleMath.fitPixelsPerSecond(10_000L, 357, 11f, 176f)
+        val second = TimelineScaleMath.fitPixelsPerSecond(10_000L, 357, 11f, 176f)
+        assertEquals(35.7f, first, 0.001f)
+        assertEquals(first, second, 0f)
+    }
+
+    @Test
+    fun fitScaleClampsToSupportedRange() {
+        assertEquals(11f, TimelineScaleMath.fitPixelsPerSecond(60_000L, 100, 11f, 176f), 0f)
+        assertEquals(176f, TimelineScaleMath.fitPixelsPerSecond(100L, 1_000, 11f, 176f), 0f)
+    }
+
+    @Test
     fun rulerTickSpacingAdaptsToPxPerSecond() {
         assertEquals(5_000L, TimelineScaleMath.rulerStepMs(22f, 48f))
         assertEquals(1_000L, TimelineScaleMath.rulerStepMs(83f, 48f))
