@@ -262,3 +262,11 @@ These are new release-blocking UI/interaction requirements. They are recorded as
 - Corrected `scrollForAnchoredZoom` to clamp a zero/start timestamp directly to scroll offset zero.
 - This is a boundary-math fix only. Actual two-finger gesture integration and device verification remain pending; do not treat pinch zoom as implemented.
 - Re-run CI on the correction before proceeding. PR #11 remains draft; version 395 remains blocked.
+
+
+### Two-finger anchored timeline pinch — implementation added (2026-10-31)
+
+- Added an Android `ScaleGestureDetector` path scoped to touches beginning inside the timeline viewport. Two-finger gestures are captured so clip drag/scrub handlers do not also react during the pinch.
+- The timestamp beneath the pinch midpoint is captured at gesture start; zoom updates recalculate the shared lane scroll offset using the anchored-zoom math, keeping that timestamp beneath the moving finger midpoint while the shared lane scroll position remains synchronized.
+- Zoom remains clamped to 0.5×–8×. Clip timestamps/durations are not rewritten by the gesture.
+- This is an implementation step, not device acceptance: run Verify/build, then test two-finger zoom on a physical phone at multiple timeline positions, both zoom directions, screen edges, and with video/audio/text lanes visible. Confirm one-finger scrub and clip drag still work after pinch. No release/395 created.
