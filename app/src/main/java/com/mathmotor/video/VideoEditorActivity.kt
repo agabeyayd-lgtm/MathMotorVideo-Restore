@@ -2145,6 +2145,7 @@ class VideoEditorActivity : Activity() {
                 // both spacers tied to the full track frame, not just the scroll
                 // viewport (which starts to the right of the 57dp label/grip gutter).
                 val originWidth = timelineOriginSpacerWidth(viewportWidth)
+                val endWidth = timelineEndSpacerWidth(viewportWidth)
                 val first = laneTrack.getChildAt(0)
                 if (first?.tag == "timeline-origin-spacer") {
                     val params = first.layoutParams as? LinearLayout.LayoutParams
@@ -2155,19 +2156,20 @@ class VideoEditorActivity : Activity() {
                 val last = laneTrack.getChildAt(laneTrack.childCount - 1)
                 if (last?.tag == "timeline-end-spacer") {
                     val params = last.layoutParams as? LinearLayout.LayoutParams
-                    if (params == null || params.width != originWidth) {
-                        last.layoutParams = LinearLayout.LayoutParams(originWidth, dp(24))
+                    if (params == null || params.width != endWidth) {
+                        last.layoutParams = LinearLayout.LayoutParams(endWidth, dp(24))
                     }
                 }
             }
             val originWidth = timelineOriginSpacerWidth(laneScroll.width)
+            val endWidth = timelineEndSpacerWidth(laneScroll.width)
             if (laneTrack.getChildAt(0)?.tag != "timeline-origin-spacer") {
                 val originSpacer = View(this).apply { tag = "timeline-origin-spacer" }
                 laneTrack.addView(originSpacer, 0, LinearLayout.LayoutParams(originWidth, dp(24)))
             }
             if (laneTrack.getChildAt(laneTrack.childCount - 1)?.tag != "timeline-end-spacer") {
                 val endSpacer = View(this).apply { tag = "timeline-end-spacer" }
-                laneTrack.addView(endSpacer, LinearLayout.LayoutParams(originWidth, dp(24)))
+                laneTrack.addView(endSpacer, LinearLayout.LayoutParams(endWidth, dp(24)))
             }
             // Recalculate after measurement and on responsive viewport changes.
             laneScroll.addOnLayoutChangeListener { view, left, top, right, bottom,
@@ -2710,12 +2712,24 @@ class VideoEditorActivity : Activity() {
     private fun timelinePixelsPerSecond(): Float = dp(22).toFloat() * timelineZoom
 
     /** Width of the leading blank time-zero spacer inside each horizontally scrolling lane. */
-    private fun timelineOriginSpacerWidth(viewportWidth: Int = 0): Int {
+    private fun timelineFrameWidth(viewportWidth: Int): Pair<Int, Int> {
         val gutterPx = dp(57)
         val frameWidth = timelineTracksFrame.width.takeIf { it > 0 }
             ?: if (viewportWidth > 0) viewportWidth + gutterPx
             else resources.displayMetrics.widthPixels
-        return TimelineScaleMath.originSpacerWidthForCenteredPlayhead(frameWidth, gutterPx)
+        val scrollViewportWidth = viewportWidth.takeIf { it > 0 }
+            ?: (frameWidth - gutterPx).coerceAtLeast(dp(1))
+        return frameWidth to scrollViewportWidth
+    }
+
+    private fun timelineOriginSpacerWidth(viewportWidth: Int = 0): Int {
+        val (frameWidth, _) = timelineFrameWidth(viewportWidth)
+        return TimelineScaleMath.originSpacerWidthForCenteredPlayhead(frameWidth, dp(57))
+    }
+
+    private fun timelineEndSpacerWidth(viewportWidth: Int = 0): Int {
+        val (frameWidth, _) = timelineFrameWidth(viewportWidth)
+        return TimelineScaleMath.endSpacerWidthForCenteredPlayhead(frameWidth, dp(57))
     }
 
     private fun ensureTrimHandlesReachable(index: Int): Boolean {
