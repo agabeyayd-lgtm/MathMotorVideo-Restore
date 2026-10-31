@@ -479,7 +479,8 @@ This is a layout target, not a claim that all behaviors are implemented. Gesture
 - [x] Replaced five-second ruler labels with one-second labels (`0, 1, 2, 3…`). Each cell width is derived from the common time-to-pixel scale.
 - [x] Changed the first filmstrip thumbnail sample to the clip's actual source start frame; later samples advance evenly through the clip.
 - [x] Accounted for one-pixel separators within the available thumbnail width so they do not push the final cells beyond the clip edge.
-- [ ] Verify the PR-head build/unit workflows and inspect fresh emulator screenshots for ruler visibility, zero alignment, scrolling synchronization, and compact/keyboard layouts.
+- [x] PR-head build/unit verification passed (Verify #251); APK build passed (Build #326); emulator screenshot workflow passed (Screenshots #495). In the captured editor-with-video screenshot, ruler label `0`, the stationary playhead, and the first thumbnail's left edge all align at x=187 px.
+- [ ] Verify playback scrolling synchronization and confirm the ruler remains readable with the keyboard open; the current screenshot run captures initial editor launch only.
 - [ ] Confirm on the user's phone that the first frame and ruler zero remain directly under the stationary playhead, and that no thumbnail/time exists to its left before playback advances.
 - PR #11 remains open and draft. No merge or version 395 release is authorized.
 - Source commit for this pass: `ec6dcb9567c50650b58ab0aede58858a98c87745`.
@@ -493,5 +494,6 @@ This is a layout target, not a claim that all behaviors are implemented. Gesture
 ### Fresh video import start position
 
 - [x] When a new main video replaces the current video, reset `timelineHorizontalScrollX`, pending scroll restoration, and the playhead to `0 ms` before rebuilding the lanes. An old session's offset can no longer make the new video appear to start at a later time.
-- [ ] Verify fresh import at `00:00` on the emulator and physical phone.
+- [x] Emulator fresh-import screenshot shows `00:00.00` and the first thumbnail beginning directly at the playhead/ruler zero coordinate.
+- [ ] Confirm the same behavior on the user's physical phone.
 - Source commit: `67af75472c2452234fffc3ec7221cd8598ce3af8`.
