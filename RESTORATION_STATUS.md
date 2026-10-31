@@ -87,4 +87,4 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 - [ ] Make each music and sound-effect item independently draggable and trimmable with separate start/end times.
 - [ ] Verify overlap, preview sync, project save/reopen and MP4 export for independently positioned items.
 
-**Important:** PR #11 currently has no attached CI result. The branch-only source edits are not a build/test pass. Text layers currently have independent drag/trim behavior; the remaining media types are not yet complete. Version 395 stays blocked.
+**Important:** PR #11 has no reported CI run/status yet. The verify-android-build workflow now listens for pull requests targeting main (added on this branch); until GitHub reports a result, the source changes are not a build/test pass. Text layers currently have independent drag/trim behavior; the remaining media types are not yet complete. Version 395 stays blocked.
