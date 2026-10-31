@@ -24,7 +24,7 @@ sample_pattern = re.compile(
     r"playerMs=(\d+) "
     r"playheadMs=(\d+) "
     r"scrollXs=([0-9,]*) "
-    r"originXs=([0-9,-]*) "
+    r"originRightXs=([0-9,-]*) "
     r"pxPerSecond=([0-9.]+) "
     r"expectedScrollPx=(\d+) "
     r"playheadCenterPx=(-?\d+) "
@@ -93,11 +93,11 @@ for index, sample in enumerate(samples):
     if any(value < 0 for value in origins):
         raise SystemExit(f"FAIL: a lane's time-zero origin could not be measured: {origins}.")
     if len(set(origins)) != 1:
-        raise SystemExit(f"FAIL: ruler/video time-zero origins do not align: {origins}.")
+        raise SystemExit(f"FAIL: ruler/video time-zero edges do not align: {origins}.")
     if abs(int(origins[0]) + int(scrolls[0]) - center) > 1:
         raise SystemExit(
-            f"FAIL: shared time-zero origin does not map to the fixed playhead: "
-            f"originX={origins[0]}px + scroll={scrolls[0]}px, playhead={center}px."
+            f"FAIL: shared time-zero edge does not map to the fixed playhead: "
+            f"originRightX={origins[0]}px + scroll={scrolls[0]}px, playhead={center}px."
         )
     if any(value < 0 for value in scrolls):
         raise SystemExit(f"FAIL: negative lane scroll at sample {index}: {scrolls}.")
@@ -146,4 +146,4 @@ print(f"  Player position: {first_player} -> {last_player} ms")
 print(f"  Timeline lanes synchronized: {lane_count}")
 print(f"  Shared ruler/filmstrip scroll follows playhead time; no negative scroll")
 print(f"  Fixed playhead/Play center: {baseline_center}px")
-print("  Ruler and first-video-frame zero origins share the same screen coordinate")
+print("  Ruler and first-video-frame zero edges share the same screen coordinate")
