@@ -697,3 +697,15 @@ The following eight issues were reported by the user after reviewing the current
 - Fix in small, focused groups. After each group, update this document and `RESTORATION_STATUS.md` with exact commit/run evidence and mark only what is actually verified.
 - Verify on emulator at phone size and, where possible, on the user's device: visual comparison to the supplied CapCut reference, one-/two-finger behavior, timeline alignment, preview response, thumbnail framing, and clip boundaries.
 - Keep PR #11 draft and unmerged until acceptance checks pass. Installed baseline remains versionCode 394 / build 61. **Do not create, sign, publish, or offer version 395** until all release gates pass and the user explicitly authorizes it.
+
+## First targeted corrections — 2026-10-31 (source only; verification pending)
+
+Commit `90a877d7836df45adb27c5ced7f308d5ff210cce` makes a first small correction pass based on the user's eight reported issues:
+
+- Saved-draft open no longer writes the persistent “Taslak açıldı” message into the status line. Genuine project-load errors remain visible.
+- The playback readout now uses the compact `MM:SS / MM:SS` format rather than centiseconds, preventing unnecessary width pressure and matching the requested CapCut-style counter.
+- Adding a video now appends it after the furthest video clip, not after the furthest project layer. A longer music/text layer therefore cannot create an unintended gray gap before the next video.
+- Filmstrip thumbnails use fit/letterbox framing rather than center-cropping; the full source scene remains visible.
+- Thumbnail cells no longer add 1dp separator gaps, so the filmstrip reads as a continuous strip.
+
+**Not yet verified:** Kotlin compilation, unit tests, APK build, emulator screenshots, actual two-clip gap behavior, thumbnail performance, and visual comparison on a phone. These source changes must not be described as device-accepted until those checks pass. The other reported gesture, selection, zoom, frame-ruler and contextual-toolbar issues remain open.
