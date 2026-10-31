@@ -168,3 +168,18 @@ The user clarified the desired interaction model. This section is a requirements
 - [ ] Confirm small-screen and keyboard-open layout.
 
 **Current status:** documentation only; implementation and device verification remain pending. Keep PR #11 in draft. Do not create/sign/publish version 395; installed 394/build 61 remains the baseline.
+
+
+## CapCut-style video filmstrip — user-confirmed (2026-10-31)
+
+New visual requirement; this is a documentation record, not a claim that the UI is already fixed.
+
+- [ ] Every video clip is displayed as a continuous strip of real sequential thumbnails decoded from the source video, not a plain block, filename card or text-only clip box.
+- [ ] Thumbnails fill the clip from start to end with correct frame order and no persistent black, duplicated or placeholder frames.
+- [ ] Thumbnail scale/density adapts to the shared timeline zoom: closer zoom shows larger, more detailed frames; wider zoom shows a denser overview without changing actual clip duration.
+- [ ] Adjacent clips have a clear seam/boundary. Clip edges expose usable trim handles; dragging the body moves the clip and dragging edges trims/extends it.
+- [ ] Filmstrip remains aligned with the shared time ruler, stationary center playhead and all audio/text lanes at every zoom level.
+- [ ] No separate clip-editing timeline, extra row or independent panel is introduced to support selection/trim controls.
+- [ ] Device verification must cover frame sequence/timestamps, black/duplicate thumbnail avoidance, pinch zoom, horizontal scroll, body drag, edge trim and project save/reopen.
+
+**Status:** requirement recorded; implementation and device verification remain pending. Existing 192×108 extraction and bounded cache are groundwork only, not acceptance proof. Version 395 remains blocked.
