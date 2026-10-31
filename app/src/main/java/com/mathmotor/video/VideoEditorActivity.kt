@@ -2123,7 +2123,15 @@ class VideoEditorActivity : Activity() {
             } else {
                 first.layoutParams = LinearLayout.LayoutParams(originWidth, dp(24))
             }
+            val last = laneTrack.getChildAt(laneTrack.childCount - 1)
+            if (last?.tag != "timeline-end-spacer") {
+                val endSpacer = View(this).apply { tag = "timeline-end-spacer" }
+                laneTrack.addView(endSpacer, LinearLayout.LayoutParams(originWidth, dp(24)))
+            } else {
+                last.layoutParams = LinearLayout.LayoutParams(originWidth, dp(24))
+            }
         }
+        // The matching end spacer lets the final frame reach the center playhead too.
         // A MATCH_PARENT playhead inside a WRAP_CONTENT FrameLayout would let
         // the frame expand to the full available screen height and push the tool dock
         // off-screen. Size the frame from the actual timeline lanes instead.
