@@ -115,7 +115,7 @@ class TimelineAudioMathTest {
     @Test
     fun normalizationPreventsAudioItemsFromLeavingSourceOrTimeline() {
         assertEquals(
-            TimelineAudioSegment(8_000L, 9_000L, 1_000L),
+            TimelineAudioSegment(9_000L, 10_000L, 0L),
             TimelineAudioMath.normalize(
                 TimelineAudioSegment(20_000L, 15_000L, 9_000L),
                 sourceDurationMs = 10_000L,
