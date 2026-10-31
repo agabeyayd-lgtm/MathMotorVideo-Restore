@@ -408,3 +408,11 @@ This is a layout target, not a claim that all behaviors are implemented. Gesture
 - Commits `693b49af2964fae5150d0e45d9fab4182212dc2e` and `1faa0aa25fbf3a2d5e1cdba51cd2a57730c86a46` implement a shared half-viewport time-zero origin and matching end spacer on every lane. Scroll distance now corresponds directly to elapsed project time.
 - Verification is pending on the latest PR head. Check first-frame alignment, end reachability, ruler alignment, drag scrubbing, playback auto-scroll, zoom anchoring, and synchronized video/text/audio strips. Do not mark this complete from compilation alone.
 - Keep PR #11 draft and do not create or publish version 395.
+
+
+## 2026-10-31 — responsive centered timeline origin
+
+- [x] Updated the per-lane leading/trailing origin spacers when the actual horizontal-scroll viewport is measured and whenever its dimensions change. This prevents the initial fallback width from leaving time zero offset from the fixed center playhead after keyboard or viewport resizing.
+- [ ] Await fresh PR #11 compiler/unit, debug APK and emulator screenshot workflows for commit `0771c298bb2f2e8b65c7c741ef2ce4ad4a3424c9`.
+- [ ] Visually inspect the emulator screenshots and validate first-frame/final-frame alignment, ruler and strip synchronization, scrubbing, playback auto-scroll and pinch-zoom anchoring after resizing.
+- PR #11 stays draft. Do not create, sign, publish or offer version 395 until every required gate passes and the user explicitly authorizes release.
