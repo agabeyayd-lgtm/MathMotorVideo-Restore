@@ -114,6 +114,19 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - [ ] Perform a final physical-device smoke test when possible.
 - [ ] Only after every required item is complete and verified, prepare version 395. Until then, do not bump the app version or publish an APK.
 
+
+
+### Independent timeline elements and simplified layout — user-confirmed
+
+- [ ] Remove the visible per-clip header labels (including “Video 1” / “Video 2” or “Klip 1” / “Klip 2”); retain clip boundaries and selection visually without text headers.
+- [ ] Keep the timeline visually minimal: remove redundant explanatory labels, duplicate duration/zoom controls and decorative controls; retain only controls needed for the current selection.
+- [ ] Make every timeline element independently movable: video clips, each text layer, music and each sound effect have their own lane item and independently editable start/end times.
+- [ ] Moving, trimming, selecting or deleting one element must not move or modify other elements. Only an explicit multi-select/group/link action may affect multiple elements.
+- [ ] Allow timeline elements to overlap in time; all lanes share the same ruler, zoom and horizontal scroll coordinate system.
+- [ ] Keep clip thumbnails visible as a continuous filmstrip across the clip; show a clear seam between adjacent clips without separate “Video 1/2” headers.
+- [ ] Keep editing controls contextual: show only the selected element's relevant actions; return to a compact tool dock when selection is cleared or the tool is closed.
+- [ ] Verify independent placement, overlap, trim and save/reopen for two video clips, two text layers, music and a sound effect. Confirm moving one item leaves all others unchanged.
+
 ## Verification boundaries
 
 - Existing unit tests cover some timeline time/pixel mapping, clip trim bounds, playhead-to-clip mapping and text timing boundaries.
