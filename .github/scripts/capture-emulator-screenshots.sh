@@ -315,7 +315,8 @@ timeout -k 2s 15s adb -s emulator-5554 shell am start \
   -n com.mathmotor.video.next/com.mathmotor.video.EditorTestEntryActivity \
   --es video_uri "file://$app_internal_video" \
   --es draft_id "11111111-1111-4111-8111-111111111111" \
-  --ez timeline_sync_test true | tee emulator-screenshots/editor-video-launch.txt
+  --ez timeline_sync_test true \
+  --ef timeline_test_px_per_sec_dp 120 | tee emulator-screenshots/editor-video-launch.txt
 
 # Do not assert that a filename appears in uiautomator XML: on these images
 # uiautomator frequently fails, and the editor is free to display a friendly
@@ -365,7 +366,121 @@ fi
 # clip is inserted into the timeline, so inaccessible UI hierarchy is diagnostic
 # only and does not turn a successful import into a false failure.
 
-echo "Step 8/10: exercise live playback and validate ruler/filmstrip synchronization"
+echo "Step 8/10: exercise filmstrip scrubbing in both directions"
+clip_bounds="$(python3 - emulator-screenshots/editor-window.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+try:
+    root = ET.parse(sys.argv[1]).getroot()
+except (OSError, ET.ParseError):
+    raise SystemExit(0)
+for node in root.iter("node"):
+    desc = node.attrib.get("content-desc", "")
+    bounds = node.attrib.get("bounds", "")
+    if desc.startswith("Klip 1:"):
+        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", bounds)
+        if match:
+            print(*map(int, match.groups()))
+            break
+PY
+)"
+if [ -z "$clip_bounds" ]; then
+  echo "Could not locate the first video filmstrip for the scrub test."
+  collect_capture_diagnostics filmstrip-scrub-target-missing
+  exit 17
+fi
+read -r clip_x1 clip_y1 clip_x2 clip_y2 <<< "$clip_bounds"
+scrub_y="$(((clip_y1 + clip_y2) / 2))"
+forward_start="$((clip_x2 - 35))"
+forward_end="$((clip_x1 + 35))"
+if [ "$((forward_start - forward_end))" -lt 80 ]; then
+  echo "The filmstrip does not expose enough horizontal scroll distance for a meaningful scrub."
+  collect_capture_diagnostics filmstrip-scrub-distance-too-small
+  exit 18
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$forward_start" "$scrub_y" "$forward_end" "$scrub_y" 700
+sleep 1
+timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime > emulator-screenshots/filmstrip-scrub-forward-logcat.txt 2>&1
+forward_values="$(python3 - emulator-screenshots/filmstrip-scrub-forward-logcat.txt <<'PY'
+import re
+import sys
+latest = None
+for line in open(sys.argv[1], errors="replace"):
+    if "TIMELINE_SYNC_SAMPLE" not in line:
+        continue
+    p = re.search(r"playheadMs=(\d+)", line)
+    s = re.search(r"scrollXs=([0-9,]+)", line)
+    if p and s:
+        latest = (int(p.group(1)), int(s.group(1).split(",")[0]))
+if latest:
+    print(*latest)
+PY
+)"
+if [ -z "$forward_values" ]; then
+  echo "No timeline synchronization sample was recorded after dragging the filmstrip left."
+  collect_capture_diagnostics filmstrip-scrub-forward-no-sample
+  exit 19
+fi
+read -r forward_ms forward_scroll <<< "$forward_values"
+if [ "$forward_ms" -le 0 ] || [ "$forward_scroll" -le 0 ]; then
+  echo "Dragging the filmstrip left did not advance the shared playhead."
+  echo "Observed playheadMs=$forward_ms scrollX=$forward_scroll"
+  collect_capture_diagnostics filmstrip-scrub-forward-not-advanced
+  exit 20
+fi
+dump_hierarchy editor-after-forward-scrub.xml emulator-screenshots/editor-after-forward-scrub.xml || true
+reverse_bounds="$(python3 - emulator-screenshots/editor-after-forward-scrub.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+try:
+    root = ET.parse(sys.argv[1]).getroot()
+except (OSError, ET.ParseError):
+    raise SystemExit(0)
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").startswith("Klip 1:"):
+        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+        if match:
+            print(*map(int, match.groups()))
+            break
+PY
+)"
+if [ -z "$reverse_bounds" ]; then
+  echo "Could not relocate the filmstrip after forward scrubbing."
+  collect_capture_diagnostics filmstrip-scrub-reverse-target-missing
+  exit 21
+fi
+read -r reverse_x1 reverse_y1 reverse_x2 reverse_y2 <<< "$reverse_bounds"
+reverse_y="$(((reverse_y1 + reverse_y2) / 2))"
+reverse_start="$((reverse_x1 + 35))"
+reverse_end="$((reverse_x2 - 35))"
+timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$reverse_start" "$reverse_y" "$reverse_end" "$reverse_y" 700
+sleep 1
+timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime > emulator-screenshots/filmstrip-scrub-reverse-logcat.txt 2>&1
+reverse_ms="$(python3 - emulator-screenshots/filmstrip-scrub-reverse-logcat.txt <<'PY'
+import re
+import sys
+latest = None
+for line in open(sys.argv[1], errors="replace"):
+    if "TIMELINE_SYNC_SAMPLE" not in line:
+        continue
+    p = re.search(r"playheadMs=(\d+)", line)
+    if p:
+        latest = int(p.group(1))
+if latest is not None:
+    print(latest)
+PY
+)"
+if [ -z "$reverse_ms" ] || [ "$reverse_ms" -ge "$forward_ms" ]; then
+  echo "Dragging the filmstrip right did not move the playhead backward."
+  echo "Forward=$forward_ms ms reverse=$reverse_ms ms"
+  collect_capture_diagnostics filmstrip-scrub-reverse-not-reversed
+  exit 22
+fi
+echo "PASS: filmstrip left advanced to \${forward_ms}ms; right returned to \${reverse_ms}ms"
+
+echo "Step 9/11: exercise live playback and validate ruler/filmstrip synchronization"
 dump_hierarchy timeline-play-button.xml emulator-screenshots/timeline-play-button.xml || true
 play_coords="$(python3 - emulator-screenshots/timeline-play-button.xml <<'PY'
 import re

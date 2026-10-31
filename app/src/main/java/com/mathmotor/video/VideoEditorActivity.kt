@@ -368,6 +368,12 @@ class VideoEditorActivity : Activity() {
             ?.takeIf { VideoProjectDraftStore.isValidId(it) }
         draftId = requestedDraftId ?: VideoProjectDraftStore.newId()
         buildUi()
+        if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            val testScaleDp = intent.getFloatExtra("timeline_test_px_per_sec_dp", 0f)
+            if (testScaleDp.isFinite() && testScaleDp > 0f) {
+                timelinePxPerSec = dp(testScaleDp.toInt().coerceIn(11, 176)).toFloat()
+            }
+        }
         player = ExoPlayer.Builder(this).build().also { exo ->
             exo.volume = if (keepSourceAudio.isChecked) sourceAudioVolume / 100f else 0f
             playerView.player = exo

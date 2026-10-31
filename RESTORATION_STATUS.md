@@ -11,6 +11,7 @@
 - [ ] Emulator acceptance for fit repeatability, state transitions and end-of-project behavior remains pending.
 
 ## Ruler and thumbnail consistency — 2026-10-31
+- Emulator smoke test now injects a long timeline scale and drags the actual first video filmstrip left and right, asserting playhead/scroll advance and reverse. This directly covers filmstrip scrubbing rather than playback-only synchronization.
 - The leading video clip is now anchored at timeline zero: moving it cannot create an empty opening gap. Other clips remain independently movable.
 
 - Ruler tick interval now derives from the same direct px/sec state as clip geometry; all tick x positions use absolute time-to-pixel conversion.
