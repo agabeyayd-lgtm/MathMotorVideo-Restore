@@ -580,14 +580,20 @@ class VideoEditorActivity : Activity() {
             ViewGroup.LayoutParams.MATCH_PARENT, dp(48)
         ))
 
-        // The live time readout is attached only to the ruler lane in makeLane().
-        // Do not parent it here: refreshTimelineTracks() rebuilds that lane repeatedly.
+        // Keep the live time readout in the playback header. The ruler and every
+        // content lane then use the same 54dp left grip/gutter and the same time-zero axis.
         timelinePlayheadLabel = label("00:00.0 / 00:00.0", 10f, Color.rgb(225, 233, 237), true).apply {
             maxLines = 1
             gravity = Gravity.CENTER_VERTICAL or Gravity.START
             setSingleLine(true)
             setPadding(dp(4), 0, dp(2), 0)
         }
+        centeredPlaybackRow.addView(
+            timelinePlayheadLabel,
+            FrameLayout.LayoutParams(dp(112), dp(42), Gravity.START or Gravity.CENTER_VERTICAL).apply {
+                leftMargin = dp(8)
+            }
+        )
         // Keep the legacy seek model detached: the visible horizontal scrubber and zoom
         // buttons are removed. Timeline gestures now move the lanes under the fixed playhead.
         timelinePlayheadSeek = SeekBar(this).apply {
@@ -596,8 +602,6 @@ class VideoEditorActivity : Activity() {
             isEnabled = false
             contentDescription = "Zaman çizelgesinde oynatma noktası"
         }
-        // The live time readout is displayed in the ruler's left header cell,
-        // not as a separate row beneath the Play button.
         installTimelinePlayheadListeners()
         val clipScroll = android.widget.HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
@@ -1356,13 +1360,6 @@ class VideoEditorActivity : Activity() {
                     dp(if (compactEditorLayout) 5 else 8),
                     dp(if (compactEditorLayout) 2 else 5)
                 )
-                if (compactEditorLayout) {
-                    val timeLabelParams = timelinePlayheadLabel.layoutParams as? LinearLayout.LayoutParams
-                    if (timeLabelParams != null) {
-                        timeLabelParams.width = dp(94)
-                        timelinePlayheadLabel.layoutParams = timeLabelParams
-                    }
-                }
                 rulerAwareTimelineRefresh()
             }
             if (!keyboardLayoutActive && viewportHeight > maxEditorViewportHeightPx) {
@@ -1575,10 +1572,6 @@ class VideoEditorActivity : Activity() {
         val preservedScrollX = pendingTimelineScrollX ?: timelineHorizontalScrollX
         pendingTimelineScrollX = null
         timelineHorizontalScrollX = preservedScrollX
-        // The playhead time label is hosted by the ruler lane. Responsive layout
-        // callbacks can rebuild the timeline more than once; detach the persistent
-        // label from the previous ruler row before attaching it to the new one.
-        (timelinePlayheadLabel.parent as? ViewGroup)?.removeView(timelinePlayheadLabel)
         timelineTracks.removeAllViews()
         timelineScrollViews.clear()
         if (::timelinePlayheadSeek.isInitialized) updateTimelinePlayheadControls()
@@ -1652,9 +1645,11 @@ class VideoEditorActivity : Activity() {
                 }
             }
             } else {
-                timelinePlayheadLabel.gravity = Gravity.CENTER_VERTICAL or Gravity.START
-                timelinePlayheadLabel.setPadding(dp(4), 0, dp(2), 0)
-                row.addView(timelinePlayheadLabel, LinearLayout.LayoutParams(dp(104), ViewGroup.LayoutParams.MATCH_PARENT))
+                // Match the 54dp layer-grip width. A wider ruler header shifts
+                // every ruler tick away from the matching video-thumbnail time.
+                row.addView(View(this).apply {
+                    contentDescription = "Zaman cetveli başlığı"
+                }, LinearLayout.LayoutParams(dp(54), ViewGroup.LayoutParams.MATCH_PARENT))
             }
 
             if (reorderable) {
@@ -2028,22 +2023,24 @@ class VideoEditorActivity : Activity() {
 
         if (!keyboardLayoutActive) {
             val ruler = makeLane("", 26, "__ruler__", reorderable = false)
-            val rulerEndMs = (((totalMs + 4999L) / 5000L).coerceAtLeast(1L)) * 5000L
+            // Each ruler label marks the exact start of one elapsed second.
+            // Cell widths come from the same time-to-pixel conversion as video clips.
+            val rulerEndMs = (((totalMs + 999L) / 1000L).coerceAtLeast(1L)) * 1000L
             var rulerTimeMs = 0L
             var rulerPositionPx = 0
             while (rulerTimeMs < rulerEndMs) {
-                val spanMs = minOf(5000L, rulerEndMs - rulerTimeMs)
-                val nextTimeMs = rulerTimeMs + spanMs
+                val nextTimeMs = rulerTimeMs + 1000L
                 val nextPositionPx = TimelineScaleMath.pixelsForTime(nextTimeMs, pxPerSecond)
                 val tick = TextView(this).apply {
-                    text = formatMs(rulerTimeMs) + " ┆"
+                    text = (rulerTimeMs / 1000L).toString()
                     textSize = 9f
                     setTextColor(Color.rgb(166, 184, 201))
                     gravity = Gravity.CENTER_VERTICAL or Gravity.START
-                    setPadding(dp(2), 0, 0, 0)
+                    setPadding(0, 0, 0, 0)
+                    maxLines = 1
                 }
                 ruler.addView(tick, LinearLayout.LayoutParams(
-                    maxOf(dp(26), (nextPositionPx - rulerPositionPx).coerceAtLeast(1)), dp(22)
+                    (nextPositionPx - rulerPositionPx).coerceAtLeast(1), dp(22)
                 ))
                 rulerTimeMs = nextTimeMs
                 rulerPositionPx = nextPositionPx
@@ -2125,9 +2122,9 @@ class VideoEditorActivity : Activity() {
             addSoundEffectTimelineBlock(effectTrack, totalMs)
             addSpacer(effectTrack, endMs, totalMs)
         }
-        // Give every lane the same half-viewport time-zero origin. At scrollX=0,
-        // each clip/layer begins beneath the fixed center playhead; playback scrolls
-        // all synchronized lanes by the elapsed-time pixel distance.
+        // Give every lane the same half-viewport time-zero origin. With the shared
+        // 57dp row gutter (3dp row padding + 54dp header/grip), t=0 in the ruler
+        // and the first video frame occupy the exact same fixed-playhead coordinate.
         timelineScrollViews.forEach { laneScroll ->
             val laneTrack = laneScroll.getChildAt(0) as? LinearLayout ?: return@forEach
             fun updateLaneOriginSpacer(viewportWidth: Int) {
@@ -4474,20 +4471,28 @@ class VideoEditorActivity : Activity() {
         val targetThumbnailWidth = dp(52).coerceAtLeast(1)
         val thumbnailCount = kotlin.math.ceil(width.toDouble() / targetThumbnailWidth)
             .toInt().coerceIn(1, 32)
-        val thumbnailCellWidth = (width / thumbnailCount).coerceAtLeast(1)
+        val separatorWidth = dp(1) * (thumbnailCount - 1)
+        val availableCellWidth = (width - separatorWidth).coerceAtLeast(thumbnailCount)
+        val baseCellWidth = (availableCellWidth / thumbnailCount).coerceAtLeast(1)
+        val extraPixels = availableCellWidth % thumbnailCount
+        val sampleSpanMs = (durationMs - 1L).coerceAtLeast(0L)
         repeat(thumbnailCount) { slot ->
             val image = ImageView(this).apply {
                 scaleType = ImageView.ScaleType.CENTER_CROP
                 setBackgroundColor(Color.rgb(31, 46, 59))
                 contentDescription = "Klip karesi"
             }
-            val cellWidth = if (slot == thumbnailCount - 1) {
-                (width - thumbnailCellWidth * slot).coerceAtLeast(1)
-            } else thumbnailCellWidth
+            val cellWidth = baseCellWidth + if (slot < extraPixels) 1 else 0
             filmstrip.addView(image, LinearLayout.LayoutParams(cellWidth, ViewGroup.LayoutParams.MATCH_PARENT).apply {
                 if (slot < thumbnailCount - 1) rightMargin = dp(1)
             })
-            val frameTime = clip.startMs + (durationMs * (slot + 1L) / (thumbnailCount + 1L))
+            // The first thumbnail is the actual first source frame, not a later
+            // preview sample. Every subsequent sample advances along that same clip.
+            val frameTime = clip.startMs + if (thumbnailCount <= 1) {
+                0L
+            } else {
+                sampleSpanMs * slot.toLong() / (thumbnailCount - 1).toLong()
+            }
             requestTimelineThumbnail(clip.uri, frameTime, image)
         }
         container.addView(filmstrip, FrameLayout.LayoutParams(
