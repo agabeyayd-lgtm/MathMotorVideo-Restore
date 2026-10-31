@@ -416,3 +416,31 @@ These are new release-blocking UI/interaction requirements. They are recorded as
 - This is an implementation pass, **not** a claim of CapCut visual parity. Await PR-head build, unit tests and emulator screenshot review. Compare the actual screenshot against the user's marked image before making further layout changes.
 - PR #11 remains draft. Version 395 remains blocked.
 
+
+
+
+## Exact CapCut editor reference — final screenshot (2026-10-31)
+
+The screenshot supplied by the user on 2026-10-31 is the **single, exact, non-negotiable editor layout target**. It supersedes earlier verbal interpretations and any intermediate mockups. Do not reinterpret the layer order or invent another editor layout.
+
+### Match the screenshot from top to bottom
+
+1. **Top action bar:** X/close and search on the left; premium/action icon where present; resolution selector (e.g. YZ UHD) and cyan Dışa Aktar button on the right.
+2. **Large portrait preview:** centered, dark background, source aspect ratio preserved.
+3. **Preview controls row:** expand/fullscreen at left; one centered Play/Pause; adjacent overlay/undo/redo actions to the right.
+4. **One timeline header row:** current/total time at far left (e.g. 00:00 / 00:42); ruler labels to its right on the same horizontal row (00:00, 00:05, 00:10, 00:15 …).
+5. **Timeline workspace:** compact, continuous, dark workspace. The **main video filmstrip is the first/top track**. Text/overlay strips appear immediately below it, followed by audio/music and other added layers as needed. These strips are close together and can overlap in time; they are not separated into large cards or unrelated panels. All tracks use one shared ruler, zoom, horizontal scroll and a centered white vertical playhead. Each strip has its own start/end and can be moved or trimmed independently; moving one must not shift the others.
+6. **Bottom tool dock:** fixed, full-width, dark dock with the contextual icon-and-label actions shown in the screenshot (e.g. Metin ekle, Otomatik Altyazılar, Çıkartmalar, Çiz, Metin şablonları). The timeline ends directly above this dock.
+
+### Critical layout rules
+
+- Do not reverse the layer order: **video first/top; text and overlays immediately below; audio and additional tracks below those; tool dock last/bottom.**
+- Do not add artificial six-track placeholders. Only show actual content layers, with compact row spacing like the reference.
+- The current/total time and ruler labels share the same horizontal row.
+- Keep the playhead over the timeline tracks, not the preview. Play/Pause remains centered below the preview.
+- Keep the preview large and timeline usable. No tiny timeline card, no excessive blank gaps, no floating detached blocks.
+- Match the reference's proportions, dark surfaces, compact spacing, clip filmstrip treatment, and bottom dock. Do not replace it with a generic “inspired by” design.
+- Do not claim visual acceptance from compilation or unit tests alone. Inspect the emulator screenshot at phone dimensions side by side with this exact reference.
+
+This is a layout target, not a claim that all behaviors are implemented. Gesture, independent trim/move, preview synchronization, keyboard, save/reopen and export checks remain separate verification gates. PR #11 stays draft; version 395 stays blocked until all gates pass and the user explicitly authorizes it.
+
