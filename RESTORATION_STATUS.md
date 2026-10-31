@@ -667,3 +667,18 @@ For every item, track separately: source implementation, focused automated test 
 
 ### Release guard
 PR #11 remains draft and unmerged. Installed baseline remains versionCode 394 / build 61. Version 395 must not be created, signed, published, or offered until all required work and verification gates pass and the user explicitly authorizes it.
+
+## First targeted source corrections — 2026-10-31
+
+Commit `90a877d7836df45adb27c5ced7f308d5ff210cce`:
+- [x] Remove persistent “Taslak açıldı” status message on successful draft load (source change; verification pending).
+- [x] Use compact `MM:SS / MM:SS` playback duration display (source change; verification pending).
+- [x] Append newly added video after the last video endpoint rather than the furthest text/music/sound endpoint (source change; verify two-clip behavior).
+- [x] Preserve full thumbnail scene with fit/letterbox rendering instead of center crop (source change; verify on emulator/device).
+- [x] Remove inter-cell thumbnail separator spacing (source change; visual verification pending).
+- [ ] Run focused compile/unit checks and inspect results before any retry.
+- [ ] Verify adjacent clips have no unintended gray gap on emulator and real device.
+- [ ] Verify thumbnail framing, continuous filmstrip, duration readout and draft-open behavior in screenshots.
+- [ ] Remaining two-finger zoom/pan, tap-empty-to-deselect, frame ruler, preview latency and contextual toolbar requirements remain open.
+
+No version change. PR #11 remains draft/unmerged; installed 394/build 61 is unchanged. Version 395 remains blocked.
