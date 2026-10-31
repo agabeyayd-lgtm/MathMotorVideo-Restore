@@ -699,8 +699,12 @@ class VideoEditorActivity : Activity() {
         }
         timelineCard.addView(playheadRow, matchWrap())
         installTimelinePlayheadListeners()
+        // Keep the shared timeline compact and content-focused instead of stretching
+        // its empty background to consume every remaining pixel on short phones.
+        // The track rows scroll horizontally; the editor shell keeps its own height.
         root.addView(timelineCard, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            dp(if (compactEditorLayout) 224 else 252)
         ))
         root.addView(gap(8))
 
