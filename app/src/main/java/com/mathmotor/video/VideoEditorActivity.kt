@@ -1176,23 +1176,28 @@ class VideoEditorActivity : Activity() {
         val dock = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setPadding(0, dp(5), 0, 0)
+            setPadding(dp(3), dp(4), dp(3), dp(2))
+            setBackgroundColor(Color.rgb(8, 12, 18))
+            elevation = dp(8).toFloat()
         }
         listOf(
-            Triple("clip", "Klip", "✂"),
+            Triple("clip", "Düzenle", "✂"),
             Triple("text", "Metin", "T"),
             Triple("audio", "Ses", "♫"),
-            Triple("export", "Diğer", "⋯")
+            Triple("export", "Proje", "⋯")
         ).forEach { (key, title, symbol) ->
             val tab = miniButton("$symbol\n$title") { toggleEditorPanel(key) }.apply {
                 textSize = 10f
+                gravity = Gravity.CENTER
                 minHeight = dp(52)
                 setPadding(dp(1), dp(2), dp(1), dp(2))
                 maxLines = 2
+                background = android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
+                setTextColor(Color.rgb(205, 216, 228))
             }
             editorTabButtons[key] = tab
             dock.addView(tab, LinearLayout.LayoutParams(0, dp(52), 1f).apply {
-                if (key != "clip") leftMargin = dp(4)
+                if (key != "clip") leftMargin = dp(3)
             })
         }
         root.addView(dock, matchWrap())
@@ -1523,11 +1528,12 @@ class VideoEditorActivity : Activity() {
         editorTabButtons.forEach { (key, button) ->
             val selected = key == name
             button.background = android.graphics.drawable.GradientDrawable().apply {
-                setColor(if (selected) Color.rgb(34, 184, 158) else Color.rgb(20, 31, 45))
-                cornerRadius = dp(12).toFloat()
-                setStroke(dp(1), if (selected) Color.rgb(100, 245, 218) else Color.rgb(42, 59, 77))
+                setColor(if (selected) Color.rgb(34, 48, 61) else Color.TRANSPARENT)
+                cornerRadius = dp(8).toFloat()
+                setStroke(dp(if (selected) 1 else 0),
+                    if (selected) Color.rgb(57, 220, 190) else Color.TRANSPARENT)
             }
-            button.setTextColor(if (selected) Color.rgb(5, 25, 29) else Color.rgb(220, 231, 240))
+            button.setTextColor(if (selected) Color.rgb(86, 231, 200) else Color.rgb(205, 216, 228))
         }
         if (name == "export") status.text = "Projeyi kaydedebilir veya MP4 olarak dışa aktarabilirsin."
     }
@@ -1565,12 +1571,8 @@ class VideoEditorActivity : Activity() {
         editorPanels.values.forEach { it.visibility = View.GONE }
         updateTextOverlayEditToggle()
         editorTabButtons.values.forEach { button ->
-            button.background = android.graphics.drawable.GradientDrawable().apply {
-                setColor(Color.rgb(20, 31, 45))
-                cornerRadius = dp(12).toFloat()
-                setStroke(dp(1), Color.rgb(42, 59, 77))
-            }
-            button.setTextColor(Color.rgb(220, 231, 240))
+            button.background = android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
+            button.setTextColor(Color.rgb(205, 216, 228))
         }
         val focused = currentFocus
         val keyboard = getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
