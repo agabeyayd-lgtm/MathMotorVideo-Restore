@@ -142,3 +142,29 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 - [x] Corrected the clamp expectation and added a separate valid-range preservation assertion in commit `1ac2eff891af503fe0083b33f46d6478128ea6c6`.
 - [ ] Await fresh PR-head CI for the corrected test. Do not treat the correction as verified until unit tests and Debug APK assembly pass.
 - [ ] Physical-device preview/export, gestures and project persistence remain unverified. Version 395 remains blocked.
+
+
+## Unified editor surface — newly confirmed by user (2026-10-31)
+
+The user clarified the desired interaction model. This section is a requirements record only; none of these items is marked implemented or device-verified by this update.
+
+- [ ] Merge the separately titled “Zaman Çizelgesi” and “Klip Düzenleme” areas into one coherent editor surface. Clip editing becomes contextual actions for the selected clip, not a second timeline-like panel.
+- [ ] Exactly one Play/Pause control, one time readout and one vertical red playhead. Remove duplicate controls/time displays and persistent playback buttons over the video preview.
+- [ ] The red playhead stays fixed at the center of the visible timeline viewport. During playback, the ruler and all timeline lanes scroll together underneath it. Dragging the timeline changes the time under the fixed playhead and updates preview.
+- [ ] Video preview stays clean and unobstructed; do not place persistent playback controls over the picture.
+- [ ] Two-finger pinch zoom acts on the real shared timeline. The timestamp under the midpoint between the fingers remains anchored at that screen position during zoom, subject to timeline boundaries.
+- [ ] Zooming in expands the time scale and reveals finer detail; zooming out compresses it and shows a longer time span. Zoom must not alter clip/layer timestamps or durations.
+- [ ] Ruler, video, text, music, sound effects, trim handles and playhead share one time-to-pixel scale and one synchronized horizontal scroll position.
+- [ ] Project duration is the furthest end among all timeline items, not the sum of overlapping durations. Show time/duration once, not in a second panel.
+- [ ] Keep the UI minimal: no duplicate timeline, redundant panel, decorative control row or unnecessary buttons. Show only contextual actions for the selected clip.
+
+### Acceptance checks (not yet run)
+
+- [ ] Confirm one Play/Pause, one time readout and one fixed center red playhead.
+- [ ] Confirm all lanes and ruler move together beneath the stationary playhead during playback and timeline scrubbing.
+- [ ] Confirm pinch midpoint anchoring and synchronized zoom across all lanes at multiple scales.
+- [ ] Confirm “Zaman Çizelgesi” and “Klip Düzenleme” no longer appear as separate timeline-like sections.
+- [ ] Confirm preview has no persistent overlay controls and project duration is based on the furthest lane end.
+- [ ] Confirm small-screen and keyboard-open layout.
+
+**Current status:** documentation only; implementation and device verification remain pending. Keep PR #11 in draft. Do not create/sign/publish version 395; installed 394/build 61 remains the baseline.
