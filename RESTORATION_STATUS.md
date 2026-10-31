@@ -11,6 +11,7 @@
 - [ ] Emulator acceptance for fit repeatability, state transitions and end-of-project behavior remains pending.
 
 ## Ruler and thumbnail consistency — 2026-10-31
+- The leading video clip is now anchored at timeline zero: moving it cannot create an empty opening gap. Other clips remain independently movable.
 
 - Ruler tick interval now derives from the same direct px/sec state as clip geometry; all tick x positions use absolute time-to-pixel conversion.
 - Scroll and frame hit-testing use the shared viewport-origin time conversion rather than independent x-to-time formulas.

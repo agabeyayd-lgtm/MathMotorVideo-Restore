@@ -4612,7 +4612,10 @@ class VideoEditorActivity : Activity() {
                             filmstripMoved=true;timelineHandler.removeCallbacks(longPressAction)
                             if(!filmstripLongPressed){
                                 val minimumPx=-TimelineScaleMath.pixelsForTime(initialStartMs,timelinePixelsPerSecond())
-                                view.translationX=maxOf(minimumPx.toFloat(),dx)
+                                // The leading clip is anchored at project time zero; it may not
+                                // be dragged right and create an unintended empty opening gap.
+                                val boundedDelta = if (initialStartMs == 0L) minOf(0f, dx) else dx
+                                view.translationX=maxOf(minimumPx.toFloat(),boundedDelta)
                             }
                         }
                         true
@@ -4621,8 +4624,10 @@ class VideoEditorActivity : Activity() {
                         timelineHandler.removeCallbacks(longPressAction);filmstripTouchActive=false
                         view.parent?.requestDisallowInterceptTouchEvent(false);view.translationX=0f
                         if(filmstripMoved&&!filmstripLongPressed){
-                            val delta=TimelineScaleMath.millisecondsForPixels(event.rawX-downRawX,timelinePixelsPerSecond())
-                            val nextStart=(initialStartMs+delta).coerceAtLeast(0L)
+                            val rawDeltaPx = event.rawX-downRawX
+                            val allowedDeltaPx = if (initialStartMs == 0L) minOf(0f, rawDeltaPx) else rawDeltaPx
+                            val delta=TimelineScaleMath.millisecondsForPixels(allowedDeltaPx,timelinePixelsPerSecond())
+                            val nextStart=if (initialStartMs == 0L) 0L else (initialStartMs+delta).coerceAtLeast(0L)
                             if(nextStart!=initialStartMs){
                                 recordClipEdit();clip.timelineStartMs=nextStart;selectedClipIndex=index;timelinePlayheadMs=nextStart
                                 timelinePreviewLoaded=false;previewSingleClip=false
