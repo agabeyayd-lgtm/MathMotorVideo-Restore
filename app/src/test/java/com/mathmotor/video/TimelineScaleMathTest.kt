@@ -63,14 +63,14 @@ class TimelineScaleMathTest {
     }
 
     @Test
-    fun sharedProjectDurationExpandsToTheFurthestLayerEnd() {
+    fun sharedProjectDurationExpandsToTheFurthestIndependentLayerEnd() {
         assertEquals(
             13_000L,
             TimelineProjectDurationMath.totalDuration(
-                10_000L, // video
-                8_000L,  // text
-                13_000L, // music
-                2_500L   // effect
+                videoEndMs = 10_000L,
+                textLayerEnds = listOf(TimelineLayerEnd(8_000L)),
+                musicEndMs = 13_000L,
+                soundEndMs = 2_500L
             )
         )
     }
@@ -79,13 +79,52 @@ class TimelineScaleMathTest {
     fun sharedProjectDurationShrinksWhenTheFurthestLayerIsRemoved() {
         assertEquals(
             10_000L,
-            TimelineProjectDurationMath.totalDuration(10_000L, 8_000L, 2_500L)
+            TimelineProjectDurationMath.totalDuration(
+                videoEndMs = 10_000L,
+                textLayerEnds = listOf(TimelineLayerEnd(8_000L)),
+                musicEndMs = 0L,
+                soundEndMs = 2_500L
+            )
+        )
+    }
+
+    @Test
+    fun projectFollowingTextDoesNotKeepAnOldLongerProjectDurationAlive() {
+        assertEquals(
+            10_000L,
+            TimelineProjectDurationMath.totalDuration(
+                videoEndMs = 10_000L,
+                textLayerEnds = listOf(TimelineLayerEnd(13_000L, followsProjectDuration = true)),
+                musicEndMs = 0L,
+                soundEndMs = 0L
+            )
+        )
+    }
+
+    @Test
+    fun explicitlyTimedTextCanExtendTheProjectDuration() {
+        assertEquals(
+            13_000L,
+            TimelineProjectDurationMath.totalDuration(
+                videoEndMs = 10_000L,
+                textLayerEnds = listOf(TimelineLayerEnd(13_000L, followsProjectDuration = false)),
+                musicEndMs = 0L,
+                soundEndMs = 0L
+            )
         )
     }
 
     @Test
     fun sharedProjectDurationNeverBecomesNegative() {
-        assertEquals(0L, TimelineProjectDurationMath.totalDuration(-1L, -500L))
+        assertEquals(
+            0L,
+            TimelineProjectDurationMath.totalDuration(
+                videoEndMs = -1L,
+                textLayerEnds = listOf(TimelineLayerEnd(-2L, followsProjectDuration = true)),
+                musicEndMs = -3L,
+                soundEndMs = -4L
+            )
+        )
     }
 
     @Test
