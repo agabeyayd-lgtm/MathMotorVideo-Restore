@@ -71,7 +71,8 @@ class TimelineTrimMathTest {
 class MusicSourceRangeMathTest {
     @Test
     fun sourceRangeIsClampedAndRemainsOrdered() {
-        assertEquals(MusicSourceRange(2_000L, 8_000L), MusicSourceRangeMath.normalize(MusicSourceRange(-5L, 20_000L), 10_000L))
+        assertEquals(MusicSourceRange(0L, 10_000L), MusicSourceRangeMath.normalize(MusicSourceRange(-5L, 20_000L), 10_000L))
+        assertEquals(MusicSourceRange(2_000L, 8_000L), MusicSourceRangeMath.normalize(MusicSourceRange(2_000L, 8_000L), 10_000L))
         assertEquals(MusicSourceRange(9_900L, 10_000L), MusicSourceRangeMath.start(MusicSourceRange(0L, 10_000L), 9_999L, 10_000L))
         assertEquals(MusicSourceRange(2_000L, 2_100L), MusicSourceRangeMath.end(MusicSourceRange(2_000L, 8_000L), 0L, 10_000L))
     }
