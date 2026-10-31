@@ -325,3 +325,12 @@ New visual requirement; this is a documentation record, not a claim that the UI 
 - [ ] Verify vertical layer scrolling, lane reordering, horizontal synchronized scrolling, center playhead and pinch zoom on an emulator/device.
 - [ ] Review screenshots with many layers and keyboard open; verify the bottom dock remains anchored when the keyboard is closed.
 - This is an implementation change, not accepted visual parity. PR #11 stays draft and version 395 stays blocked.
+
+
+## Bottom tool dock visual pass — implementation pending visual approval (2026-10-31)
+
+- [x] Change the bottom toolbar from rounded filled buttons to a flat dark dock with compact icon/label controls.
+- [x] Rename existing functional tools to Düzenle, Metin, Ses and Proje; no placeholder or inert tools were added.
+- [x] Selected tool receives a restrained accent highlight; closing it restores the neutral dock.
+- [ ] Confirm the dock remains visible at the bottom on portrait and compact screens, including with contextual panels and keyboard.
+- [ ] Review icon glyph legibility and touch target sizing on device. This is not yet visual acceptance.
