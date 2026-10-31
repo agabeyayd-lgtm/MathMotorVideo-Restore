@@ -419,8 +419,9 @@ for line in open(sys.argv[1], errors="replace"):
         continue
     p = re.search(r"playheadMs=(\d+)", line)
     s = re.search(r"scrollXs=([0-9,]+)", line)
-    if p and s:
-        latest = (int(p.group(1)), int(s.group(1).split(",")[0]))
+    c = re.search(r"playheadCenterPx=(\d+)", line)
+    if p and s and c:
+        latest = (int(p.group(1)), int(s.group(1).split(",")[0]), int(c.group(1)))
 if latest:
     print(*latest)
 PY
@@ -430,7 +431,7 @@ if [ -z "$forward_values" ]; then
   collect_capture_diagnostics filmstrip-scrub-forward-no-sample
   exit 19
 fi
-read -r forward_ms forward_scroll <<< "$forward_values"
+read -r forward_ms forward_scroll playhead_center <<< "$forward_values"
 if [ "$forward_ms" -le 0 ] || [ "$forward_scroll" -le 0 ]; then
   echo "Dragging the filmstrip left did not advance the shared playhead."
   echo "Observed playheadMs=$forward_ms scrollX=$forward_scroll"
@@ -465,7 +466,14 @@ reverse_width="$((reverse_x2 - reverse_x1))"
 reverse_inset="$((reverse_width / 10))"
 if [ "$reverse_inset" -lt 10 ]; then reverse_inset=10; fi
 if [ "$reverse_inset" -gt 24 ]; then reverse_inset=24; fi
+# Keep the reverse gesture entirely to the right of the fixed playhead's
+# 28dp touch target. Crossing that overlay hands the gesture to playhead seeking
+# instead of the HorizontalScrollView and can falsely look like reverse scrub.
 reverse_start="$((reverse_x1 + reverse_inset))"
+playhead_safe_start="$((playhead_center + 20))"
+if [ "$reverse_start" -lt "$playhead_safe_start" ]; then
+  reverse_start="$playhead_safe_start"
+fi
 reverse_end="$((reverse_x2 - reverse_inset))"
 reverse_distance="$((reverse_end - reverse_start))"
 if [ "$reverse_distance" -lt 80 ]; then
