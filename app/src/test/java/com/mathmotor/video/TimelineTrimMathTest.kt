@@ -227,22 +227,39 @@ class TimelineVideoMathTest {
     }
 
     @Test
-    fun overlappingClipsUseRowsThatMatchLayerPriority() {
+    fun everyClipUsesTheSameVisualStripAndKeepsItsExactTimelineRange() {
         val segments = listOf(
             TimelineVideoSegment(0L, 0L, 5_000L, 5_000L),
-            TimelineVideoSegment(2_000L, 0L, 4_000L, 4_000L)
+            TimelineVideoSegment(2_000L, 0L, 4_000L, 4_000L),
+            TimelineVideoSegment(9_000L, 500L, 2_000L, 2_000L)
         )
-        // The later list item is the top layer, so it must appear in row zero.
-        assertEquals(listOf(listOf(1), listOf(0)), TimelineVideoMath.assignLanes(segments))
+
+        val placements = TimelineVideoMath.singleTrackPlacements(segments)
+
+        assertEquals(listOf(0, 1, 2), placements.map { it.clipIndex })
+        assertEquals(listOf(0L, 2_000L, 9_000L), placements.map { it.timelineStartMs })
+        assertEquals(listOf(5_000L, 6_000L, 10_500L), placements.map { it.timelineEndMs })
+        assertEquals(listOf(0, 1, 2), placements.map { it.layerOrder })
+        // The first two clips still overlap in time; overlap does not create a row.
+        assertEquals(1, TimelineVideoMath.activeSegmentIndexAt(segments, 2_500L))
     }
 
     @Test
-    fun nonOverlappingClipsCanShareOneChronologicalRow() {
+    fun singleStripPlacementIncludesAllClipsEvenWhenOneIsFullyCovered() {
         val segments = listOf(
-            TimelineVideoSegment(5_000L, 0L, 2_000L, 2_000L),
-            TimelineVideoSegment(0L, 0L, 3_000L, 3_000L)
+            TimelineVideoSegment(1_000L, 0L, 8_000L, 8_000L),
+            TimelineVideoSegment(1_000L, 0L, 8_000L, 8_000L),
+            TimelineVideoSegment(12_000L, 0L, 3_000L, 3_000L)
         )
-        assertEquals(listOf(listOf(1, 0)), TimelineVideoMath.assignLanes(segments))
+
+        val placements = TimelineVideoMath.singleTrackPlacements(segments)
+
+        assertEquals(3, placements.size)
+        assertEquals(listOf(0, 1, 2), placements.map { it.clipIndex })
+        assertEquals(placements[0].timelineStartMs, placements[1].timelineStartMs)
+        assertEquals(placements[0].timelineEndMs, placements[1].timelineEndMs)
+        // The higher layer remains the preview winner while either item is editable.
+        assertEquals(1, TimelineVideoMath.activeSegmentIndexAt(segments, 4_000L))
     }
 
     @Test
