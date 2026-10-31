@@ -364,6 +364,7 @@ class VideoEditorActivity : Activity() {
         }
     }
 
+    // CapCut-reference workspace: preview, centered playback, left time readout, shared timeline, pinned dock.
     private fun buildUi() {
         editorPanels.clear()
         editorTabButtons.clear()
