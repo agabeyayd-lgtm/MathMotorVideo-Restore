@@ -153,15 +153,16 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 
 ### Still open
 
-- Independent video project positions, body drag, edge trim and persistence are now implemented in PR #11. Verification of the updated timeline row/layer ordering is pending CI; actual touch gestures, preview/export output and save/reopen still require device validation.
+- Independent video project positions, body drag, edge trim and persistence are implemented in PR #11. The video timeline is now being converted to one CapCut-style VIDEO strip; build/test and real-device gesture, preview/export and save/reopen validation remain required.
 - Music source in/out selection is now implemented separately from project-timeline placement; CI and device/export validation are pending.
 - Verify overlap and exact synchronization across all items in the shared timeline, live preview, MP4 export and saved/reopened projects.
 - Test thumbnail clarity/load behavior, actual finger gestures, audio sync, small screens and keyboard behavior on a device.
 ### Independent video timeline — implementation added, verification pending (2026-10-31)
 
 - Every video clip stores a project-timeline start separately from source in/out. Existing version-1 projects without this field load sequentially; new saves persist each position.
-- Video clips are placed at shared timeline coordinates. Overlapping ranges render on separate rows; dragging a filmstrip moves only that clip; left/right trim maintains source and project boundaries.
-- Preview and export share one flattened video sequence: the last clip in layer order is visible during overlap and empty intervals become black/silent. Timeline rows now follow that same layer priority, so the topmost overlapping item is shown above lower layers. This is top-layer occlusion, not alpha blending, crossfade or picture-in-picture.
+- Video clips retain independent shared-timeline start/end positions. The former row-assignment renderer has been replaced by one VIDEO strip: each real-frame filmstrip is positioned at its absolute project-time x-coordinate inside a single strip canvas. Overlaps are stacked within this one lane in the same layer order as preview/export; no additional VIDEO rows are created.
+- The selected clip is raised above overlapping clips so its frame and trim handles remain editable. Long-pressing an overlapping clip exposes an “Örtüşen klibi seç” submenu for selecting a covered clip without adding another row. Body drag and edge trim continue to update only the chosen clip.
+- Preview and export share one flattened video sequence: the last clip in layer order is visible during overlap and empty intervals become black/silent. Overlap remains top-layer occlusion, not alpha blending, crossfade or picture-in-picture.
 - Touch, overlapping preview/export, actual MP4 output and save/reopen still require device/emulator verification. Version 395 remains blocked.
 
 ### Multi-track implementation constraint — Media3 1.10.1
@@ -270,3 +271,14 @@ These are new release-blocking UI/interaction requirements. They are recorded as
 - The timestamp beneath the pinch midpoint is captured at gesture start; zoom updates recalculate the shared lane scroll offset using the anchored-zoom math, keeping that timestamp beneath the moving finger midpoint while the shared lane scroll position remains synchronized.
 - Zoom remains clamped to 0.5×–8×. Clip timestamps/durations are not rewritten by the gesture.
 - This is an implementation step, not device acceptance: run Verify/build, then test two-finger zoom on a physical phone at multiple timeline positions, both zoom directions, screen edges, and with video/audio/text lanes visible. Confirm one-finger scrub and clip drag still work after pinch. No release/395 created.
+
+
+### One CapCut-style VIDEO strip — implementation added (2026-10-31)
+
+- Removed visual lane assignment for video clips. The editor now creates exactly one row labelled **VIDEO** and places every clip in a single FrameLayout canvas at its true project-timeline x-coordinate.
+- Each clip retains its own decoded-frame filmstrip, clip boundary, body-drag handler and left/right trim handles. Moving or trimming one clip does not rewrite another clip's start/end values.
+- Overlapping clips are composited inside the same strip in clip-list/layer order, matching the current preview/export rule (the later layer is visible on top). No extra VIDEO row is created.
+- The selected clip receives the top z-order so its handles remain available. Long-press on an overlapping clip offers an **Örtüşen klibi seç** submenu, allowing a fully covered clip to be selected and raised without creating another row.
+- Removed the old assignLanes() helper and replaced tests that asserted multi-row behavior with tests for one-strip placement, exact timeline-range preservation, overlap order and fully covered clips.
+- **Verification pending:** run PR-head unit tests/Kotlin compilation/debug APK build. Then test the single strip on the phone with sequential clips, gaps, partially overlapping clips and fully overlapping clips; check frame continuity, clip selection, body drag, both trim edges, pinch zoom and synchronized lane scrolling. Do not mark device acceptance complete until those checks pass.
+- PR #11 remains draft; version 395 remains blocked; installed version 394/build 61 stays unchanged.
