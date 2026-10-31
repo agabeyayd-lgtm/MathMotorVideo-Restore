@@ -30,6 +30,16 @@ A change is **not accepted** merely because it compiles, passes unit tests, or l
 **Scope guard:** Do not introduce a second competing editor design or ask the user to choose between layouts. Work only toward this reference. Version 395 remains blocked until all implementation and verification gates pass and the user explicitly authorizes release.
 
 
+## Ruler and thumbnail consistency — 2026-10-31
+
+- Ruler tick interval now derives from the same direct px/sec state as clip geometry; all tick x positions use absolute time-to-pixel conversion.
+- Scroll and frame hit-testing use the shared viewport-origin time conversion rather than independent x-to-time formulas.
+- Added deterministic Sığdır action using available timeline width / total project duration.
+- Thumbnail cell count follows clip width (up to 256); decode failures retry twice and can temporarily reuse the nearest cached frame without deleting prior cached frames.
+- [ ] Emulator: repeated fit produces identical px/sec; selection/move does not alter scale; ruler labels/readout agree at fit and pinch zoom.
+- [ ] Emulator: zooming 41→83 px/sec increases cells to match clip width; old frames remain until replacement samples decode; failed thumbnails retry.
+- PR #11 remains draft; version 395 remains blocked.
+
 ## Single px/sec timeline scale — 2026-10-31
 
 - Replaced the live zoom multiplier with one authoritative `timelinePxPerSec` value. Pinch zoom changes it; selecting or moving a clip only scrolls the timeline.

@@ -624,6 +624,17 @@ class VideoEditorActivity : Activity() {
                 leftMargin = dp(8)
             }
         )
+        val fitTimelineButton = miniButton("Sığdır") { fitTimelineToProject() }.apply {
+            textSize = 10f
+            minWidth = dp(58)
+            contentDescription = "Zaman çizelgesini projeye sığdır"
+        }
+        centeredPlaybackRow.addView(
+            fitTimelineButton,
+            FrameLayout.LayoutParams(dp(64), dp(36), Gravity.END or Gravity.CENTER_VERTICAL).apply {
+                rightMargin = dp(8)
+            }
+        )
         // Keep the legacy seek model detached: the visible horizontal scrubber and zoom
         // buttons are removed. Timeline gestures now move the lanes under the fixed playhead.
         timelinePlayheadSeek = SeekBar(this).apply {
@@ -1761,8 +1772,9 @@ class VideoEditorActivity : Activity() {
                     if (!autoScrollingTimeline && view === timelineScrollViews.firstOrNull() && view.width > 0) {
                         // The fixed center playhead stays still while the filmstrip moves
                         // underneath it. Update the visible time immediately on every drag.
-                        val underPlayheadMs = TimelineScaleMath.millisecondsForPixels(
-                            scrollX.toFloat().coerceAtLeast(0f), timelinePixelsPerSecond()
+                        val originPx = timelineOriginSpacerWidth(view.width).toFloat()
+                        val underPlayheadMs = TimelineScaleMath.timeAtViewportX(
+                            scrollX, originPx, originPx, timelinePixelsPerSecond()
                         ).coerceIn(0L, totalOutputDurationMs())
                         if (underPlayheadMs != timelinePlayheadMs) {
                             // A manual scrub takes control from playback so the periodic
@@ -2069,20 +2081,20 @@ class VideoEditorActivity : Activity() {
         // already reduces row height for IME mode; hiding this row makes the time
         // axis disappear exactly when text controls are being edited.
         val ruler = makeLane("", 26, "__ruler__", reorderable = false)
-        // Each ruler label marks the exact start of one elapsed second.
-        // Cell widths come from the same time-to-pixel conversion as video clips.
-        val rulerEndMs = (((totalMs + 999L) / 1000L).coerceAtLeast(1L)) * 1000L
+        // Tick spacing adapts to the single px/sec value; labels never use a fixed one-second grid.
+        val rulerStepMs = TimelineScaleMath.rulerStepMs(pxPerSecond, dp(48).toFloat())
+        val rulerEndMs = (((totalMs + rulerStepMs - 1L) / rulerStepMs).coerceAtLeast(1L)) * rulerStepMs
         var rulerTimeMs = 0L
         var rulerPositionPx = 0
         while (rulerTimeMs < rulerEndMs) {
-            val nextTimeMs = rulerTimeMs + 1000L
+            val nextTimeMs = rulerTimeMs + rulerStepMs
             val nextPositionPx = TimelineScaleMath.pixelsForTime(nextTimeMs, pxPerSecond)
             val tick = TextView(this).apply {
-                text = (rulerTimeMs / 1000L).toString()
+                text = TimelineScaleMath.formatRulerTime(rulerTimeMs)
                 textSize = 9f
                 setTextColor(Color.rgb(166, 184, 201))
                 gravity = Gravity.CENTER_VERTICAL or Gravity.START
-                setPadding(0, 0, 0, 0)
+                setPadding(dp(2), 0, 0, 0)
                 maxLines = 1
             }
             ruler.addView(tick, LinearLayout.LayoutParams(
@@ -2821,11 +2833,14 @@ class VideoEditorActivity : Activity() {
 
     private fun seekFromTimelineFrameX(frameX: Float) {
         if (clips.isEmpty()) return
-        val scrollX = timelineScrollViews.firstOrNull()?.scrollX ?: 0
-        val timelineContentX = frameX + scrollX
-        val timeZeroContentX = timelineTracksFrame.width / 2f
-        val offsetPixels = (timelineContentX - timeZeroContentX).coerceAtLeast(0f)
-        val requestedMs = TimelineScaleMath.millisecondsForPixels(offsetPixels, timelinePixelsPerSecond())
+        val lane = timelineScrollViews.firstOrNull() ?: return
+        val viewportX = frameX - dp(57).toFloat()
+        val requestedMs = TimelineScaleMath.timeAtViewportX(
+            lane.scrollX,
+            viewportX,
+            timelineOriginSpacerWidth(lane.width).toFloat(),
+            timelinePixelsPerSecond()
+        )
         seekTimelinePreview(requestedMs.coerceIn(0L, totalOutputDurationMs()))
     }
 
@@ -4629,7 +4644,7 @@ class VideoEditorActivity : Activity() {
         // Bound the count to keep thumbnail decoding and cache pressure predictable.
         val targetThumbnailWidth = dp(52).coerceAtLeast(1)
         val thumbnailCount = kotlin.math.ceil(width.toDouble() / targetThumbnailWidth)
-            .toInt().coerceIn(1, 32)
+            .toInt().coerceIn(1, 256)
         val separatorWidth = dp(1) * (thumbnailCount - 1)
         val availableCellWidth = (width - separatorWidth).coerceAtLeast(thumbnailCount)
         val baseCellWidth = (availableCellWidth / thumbnailCount).coerceAtLeast(1)
@@ -4838,9 +4853,22 @@ class VideoEditorActivity : Activity() {
         val key = "${uri}#${timestampMs}"
         target.tag = key
         val cached = timelineThumbnailCache.get(key)
-        if (cached != null) {
+        if (cached != null && !cached.isRecycled) {
             target.setImageBitmap(cached)
             return
+        }
+        // Keep a nearby cached frame visible while this scale-specific sample is decoding.
+        if (target.drawable == null) {
+            val prefix = uri.toString() + "#"
+            val nearby = timelineThumbnailCache.snapshot().entries
+                .asSequence()
+                .filter { it.key.startsWith(prefix) && !it.value.isRecycled }
+                .minByOrNull { entry ->
+                    kotlin.math.abs(
+                        (entry.key.substringAfterLast("#").toLongOrNull() ?: Long.MAX_VALUE) - timestampMs
+                    )
+                }?.value
+            if (nearby != null) target.setImageBitmap(nearby)
         }
         val waiting = pendingTimelineThumbnails[key]
         if (waiting != null) {
@@ -4852,7 +4880,17 @@ class VideoEditorActivity : Activity() {
             timelineThumbnailExecutor.execute {
                 var result: Bitmap? = null
                 try {
-                    val original = decodeTimelineFrame(uri, timestampMs)
+                    var original: Bitmap? = null
+                    // Retry transient frame-extractor/codec failures without affecting playback.
+                    for (attempt in 0..2) {
+                        original = decodeTimelineFrame(uri, timestampMs)
+                        if (original != null && !original.isRecycled &&
+                            original.width > 0 && original.height > 0
+                        ) break
+                        original?.let { if (!it.isRecycled) it.recycle() }
+                        original = null
+                        if (attempt < 2) Thread.sleep(120L * (attempt + 1))
+                    }
                     if (original != null && !original.isRecycled && original.width > 0 && original.height > 0) {
                         val scale = maxOf(192f / original.width, 108f / original.height)
                         val scaledWidth = (original.width * scale).toInt().coerceAtLeast(192)
