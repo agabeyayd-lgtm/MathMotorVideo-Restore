@@ -719,3 +719,13 @@ Commit `6e3d68fea241b0855ffaec349a1f65e0e27570d1`:
 - Two-finger timeline zoom routing was inspected and retained; it already uses the activity-level ScaleGestureDetector and fixed-time anchoring. This source review is not proof of gesture acceptance.
 
 **Pending:** compile/unit verification, emulator tap-outside-lane interaction, two-finger zoom/pan behavior, and regression checks for clip selection/trim.
+
+
+## Pinch gesture isolation — 2026-11-01 (source change; interaction verification pending)
+
+Commit `75885369fdb3f136abb451ae6e8fb135e2d413cd`:
+- Empty, non-clickable portions inside each timeline track now bubble taps to the track and clear the current clip selection.
+- When a second finger starts a pinch inside the timeline, the in-progress one-finger child gesture receives ACTION_CANCEL before the Activity captures the pinch. This prevents a pinch from continuing as a clip drag/trim.
+- The Activity keeps ownership of the captured two-finger gesture until the final finger lifts; the existing anchored zoom calculation remains in place.
+
+**Pending:** compile/unit checks, emulator/phone pinch zoom and pan, confirm the first finger does not move/trim a clip, verify one-finger clip drag/trim and empty-lane deselection. Screenshot smoke tests alone do not prove touch behavior.
