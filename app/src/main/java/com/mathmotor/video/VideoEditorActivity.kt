@@ -1783,10 +1783,16 @@ class VideoEditorActivity : Activity() {
         // A short phone cannot fit the full multi-lane timeline and a usable tool drawer
         // at the same time. Keep the preview legible at 180dp while the Clip drawer is open;
         // text/audio/export drawers use the existing compact preview allowance.
-        val shortClipToolPanel = shortCompactEditorLayout && activeEditorPanel == "clip"
+        val compactClipToolPanel = compactEditorLayout && activeEditorPanel == "clip"
+        val shortClipToolPanel = shortCompactEditorLayout && compactClipToolPanel
         val compactToolPanel = compactEditorLayout && activeEditorPanel != null && activeEditorPanel != "clip"
         return when {
             shortClipToolPanel -> 180
+            // A taller compact phone can still reserve almost 45% of its height for preview.
+            // Capping the Clip-panel preview at 320dp leaves enough room for the primary
+            // add-video touch target without making the preview smaller than the tall-phone
+            // layout's 320dp minimum.
+            compactClipToolPanel -> previewStageHeightDp.coerceIn(150, 320)
             compactToolPanel -> minOf(previewStageHeightDp, 112).coerceAtLeast(104)
             compactEditorLayout && clips.size > 1 -> minOf(previewStageHeightDp, 154).coerceAtLeast(150)
             else -> previewStageHeightDp.coerceIn(150, 460)

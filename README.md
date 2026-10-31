@@ -304,3 +304,14 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - Compact preview sizing changed from 40% to 34% of the measured viewport below 650dp, reserving enough vertical space for the fixed status row and full-height bottom dock. This is a targeted layout adjustment, not a verified pass.
 - Next gate: inspect the next run's actual XML and screenshots. Confirm all four dock tabs meet 44dp, the empty-editor add-video action remains fully above the dock at 393×873, and loaded-video layout plus ruler zoom checks pass.
 - Version remains 394/build 61. Version 395 remains blocked; no version bump, signing, publishing, or updater activation.
+
+
+### Tall-phone empty-editor action — #405/#406 failure diagnosed and targeted layout fix (2026-10-31)
+
+- [Run #405 — FAILURE](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41148363956) and [Run #406 — FAILURE](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41148378149): unit tests, Debug APK build and fixture preparation passed; the focused `EmulatorScreenshotTest#captureHomeEditorAndTextPanel` failed at the tall-phone empty-editor action assertion in `EmulatorScreenshotTest.kt:207`.
+- The #406 log's `EditorPanel` measurements on the 393×873 viewport show the Clip panel content at 101px while its parent ScrollView is only 63px high. The 46dp primary add-video action is clipped by the available panel viewport; this is a layout constraint, not a Gradle build failure or emulator-shutdown failure.
+- Clarification: [Run #402 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41143199557) exercised only the compact-phone keyboard test. It did **not** run the 393×873 screenshot assertion and must not be counted as passing this tall-phone gate.
+- Root cause: the responsive preview reduction for the Clip panel applied only below 700dp. On the 873dp test viewport, the 45% default preview occupied about 392dp and left too little room for the tool panel.
+- Targeted source correction committed for validation: when a compact layout has the Clip panel open, cap the preview stage at 320dp (retain the existing 180dp short-phone treatment). This preserves the tall-phone preview's 320dp minimum while returning vertical space to the add-video action. Instrumentation failure strings now interpolate the actual visible bounds instead of printing a literal placeholder.
+- Validation is still **pending** until the next PR-triggered emulator run passes the 44dp/120dp action-size assertion, verifies the action remains above the dock, captures the loaded-video layout and completes the ruler checks. Do not close the gate based on source code or APK build alone.
+- Version remains 394/build 61. Version 395 remains blocked; no version bump, signing, publishing, or updater activation.
