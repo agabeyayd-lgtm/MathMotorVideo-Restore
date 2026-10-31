@@ -2021,30 +2021,31 @@ class VideoEditorActivity : Activity() {
             if (endMs < totalMs) addSpacer(track, endMs, totalMs)
         }
 
-        if (!keyboardLayoutActive) {
-            val ruler = makeLane("", 26, "__ruler__", reorderable = false)
-            // Each ruler label marks the exact start of one elapsed second.
-            // Cell widths come from the same time-to-pixel conversion as video clips.
-            val rulerEndMs = (((totalMs + 999L) / 1000L).coerceAtLeast(1L)) * 1000L
-            var rulerTimeMs = 0L
-            var rulerPositionPx = 0
-            while (rulerTimeMs < rulerEndMs) {
-                val nextTimeMs = rulerTimeMs + 1000L
-                val nextPositionPx = TimelineScaleMath.pixelsForTime(nextTimeMs, pxPerSecond)
-                val tick = TextView(this).apply {
-                    text = (rulerTimeMs / 1000L).toString()
-                    textSize = 9f
-                    setTextColor(Color.rgb(166, 184, 201))
-                    gravity = Gravity.CENTER_VERTICAL or Gravity.START
-                    setPadding(0, 0, 0, 0)
-                    maxLines = 1
-                }
-                ruler.addView(tick, LinearLayout.LayoutParams(
-                    (nextPositionPx - rulerPositionPx).coerceAtLeast(1), dp(22)
-                ))
-                rulerTimeMs = nextTimeMs
-                rulerPositionPx = nextPositionPx
+        // Keep the ruler present even while the keyboard is open. makeLane()
+        // already reduces row height for IME mode; hiding this row makes the time
+        // axis disappear exactly when text controls are being edited.
+        val ruler = makeLane("", 26, "__ruler__", reorderable = false)
+        // Each ruler label marks the exact start of one elapsed second.
+        // Cell widths come from the same time-to-pixel conversion as video clips.
+        val rulerEndMs = (((totalMs + 999L) / 1000L).coerceAtLeast(1L)) * 1000L
+        var rulerTimeMs = 0L
+        var rulerPositionPx = 0
+        while (rulerTimeMs < rulerEndMs) {
+            val nextTimeMs = rulerTimeMs + 1000L
+            val nextPositionPx = TimelineScaleMath.pixelsForTime(nextTimeMs, pxPerSecond)
+            val tick = TextView(this).apply {
+                text = (rulerTimeMs / 1000L).toString()
+                textSize = 9f
+                setTextColor(Color.rgb(166, 184, 201))
+                gravity = Gravity.CENTER_VERTICAL or Gravity.START
+                setPadding(0, 0, 0, 0)
+                maxLines = 1
             }
+            ruler.addView(tick, LinearLayout.LayoutParams(
+                (nextPositionPx - rulerPositionPx).coerceAtLeast(1), dp(22)
+            ))
+            rulerTimeMs = nextTimeMs
+            rulerPositionPx = nextPositionPx
         }
 
         if (clips.isEmpty()) {
