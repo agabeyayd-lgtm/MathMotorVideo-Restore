@@ -522,3 +522,8 @@ This is a layout target, not a claim that all behaviors are implemented. Gesture
 - The first thumbnail samples the clip's actual source start frame. Thumbnail cells and separators are sized to fit the clip width without cumulative overflow.
 - The shared half-viewport origin spacer keeps ruler time zero and the first video frame under the fixed playhead at the same instant. Negative pre-roll remains disallowed by the non-negative clip-time/drag bounds.
 - These are source changes only. Fresh PR-head build/unit verification, emulator screenshot review, and physical-device confirmation are still required before accepting the timeline behavior. PR #11 stays draft; version 395 remains blocked.
+
+### Keyboard-open timeline visibility follow-up
+
+- Commit `f700d0017aced27600dc218bb6a39c6a5fd23d3a` removes the conditional that omitted the ruler row while the keyboard was open. The ruler now remains in the timeline stack and uses the compact lane height already applied for IME mode.
+- Fresh emulator screenshot review is required to confirm the ruler remains visible and readable with the keyboard open, without hiding the filmstrip or pinned tool dock.
