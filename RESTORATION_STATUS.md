@@ -105,8 +105,9 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 
 - Each video clip stores an independent project start separate from source in/out trim.
 - New project JSON persists positions; old version-1 files without the field restore sequentially.
-- Overlapping clips render on separate rows. Filmstrip body drag moves only one clip; edge trim keeps source/project boundaries aligned.
-- Timeline row assignment now follows the same layer priority as preview/export: the highest-index overlapping clip is placed in the uppermost available row; non-overlapping clips can share a row. Two unit tests cover this contract; PR-head CI #140 passed.
+- Video clips now render in one CapCut-style VIDEO strip at their absolute project-time positions. Overlapping clips are visually stacked inside the same strip in preview/export layer order; they do not create additional VIDEO rows.
+- Selecting a covered clip raises it above the other items and long-press offers an overlap-selection submenu. Filmstrip body drag moves only the selected clip; edge trim keeps source/project boundaries aligned.
+- Old assignLanes() multi-row behavior and its tests have been removed. New tests assert all clips remain represented in one strip with exact start/end times and unchanged overlap/layer priority. Current change awaits PR-head CI.
 - Preview and Transformer export share one flattened stream. Highest layer order wins overlap intervals; empty intervals are black/silent.
 - Current overlap behavior is top-layer occlusion, not blending, crossfade or picture-in-picture.
 - CI and emulator/phone validation of drag/trim, overlap preview/export, MP4 correctness and save/reopen remain required.
@@ -209,3 +210,14 @@ New visual requirement; this is a documentation record, not a claim that the UI 
 - Captures the time at the initial pinch midpoint and recalculates the shared scroll offset during scaling so that time follows the moving midpoint. All timeline lanes are restored to the same horizontal offset after each zoom rebuild.
 - Zoom range is 0.5×–8×; clip start/end/duration values are not modified by pinch.
 - Pending: CI Verify/debug APK result and real-device validation for pinch at center/edges, zoom-in/out, synchronized lanes, one-finger scrubbing and clip drag. This does not authorize a release or version 395.
+
+
+## Single CapCut-style VIDEO strip — implementation added (2026-10-31)
+
+- Replaced assignLanes() rendering with one main timeline row labelled **VIDEO**. All video clips are children of one strip canvas and are positioned by the shared time-to-pixel mapping using their stored timelineStartMs and source-trimmed duration.
+- Each clip remains an actual frame filmstrip with its own boundary, body-drag behavior and left/right trim handles. No clip start, source in/out or duration is changed merely to fit the one-row UI.
+- Overlapping clips are drawn in clip-list/layer order inside the same strip. The top layer matches the existing preview/export winner; overlapping ranges no longer produce extra VIDEO rows.
+- The selected clip is promoted above other overlapping clips so it remains visible/editable. Long-press provides an overlap-selection submenu, including for clips fully covered by a later layer.
+- Removed the obsolete lane-assignment helper and replaced multi-row unit tests with one-strip tests covering full clip retention, exact start/end positions, fully covered clips and top-layer preview selection.
+- **Pending validation:** PR-head unit tests, Kotlin compilation and Debug APK build; then physical-phone checks for sequential clips, gaps, overlapping clips, filmstrip frame continuity, selection of hidden clips, body drag, both trim handles, pinch zoom and all-lane synchronization.
+- Keep PR #11 draft. Do not create or publish version 395. Installed 394/build 61 remains unchanged.
