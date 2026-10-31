@@ -1,6 +1,9 @@
 name: Verify Android build
 
 on:
+  pull_request:
+    branches:
+      - main
   push:
     branches:
       - main
@@ -10,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: verify-android-main
+  group: verify-android-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
