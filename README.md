@@ -325,3 +325,13 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - Targeted source correction committed for validation: retain the 0.025f jitter filter during normal zooming, but allow a small change that reaches the exact 0.5x or 8.0x clamp. Skip only effectively identical values (`<0.0001f`) after a limit has already been reached, preventing repeated rebuilds at the clamp.
 - Next validation must confirm both the 50% minimum and 800% maximum, verify 5,000ms and 250ms ruler intervals respectively, and complete the screenshot/interaction workflow. The tall-phone action fix is evidenced by this run advancing beyond that assertion, but keep the broader visual/physical-device acceptance open until screenshots are inspected and device review is done.
 - Version remains 394/build 61. Version 395 remains blocked; no version bump, signing, publishing, or updater activation.
+
+
+### Run #408 — compact-phone editor and zoom-boundary acceptance passed (2026-10-31)
+
+- [Run #408 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41151378476), commit `dc554242968fc3984ada592475c94feadf738009`: unit tests, Debug APK build, deterministic MP4 fixture preparation, emulator launch, focused connected instrumentation and artifact upload all completed successfully.
+- The connected test report confirms `EmulatorScreenshotTest#captureHomeEditorAndTextPanel` passed (1 test, 0 failures). Its assertions cover the tall-phone empty-editor add-video action and dock visibility, loaded-video layout, pinch zoom at both exact endpoints (50% and 800%), and ruler intervals/readability (5,000ms at minimum zoom; 250ms at maximum zoom).
+- The #408 screenshots and XML report were downloaded and inspected. Empty-editor capture shows the add-video action visible above the dock; loaded-video capture shows the 8-second clip in the timeline with text/music/SFX lanes and trim handles. This is emulator evidence, not yet a physical-device sign-off.
+- Mark the specific #405/#406 tall-phone clipping gate and #407 pinch dead-zone gate as **passed in emulator** by #408. Do not continue rerunning those same assertions without a new regression or code change.
+- Remaining gates: review the editor on the user's physical phone (including keyboard-open text editing, touch gestures and timeline interactions); verify full-size preview/thumbnail/trim/undo behavior and export output; then run current-branch signed install/update-over/relaunch preflight. The #408 screenshot test alone does not establish those untested product acceptance items.
+- Version remains 394/build 61. Version 395 remains blocked; no version bump, signing, publishing, or updater activation until remaining gates pass and the user authorizes release.
