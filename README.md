@@ -30,6 +30,13 @@ A change is **not accepted** merely because it compiles, passes unit tests, or l
 **Scope guard:** Do not introduce a second competing editor design or ask the user to choose between layouts. Work only toward this reference. Version 395 remains blocked until all implementation and verification gates pass and the user explicitly authorizes release.
 
 
+## Playback state and fit control — 2026-10-31
+
+- Added the visible Sığdır control to the playback header; it invokes the deterministic fit calculation based on project duration and the available timeline width.
+- Player errors use explicit player-error wording and a distinct error button state; thumbnail decode failures remain isolated to thumbnail rendering.
+- Playback reaching STATE_ENDED moves the playhead to the project end and returns the control to paused.
+- [ ] Emulator acceptance for fit repeatability, state transitions and end-of-project behavior remains pending.
+
 ## Ruler and thumbnail consistency — 2026-10-31
 
 - Ruler tick interval now derives from the same direct px/sec state as clip geometry; all tick x positions use absolute time-to-pixel conversion.

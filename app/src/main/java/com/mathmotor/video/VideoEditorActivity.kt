@@ -269,6 +269,9 @@ class VideoEditorActivity : Activity() {
     private var timelineScrubGrabOffsetPx = 0f
     private var timelinePreviewLoaded = false
     private var previewSingleClip = false
+    private enum class TimelinePlaybackState { PAUSED, PLAYING, ERROR }
+    private var timelinePlaybackState = TimelinePlaybackState.PAUSED
+    private var timelinePreviewError: String? = null
     private val timelineHandler = Handler(Looper.getMainLooper())
     private var pendingTimelineScrubPreviewTargetMs: Long? = null
     private var lastTimelineScrubPreviewSeekUptimeMs = 0L
@@ -584,8 +587,11 @@ class VideoEditorActivity : Activity() {
                 if (currentPlayer?.isPlaying == true) {
                     currentPlayer.pause()
                     currentPlayer.playWhenReady = false
+                    timelinePlaybackState = TimelinePlaybackState.PAUSED
                     status.text = "Önizleme duraklatıldı."
                 } else {
+                    timelinePreviewError = null
+                    timelinePlaybackState = TimelinePlaybackState.PLAYING
                     currentPlayer?.seekTo(timelinePlayheadMs)
                     currentPlayer?.playWhenReady = true
                     status.text = "Proje önizlemesi oynatılıyor."
@@ -622,6 +628,17 @@ class VideoEditorActivity : Activity() {
             timelinePlayheadLabel,
             FrameLayout.LayoutParams(dp(112), dp(42), Gravity.START or Gravity.CENTER_VERTICAL).apply {
                 leftMargin = dp(8)
+            }
+        )
+        val fitTimelineButton = miniButton("Sığdır") { fitTimelineToProject() }.apply {
+            textSize = 10f
+            minWidth = dp(58)
+            contentDescription = "Zaman çizelgesini projeye sığdır"
+        }
+        centeredPlaybackRow.addView(
+            fitTimelineButton,
+            FrameLayout.LayoutParams(dp(64), dp(36), Gravity.END or Gravity.CENTER_VERTICAL).apply {
+                rightMargin = dp(8)
             }
         )
         val fitTimelineButton = miniButton("Sığdır") { fitTimelineToProject() }.apply {
@@ -2889,9 +2906,20 @@ class VideoEditorActivity : Activity() {
     private fun updateTimelinePlayButtonState() {
         if (!::timelinePlayButton.isInitialized) return
         val playing = timelineCompositionPlayer?.isPlaying == true
-        timelinePlayButton.text = if (playing) "Ⅱ" else "▶"
-        timelinePlayButton.contentDescription =
-            if (playing) "Önizlemeyi duraklat" else "Önizlemeyi oynat"
+        if (playing) timelinePlaybackState = TimelinePlaybackState.PLAYING
+        else if (timelinePlaybackState != TimelinePlaybackState.ERROR) {
+            timelinePlaybackState = TimelinePlaybackState.PAUSED
+        }
+        timelinePlayButton.text = when (timelinePlaybackState) {
+            TimelinePlaybackState.PLAYING -> "Ⅱ"
+            TimelinePlaybackState.PAUSED -> "▶"
+            TimelinePlaybackState.ERROR -> "!"
+        }
+        timelinePlayButton.contentDescription = when (timelinePlaybackState) {
+            TimelinePlaybackState.PLAYING -> "Önizlemeyi duraklat"
+            TimelinePlaybackState.PAUSED -> "Önizlemeyi oynat"
+            TimelinePlaybackState.ERROR -> "Oynatıcı hatası: " + timelinePreviewError.orEmpty()
+        }
     }
 
     /** Emits real playback/timeline geometry only when the debug CI test opts in. */
@@ -2987,8 +3015,21 @@ class VideoEditorActivity : Activity() {
                     playerView.post{updatePreviewCanvasSize()}
                 }
                 override fun onPlayerError(error:androidx.media3.common.PlaybackException){
-                    android.util.Log.e("MathMotorTimeline","Composition preview failed",error)
-                    status.text="Zaman çizelgesi önizlemesi başlatılamadı: ${error.message ?: "Media3 hatası"}"
+                    android.util.Log.e("MathMotorTimeline","Composition player failed",error)
+                    timelinePreviewError = error.message ?: "Media3 oynatma hatası"
+                    timelinePlaybackState = TimelinePlaybackState.ERROR
+                    updateTimelinePlayButtonState()
+                    status.text = "Oynatıcı hatası: " + timelinePreviewError
+                }
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    if (playbackState == androidx.media3.common.Player.STATE_ENDED) {
+                        timelinePlayheadMs = totalOutputDurationMs()
+                        timelinePlaybackState = TimelinePlaybackState.PAUSED
+                        timelineCompositionPlayer?.playWhenReady = false
+                        scrollTimelineToPlayhead()
+                        updateTimelinePlayheadLabel()
+                        updateTimelinePlayButtonState()
+                    }
                 }
             })
             comp.setComposition(buildVideoTimelineComposition())
