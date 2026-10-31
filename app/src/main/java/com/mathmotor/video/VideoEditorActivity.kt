@@ -174,7 +174,7 @@ class VideoEditorActivity : Activity() {
     private var pendingTimelineScrollX: Int? = null
     private var timelineZoom = 1.0f
     private var deferTimelineRefresh = false
-    private val timelineThumbnailCache = object : android.util.LruCache<String, Bitmap>(256) {}
+    private val timelineThumbnailCache = object : android.util.LruCache<String, Bitmap>(384) {}
     private val pendingTimelineThumbnails = mutableMapOf<String, MutableList<WeakReference<ImageView>>>()
     private val timelineThumbnailExecutor = java.util.concurrent.Executors.newFixedThreadPool(2)
     private lateinit var timelinePlayheadSeek: SeekBar
@@ -3613,7 +3613,7 @@ class VideoEditorActivity : Activity() {
             setBackgroundColor(Color.rgb(26, 37, 51))
         }
         // Cap decode work per clip to keep long timelines responsive and avoid a stale queue.
-        val thumbnailCount = (width / dp(18)).coerceIn(2, 24)
+        val thumbnailCount = (width / dp(24)).coerceIn(2, 32)
         repeat(thumbnailCount) { slot ->
             val image = ImageView(this).apply {
                 scaleType = ImageView.ScaleType.CENTER_CROP
@@ -3837,14 +3837,14 @@ class VideoEditorActivity : Activity() {
                 try {
                     val original = decodeTimelineFrame(uri, timestampMs)
                     if (original != null && !original.isRecycled && original.width > 0 && original.height > 0) {
-                        val scale = maxOf(96f / original.width, 54f / original.height)
-                        val scaledWidth = (original.width * scale).toInt().coerceAtLeast(96)
-                        val scaledHeight = (original.height * scale).toInt().coerceAtLeast(54)
+                        val scale = maxOf(192f / original.width, 108f / original.height)
+                        val scaledWidth = (original.width * scale).toInt().coerceAtLeast(192)
+                        val scaledHeight = (original.height * scale).toInt().coerceAtLeast(108)
                         val scaled = Bitmap.createScaledBitmap(original, scaledWidth, scaledHeight, true)
                         if (scaled !== original && !original.isRecycled) original.recycle()
-                        val left = ((scaled.width - 96) / 2).coerceAtLeast(0)
-                        val top = ((scaled.height - 54) / 2).coerceAtLeast(0)
-                        result = Bitmap.createBitmap(scaled, left, top, 96, 54)
+                        val left = ((scaled.width - 192) / 2).coerceAtLeast(0)
+                        val top = ((scaled.height - 108) / 2).coerceAtLeast(0)
+                        result = Bitmap.createBitmap(scaled, left, top, 192, 108)
                         if (result !== scaled && !scaled.isRecycled) scaled.recycle()
                     } else {
                         original?.let { if (!it.isRecycled) it.recycle() }
