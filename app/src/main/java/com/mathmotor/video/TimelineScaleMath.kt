@@ -30,27 +30,28 @@ internal object TimelineScaleMath {
     }
 
 
-    /** Time at a screen-space anchor, accounting for the fixed track-label gutter. */
+    /** Time at a viewport x, measured from the shared time-zero content origin. */
     fun timeAtViewportX(
         scrollX: Int,
         viewportX: Float,
-        labelGutterPx: Float,
+        originSpacerPx: Float,
         pixelsPerSecond: Float
     ): Long {
-        val contentOffset = scrollX.toFloat() + viewportX - labelGutterPx
+        val contentOffset = scrollX.toFloat() + viewportX - originSpacerPx
         return millisecondsForPixels(contentOffset.coerceAtLeast(0f), pixelsPerSecond)
     }
 
-    /** Scroll offset that keeps [anchorTimeMs] under the same viewport x after zoom. */
+    /** Scroll offset that keeps [anchorTimeMs] beneath the same finger after zoom. */
     fun scrollForAnchoredZoom(
         anchorTimeMs: Long,
         viewportX: Float,
-        labelGutterPx: Float,
+        originSpacerPx: Float,
         newPixelsPerSecond: Float
     ): Int {
-        if (!newPixelsPerSecond.isFinite() || newPixelsPerSecond <= 0f || anchorTimeMs <= 0L) return 0
+        if (!newPixelsPerSecond.isFinite() || !newPixelsPerSecond.isFinite() ||
+            newPixelsPerSecond <= 0f || anchorTimeMs <= 0L) return 0
         val contentX = pixelsForTime(anchorTimeMs, newPixelsPerSecond).toFloat()
-        return (contentX - (viewportX - labelGutterPx)).roundToInt().coerceAtLeast(0)
+        return (contentX - (viewportX - originSpacerPx)).roundToInt().coerceAtLeast(0)
     }
 }
 
