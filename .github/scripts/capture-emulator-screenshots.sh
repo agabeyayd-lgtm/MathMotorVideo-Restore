@@ -392,7 +392,8 @@ if [ -z "$play_coords" ]; then
   exit 14
 fi
 echo "Tapping the real editor Play button at $play_coords"
-timeout -k 2s 8s adb -s emulator-5554 logcat -c || true
+# Keep the test-enabled marker emitted at editor startup; logcat was already
+# cleared immediately before the editor launch above.
 if ! timeout -k 2s 8s adb -s emulator-5554 shell input tap $play_coords; then
   echo "Could not tap the editor Play button."
   collect_capture_diagnostics timeline-play-tap-failed
