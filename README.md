@@ -678,3 +678,22 @@ This section is the authoritative current checkpoint and supersedes older pendin
 - [ ] Persistence verification remains open: save/reopen transformed projects and load older version-1 projects with identity defaults.
 - [ ] The generated APK is a **debug APK**, not a signed release/update package. Do not treat it as an in-app update for installed version 394/build 61.
 - PR #11 remains draft and unmerged. Installed baseline remains versionCode 394 / build 61. Version 395 must not be created, signed, published, or offered until all release gates pass and the user explicitly authorizes it.
+
+## User-reported editor issues and next work plan — 2026-10-31
+
+The following eight issues were reported by the user after reviewing the current editor against the real CapCut reference. These are **requirements to investigate**, not claims that the source has already been corrected. Keep this list current as work progresses; after each targeted fix, record implementation, automated evidence, emulator/device evidence, and remaining gaps separately.
+
+1. **Gap between adjacent video clips:** remove the unintended gray/empty area between clips that should meet edge-to-edge. Preserve intentional gaps only when the user explicitly positions clips apart.
+2. **Clipped duration readout and timeline zoom:** the total-duration label (for example, `00:10…`) must remain fully visible within the phone width. Make the timeline comfortably usable and support reliable two-finger pinch zoom in/out.
+3. **Persistent draft message:** remove the unnecessary “Taslak açıldı” message entirely; it must not remain stuck on screen.
+4. **CapCut-style editing workspace and contextual tools:** allocate more vertical space to the timeline and less to an oversized preview where appropriate; add adaptive frame-level ruler detail at close zoom (for example, 20f/22f/24f), a concise current/total time display, working undo/redo and keyframe controls, and a selected-clip contextual toolbar (such as sound effect, split, volume, duplicate, delete). Remove the permanent generic tool row/long hint when it conflicts with contextual editing. Follow the user's supplied CapCut screenshot as the single layout reference; do not create a competing design.
+5. **Selection dismissal and two-finger gestures:** tapping an empty area outside all lanes clears the selected strip, its handles and contextual controls. With no strip selected, two-finger gestures must reliably control timeline pan/zoom without accidentally moving or trimming a clip. Keep one-finger clip editing distinct from two-finger timeline navigation.
+6. **Thumbnail/preview responsiveness:** make thumbnail loading and horizontal scrubbing feel immediate and fluid. The preview must react promptly to timeline movement and show the frame at the playhead; thumbnail extraction must not block gestures. Investigate decoding, caching, seek coalescing and UI-thread work rather than hiding latency with animation.
+7. **Thumbnail framing:** stop aggressively center-cropping source frames. Preserve the source frame composition so the surrounding scene/background is visible and users can identify scene changes and cut points at a glance.
+8. **Continuous filmstrip and frame-accurate ruler:** remove visible gaps/borders that make thumbnails look like separate boxes; make the filmstrip read as one continuous strip. At higher zoom, show frame-level ruler ticks/labels and support frame-accurate cut placement. Do not clip the first or last thumbnail halfway; balance strip height with the available timeline workspace.
+
+### Work order and acceptance
+- First inspect the current PR #11 source and existing tests for each reported issue; distinguish a real source defect from a test/device-only observation. Avoid repeating unchanged failing workflows.
+- Fix in small, focused groups. After each group, update this document and `RESTORATION_STATUS.md` with exact commit/run evidence and mark only what is actually verified.
+- Verify on emulator at phone size and, where possible, on the user's device: visual comparison to the supplied CapCut reference, one-/two-finger behavior, timeline alignment, preview response, thumbnail framing, and clip boundaries.
+- Keep PR #11 draft and unmerged until acceptance checks pass. Installed baseline remains versionCode 394 / build 61. **Do not create, sign, publish, or offer version 395** until all release gates pass and the user explicitly authorizes it.
