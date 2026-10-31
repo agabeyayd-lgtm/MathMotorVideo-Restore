@@ -307,8 +307,8 @@ New visual requirement; this is a documentation record, not a claim that the UI 
 
 - [x] Remove the hard-coded 180dp PlayerView width and keep the preview player MATCH_PARENT in the preview frame (`74829abf93ae8a16541bb0c5d057f44b0c3f159e`).
 - [x] Remove the later aspect-ratio sizing code that shrank the entire PlayerView to the calculated portrait-video width; set Media3 FIT mode so the source aspect ratio is retained inside the full-width preview canvas (`0cf5f0f1faeecbf21cc48af331dcd4072a75886b`).
-- [x] Increase the preview stage share on regular-height phones and increase the timeline workspace height, with a smaller allocation on short screens.
-- [x] Reduce timeline workspace height while the keyboard is visible so text editing has room.
+- [x] Make the preview consume remaining vertical space after accounting for the measured timeline, contextual panel, status strip and pinned bottom dock.
+- [x] Size the timeline card from actual visible lane heights; compress lane/card sizing while the keyboard is visible and let the preview use the remaining area.
 - [ ] Confirm compilation and unit tests on the new PR head.
 - [ ] Inspect fresh emulator captures on a portrait phone and a smaller viewport. Confirm preview width, crop/letterboxing, visible timeline rows, bottom dock anchoring and contextual panel position.
 - [ ] Interactively test touch/zoom/scroll and verify no timeline gestures regressed due to responsive sizing.
