@@ -416,3 +416,14 @@ This is a layout target, not a claim that all behaviors are implemented. Gesture
 - [ ] Await fresh PR #11 compiler/unit, debug APK and emulator screenshot workflows for commit `0771c298bb2f2e8b65c7c741ef2ce4ad4a3424c9`.
 - [ ] Visually inspect the emulator screenshots and validate first-frame/final-frame alignment, ruler and strip synchronization, scrubbing, playback auto-scroll and pinch-zoom anchoring after resizing.
 - PR #11 stays draft. Do not create, sign, publish or offer version 395 until every required gate passes and the user explicitly authorizes release.
+
+
+## 2026-10-31 — user-confirmed CapCut visual target / filmstrip refinement
+
+- [x] Recorded the user's confirmation that the generated CapCut-style editor mockup is the visual direction; the supplied CapCut screenshot remains the detailed layout/interaction reference.
+- [x] Updated video filmstrip thumbnail sampling from 24dp slots to 12dp slots, bounded at 3–48 frames per clip, to create a denser continuous thumbnail strip on phone screens. Source commit: `a0212de8fb79c25c17e5ca59c2264158602d1d2d`.
+- [ ] Run fresh PR-head unit/compiler and debug APK workflows.
+- [ ] Run emulator screenshot workflow and visually compare the filmstrip, preview, fixed playhead, ruler, independent lower layers and bottom dock against the reference.
+- [ ] Check thumbnail uniqueness, decode stability and memory/scroll performance on short and long clips.
+- [ ] Continue interaction/keyboard/save-reopen/export acceptance; these are not covered by the filmstrip change.
+- PR #11 remains draft and unmerged. Version 395 is blocked; do not bump or publish it.
