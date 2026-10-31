@@ -483,3 +483,9 @@ This is a layout target, not a claim that all behaviors are implemented. Gesture
 - [ ] Confirm on the user's phone that the first frame and ruler zero remain directly under the stationary playhead, and that no thumbnail/time exists to its left before playback advances.
 - PR #11 remains open and draft. No merge or version 395 release is authorized.
 - Source commit for this pass: `ec6dcb9567c50650b58ab0aede58858a98c87745`.
+
+### Keyboard-open ruler visibility
+
+- [x] Removed the IME condition that skipped creation of the ruler row. The ruler is now present during keyboard-open editing and uses the compact lane height.
+- [ ] Verify on a fresh emulator screenshot that the ruler stays visible/readable with the keyboard open and that video thumbnails, playhead, and bottom dock remain accessible.
+- Source commit: `f700d0017aced27600dc218bb6a39c6a5fd23d3a`.
