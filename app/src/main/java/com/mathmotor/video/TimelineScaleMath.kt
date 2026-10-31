@@ -68,7 +68,7 @@ internal object TimelineScaleMath {
         val targetSeconds = (minimumLabelSpacingPx.coerceAtLeast(1f) / pixelsPerSecond)
             .coerceAtLeast(0.001f)
         // The editor ruler is a seconds counter: never emit fractional-second ticks.
-        val niceSteps = floatArrayOf(1f, 2f, 5f, 10f, 15f, 30f, 60f, 120f, 300f, 600f)
+        val niceSteps = floatArrayOf(1f, 2f, 3f, 5f, 10f, 15f, 30f, 60f, 120f, 300f, 600f)
         val seconds = niceSteps.firstOrNull { it >= targetSeconds }
             ?: (kotlin.math.ceil(targetSeconds / 600f) * 600f)
         return (seconds * 1000f).toLong().coerceAtLeast(1L)
