@@ -306,3 +306,10 @@ These are new release-blocking UI/interaction requirements. They are recorded as
 - [ ] Verify play/pause icon state updates correctly during playback, pause, seek and preview rebuild.
 
 **Status:** source implementation committed to PR #11; visual/device verification is pending. Version 395 remains blocked and the installed 394/build 61 baseline is unchanged.
+
+
+### Follow-up verification — 2026-10-31
+
+- Fixed the Kotlin compile error in the contextual-panel layout (visibility belongs to the View, not LinearLayout.LayoutParams) in commit 65180c0328197e97d229aa45f2a80df18ca9e73d.
+- Verify run [#175](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41179027832) completed **SUCCESS** on that PR head: unit tests, Kotlin compilation and Debug APK assembly passed.
+- The separate APK workflow #250 and emulator screenshot workflow #419 were still running at the time of this update. No emulator screenshot has yet been inspected; actual gesture behavior, export and save/reopen remain unverified. PR #11 stays draft and version 395 stays blocked.
