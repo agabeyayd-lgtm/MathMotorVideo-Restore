@@ -88,3 +88,10 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 - [ ] Verify overlap, preview sync, project save/reopen and MP4 export for independently positioned items.
 
 **Important:** PR #11 has no reported CI run/status yet. The verify-android-build workflow now listens for pull requests targeting main (added on this branch); until GitHub reports a result, the source changes are not a build/test pass. Text layers currently have independent drag/trim behavior; the remaining media types are not yet complete. Version 395 stays blocked.
+
+## Multi-track technical constraint — checked 2026-10-31
+
+- App dependencies use Media3 1.10.1.
+- Media3 Transformer Composition supports separate sequences whose media items overlap, including video/audio layering.
+- CompositionPlayer is currently documented as early/experimental. Its documented supported preview cases include a single video sequence plus one audio sequence; preview of multiple video sequences is still listed as active development.
+- Therefore, multi-video overlap cannot be called complete from timeline UI or export code alone. The same project must be verified in live preview and final export before the feature is accepted.
