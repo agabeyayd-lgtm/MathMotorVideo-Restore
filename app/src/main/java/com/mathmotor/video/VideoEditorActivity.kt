@@ -592,11 +592,10 @@ class VideoEditorActivity : Activity() {
         }
         centeredPlaybackRow.addView(
             timelinePlayButton,
-            FrameLayout.LayoutParams(dp(46), dp(42), Gravity.CENTER).apply {
-                // Timeline lanes reserve a 57 dp label gutter before the time axis.
-                leftMargin = dp(57) / 2
-            }
+            FrameLayout.LayoutParams(dp(46), dp(42), Gravity.CENTER)
         )
+        // Timeline lanes reserve a 57 dp label gutter before the time axis.
+        timelinePlayButton.translationX = dp(57) / 2f
         timelineCard.addView(centeredPlaybackRow, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(44)
         ))
