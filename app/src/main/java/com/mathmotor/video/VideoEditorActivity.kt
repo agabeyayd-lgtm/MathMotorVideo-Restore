@@ -526,27 +526,9 @@ class VideoEditorActivity : Activity() {
 
         val timelineCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(8), dp(5), dp(8), dp(5))
-            background = android.graphics.drawable.GradientDrawable().apply {
-                setColor(Color.rgb(23, 32, 45))
-                cornerRadius = dp(12).toFloat()
-                setStroke(dp(1), Color.rgb(48, 66, 85))
-            }
+            setPadding(0, dp(3), 0, dp(3))
+            setBackgroundColor(Color.rgb(8, 12, 18))
         }
-        val timelineHeader = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        timelineHeader.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
-        timelineHeader.addView(miniButton("＋") { chooseVideo(true) }.apply {
-            minWidth = dp(38)
-            minimumWidth = dp(38)
-            textSize = 18f
-            setPadding(0, 0, 0, 0)
-            contentDescription = "Zaman çizelgesine video ekle"
-        }, LinearLayout.LayoutParams(dp(42), dp(40)).apply { leftMargin = dp(3) })
-         timelineCard.addView(timelineHeader, matchWrap())
-
         // One playback control, fixed on the same center axis as the stationary red playhead.
         val centeredPlaybackRow = FrameLayout(this)
         timelinePlayButton = miniButton("▶") {
@@ -580,8 +562,8 @@ class VideoEditorActivity : Activity() {
         centeredPlaybackRow.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
             updateTimelinePlayheadLine()
         }
-        timelineCard.addView(centeredPlaybackRow, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(44)
+        root.addView(centeredPlaybackRow, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(48)
         ))
 
         val clipScroll = android.widget.HorizontalScrollView(this).apply {
@@ -611,7 +593,7 @@ class VideoEditorActivity : Activity() {
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             addView(
                 View(this@VideoEditorActivity).apply {
-                    setBackgroundColor(Color.rgb(255, 78, 92))
+                    setBackgroundColor(Color.WHITE)
                 },
                 FrameLayout.LayoutParams(dp(2), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.TOP or Gravity.CENTER_HORIZONTAL)
             )
@@ -677,6 +659,9 @@ class VideoEditorActivity : Activity() {
             gravity = Gravity.CENTER
             setSingleLine(true)
         }
+        playheadRow.gravity = Gravity.CENTER_VERTICAL or Gravity.START
+        timelinePlayheadLabel.gravity = Gravity.CENTER_VERTICAL or Gravity.START
+        timelinePlayheadLabel.setPadding(dp(8), 0, 0, 0)
         playheadRow.addView(timelinePlayheadLabel, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ))
@@ -688,7 +673,9 @@ class VideoEditorActivity : Activity() {
             isEnabled = false
             contentDescription = "Zaman çizelgesinde oynatma noktası"
         }
-        timelineCard.addView(playheadRow, matchWrap())
+        root.addView(playheadRow, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(26)
+        ))
         installTimelinePlayheadListeners()
         // Keep the shared timeline compact and content-focused instead of stretching
         // its empty background to consume every remaining pixel on short phones.
