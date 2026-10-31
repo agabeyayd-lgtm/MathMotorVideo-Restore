@@ -405,9 +405,9 @@ class VideoEditorActivity : Activity() {
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(44)))
         val heading = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(10), 0, dp(4), 0)
-            addView(label("Düzenle", 18f, Color.WHITE, true))
-            addView(label("YEREL VİDEO DÜZENLEME", 10f, Color.rgb(154, 171, 190), false))
+            addView(label("Yeni proje", 15f, Color.WHITE, true))
         }
         topBar.addView(heading, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         topBar.addView(miniButton("Dışa aktar ›") { showEditorPanel("export") },
@@ -497,31 +497,17 @@ class VideoEditorActivity : Activity() {
             previewEmptyState,
             FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER)
         )
-        val previewSizeControls = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
+        // Keep the preview clean: only the expand/focus affordance remains over the video.
+        previewFocusButton = miniButton("⛶") { togglePreviewFocusMode() }.apply {
+            contentDescription = "Videoyu geniş ekranda aç"
             elevation = dp(12).toFloat()
-            setPadding(dp(4), 0, dp(4), 0)
             background = android.graphics.drawable.GradientDrawable().apply {
                 setColor(Color.argb(205, 8, 15, 22))
                 cornerRadius = dp(9).toFloat()
             }
-            addView(label("VİDEO", 9f, Color.WHITE, true), LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { leftMargin = dp(4); rightMargin = dp(2) })
-            addView(miniButton("−") { adjustPreviewStageHeight(-30) },
-                LinearLayout.LayoutParams(dp(38), dp(40)))
-            addView(miniButton("↺") { setPreviewStageHeight(previewDefaultStageHeightDp) },
-                LinearLayout.LayoutParams(dp(42), dp(40)))
-            addView(miniButton("+") { adjustPreviewStageHeight(30) },
-                LinearLayout.LayoutParams(dp(38), dp(40)))
-            previewFocusButton = miniButton("⛶") { togglePreviewFocusMode() }
-            previewFocusButton.contentDescription = "Videoyu geniş ekranda aç"
-            addView(previewFocusButton, LinearLayout.LayoutParams(dp(42), dp(40)))
-            contentDescription = "Video önizlemesini küçült, varsayılana döndür veya büyüt"
         }
-        previewFrame.addView(previewSizeControls, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT, dp(44), Gravity.TOP or Gravity.END
+        previewFrame.addView(previewFocusButton, FrameLayout.LayoutParams(
+            dp(42), dp(40), Gravity.TOP or Gravity.END
         ).apply { topMargin = dp(6); rightMargin = dp(6) })
         root.addView(previewFrame, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(previewStageHeightDp)
@@ -543,13 +529,7 @@ class VideoEditorActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        timelineHeader.addView(label("ZAMAN ÇİZELGESİ", 11f, Color.rgb(121, 202, 218), true).apply {
-            setSingleLine(true)
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-            marginEnd = dp(4)
-        })
+        timelineHeader.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         timelineHeader.addView(miniButton("＋") { chooseVideo(true) }.apply {
             minWidth = dp(38)
             minimumWidth = dp(38)
@@ -557,14 +537,7 @@ class VideoEditorActivity : Activity() {
             setPadding(0, 0, 0, 0)
             contentDescription = "Zaman çizelgesine video ekle"
         }, LinearLayout.LayoutParams(dp(42), dp(40)).apply { leftMargin = dp(3) })
-        timelineHeader.addView(miniButton("↻") { chooseVideo(false) }.apply {
-            minWidth = dp(38)
-            minimumWidth = dp(38)
-            textSize = 16f
-            setPadding(0, 0, 0, 0)
-            contentDescription = "Seçili videoyu değiştir"
-        }, LinearLayout.LayoutParams(dp(42), dp(40)).apply { leftMargin = dp(3) })
-        timelineCard.addView(timelineHeader, matchWrap())
+         timelineCard.addView(timelineHeader, matchWrap())
 
         // One playback control, fixed on the same center axis as the stationary red playhead.
         val centeredPlaybackRow = FrameLayout(this)
@@ -669,14 +642,7 @@ class VideoEditorActivity : Activity() {
             updateTimelinePlayheadLine()
         }
         timelineCard.addView(timelineTracksFrame, matchWrap())
-        timelineCard.addView(label("Uzun bas: klibi taşı / sil / kopyala  •  Kenarlardan: kes", 9f, Color.rgb(180, 202, 216), false).apply {
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            setPadding(dp(3), dp(2), dp(3), 0)
-            contentDescription = "Klibe uzun basarak taşı, sil veya kopyala; kesmek için kenarları sürükle"
-        }, matchWrap())
-
-        val playheadRow = LinearLayout(this).apply {
+         val playheadRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
             setPadding(dp(3), dp(3), dp(3), 0)
@@ -704,7 +670,7 @@ class VideoEditorActivity : Activity() {
         // The track rows scroll horizontally; the editor shell keeps its own height.
         root.addView(timelineCard, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(if (compactEditorLayout) 224 else 252)
+            dp(224)
         ))
         root.addView(gap(8))
 
@@ -1173,13 +1139,14 @@ class VideoEditorActivity : Activity() {
             text = "Hazır. Zaman çizelgesine video ekleyebilirsin."
             setTextColor(Color.rgb(205, 218, 231))
             textSize = 11f
-            maxLines = 2
-            setPadding(dp(8), dp(5), dp(8), dp(5))
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(dp(8), dp(3), dp(8), dp(3))
             setBackgroundColor(Color.rgb(23, 32, 45))
         }
         root.addView(status, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = dp(4) })
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(26)
+        ).apply { topMargin = dp(3) })
 
         val dock = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1190,7 +1157,7 @@ class VideoEditorActivity : Activity() {
             Triple("clip", "Klip", "✂"),
             Triple("text", "Metin", "T"),
             Triple("audio", "Ses", "♫"),
-            Triple("export", "Dışa aktar", "⇧")
+            Triple("export", "Diğer", "⋯")
         ).forEach { (key, title, symbol) ->
             val tab = miniButton("$symbol\n$title") { toggleEditorPanel(key) }.apply {
                 textSize = 10f
@@ -1347,8 +1314,8 @@ class VideoEditorActivity : Activity() {
                 val density = resources.displayMetrics.density.coerceAtLeast(1f)
                 val viewportDp = (viewportHeight / density).toInt()
                 compactEditorLayout = viewportDp < 820
-                val previewRatio = if (viewportDp < 650) 0.23f else 0.30f
-                previewDefaultStageHeightDp = (viewportDp * previewRatio).toInt().coerceIn(150, 340)
+                val previewRatio = if (viewportDp < 650) 0.31f else 0.34f
+                previewDefaultStageHeightDp = (viewportDp * previewRatio).toInt().coerceIn(170, 360)
                 previewStageHeightDp = previewDefaultStageHeightDp
                 previewHeightAutoSized = true
 
@@ -1756,7 +1723,11 @@ class VideoEditorActivity : Activity() {
                 setPadding(0, dp(1), 0, dp(1))
             }
             scroll.addView(track)
-            val responsiveLaneHeight = if (keyboardLayoutActive || compactEditorLayout) 18 else heightDp
+            val responsiveLaneHeight = if (keyboardLayoutActive) {
+                minOf(heightDp, 28)
+            } else {
+                maxOf(heightDp, if (compactEditorLayout) 40 else heightDp)
+            }
             row.addView(scroll, LinearLayout.LayoutParams(0, dp(responsiveLaneHeight), 1f))
 
             if (!reorderable) {
@@ -1807,7 +1778,11 @@ class VideoEditorActivity : Activity() {
                     setOnClickListener { onClick() }
                 }
             }
-            val blockHeight = dp(if (keyboardLayoutActive || compactEditorLayout) 18 else 24)
+            val blockHeight = dp(when {
+                keyboardLayoutActive -> 26
+                compactEditorLayout -> 52
+                else -> 48
+            })
             track.addView(block, LinearLayout.LayoutParams(width, blockHeight))
         }
 
@@ -1823,7 +1798,11 @@ class VideoEditorActivity : Activity() {
             if (startMs > 0L) addSpacer(track, 0L, startMs)
 
             val blockWidth = widthBetween(startMs, endMs).coerceAtLeast(1)
-            val blockHeight = dp(if (keyboardLayoutActive || compactEditorLayout) 18 else 24)
+            val blockHeight = dp(when {
+                keyboardLayoutActive -> 26
+                compactEditorLayout -> 36
+                else -> 32
+            })
             val frame = FrameLayout(this).apply {
                 background = android.graphics.drawable.GradientDrawable().apply {
                     setColor(Color.rgb(110, 74, 154))
@@ -2016,8 +1995,8 @@ class VideoEditorActivity : Activity() {
             if (endMs < totalMs) addSpacer(track, endMs, totalMs)
         }
 
-        if (!keyboardLayoutActive && !compactEditorLayout) {
-            val ruler = makeLane("SÜRE", 22, "__ruler__", reorderable = false)
+        if (!keyboardLayoutActive) {
+            val ruler = makeLane("SÜRE", 26, "__ruler__", reorderable = false)
             val rulerEndMs = (((totalMs + 4999L) / 5000L).coerceAtLeast(1L)) * 5000L
             var rulerTimeMs = 0L
             var rulerPositionPx = 0
@@ -2049,7 +2028,7 @@ class VideoEditorActivity : Activity() {
             // Clips retain their real project start/end positions; overlaps are
             // stacked inside this same strip instead of creating extra VIDEO rows.
             val placements = TimelineVideoMath.singleTrackPlacements(videoTimelineSegments())
-            val stripHeight = dp(if (keyboardLayoutActive || compactEditorLayout) 18 else 42)
+            val stripHeight = dp(if (keyboardLayoutActive) 28 else 60)
             val furthestClipEndPx = placements.maxOfOrNull {
                 widthBetween(0L, it.timelineEndMs)
             } ?: 0
@@ -2078,7 +2057,7 @@ class VideoEditorActivity : Activity() {
                     gravity = Gravity.TOP or Gravity.LEFT
                 })
             }
-            val videoTrack = makeLane("Video", if (keyboardLayoutActive || compactEditorLayout) 18 else 44, "video")
+            val videoTrack = makeLane("Video", if (keyboardLayoutActive) 28 else 60, "video")
             videoTrack.addView(strip, LinearLayout.LayoutParams(stripWidth, stripHeight))
         }
 
@@ -2128,6 +2107,16 @@ class VideoEditorActivity : Activity() {
             if (params.height != laneContentHeight) {
                 params.height = laneContentHeight
                 timelineTracksFrame.layoutParams = params
+            }
+        }
+        // Size the timeline card from its real track content instead of reserving
+        // a large fixed empty panel on small phones. Each added layer earns its own row.
+        (timelineTracksFrame.parent as? LinearLayout)?.let { card ->
+            val desiredHeight = (laneContentHeight + dp(128)).coerceIn(dp(206), dp(360))
+            val cardParams = card.layoutParams as? LinearLayout.LayoutParams
+            if (cardParams != null && cardParams.height != desiredHeight) {
+                cardParams.height = desiredHeight
+                card.layoutParams = cardParams
             }
         }
 
