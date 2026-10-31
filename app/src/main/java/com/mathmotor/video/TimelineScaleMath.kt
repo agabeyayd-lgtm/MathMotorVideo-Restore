@@ -53,3 +53,13 @@ internal object TimelineScaleMath {
         return (contentX - (viewportX - labelGutterPx)).roundToInt().coerceAtLeast(0)
     }
 }
+
+
+/**
+ * The project ruler covers the furthest end point of any active timeline layer.
+ * Each layer owns its own interval, but all intervals share this one project duration.
+ */
+internal object TimelineProjectDurationMath {
+    fun totalDuration(vararg layerEndTimesMs: Long): Long =
+        layerEndTimesMs.maxOrNull()?.coerceAtLeast(0L) ?: 0L
+}
