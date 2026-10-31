@@ -1,5 +1,11 @@
 # MathMotor Video
 
+## Latest emulator review — 2026-10-31
+
+- Emulator screenshot workflow #427 passed and produced screenshots, but visual review found the timeline card consuming too much vertical space and a black preview frame. A targeted compact-height correction was committed as `a708a64877d1059373738144b5b39866cff101f3`.
+- This is a source-level layout adjustment only. Await the new PR-head build and emulator screenshot before marking it visually verified. The black preview frame and all touch/keyboard/save-export acceptance checks remain open.
+- Keep PR #11 draft and version 395 blocked.
+
 MathMotor Video is a local-first Android video editor with a CapCut-inspired workflow. Normal editing runs on-device; AI generation, AI scoring and paid cloud APIs are outside the current product scope.
 
 ## Editing flow
