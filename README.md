@@ -143,4 +143,4 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - These are source changes only. They have not yet been verified on a physical phone or in a new APK.
 - **Still open:** independently draggable/movable video, text, music and sound-effect items with separate start/end times; overlap; end-to-end preview/export/save-reopen verification. Text already has its own drag/trim path, but video clips are still represented as a sequential playlist and audio blocks are not independently draggable/trimmable.
 
-The PR's current branch has no CI result attached. The repository's verify-android-build workflow is configured for pushes to main or manual dispatch, while the debug APK build is manual-only. Do not interpret the absence of checks as a pass. Version 395 remains blocked.
+The verify-android-build workflow now also triggers for pull requests targeting main (added on this branch). At the latest check, GitHub had not reported a workflow run or commit status for PR #11 yet, so build/test remains unverified. The debug APK build remains manual-only. Do not interpret the absence of checks as a pass. Version 395 remains blocked.
