@@ -392,10 +392,18 @@ if [ -z "$clip_bounds" ]; then
 fi
 read -r clip_x1 clip_y1 clip_x2 clip_y2 <<< "$clip_bounds"
 scrub_y="$(((clip_y1 + clip_y2) / 2))"
-forward_start="$((clip_x2 - 35))"
-forward_end="$((clip_x1 + 35))"
-if [ "$((forward_start - forward_end))" -lt 80 ]; then
-  echo "The filmstrip does not expose enough horizontal scroll distance for a meaningful scrub."
+clip_width="$((clip_x2 - clip_x1))"
+# UIAutomator reports the visible intersection of a long clip with the lane
+# viewport, not the clip's full off-screen width. Scale the inset to that
+# visible width instead of discarding a fixed 35px from both sides.
+swipe_inset="$((clip_width / 10))"
+if [ "$swipe_inset" -lt 10 ]; then swipe_inset=10; fi
+if [ "$swipe_inset" -gt 24 ]; then swipe_inset=24; fi
+forward_start="$((clip_x2 - swipe_inset))"
+forward_end="$((clip_x1 + swipe_inset))"
+forward_distance="$((forward_start - forward_end))"
+if [ "$forward_distance" -lt 80 ]; then
+  echo "The visible filmstrip range is too small for a meaningful scrub (\${clip_width}px wide; \${forward_distance}px usable after \${swipe_inset}px insets)."
   collect_capture_diagnostics filmstrip-scrub-distance-too-small
   exit 18
 fi
@@ -453,8 +461,18 @@ if [ -z "$reverse_bounds" ]; then
 fi
 read -r reverse_x1 reverse_y1 reverse_x2 reverse_y2 <<< "$reverse_bounds"
 reverse_y="$(((reverse_y1 + reverse_y2) / 2))"
-reverse_start="$((reverse_x1 + 35))"
-reverse_end="$((reverse_x2 - 35))"
+reverse_width="$((reverse_x2 - reverse_x1))"
+reverse_inset="$((reverse_width / 10))"
+if [ "$reverse_inset" -lt 10 ]; then reverse_inset=10; fi
+if [ "$reverse_inset" -gt 24 ]; then reverse_inset=24; fi
+reverse_start="$((reverse_x1 + reverse_inset))"
+reverse_end="$((reverse_x2 - reverse_inset))"
+reverse_distance="$((reverse_end - reverse_start))"
+if [ "$reverse_distance" -lt 80 ]; then
+  echo "The visible filmstrip range became too small for the reverse scrub (\${reverse_width}px wide; \${reverse_distance}px usable after \${reverse_inset}px insets)."
+  collect_capture_diagnostics filmstrip-scrub-reverse-distance-too-small
+  exit 23
+fi
 timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$reverse_start" "$reverse_y" "$reverse_end" "$reverse_y" 700
 sleep 1
 timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime > emulator-screenshots/filmstrip-scrub-reverse-logcat.txt 2>&1
