@@ -39,6 +39,144 @@ class TimelineScaleMathTest {
         }
     }
 
+
+
+    @Test
+    fun zoomAnchorKeepsTheSameTimestampUnderTheSameFingerMidpoint() {
+        val oldScale = 22f
+        val newScale = 44f
+        val scrollX = 320
+        val midpointX = 103f
+        val originSpacer = 103f
+        val anchorTime = TimelineScaleMath.timeAtViewportX(scrollX, midpointX, originSpacer, oldScale)
+        val newScroll = TimelineScaleMath.scrollForAnchoredZoom(anchorTime, midpointX, originSpacer, newScale)
+        val timeAfterZoom = TimelineScaleMath.timeAtViewportX(newScroll, midpointX, originSpacer, newScale)
+        assertEquals(anchorTime, timeAfterZoom)
+    }
+
+    @Test
+    fun timeZeroAndFirstVideoFrameShareTheFullPlayCenter() {
+        val frameWidthPx = 320
+        val gripAndLabelGutterPx = 57
+        val originSpacerPx = TimelineScaleMath.originSpacerWidthForCenteredPlayhead(
+            frameWidthPx,
+            gripAndLabelGutterPx
+        )
+
+        val trailingRowInsetPx = 3
+        val endSpacerPx = TimelineScaleMath.endSpacerWidthForCenteredPlayhead(
+            frameWidthPx,
+            gripAndLabelGutterPx,
+            trailingRowInsetPx
+        )
+        val scrollViewportWidthPx = frameWidthPx - gripAndLabelGutterPx - trailingRowInsetPx
+
+        assertEquals(103, originSpacerPx)
+        assertEquals(157, endSpacerPx)
+        assertEquals(scrollViewportWidthPx, originSpacerPx + endSpacerPx)
+        assertEquals(frameWidthPx / 2, gripAndLabelGutterPx + originSpacerPx)
+        assertEquals(
+            0L,
+            TimelineScaleMath.timeAtViewportX(
+                scrollX = 0,
+                viewportX = originSpacerPx.toFloat(),
+                originSpacerPx = originSpacerPx.toFloat(),
+                pixelsPerSecond = 22f
+            )
+        )
+    }
+
+    @Test
+    fun playbackScrollMovesBothRulerAndVideoUnderTheSameFixedCenter() {
+        val frameWidthPx = 320
+        val gutterPx = 57
+        val originSpacerPx = TimelineScaleMath.originSpacerWidthForCenteredPlayhead(frameWidthPx, gutterPx)
+        val pixelsPerSecond = 22f
+        val elapsedMs = 2_000L
+        val scrollPx = TimelineScaleMath.pixelsForTime(elapsedMs, pixelsPerSecond)
+
+        val timeUnderPlayhead = TimelineScaleMath.timeAtViewportX(
+            scrollX = scrollPx,
+            viewportX = originSpacerPx.toFloat(),
+            originSpacerPx = originSpacerPx.toFloat(),
+            pixelsPerSecond = pixelsPerSecond
+        )
+        assertEquals(elapsedMs, timeUnderPlayhead)
+    }
+
+    @Test
+    fun zoomAnchorClampsAtTimelineStart() {
+        assertEquals(
+            0,
+            TimelineScaleMath.scrollForAnchoredZoom(0L, 20f, 57f, 44f)
+        )
+    }
+
+    @Test
+    fun sharedProjectDurationExpandsToTheFurthestIndependentLayerEnd() {
+        assertEquals(
+            13_000L,
+            TimelineProjectDurationMath.totalDuration(
+                videoEndMs = 10_000L,
+                textLayerEnds = listOf(TimelineLayerEnd(8_000L)),
+                musicEndMs = 13_000L,
+                soundEndMs = 2_500L
+            )
+        )
+    }
+
+    @Test
+    fun sharedProjectDurationShrinksWhenTheFurthestLayerIsRemoved() {
+        assertEquals(
+            10_000L,
+            TimelineProjectDurationMath.totalDuration(
+                videoEndMs = 10_000L,
+                textLayerEnds = listOf(TimelineLayerEnd(8_000L)),
+                musicEndMs = 0L,
+                soundEndMs = 2_500L
+            )
+        )
+    }
+
+    @Test
+    fun projectFollowingTextDoesNotKeepAnOldLongerProjectDurationAlive() {
+        assertEquals(
+            10_000L,
+            TimelineProjectDurationMath.totalDuration(
+                videoEndMs = 10_000L,
+                textLayerEnds = listOf(TimelineLayerEnd(13_000L, followsProjectDuration = true)),
+                musicEndMs = 0L,
+                soundEndMs = 0L
+            )
+        )
+    }
+
+    @Test
+    fun explicitlyTimedTextCanExtendTheProjectDuration() {
+        assertEquals(
+            13_000L,
+            TimelineProjectDurationMath.totalDuration(
+                videoEndMs = 10_000L,
+                textLayerEnds = listOf(TimelineLayerEnd(13_000L, followsProjectDuration = false)),
+                musicEndMs = 0L,
+                soundEndMs = 0L
+            )
+        )
+    }
+
+    @Test
+    fun sharedProjectDurationNeverBecomesNegative() {
+        assertEquals(
+            0L,
+            TimelineProjectDurationMath.totalDuration(
+                videoEndMs = -1L,
+                textLayerEnds = listOf(TimelineLayerEnd(-2L, followsProjectDuration = true)),
+                musicEndMs = -3L,
+                soundEndMs = -4L
+            )
+        )
+    }
+
     @Test
     fun invalidScaleAndNegativeTimeAreSafe() {
         assertEquals(0, TimelineScaleMath.pixelsForTime(-100L, 22f))

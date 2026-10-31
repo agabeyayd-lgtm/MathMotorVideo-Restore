@@ -16,6 +16,7 @@ class EditorTestEntryActivity : Activity() {
         super.onCreate(savedInstanceState)
         val videoUri = intent.getStringExtra("video_uri")
         val draftId = intent.getStringExtra("draft_id")
+        val timelineSyncTest = intent.getBooleanExtra("timeline_sync_test", false)
         android.util.Log.i("EditorSmokeTest", "EDITOR_SMOKE_ENTRY_STARTED uri=$videoUri")
         if (videoUri.isNullOrBlank()) {
             finish()
@@ -26,6 +27,7 @@ class EditorTestEntryActivity : Activity() {
         startActivity(Intent(this, VideoEditorActivity::class.java).apply {
             putExtra("video_uri", videoUri)
             if (!draftId.isNullOrBlank()) putExtra("draft_id", draftId)
+            if (timelineSyncTest) putExtra("timeline_sync_test", true)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         })
         finish()
