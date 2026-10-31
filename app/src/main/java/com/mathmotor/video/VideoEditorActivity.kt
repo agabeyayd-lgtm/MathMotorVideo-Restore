@@ -4746,10 +4746,12 @@ class VideoEditorActivity : Activity() {
 
     private fun totalOutputDurationMs(): Long =
         TimelineProjectDurationMath.totalDuration(
-            TimelineVideoMath.totalDuration(videoTimelineSegments()),
-            textLayers.filter { it.timingCustomized }.maxOfOrNull { it.endMs } ?: 0L,
-            if (musicUri != null) musicStartMs + musicDurationMs else 0L,
-            if (soundUri != null) soundStartMs + soundDurationMs else 0L
+            videoEndMs = TimelineVideoMath.totalDuration(videoTimelineSegments()),
+            textLayerEnds = textLayers.map { layer ->
+                TimelineLayerEnd(layer.endMs, followsProjectDuration = !layer.timingCustomized)
+            },
+            musicEndMs = if (musicUri != null) musicStartMs + musicDurationMs else 0L,
+            soundEndMs = if (soundUri != null) soundStartMs + soundDurationMs else 0L
         )
 
     private fun updateSoundControls() {
