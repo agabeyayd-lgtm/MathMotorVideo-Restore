@@ -569,3 +569,13 @@ This is a layout target, not a claim that all behaviors are implemented. Gesture
 - [x] Updated `assert-timeline-sync.py` to reject only that explicit missing-view sentinel and to continue checking `originRightX + scrollX == fixedPlayheadCenter`. Negative screen coordinates are now valid when the origin is off-screen.
 - [ ] Fresh PR-head Verify, APK build, and emulator playback/timeline synchronization run must pass before accepting this change.
 - PR #11 remains draft/unmerged. Version 395 remains blocked.
+
+
+## Floating add-video control — 2026-10-31
+
+- Implemented a transparent standalone plus at the right end of the main video filmstrip; it calls the existing gallery picker.
+- Removed the fake 5-second "+ Video ekle" placeholder block from the empty video lane and replaced it with the same transparent plus affordance.
+- The plus has no clip model, timestamp, duration, or independent timeline layer. Its visual width is included in the filmstrip content width only.
+- Commit: `d61f7851aa4c6cff59505c38d598a5b22a219505`.
+- **Not yet verified:** fresh PR-head compilation, empty/non-empty screenshots, plus placement while scrolling, add/import behavior, and preservation of existing clip/layer times. Do not mark the README acceptance items complete until those checks pass.
+- PR #11 remains draft/unmerged. Installed version 394/build 61 is unchanged; version 395 remains blocked.
