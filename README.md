@@ -407,3 +407,12 @@ These are new release-blocking UI/interaction requirements. They are recorded as
 - [x] Replaced those references with `FrameLayout.LayoutParams` (the inherited child-param class used by ScrollView) and removed the obsolete second fixed-height preview declaration in commit `e65c6a736f41c118613748b276e493ef42feee77`.
 - [ ] Verify the correction with a fresh Kotlin compile/unit-test/Debug APK run. Do not repeat the failed workflow without this source correction.
 - [ ] Emulator screenshot and touch validation remain pending. Keep PR #11 draft and version 395 blocked.
+
+
+## First visual layout pass — 2026-10-31
+
+- The editor source has been rearranged toward the user's single CapCut reference: the generic project heading was replaced with close/search on the left and resolution/cyan export actions on the right; Play/Pause now sits in its own centered row directly below the preview; the current/total time readout has been moved above the timeline tracks and left-aligned; the redundant timeline-card header has been removed; and the timeline indicator is white.
+- The bottom dock and shared timeline remain in place. The editor's time ruler is still a separate row from the current/total readout, and the dock still needs the reference's contextual tool presentation. These are known visual gaps, not accepted as finished.
+- This is an implementation pass, **not** a claim of CapCut visual parity. Await PR-head build, unit tests and emulator screenshot review. Compare the actual screenshot against the user's marked image before making further layout changes.
+- PR #11 remains draft. Version 395 remains blocked.
+
