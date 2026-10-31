@@ -8,6 +8,7 @@ on:
   push:
     branches:
       - fix/editor-395-gate
+      - fix/editor-395-mainline
     paths:
       - ".github/workflows/verify-signed-install.yml"
       - "app/**"
