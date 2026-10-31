@@ -568,3 +568,13 @@ This is a layout target, not a claim that all behaviors are implemented. Gesture
 - Fresh emulator screenshot review is required to confirm the ruler remains visible and readable with the keyboard open, without hiding the filmstrip or pinned tool dock.
 
 - Commit `67af75472c2452234fffc3ec7221cd8598ce3af8` resets the horizontal timeline offset and playhead to project time zero when opening/replacing with a fresh main video. This prevents a previous session's scroll position from shifting the new video's first frame away from the ruler's zero point.
+
+
+## Emulator #532 — filmstrip scrub test range correction (2026-10-31)
+
+- [x] Inspected failed emulator run `41213136450` (run #532) and its uploaded screenshots/diagnostics. The app launched, imported the deterministic 8-second MP4 (`EDITOR_SMOKE_CLIP_ADDED`), and rendered the preview plus three visible filmstrip thumbnails; no app crash or ANR caused this failure.
+- [x] Confirmed the failure was in the smoke-test coordinate guard before any swipe was sent. UIAutomator reports the clip's visible viewport intersection (`[160,342][304,402]`, 144 px wide); the old fixed 35 px margins left only 74 px, below the test's 80 px minimum.
+- [x] Updated `.github/scripts/capture-emulator-screenshots.sh` to derive a 10%-of-visible-width inset (clamped to 10–24 px) for both forward and reverse scrubs, and to report the measured usable range if it is genuinely too small.
+- The measured forward range on the captured 144 px node is now 116 px, so the test can proceed to the actual gesture assertions.
+- [ ] Run fresh PR-head emulator verification and confirm forward scrub advances the shared playhead, reverse scrub moves it backward, playback stays synchronized, and draft save/resume passes. The failed #532 run did not perform either swipe, so scrubbing is not yet accepted.
+- PR #11 remains draft and unmerged. Version 395 remains blocked; installed 394/build 61 is unchanged.
