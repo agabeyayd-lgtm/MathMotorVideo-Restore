@@ -261,6 +261,8 @@ class VideoEditorActivity : Activity() {
     private lateinit var timelinePlayheadLabel: TextView
     private lateinit var timelinePlayButton: Button
     private var timelinePlayheadMs = 0L
+    // Enabled only by the debug emulator test bridge; no telemetry is emitted in normal app use.
+    private var timelineSyncTestEnabled = false
     private var timelineScrubGrabOffsetPx = 0f
     private var timelinePreviewLoaded = false
     private var previewSingleClip = false
@@ -274,6 +276,7 @@ class VideoEditorActivity : Activity() {
             else if (previewSingleClip) syncSingleClipPlayheadFromPlayer()
             syncPreviewAudio()
             updateTimelinePlayButtonState()
+            if (timelineSyncTestEnabled) logTimelineSyncTestSample()
             timelineHandler.postDelayed(this, 250L)
         }
     }
@@ -328,6 +331,12 @@ class VideoEditorActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        timelineSyncTestEnabled =
+            (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0 &&
+                intent.getBooleanExtra("timeline_sync_test", false)
+        if (timelineSyncTestEnabled) {
+            android.util.Log.i("TimelineSyncTest", "TIMELINE_SYNC_TEST_ENABLED")
+        }
         window.statusBarColor = Color.rgb(15, 31, 45)
         window.navigationBarColor = Color.rgb(15, 31, 45)
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
@@ -2791,6 +2800,27 @@ class VideoEditorActivity : Activity() {
         timelinePlayButton.text = if (playing) "Ⅱ" else "▶"
         timelinePlayButton.contentDescription =
             if (playing) "Önizlemeyi duraklat" else "Önizlemeyi oynat"
+    }
+
+    /** Emits real playback/timeline geometry only when the debug CI test opts in. */
+    private fun logTimelineSyncTestSample() {
+        val composition = timelineCompositionPlayer ?: return
+        val firstLane = timelineScrollViews.firstOrNull() ?: return
+        if (!::timelinePlayheadLine.isInitialized || firstLane.width <= 0) return
+
+        val pixelsPerSecond = timelinePixelsPerSecond()
+        val playheadCenterPx = timelinePlayheadLine.left + timelinePlayheadLine.width / 2
+        val expectedCenterPx = dp(57) + firstLane.width / 2
+        val expectedScrollPx = TimelineScaleMath.pixelsForTime(timelinePlayheadMs, pixelsPerSecond)
+        val laneScrolls = timelineScrollViews.joinToString(",") { it.scrollX.toString() }
+        android.util.Log.i(
+            "TimelineSyncTest",
+            "TIMELINE_SYNC_SAMPLE playing=${composition.isPlaying} " +
+                "playerMs=${composition.currentPosition} playheadMs=$timelinePlayheadMs " +
+                "scrollXs=$laneScrolls pxPerSecond=$pixelsPerSecond " +
+                "expectedScrollPx=$expectedScrollPx playheadCenterPx=$playheadCenterPx " +
+                "expectedCenterPx=$expectedCenterPx"
+        )
     }
 
     private fun buildFlattenedVideoSequence():EditedMediaItemSequence {
