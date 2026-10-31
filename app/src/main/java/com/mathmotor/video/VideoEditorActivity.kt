@@ -3125,6 +3125,10 @@ class VideoEditorActivity : Activity() {
         comp.seekTo(target);timelinePlayheadMs=target
         val active=activeClipIndexAt(target)
         if(active!=null&&selectedClipIndex!=active){
+            // Playback/scrubbing can follow another active clip, but it must not
+            // transfer the user's explicit selection or reveal trim handles automatically.
+            clipHandlesVisible = false
+            if (activeEditorPanel == "clip") toggleEditorPanel("clip")
             selectedClipIndex=active;refreshClipList();loadTrimControls()
         }
         timelinePlayheadSeek.progress=TimelineTrimMath.progressForTime(target,total)
@@ -3136,6 +3140,10 @@ class VideoEditorActivity : Activity() {
         timelinePlayheadMs=comp.currentPosition.coerceIn(0L,totalOutputDurationMs())
         val active=activeClipIndexAt(timelinePlayheadMs)
         if(active!=null&&selectedClipIndex!=active){
+            // Playback/scrubbing can follow another active clip, but it must not
+            // transfer the user's explicit selection or reveal trim handles automatically.
+            clipHandlesVisible = false
+            if (activeEditorPanel == "clip") toggleEditorPanel("clip")
             selectedClipIndex=active;refreshClipList();loadTrimControls()
         }
         val progress=TimelineTrimMath.progressForTime(timelinePlayheadMs,totalOutputDurationMs())
