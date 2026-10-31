@@ -56,10 +56,29 @@ internal object TimelineScaleMath {
 
 
 /**
- * The project ruler covers the furthest end point of any active timeline layer.
- * Each layer owns its own interval, but all intervals share this one project duration.
+ * A text layer with no user-defined end follows the project end. It must not
+ * extend the project it is following; only explicitly timed text contributes
+ * its own independent endpoint.
+ */
+internal data class TimelineLayerEnd(
+    val endMs: Long,
+    val followsProjectDuration: Boolean = false
+)
+
+/**
+ * The ruler covers the furthest independent end among video, explicit text,
+ * music and sound/effect items. Overlapping durations are never summed.
  */
 internal object TimelineProjectDurationMath {
-    fun totalDuration(vararg layerEndTimesMs: Long): Long =
-        layerEndTimesMs.maxOrNull()?.coerceAtLeast(0L) ?: 0L
+    fun totalDuration(
+        videoEndMs: Long,
+        textLayerEnds: Iterable<TimelineLayerEnd>,
+        musicEndMs: Long,
+        soundEndMs: Long
+    ): Long {
+        val independentTextEnd = textLayerEnds
+            .filterNot { it.followsProjectDuration }
+            .maxOfOrNull { it.endMs } ?: 0L
+        return maxOf(videoEndMs, independentTextEnd, musicEndMs, soundEndMs, 0L)
+    }
 }
