@@ -257,3 +257,12 @@ New visual requirement; this is a documentation record, not a claim that the UI 
 - [ ] Verify play/pause icon state updates correctly during playback, pause, seek and preview rebuild.
 
 **Status:** source implementation committed to PR #11; visual/device verification is pending. Version 395 remains blocked and the installed 394/build 61 baseline is unchanged.
+
+
+## Follow-up compile verification — 2026-10-31
+
+- [x] Corrected the invalid visibility assignment on LinearLayout.LayoutParams in commit 65180c0328197e97d229aa45f2a80df18ca9e73d.
+- [x] Verify run [#175](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41179027832) passed on that PR head: unit tests, Kotlin compilation and Debug APK assembly.
+- [ ] Separate APK workflow #250 and emulator screenshot workflow #419 were still running at this update; inspect their final results.
+- [ ] Inspect a successful emulator screenshot and perform real UI gesture, preview/export and save/reopen acceptance.
+- No physical-device acceptance is claimed. PR #11 remains draft; version 395 remains blocked; installed version 394/build 61 stays unchanged.
