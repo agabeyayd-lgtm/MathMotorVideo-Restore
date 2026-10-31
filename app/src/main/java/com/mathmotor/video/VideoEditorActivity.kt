@@ -2715,7 +2715,7 @@ class VideoEditorActivity : Activity() {
         val frameWidth = timelineTracksFrame.width.takeIf { it > 0 }
             ?: if (viewportWidth > 0) viewportWidth + gutterPx
             else resources.displayMetrics.widthPixels
-        return (frameWidth / 2 - gutterPx).coerceAtLeast(dp(1))
+        return TimelineScaleMath.originSpacerWidthForCenteredPlayhead(frameWidth, gutterPx)
     }
 
     private fun ensureTrimHandlesReachable(index: Int): Boolean {
