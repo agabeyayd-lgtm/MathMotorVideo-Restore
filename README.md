@@ -190,3 +190,44 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - Corrected the test to expect the actual clamp result `(0, 10,000)` and added a separate assertion that a valid `(2,000, 8,000)` range remains unchanged.
 - Correction commit: `1ac2eff891af503fe0083b33f46d6478128ea6c6`. The corrected PR head still requires a fresh CI result; do not mark verification passed until it completes successfully.
 - No production timing implementation was changed for this failure. Version 395 remains blocked.
+
+
+## Unified CapCut-style editor surface — user-confirmed requirements (2026-10-31)
+
+These are new release-blocking UI/interaction requirements. They are recorded as **not yet implemented or device-verified**; do not mark them complete based on this documentation entry.
+
+### One timeline, one playhead, one control set
+
+- [ ] Replace the visually separated “Zaman Çizelgesi” and “Klip Düzenleme” sections with one coherent editor/timeline surface. “Klip Düzenleme” must be contextual actions for the currently selected clip, not a second timeline-like section or independent editing workspace.
+- [ ] Keep exactly one Play/Pause control for the editor preview. Remove duplicate play controls and playback controls placed over the video preview.
+- [ ] Keep exactly one time readout in the editor. Remove duplicate duration/progress/time displays and independent secondary seek controls.
+- [ ] Use exactly one vertical red playhead, fixed at the horizontal center of the visible timeline viewport. Do not move the red line across the screen during playback or scrubbing.
+- [ ] During playback, scroll the shared time ruler and every timeline lane horizontally underneath the stationary center playhead. The time under the playhead and the video preview must stay synchronized.
+- [ ] When the user drags the timeline, keep the playhead fixed and update the current preview time from the ruler position under that line. All lanes must move together.
+- [ ] Keep video preview visually clean and unobstructed: no persistent play/pause, seek, or duplicate timeline controls over the picture. Playback is controlled by the single editor Play/Pause control.
+- [ ] Keep the editor visually restrained. Do not add a control, label, button row or separate panel unless it serves a distinct necessary editing action. Show clip actions contextually for the selected item.
+
+### Pinch zoom and adaptive time ruler
+
+- [ ] Implement two-finger pinch zoom on the actual shared timeline. The midpoint between the two fingers is the zoom anchor: the timestamp under that midpoint must remain at that same screen position while zooming in or out, subject only to timeline-boundary clamping.
+- [ ] Pinch out expands horizontal time scale and reveals finer time detail; pinch in compresses it and shows a longer time range. Zoom changes visual scale only and must not change clip/layer timestamps or durations.
+- [ ] The ruler labels and tick spacing must adapt to the current scale. The visible timeline span must expand when zoomed out and contract when zoomed in; it must not be a fixed-width/fixed-interval display.
+- [ ] Preserve the single centered red playhead while pinch zooming. The gesture anchor and fixed playhead are distinct: zoom preserves the time under the finger midpoint, while the red playhead remains at viewport center.
+
+### One shared timeline coordinate system
+
+- [ ] Video clips, text, music, sound effects, trim handles, ruler and playhead must use one shared time-to-pixel mapping and synchronized horizontal scroll position.
+- [ ] Every lane follows the same zoom factor and scroll offset. No independent timeline/ruler/zoom control for “Klip Düzenleme”, audio or text.
+- [ ] Project duration is derived from the furthest end time of all timeline items (video, text, music and sound effects), not from adding overlapping durations. Show this project duration only in the single time display; do not add a second duration panel.
+- [ ] Keep the existing independent-item behavior: moving or trimming one item must not move or modify another item unless the user explicitly groups/links them. Overlap must not create a duplicate timeline or an unintended extra editing section.
+
+### Required validation for this UI change
+
+- [ ] Verify exactly one Play/Pause, one time readout and one fixed center red playhead are visible; confirm no playback controls overlay the preview.
+- [ ] Verify playback scrolls all lanes/ruler beneath the fixed playhead and scrubbing by dragging the timeline updates preview/time correctly.
+- [ ] Verify pinch zoom in/out preserves the timestamp under the two-finger midpoint and keeps all lanes aligned at several zoom levels.
+- [ ] Verify the “Zaman Çizelgesi” / “Klip Düzenleme” split is gone and clip actions appear contextually without creating another timeline surface.
+- [ ] Verify project duration uses the furthest end among all lanes and does not change merely because of zoom.
+- [ ] Test on a small screen and with the keyboard open; review screenshots and interaction logs.
+
+**Status:** requirements recorded only. No production code change or passing test is claimed by this entry. Version 395 remains blocked; installed version 394/build 61 stays unchanged.
