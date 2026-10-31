@@ -169,3 +169,15 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - Transformer Composition can combine separate sequences that overlap in time, including video/audio layers.
 - The current preview passes a single flattened video sequence to CompositionPlayer; overlapping clips are resolved to one active top-layer segment before preview rather than passed as multiple video sequences. This avoids relying on CompositionPlayer's still-developing multi-video-sequence preview path.
 - This does not prove real-time touch/seek behavior or MP4 correctness. Both preview and final export still require device/emulator verification before acceptance.
+
+
+### Music source trim — implementation added, verification pending (2026-10-31)
+
+- Added independent music-file source in/out points, separate from the music item's project-timeline start and duration.
+- Added source-range controls in the audio panel. The selected source range is normalized to the file duration and kept at a minimum non-empty span.
+- Preview seeks and loops only inside the selected source range while the music item is active on the project timeline.
+- Transformer export clips repeated music chunks to the selected source in/out range; timeline gaps before and after the music item remain silent.
+- New project JSON stores the source in/out values. Older projects without these keys default to the full source file.
+- Added pure unit tests for source range normalization, boundary handling and selected-range looping.
+- PR-head CI run #146 is in progress; do not mark tests passed until GitHub reports success.
+- Physical-device checks of both source-range controls, preview seeking, exported MP4 audio and save/reopen remain required. Version 395 remains blocked.
