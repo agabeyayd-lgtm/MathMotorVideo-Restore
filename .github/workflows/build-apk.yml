@@ -1,7 +1,10 @@
 name: Build MathMotorVideo APK
 
-# APK builds are manual-only. Source updates must not automatically create APK artifacts.
+# Build an unsigned debug APK for PR device verification; signed publishing remains separate.
 on:
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
