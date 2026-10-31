@@ -482,3 +482,13 @@ This is a layout target, not a claim that all behaviors are implemented. Gesture
 
 - Replaced the oversized turquoise arrow-shaped video trim handles with slim white vertical markers, matching the supplied CapCut reference more closely. The larger transparent touch targets and existing trim gesture behavior remain intact.
 - Source commit: `ccbece8c3ee0fc1171dcf0689a699f4fb1766eda`. Await fresh PR-head CI and emulator screenshot inspection before visual acceptance. PR #11 stays draft; version 395 stays blocked.
+
+
+## Emulator startup crash fix — 2026-10-31 (PR #11)
+
+- Emulator screenshot run #477 built the debug APK successfully but the editor process crashed on launch before the fixture video could be imported.
+- The actual exception was `IllegalStateException: The specified child already has a parent` at `VideoEditorActivity.refreshTimelineTracks$makeLane(VideoEditorActivity.kt:1646)`.
+- Root cause: the live time label was still attached to an unused legacy `playheadRow`, then `makeLane()` attempted to attach the same View to the ruler lane. The obsolete parent attachment was removed; the time label is now created detached and attached only by the ruler lane.
+- Fix commit: `fef3116d0eb6c9394915b9663f82efda5406ef5e`.
+- [ ] Run targeted compiler/unit + emulator launch/import verification on the fix commit; inspect a fresh screenshot. Do not count the failed #477 run as a visual or functional pass.
+- PR #11 remains draft and unmerged. Version 395 remains blocked.
