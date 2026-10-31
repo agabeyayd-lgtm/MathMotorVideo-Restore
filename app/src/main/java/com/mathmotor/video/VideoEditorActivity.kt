@@ -580,22 +580,14 @@ class VideoEditorActivity : Activity() {
             ViewGroup.LayoutParams.MATCH_PARENT, dp(48)
         ))
 
-         val playheadRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            setPadding(dp(3), dp(3), dp(3), 0)
-        }
+        // The live time readout is attached only to the ruler lane in makeLane().
+        // Do not parent it here: refreshTimelineTracks() rebuilds that lane repeatedly.
         timelinePlayheadLabel = label("00:00.0 / 00:00.0", 10f, Color.rgb(225, 233, 237), true).apply {
             maxLines = 1
-            gravity = Gravity.CENTER
+            gravity = Gravity.CENTER_VERTICAL or Gravity.START
             setSingleLine(true)
+            setPadding(dp(4), 0, dp(2), 0)
         }
-        playheadRow.gravity = Gravity.CENTER
-        timelinePlayheadLabel.gravity = Gravity.CENTER
-        timelinePlayheadLabel.setPadding(0, 0, 0, 0)
-        playheadRow.addView(timelinePlayheadLabel, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
         // Keep the legacy seek model detached: the visible horizontal scrubber and zoom
         // buttons are removed. Timeline gestures now move the lanes under the fixed playhead.
         timelinePlayheadSeek = SeekBar(this).apply {
