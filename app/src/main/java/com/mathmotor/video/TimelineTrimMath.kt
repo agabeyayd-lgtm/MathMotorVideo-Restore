@@ -269,6 +269,14 @@ internal data class TimelineVideoSegment(
     val timelineEndMs: Long get() = timelineStartMs.coerceAtLeast(0L) + durationMs
 }
 
+/** A clip's position inside the one shared visual VIDEO strip. */
+internal data class TimelineVideoPlacement(
+    val clipIndex: Int,
+    val timelineStartMs: Long,
+    val timelineEndMs: Long,
+    val layerOrder: Int
+)
+
 /** Independent video placement, overlap selection and edge-trim math. */
 internal object TimelineVideoMath {
     fun normalize(segment: TimelineVideoSegment): TimelineVideoSegment {
@@ -297,27 +305,22 @@ internal object TimelineVideoMath {
     }
 
     /**
-     * Assigns visual rows in layer order: the highest-index clip occupies the
-     * uppermost available row. Clips may share a row only when their time ranges
-     * do not overlap. This keeps the timeline's vertical stacking consistent
-     * with activeSegmentIndexAt() and the flattened preview/export result.
+     * Returns every clip for the single visual VIDEO strip.
+     *
+     * The input order is layer order (later entries are above earlier ones when
+     * project ranges overlap), matching activeSegmentIndexAt() and preview/export.
+     * Time ranges are preserved exactly; overlap never creates another visual row.
      */
-    fun assignLanes(segments: List<TimelineVideoSegment>): List<List<Int>> {
-        val safeSegments = segments.map(::normalize)
-        val lanes = mutableListOf<MutableList<Int>>()
-        for (index in segments.indices.reversed()) {
-            val current = safeSegments[index]
-            val row = lanes.indexOfFirst { rowIndices ->
-                rowIndices.none { otherIndex ->
-                    val other = safeSegments[otherIndex]
-                    current.timelineStartMs < other.timelineEndMs &&
-                        other.timelineStartMs < current.timelineEndMs
-                }
-            }.takeIf { it >= 0 } ?: lanes.size.also { lanes.add(mutableListOf()) }
-            lanes[row].add(index)
+    fun singleTrackPlacements(segments: List<TimelineVideoSegment>): List<TimelineVideoPlacement> =
+        segments.mapIndexed { index, segment ->
+            val safe = normalize(segment)
+            TimelineVideoPlacement(
+                clipIndex = index,
+                timelineStartMs = safe.timelineStartMs,
+                timelineEndMs = safe.timelineEndMs,
+                layerOrder = index
+            )
         }
-        return lanes.map { row -> row.sortedBy { safeSegments[it].timelineStartMs } }
-    }
 
     fun move(segment: TimelineVideoSegment, requestedStartMs: Long): TimelineVideoSegment =
         normalize(segment).copy(timelineStartMs = requestedStartMs.coerceAtLeast(0L))
