@@ -1575,6 +1575,10 @@ class VideoEditorActivity : Activity() {
         val preservedScrollX = pendingTimelineScrollX ?: timelineHorizontalScrollX
         pendingTimelineScrollX = null
         timelineHorizontalScrollX = preservedScrollX
+        // The playhead time label is hosted by the ruler lane. Responsive layout
+        // callbacks can rebuild the timeline more than once; detach the persistent
+        // label from the previous ruler row before attaching it to the new one.
+        (timelinePlayheadLabel.parent as? ViewGroup)?.removeView(timelinePlayheadLabel)
         timelineTracks.removeAllViews()
         timelineScrollViews.clear()
         if (::timelinePlayheadSeek.isInitialized) updateTimelinePlayheadControls()
