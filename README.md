@@ -502,3 +502,15 @@ This is a layout target, not a claim that all behaviors are implemented. Gesture
 - On the parent commit, APK build `41192048694` and Verify/unit/build `41192048740` passed; emulator UI run `41192048687` failed on the reparenting issue above. Those are not verification results for the new fix commit.
 - [ ] Re-run PR-head compile/unit, debug APK and emulator fixture-import/screenshot checks on `4c1e9cd71af19f5e90d13b33b27e3a633d99f90f`. Inspect the screenshot and verify the time label, playhead and ruler still align after repeated layout refreshes.
 - PR #11 remains draft and unmerged. Version 395 remains blocked; installed 394/build 61 remains unchanged.
+
+## Timeline alignment and filmstrip readability — 2026-10-31
+
+- User-confirmed timeline contract: the Play control is above the time ruler; the ruler labels run 0, 1, 2, 3…; the fixed white playhead sits at the exact horizontal center directly below Play. On editor entry, the imported video's first frame, ruler zero, time readout 00:00 and playhead must all align at zero, with playback paused.
+- The video filmstrip is the actual moving video content, not a decorative/background strip that appears to move independently. Its thumbnails and the ruler share one horizontal scroll offset and time-to-pixel mapping beneath the stationary playhead.
+- The first video frame is clamped to the playhead at project time zero: the filmstrip may move forward/right to reveal later time, but must not move left past its first frame and create negative pre-roll space.
+- Thumbnail readability correction committed in `56ddc2dff0085bb215aed9a5cd082a1c4fa72def`: replace 12dp sliver cells with approximately 52dp-wide thumbnail cells, fill the clip width evenly, and cap the number of decoded thumbnails. This is a source change only; verify at phone size that frames are visibly wider and no longer look like narrow chopped rectangles.
+- Thumbnail generation latency remains an open performance issue. Current implementation opens a decoder/retriever per requested frame and uses a two-thread executor; profile and optimize this separately without delaying preview startup or changing timeline coordinates.
+- [ ] Verify fresh PR-head compilation/unit tests and Debug APK.
+- [ ] Review fresh emulator screenshot and physical-phone behavior for paused-at-zero entry, ruler/filmstrip/playhead alignment, zero-boundary clamp, shared movement, and thumbnail cell width.
+- [ ] Measure thumbnail first-frame and full-strip population latency; do not mark speed fixed until measured.
+- PR #11 remains draft; version 395 remains blocked.
