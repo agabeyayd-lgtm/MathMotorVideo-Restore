@@ -82,20 +82,24 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 - [x] Decode filmstrip frames at 192×108 and set the Media3 fallback output height to 108px.
 - [x] Bound thumbnail cache by 16 MiB of bitmap allocation size.
 - [x] Keep default filmstrip density near one frame per second at 22 dp/s with 24 dp slots.
-- [x] Implement sound-effect body drag to move the item without changing other timeline items.
-- [x] Implement sound-effect left/right trim; left trim preserves the correct source-file in-point.
-- [x] Save/restore sound-effect source duration, source in-point, timeline start and segment duration while keeping old JSON projects compatible.
-- [x] Add pure unit tests for audio move/trim and boundary normalization.
-- [x] Enable PR-triggered verification workflow; latest checked commit `7e75c016b7d01c4e1e7863a92ff72bfaa6bbc134` passed unit tests and Debug compilation/package.
-- [ ] Verify sound-effect drag/trim gestures and live audio sync on an actual phone or reliable emulator.
-- [ ] Make music independently movable and trimmable with its own start/end.
-- [ ] Replace sequential-only video clip positioning with independently movable timeline items.
-- [ ] Verify overlapping arrangements in both live preview and MP4 export.
+- [x] Implement sound-effect body drag and two-edge trim; left trim preserves the source-file in-point.
+- [x] Save/restore sound-effect source duration, source in-point, timeline start and segment duration; keep older project files compatible.
+- [x] Implement music timeline start/duration with independent body drag and left/right trim.
+- [x] Synchronize music preview to its project-time window and keep it silent outside that range.
+- [x] Export music only inside its timeline window, repeating the source as needed and adding silence before/after the item.
+- [x] Save/restore music source duration and project-time range; old project files default to full-video music duration.
+- [x] Add pure unit tests for sound-effect source trim and music timeline move/trim boundaries.
+- [x] Enable PR-triggered verification workflow; commit `1ea29d100a1c01cdfa801f9d520ee0aa446ff4c1` passed unit tests, Kotlin compilation and Debug APK assembly.
+- [ ] Verify music/sound-effect drag and trim gestures plus live audio sync on an actual phone or reliable emulator.
+- [ ] Verify exported audio start/end, repeat behavior, silence outside the segment and source-video preservation in a real MP4.
+- [ ] Verify project save/reopen retains edited music/effect positions and durations.
+- [ ] Implement independently positioned/trimmable video clips instead of the current sequential playlist.
+- [ ] Add source-in/source-out selection for music; current music block repeats the full source within its timeline range.
+- [ ] Verify overlapping layers in both live preview and MP4 export.
 - [ ] Verify thumbnail sharpness, distinct timestamps, load priority and memory behavior on a physical device.
-- [ ] Verify full project save/reopen, audio sync and MP4 output with independently positioned layers.
+- [ ] Complete full interaction, small-screen and keyboard tests.
 
-**Release gate:** version 395 remains blocked. A green unit-test/Debug build is necessary but does not replace device, interaction, preview/export and project-persistence acceptance.
-
+**Release gate:** version 395 remains blocked. A green unit-test/Debug build does not replace device, interaction, preview/export and project-persistence acceptance.
 ## Multi-track technical constraint — checked 2026-10-31
 
 - App dependencies use Media3 1.10.1.

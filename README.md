@@ -138,24 +138,24 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 
 - The redundant clip title/card strip is hidden; clip state and selection logic are retained.
 - Filmstrip decoding requests **192×108** directly, with the Media3 fallback set to 108px height.
-- Thumbnail caching is bounded by **16 MiB of bitmap allocation memory**; default density is about one frame per second (22 dp/s timeline scale, 24 dp thumbnail slot).
-- A sound-effect item can now be moved by its body and trimmed from both edges. Leading-edge trim updates both its project start and source-file in-point; right-edge trim updates its duration.
-- Sound-effect source duration, source in-point, project start and segment duration are saved/restored in the JSON project. Older project files remain compatible (their source in-point defaults to 0).
-- Added pure timing tests for audio move/trim/bounds. The PR verification workflow now runs `testDebugUnitTest` and `assembleDebug` for pull requests targeting `main`.
+- Thumbnail caching is bounded by **16 MiB of bitmap allocation memory**; default filmstrip density is approximately one frame per second.
+- Sound-effect blocks can be moved and trimmed from both edges. The left edge tracks a separate source-file in-point; this range is used by preview, export and JSON persistence. Older project files default the source in-point to zero.
+- Music now has its own project-timeline start and duration. Its block can be moved by the body and shortened/extended from either edge without moving other tracks. Preview pauses outside that range; export repeats the source music only inside the chosen range and fills the rest of the project with silence.
+- Music source duration and timeline start/duration are saved in the project JSON. Older projects without these fields default to music covering the full video timeline, preserving the earlier behavior.
+- Added pure timing tests for sound-effect source trims and music timeline move/trim boundaries.
 
 ### Verification
 
-- Latest PR check for commit `7e75c016b7d01c4e1e7863a92ff72bfaa6bbc134`: **passed** (`testDebugUnitTest`, Kotlin compilation and `assembleDebug`).
-- This check builds the Debug APK on the CI runner but does not upload an APK artifact. No release or version 395 was created.
-- Physical-device gesture, audio-sync, thumbnail-quality, export playback and save/reopen checks remain outstanding.
+- Latest PR check for commit `1ea29d100a1c01cdfa801f9d520ee0aa446ff4c1` **passed**: `testDebugUnitTest`, Kotlin compilation, `packageDebug` and `assembleDebug`.
+- The check built a Debug APK on the CI runner; it did not upload an APK artifact. No release or version 395 was created.
+- Device-level touch gestures, actual audio preview/export playback, project save/reopen with edited music, and audio sync remain unverified on a physical phone or reliable emulator.
 
 ### Still open
 
-- Independently position and trim video clips on the shared timeline; they are still played/exported as a sequential playlist.
-- Give the music track its own start/end and drag/trim controls; it still spans the whole project.
-- Verify all independent layers can overlap and that preview, export and saved projects preserve the exact arrangement.
-- Test actual finger gestures, loading and memory behavior on a physical phone or reliable emulator.
-
+- Video clips are still positioned as a sequential playlist. They need independent project start/end times and their own move/trim behavior.
+- Music blocks move/trim on the project timeline, but selecting a subrange inside the music source file is not implemented; the full source music repeats from its beginning inside the block.
+- Verify overlap and exact synchronization across all items in the shared timeline, live preview, MP4 export and saved/reopened projects.
+- Test thumbnail clarity/load behavior, actual finger gestures, audio sync, small screens and keyboard behavior on a device.
 ### Multi-track implementation constraint — Media3 1.10.1
 
 - Transformer Composition can combine separate sequences that overlap in time, including video/audio layers.
