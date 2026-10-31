@@ -79,19 +79,26 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 ## PR #11 follow-up — 2026-10-31
 
 - [x] Hide the redundant clip title/card strip without deleting clip state.
-- [x] Request 192×108 filmstrip frames from the platform decoder, and configure the Media3 fallback for 108px output height.
-- [x] Bound the thumbnail bitmap cache by 16 MiB allocation memory.
-- [x] Keep default filmstrip density near one frame per second (22 dp/s timeline scale; 24 dp thumbnail slot), with a decoder-queue cap.
-- [ ] Verify thumbnail sharpness, distinct timestamps, load priority and memory behavior on an actual phone.
-- [ ] Make video clips independently movable/timed rather than a single sequential playlist.
-- [ ] Make each music and sound-effect item independently draggable and trimmable with separate start/end times.
-- [ ] Verify overlap, preview sync, project save/reopen and MP4 export for independently positioned items.
+- [x] Decode filmstrip frames at 192×108 and set the Media3 fallback output height to 108px.
+- [x] Bound thumbnail cache by 16 MiB of bitmap allocation size.
+- [x] Keep default filmstrip density near one frame per second at 22 dp/s with 24 dp slots.
+- [x] Implement sound-effect body drag to move the item without changing other timeline items.
+- [x] Implement sound-effect left/right trim; left trim preserves the correct source-file in-point.
+- [x] Save/restore sound-effect source duration, source in-point, timeline start and segment duration while keeping old JSON projects compatible.
+- [x] Add pure unit tests for audio move/trim and boundary normalization.
+- [x] Enable PR-triggered verification workflow; latest checked commit `7e75c016b7d01c4e1e7863a92ff72bfaa6bbc134` passed unit tests and Debug compilation/package.
+- [ ] Verify sound-effect drag/trim gestures and live audio sync on an actual phone or reliable emulator.
+- [ ] Make music independently movable and trimmable with its own start/end.
+- [ ] Replace sequential-only video clip positioning with independently movable timeline items.
+- [ ] Verify overlapping arrangements in both live preview and MP4 export.
+- [ ] Verify thumbnail sharpness, distinct timestamps, load priority and memory behavior on a physical device.
+- [ ] Verify full project save/reopen, audio sync and MP4 output with independently positioned layers.
 
-**Important:** PR #11 has no reported CI run/status yet. The verify-android-build workflow now listens for pull requests targeting main (added on this branch); until GitHub reports a result, the source changes are not a build/test pass. Text layers currently have independent drag/trim behavior; the remaining media types are not yet complete. Version 395 stays blocked.
+**Release gate:** version 395 remains blocked. A green unit-test/Debug build is necessary but does not replace device, interaction, preview/export and project-persistence acceptance.
 
 ## Multi-track technical constraint — checked 2026-10-31
 
 - App dependencies use Media3 1.10.1.
-- Media3 Transformer Composition supports separate sequences whose media items overlap, including video/audio layering.
-- CompositionPlayer is currently documented as early/experimental. Its documented supported preview cases include a single video sequence plus one audio sequence; preview of multiple video sequences is still listed as active development.
-- Therefore, multi-video overlap cannot be called complete from timeline UI or export code alone. The same project must be verified in live preview and final export before the feature is accepted.
+- Transformer Composition supports combining separate sequences with overlapping media items, including video/audio layering.
+- CompositionPlayer is documented as early/experimental. Supported preview cases include one video sequence plus one audio sequence; multi-video-sequence preview remains active development.
+- Do not declare multi-video overlap complete until the same arrangement is verified in both live preview and final export.

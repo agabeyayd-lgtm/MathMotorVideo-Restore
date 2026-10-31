@@ -134,19 +134,30 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - Record a checkbox as complete only after the corresponding behavior is implemented and its relevant test passes. If a test cannot be run, leave the item unchecked and say so.
 - This repository is a reconstruction from recoverable project files, not an exact recovery of the old V7 source tree.
 
-## Latest editor work — 2026-10-31 (PR #11, still open)
+## Latest editor work — 2026-10-31 (PR #11, draft)
 
-- The redundant clip title/card strip is hidden; the underlying clip model and selection state are retained.
-- Filmstrip decode now requests **192×108** directly from Android's scaled-frame API, with the Media3 fallback configured for 108px height. This replaces the prior 96×54 decode that was being enlarged afterward.
-- Thumbnail caching is now bounded by **16 MiB of bitmap allocation memory**, rather than by a count of 384 entries.
-- Filmstrip density remains approximately one frame per second at the default timeline scale (22 dp/s with a 24 dp frame slot); it adapts with zoom and is capped to avoid flooding the decoder queue.
-- These are source changes only. They have not yet been verified on a physical phone or in a new APK.
-- **Still open:** independently draggable/movable video, text, music and sound-effect items with separate start/end times; overlap; end-to-end preview/export/save-reopen verification. Text already has its own drag/trim path, but video clips are still represented as a sequential playlist and audio blocks are not independently draggable/trimmable.
+- The redundant clip title/card strip is hidden; clip state and selection logic are retained.
+- Filmstrip decoding requests **192×108** directly, with the Media3 fallback set to 108px height.
+- Thumbnail caching is bounded by **16 MiB of bitmap allocation memory**; default density is about one frame per second (22 dp/s timeline scale, 24 dp thumbnail slot).
+- A sound-effect item can now be moved by its body and trimmed from both edges. Leading-edge trim updates both its project start and source-file in-point; right-edge trim updates its duration.
+- Sound-effect source duration, source in-point, project start and segment duration are saved/restored in the JSON project. Older project files remain compatible (their source in-point defaults to 0).
+- Added pure timing tests for audio move/trim/bounds. The PR verification workflow now runs `testDebugUnitTest` and `assembleDebug` for pull requests targeting `main`.
 
-The verify-android-build workflow now also triggers for pull requests targeting main (added on this branch). At the latest check, GitHub had not reported a workflow run or commit status for PR #11 yet, so build/test remains unverified. The debug APK build remains manual-only. Do not interpret the absence of checks as a pass. Version 395 remains blocked.
+### Verification
 
-### Multi-track implementation constraint checked against Media3 1.10.1
+- Latest PR check for commit `7e75c016b7d01c4e1e7863a92ff72bfaa6bbc134`: **passed** (`testDebugUnitTest`, Kotlin compilation and `assembleDebug`).
+- This check builds the Debug APK on the CI runner but does not upload an APK artifact. No release or version 395 was created.
+- Physical-device gesture, audio-sync, thumbnail-quality, export playback and save/reopen checks remain outstanding.
 
-- Transformer Composition can combine separate media sequences that overlap in time, including layered video and audio sequences.
-- The real-time CompositionPlayer preview API is still marked early/experimental; its documented supported cases include a single video sequence plus an audio sequence. Multi-video-sequence preview is listed as active development, so export support must not be mistaken for a proven live-preview path.
-- Before enabling video overlap in the UI, the implementation must demonstrate matching Composition export and preview behavior; otherwise the app could show a timeline it cannot accurately preview.
+### Still open
+
+- Independently position and trim video clips on the shared timeline; they are still played/exported as a sequential playlist.
+- Give the music track its own start/end and drag/trim controls; it still spans the whole project.
+- Verify all independent layers can overlap and that preview, export and saved projects preserve the exact arrangement.
+- Test actual finger gestures, loading and memory behavior on a physical phone or reliable emulator.
+
+### Multi-track implementation constraint — Media3 1.10.1
+
+- Transformer Composition can combine separate sequences that overlap in time, including video/audio layers.
+- CompositionPlayer preview is early/experimental; its documented supported cases include one video sequence plus one audio sequence, while previewing multiple video sequences is still in active development.
+- Therefore, multi-video overlap must not be considered complete from export support alone; live preview and final export must both be verified before acceptance.
