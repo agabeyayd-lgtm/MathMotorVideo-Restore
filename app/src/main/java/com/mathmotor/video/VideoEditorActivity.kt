@@ -2603,6 +2603,7 @@ class VideoEditorActivity : Activity() {
         val duration=(clip.endMs-clip.startMs).coerceAtLeast(0L)
         timelinePlayheadMs=(clip.timelineStartMs+current.currentPosition.coerceIn(0L,duration)).coerceIn(0L,totalOutputDurationMs())
         if(::timelinePlayheadSeek.isInitialized)timelinePlayheadSeek.progress=TimelineTrimMath.progressForTime(timelinePlayheadMs,totalOutputDurationMs())
+        scrollTimelineToPlayhead()
         updateTimelinePlayheadLabel()
     }
 
