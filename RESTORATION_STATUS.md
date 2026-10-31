@@ -117,3 +117,19 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 - Transformer Composition supports combining separate sequences with overlapping media items, including video/audio layering.
 - CompositionPlayer is documented as early/experimental. Supported preview cases include one video sequence plus one audio sequence; multi-video-sequence preview remains active development.
 - Do not declare multi-video overlap complete until the same arrangement is verified in both live preview and final export.
+
+
+## Music source in/out — implementation added, verification pending (2026-10-31)
+
+- [x] Add separate music source-file in/out state without conflating it with project-timeline position/duration.
+- [x] Add audio-panel controls for selecting the source-file start and end.
+- [x] Persist source in/out in project JSON; older projects default to the complete source file.
+- [x] Make live music preview seek/loop only inside the selected source range.
+- [x] Make MP4 export repeat only the selected source range, with silence outside the music item's timeline window.
+- [x] Add unit tests for source-range normalization, minimum span, boundaries and looping.
+- [ ] Confirm PR-head CI run #146 passes unit tests and Debug APK assembly.
+- [ ] Verify source-range controls and preview audio on a physical phone or reliable emulator.
+- [ ] Verify exported MP4 uses the selected source in/out and project save/reopen preserves it.
+- [ ] Keep version 395 blocked until all device, interaction, export and persistence acceptance checks are complete.
+
+**Current limitation:** implementation has been committed to PR #11, but CI #146 is still running and no physical-device validation has been performed. This is not a signed release or an installable OTA update.
