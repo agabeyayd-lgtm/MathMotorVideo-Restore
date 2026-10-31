@@ -313,3 +313,15 @@ New visual requirement; this is a documentation record, not a claim that the UI 
 - [ ] Inspect fresh emulator captures on a portrait phone and a smaller viewport. Confirm preview width, crop/letterboxing, visible timeline rows, bottom dock anchoring and contextual panel position.
 - [ ] Interactively test touch/zoom/scroll and verify no timeline gestures regressed due to responsive sizing.
 - These layout changes are not yet visually accepted by the user and are not device-verified. Keep PR #11 in draft; version 395 remains blocked.
+
+
+## Flexible preview and vertically scrollable shared timeline — implementation pending CI/device review (2026-10-31)
+
+- [x] Preview is a weighted flexible area: it uses the remaining vertical space after the top bar, contextual panel, timeline, status strip and bottom dock are measured.
+- [x] Timeline height is derived from visible lane heights instead of a static empty card height.
+- [x] Shared lanes are wrapped in a vertical scroll viewport so adding many independent layers does not force the preview or bottom dock off-screen. Horizontal lane scroll/zoom remains shared.
+- [x] Keyboard mode uses shorter lane heights and a compact timeline-card target; the preview flexes around the keyboard and contextual settings.
+- [ ] Compile and unit tests for the new ScrollView parent/layout parameters.
+- [ ] Verify vertical layer scrolling, lane reordering, horizontal synchronized scrolling, center playhead and pinch zoom on an emulator/device.
+- [ ] Review screenshots with many layers and keyboard open; verify the bottom dock remains anchored when the keyboard is closed.
+- This is an implementation change, not accepted visual parity. PR #11 stays draft and version 395 stays blocked.
