@@ -1723,10 +1723,11 @@ class VideoEditorActivity : Activity() {
                 setPadding(0, dp(1), 0, dp(1))
             }
             scroll.addView(track)
-            val responsiveLaneHeight = if (keyboardLayoutActive) {
-                minOf(heightDp, 28)
-            } else {
-                maxOf(heightDp, if (compactEditorLayout) 40 else heightDp)
+            val responsiveLaneHeight = when {
+                keyboardLayoutActive -> minOf(heightDp, 28)
+                !reorderable -> heightDp
+                compactEditorLayout -> maxOf(heightDp, 40)
+                else -> heightDp
             }
             row.addView(scroll, LinearLayout.LayoutParams(0, dp(responsiveLaneHeight), 1f))
 
@@ -1780,7 +1781,7 @@ class VideoEditorActivity : Activity() {
             }
             val blockHeight = dp(when {
                 keyboardLayoutActive -> 26
-                compactEditorLayout -> 52
+                compactEditorLayout -> 40
                 else -> 48
             })
             track.addView(block, LinearLayout.LayoutParams(width, blockHeight))
