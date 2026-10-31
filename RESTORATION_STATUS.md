@@ -400,3 +400,11 @@ This is a layout target, not a claim that all behaviors are implemented. Gesture
 - The elapsed/total time readout is directly below Play, centered, and updates as the playhead advances; it is above the ruler and tracks.
 - This is a source/layout change only; do not treat it as visually verified until the small-screen emulator screenshot check passes.
 - Version 395 remains blocked; no release/version bump is authorized.
+
+
+## Centered time-zero / fixed-playhead correction — 2026-10-31
+
+- User clarified the intended playback behavior from the supplied screenshot: Play/Pause and the white vertical playhead stay fixed; only the time readout updates above the ruler, while the ruler and every track scroll beneath the playhead.
+- Commits `693b49af2964fae5150d0e45d9fab4182212dc2e` and `1faa0aa25fbf3a2d5e1cdba51cd2a57730c86a46` implement a shared half-viewport time-zero origin and matching end spacer on every lane. Scroll distance now corresponds directly to elapsed project time.
+- Verification is pending on the latest PR head. Check first-frame alignment, end reachability, ruler alignment, drag scrubbing, playback auto-scroll, zoom anchoring, and synchronized video/text/audio strips. Do not mark this complete from compilation alone.
+- Keep PR #11 draft and do not create or publish version 395.
