@@ -1889,7 +1889,7 @@ class VideoEditorActivity : Activity() {
             contentDescription = "Ses efekti: ortasından taşı, kenarlarından kırp"
         }
         val body = TextView(this).apply {
-            text = "♪ \${soundTitle ?: "Ses efekti"}"
+            text = "♪ ${soundTitle ?: "Ses efekti"}"
             textSize = 9f
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER_VERTICAL
