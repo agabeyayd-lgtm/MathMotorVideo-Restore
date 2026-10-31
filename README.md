@@ -9,7 +9,7 @@ The user's blue-marked screenshot is the **single authoritative visual acceptanc
 1. **Top action bar:** close (X) and search on the left; resolution selector (for example, “YZ UHD”) and the prominent cyan **Dışa Aktar** action on the right.
 2. **Large video preview:** centered, portrait video canvas on the dark editor background, preserving the source aspect ratio.
 3. **Preview control row:** a single Play/Pause button centered immediately below the preview, with the adjacent preview actions arranged like the reference. Do not duplicate playback controls.
-4. **Time and ruler row:** current time / total duration on the left (for example, `00:02 / 00:32`); the horizontal timeline ruler continues to the right with labels such as `00:00`, `00:10`, `00:20`, `00:30`. Keep this row directly above the tracks.
+4. **Playback/time/ruler rows:** one Play/Pause control stays horizontally centered on the full phone screen. The current-time / total-duration readout sits centered directly beneath Play and updates during playback. The ruler is on the next row below the readout.
 5. **Timeline workspace:** video filmstrip on the upper track; text, music, sound and other items on independent tracks below. The white vertical playhead is centered over the timeline tracks as shown in the reference. It is a timeline indicator, not a line over the video preview. Timeline content moves beneath it during scrub/scroll.
 6. **Bottom tool dock:** fixed at the bottom, with the selected tool's actions in the same visual region as the reference (for example, Metin ekle, Otomatik Altyazılar, Çıkartmalar, Çiz, Metin şablonları). Keep it anchored and reachable on small screens.
 
@@ -17,7 +17,7 @@ The user's blue-marked screenshot is the **single authoritative visual acceptanc
 
 - Match the **placement, order, alignment, relative spacing and visual hierarchy** of the blue-marked Play control, time/ruler row, centered timeline playhead, independent lower-layer area and bottom tool dock.
 - The time readout belongs at the **left of the ruler row**; ruler labels occupy the remaining horizontal space. Do not move the time readout below the tracks.
-- Keep the centered white playhead over the timeline tracks. Do not place it over the preview or invent a different fixed red line treatment.
+- Keep the centered white playhead over the timeline tracks. Do not place it over the preview or use a red line. The playhead and Play control stay fixed; the time readout updates above the ruler as playback advances.
 - Preserve the large preview and give the timeline enough height for clearly visible tracks and usable touch targets. Do not compress the timeline into a tiny card or leave large avoidable empty gaps.
 - Keep the bottom dock fixed to the bottom edge; timeline and preview must adapt to available height and keyboard visibility without overlapping or hiding controls.
 - Preserve the dark background, compact icon-and-label tool presentation and cyan export emphasis visible in the reference. Avoid unnecessary explanatory copy, duplicate controls, decorative controls and unrelated layout experiments.
@@ -452,3 +452,11 @@ This is a layout target, not a claim that all behaviors are implemented. Gesture
 - The elapsed/total time readout is directly below Play, centered, and updates as the playhead advances; it is above the ruler and tracks.
 - This is a source/layout change only; do not treat it as visually verified until the small-screen emulator screenshot check passes.
 - Version 395 remains blocked; no release/version bump is authorized.
+
+
+## Centered timeline origin and fixed playhead — implementation pass (2026-10-31)
+
+- User-confirmed playback behavior: the white vertical playhead and Play/Pause control remain stationary. The current/total time readout above the ruler changes as playback advances. The ruler and all timeline strips move underneath the fixed playhead.
+- Source commit `693b49af2964fae5150d0e45d9fab4182212dc2e` changed scroll-to-time mapping so elapsed project time maps directly to horizontal scroll distance.
+- Source commit `1faa0aa25fbf3a2d5e1cdba51cd2a57730c86a46` adds a shared half-viewport leading origin and matching trailing space to each lane: time zero begins at the center playhead, and the end of the timeline can also reach the playhead.
+- This is implementation, not acceptance. PR-head unit/build and emulator screenshot runs are in progress; visually verify start/end alignment, scrubbing, playback, zoom, and every synchronized lane before marking complete. PR #11 stays draft; version 395 stays blocked.
