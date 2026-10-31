@@ -203,6 +203,9 @@ class VideoEditorActivity : Activity() {
     // Single authoritative timeline scale in physical pixels per second.
     private var timelinePxPerSec = 0f
     private var timelineScaleGestureActive = false
+    // Once a second finger starts a pinch inside the timeline, cancel the
+    // one-finger child gesture and keep the Activity as the sole touch target.
+    private var timelinePinchGestureCaptured = false
     private var timelineScaleAnchorTimeMs = 0L
     private var timelineScaleAnchorViewportX = 0f
     private val timelineScaleGestureDetector by lazy {
@@ -1845,6 +1848,10 @@ class VideoEditorActivity : Activity() {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(0, dp(1), 0, dp(1))
+                // Empty portions of a lane are valid tap targets for clearing
+                // clip selection; non-clickable spacers naturally bubble here.
+                isClickable = true
+                setOnClickListener { clearTimelineClipSelection() }
             }
             scroll.addView(track)
             val responsiveLaneHeight = when {
@@ -2834,8 +2841,38 @@ class VideoEditorActivity : Activity() {
     }
 
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        val wasPinchCaptured = timelinePinchGestureCaptured
         timelineScaleGestureDetector.onTouchEvent(event)
-        if (timelineScaleGestureActive && event.pointerCount >= 2) return true
+
+        if (!wasPinchCaptured &&
+            event.actionMasked == MotionEvent.ACTION_POINTER_DOWN &&
+            event.pointerCount >= 2 &&
+            timelineScaleGestureActive
+        ) {
+            // The first finger may already have started a clip drag/trim. Cancel
+            // that child gesture before the pinch owns subsequent pointer events.
+            val cancel = MotionEvent.obtain(event).apply {
+                action = MotionEvent.ACTION_CANCEL
+            }
+            try {
+                super.dispatchTouchEvent(cancel)
+            } finally {
+                cancel.recycle()
+            }
+            timelinePinchGestureCaptured = true
+            return true
+        }
+
+        if (timelinePinchGestureCaptured) {
+            if (event.actionMasked == MotionEvent.ACTION_UP ||
+                event.actionMasked == MotionEvent.ACTION_CANCEL
+            ) {
+                timelinePinchGestureCaptured = false
+                timelineScaleGestureActive = false
+            }
+            return true
+        }
+
         if (event.actionMasked == MotionEvent.ACTION_CANCEL ||
             event.actionMasked == MotionEvent.ACTION_UP) {
             timelineScaleGestureActive = false
