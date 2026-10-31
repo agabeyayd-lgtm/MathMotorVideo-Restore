@@ -231,3 +231,16 @@ These are new release-blocking UI/interaction requirements. They are recorded as
 - [ ] Test on a small screen and with the keyboard open; review screenshots and interaction logs.
 
 **Status:** requirements recorded only. No production code change or passing test is claimed by this entry. Version 395 remains blocked; installed version 394/build 61 stays unchanged.
+
+
+### CapCut-style continuous video filmstrip — user-confirmed (2026-10-31)
+
+- [ ] Render each video clip as a continuous filmstrip made from actual frames decoded from that source video. Do not represent video clips as plain colored blocks, filename cards or text-only clip boxes.
+- [ ] Fill the full visible clip width with sequential thumbnails from beginning to end, with no large empty gaps, repeated placeholder frames or persistent black thumbnails after loading.
+- [ ] Keep thumbnail density adaptive to the shared timeline zoom: zooming in reveals larger/more detailed frames; zooming out shows a denser overview while preserving correct clip duration and frame order.
+- [ ] Keep the filmstrip visually continuous across the clip and show a clear, subtle seam/boundary between adjacent clips.
+- [ ] Show clear left/right trim handles at clip edges. Dragging the filmstrip body moves the clip; dragging either edge trims/extends the source range within valid bounds. Selection and handles must not create a separate clip-editing timeline or extra row.
+- [ ] Preserve the filmstrip's alignment with the shared ruler, fixed center playhead and every other timeline lane at all zoom levels.
+- [ ] Verify thumbnail timestamps/order, no black/duplicate frames, scrolling, pinch zoom, body drag, edge trim and save/reopen on a real device or reliable emulator.
+
+**Status:** newly recorded design/acceptance requirement only. Existing thumbnail decode/cache work does not prove the final CapCut-style adaptive filmstrip behavior. Leave unchecked until implementation and relevant device verification pass.
