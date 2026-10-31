@@ -68,3 +68,94 @@ internal object TimelineTrimMath {
         return requestedEndMs.coerceIn(minEndMs(startMs, duration, minimumSpanMs), duration)
     }
 }
+
+
+/** A sound item with independent source and project-timeline boundaries. */
+internal data class TimelineAudioSegment(
+    val timelineStartMs: Long,
+    val sourceStartMs: Long,
+    val durationMs: Long
+)
+
+/** Pure timing operations for moving and trimming an audio item without touching other tracks. */
+internal object TimelineAudioMath {
+    fun normalize(
+        segment: TimelineAudioSegment,
+        sourceDurationMs: Long,
+        timelineDurationMs: Long
+    ): TimelineAudioSegment {
+        val sourceDuration = sourceDurationMs.coerceAtLeast(0L)
+        val timelineDuration = timelineDurationMs.coerceAtLeast(0L)
+        val sourceStart = segment.sourceStartMs.coerceIn(0L, sourceDuration)
+        val timelineStart = segment.timelineStartMs.coerceIn(0L, timelineDuration)
+        val maximumDuration = minOf(
+            (sourceDuration - sourceStart).coerceAtLeast(0L),
+            (timelineDuration - timelineStart).coerceAtLeast(0L)
+        )
+        return TimelineAudioSegment(
+            timelineStartMs = timelineStart,
+            sourceStartMs = sourceStart,
+            durationMs = segment.durationMs.coerceIn(0L, maximumDuration)
+        )
+    }
+
+    /** Move the complete item; its source trim and duration remain unchanged. */
+    fun move(
+        segment: TimelineAudioSegment,
+        requestedTimelineStartMs: Long,
+        sourceDurationMs: Long,
+        timelineDurationMs: Long
+    ): TimelineAudioSegment {
+        val safe = normalize(segment, sourceDurationMs, timelineDurationMs)
+        if (safe.durationMs <= 0L) return safe
+        val latestStart = (timelineDurationMs - safe.durationMs).coerceAtLeast(0L)
+        return safe.copy(timelineStartMs = requestedTimelineStartMs.coerceIn(0L, latestStart))
+    }
+
+    /**
+     * Trim the left edge. A positive delta removes source time from the beginning
+     * and moves the project start right; a negative delta restores the earlier source.
+     */
+    fun trimStart(
+        segment: TimelineAudioSegment,
+        deltaMs: Long,
+        sourceDurationMs: Long,
+        timelineDurationMs: Long,
+        minimumDurationMs: Long = 100L
+    ): TimelineAudioSegment {
+        val safe = normalize(segment, sourceDurationMs, timelineDurationMs)
+        if (safe.durationMs <= 0L) return safe
+        val minimum = minimumDurationMs.coerceAtLeast(1L).coerceAtMost(safe.durationMs)
+        val lowerDelta = -minOf(safe.timelineStartMs, safe.sourceStartMs)
+        val upperDelta = (safe.durationMs - minimum).coerceAtLeast(0L)
+        val delta = deltaMs.coerceIn(lowerDelta, upperDelta)
+        return normalize(
+            TimelineAudioSegment(
+                timelineStartMs = safe.timelineStartMs + delta,
+                sourceStartMs = safe.sourceStartMs + delta,
+                durationMs = safe.durationMs - delta
+            ),
+            sourceDurationMs,
+            timelineDurationMs
+        )
+    }
+
+    /** Trim the right edge without exceeding either the source file or project end. */
+    fun trimEnd(
+        segment: TimelineAudioSegment,
+        deltaMs: Long,
+        sourceDurationMs: Long,
+        timelineDurationMs: Long,
+        minimumDurationMs: Long = 100L
+    ): TimelineAudioSegment {
+        val safe = normalize(segment, sourceDurationMs, timelineDurationMs)
+        if (safe.durationMs <= 0L) return safe
+        val maximumDuration = minOf(
+            (sourceDurationMs - safe.sourceStartMs).coerceAtLeast(0L),
+            (timelineDurationMs - safe.timelineStartMs).coerceAtLeast(0L)
+        )
+        val minimum = minimumDurationMs.coerceAtLeast(1L).coerceAtMost(maximumDuration)
+        val requested = safe.durationMs + deltaMs
+        return safe.copy(durationMs = requested.coerceIn(minimum, maximumDuration))
+    }
+}
