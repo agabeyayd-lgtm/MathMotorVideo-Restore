@@ -156,6 +156,13 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - Music blocks move/trim on the project timeline, but selecting a subrange inside the music source file is not implemented; the full source music repeats from its beginning inside the block.
 - Verify overlap and exact synchronization across all items in the shared timeline, live preview, MP4 export and saved/reopened projects.
 - Test thumbnail clarity/load behavior, actual finger gestures, audio sync, small screens and keyboard behavior on a device.
+### Independent video timeline — implementation added, verification pending (2026-10-31)
+
+- Every video clip stores a project-timeline start separately from source in/out. Existing version-1 projects without this field load sequentially; new saves persist each position.
+- Video clips are placed at shared timeline coordinates. Overlapping ranges render on separate rows; dragging a filmstrip moves only that clip; left/right trim maintains source and project boundaries.
+- Preview and export share one flattened video sequence: the last clip in layer order is visible during overlap and empty intervals become black/silent. This is top-layer occlusion, not alpha blending, crossfade or picture-in-picture.
+- Touch, overlapping preview/export, actual MP4 output and save/reopen still require device/emulator verification. Version 395 remains blocked.
+
 ### Multi-track implementation constraint — Media3 1.10.1
 
 - Transformer Composition can combine separate sequences that overlap in time, including video/audio layers.

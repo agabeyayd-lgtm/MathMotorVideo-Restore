@@ -100,6 +100,15 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 - [ ] Complete full interaction, small-screen and keyboard tests.
 
 **Release gate:** version 395 remains blocked. A green unit-test/Debug build does not replace device, interaction, preview/export and project-persistence acceptance.
+## Independent video timeline — implementation added, verification pending (2026-10-31)
+
+- Each video clip stores an independent project start separate from source in/out trim.
+- New project JSON persists positions; old version-1 files without the field restore sequentially.
+- Overlapping clips render on separate rows. Filmstrip body drag moves only one clip; edge trim keeps source/project boundaries aligned.
+- Preview and Transformer export share one flattened stream. Highest layer order wins overlap intervals; empty intervals are black/silent.
+- Current overlap behavior is top-layer occlusion, not blending, crossfade or picture-in-picture.
+- CI and emulator/phone validation of drag/trim, overlap preview/export, MP4 correctness and save/reopen remain required.
+
 ## Multi-track technical constraint — checked 2026-10-31
 
 - App dependencies use Media3 1.10.1.
