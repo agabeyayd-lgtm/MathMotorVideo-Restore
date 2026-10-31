@@ -3491,14 +3491,10 @@ class VideoEditorActivity : Activity() {
         if (clips.isEmpty()) {
             previewSingleClip = false
             player?.clearMediaItems()
-        } else if (previewSingleClip) {
-            selectedClip()?.let { clip ->
-                player?.setMediaItem(clippedMediaItem(clip))
-                player?.prepare()
-                player?.seekTo(0L)
-                player?.playWhenReady = false
-            }
         } else {
+            // Always restore through the shared composition so per-clip effects
+            // remain visible after undo/redo as well as in exported output.
+            previewSingleClip = false
             ensureTimelinePreviewLoaded()
             seekTimelinePreview(timelinePlayheadMs)
         }
@@ -4424,14 +4420,11 @@ class VideoEditorActivity : Activity() {
         sourceVolumeLabel.text = "Orijinal video sesi: $sourceAudioVolume%"
         refreshClipList()
         loadTrimControls()
-        selectedClip()?.let { clip ->
-            player?.setMediaItem(clippedMediaItem(clip))
-            player?.prepare()
-            player?.playWhenReady = false
-            val clipOffsetMs=clip.timelineStartMs
-            val localPositionMs=(timelinePlayheadMs-clipOffsetMs)
-                .coerceIn(0L, (clip.endMs - clip.startMs).coerceAtLeast(0L))
-            player?.seekTo(localPositionMs)
+        selectedClip()?.let {
+            previewSingleClip = false
+            timelinePreviewLoaded = false
+            ensureTimelinePreviewLoaded()
+            seekTimelinePreview(timelinePlayheadMs)
         }
         ensureTrimHandlesReachable(selectedClipIndex)
         if (hasSavedTimelineScroll) {
@@ -4657,11 +4650,10 @@ class VideoEditorActivity : Activity() {
                 refreshClipList()
                 loadTrimControls()
                 refreshTimelineTracks()
-                val selected = selectedClip()
-                if (selected != null) {
-                    player?.setMediaItem(clippedMediaItem(selected))
-                    player?.prepare()
-                    player?.playWhenReady = false
+                if (selectedClip() != null) {
+                    previewSingleClip = false
+                    ensureTimelinePreviewLoaded()
+                    seekTimelinePreview(timelinePlayheadMs)
                 }
                 val skipped = uris.size - ready.size
                 status.text = buildString {
@@ -5506,7 +5498,7 @@ class VideoEditorActivity : Activity() {
         ) {
             listOf<androidx.media3.common.Effect>(
                 MatrixTransformation { _ ->
-                    val radians = Math.toRadians(clip.transformRotationDegrees.toDouble())
+                    val radians = Math.toRadians(-clip.transformRotationDegrees.toDouble())
                     val cosine = kotlin.math.cos(radians).toFloat() * clip.transformScale
                     val sine = kotlin.math.sin(radians).toFloat() * clip.transformScale
                     Matrix().apply {
