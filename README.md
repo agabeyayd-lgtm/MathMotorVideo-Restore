@@ -514,3 +514,11 @@ This is a layout target, not a claim that all behaviors are implemented. Gesture
 - [ ] Review fresh emulator screenshot and physical-phone behavior for paused-at-zero entry, ruler/filmstrip/playhead alignment, zero-boundary clamp, shared movement, and thumbnail cell width.
 - [ ] Measure thumbnail first-frame and full-strip population latency; do not mark speed fixed until measured.
 - PR #11 remains draft; version 395 remains blocked.
+
+## Timeline zero-alignment pass — 2026-10-31
+
+- PR #11 commit `ec6dcb9567c50650b58ab0aede58858a98c87745` gives the ruler the same 54dp left gutter as the video and other timeline lanes. The live time readout is in the Play header so it no longer changes the ruler's horizontal origin.
+- The ruler now marks every second (`0, 1, 2, 3…`) using the same time-to-pixel scale as the video filmstrip.
+- The first thumbnail samples the clip's actual source start frame. Thumbnail cells and separators are sized to fit the clip width without cumulative overflow.
+- The shared half-viewport origin spacer keeps ruler time zero and the first video frame under the fixed playhead at the same instant. Negative pre-roll remains disallowed by the non-negative clip-time/drag bounds.
+- These are source changes only. Fresh PR-head build/unit verification, emulator screenshot review, and physical-device confirmation are still required before accepting the timeline behavior. PR #11 stays draft; version 395 remains blocked.
