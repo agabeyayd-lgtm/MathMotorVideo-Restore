@@ -63,6 +63,32 @@ class TimelineScaleMathTest {
     }
 
     @Test
+    fun sharedProjectDurationExpandsToTheFurthestLayerEnd() {
+        assertEquals(
+            13_000L,
+            TimelineProjectDurationMath.totalDuration(
+                10_000L, // video
+                8_000L,  // text
+                13_000L, // music
+                2_500L   // effect
+            )
+        )
+    }
+
+    @Test
+    fun sharedProjectDurationShrinksWhenTheFurthestLayerIsRemoved() {
+        assertEquals(
+            10_000L,
+            TimelineProjectDurationMath.totalDuration(10_000L, 8_000L, 2_500L)
+        )
+    }
+
+    @Test
+    fun sharedProjectDurationNeverBecomesNegative() {
+        assertEquals(0L, TimelineProjectDurationMath.totalDuration(-1L, -500L))
+    }
+
+    @Test
     fun invalidScaleAndNegativeTimeAreSafe() {
         assertEquals(0, TimelineScaleMath.pixelsForTime(-100L, 22f))
         assertEquals(0, TimelineScaleMath.pixelsForTime(1_000L, 0f))
