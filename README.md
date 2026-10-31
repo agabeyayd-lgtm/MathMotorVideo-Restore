@@ -335,3 +335,14 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - Mark the specific #405/#406 tall-phone clipping gate and #407 pinch dead-zone gate as **passed in emulator** by #408. Do not continue rerunning those same assertions without a new regression or code change.
 - Remaining gates: review the editor on the user's physical phone (including keyboard-open text editing, touch gestures and timeline interactions); verify full-size preview/thumbnail/trim/undo behavior and export output; then run current-branch signed install/update-over/relaunch preflight. The #408 screenshot test alone does not establish those untested product acceptance items.
 - Version remains 394/build 61. Version 395 remains blocked; no version bump, signing, publishing, or updater activation until remaining gates pass and the user authorizes release.
+
+
+## Handoff — 2026-10-31 (#408 verified)
+
+- Latest targeted emulator run [#408 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41151378476), source commit dc554242968fc3984ada592475c94feadf738009: unit tests, Debug APK, deterministic fixture setup, emulator launch, focused instrumentation and artifact upload all passed.
+- The #408 JUnit report confirms EmulatorScreenshotTest#captureHomeEditorAndTextPanel passed 1/1. Inspected captures confirm the empty-editor add-video action remains above the dock and the loaded 8-second clip shows the timeline lanes and trim handles. The same test reaches both zoom clamps (50% / 800%) and verifies the corresponding ruler intervals (5,000 ms / 250 ms).
+- Close the #405/#406 tall-phone empty-panel clipping and #407 minimum-zoom dead-zone gates for the tested emulator path. Do not rerun these assertions unchanged.
+- Short-screen keyboard editing is separately closed for the tested emulator path by #399 (360×640 dp). Neither emulator result replaces physical-phone acceptance.
+- Next work must not repeat #408: inspect the current-branch signed install/update-over/relaunch preflight workflow and its exact version/signing constraints; separately keep physical-device touch/performance review open for the user to perform on the phone.
+- Remaining physical acceptance: keyboard-open editing on the actual phone, timeline touch/trim/scroll/pinch, thumbnail readability/loading, preview and dock usability, and export playback/output. Record actual device evidence before closing these gates.
+- Installed baseline remains versionCode 394 / build 61. Version 395 is blocked. No version bump, release APK, publishing, or updater activation until all acceptance gates pass and the user explicitly authorizes release.
