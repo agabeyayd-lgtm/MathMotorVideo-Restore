@@ -2712,25 +2712,24 @@ class VideoEditorActivity : Activity() {
     private fun timelinePixelsPerSecond(): Float = dp(22).toFloat() * timelineZoom
 
     /** Width of the leading blank time-zero spacer inside each horizontally scrolling lane. */
-    private fun timelineFrameWidth(viewportWidth: Int): Pair<Int, Int> {
+    private fun timelineFrameWidth(viewportWidth: Int): Int {
         val gutterPx = dp(57)
-        val frameWidth = timelineTracksFrame.width.takeIf { it > 0 }
+        return timelineTracksFrame.width.takeIf { it > 0 }
             ?: if (viewportWidth > 0) viewportWidth + gutterPx
             else resources.displayMetrics.widthPixels
-        val scrollViewportWidth = viewportWidth.takeIf { it > 0 }
-            ?: (frameWidth - gutterPx).coerceAtLeast(dp(1))
-        return frameWidth to scrollViewportWidth
     }
 
-    private fun timelineOriginSpacerWidth(viewportWidth: Int = 0): Int {
-        val (frameWidth, _) = timelineFrameWidth(viewportWidth)
-        return TimelineScaleMath.originSpacerWidthForCenteredPlayhead(frameWidth, dp(57))
-    }
+    private fun timelineOriginSpacerWidth(viewportWidth: Int = 0): Int =
+        TimelineScaleMath.originSpacerWidthForCenteredPlayhead(
+            timelineFrameWidth(viewportWidth),
+            dp(57)
+        )
 
-    private fun timelineEndSpacerWidth(viewportWidth: Int = 0): Int {
-        val (frameWidth, _) = timelineFrameWidth(viewportWidth)
-        return TimelineScaleMath.endSpacerWidthForCenteredPlayhead(frameWidth, dp(57))
-    }
+    private fun timelineEndSpacerWidth(viewportWidth: Int = 0): Int =
+        TimelineScaleMath.endSpacerWidthForCenteredPlayhead(
+            timelineFrameWidth(viewportWidth),
+            dp(57)
+        )
 
     private fun ensureTrimHandlesReachable(index: Int): Boolean {
         val clip = clips.getOrNull(index) ?: return false
