@@ -201,3 +201,11 @@ New visual requirement; this is a documentation record, not a claim that the UI 
 - Cause: zero-time anchor plus a viewport x inside the fixed 57 px label gutter yielded a positive scroll offset.
 - Fixed by returning zero scroll for a non-positive anchor timestamp in `scrollForAnchoredZoom`.
 - This corrects the pure math helper only. Pinch gesture wiring and device validation are still pending. Re-run CI on the fix; keep PR #11 draft and version 395 blocked.
+
+
+## Two-finger anchored timeline pinch — implementation added (2026-10-31)
+
+- `VideoEditorActivity` now routes timeline-area multi-touch through `ScaleGestureDetector`; gestures starting outside the timeline are not treated as timeline zoom.
+- Captures the time at the initial pinch midpoint and recalculates the shared scroll offset during scaling so that time follows the moving midpoint. All timeline lanes are restored to the same horizontal offset after each zoom rebuild.
+- Zoom range is 0.5×–8×; clip start/end/duration values are not modified by pinch.
+- Pending: CI Verify/debug APK result and real-device validation for pinch at center/edges, zoom-in/out, synchronized lanes, one-finger scrubbing and clip drag. This does not authorize a release or version 395.
