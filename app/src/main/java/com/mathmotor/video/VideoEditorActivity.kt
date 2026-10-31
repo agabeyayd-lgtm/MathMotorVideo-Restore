@@ -425,9 +425,14 @@ class VideoEditorActivity : Activity() {
         previewFrame = FrameLayout(this).apply {
             setBackgroundColor(Color.rgb(5, 9, 15))
         }
+        // The preview must use the full editor width; a fixed 180dp player
+        // makes the central canvas look like a narrow phone-within-a-phone.
         previewFrame.addView(
             playerView,
-            FrameLayout.LayoutParams(dp(180), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER)
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
         )
         previewTextOverlay = TextView(this).apply {
             textSize = textSizeSp.toFloat()
