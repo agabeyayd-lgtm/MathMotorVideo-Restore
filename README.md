@@ -1,5 +1,35 @@
 # MathMotor Video
 
+## Non-negotiable visual reference — user-provided CapCut screenshot (2026-10-31)
+
+The user's blue-marked screenshot is the **single authoritative visual acceptance reference** for the mobile editor. Do not substitute a generic editor layout, an alternative redesign, or a merely “CapCut-inspired” approximation. All future editor UI work must be compared directly against that screenshot.
+
+### Required screen composition (top to bottom)
+
+1. **Top action bar:** close (X) and search on the left; resolution selector (for example, “YZ UHD”) and the prominent cyan **Dışa Aktar** action on the right.
+2. **Large video preview:** centered, portrait video canvas on the dark editor background, preserving the source aspect ratio.
+3. **Preview control row:** a single Play/Pause button centered immediately below the preview, with the adjacent preview actions arranged like the reference. Do not duplicate playback controls.
+4. **Time and ruler row:** current time / total duration on the left (for example, `00:02 / 00:32`); the horizontal timeline ruler continues to the right with labels such as `00:00`, `00:10`, `00:20`, `00:30`. Keep this row directly above the tracks.
+5. **Timeline workspace:** video filmstrip on the upper track; text, music, sound and other items on independent tracks below. The white vertical playhead is centered over the timeline tracks as shown in the reference. It is a timeline indicator, not a line over the video preview. Timeline content moves beneath it during scrub/scroll.
+6. **Bottom tool dock:** fixed at the bottom, with the selected tool's actions in the same visual region as the reference (for example, Metin ekle, Otomatik Altyazılar, Çıkartmalar, Çiz, Metin şablonları). Keep it anchored and reachable on small screens.
+
+### Blue-marked details are mandatory
+
+- Match the **placement, order, alignment, relative spacing and visual hierarchy** of the blue-marked Play control, time/ruler row, centered timeline playhead, independent lower-layer area and bottom tool dock.
+- The time readout belongs at the **left of the ruler row**; ruler labels occupy the remaining horizontal space. Do not move the time readout below the tracks.
+- Keep the centered white playhead over the timeline tracks. Do not place it over the preview or invent a different fixed red line treatment.
+- Preserve the large preview and give the timeline enough height for clearly visible tracks and usable touch targets. Do not compress the timeline into a tiny card or leave large avoidable empty gaps.
+- Keep the bottom dock fixed to the bottom edge; timeline and preview must adapt to available height and keyboard visibility without overlapping or hiding controls.
+- Preserve the dark background, compact icon-and-label tool presentation and cyan export emphasis visible in the reference. Avoid unnecessary explanatory copy, duplicate controls, decorative controls and unrelated layout experiments.
+- Every video, text, music, sound-effect and other timeline item remains independently positionable and trimmable. Moving or trimming one item must not move or modify another unless the user explicitly invokes a group/link action. All tracks share the same ruler, zoom and horizontal scroll position.
+
+### Acceptance rule
+
+A change is **not accepted** merely because it compiles, passes unit tests, or looks generally similar. Review the actual emulator screenshot side by side with the user's reference at phone size and check every numbered region above. If the composition differs, revise it; do not present a different design as the result. Gesture behavior, preview/export synchronization, keyboard behavior and save/reopen still require their own tests. This reference section records the target; it does not claim those requirements are already implemented or verified.
+
+**Scope guard:** Do not introduce a second competing editor design or ask the user to choose between layouts. Work only toward this reference. Version 395 remains blocked until all implementation and verification gates pass and the user explicitly authorizes release.
+
+
 ## Mobile editor rebuild — 2026-10-31
 
 - The latest PR-head checks before this change were green: Verify #185, APK #260 and emulator screenshots #429. Screenshot review confirmed the imported test video is visible in the preview, but the timeline was visually unacceptable on a small phone: compact mode reduced the ruler/filmstrip to tiny 18dp rows and left a large empty card.
