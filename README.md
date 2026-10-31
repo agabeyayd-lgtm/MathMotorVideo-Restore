@@ -154,7 +154,7 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 ### Still open
 
 - Independent video project positions, body drag, edge trim and persistence are now implemented in PR #11. Verification of the updated timeline row/layer ordering is pending CI; actual touch gestures, preview/export output and save/reopen still require device validation.
-- Music blocks move/trim on the project timeline, but selecting a subrange inside the music source file is not implemented; the full source music repeats from its beginning inside the block.
+- Music source in/out selection is now implemented separately from project-timeline placement; CI and device/export validation are pending.
 - Verify overlap and exact synchronization across all items in the shared timeline, live preview, MP4 export and saved/reopened projects.
 - Test thumbnail clarity/load behavior, actual finger gestures, audio sync, small screens and keyboard behavior on a device.
 ### Independent video timeline — implementation added, verification pending (2026-10-31)
@@ -179,5 +179,5 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - Transformer export clips repeated music chunks to the selected source in/out range; timeline gaps before and after the music item remain silent.
 - New project JSON stores the source in/out values. Older projects without these keys default to the full source file.
 - Added pure unit tests for source range normalization, boundary handling and selected-range looping.
-- PR-head CI run #146 is in progress; do not mark tests passed until GitHub reports success.
+- CI run #146 checked the implementation commit; latest documentation-updated PR head is being checked by run #147 (pending). Do not mark tests passed until GitHub reports success.
 - Physical-device checks of both source-range controls, preview seeking, exported MP4 audio and save/reopen remain required. Version 395 remains blocked.
