@@ -1,5 +1,12 @@
 # MathMotor Video
 
+## Mobile editor rebuild — 2026-10-31
+
+- The latest PR-head checks before this change were green: Verify #185, APK #260 and emulator screenshots #429. Screenshot review confirmed the imported test video is visible in the preview, but the timeline was visually unacceptable on a small phone: compact mode reduced the ruler/filmstrip to tiny 18dp rows and left a large empty card.
+- New source correction: commit 92e9acdc02682211ff2852020fe5c1be770fcd5c. Compact phones now keep a visible ruler and substantially taller video/text strips; the timeline card height follows its actual track content instead of reserving a fixed empty panel. The preview stage gets more vertical room, redundant preview size buttons and timeline instructions were removed, and the status line was compacted.
+- This is a targeted first layout pass, not CapCut acceptance. The new PR-head build and screenshots must pass; then inspect the updated screen and continue with the full one-finger/two-finger interactions, item selection, trim and contextual controls. No release/version changes.
+
+
 ## Latest emulator review — 2026-10-31
 
 - Emulator screenshot workflow #427 passed and produced screenshots, but visual review found the timeline card consuming too much vertical space and a black preview frame. A targeted compact-height correction was committed as `a708a64877d1059373738144b5b39866cff101f3`.
