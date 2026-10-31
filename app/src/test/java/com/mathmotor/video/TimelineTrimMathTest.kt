@@ -202,6 +202,25 @@ class TimelineVideoMathTest {
     }
 
     @Test
+    fun overlappingClipsUseRowsThatMatchLayerPriority() {
+        val segments = listOf(
+            TimelineVideoSegment(0L, 0L, 5_000L, 5_000L),
+            TimelineVideoSegment(2_000L, 0L, 4_000L, 4_000L)
+        )
+        // The later list item is the top layer, so it must appear in row zero.
+        assertEquals(listOf(listOf(1), listOf(0)), TimelineVideoMath.assignLanes(segments))
+    }
+
+    @Test
+    fun nonOverlappingClipsCanShareOneChronologicalRow() {
+        val segments = listOf(
+            TimelineVideoSegment(5_000L, 0L, 2_000L, 2_000L),
+            TimelineVideoSegment(0L, 0L, 3_000L, 3_000L)
+        )
+        assertEquals(listOf(listOf(1, 0)), TimelineVideoMath.assignLanes(segments))
+    }
+
+    @Test
     fun movePreservesSourceRangeAndDoesNotAlterOtherSegment() {
         val source = TimelineVideoSegment(0L, 1_000L, 4_000L, 8_000L)
         val independent = TimelineVideoSegment(7_000L, 0L, 2_000L, 2_000L)
