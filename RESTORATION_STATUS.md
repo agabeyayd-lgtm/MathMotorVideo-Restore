@@ -183,3 +183,13 @@ New visual requirement; this is a documentation record, not a claim that the UI 
 - [ ] Device verification must cover frame sequence/timestamps, black/duplicate thumbnail avoidance, pinch zoom, horizontal scroll, body drag, edge trim and project save/reopen.
 
 **Status:** requirement recorded; implementation and device verification remain pending. Existing 192×108 extraction and bounded cache are groundwork only, not acceptance proof. Version 395 remains blocked.
+
+
+## First timeline behavior implementation — 2026-10-31
+
+- **Implemented in code:** red playhead is now positioned at the horizontal center of the visible timeline viewport.
+- **Implemented in code:** full-timeline playback and single-clip preview scroll the synchronized lanes to keep the current project time under that fixed center line.
+- **Implemented in code:** manual horizontal scrolling of the primary lane maps the time under the center line back to project time and seeks the preview; synchronized lanes follow the same scroll offset.
+- **Existing groundwork confirmed:** filmstrip thumbnail count is calculated from clip pixel width, so the number of decoded frames changes with zoom scale. It is not yet accepted as complete adaptive filmstrip behavior.
+- **Not yet verified:** CI for the new code is running; physical-device/emulator checks for scrolling, playback-follow, touch seeking, zoom anchoring and small-screen layout remain pending.
+- Keep the PR draft and version 395 blocked until the relevant CI and device acceptance checks pass.
