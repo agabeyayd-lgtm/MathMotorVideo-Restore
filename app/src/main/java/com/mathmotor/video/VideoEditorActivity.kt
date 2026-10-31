@@ -2841,21 +2841,22 @@ class VideoEditorActivity : Activity() {
         val expectedCenterPx = frameLocation[0] + timelineTracksFrame.width / 2
         val expectedScrollPx = TimelineScaleMath.pixelsForTime(timelinePlayheadMs, pixelsPerSecond)
         val laneScrolls = timelineScrollViews.joinToString(",") { it.scrollX.toString() }
-        val originScreenXs = timelineScrollViews.joinToString(",") { lane ->
+        // The time-zero point is the RIGHT edge of the leading spacer, not its left edge.
+        val originRightScreenXs = timelineScrollViews.joinToString(",") { lane ->
             val track = lane.getChildAt(0) as? LinearLayout
             val origin = track?.getChildAt(0)
             if (origin == null) "-1"
             else {
                 val location = IntArray(2)
                 origin.getLocationOnScreen(location)
-                location[0].toString()
+                (location[0] + origin.width).toString()
             }
         }
         android.util.Log.i(
             "TimelineSyncTest",
             "TIMELINE_SYNC_SAMPLE playing=${composition.isPlaying} " +
                 "playerMs=${composition.currentPosition} playheadMs=$timelinePlayheadMs " +
-                "scrollXs=$laneScrolls originXs=$originScreenXs pxPerSecond=$pixelsPerSecond " +
+                "scrollXs=$laneScrolls originRightXs=$originRightScreenXs pxPerSecond=$pixelsPerSecond " +
                 "expectedScrollPx=$expectedScrollPx playheadCenterPx=$playheadCenterPx " +
                 "playButtonCenterPx=$playButtonCenterPx expectedCenterPx=$expectedCenterPx"
         )
