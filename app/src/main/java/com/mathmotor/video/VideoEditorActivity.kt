@@ -183,6 +183,7 @@ class VideoEditorActivity : Activity() {
     private lateinit var timelinePlayheadLine: View
     private val timelineScrollViews = mutableListOf<android.widget.HorizontalScrollView>()
     private var syncingTimelineScroll = false
+    private var autoScrollingTimeline = false
     private var timelineHorizontalScrollX = 0
     private var pendingTimelineScrollX: Int? = null
     private var timelineZoom = 1.0f
@@ -1539,11 +1540,22 @@ class VideoEditorActivity : Activity() {
                     syncingTimelineScroll = true
                     try {
                         timelineHorizontalScrollX = scrollX
-                    timelineScrollViews.forEach { other ->
+                        timelineScrollViews.forEach { other ->
                             if (other !== view && other.scrollX != scrollX) other.scrollTo(scrollX, 0)
                         }
                     } finally {
                         syncingTimelineScroll = false
+                    }
+                    if (!autoScrollingTimeline && view === timelineScrollViews.firstOrNull() && view.width > 0) {
+                        val centerX = dp(57).toFloat() + view.width / 2f
+                        val contentX = scrollX + centerX - dp(57)
+                        val underPlayheadMs = TimelineScaleMath.millisecondsForPixels(
+                            contentX.coerceAtLeast(0f), timelinePixelsPerSecond()
+                        ).coerceIn(0L, totalOutputDurationMs())
+                        if (underPlayheadMs != timelinePlayheadMs) {
+                            timelinePlayheadMs = underPlayheadMs
+                            seekTimelinePreview(underPlayheadMs)
+                        }
                     }
                     updateTimelinePlayheadLine()
                 }
@@ -2356,21 +2368,40 @@ class VideoEditorActivity : Activity() {
 
     private fun updateTimelinePlayheadLine() {
         if (!::timelinePlayheadLine.isInitialized || !::timelineTracksFrame.isInitialized) return
-        val scrollX = timelineScrollViews.firstOrNull()?.scrollX ?: 0
-        val pixelsPerSecond = timelinePixelsPerSecond()
-        val timelineX = dp(57) + TimelineScaleMath.pixelsForTime(timelinePlayheadMs, pixelsPerSecond) - scrollX
-        val frameWidth = timelineTracksFrame.width
-        if (frameWidth > 0 && (timelineX < 0 || timelineX > frameWidth)) {
-            timelinePlayheadLine.visibility = View.INVISIBLE
-            return
-        }
+        val firstLane = timelineScrollViews.firstOrNull()
+        val centerX = if (firstLane != null && firstLane.width > 0)
+            dp(57) + firstLane.width / 2
+        else
+            timelineTracksFrame.width / 2
         timelinePlayheadLine.visibility = View.VISIBLE
         val params = timelinePlayheadLine.layoutParams as? FrameLayout.LayoutParams ?: return
         params.width = dp(28)
-        // Do not pin an out-of-range playhead to the left edge: preserve the exact x coordinate.
-        params.leftMargin = timelineX - dp(14)
+        // The red playhead is a viewport guide, not a moving timeline item.
+        params.leftMargin = centerX - dp(14)
         timelinePlayheadLine.layoutParams = params
         timelinePlayheadLine.bringToFront()
+    }
+
+    private fun scrollTimelineToPlayhead() {
+        val firstLane = timelineScrollViews.firstOrNull() ?: return
+        if (firstLane.width <= 0 || timelineScrollViews.isEmpty()) return
+        val centerX = dp(57) + firstLane.width / 2f
+        val contentX = dp(57).toFloat() +
+            TimelineScaleMath.pixelsForTime(timelinePlayheadMs, timelinePixelsPerSecond())
+        val requestedScroll = (contentX - centerX).toInt().coerceAtLeast(0)
+        if (firstLane.scrollX == requestedScroll) return
+        autoScrollingTimeline = true
+        syncingTimelineScroll = true
+        try {
+            timelineHorizontalScrollX = requestedScroll
+            timelineScrollViews.forEach { lane ->
+                if (lane.scrollX != requestedScroll) lane.scrollTo(requestedScroll, 0)
+            }
+        } finally {
+            syncingTimelineScroll = false
+            autoScrollingTimeline = false
+        }
+        updateTimelinePlayheadLine()
     }
 
     private fun timelinePixelsPerSecond(): Float = dp(22).toFloat() * timelineZoom
@@ -2563,6 +2594,7 @@ class VideoEditorActivity : Activity() {
         }
         val progress=TimelineTrimMath.progressForTime(timelinePlayheadMs,totalOutputDurationMs())
         if(timelinePlayheadSeek.progress!=progress)timelinePlayheadSeek.progress=progress
+        scrollTimelineToPlayhead()
         updateTimelinePlayheadLabel()
     }
     private fun syncSingleClipPlayheadFromPlayer(){
