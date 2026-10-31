@@ -1901,25 +1901,45 @@ class VideoEditorActivity : Activity() {
         }
 
         if (clips.isEmpty()) {
-            val lane=makeLane("VIDEO",if(keyboardLayoutActive||compactEditorLayout)18 else 44)
-            addBlock(lane,"+ Video ekle",5000L,Color.rgb(38,105,123),onClick={chooseVideo(true)},minimumWidthDp=115)
+            val lane = makeLane("VIDEO", if (keyboardLayoutActive || compactEditorLayout) 18 else 44)
+            addBlock(lane, "+ Video ekle", 5000L, Color.rgb(38, 105, 123),
+                onClick = { chooseVideo(true) }, minimumWidthDp = 115)
         } else {
-            val lanes=TimelineVideoMath.assignLanes(videoTimelineSegments())
-            lanes.forEachIndexed { row,indices ->
-                val lane=makeLane(if(row==0)"VIDEO" else "",if(keyboardLayoutActive||compactEditorLayout)18 else 44)
-                var cursor=0L
-                indices.forEach { index ->
-                    val clip=clips[index]
-                    val duration=(clip.endMs-clip.startMs).coerceAtLeast(0L)
-                    if(clip.timelineStartMs>cursor)addSpacer(lane,cursor,clip.timelineStartMs)
-                    val end=clip.timelineStartMs+duration
-                    val width=widthBetween(clip.timelineStartMs,end).coerceAtLeast(1)
-                    val height=dp(if(keyboardLayoutActive||compactEditorLayout)18 else 42)
-                    lane.addView(buildVideoClipFilmstrip(clip,index,width,height,index==selectedClipIndex),LinearLayout.LayoutParams(width,height))
-                    cursor=maxOf(cursor,end)
-                }
-                if(cursor<totalMs)addSpacer(lane,cursor,totalMs)
+            // CapCut-style main video strip: one VIDEO lane, one shared time axis.
+            // Clips retain their real project start/end positions; overlaps are
+            // stacked inside this same strip instead of creating extra VIDEO rows.
+            val placements = TimelineVideoMath.singleTrackPlacements(videoTimelineSegments())
+            val stripHeight = dp(if (keyboardLayoutActive || compactEditorLayout) 18 else 42)
+            val furthestClipEndPx = placements.maxOfOrNull {
+                widthBetween(0L, it.timelineEndMs)
+            } ?: 0
+            val stripWidth = maxOf(widthBetween(0L, totalMs), furthestClipEndPx)
+                .coerceAtLeast(dp(115))
+            val strip = FrameLayout(this).apply {
+                setBackgroundColor(Color.rgb(16, 25, 36))
+                layoutDirection = View.LAYOUT_DIRECTION_LTR
+                clipChildren = true
+                clipToPadding = true
             }
+
+            // Placement order is layer order: later clips draw above earlier ones,
+            // matching activeSegmentIndexAt() and the flattened preview/export.
+            placements.forEach { placement ->
+                val index = placement.clipIndex
+                val clip = clips.getOrNull(index) ?: return@forEach
+                val left = widthBetween(0L, placement.timelineStartMs)
+                val width = widthBetween(placement.timelineStartMs, placement.timelineEndMs)
+                    .coerceAtLeast(dp(1))
+                val clipView = buildVideoClipFilmstrip(
+                    clip, index, width, stripHeight, index == selectedClipIndex
+                )
+                strip.addView(clipView, FrameLayout.LayoutParams(width, stripHeight).apply {
+                    leftMargin = left
+                    gravity = Gravity.TOP or Gravity.LEFT
+                })
+            }
+            val videoTrack = makeLane("VIDEO", if (keyboardLayoutActive || compactEditorLayout) 18 else 44)
+            videoTrack.addView(strip, LinearLayout.LayoutParams(stripWidth, stripHeight))
         }
 
         if (textLayers.isEmpty()) {
@@ -2693,7 +2713,7 @@ class VideoEditorActivity : Activity() {
         selectedClipIndex=index;timelinePlayheadMs=clips[index].timelineStartMs
         ensureTrimHandlesReachable(index)
         val clip=clips[index]
-        refreshClipList();loadTrimControls()
+        refreshClipList();loadTrimControls();refreshTimelineTracks()
         ensureTimelinePreviewLoaded();seekTimelinePreview(timelinePlayheadMs)
         status.text="Seçili klip: ${clip.title}. Gövdesini sürükleyerek taşı."
         updateTimelinePlayheadLabel()
@@ -4145,6 +4165,8 @@ class VideoEditorActivity : Activity() {
                     if (selected) Color.rgb(117, 240, 221) else Color.rgb(61, 79, 99))
             }
             clipToOutline = true
+            // Keep the selected clip reachable even when it overlaps another clip.
+            elevation = if (selected) dp(12).toFloat() else 0f
             isClickable = true
             isFocusable = true
             setOnClickListener { selectTimelineClip(index) }
@@ -4203,13 +4225,28 @@ class VideoEditorActivity : Activity() {
                 menu.menu.add(0, 3, 2, "Böl")
                 menu.menu.add(0, 4, 3, "Bir önceye al")
                 menu.menu.add(0, 5, 4, "Bir sonraya al")
+                val currentSegment = videoTimelineSegments().getOrNull(index)
+                val overlappingIndices = videoTimelineSegments().indices.filter { otherIndex ->
+                    if (otherIndex == index || currentSegment == null) return@filter false
+                    val other = TimelineVideoMath.normalize(videoTimelineSegments()[otherIndex])
+                    val current = TimelineVideoMath.normalize(currentSegment)
+                    current.timelineStartMs < other.timelineEndMs &&
+                        other.timelineStartMs < current.timelineEndMs
+                }
+                if (overlappingIndices.isNotEmpty()) {
+                    val overlapMenu = menu.menu.addSubMenu("Örtüşen klibi seç")
+                    overlappingIndices.forEach { otherIndex ->
+                        overlapMenu.add(0, 1000 + otherIndex, otherIndex, clips[otherIndex].title)
+                    }
+                }
                 menu.setOnMenuItemClickListener { item ->
-                    when (item.itemId) {
-                        1 -> duplicateClipAt(index)
-                        2 -> removeClipAt(index)
-                        3 -> splitSelectedClipAtPlayhead(expectedClipIndex = index)
-                        4 -> { selectTimelineClip(index); moveSelectedClip(-1) }
-                        5 -> { selectTimelineClip(index); moveSelectedClip(1) }
+                    when {
+                        item.itemId >= 1000 -> selectTimelineClip(item.itemId - 1000)
+                        item.itemId == 1 -> duplicateClipAt(index)
+                        item.itemId == 2 -> removeClipAt(index)
+                        item.itemId == 3 -> splitSelectedClipAtPlayhead(expectedClipIndex = index)
+                        item.itemId == 4 -> { selectTimelineClip(index); moveSelectedClip(-1) }
+                        item.itemId == 5 -> { selectTimelineClip(index); moveSelectedClip(1) }
                     }
                     true
                 }
