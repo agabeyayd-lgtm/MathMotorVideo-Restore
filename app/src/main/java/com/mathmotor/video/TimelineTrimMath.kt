@@ -262,6 +262,29 @@ internal object TimelineVideoMath {
         }
     }
 
+    /**
+     * Assigns visual rows in layer order: the highest-index clip occupies the
+     * uppermost available row. Clips may share a row only when their time ranges
+     * do not overlap. This keeps the timeline's vertical stacking consistent
+     * with activeSegmentIndexAt() and the flattened preview/export result.
+     */
+    fun assignLanes(segments: List<TimelineVideoSegment>): List<List<Int>> {
+        val safeSegments = segments.map(::normalize)
+        val lanes = mutableListOf<MutableList<Int>>()
+        for (index in segments.indices.reversed()) {
+            val current = safeSegments[index]
+            val row = lanes.indexOfFirst { rowIndices ->
+                rowIndices.none { otherIndex ->
+                    val other = safeSegments[otherIndex]
+                    current.timelineStartMs < other.timelineEndMs &&
+                        other.timelineStartMs < current.timelineEndMs
+                }
+            }.takeIf { it >= 0 } ?: lanes.size.also { lanes.add(mutableListOf()) }
+            lanes[row].add(index)
+        }
+        return lanes.map { row -> row.sortedBy { safeSegments[it].timelineStartMs } }
+    }
+
     fun move(segment: TimelineVideoSegment, requestedStartMs: Long): TimelineVideoSegment =
         normalize(segment).copy(timelineStartMs = requestedStartMs.coerceAtLeast(0L))
 
