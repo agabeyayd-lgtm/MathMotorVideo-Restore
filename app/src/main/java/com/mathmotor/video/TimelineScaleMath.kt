@@ -48,7 +48,7 @@ internal object TimelineScaleMath {
         labelGutterPx: Float,
         newPixelsPerSecond: Float
     ): Int {
-        if (!newPixelsPerSecond.isFinite() || newPixelsPerSecond <= 0f) return 0
+        if (!newPixelsPerSecond.isFinite() || newPixelsPerSecond <= 0f || anchorTimeMs <= 0L) return 0
         val contentX = pixelsForTime(anchorTimeMs, newPixelsPerSecond).toFloat()
         return (contentX - (viewportX - labelGutterPx)).roundToInt().coerceAtLeast(0)
     }
