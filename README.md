@@ -346,3 +346,13 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - Next work must not repeat #408: inspect the current-branch signed install/update-over/relaunch preflight workflow and its exact version/signing constraints; separately keep physical-device touch/performance review open for the user to perform on the phone.
 - Remaining physical acceptance: keyboard-open editing on the actual phone, timeline touch/trim/scroll/pinch, thumbnail readability/loading, preview and dock usability, and export playback/output. Record actual device evidence before closing these gates.
 - Installed baseline remains versionCode 394 / build 61. Version 395 is blocked. No version bump, release APK, publishing, or updater activation until all acceptance gates pass and the user explicitly authorizes release.
+
+
+## Signed update preflight — 2026-10-31 (#10 PASS)
+
+- Current-branch workflow [#10 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41152584045), commit 72d9f8ea6829152121baad2550344af227386ced.
+- Inspected artifact MathMotorVideo-394-device-review and signed-preflight report. Baseline and candidate package IDs both com.mathmotor.video.next; both versionCode 394; both signing certificate SHA-256 values match: 2a7b6b544f9b4240a25b6619794f31d561ca8792c45a88f7cc701e6d4502b26f.
+- Emulator successfully installed the baseline, updated over it with the signed candidate, and relaunched the app. Post-update package dump confirms versionCode 394 and launcher activity com.mathmotor.video.next/com.mathmotor.video.MainActivity. Baseline and candidate process IDs were captured separately.
+- Workflow explicitly reports no release or tag created. Candidate signed APK is retained in artifact MathMotorVideo-394-device-review (artifact ID 13023768940; expires 2026-11-07); preflight report artifact ID 13023714183 (expires 2026-11-14).
+- This closes the current-branch signed install/update-over/relaunch gate for the tested emulator. It does NOT close physical-phone acceptance or prove in-app updater delivery. Physical phone keyboard/touch/timeline/thumbnail/export review remains open.
+- Installed baseline/version remains 394 / build 61. Do not create version 395, publish, tag, or activate updater until remaining acceptance gates pass and the user explicitly authorizes release.
