@@ -435,3 +435,14 @@ This is a layout target, not a claim that all behaviors are implemented. Gesture
 - Source commit: `ccbece8c3ee0fc1171dcf0689a699f4fb1766eda`.
 - [ ] Fresh PR-head compile/unit and emulator screenshot checks must confirm no regression in hit targets, trim gestures, or clip filmstrip visibility.
 - PR #11 remains draft and unmerged. Version 395 remains blocked.
+
+
+## 2026-10-31 — emulator #477 crash diagnosis and fix
+
+- [x] Inspected emulator #477 job logs and uploaded diagnostics. APK build succeeded; emulator launch failed because the editor activity crashed before fixture import.
+- [x] Root cause confirmed from the stack trace: `IllegalStateException: The specified child already has a parent` in `VideoEditorActivity.refreshTimelineTracks$makeLane` at line 1646.
+- [x] Removed the obsolete `playheadRow.addView(timelinePlayheadLabel)` attachment. The live time label is now created detached and only attached to the ruler lane, which owns it during timeline refreshes.
+- Fix commit: `fef3116d0eb6c9394915b9663f82efda5406ef5e`.
+- [ ] Run targeted compile/unit verification and a fresh emulator launch + fixture import on the fix commit. The previous emulator failure is not a pass.
+- [ ] Review the fresh screenshot for time label position, audio toggle placement and filmstrip appearance.
+- PR #11 remains draft and unmerged. Version 395 remains blocked.
