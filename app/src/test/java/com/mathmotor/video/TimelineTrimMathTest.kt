@@ -68,6 +68,30 @@ class TimelineTrimMathTest {
 }
 
 
+class MusicSourceRangeMathTest {
+    @Test
+    fun sourceRangeIsClampedAndRemainsOrdered() {
+        assertEquals(MusicSourceRange(2_000L, 8_000L), MusicSourceRangeMath.normalize(MusicSourceRange(-5L, 20_000L), 10_000L))
+        assertEquals(MusicSourceRange(9_900L, 10_000L), MusicSourceRangeMath.start(MusicSourceRange(0L, 10_000L), 9_999L, 10_000L))
+        assertEquals(MusicSourceRange(2_000L, 2_100L), MusicSourceRangeMath.end(MusicSourceRange(2_000L, 8_000L), 0L, 10_000L))
+    }
+
+    @Test
+    fun sourcePositionLoopsOnlyInsideSelectedRange() {
+        val range = MusicSourceRange(3_000L, 7_000L)
+        assertEquals(3_000L, MusicSourceRangeMath.sourcePosition(range, 0L, 10_000L))
+        assertEquals(6_500L, MusicSourceRangeMath.sourcePosition(range, 3_500L, 10_000L))
+        assertEquals(3_500L, MusicSourceRangeMath.sourcePosition(range, 4_500L, 10_000L))
+    }
+
+    @Test
+    fun emptyOrInvalidSourceRangeNeverProducesNegativeDuration() {
+        assertEquals(0L, MusicSourceRangeMath.normalize(MusicSourceRange(5_000L, 2_000L), 10_000L).durationMs)
+        assertEquals(0L, MusicSourceRangeMath.sourcePosition(MusicSourceRange(0L, 0L), 500L, 10_000L))
+    }
+}
+
+
 class TimelineAudioMathTest {
     @Test
     fun movingAnAudioItemKeepsItsSourceTrimAndDuration() {
