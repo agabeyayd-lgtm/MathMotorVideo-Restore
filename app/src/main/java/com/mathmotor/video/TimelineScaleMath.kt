@@ -14,8 +14,16 @@ internal object TimelineScaleMath {
         (frameWidthPx.coerceAtLeast(0) / 2 - gutterPx.coerceAtLeast(0)).coerceAtLeast(1)
 
     /** Trailing spacer keeps the final project frame reachable beneath the same center line. */
-    fun endSpacerWidthForCenteredPlayhead(frameWidthPx: Int, gutterPx: Int): Int {
-        val viewportWidth = (frameWidthPx.coerceAtLeast(0) - gutterPx.coerceAtLeast(0)).coerceAtLeast(0)
+    fun endSpacerWidthForCenteredPlayhead(
+        frameWidthPx: Int,
+        gutterPx: Int,
+        trailingInsetPx: Int = 0
+    ): Int {
+        val viewportWidth = (
+            frameWidthPx.coerceAtLeast(0) -
+                gutterPx.coerceAtLeast(0) -
+                trailingInsetPx.coerceAtLeast(0)
+            ).coerceAtLeast(0)
         val originWidth = originSpacerWidthForCenteredPlayhead(frameWidthPx, gutterPx)
         return (viewportWidth - originWidth).coerceAtLeast(1)
     }
