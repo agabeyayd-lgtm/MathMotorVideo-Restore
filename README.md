@@ -30,6 +30,14 @@ A change is **not accepted** merely because it compiles, passes unit tests, or l
 **Scope guard:** Do not introduce a second competing editor design or ask the user to choose between layouts. Work only toward this reference. Version 395 remains blocked until all implementation and verification gates pass and the user explicitly authorizes release.
 
 
+## Filmstrip scrubbing and preview seek coalescing — 2026-10-31
+
+- Confirmed source cause: the primary lane's horizontal-scroll callback was calling Media3 `seekTo` for every scroll update. The 250 ms player-sync task could also write the previous paused player position back into the timeline during a manual scrub.
+- PR #11 source correction: the visible playhead time/progress now updates on every horizontal movement; decoder seeks are coalesced to at most one per 120 ms while retaining the latest requested timestamp. The last pending position is delivered after scrolling becomes idle. Manual scrubbing pauses active composition playback, and paused-player polling no longer overrides the user's scrub position.
+- Added JVM coverage for the seek-throttle timing policy.
+- **Not yet accepted:** verify on emulator that dragging the filmstrip left scrubs forward and dragging right scrubs backward, the preview visibly follows the frame under the fixed center playhead without gray-frame/decoder errors, and release leaves the exact final frame. Build, unit-test and emulator workflows must pass on the updated PR head before this is called fixed.
+- No release/version changes. PR #11 remains draft; version 395 remains blocked.
+
 ## Mobile editor rebuild — 2026-10-31
 
 - The latest PR-head checks before this change were green: Verify #185, APK #260 and emulator screenshots #429. Screenshot review confirmed the imported test video is visible in the preview, but the timeline was visually unacceptable on a small phone: compact mode reduced the ruler/filmstrip to tiny 18dp rows and left a large empty card.

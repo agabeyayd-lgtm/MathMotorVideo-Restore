@@ -48,6 +48,16 @@ internal object TimelineScaleMath {
             .roundToLong()
     }
 
+    /** Minimum wait before the next decoder seek in a continuous timeline scrub. */
+    fun scrubSeekDelayMs(
+        nowMs: Long,
+        lastSeekUptimeMs: Long,
+        minimumIntervalMs: Long
+    ): Long {
+        val elapsedMs = (nowMs - lastSeekUptimeMs).coerceAtLeast(0L)
+        return (minimumIntervalMs.coerceAtLeast(0L) - elapsedMs).coerceAtLeast(0L)
+    }
+
 
     /** Time at a viewport x, measured from the shared time-zero content origin. */
     fun timeAtViewportX(

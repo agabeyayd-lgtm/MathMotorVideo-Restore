@@ -178,6 +178,30 @@ class TimelineScaleMathTest {
     }
 
     @Test
+    fun scrubDecoderSeekWaitsForRemainingThrottleWindow() {
+        assertEquals(
+            45L,
+            TimelineScaleMath.scrubSeekDelayMs(
+                nowMs = 1_075L,
+                lastSeekUptimeMs = 1_000L,
+                minimumIntervalMs = 120L
+            )
+        )
+    }
+
+    @Test
+    fun scrubDecoderSeekRunsImmediatelyWhenThrottleWindowHasElapsed() {
+        assertEquals(
+            0L,
+            TimelineScaleMath.scrubSeekDelayMs(
+                nowMs = 1_200L,
+                lastSeekUptimeMs = 1_000L,
+                minimumIntervalMs = 120L
+            )
+        )
+    }
+
+    @Test
     fun invalidScaleAndNegativeTimeAreSafe() {
         assertEquals(0, TimelineScaleMath.pixelsForTime(-100L, 22f))
         assertEquals(0, TimelineScaleMath.pixelsForTime(1_000L, 0f))

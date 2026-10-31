@@ -16,6 +16,7 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.MediaStore
 import android.text.SpannableString
 import android.text.Spanned
@@ -267,13 +268,31 @@ class VideoEditorActivity : Activity() {
     private var timelinePreviewLoaded = false
     private var previewSingleClip = false
     private val timelineHandler = Handler(Looper.getMainLooper())
+    private var pendingTimelineScrubPreviewTargetMs: Long? = null
+    private var lastTimelineScrubPreviewSeekUptimeMs = 0L
+    private val timelineScrubPreviewSeekTask = object : Runnable {
+        override fun run() {
+            val targetMs = pendingTimelineScrubPreviewTargetMs ?: return
+            pendingTimelineScrubPreviewTargetMs = null
+            lastTimelineScrubPreviewSeekUptimeMs = SystemClock.uptimeMillis()
+            seekTimelinePreview(targetMs)
+        }
+    }
     private val textTimelineRefreshTask = object : Runnable {
         override fun run() { refreshTimelineTracks() }
     }
     private val timelineSyncTask = object : Runnable {
         override fun run() {
-            if (timelinePreviewLoaded) syncTimelinePlayheadFromPlayer()
-            else if (previewSingleClip) syncSingleClipPlayheadFromPlayer()
+            // A paused preview must not overwrite the position currently being scrubbed.
+            // While playing, the composition player remains the source of truth.
+            val composition = timelineCompositionPlayer
+            if (timelinePreviewLoaded &&
+                (composition?.isPlaying == true || composition?.playWhenReady == true)
+            ) {
+                syncTimelinePlayheadFromPlayer()
+            } else if (previewSingleClip && player?.isPlaying == true) {
+                syncSingleClipPlayheadFromPlayer()
+            }
             syncPreviewAudio()
             updateTimelinePlayButtonState()
             if (timelineSyncTestEnabled) logTimelineSyncTestSample()
@@ -1738,14 +1757,28 @@ class VideoEditorActivity : Activity() {
                         syncingTimelineScroll = false
                     }
                     if (!autoScrollingTimeline && view === timelineScrollViews.firstOrNull() && view.width > 0) {
-                        // The shared half-viewport origin spacer puts time zero under
-                        // the fixed center playhead; scrollX is elapsed timeline distance.
+                        // The fixed center playhead stays still while the filmstrip moves
+                        // underneath it. Update the visible time immediately on every drag.
                         val underPlayheadMs = TimelineScaleMath.millisecondsForPixels(
                             scrollX.toFloat().coerceAtLeast(0f), timelinePixelsPerSecond()
                         ).coerceIn(0L, totalOutputDurationMs())
                         if (underPlayheadMs != timelinePlayheadMs) {
+                            // A manual scrub takes control from playback so the periodic
+                            // player sync cannot pull the ruler back to an older frame.
+                            timelineCompositionPlayer?.let { composition ->
+                                if (composition.isPlaying || composition.playWhenReady) {
+                                    composition.pause()
+                                    composition.playWhenReady = false
+                                }
+                            }
                             timelinePlayheadMs = underPlayheadMs
-                            seekTimelinePreview(underPlayheadMs)
+                            if (::timelinePlayheadSeek.isInitialized) {
+                                timelinePlayheadSeek.progress = TimelineTrimMath.progressForTime(
+                                    underPlayheadMs, totalOutputDurationMs()
+                                )
+                            }
+                            updateTimelinePlayheadLabel()
+                            scheduleTimelineScrubPreviewSeek(underPlayheadMs)
                         }
                     }
                     updateTimelinePlayheadLine()
@@ -2932,7 +2965,25 @@ class VideoEditorActivity : Activity() {
             status.text="Zaman çizelgesi önizlemesi kurulamadı: ${error.message ?: error.javaClass.simpleName}"
         }
     }
+    /**
+     * Coalesces rapid HorizontalScrollView updates before asking Media3 to decode.
+     * The latest requested time is retained, so a stopped drag always lands exactly
+     * on the frame represented by the fixed playhead.
+     */
+    private fun scheduleTimelineScrubPreviewSeek(targetMs: Long) {
+        pendingTimelineScrubPreviewTargetMs = targetMs
+        val delayMs = TimelineScaleMath.scrubSeekDelayMs(
+            nowMs = SystemClock.uptimeMillis(),
+            lastSeekUptimeMs = lastTimelineScrubPreviewSeekUptimeMs,
+            minimumIntervalMs = 120L
+        )
+        timelineHandler.removeCallbacks(timelineScrubPreviewSeekTask)
+        timelineHandler.postDelayed(timelineScrubPreviewSeekTask, delayMs)
+    }
+
     private fun seekTimelinePreview(requestedMs:Long){
+        timelineHandler.removeCallbacks(timelineScrubPreviewSeekTask)
+        pendingTimelineScrubPreviewTargetMs = null
         if(clips.isEmpty())return
         ensureTimelinePreviewLoaded()
         val comp=timelineCompositionPlayer?:return
@@ -5298,6 +5349,8 @@ class VideoEditorActivity : Activity() {
     override fun onDestroy() {
         timelineHandler.removeCallbacks(timelineSyncTask)
         timelineHandler.removeCallbacks(textTimelineRefreshTask)
+        timelineHandler.removeCallbacks(timelineScrubPreviewSeekTask)
+        pendingTimelineScrubPreviewTargetMs = null
         timelineThumbnailExecutor.shutdownNow()
         pendingTimelineThumbnails.clear()
         timelineThumbnailCache.evictAll()

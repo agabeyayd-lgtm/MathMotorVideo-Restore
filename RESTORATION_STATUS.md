@@ -1,5 +1,15 @@
 # MathMotor Video — current project status
 
+## Filmstrip scrub / preview synchronization correction — 2026-10-31
+
+- Source-level cause verified in PR #11: the primary horizontal-scroll listener sent a Media3 `seekTo` on every small scroll event; the periodic sync task also polled paused playback and could restore an earlier player position over the manual scrub.
+- Added a 120 ms coalesced decoder-seek scheduler that keeps the newest requested playhead time, updates the visible time readout immediately, pauses active composition playback during manual scrubbing, and avoids paused-player position overwrites.
+- Added JVM unit tests for the coalescing interval calculation.
+- [ ] Run PR-head unit tests, Kotlin compilation and Debug APK build.
+- [ ] Inspect emulator interaction/screenshots/logs: drag filmstrip left = preview forward; drag right = preview backward; fixed center playhead; preview shows the frame under it while dragging; release holds the exact last frame.
+- [ ] Confirm no gray filmstrip/preview and no Media3 frame-processing errors under repeated scrubbing.
+- This is an implementation change, not yet device-accepted. PR #11 remains draft; version 395 remains blocked.
+
 ## Latest UI rebuild — 2026-10-31
 
 - Verified previous PR-head run set: Verify #185, APK #260 and emulator screenshots #429 all completed successfully.
