@@ -420,6 +420,7 @@ class VideoEditorActivity : Activity() {
             // Native controls show the source clip duration, not the combined project duration.
             // Keep playback aligned with the edited timeline controls below.
             useController = false
+            resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
             contentDescription = "Düzenlenmiş video önizlemesi"
         }
         previewFrame = FrameLayout(this).apply {
@@ -1241,6 +1242,21 @@ class VideoEditorActivity : Activity() {
             keyboardLayoutActive = imeVisible
             applyingResponsiveLayout = true
             try {
+                val timelineParams = timelineCard.layoutParams as? LinearLayout.LayoutParams
+                if (timelineParams != null) {
+                    val density = resources.displayMetrics.density.coerceAtLeast(1f)
+                    val viewportDp = (availableHeight / density).toInt()
+                    timelineParams.height = dp(
+                        when {
+                            imeVisible -> 152
+                            viewportDp < 650 -> 196
+                            else -> 252
+                        }
+                    )
+                    timelineParams.weight = 0f
+                    timelineCard.layoutParams = timelineParams
+                }
+
                 val previewParams = previewFrame.layoutParams as LinearLayout.LayoutParams
                 if (previewFocusMode) {
                     previewParams.height = 0
@@ -1319,9 +1335,17 @@ class VideoEditorActivity : Activity() {
                 val density = resources.displayMetrics.density.coerceAtLeast(1f)
                 val viewportDp = (viewportHeight / density).toInt()
                 compactEditorLayout = viewportDp < 820
-                val previewRatio = if (viewportDp < 650) 0.39f else 0.36f
-                previewDefaultStageHeightDp = (viewportDp * previewRatio).toInt().coerceIn(198, 320)
+                // Give the preview the dominant upper canvas area, while reserving
+                // enough height for the shared timeline and the fixed bottom tool dock.
+                val previewRatio = if (viewportDp < 650) 0.40f else 0.46f
+                previewDefaultStageHeightDp = (viewportDp * previewRatio).toInt().coerceIn(190, 390)
                 previewStageHeightDp = previewDefaultStageHeightDp
+                val timelineParams = timelineCard.layoutParams as? LinearLayout.LayoutParams
+                if (timelineParams != null) {
+                    timelineParams.height = dp(if (viewportDp < 650) 196 else 252)
+                    timelineParams.weight = 0f
+                    timelineCard.layoutParams = timelineParams
+                }
                 previewHeightAutoSized = true
 
                 // Reserve room for real tools and the multi-track timeline on shorter phones.
@@ -1409,31 +1433,24 @@ class VideoEditorActivity : Activity() {
     private fun updatePreviewCanvasSize() {
         if (!::previewFrame.isInitialized || !::playerView.isInitialized) return
         val stageWidth = previewFrame.width
-        val stageHeight = previewFrame.height
-        if (stageWidth <= 0 || stageHeight <= 0) return
+        if (stageWidth <= 0 || previewFrame.height <= 0) return
 
-        val videoSize = player?.videoSize
-        val ratio = (if (videoSize != null && videoSize.width > 0 && videoSize.height > 0) {
-            val rotated = videoSize.unappliedRotationDegrees % 180 != 0
-            val width = if (rotated) videoSize.height else videoSize.width
-            val height = if (rotated) videoSize.width else videoSize.height
-            width.toFloat() / height.toFloat()
-        } else {
-            9f / 16f
-        }).coerceIn(0.25f, 4f)
-
-        val targetWidth = minOf(stageWidth.toFloat(), stageHeight * ratio).toInt().coerceAtLeast(1)
-        val targetHeight = minOf(stageHeight.toFloat(), targetWidth / ratio).toInt().coerceAtLeast(1)
+        // Keep the PlayerView itself full-width. Media3's FIT mode preserves the
+        // source aspect ratio inside that canvas; shrinking the view to the
+        // calculated portrait-video width made the whole preview look undersized.
         val params = playerView.layoutParams as? FrameLayout.LayoutParams ?: return
-        if (params.width != targetWidth || params.height != targetHeight || params.gravity != Gravity.CENTER) {
-            params.width = targetWidth
-            params.height = targetHeight
+        if (params.width != ViewGroup.LayoutParams.MATCH_PARENT ||
+            params.height != ViewGroup.LayoutParams.MATCH_PARENT ||
+            params.gravity != Gravity.CENTER
+        ) {
+            params.width = ViewGroup.LayoutParams.MATCH_PARENT
+            params.height = ViewGroup.LayoutParams.MATCH_PARENT
             params.gravity = Gravity.CENTER
             playerView.layoutParams = params
         }
         if (::previewTextOverlay.isInitialized) {
             previewTextOverlays.forEach { overlay ->
-                overlay.maxWidth = (targetWidth - dp(16)).coerceAtLeast(dp(100))
+                overlay.maxWidth = (stageWidth - dp(16)).coerceAtLeast(dp(100))
             }
             updatePreviewTextOverlay()
         }
