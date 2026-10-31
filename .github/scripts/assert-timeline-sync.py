@@ -24,27 +24,33 @@ sample_pattern = re.compile(
     r"playerMs=(\d+) "
     r"playheadMs=(\d+) "
     r"scrollXs=([0-9,]*) "
+    r"originXs=([0-9,-]*) "
     r"pxPerSecond=([0-9.]+) "
     r"expectedScrollPx=(\d+) "
     r"playheadCenterPx=(-?\d+) "
+    r"playButtonCenterPx=(-?\d+) "
     r"expectedCenterPx=(-?\d+)"
 )
 
 samples: list[dict[str, object]] = []
 for match in sample_pattern.finditer(log):
-    playing, player_ms, playhead_ms, raw_scrolls, raw_pps, expected_scroll, center, expected_center = match.groups()
+    (playing, player_ms, playhead_ms, raw_scrolls, raw_origins, raw_pps,
+     expected_scroll, center, play_button_center, expected_center) = match.groups()
     if playing != "true":
         continue
     scrolls = [int(value) for value in raw_scrolls.split(",") if value]
-    if not scrolls:
+    origins = [int(value) for value in raw_origins.split(",") if value]
+    if not scrolls or not origins:
         continue
     samples.append({
         "player_ms": int(player_ms),
         "playhead_ms": int(playhead_ms),
         "scrolls": scrolls,
+        "origins": origins,
         "pps": float(raw_pps),
         "expected_scroll": int(expected_scroll),
         "center": int(center),
+        "play_button_center": int(play_button_center),
         "expected_center": int(expected_center),
     })
 
@@ -78,9 +84,20 @@ for index, sample in enumerate(samples):
     center = int(sample["center"])
     expected_center = int(sample["expected_center"])
 
-    if len(scrolls) != lane_count:
+    origins = sample["origins"]
+    if len(scrolls) != lane_count or len(origins) != lane_count:
         raise SystemExit(
-            f"FAIL: lane count changed at sample {index}: {lane_count} -> {len(scrolls)}."
+            f"FAIL: timeline lane count changed at sample {index}: "
+            f"expected {lane_count}, scrolls={len(scrolls)}, origins={len(origins)}."
+        )
+    if any(value < 0 for value in origins):
+        raise SystemExit(f"FAIL: a lane's time-zero origin could not be measured: {origins}.")
+    if len(set(origins)) != 1:
+        raise SystemExit(f"FAIL: ruler/video time-zero origins do not align: {origins}.")
+    if abs(int(origins[0]) + int(scrolls[0]) - center) > 1:
+        raise SystemExit(
+            f"FAIL: shared time-zero origin does not map to the fixed playhead: "
+            f"originX={origins[0]}px + scroll={scrolls[0]}px, playhead={center}px."
         )
     if any(value < 0 for value in scrolls):
         raise SystemExit(f"FAIL: negative lane scroll at sample {index}: {scrolls}.")
@@ -98,8 +115,13 @@ for index, sample in enumerate(samples):
         )
     if abs(center - expected_center) > 1:
         raise SystemExit(
-            f"FAIL: playhead is not at the calculated viewport center: "
+            f"FAIL: playhead is not at the calculated timeline center: "
             f"actual={center}px, expected={expected_center}px."
+        )
+    if abs(center - int(sample["play_button_center"])) > 1:
+        raise SystemExit(
+            f"FAIL: fixed playhead is not vertically aligned with the Play button: "
+            f"playhead={center}px, Play={sample['play_button_center']}px."
         )
 
     # Kotlin roundToInt() for non-negative values is floor(value + 0.5).
@@ -123,4 +145,5 @@ print(f"  Samples while playing: {len(samples)}")
 print(f"  Player position: {first_player} -> {last_player} ms")
 print(f"  Timeline lanes synchronized: {lane_count}")
 print(f"  Shared ruler/filmstrip scroll follows playhead time; no negative scroll")
-print(f"  Fixed playhead center: {baseline_center}px")
+print(f"  Fixed playhead/Play center: {baseline_center}px")
+print("  Ruler and first-video-frame zero origins share the same screen coordinate")
