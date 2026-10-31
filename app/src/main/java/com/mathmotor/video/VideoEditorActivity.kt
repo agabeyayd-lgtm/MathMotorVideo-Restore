@@ -1718,10 +1718,10 @@ class VideoEditorActivity : Activity() {
                         syncingTimelineScroll = false
                     }
                     if (!autoScrollingTimeline && view === timelineScrollViews.firstOrNull() && view.width > 0) {
-                        val centerX = dp(57).toFloat() + view.width / 2f
-                        val contentX = scrollX + centerX - dp(57)
+                        // The shared half-viewport origin spacer puts time zero under
+                        // the fixed center playhead; scrollX is elapsed timeline distance.
                         val underPlayheadMs = TimelineScaleMath.millisecondsForPixels(
-                            contentX.coerceAtLeast(0f), timelinePixelsPerSecond()
+                            scrollX.toFloat().coerceAtLeast(0f), timelinePixelsPerSecond()
                         ).coerceIn(0L, totalOutputDurationMs())
                         if (underPlayheadMs != timelinePlayheadMs) {
                             timelinePlayheadMs = underPlayheadMs
@@ -2108,6 +2108,21 @@ class VideoEditorActivity : Activity() {
             addSpacer(effectTrack, 0L, segment.timelineStartMs)
             addSoundEffectTimelineBlock(effectTrack, totalMs)
             addSpacer(effectTrack, endMs, totalMs)
+        }
+        // Give every lane the same half-viewport time-zero origin. At scrollX=0,
+        // each clip/layer begins beneath the fixed center playhead; playback scrolls
+        // all synchronized lanes by the elapsed-time pixel distance.
+        timelineScrollViews.forEach { laneScroll ->
+            val laneTrack = laneScroll.getChildAt(0) as? LinearLayout ?: return@forEach
+            val originWidth = ((laneScroll.width.takeIf { it > 0 }
+                ?: (resources.displayMetrics.widthPixels - dp(57))).coerceAtLeast(dp(2))) / 2
+            val first = laneTrack.getChildAt(0)
+            if (first?.tag != "timeline-origin-spacer") {
+                val originSpacer = View(this).apply { tag = "timeline-origin-spacer" }
+                laneTrack.addView(originSpacer, 0, LinearLayout.LayoutParams(originWidth, dp(24)))
+            } else {
+                first.layoutParams = LinearLayout.LayoutParams(originWidth, dp(24))
+            }
         }
         // A MATCH_PARENT playhead inside a WRAP_CONTENT FrameLayout would let
         // the frame expand to the full available screen height and push the tool dock
@@ -2602,10 +2617,10 @@ class VideoEditorActivity : Activity() {
     private fun scrollTimelineToPlayhead() {
         val firstLane = timelineScrollViews.firstOrNull() ?: return
         if (firstLane.width <= 0 || timelineScrollViews.isEmpty()) return
-        val centerX = dp(57) + firstLane.width / 2f
-        val contentX = dp(57).toFloat() +
-            TimelineScaleMath.pixelsForTime(timelinePlayheadMs, timelinePixelsPerSecond())
-        val requestedScroll = (contentX - centerX).toInt().coerceAtLeast(0)
+        // With time zero at the viewport center, scroll distance equals elapsed time.
+        val requestedScroll = TimelineScaleMath.pixelsForTime(
+            timelinePlayheadMs, timelinePixelsPerSecond()
+        ).coerceAtLeast(0)
         if (firstLane.scrollX == requestedScroll) return
         autoScrollingTimeline = true
         syncingTimelineScroll = true
