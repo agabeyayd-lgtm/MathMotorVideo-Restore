@@ -75,3 +75,16 @@ See the detailed, release-blocking checklist in README.md. The active list is:
 ## Recovery background
 
 Some older physics/scenario-related source and tests remain as reconstruction leftovers; they are outside the active video-editing workflow. The original complete V7 source tree was not recoverable.
+
+## PR #11 follow-up — 2026-10-31
+
+- [x] Hide the redundant clip title/card strip without deleting clip state.
+- [x] Request 192×108 filmstrip frames from the platform decoder, and configure the Media3 fallback for 108px output height.
+- [x] Bound the thumbnail bitmap cache by 16 MiB allocation memory.
+- [x] Keep default filmstrip density near one frame per second (22 dp/s timeline scale; 24 dp thumbnail slot), with a decoder-queue cap.
+- [ ] Verify thumbnail sharpness, distinct timestamps, load priority and memory behavior on an actual phone.
+- [ ] Make video clips independently movable/timed rather than a single sequential playlist.
+- [ ] Make each music and sound-effect item independently draggable and trimmable with separate start/end times.
+- [ ] Verify overlap, preview sync, project save/reopen and MP4 export for independently positioned items.
+
+**Important:** PR #11 currently has no attached CI result. The branch-only source edits are not a build/test pass. Text layers currently have independent drag/trim behavior; the remaining media types are not yet complete. Version 395 stays blocked.
