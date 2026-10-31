@@ -67,18 +67,25 @@ internal object TimelineScaleMath {
         if (!pixelsPerSecond.isFinite() || pixelsPerSecond <= 0f) return 1_000L
         val targetSeconds = (minimumLabelSpacingPx.coerceAtLeast(1f) / pixelsPerSecond)
             .coerceAtLeast(0.001f)
-        val niceSteps = floatArrayOf(0.1f, 0.2f, 0.5f, 1f, 2f, 5f, 10f, 15f, 30f, 60f, 120f, 300f, 600f)
+        val niceSteps = floatArrayOf(0.1f, 0.2f, 0.5f, 1f, 1.5f, 2f, 2.5f, 5f, 10f, 15f, 30f, 60f, 120f, 300f, 600f)
         val seconds = niceSteps.firstOrNull { it >= targetSeconds }
             ?: (kotlin.math.ceil(targetSeconds / 600f) * 600f)
         return (seconds * 1000f).toLong().coerceAtLeast(1L)
     }
 
     fun formatRulerTime(timeMs: Long): String {
-        val totalSeconds = timeMs.coerceAtLeast(0L) / 1000L
+        val safeMs = timeMs.coerceAtLeast(0L)
+        val totalSeconds = safeMs / 1000L
         val minutes = totalSeconds / 60L
         val seconds = totalSeconds % 60L
-        return if (minutes > 0L) "%d:%02d".format(java.util.Locale.US, minutes, seconds)
-        else seconds.toString()
+        val tenth = (safeMs % 1000L) / 100L
+        return when {
+            minutes > 0L && tenth > 0L ->
+                "%d:%02d.%d".format(java.util.Locale.US, minutes, seconds, tenth)
+            minutes > 0L -> "%d:%02d".format(java.util.Locale.US, minutes, seconds)
+            safeMs % 1000L > 0L -> "$totalSeconds.$tenth"
+            else -> seconds.toString()
+        }
     }
 
     /** Minimum wait before the next decoder seek in a continuous timeline scrub. */
