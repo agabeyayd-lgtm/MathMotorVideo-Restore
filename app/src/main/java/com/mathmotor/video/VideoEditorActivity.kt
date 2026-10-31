@@ -4747,7 +4747,7 @@ class VideoEditorActivity : Activity() {
     private fun totalOutputDurationMs(): Long =
         TimelineProjectDurationMath.totalDuration(
             TimelineVideoMath.totalDuration(videoTimelineSegments()),
-            textLayers.maxOfOrNull { it.endMs } ?: 0L,
+            textLayers.filter { it.timingCustomized }.maxOfOrNull { it.endMs } ?: 0L,
             if (musicUri != null) musicStartMs + musicDurationMs else 0L,
             if (soundUri != null) soundStartMs + soundDurationMs else 0L
         )
