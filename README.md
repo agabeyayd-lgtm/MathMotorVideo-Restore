@@ -146,13 +146,14 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 
 ### Verification
 
-- Latest PR check for commit `1ea29d100a1c01cdfa801f9d520ee0aa446ff4c1` **passed**: `testDebugUnitTest`, Kotlin compilation, `packageDebug` and `assembleDebug`.
+- PR check #137 for the preceding head `20dd0757dff7f85bfb47acc1578a5bae5ab5bef3` **passed**: `testDebugUnitTest`, Kotlin compilation, `packageDebug` and `assembleDebug`.
+- Follow-up commits now align overlapping clip row stacking with preview/export layer priority and add unit tests for that rule. Those new commits still need their own CI result; the earlier green run does not cover them.
 - The check built a Debug APK on the CI runner; it did not upload an APK artifact. No release or version 395 was created.
 - Device-level touch gestures, actual audio preview/export playback, project save/reopen with edited music, and audio sync remain unverified on a physical phone or reliable emulator.
 
 ### Still open
 
-- Video clips are still positioned as a sequential playlist. They need independent project start/end times and their own move/trim behavior.
+- Independent video project positions, body drag, edge trim and persistence are now implemented in PR #11. Verification of the updated timeline row/layer ordering is pending CI; actual touch gestures, preview/export output and save/reopen still require device validation.
 - Music blocks move/trim on the project timeline, but selecting a subrange inside the music source file is not implemented; the full source music repeats from its beginning inside the block.
 - Verify overlap and exact synchronization across all items in the shared timeline, live preview, MP4 export and saved/reopened projects.
 - Test thumbnail clarity/load behavior, actual finger gestures, audio sync, small screens and keyboard behavior on a device.
@@ -160,11 +161,11 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 
 - Every video clip stores a project-timeline start separately from source in/out. Existing version-1 projects without this field load sequentially; new saves persist each position.
 - Video clips are placed at shared timeline coordinates. Overlapping ranges render on separate rows; dragging a filmstrip moves only that clip; left/right trim maintains source and project boundaries.
-- Preview and export share one flattened video sequence: the last clip in layer order is visible during overlap and empty intervals become black/silent. This is top-layer occlusion, not alpha blending, crossfade or picture-in-picture.
+- Preview and export share one flattened video sequence: the last clip in layer order is visible during overlap and empty intervals become black/silent. Timeline rows now follow that same layer priority, so the topmost overlapping item is shown above lower layers. This is top-layer occlusion, not alpha blending, crossfade or picture-in-picture.
 - Touch, overlapping preview/export, actual MP4 output and save/reopen still require device/emulator verification. Version 395 remains blocked.
 
 ### Multi-track implementation constraint — Media3 1.10.1
 
 - Transformer Composition can combine separate sequences that overlap in time, including video/audio layers.
-- CompositionPlayer preview is early/experimental; its documented supported cases include one video sequence plus one audio sequence, while previewing multiple video sequences is still in active development.
-- Therefore, multi-video overlap must not be considered complete from export support alone; live preview and final export must both be verified before acceptance.
+- The current preview passes a single flattened video sequence to CompositionPlayer; overlapping clips are resolved to one active top-layer segment before preview rather than passed as multiple video sequences. This avoids relying on CompositionPlayer's still-developing multi-video-sequence preview path.
+- This does not prove real-time touch/seek behavior or MP4 correctness. Both preview and final export still require device/emulator verification before acceptance.
