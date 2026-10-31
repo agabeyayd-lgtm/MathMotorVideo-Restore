@@ -488,7 +488,17 @@ This is a layout target, not a claim that all behaviors are implemented. Gesture
 
 - Emulator screenshot run #477 built the debug APK successfully but the editor process crashed on launch before the fixture video could be imported.
 - The actual exception was `IllegalStateException: The specified child already has a parent` at `VideoEditorActivity.refreshTimelineTracks$makeLane(VideoEditorActivity.kt:1646)`.
-- Root cause: the live time label was still attached to an unused legacy `playheadRow`, then `makeLane()` attempted to attach the same View to the ruler lane. The obsolete parent attachment was removed; the time label is now created detached and attached only by the ruler lane.
+- Initial root cause: the live time label was still attached to the obsolete `playheadRow`; that legacy attachment was removed in the first fix. A later responsive refresh exposed a second reparenting path in which the label remained attached to the previous ruler row. The follow-up fix is recorded below.
 - Fix commit: `fef3116d0eb6c9394915b9663f82efda5406ef5e`.
 - [ ] Run targeted compiler/unit + emulator launch/import verification on the fix commit; inspect a fresh screenshot. Do not count the failed #477 run as a visual or functional pass.
 - PR #11 remains draft and unmerged. Version 395 remains blocked.
+
+
+## Responsive timeline refresh — ruler label reparenting follow-up (2026-10-31, PR #11)
+
+- The fresh PR-head emulator run `41192048687` built and launched the app, but fixture import triggered a second `IllegalStateException: The specified child already has a parent` at `makeLane()` line 1653.
+- Root cause: the persistent time-label View had been attached to the previous ruler row. `refreshTimelineTracks()` removed the old lane from the timeline container but did not detach the label from that old parent; the next responsive layout refresh tried to attach the same View to the rebuilt ruler row.
+- Fix commit `4c1e9cd71af19f5e90d13b33b27e3a633d99f90f` explicitly removes the time label from its current parent before clearing and rebuilding timeline rows.
+- On the parent commit, APK build `41192048694` and Verify/unit/build `41192048740` passed; emulator UI run `41192048687` failed on the reparenting issue above. Those are not verification results for the new fix commit.
+- [ ] Re-run PR-head compile/unit, debug APK and emulator fixture-import/screenshot checks on `4c1e9cd71af19f5e90d13b33b27e3a633d99f90f`. Inspect the screenshot and verify the time label, playhead and ruler still align after repeated layout refreshes.
+- PR #11 remains draft and unmerged. Version 395 remains blocked; installed 394/build 61 remains unchanged.
