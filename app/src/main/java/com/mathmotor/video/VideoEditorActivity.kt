@@ -1570,7 +1570,10 @@ class VideoEditorActivity : Activity() {
                 compactEditorLayout = viewportDp < 900
                 shortCompactEditorLayout = viewportDp < 700
                 updateClipCarouselVisibility()
-                val previewRatio = if (viewportDp < 650) 0.40f else 0.45f
+                // A 40% preview leaves the fixed status row and 46dp dock clipped on 640dp phones.
+                // Give the preview a little less vertical space on the shortest screens so
+                // every bottom tool keeps its full touch target without scrolling the dock.
+                val previewRatio = if (viewportDp < 650) 0.34f else 0.45f
                 previewDefaultStageHeightDp = (viewportDp * previewRatio).toInt().coerceIn(150, 400)
                 previewStageHeightDp = previewDefaultStageHeightDp
                 previewHeightAutoSized = true
