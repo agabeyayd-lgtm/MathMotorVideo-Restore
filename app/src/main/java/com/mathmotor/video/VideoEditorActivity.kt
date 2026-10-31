@@ -401,17 +401,30 @@ class VideoEditorActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        topBar.addView(miniButton("‹ Geri") { finish() },
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(44)))
-        val heading = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(10), 0, dp(4), 0)
-            addView(label("Video Projesi", 14f, Color.WHITE, true))
-        }
-        topBar.addView(heading, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        topBar.addView(miniButton("Dışa aktar ›") { showEditorPanel("export") },
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(42)))
+        topBar.addView(miniButton("×") { finish() }.apply {
+            textSize = 27f
+            contentDescription = "Düzenleyiciyi kapat"
+            background = android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
+        }, LinearLayout.LayoutParams(dp(42), dp(44)))
+        topBar.addView(miniButton("⌕") { chooseVideo(true) }.apply {
+            textSize = 25f
+            contentDescription = "Galeriden video ara"
+            background = android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
+        }, LinearLayout.LayoutParams(dp(42), dp(44)))
+        topBar.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
+        topBar.addView(miniButton("YZ UHD ▾") { showEditorPanel("export") }.apply {
+            contentDescription = "Çıkış çözünürlüğünü seç"
+        }, LinearLayout.LayoutParams(dp(96), dp(42)).apply { rightMargin = dp(7) })
+        topBar.addView(miniButton("Dışa Aktar") { showEditorPanel("export") }.apply {
+            setTextColor(Color.rgb(4, 27, 31))
+            textSize = 13f
+            typeface = Typeface.DEFAULT_BOLD
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.rgb(42, 211, 218))
+                cornerRadius = dp(9).toFloat()
+            }
+            contentDescription = "Dışa aktarma ayarlarını aç"
+        }, LinearLayout.LayoutParams(dp(108), dp(42)))
         root.addView(topBar, matchWrap())
         root.addView(gap(6))
 
@@ -2581,13 +2594,7 @@ class VideoEditorActivity : Activity() {
         // The red playhead is a viewport guide, not a moving timeline item.
         params.leftMargin = centerX - dp(14)
         timelinePlayheadLine.layoutParams = params
-        if (::timelinePlayButton.isInitialized) {
-            val playbackRow = timelinePlayButton.parent as? View
-            if (playbackRow != null && playbackRow.width > 0) {
-                // Use the exact same measured center as the red line, including lane gutters.
-                timelinePlayButton.translationX = centerX - playbackRow.width / 2f
-            }
-        }
+        // Playback remains centered under the preview; the timeline playhead is a separate guide.
         timelinePlayheadLine.bringToFront()
     }
 
