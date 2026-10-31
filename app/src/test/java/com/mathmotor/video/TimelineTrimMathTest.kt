@@ -177,3 +177,73 @@ class TimelineRangeMathTest {
         )
     }
 }
+
+
+class TimelineVideoMathTest {
+    @Test
+    fun totalDurationUsesFurthestEndInsteadOfAddingOverlaps() {
+        val segments = listOf(
+            TimelineVideoSegment(0L, 0L, 5_000L, 5_000L),
+            TimelineVideoSegment(2_000L, 0L, 4_000L, 4_000L),
+            TimelineVideoSegment(9_000L, 500L, 2_000L, 2_000L)
+        )
+        assertEquals(10_500L, TimelineVideoMath.totalDuration(segments))
+    }
+
+    @Test
+    fun overlapSelectsTopLayerAndGapSelectsNoClip() {
+        val segments = listOf(
+            TimelineVideoSegment(0L, 0L, 5_000L, 5_000L),
+            TimelineVideoSegment(2_000L, 0L, 4_000L, 4_000L)
+        )
+        assertEquals(0, TimelineVideoMath.activeSegmentIndexAt(segments, 1_000L))
+        assertEquals(1, TimelineVideoMath.activeSegmentIndexAt(segments, 2_500L))
+        assertEquals(null, TimelineVideoMath.activeSegmentIndexAt(segments, 6_000L))
+    }
+
+    @Test
+    fun movePreservesSourceRangeAndDoesNotAlterOtherSegment() {
+        val source = TimelineVideoSegment(0L, 1_000L, 4_000L, 8_000L)
+        val independent = TimelineVideoSegment(7_000L, 0L, 2_000L, 2_000L)
+        assertEquals(
+            TimelineVideoSegment(5_000L, 1_000L, 4_000L, 8_000L),
+            TimelineVideoMath.move(source, 5_000L)
+        )
+        assertEquals(TimelineVideoSegment(7_000L, 0L, 2_000L, 2_000L), independent)
+    }
+
+    @Test
+    fun leftTrimMovesProjectStartAndSourceInTogether() {
+        val source = TimelineVideoSegment(3_000L, 2_000L, 8_000L, 10_000L)
+        assertEquals(
+            TimelineVideoSegment(4_000L, 3_000L, 8_000L, 10_000L),
+            TimelineVideoMath.trimStart(source, 1_000L)
+        )
+        assertEquals(
+            TimelineVideoSegment(1_000L, 0L, 8_000L, 10_000L),
+            TimelineVideoMath.trimStart(source, -3_000L)
+        )
+    }
+
+    @Test
+    fun rightTrimChangesOnlySourceOutAndRespectsMinimumSpan() {
+        val source = TimelineVideoSegment(3_000L, 2_000L, 8_000L, 10_000L)
+        assertEquals(
+            TimelineVideoSegment(3_000L, 2_000L, 9_000L, 10_000L),
+            TimelineVideoMath.trimEnd(source, 1_000L)
+        )
+        assertEquals(
+            TimelineVideoSegment(3_000L, 2_000L, 2_500L, 10_000L),
+            TimelineVideoMath.trimEnd(source, -9_000L)
+        )
+    }
+
+    @Test
+    fun leftTrimCannotCrossProjectOrSourceZero() {
+        val source = TimelineVideoSegment(500L, 2_000L, 5_000L, 8_000L)
+        assertEquals(
+            TimelineVideoSegment(0L, 1_500L, 5_000L, 8_000L),
+            TimelineVideoMath.trimStart(source, -5_000L)
+        )
+    }
+}

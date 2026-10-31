@@ -222,3 +222,80 @@ internal object TimelineRangeMath {
         )
     }
 }
+
+
+/** A source-trimmed video clip placed at an independent project-timeline position. */
+internal data class TimelineVideoSegment(
+    val timelineStartMs: Long,
+    val sourceStartMs: Long,
+    val sourceEndMs: Long,
+    val sourceDurationMs: Long
+) {
+    val durationMs: Long get() = (sourceEndMs - sourceStartMs).coerceAtLeast(0L)
+    val timelineEndMs: Long get() = timelineStartMs.coerceAtLeast(0L) + durationMs
+}
+
+/** Independent video placement, overlap selection and edge-trim math. */
+internal object TimelineVideoMath {
+    fun normalize(segment: TimelineVideoSegment): TimelineVideoSegment {
+        val sourceDuration = segment.sourceDurationMs.coerceAtLeast(0L)
+        val sourceStart = segment.sourceStartMs.coerceIn(0L, sourceDuration)
+        val sourceEnd = segment.sourceEndMs.coerceIn(sourceStart, sourceDuration)
+        return segment.copy(
+            timelineStartMs = segment.timelineStartMs.coerceAtLeast(0L),
+            sourceStartMs = sourceStart,
+            sourceEndMs = sourceEnd,
+            sourceDurationMs = sourceDuration
+        )
+    }
+
+    fun totalDuration(segments: List<TimelineVideoSegment>): Long =
+        segments.maxOfOrNull { normalize(it).timelineEndMs } ?: 0L
+
+    /** Last clip in layer order is topmost when time ranges overlap. */
+    fun activeSegmentIndexAt(segments: List<TimelineVideoSegment>, projectTimeMs: Long): Int? {
+        if (projectTimeMs < 0L) return null
+        return segments.indices.reversed().firstOrNull { index ->
+            val safe = normalize(segments[index])
+            safe.durationMs > 0L &&
+                projectTimeMs >= safe.timelineStartMs && projectTimeMs < safe.timelineEndMs
+        }
+    }
+
+    fun move(segment: TimelineVideoSegment, requestedStartMs: Long): TimelineVideoSegment =
+        normalize(segment).copy(timelineStartMs = requestedStartMs.coerceAtLeast(0L))
+
+    /** Left trim advances source in-point and project start together. */
+    fun trimStart(
+        segment: TimelineVideoSegment,
+        deltaMs: Long,
+        minimumDurationMs: Long = 500L
+    ): TimelineVideoSegment {
+        val safe = normalize(segment)
+        if (safe.durationMs <= 0L) return safe
+        val minimum = minimumDurationMs.coerceAtLeast(1L).coerceAtMost(safe.durationMs)
+        val delta = deltaMs.coerceIn(
+            -minOf(safe.timelineStartMs, safe.sourceStartMs),
+            (safe.durationMs - minimum).coerceAtLeast(0L)
+        )
+        return safe.copy(
+            timelineStartMs = safe.timelineStartMs + delta,
+            sourceStartMs = safe.sourceStartMs + delta
+        )
+    }
+
+    /** Right trim changes source out-point only. */
+    fun trimEnd(
+        segment: TimelineVideoSegment,
+        deltaMs: Long,
+        minimumDurationMs: Long = 500L
+    ): TimelineVideoSegment {
+        val safe = normalize(segment)
+        if (safe.durationMs <= 0L) return safe
+        val minimum = minimumDurationMs.coerceAtLeast(1L).coerceAtMost(safe.durationMs)
+        val minimumEnd = (safe.sourceStartMs + minimum).coerceAtMost(safe.sourceDurationMs)
+        return safe.copy(
+            sourceEndMs = (safe.sourceEndMs + deltaMs).coerceIn(minimumEnd, safe.sourceDurationMs)
+        )
+    }
+}
