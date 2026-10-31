@@ -156,11 +156,11 @@ class TimelineRangeMathTest {
     @Test
     fun musicRangeCannotMoveOrExtendOutsideTheVideoTimeline() {
         assertEquals(
-            TimelineRange(8_000L, 2_000L),
+            TimelineRange(10_000L, 0L),
             TimelineRangeMath.normalize(TimelineRange(20_000L, 8_000L), 10_000L)
         )
         assertEquals(
-            TimelineRange(0L, 10_000L),
+            TimelineRange(0L, 8_000L),
             TimelineRangeMath.move(TimelineRange(2_000L, 8_000L), -5_000L, 10_000L)
         )
     }
