@@ -369,3 +369,11 @@ These are new release-blocking UI/interaction requirements. They are recorded as
 - [x] Selected tool receives a restrained accent highlight; closing it restores the neutral dock.
 - [ ] Confirm the dock remains visible at the bottom on portrait and compact screens, including with contextual panels and keyboard.
 - [ ] Review icon glyph legibility and touch target sizing on device. This is not yet visual acceptance.
+
+
+## Verify #202 compile failure — targeted correction (2026-10-31)
+
+- [x] Inspected Verify run #202 job log. The failures were Kotlin compile errors in the new timeline ScrollView wrapper: `ScrollView.LayoutParams` was not a resolvable type at the call/cast sites, and the initial responsive-layout block declared `previewParams` twice.
+- [x] Replaced those references with `FrameLayout.LayoutParams` (the inherited child-param class used by ScrollView) and removed the obsolete second fixed-height preview declaration in commit `e65c6a736f41c118613748b276e493ef42feee77`.
+- [ ] Verify the correction with a fresh Kotlin compile/unit-test/Debug APK run. Do not repeat the failed workflow without this source correction.
+- [ ] Emulator screenshot and touch validation remain pending. Keep PR #11 draft and version 395 blocked.
