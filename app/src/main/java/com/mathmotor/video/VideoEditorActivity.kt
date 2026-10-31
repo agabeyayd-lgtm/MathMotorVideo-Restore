@@ -4451,9 +4451,10 @@ class VideoEditorActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(Color.rgb(26, 37, 51))
         }
-        // At the default 22 dp/s scale, a 24 dp slot yields about one frame per second.
-        // Keep the filmstrip legible without flooding the two-worker decoder queue.
-        val thumbnailCount = (width / dp(24)).coerceIn(2, 32)
+        // Match the reference's dense, continuous CapCut-style filmstrip: use narrower
+        // thumbnail slots so short clips still show several distinct frames at phone size.
+        // Keep a hard cap to bound decoder work and bitmap-cache pressure on long clips.
+        val thumbnailCount = (width / dp(12)).coerceIn(3, 48)
         repeat(thumbnailCount) { slot ->
             val image = ImageView(this).apply {
                 scaleType = ImageView.ScaleType.CENTER_CROP
