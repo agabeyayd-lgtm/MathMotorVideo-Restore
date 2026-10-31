@@ -517,9 +517,11 @@ class VideoEditorActivity : Activity() {
             setPadding(0, dp(6), 0, dp(5))
         }
         clipScroll.addView(clipList)
+        // Keep the clip list and selection state alive, but remove its redundant visible header strip.
+        clipScroll.visibility = View.GONE
         timelineCard.addView(clipScroll, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, 0
-        ).apply { visibility = View.GONE })
+        ))
         timelineTracksFrame = FrameLayout(this)
         timelineTracks = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         timelineTracksFrame.addView(
