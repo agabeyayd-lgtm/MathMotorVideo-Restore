@@ -407,7 +407,7 @@ class VideoEditorActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(10), 0, dp(4), 0)
-            addView(label("Yeni proje", 15f, Color.WHITE, true))
+            addView(label("Video Projesi", 14f, Color.WHITE, true))
         }
         topBar.addView(heading, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         topBar.addView(miniButton("Dışa aktar ›") { showEditorPanel("export") },
