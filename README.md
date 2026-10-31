@@ -610,3 +610,18 @@ This is a layout target, not a claim that all behaviors are implemented. Gesture
 - [ ] Verify the plus placement at the beginning, middle and end of a horizontally scrolled timeline, with keyboard-open and compact-height layouts.
 - [ ] Verify the empty-project state uses the same restrained plus affordance in the video lane.
 - Source implementation added on PR #11 head commit `d61f7851aa4c6cff59505c38d598a5b22a219505`; this is implementation only. Leave all acceptance items unchecked until fresh build and interaction-level verification pass.
+
+
+## 2026-10-31 — clip selection, trim handles and whole-second ruler (PR #11)
+
+- [x] Clip trim handles are hidden until the user explicitly taps a clip in the timeline.
+- [x] Explicitly selected clips use a white selection outline and reveal only their own left/right trim handles.
+- [x] Selecting a clip opens the contextual clip-edit panel; tapping blank space in the video lane clears the visible selection and hides the clip panel.
+- [x] Long-press feedback scales the clip down while it is held for repositioning; the scale returns to normal on release/cancel.
+- [x] Ruler tick intervals now use whole seconds or larger (1, 2, 5, 10 …), never fractional-second labels such as 0.1 / 0.5.
+- [ ] Verify one-tap selection, deselection on blank space, white outline, handle visibility/hit targets, trim/extend behavior, and contextual panel on emulator.
+- [ ] Verify long-press shrink feedback and independent clip repositioning without moving other tracks.
+- [ ] Verify ruler labels at minimum, fitted and maximum zoom; labels must remain readable and integer-second based.
+- [ ] Video preview drag/pinch/rotate transforms are not yet implemented for video clips; existing preview gesture support is for text overlays. Keep this separate from timeline selection/trim acceptance.
+- [ ] Verify timeline scrub stays within actual video segments and preview never shows black frames outside valid clip ranges.
+- PR #11 remains draft/unmerged. Installed version 394/build 61 remains unchanged. Do not create or publish version 395.
