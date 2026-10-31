@@ -631,7 +631,12 @@ class VideoEditorActivity : Activity() {
             val span = pointerSpan(event)
             if (span <= 0f || pinchStartSpanPx <= 0f) return
             val nextZoom = (pinchStartZoom * span / pinchStartSpanPx).coerceIn(0.5f, 8.0f)
-            if (kotlin.math.abs(nextZoom - lastAppliedPinchZoom) < 0.025f) return
+            val zoomDelta = kotlin.math.abs(nextZoom - lastAppliedPinchZoom)
+            // Ignore tiny finger jitter during ordinary zooming, but never let that
+            // dead zone prevent the gesture from reaching an exact min/max clamp.
+            // Also avoid rebuilding the timeline repeatedly after the clamp is reached.
+            if (zoomDelta < 0.0001f) return
+            if (zoomDelta < 0.025f && nextZoom > 0.5f && nextZoom < 8.0f) return
 
             timelineZoom = nextZoom
             lastAppliedPinchZoom = nextZoom

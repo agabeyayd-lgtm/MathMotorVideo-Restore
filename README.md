@@ -315,3 +315,13 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - Targeted source correction committed for validation: when a compact layout has the Clip panel open, cap the preview stage at 320dp (retain the existing 180dp short-phone treatment). This preserves the tall-phone preview's 320dp minimum while returning vertical space to the add-video action. Instrumentation failure strings now interpolate the actual visible bounds instead of printing a literal placeholder.
 - Validation is still **pending** until the next PR-triggered emulator run passes the 44dp/120dp action-size assertion, verifies the action remains above the dock, captures the loaded-video layout and completes the ruler checks. Do not close the gate based on source code or APK build alone.
 - Version remains 394/build 61. Version 395 remains blocked; no version bump, signing, publishing, or updater activation.
+
+
+### Timeline zoom minimum boundary — #407 diagnosed and pinch dead-zone fixed (2026-10-31)
+
+- [Run #407 — FAILURE](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41149638796): unit tests, Debug APK build and deterministic fixture preparation passed. The tall-phone empty-editor action assertions and loaded-video layout checks were passed; the test proceeded to the ruler zoom boundary checks.
+- The only assertion failure was `Timeline zoom did not reach requested clamp 50%; actual=51%` (`EmulatorScreenshotTest.kt:371/402`). Instrumentation logcat showed the internal zoom stopping at `0.51714116` after the first pinch sequence.
+- Root cause in `VideoEditorActivity.updateTimelinePinch`: all changes smaller than `0.025f` were ignored, including the final 0.0171 difference needed to clamp from 51.7% to 50%. The remaining repeated pinch attempts therefore could not enter the minimum boundary; this is an app gesture dead-zone, not an emulator shutdown or build error.
+- Targeted source correction committed for validation: retain the 0.025f jitter filter during normal zooming, but allow a small change that reaches the exact 0.5x or 8.0x clamp. Skip only effectively identical values (`<0.0001f`) after a limit has already been reached, preventing repeated rebuilds at the clamp.
+- Next validation must confirm both the 50% minimum and 800% maximum, verify 5,000ms and 250ms ruler intervals respectively, and complete the screenshot/interaction workflow. The tall-phone action fix is evidenced by this run advancing beyond that assertion, but keep the broader visual/physical-device acceptance open until screenshots are inspected and device review is done.
+- Version remains 394/build 61. Version 395 remains blocked; no version bump, signing, publishing, or updater activation.
