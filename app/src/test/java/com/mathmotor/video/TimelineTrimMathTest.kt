@@ -66,3 +66,61 @@ class TimelineTrimMathTest {
         }
     }
 }
+
+
+class TimelineAudioMathTest {
+    @Test
+    fun movingAnAudioItemKeepsItsSourceTrimAndDuration() {
+        val original = TimelineAudioSegment(
+            timelineStartMs = 2_000L,
+            sourceStartMs = 1_500L,
+            durationMs = 3_000L
+        )
+        assertEquals(
+            TimelineAudioSegment(5_000L, 1_500L, 3_000L),
+            TimelineAudioMath.move(original, 5_000L, 10_000L, 10_000L)
+        )
+        assertEquals(
+            TimelineAudioSegment(7_000L, 1_500L, 3_000L),
+            TimelineAudioMath.move(original, 99_000L, 10_000L, 10_000L)
+        )
+    }
+
+    @Test
+    fun trimmingStartChangesTimelineAndSourceStartTogether() {
+        val original = TimelineAudioSegment(2_000L, 1_000L, 5_000L)
+        assertEquals(
+            TimelineAudioSegment(3_000L, 2_000L, 4_000L),
+            TimelineAudioMath.trimStart(original, 1_000L, 10_000L, 10_000L)
+        )
+        assertEquals(
+            TimelineAudioSegment(1_000L, 0L, 6_000L),
+            TimelineAudioMath.trimStart(original, -2_000L, 10_000L, 10_000L)
+        )
+    }
+
+    @Test
+    fun trimmingEndRespectsSourceAndProjectBoundaries() {
+        val original = TimelineAudioSegment(2_000L, 1_000L, 4_000L)
+        assertEquals(
+            TimelineAudioSegment(2_000L, 1_000L, 6_000L),
+            TimelineAudioMath.trimEnd(original, 2_000L, 10_000L, 10_000L)
+        )
+        assertEquals(
+            TimelineAudioSegment(2_000L, 1_000L, 100L),
+            TimelineAudioMath.trimEnd(original, -9_000L, 10_000L, 10_000L)
+        )
+    }
+
+    @Test
+    fun normalizationPreventsAudioItemsFromLeavingSourceOrTimeline() {
+        assertEquals(
+            TimelineAudioSegment(8_000L, 9_000L, 1_000L),
+            TimelineAudioMath.normalize(
+                TimelineAudioSegment(20_000L, 15_000L, 9_000L),
+                sourceDurationMs = 10_000L,
+                timelineDurationMs = 9_000L
+            )
+        )
+    }
+}
