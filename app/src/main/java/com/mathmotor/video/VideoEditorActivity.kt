@@ -3587,7 +3587,7 @@ class VideoEditorActivity : Activity() {
                 refreshClipList()
                 loadTrimControls()
                 refreshTimelineTracks()
-                status.text = "${title} eklendi. Kesme aralığını seçebilirsin."
+                status.text = "Video eklendi. Kesme aralığını seçebilirsin."
                 // A debug-only signal lets CI verify clip import even when the
                 // emulator accessibility tree cannot be captured reliably.
                 if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) android.util.Log.i(
