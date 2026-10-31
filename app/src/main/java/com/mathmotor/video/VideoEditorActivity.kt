@@ -174,7 +174,9 @@ class VideoEditorActivity : Activity() {
     private var pendingTimelineScrollX: Int? = null
     private var timelineZoom = 1.0f
     private var deferTimelineRefresh = false
-    private val timelineThumbnailCache = object : android.util.LruCache<String, Bitmap>(384) {}
+    private val timelineThumbnailCache = object : android.util.LruCache<String, Bitmap>(16 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount.coerceAtLeast(1)
+    }
     private val pendingTimelineThumbnails = mutableMapOf<String, MutableList<WeakReference<ImageView>>>()
     private val timelineThumbnailExecutor = java.util.concurrent.Executors.newFixedThreadPool(2)
     private lateinit var timelinePlayheadSeek: SeekBar
@@ -3612,7 +3614,8 @@ class VideoEditorActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(Color.rgb(26, 37, 51))
         }
-        // Cap decode work per clip to keep long timelines responsive and avoid a stale queue.
+        // At the default 22 dp/s scale, a 24 dp slot yields about one frame per second.
+        // Keep the filmstrip legible without flooding the two-worker decoder queue.
         val thumbnailCount = (width / dp(24)).coerceIn(2, 32)
         repeat(thumbnailCount) { slot ->
             val image = ImageView(this).apply {
@@ -3773,8 +3776,8 @@ class VideoEditorActivity : Activity() {
                     retriever.getScaledFrameAtTime(
                         frameTimeUs,
                         MediaMetadataRetriever.OPTION_CLOSEST,
-                        96,
-                        54
+                        192,
+                        108
                     )
                 }.getOrNull()
             } else {
@@ -3802,7 +3805,7 @@ class VideoEditorActivity : Activity() {
         var frameFuture: java.util.concurrent.Future<FrameExtractor.Frame>? = null
         try {
             val createdExtractor = FrameExtractor.Builder(this, MediaItem.fromUri(uri))
-                .setEffects(listOf(Presentation.createForHeight(96)))
+                .setEffects(listOf(Presentation.createForHeight(108)))
                 .build()
             extractor = createdExtractor
             val future = createdExtractor.getFrame(timeMs.coerceAtLeast(0L))
