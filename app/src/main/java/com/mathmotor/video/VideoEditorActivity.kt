@@ -2728,7 +2728,8 @@ class VideoEditorActivity : Activity() {
     private fun timelineEndSpacerWidth(viewportWidth: Int = 0): Int =
         TimelineScaleMath.endSpacerWidthForCenteredPlayhead(
             timelineFrameWidth(viewportWidth),
-            dp(57)
+            dp(57),
+            dp(3)
         )
 
     private fun ensureTrimHandlesReachable(index: Int): Boolean {
