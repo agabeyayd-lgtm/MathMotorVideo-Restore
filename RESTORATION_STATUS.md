@@ -625,3 +625,10 @@ This is a layout target, not a claim that all behaviors are implemented. Gesture
 - [ ] Save and reopen a project; verify per-clip transforms persist and old version-1 projects still open.
 
 This is an implementation change, not device acceptance. PR #11 remains draft. Installed version 394/build 61 remains unchanged; version 395 stays blocked.
+
+
+### Transform math test coverage update — 2026-10-31
+
+- [x] Extract transform normalization and 3×3 matrix-value generation into pure `ClipTransformMath`.
+- [x] Add unit tests for identity, combined scale/rotation/translation, boundary normalization, non-finite values and rotation scale preservation.
+- [ ] Run the new transform unit tests on the current PR head. Earlier green Verify #309 predates this helper/test extraction and does not verify these new tests.
