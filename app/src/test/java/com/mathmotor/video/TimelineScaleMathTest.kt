@@ -216,17 +216,20 @@ class TimelineScaleMathTest {
     }
 
     @Test
-    fun rulerTickSpacingAdaptsToPxPerSecond() {
-        assertEquals(2_500L, TimelineScaleMath.rulerStepMs(22f, 48f))
+    fun rulerTickSpacingAdaptsWithoutFractionalSeconds() {
+        assertEquals(3_000L, TimelineScaleMath.rulerStepMs(22f, 48f))
         assertEquals(1_000L, TimelineScaleMath.rulerStepMs(83f, 48f))
         assertEquals(5_000L, TimelineScaleMath.rulerStepMs(11f, 48f))
+        listOf(11f, 22f, 83f, 176f).forEach { scale ->
+            assertEquals(0L, TimelineScaleMath.rulerStepMs(scale, 48f) % 1_000L)
+        }
     }
 
     @Test
-    fun rulerLabelsFormatMinutesAndSeconds() {
+    fun rulerLabelsFormatWholeSecondsAndMinutes() {
         assertEquals("0", TimelineScaleMath.formatRulerTime(0L))
+        assertEquals("3", TimelineScaleMath.formatRulerTime(3_000L))
         assertEquals("5", TimelineScaleMath.formatRulerTime(5_000L))
-        assertEquals("2.5", TimelineScaleMath.formatRulerTime(2_500L))
         assertEquals("1:05", TimelineScaleMath.formatRulerTime(65_000L))
     }
 
