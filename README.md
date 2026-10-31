@@ -253,3 +253,12 @@ These are new release-blocking UI/interaction requirements. They are recorded as
 - Manual horizontal scrolling of the primary lane updates the project time beneath the center guide and seeks the preview; the existing lane-scroll synchronization keeps the other lanes aligned.
 - The filmstrip thumbnail slot count already derives from rendered clip width, so it increases with zoom-in and decreases with zoom-out. This is adaptive density groundwork; the full gesture/visual acceptance is still pending.
 - Verification: PR-head Android build and unit-test workflows are running for the implementation commits. Do not mark the behavior complete until CI succeeds and center-follow, manual-scroll scrubbing, zoom, and small-screen behavior are checked on a device/emulator.
+
+
+### Anchored zoom start-boundary correction — 2026-10-31
+
+- CI on the previous helper commit found one failing unit test: `zoomAnchorClampsAtTimelineStart` (44 other tests passed; Kotlin compilation completed).
+- Root cause: an anchor timestamp of zero could produce a positive scroll offset when the finger midpoint was inside the fixed label gutter.
+- Corrected `scrollForAnchoredZoom` to clamp a zero/start timestamp directly to scroll offset zero.
+- This is a boundary-math fix only. Actual two-finger gesture integration and device verification remain pending; do not treat pinch zoom as implemented.
+- Re-run CI on the correction before proceeding. PR #11 remains draft; version 395 remains blocked.
