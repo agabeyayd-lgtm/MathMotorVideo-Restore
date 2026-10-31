@@ -4467,17 +4467,24 @@ class VideoEditorActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(Color.rgb(26, 37, 51))
         }
-        // Match the reference's dense, continuous CapCut-style filmstrip: use narrower
-        // thumbnail slots so short clips still show several distinct frames at phone size.
-        // Keep a hard cap to bound decoder work and bitmap-cache pressure on long clips.
-        val thumbnailCount = (width / dp(12)).coerceIn(3, 48)
+        // Render a readable, continuous filmstrip: each frame gets a near-fixed
+        // 52dp-wide cell instead of the previous 12dp sliver. The cells fill the clip
+        // exactly, so there is no second independently moving strip behind them.
+        // Bound the count to keep thumbnail decoding and cache pressure predictable.
+        val targetThumbnailWidth = dp(52).coerceAtLeast(1)
+        val thumbnailCount = kotlin.math.ceil(width.toDouble() / targetThumbnailWidth)
+            .toInt().coerceIn(1, 32)
+        val thumbnailCellWidth = (width / thumbnailCount).coerceAtLeast(1)
         repeat(thumbnailCount) { slot ->
             val image = ImageView(this).apply {
                 scaleType = ImageView.ScaleType.CENTER_CROP
                 setBackgroundColor(Color.rgb(31, 46, 59))
                 contentDescription = "Klip karesi"
             }
-            filmstrip.addView(image, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply {
+            val cellWidth = if (slot == thumbnailCount - 1) {
+                (width - thumbnailCellWidth * slot).coerceAtLeast(1)
+            } else thumbnailCellWidth
+            filmstrip.addView(image, LinearLayout.LayoutParams(cellWidth, ViewGroup.LayoutParams.MATCH_PARENT).apply {
                 if (slot < thumbnailCount - 1) rightMargin = dp(1)
             })
             val frameTime = clip.startMs + (durationMs * (slot + 1L) / (thumbnailCount + 1L))
