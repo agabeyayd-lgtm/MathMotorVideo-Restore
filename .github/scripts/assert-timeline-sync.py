@@ -90,8 +90,11 @@ for index, sample in enumerate(samples):
             f"FAIL: timeline lane count changed at sample {index}: "
             f"expected {lane_count}, scrolls={len(scrolls)}, origins={len(origins)}."
         )
-    if any(value < 0 for value in origins):
-        raise SystemExit(f"FAIL: a lane's time-zero origin could not be measured: {origins}.")
+    # A time-zero edge may legitimately move left of the screen while the
+    # fixed playhead advances. Only the explicit Int.MIN_VALUE sentinel means
+    # the origin view could not be found.
+    if any(value == -2147483648 for value in origins):
+        raise SystemExit(f"FAIL: a lane's time-zero origin view could not be found: {origins}.")
     if len(set(origins)) != 1:
         raise SystemExit(f"FAIL: ruler/video time-zero edges do not align: {origins}.")
     if abs(int(origins[0]) + int(scrolls[0]) - center) > 1:
