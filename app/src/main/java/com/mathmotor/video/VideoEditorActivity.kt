@@ -101,6 +101,9 @@ class VideoEditorActivity : Activity() {
     private var musicSourceDurationMs: Long = 0L
     private var musicSourceStartMs: Long = 0L
     private var musicSourceEndMs: Long = 0L
+    private lateinit var musicSourceRangeLabel: TextView
+    private lateinit var musicSourceStartSeek: SeekBar
+    private lateinit var musicSourceEndSeek: SeekBar
     private var musicStartMs: Long = 0L
     private var musicDurationMs: Long = 0L
     private var soundUri: Uri? = null
@@ -878,6 +881,9 @@ class VideoEditorActivity : Activity() {
             musicSourceEndMs = 0L
             musicStartMs = 0L
             musicDurationMs = 0L
+            if (::musicSourceRangeLabel.isInitialized) musicSourceRangeLabel.text = "Müzik seçilmedi."
+            if (::musicSourceStartSeek.isInitialized) musicSourceStartSeek.progress = 0
+            if (::musicSourceEndSeek.isInitialized) musicSourceEndSeek.progress = 1000
             musicLabel.text = "Müzik seçilmedi."
             refreshTimelineTracks()
         }, LinearLayout.LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(5) })
@@ -891,6 +897,34 @@ class VideoEditorActivity : Activity() {
             musicPreviewPlayer?.volume = value / 100f
         })
         audioPanel.addView(musicVolumeSeek, matchWrap())
+
+        musicSourceRangeLabel = label("Müzik kaynak aralığı: tüm dosya", 12f, Color.WHITE, true)
+        audioPanel.addView(musicSourceRangeLabel)
+        musicSourceStartSeek = SeekBar(this).apply { max = 1000; progress = 0; contentDescription = "Müzik dosyası başlangıç noktası" }
+        musicSourceEndSeek = SeekBar(this).apply { max = 1000; progress = 1000; contentDescription = "Müzik dosyası bitiş noktası" }
+        val sourceRangeListener = object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (!fromUser || musicSourceDurationMs <= 0L) return
+                val requested = progress.toLong() * musicSourceDurationMs / 1000L
+                val current = MusicSourceRange(musicSourceStartMs, musicSourceEndMs)
+                val updated = if (seekBar === musicSourceStartSeek)
+                    MusicSourceRangeMath.start(current, requested, musicSourceDurationMs)
+                else MusicSourceRangeMath.end(current, requested, musicSourceDurationMs)
+                musicSourceStartMs = updated.startMs
+                musicSourceEndMs = updated.endMs
+                musicSourceRangeLabel.text = "Dosya içi: ${formatTimelineMs(updated.startMs)} – ${formatTimelineMs(updated.endMs)}"
+                musicPreviewPlayer?.pause()
+                refreshTimelineTracks()
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) { player?.playWhenReady = false }
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        }
+        musicSourceStartSeek.setOnSeekBarChangeListener(sourceRangeListener)
+        musicSourceEndSeek.setOnSeekBarChangeListener(sourceRangeListener)
+        audioPanel.addView(label("Dosya içi başlangıç", 11f, Color.LTGRAY, false))
+        audioPanel.addView(musicSourceStartSeek, matchWrap())
+        audioPanel.addView(label("Dosya içi bitiş", 11f, Color.LTGRAY, false))
+        audioPanel.addView(musicSourceEndSeek, matchWrap())
 
         audioPanel.addView(gap(4))
         soundLabel = label("Ses efekti seçilmedi.", 12f, Color.WHITE, false)
@@ -3634,6 +3668,9 @@ class VideoEditorActivity : Activity() {
                             musicSourceStartMs = 0L
                             musicSourceEndMs = duration
                             musicStartMs = 0L
+                            if (::musicSourceStartSeek.isInitialized) musicSourceStartSeek.progress = 0
+                            if (::musicSourceEndSeek.isInitialized) musicSourceEndSeek.progress = 1000
+                            if (::musicSourceRangeLabel.isInitialized) musicSourceRangeLabel.text = "Dosya içi: 00:00 – ${formatTimelineMs(duration)}"
                             musicDurationMs = totalOutputDurationMs().takeIf { it > 0L } ?: duration
                             updateMusicTimingLabel()
                             refreshTimelineTracks()
@@ -4532,7 +4569,8 @@ class VideoEditorActivity : Activity() {
                 outputDurationMs
             )
             val sourceDurationMs = musicSourceDurationMs
-            if (musicRange.durationMs > 0L && sourceDurationMs <= 0L) {
+            val sourceRange = MusicSourceRangeMath.normalize(MusicSourceRange(musicSourceStartMs, musicSourceEndMs.takeIf { it > 0L } ?: sourceDurationMs), sourceDurationMs)
+            if (musicRange.durationMs > 0L && (sourceDurationMs <= 0L || sourceRange.durationMs <= 0L)) {
                 exporting = false
                 exportButton.isEnabled = true
                 status.text = "Müzik dosyasının süresi okunamadı. Projeyi yeniden açıp tekrar dene."
@@ -4545,13 +4583,13 @@ class VideoEditorActivity : Activity() {
                 if (musicRange.startMs > 0L) sequenceBuilder.addGap(musicRange.startMs * 1000L)
                 var remainingMs = musicRange.durationMs
                 while (remainingMs > 0L) {
-                    val chunkMs = minOf(sourceDurationMs, remainingMs)
+                    val chunkMs = minOf(sourceRange.durationMs, remainingMs)
                     val musicItem = MediaItem.Builder()
                         .setUri(uri)
                         .setClippingConfiguration(
                             MediaItem.ClippingConfiguration.Builder()
-                                .setStartPositionMs(0L)
-                                .setEndPositionMs(chunkMs)
+                                .setStartPositionMs(sourceRange.startMs)
+                                .setEndPositionMs(sourceRange.startMs + chunkMs)
                                 .build()
                         )
                         .build()
