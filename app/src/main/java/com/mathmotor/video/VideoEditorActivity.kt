@@ -4483,22 +4483,21 @@ class VideoEditorActivity : Activity() {
                 return minDelta*scale to maxDelta*scale
             }
             val handle = FrameLayout(this).apply {
-                background = android.graphics.drawable.GradientDrawable().apply {
-                    setColor(Color.rgb(0, 205, 177))
-                    cornerRadius = dp(4).toFloat()
-                    setStroke(dp(2), Color.WHITE)
-                }
+                // CapCut-style clean white trim edge: keep the wide transparent
+                // touch target, but remove the oversized turquoise arrow blocks.
+                setBackgroundColor(Color.TRANSPARENT)
                 elevation = dp(8).toFloat()
-                contentDescription = if (isStart) "Sol tutamaç: klibin başlangıcını sürükleyerek kısalt veya uzat" else "Sağ tutamaç: klibin bitişini sürükleyerek kısalt veya uzat"
-                val grip = TextView(this@VideoEditorActivity).apply {
-                    text = if (isStart) "❮" else "❯"
-                    textSize = 13f
-                    typeface = Typeface.DEFAULT_BOLD
-                    setTextColor(Color.WHITE)
-                    gravity = Gravity.CENTER
+                contentDescription = if (isStart) "Sol beyaz tutamaç: klibin başlangıcını sürükleyerek kısalt veya uzat" else "Sağ beyaz tutamaç: klibin bitişini sürükleyerek kısalt veya uzat"
+                val grip = View(this@VideoEditorActivity).apply {
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        setColor(Color.WHITE)
+                        cornerRadius = dp(3).toFloat()
+                    }
                     isClickable = false
                 }
-                addView(grip, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+                addView(grip, FrameLayout.LayoutParams(
+                    dp(5), dp(30), Gravity.CENTER
+                ))
                 var downRawX = 0f
                 var initialStartMs = clip.startMs
                 var initialEndMs = clip.endMs
