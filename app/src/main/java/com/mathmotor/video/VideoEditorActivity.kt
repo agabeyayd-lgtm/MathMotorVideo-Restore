@@ -8,6 +8,7 @@ import android.content.Intent
 import android.database.Cursor
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.Matrix
 import android.graphics.Typeface
 import android.media.MediaMetadataRetriever
 import android.net.Uri
@@ -49,6 +50,7 @@ import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.audio.ChannelMixingAudioProcessor
 import androidx.media3.common.audio.ChannelMixingMatrix
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.effect.MatrixTransformation
 import androidx.media3.effect.OverlayEffect
 import androidx.media3.effect.Presentation
 import androidx.media3.common.OverlaySettings
@@ -81,7 +83,11 @@ class VideoEditorActivity : Activity() {
         val durationMs: Long,
         var startMs: Long = 0L,
         var endMs: Long = durationMs,
-        var timelineStartMs: Long = 0L
+        var timelineStartMs: Long = 0L,
+        var transformScale: Float = 1f,
+        var transformRotationDegrees: Float = 0f,
+        var transformTranslateX: Float = 0f,
+        var transformTranslateY: Float = 0f
     )
 
     private data class ClipEditSnapshot(
@@ -181,6 +187,7 @@ class VideoEditorActivity : Activity() {
     private var previewFocusMode = false
     private val previewFocusOriginalVisibility = linkedMapOf<View, Int>()
     private lateinit var previewTextOverlay: TextView
+    private lateinit var clipTransformTouchOverlay: View
     private lateinit var previewEmptyState: LinearLayout
     private lateinit var clipList: LinearLayout
     private lateinit var timelineTracks: LinearLayout
@@ -490,6 +497,22 @@ class VideoEditorActivity : Activity() {
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
         )
+        // Transparent gesture surface sits above the video but below editable text overlays.
+        clipTransformTouchOverlay = View(this).apply {
+            setBackgroundColor(Color.TRANSPARENT)
+            visibility = View.GONE
+            isClickable = true
+            contentDescription = "Seçili video klibini sürükle, iki parmakla büyüt ve döndür"
+        }
+        previewFrame.addView(
+            clipTransformTouchOverlay,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        )
+        installClipTransformTouch()
+
         previewTextOverlay = TextView(this).apply {
             textSize = textSizeSp.toFloat()
             gravity = Gravity.CENTER
@@ -1549,6 +1572,7 @@ class VideoEditorActivity : Activity() {
 
     private fun showEditorPanel(name: String) {
         activeEditorPanel = name
+        updateClipTransformTouchAvailability()
         if (::editorPanelScroll.isInitialized) {
             editorPanelScroll.visibility = View.VISIBLE
             val params = editorPanelScroll.layoutParams as? LinearLayout.LayoutParams
@@ -1604,6 +1628,7 @@ class VideoEditorActivity : Activity() {
             return
         }
         activeEditorPanel = null
+        updateClipTransformTouchAvailability()
         textOverlayEditingEnabled = false
         if (::editorPanelScroll.isInitialized) editorPanelScroll.visibility = View.GONE
         editorPanels.values.forEach { it.visibility = View.GONE }
@@ -3161,6 +3186,211 @@ class VideoEditorActivity : Activity() {
         updateTimelinePlayheadLabel()
     }
 
+    private fun normalizeClipTransform(clip: Clip) {
+        clip.transformScale = clip.transformScale.takeIf { it.isFinite() }?.coerceIn(0.25f, 4f) ?: 1f
+        val rotation = clip.transformRotationDegrees.takeIf { it.isFinite() } ?: 0f
+        clip.transformRotationDegrees = ((rotation + 180f) % 360f + 360f) % 360f - 180f
+        clip.transformTranslateX = clip.transformTranslateX.takeIf { it.isFinite() }?.coerceIn(-2f, 2f) ?: 0f
+        clip.transformTranslateY = clip.transformTranslateY.takeIf { it.isFinite() }?.coerceIn(-2f, 2f) ?: 0f
+    }
+
+    private fun updateClipTransformTouchAvailability() {
+        if (!::clipTransformTouchOverlay.isInitialized) return
+        val enabled = clipHandlesVisible &&
+            selectedClipIndex in clips.indices &&
+            activeEditorPanel == "clip"
+        clipTransformTouchOverlay.visibility = if (enabled) View.VISIBLE else View.GONE
+        clipTransformTouchOverlay.isClickable = enabled
+        if (!enabled) resetPlayerViewTransform()
+    }
+
+    private fun resetPlayerViewTransform() {
+        if (!::playerView.isInitialized) return
+        playerView.pivotX = playerView.width / 2f
+        playerView.pivotY = playerView.height / 2f
+        playerView.scaleX = 1f
+        playerView.scaleY = 1f
+        playerView.rotation = 0f
+        playerView.translationX = 0f
+        playerView.translationY = 0f
+    }
+
+    private fun applyTemporaryClipTransform(clip: Clip) {
+        normalizeClipTransform(clip)
+        if (!::playerView.isInitialized) return
+        playerView.pivotX = playerView.width / 2f
+        playerView.pivotY = playerView.height / 2f
+        playerView.scaleX = clip.transformScale
+        playerView.scaleY = clip.transformScale
+        playerView.rotation = clip.transformRotationDegrees
+        playerView.translationX = clip.transformTranslateX * playerView.width / 2f
+        playerView.translationY = clip.transformTranslateY * playerView.height / 2f
+    }
+
+    private fun finishClipTransformGesture(
+        clipIndex: Int,
+        before: ClipEditSnapshot?,
+        cancelled: Boolean
+    ) {
+        val clip = clips.getOrNull(clipIndex)
+        val original = before?.clips?.getOrNull(clipIndex)
+        if (cancelled && clip != null && original != null) {
+            clip.transformScale = original.transformScale
+            clip.transformRotationDegrees = original.transformRotationDegrees
+            clip.transformTranslateX = original.transformTranslateX
+            clip.transformTranslateY = original.transformTranslateY
+        }
+        clip?.let(::normalizeClipTransform)
+        resetPlayerViewTransform()
+        if (!cancelled && before != null && before.clips != clips) {
+            pushClipUndoSnapshot(before)
+        }
+        if (clip != null) {
+            timelinePreviewLoaded = false
+            previewSingleClip = false
+            ensureTimelinePreviewLoaded()
+            seekTimelinePreview(timelinePlayheadMs)
+            status.text = if (cancelled) {
+                "Video dönüşümü geri alındı."
+            } else {
+                "Video konumu, boyutu ve açısı bu klibe kaydedildi."
+            }
+        }
+        updateClipTransformTouchAvailability()
+    }
+
+    private fun installClipTransformTouch() {
+        var activeIndex = -1
+        var beforeSnapshot: ClipEditSnapshot? = null
+        var downRawX = 0f
+        var downRawY = 0f
+        var baseScale = 1f
+        var baseRotation = 0f
+        var baseTranslateX = 0f
+        var baseTranslateY = 0f
+        var twoFingerStartDistance = 0f
+        var twoFingerStartAngle = 0f
+        var twoFingerStartCenterX = 0f
+        var twoFingerStartCenterY = 0f
+        var twoFingerBaseScale = 1f
+        var twoFingerBaseRotation = 0f
+        var twoFingerBaseTranslateX = 0f
+        var twoFingerBaseTranslateY = 0f
+
+        clipTransformTouchOverlay.setOnTouchListener { view, event ->
+            val clip = clips.getOrNull(activeIndex)
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    if (!clipHandlesVisible || activeEditorPanel != "clip" ||
+                        selectedClipIndex !in clips.indices
+                    ) return@setOnTouchListener false
+
+                    activeIndex = selectedClipIndex
+                    val selected = clips[activeIndex]
+                    beforeSnapshot = captureClipEditSnapshot().copy(previewSingleClip = false)
+                    if (!timelinePreviewLoaded || timelineCompositionPlayer == null ||
+                        playerView.player !== timelineCompositionPlayer
+                    ) {
+                        timelinePreviewLoaded = false
+                        previewSingleClip = false
+                        ensureTimelinePreviewLoaded()
+                        seekTimelinePreview(timelinePlayheadMs)
+                    }
+                    player?.playWhenReady = false
+                    timelineCompositionPlayer?.playWhenReady = false
+                    baseScale = selected.transformScale
+                    baseRotation = selected.transformRotationDegrees
+                    baseTranslateX = selected.transformTranslateX
+                    baseTranslateY = selected.transformTranslateY
+                    downRawX = event.rawX
+                    downRawY = event.rawY
+                    twoFingerStartDistance = 0f
+                    view.parent?.requestDisallowInterceptTouchEvent(true)
+                    true
+                }
+                MotionEvent.ACTION_POINTER_DOWN -> {
+                    if (clip == null || event.pointerCount < 2) return@setOnTouchListener true
+                    val dx = event.getX(0) - event.getX(1)
+                    val dy = event.getY(0) - event.getY(1)
+                    twoFingerStartDistance = kotlin.math.hypot(dx.toDouble(), dy.toDouble())
+                        .toFloat().coerceAtLeast(1f)
+                    twoFingerStartAngle = Math.toDegrees(kotlin.math.atan2(dy.toDouble(), dx.toDouble())).toFloat()
+                    twoFingerStartCenterX = (event.getX(0) + event.getX(1)) / 2f
+                    twoFingerStartCenterY = (event.getY(0) + event.getY(1)) / 2f
+                    twoFingerBaseScale = clip.transformScale
+                    twoFingerBaseRotation = clip.transformRotationDegrees
+                    twoFingerBaseTranslateX = clip.transformTranslateX
+                    twoFingerBaseTranslateY = clip.transformTranslateY
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (clip == null) return@setOnTouchListener true
+                    if (event.pointerCount >= 2 && twoFingerStartDistance > 0f) {
+                        val dx = event.getX(0) - event.getX(1)
+                        val dy = event.getY(0) - event.getY(1)
+                        val distance = kotlin.math.hypot(dx.toDouble(), dy.toDouble()).toFloat()
+                        val angle = Math.toDegrees(kotlin.math.atan2(dy.toDouble(), dx.toDouble())).toFloat()
+                        val centerX = (event.getX(0) + event.getX(1)) / 2f
+                        val centerY = (event.getY(0) + event.getY(1)) / 2f
+                        val angleDelta = ((angle - twoFingerStartAngle + 180f) % 360f + 360f) % 360f - 180f
+                        clip.transformScale = (twoFingerBaseScale * distance / twoFingerStartDistance)
+                            .coerceIn(0.25f, 4f)
+                        clip.transformRotationDegrees = twoFingerBaseRotation + angleDelta
+                        clip.transformTranslateX = (
+                            twoFingerBaseTranslateX + (centerX - twoFingerStartCenterX) * 2f /
+                                view.width.coerceAtLeast(1)
+                            ).coerceIn(-2f, 2f)
+                        clip.transformTranslateY = (
+                            twoFingerBaseTranslateY + (centerY - twoFingerStartCenterY) * 2f /
+                                view.height.coerceAtLeast(1)
+                            ).coerceIn(-2f, 2f)
+                    } else if (event.pointerCount == 1) {
+                        clip.transformTranslateX = (
+                            baseTranslateX + (event.rawX - downRawX) * 2f /
+                                view.width.coerceAtLeast(1)
+                            ).coerceIn(-2f, 2f)
+                        clip.transformTranslateY = (
+                            baseTranslateY + (event.rawY - downRawY) * 2f /
+                                view.height.coerceAtLeast(1)
+                            ).coerceIn(-2f, 2f)
+                    }
+                    applyTemporaryClipTransform(clip)
+                    true
+                }
+                MotionEvent.ACTION_POINTER_UP -> {
+                    if (clip != null && event.pointerCount >= 2) {
+                        val remainingIndex = if (event.actionIndex == 0) 1 else 0
+                        val location = IntArray(2)
+                        view.getLocationOnScreen(location)
+                        downRawX = location[0] + event.getX(remainingIndex)
+                        downRawY = location[1] + event.getY(remainingIndex)
+                        baseTranslateX = clip.transformTranslateX
+                        baseTranslateY = clip.transformTranslateY
+                        baseScale = clip.transformScale
+                        baseRotation = clip.transformRotationDegrees
+                        twoFingerStartDistance = 0f
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    view.parent?.requestDisallowInterceptTouchEvent(false)
+                    finishClipTransformGesture(activeIndex, beforeSnapshot, cancelled = false)
+                    activeIndex = -1
+                    beforeSnapshot = null
+                    true
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    view.parent?.requestDisallowInterceptTouchEvent(false)
+                    finishClipTransformGesture(activeIndex, beforeSnapshot, cancelled = true)
+                    activeIndex = -1
+                    beforeSnapshot = null
+                    true
+                }
+                else -> true
+            }
+        }
+    }
+
     private fun selectTimelineClip(index:Int){
         if(index !in clips.indices)return
         clipHandlesVisible = true
@@ -3171,6 +3401,7 @@ class VideoEditorActivity : Activity() {
         refreshClipList();loadTrimControls();refreshTimelineTracks()
         ensureTimelinePreviewLoaded();seekTimelinePreview(timelinePlayheadMs)
         showEditorPanel("clip")
+        updateClipTransformTouchAvailability()
         status.text="Seçili klip: ${clip.title}. Kenar tutamaçları yalnızca seçimden sonra görünür; basılı tutup sürükleyerek taşı."
         updateTimelinePlayheadLabel()
     }
@@ -3179,6 +3410,7 @@ class VideoEditorActivity : Activity() {
         if (!clipHandlesVisible) return
         clipHandlesVisible = false
         if (activeEditorPanel == "clip") toggleEditorPanel("clip")
+        updateClipTransformTouchAvailability()
         refreshTimelineTracks()
         status.text = "Klip seçimi kaldırıldı."
     }
@@ -3940,6 +4172,10 @@ class VideoEditorActivity : Activity() {
                 put("startMs", clip.startMs)
                 put("endMs", clip.endMs)
                 put("timelineStartMs",clip.timelineStartMs)
+                put("transformScale", clip.transformScale)
+                put("transformRotationDegrees", clip.transformRotationDegrees)
+                put("transformTranslateX", clip.transformTranslateX)
+                put("transformTranslateY", clip.transformTranslateY)
             })
         }
         return JSONObject().apply {
@@ -4010,7 +4246,20 @@ class VideoEditorActivity : Activity() {
             val end = item.optLong("endMs", duration).coerceIn(start, duration)
             require(duration > 0L && end > start) { "Projede geçersiz klip aralığı var." }
             val timelineStartMs=if(item.has("timelineStartMs"))item.optLong("timelineStartMs",legacyTimelineCursorMs).coerceAtLeast(0L) else legacyTimelineCursorMs
-            loadedClips.add(Clip(uri,item.optString("title","Video klibi"),duration,start,end,timelineStartMs))
+            val loadedClip = Clip(
+                uri = uri,
+                title = item.optString("title", "Video klibi"),
+                durationMs = duration,
+                startMs = start,
+                endMs = end,
+                timelineStartMs = timelineStartMs,
+                transformScale = item.optDouble("transformScale", 1.0).toFloat(),
+                transformRotationDegrees = item.optDouble("transformRotationDegrees", 0.0).toFloat(),
+                transformTranslateX = item.optDouble("transformTranslateX", 0.0).toFloat(),
+                transformTranslateY = item.optDouble("transformTranslateY", 0.0).toFloat()
+            )
+            normalizeClipTransform(loadedClip)
+            loadedClips.add(loadedClip)
             legacyTimelineCursorMs=maxOf(legacyTimelineCursorMs,timelineStartMs+(end-start).coerceAtLeast(0L))
         }
         require(loadedClips.isNotEmpty()) { "Projede video klibi bulunamadı." }
@@ -4477,17 +4726,15 @@ class VideoEditorActivity : Activity() {
                         clipHandlesVisible = true
                         selectedClipIndex = index
                         timelinePreviewLoaded = false
-                        previewSingleClip = true
+                        previewSingleClip = false
                         timelinePlayheadMs = clips[index].timelineStartMs
                         ensureTrimHandlesReachable(index)
                         refreshClipList()
                         loadTrimControls()
                         updateTimelinePlayheadLabel()
-                        showSingleClipPreview()
-                        previewSingleClip = true
-                        player?.setMediaItem(clippedMediaItem(clip))
-                        player?.prepare()
-                        player?.playWhenReady = true
+                        ensureTimelinePreviewLoaded()
+                        seekTimelinePreview(timelinePlayheadMs)
+                        timelineCompositionPlayer?.playWhenReady = true
                         showEditorPanel("clip")
                         status.text = "Klip ${index + 1} seçildi: ${clip.title}"
                     }
@@ -5098,9 +5345,9 @@ class VideoEditorActivity : Activity() {
         deferTimelineRefresh=false;finishTrimHistoryGesture()
         val clip=selectedClip()
         if(clip!=null){
-            timelinePreviewLoaded=false;previewSingleClip=true;pauseActivePreview();timelinePlayheadMs=clip.timelineStartMs
-            ensureTrimHandlesReachable(selectedClipIndex);showSingleClipPreview()
-            player?.setMediaItem(clippedMediaItem(clip));player?.prepare();player?.seekTo(0L)
+            timelinePreviewLoaded=false;previewSingleClip=false;pauseActivePreview();timelinePlayheadMs=clip.timelineStartMs
+            ensureTrimHandlesReachable(selectedClipIndex)
+            ensureTimelinePreviewLoaded();seekTimelinePreview(timelinePlayheadMs)
         }else{timelinePreviewLoaded=false;previewSingleClip=false}
         refreshClipList();loadTrimControls();updateTimelinePlayheadLabel();status.text="Kesme aralığı güncellendi."
     }
@@ -5225,10 +5472,10 @@ class VideoEditorActivity : Activity() {
     private fun previewSelectedClip(){
         val clip=selectedClip()
         if(clip==null){status.text="Önizleme için önce video seç.";return}
-        timelinePreviewLoaded=false;previewSingleClip=true;timelinePlayheadMs=clip.timelineStartMs
-        updateTimelinePlayheadLabel();showSingleClipPreview()
-        player?.setMediaItem(clippedMediaItem(clip));player?.prepare();player?.playWhenReady=true
-        status.text="Seçili kesme aralığının önizlemesi başladı."
+        timelinePreviewLoaded=false;previewSingleClip=false;timelinePlayheadMs=clip.timelineStartMs
+        updateTimelinePlayheadLabel();ensureTimelinePreviewLoaded();seekTimelinePreview(timelinePlayheadMs)
+        timelineCompositionPlayer?.playWhenReady=true
+        status.text="Seçili klibin dönüşüm ve kesme ayarlarıyla önizlemesi başladı."
     }
 
     
@@ -5250,9 +5497,32 @@ class VideoEditorActivity : Activity() {
             .build()
 
         val audio = if (keepSourceAudio.isChecked) audioEffects(sourceAudioVolume) else emptyList()
+        normalizeClipTransform(clip)
+        val videoEffects = if (
+            clip.transformScale != 1f ||
+            clip.transformRotationDegrees != 0f ||
+            clip.transformTranslateX != 0f ||
+            clip.transformTranslateY != 0f
+        ) {
+            listOf<androidx.media3.common.Effect>(
+                MatrixTransformation { _ ->
+                    val radians = Math.toRadians(clip.transformRotationDegrees.toDouble())
+                    val cosine = kotlin.math.cos(radians).toFloat() * clip.transformScale
+                    val sine = kotlin.math.sin(radians).toFloat() * clip.transformScale
+                    Matrix().apply {
+                        // Media3 uses normalized device coordinates (-1..1); positive Y is up.
+                        setValues(floatArrayOf(
+                            cosine, -sine, clip.transformTranslateX,
+                            sine, cosine, -clip.transformTranslateY,
+                            0f, 0f, 1f
+                        ))
+                    }
+                }
+            )
+        } else emptyList()
         return EditedMediaItem.Builder(mediaItem)
             .setDurationUs(clip.durationMs * 1000L)
-            .setEffects(Effects(audio, emptyList()))
+            .setEffects(Effects(audio, videoEffects))
             .apply { if (!keepSourceAudio.isChecked) setRemoveAudio(true) }
             .build()
     }
