@@ -184,6 +184,8 @@ class VideoEditorActivity : Activity() {
     private lateinit var timelineTracksFrame: FrameLayout
     private lateinit var timelinePlayheadLine: View
     private val timelineScrollViews = mutableListOf<android.widget.HorizontalScrollView>()
+    // Order of the independently movable timeline strips, persisted with the project.
+    private val timelineLaneOrder = mutableListOf<String>()
     private var syncingTimelineScroll = false
     private var autoScrollingTimeline = false
     private var timelineHorizontalScrollX = 0
@@ -697,7 +699,9 @@ class VideoEditorActivity : Activity() {
         }
         timelineCard.addView(playheadRow, matchWrap())
         installTimelinePlayheadListeners()
-        root.addView(timelineCard, matchWrap())
+        root.addView(timelineCard, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
         root.addView(gap(8))
 
         val clipPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -1143,7 +1147,7 @@ class VideoEditorActivity : Activity() {
             setPadding(dp(4), dp(2), dp(4), dp(4))
         }
         editorPanels.values.forEachIndexed { index, panel ->
-            panel.visibility = if (index == 0) View.VISIBLE else View.GONE
+            panel.visibility = View.GONE
             panelHolder.addView(panel, matchWrap())
         }
         editorPanelScroll.addView(panelHolder)
@@ -1157,8 +1161,8 @@ class VideoEditorActivity : Activity() {
             }
         }
         root.addView(editorPanelScroll, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
-        ))
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(168)
+        ).apply { visibility = View.GONE })
 
         status = TextView(this).apply {
             text = "Hazır. Zaman çizelgesine video ekleyebilirsin."
@@ -1196,8 +1200,14 @@ class VideoEditorActivity : Activity() {
         }
         root.addView(dock, matchWrap())
 
+        // Contextual settings live above the preview; the lower dock remains pinned
+        // at the bottom and the shared timeline stays between preview and dock.
+        root.removeView(editorPanelScroll)
+        root.addView(editorPanelScroll, 1, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(168)
+        ).apply { visibility = View.GONE })
+
         setContentView(root)
-        showEditorPanel("clip")
         refreshTextLayerList()
         refreshTimelineTracks()
         installResponsiveEditorLayout(
@@ -1266,6 +1276,14 @@ class VideoEditorActivity : Activity() {
                     previewParams.weight = 0f
                 }
                 previewFrame.layoutParams = previewParams
+
+                if (::editorPanelScroll.isInitialized && editorPanelScroll.visibility == View.VISIBLE) {
+                    val panelParams = editorPanelScroll.layoutParams as? LinearLayout.LayoutParams
+                    if (panelParams != null) {
+                        panelParams.height = dp(if (imeVisible) 124 else 168)
+                        editorPanelScroll.layoutParams = panelParams
+                    }
+                }
 
                 // Hide decorative strips and fixed docks so the active tool gets
                 // the visible space left by the keyboard.
@@ -1498,6 +1516,14 @@ class VideoEditorActivity : Activity() {
 
     private fun showEditorPanel(name: String) {
         activeEditorPanel = name
+        if (::editorPanelScroll.isInitialized) {
+            editorPanelScroll.visibility = View.VISIBLE
+            val params = editorPanelScroll.layoutParams as? LinearLayout.LayoutParams
+            if (params != null) {
+                params.height = dp(if (keyboardLayoutActive) 124 else 168)
+                editorPanelScroll.layoutParams = params
+            }
+        }
         textOverlayEditingEnabled = name == "text"
         updateTextOverlayEditToggle()
         if (::editorPanelScroll.isInitialized) editorPanelScroll.scrollTo(0, 0)
@@ -1545,8 +1571,9 @@ class VideoEditorActivity : Activity() {
         }
         activeEditorPanel = null
         textOverlayEditingEnabled = false
-        updateTextOverlayEditToggle()
+        if (::editorPanelScroll.isInitialized) editorPanelScroll.visibility = View.GONE
         editorPanels.values.forEach { it.visibility = View.GONE }
+        updateTextOverlayEditToggle()
         editorTabButtons.values.forEach { button ->
             button.background = android.graphics.drawable.GradientDrawable().apply {
                 setColor(Color.rgb(20, 31, 45))
@@ -1601,19 +1628,91 @@ class VideoEditorActivity : Activity() {
         fun widthBetween(startMs: Long, endMs: Long): Int =
             TimelineScaleMath.widthBetween(startMs, endMs, pxPerSecond)
 
-        fun makeLane(tag: String, heightDp: Int = 30): LinearLayout {
+        fun makeLane(
+            tag: String,
+            heightDp: Int = 30,
+            laneKey: String = tag,
+            reorderable: Boolean = true
+        ): LinearLayout {
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(3), dp(1), dp(3), dp(1))
+                this.tag = if (reorderable) laneKey else "__ruler__"
             }
-            row.addView(TextView(this).apply {
-                text = tag
-                textSize = 9f
+            val grip = TextView(this).apply {
+                // Layer rows are deliberately not named by media type. The user can
+                // arrange any strip above or below another strip with this handle.
+                text = if (reorderable) "⠿" else tag
+                textSize = if (reorderable) 18f else 9f
                 setTextColor(Color.rgb(166, 184, 201))
                 typeface = Typeface.DEFAULT_BOLD
-                gravity = Gravity.CENTER_VERTICAL
-            }, LinearLayout.LayoutParams(dp(54), ViewGroup.LayoutParams.MATCH_PARENT))
+                gravity = Gravity.CENTER
+                contentDescription = if (reorderable) {
+                    "$tag şeridi. Tutup yukarı veya aşağı sürükleyerek yerini değiştir."
+                } else tag
+            }
+            row.addView(grip, LinearLayout.LayoutParams(dp(54), ViewGroup.LayoutParams.MATCH_PARENT))
+
+            if (reorderable) {
+                var downRawY = 0f
+                var moved = false
+                grip.setOnTouchListener { view, event ->
+                    when (event.actionMasked) {
+                        MotionEvent.ACTION_DOWN -> {
+                            downRawY = event.rawY
+                            moved = false
+                            view.parent?.requestDisallowInterceptTouchEvent(true)
+                            true
+                        }
+                        MotionEvent.ACTION_MOVE -> {
+                            val deltaY = event.rawY - downRawY
+                            if (kotlin.math.abs(deltaY) > android.view.ViewConfiguration.get(this).scaledTouchSlop) {
+                                moved = true
+                                val location = IntArray(2)
+                                timelineTracks.getLocationOnScreen(location)
+                                val localY = (event.rawY - location[1]).toInt()
+                                val currentIndex = timelineTracks.indexOfChild(row)
+                                var targetIndex = timelineTracks.childCount
+                                for (index in 0 until timelineTracks.childCount) {
+                                    val candidate = timelineTracks.getChildAt(index)
+                                    if (candidate === row || candidate.tag == "__ruler__") continue
+                                    if (localY < candidate.top + candidate.height / 2) {
+                                        targetIndex = index
+                                        break
+                                    }
+                                }
+                                if (currentIndex >= 0 && targetIndex != currentIndex) {
+                                    timelineTracks.removeView(row)
+                                    if (targetIndex > currentIndex) targetIndex--
+                                    timelineTracks.addView(row, targetIndex.coerceIn(0, timelineTracks.childCount))
+                                    timelineTracks.requestLayout()
+                                }
+                            }
+                            true
+                        }
+                        MotionEvent.ACTION_UP -> {
+                            view.parent?.requestDisallowInterceptTouchEvent(false)
+                            if (moved) {
+                                timelineLaneOrder.clear()
+                                for (index in 0 until timelineTracks.childCount) {
+                                    val key = timelineTracks.getChildAt(index).tag as? String
+                                    if (!key.isNullOrBlank() && key != "__ruler__") timelineLaneOrder.add(key)
+                                }
+                                status.text = "Şeridin sırası değiştirildi."
+                            } else {
+                                view.performClick()
+                            }
+                            true
+                        }
+                        MotionEvent.ACTION_CANCEL -> {
+                            view.parent?.requestDisallowInterceptTouchEvent(false)
+                            true
+                        }
+                        else -> false
+                    }
+                }
+            }
 
             val scroll = android.widget.HorizontalScrollView(this).apply {
                 isHorizontalScrollBarEnabled = false
@@ -1648,13 +1747,25 @@ class VideoEditorActivity : Activity() {
             val track = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                // Keep the content origin identical to the ruler and playhead coordinate system.
                 setPadding(0, dp(1), 0, dp(1))
             }
             scroll.addView(track)
             val responsiveLaneHeight = if (keyboardLayoutActive || compactEditorLayout) 18 else heightDp
             row.addView(scroll, LinearLayout.LayoutParams(0, dp(responsiveLaneHeight), 1f))
-            timelineTracks.addView(row, matchWrap())
+
+            if (!reorderable) {
+                timelineTracks.addView(row, 0)
+            } else {
+                val savedIndex = timelineLaneOrder.indexOf(laneKey)
+                if (savedIndex < 0) {
+                    timelineLaneOrder.add(laneKey)
+                    timelineTracks.addView(row)
+                } else {
+                    val rulerOffset = if (timelineTracks.childCount > 0 &&
+                        timelineTracks.getChildAt(0).tag == "__ruler__") 1 else 0
+                    timelineTracks.addView(row, (savedIndex + rulerOffset).coerceIn(0, timelineTracks.childCount))
+                }
+            }
             return track
         }
 
@@ -1900,7 +2011,7 @@ class VideoEditorActivity : Activity() {
         }
 
         if (!keyboardLayoutActive && !compactEditorLayout) {
-            val ruler = makeLane("SÜRE", 22)
+            val ruler = makeLane("SÜRE", 22, "__ruler__", reorderable = false)
             val rulerEndMs = (((totalMs + 4999L) / 5000L).coerceAtLeast(1L)) * 5000L
             var rulerTimeMs = 0L
             var rulerPositionPx = 0
@@ -1924,7 +2035,7 @@ class VideoEditorActivity : Activity() {
         }
 
         if (clips.isEmpty()) {
-            val lane = makeLane("VIDEO", if (keyboardLayoutActive || compactEditorLayout) 18 else 44)
+            val lane = makeLane("Video", if (keyboardLayoutActive || compactEditorLayout) 18 else 44, "video")
             addBlock(lane, "+ Video ekle", 5000L, Color.rgb(38, 105, 123),
                 onClick = { chooseVideo(true) }, minimumWidthDp = 115)
         } else {
@@ -1961,25 +2072,17 @@ class VideoEditorActivity : Activity() {
                     gravity = Gravity.TOP or Gravity.LEFT
                 })
             }
-            val videoTrack = makeLane("VIDEO", if (keyboardLayoutActive || compactEditorLayout) 18 else 44)
+            val videoTrack = makeLane("Video", if (keyboardLayoutActive || compactEditorLayout) 18 else 44, "video")
             videoTrack.addView(strip, LinearLayout.LayoutParams(stripWidth, stripHeight))
         }
 
-        if (textLayers.isEmpty()) {
-            val textTrack = makeLane("METİN", 24)
-            addBlock(
-                textTrack, "+ Metin ekle", totalMs.coerceAtLeast(5000L), Color.rgb(70, 54, 93),
-                onClick = { showEditorPanel("text"); addTextLayer() }, minimumWidthDp = 115
-            )
-        } else {
-            textLayers.forEachIndexed { index, layer ->
-                val textTrack = makeLane("YAZI ${index + 1}", 24)
-                addTextLayerBlock(textTrack, layer, index)
-            }
+        textLayers.forEachIndexed { index, layer ->
+            val textTrack = makeLane("Metin ${index + 1}", 24, "text:${layer.id}")
+            addTextLayerBlock(textTrack, layer, index)
         }
 
-        val musicTrack = makeLane("MÜZİK", 24)
         if (musicUri != null && totalMs > 0L) {
+            val musicTrack = makeLane("Müzik", 24, "music")
             val musicRange = TimelineRangeMath.normalize(
                 TimelineRange(musicStartMs, musicDurationMs),
                 totalMs
@@ -1989,13 +2092,10 @@ class VideoEditorActivity : Activity() {
             addSpacer(musicTrack, 0L, musicRange.startMs)
             addMusicTimelineBlock(musicTrack, totalMs)
             addSpacer(musicTrack, musicRange.startMs + musicRange.durationMs, totalMs)
-        } else {
-            addBlock(musicTrack, "+ Müzik ekle", totalMs.coerceAtLeast(5000L), Color.rgb(42, 78, 63),
-                onClick = { chooseAudio(true) }, minimumWidthDp = 115)
         }
 
-        val effectTrack = makeLane("EFEKT", 24)
         if (soundUri != null && totalMs > 0L) {
+            val effectTrack = makeLane("Ses", 24, "sound")
             val segment = TimelineAudioMath.normalize(
                 TimelineAudioSegment(soundStartMs, soundSourceStartMs, soundDurationMs),
                 soundSourceDurationMs,
@@ -2008,9 +2108,6 @@ class VideoEditorActivity : Activity() {
             addSpacer(effectTrack, 0L, segment.timelineStartMs)
             addSoundEffectTimelineBlock(effectTrack, totalMs)
             addSpacer(effectTrack, endMs, totalMs)
-        } else {
-            addBlock(effectTrack, "+ Ses efekti ekle", totalMs.coerceAtLeast(5000L), Color.rgb(96, 68, 41),
-                onClick = { chooseAudio(false) }, minimumWidthDp = 115)
         }
         // A MATCH_PARENT playhead inside a WRAP_CONTENT FrameLayout would let
         // the frame expand to the full available screen height and push the tool dock
@@ -3512,6 +3609,9 @@ class VideoEditorActivity : Activity() {
             put("selectedClipIndex", selectedClipIndex)
             put("timelinePlayheadMs", timelinePlayheadMs.coerceIn(0L, totalOutputDurationMs()))
             put("timelineZoom", timelineZoom)
+            put("timelineLaneOrder", JSONArray().apply {
+                timelineLaneOrder.forEach { put(it) }
+            })
             // The cached value is authoritative during the short interval between
             // scheduling a scroll restore and the ScrollView applying it.
             val currentScrollX = pendingTimelineScrollX ?: timelineHorizontalScrollX
@@ -3579,6 +3679,13 @@ class VideoEditorActivity : Activity() {
         selectedClipIndex = json.optInt("selectedClipIndex", 0).coerceIn(0, clips.lastIndex)
         timelinePreviewLoaded = false
         previewSingleClip = true
+        timelineLaneOrder.clear()
+        json.optJSONArray("timelineLaneOrder")?.let { savedOrder ->
+            for (i in 0 until savedOrder.length()) {
+                val key = savedOrder.optString(i).takeIf { it.isNotBlank() }
+                if (key != null && key !in timelineLaneOrder) timelineLaneOrder.add(key)
+            }
+        }
         timelineZoom = json.optDouble("timelineZoom", timelineZoom.toDouble())
             .toFloat().takeIf { it.isFinite() }?.coerceIn(0.5f, 8.0f) ?: 1.0f
         val savedTimelineScrollMs: Long? = when {
@@ -3853,7 +3960,9 @@ class VideoEditorActivity : Activity() {
                             if (::musicSourceStartSeek.isInitialized) musicSourceStartSeek.progress = 0
                             if (::musicSourceEndSeek.isInitialized) musicSourceEndSeek.progress = 1000
                             if (::musicSourceRangeLabel.isInitialized) musicSourceRangeLabel.text = "Dosya içi: 00:00 – ${formatTimelineMs(duration)}"
-                            musicDurationMs = totalOutputDurationMs().takeIf { it > 0L } ?: duration
+                            // Keep the full selected source range; if it extends beyond the
+                            // video, the shared project timeline grows to include the music.
+                            musicDurationMs = (musicSourceEndMs - musicSourceStartMs).coerceAtLeast(0L)
                             updateMusicTimingLabel()
                             refreshTimelineTracks()
                             status.text = "Müzik eklendi. Zaman çizelgesinde sürükleyip başlangıç ve bitişini ayarlayabilirsin."
@@ -4633,8 +4742,13 @@ class VideoEditorActivity : Activity() {
     private fun activeClipIndexAt(projectTimeMs:Long):Int? =
         TimelineVideoMath.activeSegmentIndexAt(videoTimelineSegments(),projectTimeMs)
 
-    private fun totalOutputDurationMs():Long =
-        TimelineVideoMath.totalDuration(videoTimelineSegments())
+    private fun totalOutputDurationMs(): Long =
+        TimelineProjectDurationMath.totalDuration(
+            TimelineVideoMath.totalDuration(videoTimelineSegments()),
+            textLayers.maxOfOrNull { it.endMs } ?: 0L,
+            if (musicUri != null) musicStartMs + musicDurationMs else 0L,
+            if (soundUri != null) soundStartMs + soundDurationMs else 0L
+        )
 
     private fun updateSoundControls() {
         if (!::soundStartSeek.isInitialized || !::soundStartLabel.isInitialized) return
