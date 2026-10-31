@@ -641,17 +641,6 @@ class VideoEditorActivity : Activity() {
                 rightMargin = dp(8)
             }
         )
-        val fitTimelineButton = miniButton("Sığdır") { fitTimelineToProject() }.apply {
-            textSize = 10f
-            minWidth = dp(58)
-            contentDescription = "Zaman çizelgesini projeye sığdır"
-        }
-        centeredPlaybackRow.addView(
-            fitTimelineButton,
-            FrameLayout.LayoutParams(dp(64), dp(36), Gravity.END or Gravity.CENTER_VERTICAL).apply {
-                rightMargin = dp(8)
-            }
-        )
         // Keep the legacy seek model detached: the visible horizontal scrubber and zoom
         // buttons are removed. Timeline gestures now move the lanes under the fixed playhead.
         timelinePlayheadSeek = SeekBar(this).apply {

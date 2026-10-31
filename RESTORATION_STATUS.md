@@ -1,6 +1,7 @@
 # MathMotor Video — current project status
 
 ## Playback state and fit control — 2026-10-31
+- Removed a duplicate Sığdır button declaration found by PR-head Kotlin compilation; one visible fit control remains.
 - Fit now preserves the current playhead time under the fixed center marker; the scale calculation is a pure tested helper. Playback state also respects Media3 playWhenReady while buffering.
 - CI caught one incorrect expected value in the new ruler-step unit test: at 22 px/sec and 48 px minimum label spacing the next readable interval is 5 seconds. Corrected the assertion; production Kotlin compilation had succeeded on the preceding run.
 
