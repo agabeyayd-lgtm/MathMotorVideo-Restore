@@ -2951,7 +2951,7 @@ class VideoEditorActivity : Activity() {
         val originRightScreenXs = timelineScrollViews.joinToString(",") { lane ->
             val track = lane.getChildAt(0) as? LinearLayout
             val origin = track?.getChildAt(0)
-            if (origin == null) "-1"
+            if (origin == null) Int.MIN_VALUE.toString()
             else {
                 val location = IntArray(2)
                 origin.getLocationOnScreen(location)
