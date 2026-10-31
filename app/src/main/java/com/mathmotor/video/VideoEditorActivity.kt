@@ -257,6 +257,7 @@ class VideoEditorActivity : Activity() {
     private val timelineThumbnailExecutor = java.util.concurrent.Executors.newFixedThreadPool(2)
     private lateinit var timelinePlayheadSeek: SeekBar
     private lateinit var timelinePlayheadLabel: TextView
+    private lateinit var timelinePlayButton: Button
     private var timelinePlayheadMs = 0L
     private var timelineScrubGrabOffsetPx = 0f
     private var timelinePreviewLoaded = false
@@ -270,6 +271,7 @@ class VideoEditorActivity : Activity() {
             if (timelinePreviewLoaded) syncTimelinePlayheadFromPlayer()
             else if (previewSingleClip) syncSingleClipPlayheadFromPlayer()
             syncPreviewAudio()
+            updateTimelinePlayButtonState()
             timelineHandler.postDelayed(this, 250L)
         }
     }
@@ -546,28 +548,6 @@ class VideoEditorActivity : Activity() {
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
             marginEnd = dp(4)
         })
-        timelineHeader.addView(miniButton("▶Ⅱ") {
-            if (clips.isEmpty()) {
-                chooseVideo(true)
-            } else {
-                ensureTimelinePreviewLoaded()
-                val currentPlayer=timelineCompositionPlayer
-                if(currentPlayer?.isPlaying==true){
-                    currentPlayer.pause()
-                    status.text="Önizleme duraklatıldı."
-                }else{
-                    currentPlayer?.seekTo(timelinePlayheadMs)
-                    currentPlayer?.playWhenReady=true
-                    status.text="Proje önizlemesi oynatılıyor."
-                }
-            }
-        }.apply {
-            minWidth = dp(38)
-            minimumWidth = dp(38)
-            textSize = 13f
-            setPadding(0, 0, 0, 0)
-            contentDescription = "Önizlemeyi oynat veya duraklat"
-        }, LinearLayout.LayoutParams(dp(42), dp(40)))
         timelineHeader.addView(miniButton("＋") { chooseVideo(true) }.apply {
             minWidth = dp(38)
             minimumWidth = dp(38)
@@ -583,6 +563,43 @@ class VideoEditorActivity : Activity() {
             contentDescription = "Seçili videoyu değiştir"
         }, LinearLayout.LayoutParams(dp(42), dp(40)).apply { leftMargin = dp(3) })
         timelineCard.addView(timelineHeader, matchWrap())
+
+        // One playback control, fixed on the same center axis as the stationary red playhead.
+        val centeredPlaybackRow = FrameLayout(this)
+        timelinePlayButton = miniButton("▶") {
+            if (clips.isEmpty()) {
+                chooseVideo(true)
+            } else {
+                ensureTimelinePreviewLoaded()
+                val currentPlayer = timelineCompositionPlayer
+                if (currentPlayer?.isPlaying == true) {
+                    currentPlayer.pause()
+                    currentPlayer.playWhenReady = false
+                    status.text = "Önizleme duraklatıldı."
+                } else {
+                    currentPlayer?.seekTo(timelinePlayheadMs)
+                    currentPlayer?.playWhenReady = true
+                    status.text = "Proje önizlemesi oynatılıyor."
+                }
+                updateTimelinePlayButtonState()
+            }
+        }.apply {
+            minWidth = dp(46)
+            minimumWidth = dp(46)
+            textSize = 17f
+            setPadding(0, 0, 0, 0)
+            contentDescription = "Önizlemeyi oynat veya duraklat"
+        }
+        centeredPlaybackRow.addView(
+            timelinePlayButton,
+            FrameLayout.LayoutParams(dp(46), dp(42), Gravity.CENTER).apply {
+                // Timeline lanes reserve a 57 dp label gutter before the time axis.
+                leftMargin = dp(57) / 2
+            }
+        )
+        timelineCard.addView(centeredPlaybackRow, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(44)
+        ))
 
         val clipScroll = android.widget.HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
@@ -656,22 +673,25 @@ class VideoEditorActivity : Activity() {
 
         val playheadRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
+            gravity = Gravity.CENTER
             setPadding(dp(3), dp(3), dp(3), 0)
         }
-        timelinePlayheadLabel = label("00:00.0 / 00:00.0", 9f, Color.rgb(225, 233, 237), true).apply { maxLines = 2; setLineSpacing(-dp(2).toFloat(), 1f) }
-        playheadRow.addView(timelinePlayheadLabel, LinearLayout.LayoutParams(dp(128), ViewGroup.LayoutParams.WRAP_CONTENT))
+        timelinePlayheadLabel = label("00:00.0 / 00:00.0", 10f, Color.rgb(225, 233, 237), true).apply {
+            maxLines = 1
+            gravity = Gravity.CENTER
+            setSingleLine(true)
+        }
+        playheadRow.addView(timelinePlayheadLabel, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+        // Keep the legacy seek model detached: the visible horizontal scrubber and zoom
+        // buttons are removed. Timeline gestures now move the lanes under the fixed playhead.
         timelinePlayheadSeek = SeekBar(this).apply {
             max = 0
             progress = 0
             isEnabled = false
             contentDescription = "Zaman çizelgesinde oynatma noktası"
         }
-        playheadRow.addView(timelinePlayheadSeek, LinearLayout.LayoutParams(0, dp(34), 1f))
-        playheadRow.addView(miniButton("−") { adjustTimelineZoom(0.75f) },
-            LinearLayout.LayoutParams(dp(42), dp(42)).apply { leftMargin = dp(3) })
-        playheadRow.addView(miniButton("+") { adjustTimelineZoom(1.35f) },
-            LinearLayout.LayoutParams(dp(42), dp(42)).apply { leftMargin = dp(2) })
         timelineCard.addView(playheadRow, matchWrap())
         installTimelinePlayheadListeners()
         root.addView(timelineCard, matchWrap())
@@ -2583,20 +2603,18 @@ class VideoEditorActivity : Activity() {
         if (!::timelinePlayheadLabel.isInitialized) return
         val totalMs = totalOutputDurationMs()
         val projectPositionMs = timelinePlayheadMs.coerceIn(0L, totalMs)
-        val projectText = "Proje ${formatTimelineMs(projectPositionMs)} / ${formatTimelineMs(totalMs)}"
-        val clip = selectedClip()
-        timelinePlayheadLabel.text = if (previewSingleClip && clip != null) {
-            val projectOffsetMs = clip.timelineStartMs
-            val clipDurationMs = (clip.endMs - clip.startMs).coerceAtLeast(0L)
-            val clipPositionMs = (projectPositionMs - projectOffsetMs).coerceIn(0L, clipDurationMs)
-            // Lead with the combined project/output duration. The selected clip's
-            // local time is useful, but must not look like the final video duration.
-            "$projectText\nKlip ${formatTimelineMs(clipPositionMs)} / ${formatTimelineMs(clipDurationMs)}"
-        } else {
-            projectText
-        }
+        timelinePlayheadLabel.text =
+            "${formatTimelineMs(projectPositionMs)} / ${formatTimelineMs(totalMs)}"
         updateTimelinePlayheadLine()
         updatePreviewTextOverlay()
+    }
+
+    private fun updateTimelinePlayButtonState() {
+        if (!::timelinePlayButton.isInitialized) return
+        val playing = timelineCompositionPlayer?.isPlaying == true
+        timelinePlayButton.text = if (playing) "Ⅱ" else "▶"
+        timelinePlayButton.contentDescription =
+            if (playing) "Önizlemeyi duraklat" else "Önizlemeyi oynat"
     }
 
     private fun buildFlattenedVideoSequence():EditedMediaItemSequence {
