@@ -675,7 +675,7 @@ class VideoEditorActivity : Activity() {
         // The track rows scroll horizontally; the editor shell keeps its own height.
         root.addView(timelineCard, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(224)
+            dp(178)
         ))
         root.addView(gap(8))
 
@@ -1319,8 +1319,8 @@ class VideoEditorActivity : Activity() {
                 val density = resources.displayMetrics.density.coerceAtLeast(1f)
                 val viewportDp = (viewportHeight / density).toInt()
                 compactEditorLayout = viewportDp < 820
-                val previewRatio = if (viewportDp < 650) 0.31f else 0.34f
-                previewDefaultStageHeightDp = (viewportDp * previewRatio).toInt().coerceIn(170, 360)
+                val previewRatio = if (viewportDp < 650) 0.39f else 0.36f
+                previewDefaultStageHeightDp = (viewportDp * previewRatio).toInt().coerceIn(198, 320)
                 previewStageHeightDp = previewDefaultStageHeightDp
                 previewHeightAutoSized = true
 
@@ -1731,7 +1731,7 @@ class VideoEditorActivity : Activity() {
             val responsiveLaneHeight = when {
                 keyboardLayoutActive -> minOf(heightDp, 28)
                 !reorderable -> heightDp
-                compactEditorLayout -> maxOf(heightDp, 40)
+                compactEditorLayout -> maxOf(heightDp, 52)
                 else -> heightDp
             }
             row.addView(scroll, LinearLayout.LayoutParams(0, dp(responsiveLaneHeight), 1f))
@@ -1786,7 +1786,7 @@ class VideoEditorActivity : Activity() {
             }
             val blockHeight = dp(when {
                 keyboardLayoutActive -> 26
-                compactEditorLayout -> 40
+                compactEditorLayout -> 46
                 else -> 48
             })
             track.addView(block, LinearLayout.LayoutParams(width, blockHeight))
@@ -1795,7 +1795,7 @@ class VideoEditorActivity : Activity() {
         fun addSpacer(track: LinearLayout, startMs: Long, endMs: Long) {
             val width = widthBetween(startMs, endMs)
             if (width <= 0) return
-            track.addView(View(this), LinearLayout.LayoutParams(width, dp(if (keyboardLayoutActive || compactEditorLayout) 18 else 24)))
+            track.addView(View(this), LinearLayout.LayoutParams(width, dp(if (keyboardLayoutActive || compactEditorLayout) 20 else 24)))
         }
 
         fun addTextLayerBlock(track: LinearLayout, layer: TextLayer, layerIndex: Int) {
@@ -1806,7 +1806,7 @@ class VideoEditorActivity : Activity() {
             val blockWidth = widthBetween(startMs, endMs).coerceAtLeast(1)
             val blockHeight = dp(when {
                 keyboardLayoutActive -> 26
-                compactEditorLayout -> 36
+                compactEditorLayout -> 42
                 else -> 32
             })
             val frame = FrameLayout(this).apply {
