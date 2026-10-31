@@ -342,3 +342,17 @@ New visual requirement; this is a documentation record, not a claim that the UI 
 - [x] Replaced those references with `FrameLayout.LayoutParams` (the inherited child-param class used by ScrollView) and removed the obsolete second fixed-height preview declaration in commit `e65c6a736f41c118613748b276e493ef42feee77`.
 - [ ] Verify the correction with a fresh Kotlin compile/unit-test/Debug APK run. Do not repeat the failed workflow without this source correction.
 - [ ] Emulator screenshot and touch validation remain pending. Keep PR #11 draft and version 395 blocked.
+
+
+## CapCut reference layout — first structural pass committed (2026-10-31)
+
+- Commit: `47df170d141382c7163891e7145cf611538beb85`.
+- Moved the single Play/Pause control out of the timeline card so it sits immediately below the preview, centered in its own row.
+- Moved the current-time / total-duration readout above the timeline tracks and aligned it to the left.
+- Removed the redundant timeline-card header/add button row; the timeline workspace now starts with the ruler/tracks instead of an extra header.
+- Changed the timeline playhead indicator from red to white to match the user's marked screenshot.
+- Removed the rounded bordered timeline-card treatment in favor of the dark, open workspace in the reference.
+- **Not yet accepted:** this is a first structural pass only. It does not yet match the reference fully: top bar still needs close/search + resolution + cyan export hierarchy; time readout and ruler still need to share one horizontal row; bottom dock still needs the contextual CapCut-style tool items; preview/timeline proportions and touch alignment require screenshot review.
+- CI Verify, debug APK and emulator screenshot workflows were triggered for this exact commit. Do not infer success until all three finish and the actual screenshot is inspected.
+- Keep PR #11 draft. Do not create, sign, publish or offer version 395.
+
