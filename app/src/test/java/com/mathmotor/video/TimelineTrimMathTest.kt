@@ -216,6 +216,16 @@ class TimelineVideoMathTest {
     }
 
     @Test
+    fun playheadTimeMapsToCorrectSourceFrameAndReturnsNullForTimelineGaps() {
+        val first = TimelineVideoSegment(0L, 1_000L, 5_000L, 8_000L)
+        val second = TimelineVideoSegment(6_000L, 2_000L, 7_000L, 10_000L)
+        assertEquals(3_500L, TimelineVideoMath.sourceTimeAtProjectTime(first, 2_500L))
+        assertEquals(2_000L, TimelineVideoMath.sourceTimeAtProjectTime(second, 6_000L))
+        assertEquals(null, TimelineVideoMath.sourceTimeAtProjectTime(first, 5_000L))
+        assertEquals(null, TimelineVideoMath.sourceTimeAtProjectTime(second, 5_500L))
+    }
+
+    @Test
     fun overlapSelectsTopLayerAndGapSelectsNoClip() {
         val segments = listOf(
             TimelineVideoSegment(0L, 0L, 5_000L, 5_000L),
