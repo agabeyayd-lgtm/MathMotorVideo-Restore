@@ -9,6 +9,7 @@ Source changes on `fix/frame-accurate-timeline-zoom`:
 - Added focused unit tests for frame boundaries, snapping, alternative FPS values and pinch-anchor preservation.
 - Added `TimelinePinchGestureTest` for real API 35 emulator pinch-in/out, anchor stability and shared video/ruler scrolling.
 - Wired the API 35 emulator and targeted gesture test into the existing PR-triggered `Verify Android build` workflow; the dedicated screenshot workflow remains for manual runs and main-branch pushes. These workflows do not publish an APK.
+- Isolated the pinch instrumentation run in `.github/scripts/run-timeline-pinch-test.sh`; the workflow attempts it even when screenshot/autosave capture fails, and the test script installs the debug APK and stages its own fixture. This keeps screenshot diagnostics and gesture-test results independent.
 
 Review findings retained as open:
 - Existing millisecond-to-pixel mapping is shared across timeline lanes; this part is reusable.
