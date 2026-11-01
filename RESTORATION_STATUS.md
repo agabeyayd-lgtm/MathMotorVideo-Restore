@@ -5,7 +5,7 @@
 - Added `TimelineFrameMath` for the default 30 fps timeline grid with microsecond-accurate frame timestamps, nearest-frame seek snapping and zoom-sensitive frame ruler intervals.
 - Integrated frame labels at close zoom and retained the existing adaptive second/minute ruler at wider zoom. Timeline scrubbing snaps to the nearest 30 fps frame; continuous playback sync remains timestamp-based.
 - Corrected filmstrip sampling to stay within each clip's half-open interval and avoid the exclusive clip end.
-- **Verification update:** workflow [#654](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41317126059) is running on this candidate. Unit tests passed; Debug APK build and emulator interaction tests remain pending. Do not count the feature as fully verified until the workflow and artifacts are inspected. The 30 fps grid is the timeline timebase; exported MP4 frame rate is not yet asserted or forced by this patch.
+- **Verification update:** workflow [#654](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41317126059) is running on this candidate. Unit tests and Debug APK build passed; fixture preparation and emulator interaction tests remain pending. Do not count the feature as fully verified until the workflow and artifacts are inspected. The 30 fps grid is the timeline timebase; exported MP4 frame rate is not yet asserted or forced by this patch.
 - Version 395 remains blocked; do not bump version metadata, sign/publish an APK or enable updater delivery.
 
 # MathMotor Video — current project status
