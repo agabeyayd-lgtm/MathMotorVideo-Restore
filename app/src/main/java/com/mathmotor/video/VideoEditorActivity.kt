@@ -4957,18 +4957,24 @@ class VideoEditorActivity : Activity() {
                 } catch (_: Exception) { }
                 runCatching {
                     val retriever = MediaMetadataRetriever()
+                    var frameRate: Double? = null
                     val duration = try {
                         retriever.setDataSource(this, uri)
+                        frameRate = retriever.extractMetadata(
+                            MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE
+                        )?.toDoubleOrNull()?.takeIf { it.isFinite() && it in 1.0..240.0 }
                         retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
                     } finally {
                         retriever.release()
                     }
+                    if (frameRate == null) frameRate = readFrameRateFromMediaExtractor(uri)
                     if (duration <= 0L) null else Clip(
                         uri = uri,
                         title = queryDisplayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Video klibi",
                         durationMs = duration,
                         startMs = 0L,
-                        endMs = duration
+                        endMs = duration,
+                        frameRate = frameRate
                     )
                 }.getOrNull()
             }
