@@ -792,9 +792,7 @@ class VideoEditorActivity : Activity() {
         root.addView(gap(8))
 
         val clipPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        clipPanel.addView(label("KLİP DÜZENLEME", 13f, Color.rgb(121, 202, 218), true))
         selectedClipLabel = label("Önce bir video seç.", 12f, Color.WHITE, true)
-        clipPanel.addView(selectedClipLabel)
         val clipActions1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         clipActions1.addView(miniButton("Önizle") { previewSelectedClip() },
             LinearLayout.LayoutParams(0, dp(46), 1f))
@@ -1297,8 +1295,8 @@ class VideoEditorActivity : Activity() {
         // Contextual settings live above the preview; the lower dock remains pinned
         // at the bottom and the shared timeline stays between preview and dock.
         root.removeView(editorPanelScroll)
-        root.addView(editorPanelScroll, 1, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(168)
+        root.addView(editorPanelScroll, (root.childCount - 1).coerceAtLeast(0), LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(136)
         ))
         editorPanelScroll.visibility = View.GONE
 
@@ -5347,9 +5345,11 @@ class VideoEditorActivity : Activity() {
                                 val initial=TimelineVideoSegment(clip.timelineStartMs,initialStartMs,initialEndMs,clip.durationMs)
                                 val updated=if(isStart)TimelineVideoMath.trimStart(initial,deltaMs) else TimelineVideoMath.trimEnd(initial,deltaMs)
                                 if(updated!=initial){
-                                    clip.startMs=updated.sourceStartMs;clip.endMs=updated.sourceEndMs;clip.timelineStartMs=updated.timelineStartMs
+                                    clip.startMs=updated.sourceStartMs;clip.endMs=updated.sourceEndMs
+                                    // Trimming source footage must not move a clip already anchored at project time zero.
+                                    clip.timelineStartMs=if(initial.timelineStartMs==0L) 0L else updated.timelineStartMs
                                     selectedClipIndex=index;finishTrimControlGesture()
-                                    status.text="✓ Başlangıç: ${formatTimelineMs(clip.startMs)} / Bitiş: ${formatTimelineMs(clip.endMs)}"
+                                    status.text="Klip kesimi güncellendi."
                                 }else activeTrimHistorySnapshot=null
                             } else {
                                 activeTrimHistorySnapshot = null
@@ -5653,7 +5653,7 @@ class VideoEditorActivity : Activity() {
         endSeek.max = durationProgressMax
         startSeek.progress = TimelineTrimMath.progressForTime(clip.startMs, clip.durationMs)
         endSeek.progress = TimelineTrimMath.progressForTime(clip.endMs, clip.durationMs)
-        selectedClipLabel.text = "Seçili klip: ${clip.title} • Kesit ${formatTimelineMs((clip.endMs - clip.startMs).coerceAtLeast(0L))} / Kaynak ${formatTimelineMs(clip.durationMs)}"
+        selectedClipLabel.text = ""
         updateTrimLabels()
     }
 
