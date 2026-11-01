@@ -2894,7 +2894,6 @@ class VideoEditorActivity : Activity() {
         timelineScaleGestureDetector.onTouchEvent(event)
 
         if (!wasPinchCaptured &&
-            event.actionMasked == MotionEvent.ACTION_POINTER_DOWN &&
             event.pointerCount >= 2 &&
             timelineScaleGestureActive
         ) {
