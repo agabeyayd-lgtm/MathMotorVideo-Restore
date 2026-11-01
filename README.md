@@ -746,3 +746,6 @@ Source commit: `54daecf5864ed76694f1930eb684bddbd8499628`.
 
 
 Follow-up source commit `69140cfb4e64d18917b8e1e65750481f58c8c39d` closes one synchronization edge case: when the two-finger midpoint is off the fixed centre line, the committed scroll changes the time under the centre playhead. The playhead readout, seek control and preview are now updated to that actual centre time after the pinch. This remains subject to interaction verification.
+
+
+Follow-up source commit `88ef7ea8e06cfb3537893f7c79e8466e6173599e`: pause the active preview as soon as a timeline pinch is accepted, preventing the periodic playback-sync task from scrolling the lanes against the user's two-finger gesture. Interaction verification remains pending.
