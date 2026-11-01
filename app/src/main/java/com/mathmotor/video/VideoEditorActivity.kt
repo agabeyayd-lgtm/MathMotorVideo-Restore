@@ -186,7 +186,6 @@ class VideoEditorActivity : Activity() {
     private var timelinePinchInProgress = false
     private var timelinePinchAnchorTimeMs = 0L
     private var timelinePinchAnchorOffsetPx = 0f
-    private var timelinePinchStartZoom = 1.0f
     private var timelinePinchRequestedZoom = 1.0f
     private var timelineScaleGestureDetector: android.view.ScaleGestureDetector? = null
     private var timelineScrubGrabOffsetPx = 0f
@@ -1930,7 +1929,6 @@ class VideoEditorActivity : Activity() {
                     timelinePinchAnchorTimeMs = TimelineScaleMath.millisecondsForPixels(
                         anchorContentPx, timelinePixelsPerSecond()
                     ).coerceAtLeast(0L)
-                    timelinePinchStartZoom = timelineZoom
                     timelinePinchRequestedZoom = timelineZoom
                     timelinePinchInProgress = true
                     return true
@@ -1946,11 +1944,11 @@ class VideoEditorActivity : Activity() {
                     val targetZoom = timelinePinchRequestedZoom.coerceIn(0.5f, 8.0f)
                     if (targetZoom != timelineZoom) {
                         timelineZoom = targetZoom
-                        val newAnchorPx = TimelineScaleMath.pixelsForTime(
-                            timelinePinchAnchorTimeMs, timelinePixelsPerSecond()
+                        val anchoredScroll = TimelineScaleMath.scrollForTimeAtViewportOffset(
+                            timelinePinchAnchorTimeMs,
+                            timelinePixelsPerSecond(),
+                            timelinePinchAnchorOffsetPx
                         )
-                        val anchoredScroll = (newAnchorPx - timelinePinchAnchorOffsetPx)
-                            .roundToInt().coerceAtLeast(0)
                         pendingTimelineScrollX = anchoredScroll
                         timelineHorizontalScrollX = anchoredScroll
                         refreshTimelineTracks()
