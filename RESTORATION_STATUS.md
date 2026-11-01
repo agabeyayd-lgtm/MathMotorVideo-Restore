@@ -821,3 +821,16 @@ User-approved work scope for the current PR #11; no version 395 or merge until e
 - [ ] Implement a zoom-responsive ruler with major/minor tick subdivisions and adaptive labels similar to CapCut, instead of fixed whole-second labels only.
 
 Validation checklist remains open until the final PR-head build/unit tests, fresh emulator inspection, and phone acceptance cover all five items plus regressions in trim, preview, and timeline gestures. PR #11 stays draft/unmerged; installed versionCode 394/build 61 unchanged; version 395 blocked.
+
+
+### Initial implementation pass — 2026-11-01
+
+- [x] Keep `timelineStartMs` at zero when trimming the source start of a clip whose initial timeline position is zero (source commit `e6cbc2b73012d12afce49b64533d68b89f2ae446`).
+- [x] Remove the redundant clip-edit heading and selected-clip/source-duration line.
+- [x] Move the contextual tool panel from the top of the editor to the bottom area immediately above the fixed dock (initial placement only; sizing/keyboard behavior still needs work).
+- [ ] Verify zero-origin trim by unit/instrumentation test and on phone; verify no gray lead-in after repeated trims.
+- [ ] Finish the CapCut-style bottom drawer sizing, scrolling, keyboard and short-screen behavior.
+- [ ] Implement/verify dynamic major/minor ruler subdivisions.
+- [ ] Fix exact preview/filmstrip frame synchronization and stale/partial frames during rapid scrubbing.
+
+No build/phone acceptance claimed. PR #11 remains draft/unmerged; version 395 remains blocked.
