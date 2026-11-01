@@ -282,7 +282,35 @@ class VideoEditorActivity : Activity() {
         override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount.coerceAtLeast(1)
     }
     private val pendingTimelineThumbnails = mutableMapOf<String, MutableList<WeakReference<ImageView>>>()
-    private val timelineThumbnailExecutor = java.util.concurrent.Executors.newFixedThreadPool(2)
+    private class TimelineThumbnailTask(
+        private val distanceFromPlayheadMs: Long,
+        private val sequence: Long,
+        private val work: () -> Unit
+    ) : Runnable, Comparable<TimelineThumbnailTask> {
+        override fun compareTo(other: TimelineThumbnailTask): Int {
+            val priority = distanceFromPlayheadMs.compareTo(other.distanceFromPlayheadMs)
+            return if (priority != 0) priority else sequence.compareTo(other.sequence)
+        }
+        override fun run() = work()
+    }
+    private val timelineThumbnailTaskSequence = java.util.concurrent.atomic.AtomicLong()
+    // One decoder worker avoids competing hardware decoders. Its priority queue extracts
+    // frames nearest the fixed playhead first, rather than filling off-screen cells first.
+    private val timelineThumbnailExecutor = java.util.concurrent.ThreadPoolExecutor(
+        1,
+        1,
+        0L,
+        java.util.concurrent.TimeUnit.MILLISECONDS,
+        java.util.concurrent.PriorityBlockingQueue<Runnable>(
+            11,
+            java.util.Comparator { first, second ->
+                (first as TimelineThumbnailTask).compareTo(second as TimelineThumbnailTask)
+            }
+        )
+    )
+    // Accessed only on timelineThumbnailExecutor's single worker thread.
+    private var timelineThumbnailRetriever: MediaMetadataRetriever? = null
+    private var timelineThumbnailRetrieverUri: Uri? = null
     private lateinit var timelinePlayheadSeek: SeekBar
     private lateinit var timelinePlayheadLabel: TextView
     private lateinit var timelinePlayButton: Button
@@ -5221,33 +5249,29 @@ class VideoEditorActivity : Activity() {
         // exactly, so there is no second independently moving strip behind them.
         // Bound the count to keep thumbnail decoding and cache pressure predictable.
         val targetThumbnailWidth = dp(52).coerceAtLeast(1)
-        val thumbnailCount = kotlin.math.ceil(width.toDouble() / targetThumbnailWidth)
-            .toInt().coerceIn(1, 256)
-        val separatorWidth = 0
+        // Cell count follows the real clip width (duration × px/sec): zooming in
+        // creates more timestamp samples; zooming out reduces their density.
+        val thumbnailCount = TimelineThumbnailMath.thumbnailCount(width, targetThumbnailWidth)
         val availableCellWidth = width.coerceAtLeast(thumbnailCount)
         val baseCellWidth = (availableCellWidth / thumbnailCount).coerceAtLeast(1)
         val extraPixels = availableCellWidth % thumbnailCount
-        val sampleSpanMs = (durationMs - 1L).coerceAtLeast(0L)
         repeat(thumbnailCount) { slot ->
             val image = ImageView(this).apply {
-                // Fill each landscape timeline cell. FIT_CENTER letterboxed portrait
-                // source frames and exposed the gray cell background between thumbnails.
+                // Cells stay edge-to-edge; black is the loading fallback, never a gray rail.
                 scaleType = ImageView.ScaleType.CENTER_CROP
-                setBackgroundColor(Color.rgb(31, 46, 59))
+                setBackgroundColor(Color.BLACK)
                 contentDescription = "Klip karesi"
             }
             val cellWidth = baseCellWidth + if (slot < extraPixels) 1 else 0
             filmstrip.addView(image, LinearLayout.LayoutParams(cellWidth, ViewGroup.LayoutParams.MATCH_PARENT).apply {
                 if (slot < thumbnailCount - 1) rightMargin = 0
             })
-            // The first thumbnail is the actual first source frame, not a later
-            // preview sample. Every subsequent sample advances along that same clip.
-            val frameTime = clip.startMs + if (thumbnailCount <= 1) {
-                0L
-            } else {
-                sampleSpanMs * slot.toLong() / (thumbnailCount - 1).toLong()
-            }
-            requestTimelineThumbnail(clip.uri, frameTime, image)
+            val frameTime = TimelineThumbnailMath.sampleTime(
+                clip.startMs, clip.endMs, thumbnailCount, slot
+            )
+            val projectFrameTime = clip.timelineStartMs + (frameTime - clip.startMs).coerceAtLeast(0L)
+            val priorityDistanceMs = kotlin.math.abs(projectFrameTime - timelinePlayheadMs)
+            requestTimelineThumbnail(clip.uri, frameTime, image, priorityDistanceMs)
         }
         container.addView(filmstrip, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
@@ -5376,14 +5400,33 @@ class VideoEditorActivity : Activity() {
         return container
     }
 
+    private fun releaseTimelineThumbnailRetriever() {
+        runCatching { timelineThumbnailRetriever?.release() }
+        timelineThumbnailRetriever = null
+        timelineThumbnailRetrieverUri = null
+    }
+
     private fun decodeTimelineFrame(uri: Uri, timeMs: Long): Bitmap? {
         val frameTimeUs = timeMs.coerceAtLeast(0L) * 1000L
-        val retriever = MediaMetadataRetriever()
-        val platformFrame = try {
-            retriever.setDataSource(this, uri)
+        val retriever = try {
+            if (timelineThumbnailRetriever == null || timelineThumbnailRetrieverUri != uri) {
+                releaseTimelineThumbnailRetriever()
+                val created = MediaMetadataRetriever()
+                created.setDataSource(this, uri)
+                timelineThumbnailRetriever = created
+                timelineThumbnailRetrieverUri = uri
+            }
+            timelineThumbnailRetriever
+        } catch (error: Exception) {
+            releaseTimelineThumbnailRetriever()
+            android.util.Log.w("TimelineThumbnail", "Platform decoder could not open $uri", error)
+            null
+        }
+
+        val platformFrame = retriever?.let { activeRetriever ->
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                 runCatching {
-                    retriever.getScaledFrameAtTime(
+                    activeRetriever.getScaledFrameAtTime(
                         frameTimeUs,
                         MediaMetadataRetriever.OPTION_CLOSEST,
                         192,
@@ -5393,24 +5436,15 @@ class VideoEditorActivity : Activity() {
             } else {
                 null
             } ?: runCatching {
-                retriever.getFrameAtTime(frameTimeUs, MediaMetadataRetriever.OPTION_CLOSEST)
+                activeRetriever.getFrameAtTime(frameTimeUs, MediaMetadataRetriever.OPTION_CLOSEST)
+            }.getOrNull() ?: runCatching {
+                activeRetriever.getFrameAtTime(frameTimeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
             }.getOrNull()
-                ?: runCatching {
-                    retriever.getFrameAtTime(frameTimeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                }.getOrNull()
-                // Do not fall back to an untimestamped frame here: Android may
-                // return the video's first frame for every requested slot, creating
-                // a filmstrip full of incorrect/repeated thumbnails. Media3 below
-                // retries the exact requested timestamp instead.
-        } catch (_: Exception) {
-            null
-        } finally {
-            runCatching { retriever.release() }
         }
         if (platformFrame != null) return platformFrame
 
-        // Fallback to Media3's decoder—the same playback stack used by the preview.
-        // It is only initialized when Android's platform decoder returned no frame.
+        // Media3 is the one fallback for this timestamp. The platform retriever stays
+        // open and is reused for subsequent cells from the same video URI.
         var extractor: FrameExtractor? = null
         var frameFuture: java.util.concurrent.Future<FrameExtractor.Frame>? = null
         try {
@@ -5420,16 +5454,22 @@ class VideoEditorActivity : Activity() {
             extractor = createdExtractor
             val future = createdExtractor.getFrame(timeMs.coerceAtLeast(0L))
             frameFuture = future
-            return future.get(4L, TimeUnit.SECONDS).bitmap
-        } catch (_: Exception) {
+            return future.get(2500L, TimeUnit.MILLISECONDS).bitmap
+        } catch (error: Exception) {
             frameFuture?.cancel(true)
+            android.util.Log.w("TimelineThumbnail", "No frame decoded for $uri at ${timeMs}ms", error)
             return null
         } finally {
             runCatching { extractor?.close() }
         }
     }
 
-    private fun requestTimelineThumbnail(uri: Uri, timeMs: Long, target: ImageView) {
+    private fun requestTimelineThumbnail(
+        uri: Uri,
+        timeMs: Long,
+        target: ImageView,
+        priorityDistanceMs: Long = kotlin.math.abs(timeMs - timelinePlayheadMs)
+    ) {
         val timestampMs = timeMs.coerceAtLeast(0L)
         val key = "${uri}#${timestampMs}"
         target.tag = key
@@ -5438,7 +5478,7 @@ class VideoEditorActivity : Activity() {
             target.setImageBitmap(cached)
             return
         }
-        // Keep a nearby cached frame visible while this scale-specific sample is decoding.
+        // Keep a nearby cached frame visible while this zoom level's exact sample loads.
         if (target.drawable == null) {
             val prefix = uri.toString() + "#"
             val nearby = timelineThumbnailCache.snapshot().entries
@@ -5457,75 +5497,81 @@ class VideoEditorActivity : Activity() {
             return
         }
         pendingTimelineThumbnails[key] = mutableListOf(WeakReference(target))
-        try {
-            timelineThumbnailExecutor.execute {
-                var result: Bitmap? = null
-                try {
-                    var original: Bitmap? = null
-                    // Retry transient frame-extractor/codec failures without affecting playback.
-                    for (attempt in 0..2) {
-                        original = decodeTimelineFrame(uri, timestampMs)
-                        if (original != null && !original.isRecycled &&
-                            original.width > 0 && original.height > 0
-                        ) break
-                        original?.let { if (!it.isRecycled) it.recycle() }
-                        original = null
-                        if (attempt < 2) Thread.sleep(120L * (attempt + 1))
+        val task = TimelineThumbnailTask(
+            priorityDistanceMs.coerceAtLeast(0L),
+            timelineThumbnailTaskSequence.incrementAndGet()
+        ) {
+            var decoded: Bitmap? = null
+            try {
+                val original = decodeTimelineFrame(uri, timestampMs)
+                if (original != null && !original.isRecycled &&
+                    original.width > 0 && original.height > 0
+                ) {
+                    // Crop to 16:9, then downsample into the actual thumbnail bitmap.
+                    // The ImageView receives 192×108 pixels, not a full-size frame.
+                    val targetRatio = 192f / 108f
+                    val sourceRatio = original.width.toFloat() / original.height.toFloat()
+                    val cropWidth: Int
+                    val cropHeight: Int
+                    val cropLeft: Int
+                    val cropTop: Int
+                    if (sourceRatio > targetRatio) {
+                        cropHeight = original.height
+                        cropWidth = (cropHeight * targetRatio).toInt().coerceIn(1, original.width)
+                        cropLeft = (original.width - cropWidth) / 2
+                        cropTop = 0
+                    } else {
+                        cropWidth = original.width
+                        cropHeight = (cropWidth / targetRatio).toInt().coerceIn(1, original.height)
+                        cropLeft = 0
+                        cropTop = (original.height - cropHeight) / 2
                     }
-                    if (original != null && !original.isRecycled && original.width > 0 && original.height > 0) {
-                        // Produce a true edge-to-edge 16:9 frame bitmap. Previously the
-                        // decoder letterboxed portrait/odd-ratio sources into a 192x108
-                        // bitmap, baking the dark side/top bars into every thumbnail;
-                        // ImageView.CENTER_CROP cannot remove pixels already in the bitmap.
-                        val targetRatio = 192f / 108f
-                        val sourceRatio = original.width.toFloat() / original.height.toFloat()
-                        val cropWidth: Int
-                        val cropHeight: Int
-                        val cropLeft: Int
-                        val cropTop: Int
-                        if (sourceRatio > targetRatio) {
-                            cropHeight = original.height
-                            cropWidth = (cropHeight * targetRatio).toInt().coerceIn(1, original.width)
-                            cropLeft = (original.width - cropWidth) / 2
-                            cropTop = 0
-                        } else {
-                            cropWidth = original.width
-                            cropHeight = (cropWidth / targetRatio).toInt().coerceIn(1, original.height)
-                            cropLeft = 0
-                            cropTop = (original.height - cropHeight) / 2
-                        }
-                        val framed = Bitmap.createBitmap(192, 108, Bitmap.Config.ARGB_8888)
-                        val canvas = android.graphics.Canvas(framed)
-                        canvas.drawBitmap(
-                            original,
-                            android.graphics.Rect(cropLeft, cropTop, cropLeft + cropWidth, cropTop + cropHeight),
-                            android.graphics.Rect(0, 0, 192, 108),
-                            android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG or android.graphics.Paint.FILTER_BITMAP_FLAG)
+                    val framed = Bitmap.createBitmap(192, 108, Bitmap.Config.ARGB_8888)
+                    val canvas = android.graphics.Canvas(framed)
+                    canvas.drawBitmap(
+                        original,
+                        android.graphics.Rect(cropLeft, cropTop, cropLeft + cropWidth, cropTop + cropHeight),
+                        android.graphics.Rect(0, 0, 192, 108),
+                        android.graphics.Paint(
+                            android.graphics.Paint.ANTI_ALIAS_FLAG or
+                                android.graphics.Paint.FILTER_BITMAP_FLAG
                         )
-                        if (!original.isRecycled) original.recycle()
-                        result = framed
-                    } else {
-                        original?.let { if (!it.isRecycled) it.recycle() }
-                    }
-                } catch (_: Exception) {
-                    // Keep the neutral placeholder visible only if both decoders fail.
+                    )
+                    if (!original.isRecycled) original.recycle()
+                    decoded = framed
+                } else {
+                    original?.let { if (!it.isRecycled) it.recycle() }
                 }
-                val decoded = result
-                runOnUiThread {
-                    val targets = pendingTimelineThumbnails.remove(key).orEmpty()
-                    if (decoded != null && !isFinishing && !isDestroyed) {
-                        timelineThumbnailCache.put(key, decoded)
-                        targets.forEach { ref ->
-                            val image = ref.get()
-                            if (image != null && image.tag == key) image.setImageBitmap(decoded)
+            } catch (error: Exception) {
+                android.util.Log.w("TimelineThumbnail", "Thumbnail creation failed for $uri at ${timestampMs}ms", error)
+            }
+
+            val result = decoded
+            runOnUiThread {
+                val targets = pendingTimelineThumbnails.remove(key).orEmpty()
+                if (result != null && !isFinishing && !isDestroyed) {
+                    timelineThumbnailCache.put(key, result)
+                    targets.forEach { ref ->
+                        val image = ref.get()
+                        if (image != null && image.tag == key) image.setImageBitmap(result)
+                    }
+                } else {
+                    result?.recycle()
+                    // Do not leave a gray-blue empty tile when a decoder rejects a frame.
+                    targets.forEach { ref ->
+                        val image = ref.get()
+                        if (image != null && image.tag == key && image.drawable == null) {
+                            image.setBackgroundColor(Color.BLACK)
                         }
-                    } else {
-                        decoded?.recycle()
                     }
                 }
             }
+        }
+        try {
+            timelineThumbnailExecutor.execute(task)
         } catch (_: java.util.concurrent.RejectedExecutionException) {
             pendingTimelineThumbnails.remove(key)
+            target.setBackgroundColor(Color.BLACK)
         }
     }
 
@@ -6051,7 +6097,20 @@ class VideoEditorActivity : Activity() {
         timelineHandler.removeCallbacks(textTimelineRefreshTask)
         timelineHandler.removeCallbacks(timelineScrubPreviewSeekTask)
         pendingTimelineScrubPreviewTargetMs = null
-        timelineThumbnailExecutor.shutdownNow()
+        // Discard stale queued cells, then release the reused decoder on its worker
+        // after any in-flight frame extraction has returned.
+        timelineThumbnailExecutor.queue.clear()
+        runCatching {
+            timelineThumbnailExecutor.execute(
+                TimelineThumbnailTask(Long.MIN_VALUE, timelineThumbnailTaskSequence.incrementAndGet()) {
+                    releaseTimelineThumbnailRetriever()
+                }
+            )
+            timelineThumbnailExecutor.shutdown()
+        }.onFailure {
+            timelineThumbnailExecutor.shutdownNow()
+            releaseTimelineThumbnailRetriever()
+        }
         pendingTimelineThumbnails.clear()
         timelineThumbnailCache.evictAll()
         playerView.player = null
