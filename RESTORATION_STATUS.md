@@ -1043,7 +1043,7 @@ User explicitly prioritized solving fast filmstrip creation and confirmed the Ca
 - Preserve the accepted 52dp-wide 9:16 thumbnail cell geometry and full-frame/no-crop rendering. Do not trade image correctness for speed.
 
 ### Remaining focused acceptance
-- [ ] Inspect #641 artifact and calculate new 19-frame decode duration; compare with 7.5-second baseline.
+- [x] Inspected #641 artifact: 19 thumbnail-ready events from 13:50:37.115 to 13:50:41.222 = 4.107s, compared with #640's approximately 7.5s for the same 19-frame fixture (about 45% faster by total elapsed time). Emulator-only result; physical-phone performance still needs confirmation.
 - [ ] Verify no race/stale frame under rapid scrub, zoom and scroll; preview and filmstrip remain timestamp-identical.
 - [ ] Implement and unit-test source-FPS-aware frame ruler and frame-accurate scrub/preview.
 - [ ] Confirm all four filmstrip goals on physical phone.
