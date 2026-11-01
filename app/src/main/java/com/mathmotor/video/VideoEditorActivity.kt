@@ -1762,6 +1762,12 @@ class VideoEditorActivity : Activity() {
                 // with the ruler row; media lanes reserve the same 96dp width.
                 row.addView(FrameLayout(this).apply {
                     contentDescription = "Zaman cetveli başlığı ve oynatma süresi"
+                    // refreshTimelineTracks() can run again after the responsive layout
+                    // listener fires. Removing the old lane detaches the row from
+                    // timelineTracks, but does not detach this nested label from its
+                    // former FrameLayout. Move the shared label explicitly before
+                    // adding it to the newly created ruler header.
+                    (timelinePlayheadLabel.parent as? ViewGroup)?.removeView(timelinePlayheadLabel)
                     addView(
                         timelinePlayheadLabel,
                         FrameLayout.LayoutParams(
