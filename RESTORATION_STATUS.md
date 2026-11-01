@@ -995,3 +995,15 @@ The user confirmed the target is exactly CapCut's behavior, not a frozen thumbna
 - Keep playhead fixed in the viewport and preserve the time anchored under the pinch midpoint, matching CapCut's interaction.
 - Compare same clip, same playhead position and equivalent zoom levels on the physical phone. Acceptance is CapCut behavioral parity, not an arbitrary fixed thumbnail density.
 
+
+
+## Focused follow-up — CapCut pinch/filmstrip acceptance (2026-11-01)
+
+- Rechecked PR #11 source before editing: the shared pinch detector already scales every timeline lane horizontally, commits one shared px/sec scale, anchors zoom under the moving pinch midpoint, and rebuilds the timeline once the gesture ends. Do not replace this implementation wholesale.
+- Rechecked filmstrip sizing: thumbnail count is derived from the clip's rendered timeline width and a target cell width, so visible thumbnail count naturally increases/decreases with horizontal zoom. The filmstrip row uses MATCH_PARENT height; thumbnail cells do not define an independent vertical scale.
+- Added focused regression assertions to `TimelineScaleMathTest.kt` for thumbnail count at zoom-in/normal/zoom-out widths, ordered timestamp sampling at multiple densities, and the 256-thumbnail safety cap.
+- Test commit: `c6e9ca8faeffed7b2aafbe0515ce4b4de1be6300`.
+- State: source inspection and test authoring complete; **tests/build/emulator/physical-phone comparison have not yet been run for this commit**. Do not report green until CI evidence exists.
+- Still open: confirm pinch transform/commit visually matches CapCut on the phone; confirm stable filmstrip lane height and aspect-correct thumbnail rendering; move ruler to frame-based labels/subdivisions (2f/4f/6f where supported by actual source FPS); confirm duration readout above ruler on device.
+- Preserve PR #11 as draft/unmerged. No version bump or version 395.
+
