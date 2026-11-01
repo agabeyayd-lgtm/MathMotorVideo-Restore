@@ -180,6 +180,13 @@ class VideoEditorActivity : Activity() {
     private lateinit var timelinePlayheadSeek: SeekBar
     private lateinit var timelinePlayheadLabel: TextView
     private var timelinePlayheadMs = 0L
+    private var timelineGestureTracking = false
+    private var timelinePinchConsumed = false
+    private var timelinePinchAnchorTimeMs = 0L
+    private var timelinePinchAnchorOffsetPx = 0f
+    private var timelinePinchStartZoom = 1.0f
+    private var timelinePinchRequestedZoom = 1.0f
+    private var timelineScaleGestureDetector: android.view.ScaleGestureDetector? = null
     private var timelineScrubGrabOffsetPx = 0f
     private var timelinePreviewLoaded = false
     private var previewSingleClip = false
@@ -1893,6 +1900,99 @@ class VideoEditorActivity : Activity() {
         return zoomChanged || pendingTimelineScrollX != null
     }
 
+    private fun ensureTimelineScaleGestureDetector() {
+        if (timelineScaleGestureDetector != null) return
+        timelineScaleGestureDetector = android.view.ScaleGestureDetector(
+            this,
+            object : android.view.ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                override fun onScaleBegin(detector: android.view.ScaleGestureDetector): Boolean {
+                    if (!::timelineTracksFrame.isInitialized || timelineScrollViews.isEmpty()) return false
+                    val rootLocation = IntArray(2)
+                    val frameLocation = IntArray(2)
+                    window.decorView.getLocationOnScreen(rootLocation)
+                    timelineTracksFrame.getLocationOnScreen(frameLocation)
+                    val focusScreenX = rootLocation[0] + detector.focusX
+                    val focusScreenY = rootLocation[1] + detector.focusY
+                    if (focusScreenX < frameLocation[0] ||
+                        focusScreenX > frameLocation[0] + timelineTracksFrame.width ||
+                        focusScreenY < frameLocation[1] ||
+                        focusScreenY > frameLocation[1] + timelineTracksFrame.height
+                    ) return false
+
+                    val scroll = timelineScrollViews.firstOrNull() ?: return false
+                    val scrollLocation = IntArray(2)
+                    scroll.getLocationOnScreen(scrollLocation)
+                    timelinePinchAnchorOffsetPx =
+                        (focusScreenX - scrollLocation[0]).coerceIn(0, scroll.width.toFloat())
+                    val anchorContentPx = scroll.scrollX.toFloat() + timelinePinchAnchorOffsetPx
+                    timelinePinchAnchorTimeMs = TimelineScaleMath.millisecondsForPixels(
+                        anchorContentPx, timelinePixelsPerSecond()
+                    ).coerceAtLeast(0L)
+                    timelinePinchStartZoom = timelineZoom
+                    timelinePinchRequestedZoom = timelineZoom
+                    return true
+                }
+
+                override fun onScale(detector: android.view.ScaleGestureDetector): Boolean {
+                    timelinePinchRequestedZoom =
+                        (timelinePinchStartZoom * detector.scaleFactor).coerceIn(0.5f, 8.0f)
+                    return true
+                }
+
+                override fun onScaleEnd(detector: android.view.ScaleGestureDetector) {
+                    val targetZoom = timelinePinchRequestedZoom.coerceIn(0.5f, 8.0f)
+                    if (targetZoom != timelineZoom) {
+                        timelineZoom = targetZoom
+                        val newAnchorPx = TimelineScaleMath.pixelsForTime(
+                            timelinePinchAnchorTimeMs, timelinePixelsPerSecond()
+                        )
+                        val anchoredScroll = (newAnchorPx - timelinePinchAnchorOffsetPx)
+                            .roundToInt().coerceAtLeast(0)
+                        pendingTimelineScrollX = anchoredScroll
+                        timelineHorizontalScrollX = anchoredScroll
+                        refreshTimelineTracks()
+                        status.text = "Zaman çizelgesi: ${timelineZoom}×"
+                    }
+                    timelinePinchConsumed = true
+                }
+            }
+        )
+    }
+
+    private fun isTouchInsideTimeline(rawX: Float, rawY: Float): Boolean {
+        if (!::timelineTracksFrame.isInitialized) return false
+        val location = IntArray(2)
+        timelineTracksFrame.getLocationOnScreen(location)
+        return rawX >= location[0] && rawX <= location[0] + timelineTracksFrame.width &&
+            rawY >= location[1] && rawY <= location[1] + timelineTracksFrame.height
+    }
+
+    override fun dispatchTouchEvent(event: android.view.MotionEvent): Boolean {
+        when (event.actionMasked) {
+            android.view.MotionEvent.ACTION_DOWN -> {
+                timelineGestureTracking = isTouchInsideTimeline(event.rawX, event.rawY)
+                timelinePinchConsumed = false
+            }
+        }
+
+        if (timelineGestureTracking) {
+            ensureTimelineScaleGestureDetector()
+            val wasPinchConsumed = timelinePinchConsumed
+            timelineScaleGestureDetector?.onTouchEvent(event)
+            val consumePinch = wasPinchConsumed || timelinePinchConsumed
+            if (event.actionMasked == android.view.MotionEvent.ACTION_UP ||
+                event.actionMasked == android.view.MotionEvent.ACTION_CANCEL
+            ) {
+                timelineGestureTracking = false
+                timelinePinchConsumed = false
+                if (consumePinch) return true
+            } else if (consumePinch) {
+                return true
+            }
+        }
+        return super.dispatchTouchEvent(event)
+    }
+
     private fun adjustTimelineZoom(factor: Float) {
         val newZoom = (timelineZoom * factor).coerceIn(0.5f, 8.0f)
         if (newZoom == timelineZoom) return
@@ -1980,9 +2080,10 @@ class VideoEditorActivity : Activity() {
         if (clips.isEmpty()) return
         ensureTimelinePreviewLoaded()
         if (totalOutputDurationMs() <= 0L) return
+        val frameAlignedMs = TimelineFrameMath.snapToFrameMs(requestedMs, TimelineFrameMath.DEFAULT_PROJECT_FPS)
         val position = TimelinePositionMath.locate(
             clips.map { (it.endMs - it.startMs).coerceAtLeast(0L) },
-            requestedMs
+            frameAlignedMs
         ) ?: return
         val targetMs = position.clipStartMs + position.localPositionMs
         player?.seekTo(position.clipIndex, position.localPositionMs)
@@ -2002,7 +2103,10 @@ class VideoEditorActivity : Activity() {
         val index = currentPlayer.currentMediaItemIndex
         if (index !in clips.indices) return
         val offsetMs = clips.take(index).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
-        timelinePlayheadMs = (offsetMs + currentPlayer.currentPosition).coerceIn(0L, totalOutputDurationMs())
+        timelinePlayheadMs = TimelineFrameMath.snapToFrameMs(
+            (offsetMs + currentPlayer.currentPosition).coerceIn(0L, totalOutputDurationMs()),
+            TimelineFrameMath.DEFAULT_PROJECT_FPS
+        ).coerceAtMost(totalOutputDurationMs())
         if (selectedClipIndex != index) {
             selectedClipIndex = index
             refreshClipList()
@@ -2019,8 +2123,11 @@ class VideoEditorActivity : Activity() {
         val clip = clips.getOrNull(index) ?: return
         val beforeMs = clips.take(index).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
         val clipDuration = (clip.endMs - clip.startMs).coerceAtLeast(0L)
-        timelinePlayheadMs = (beforeMs + currentPlayer.currentPosition.coerceIn(0L, clipDuration))
-            .coerceIn(0L, totalOutputDurationMs())
+        timelinePlayheadMs = TimelineFrameMath.snapToFrameMs(
+            (beforeMs + currentPlayer.currentPosition.coerceIn(0L, clipDuration))
+                .coerceIn(0L, totalOutputDurationMs()),
+            TimelineFrameMath.DEFAULT_PROJECT_FPS
+        ).coerceAtMost(totalOutputDurationMs())
         if (::timelinePlayheadSeek.isInitialized) {
             timelinePlayheadSeek.progress = TimelineTrimMath.progressForTime(timelinePlayheadMs, totalOutputDurationMs())
         }
