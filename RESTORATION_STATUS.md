@@ -948,3 +948,26 @@ This is a targeted source fix, not yet verified. PR #11 remains draft/unmerged; 
 - In the same captured screenshot, sampling an interior point offset from the playhead gave matching preview/thumbnail pixels (max delta 0). Updated the assertion to sample a nearby interior point instead of the covered center. Source commit: `53a7f6e1775ced2d43926ccd66a7bb127509d54d`.
 - This diagnoses the #621 pixel mismatch as a test sampling defect for this capture; it does not yet establish full preview correctness across content/aspect ratios or rapid scrubbing. The corrected CI assertion still needs a fresh emulator run.
 - #621 did not reach forward/reverse scrub, playback synchronization, or autosave assertions. Pinch zoom and clip-edit gestures remain untested. PR #11 stays draft/unmerged; versionCode 394/build 61 unchanged; version 395 remains blocked.
+
+
+## Physical-phone CapCut comparison — newly observed targets (2026-11-01)
+
+The user supplied two screenshots with both editors' timelines expanded. Add the following as OPEN acceptance targets on this PR #11 candidate:
+
+1. Two-finger pinch must control timeline time-scale/ruler zoom without accidentally dragging, trimming, moving or otherwise editing the selected video clip/filmstrip. Preserve shared ruler-to-filmstrip time alignment, stable strip height and actual clip start/end/duration. Do not guess whether thumbnail density should change; compare the same clip at equivalent zoom against CapCut.
+2. Move current-time / total-duration readout to directly above the timeline ruler rather than the separate playback-control row. Keep one authoritative display.
+3. Adapt ruler granularity to zoom, including frame subdivisions (2f/4f/6f where supported by the clip frame rate).
+4. Keep playhead fixed in the viewport while timeline content moves beneath it; fixed zero-time/header controls must not scroll with the filmstrip.
+5. Keep filmstrip height stable and frames clear/sequential; pinch must not cause unintended vertical resizing, distortion or clip manipulation.
+6. Refine workspace hierarchy: preview above, shared ruler/video and independent audio/text lanes in the middle, compact contextual tools and bottom dock below. Reduce oversized panel/unused space without shrinking touch targets or distorting preview aspect ratio.
+7. Review preview size/unused black area against CapCut on the physical phone; preserve source aspect ratio.
+
+### Required proof
+
+- Compare the same source clip and equivalent timeline zoom on the actual phone.
+- Capture minimum/middle/maximum zoom and verify ruler detail, stable strip geometry and absence of unintended clip edits.
+- Confirm pinch alone does not change clip start/end, trim bounds, actual/total duration, playhead time, preview frame or export duration.
+- Confirm duration readout placement/synchronization and frame ticks against source FPS.
+- Add/run only targeted tests for uncovered behavior; do not repeat already-green scenarios unchanged.
+- These targets remain OPEN until physical-phone verification; emulator/build evidence is not device acceptance.
+
