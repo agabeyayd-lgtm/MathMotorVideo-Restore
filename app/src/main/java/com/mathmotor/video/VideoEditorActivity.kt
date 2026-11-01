@@ -668,9 +668,17 @@ class VideoEditorActivity : Activity() {
             if (clips.isEmpty()) {
                 chooseVideo(true)
             } else {
+                if (timelineSyncTestEnabled) android.util.Log.i(
+                    "TimelineSyncTest",
+                    "TIMELINE_PLAY_TAP playheadMs=$timelinePlayheadMs loaded=$timelinePreviewLoaded hasPlayer=${timelineCompositionPlayer != null}"
+                )
                 ensureTimelinePreviewLoaded()
                 val currentPlayer = timelineCompositionPlayer
-                if (currentPlayer?.isPlaying == true) {
+                if (currentPlayer == null) {
+                    timelinePlaybackState = TimelinePlaybackState.ERROR
+                    timelinePreviewError = "Önizleme oynatıcısı hazırlanamadı."
+                    status.text = timelinePreviewError
+                } else if (currentPlayer.isPlaying || currentPlayer.playWhenReady) {
                     currentPlayer.pause()
                     currentPlayer.playWhenReady = false
                     timelinePlaybackState = TimelinePlaybackState.PAUSED
@@ -679,11 +687,15 @@ class VideoEditorActivity : Activity() {
                 } else {
                     timelinePreviewError = null
                     timelinePlaybackState = TimelinePlaybackState.PLAYING
-                    currentPlayer?.seekTo(timelinePlayheadMs)
+                    currentPlayer.seekTo(timelinePlayheadMs)
                     hidePreviewFrameOverlay()
-                    currentPlayer?.playWhenReady = true
+                    currentPlayer.playWhenReady = true
                     status.text = "Proje önizlemesi oynatılıyor."
                 }
+                if (timelineSyncTestEnabled) android.util.Log.i(
+                    "TimelineSyncTest",
+                    "TIMELINE_PLAY_STATE isPlaying=${currentPlayer?.isPlaying} playWhenReady=${currentPlayer?.playWhenReady} state=${currentPlayer?.playbackState} previewLoaded=$timelinePreviewLoaded"
+                )
                 updateTimelinePlayButtonState()
             }
         }.apply {
