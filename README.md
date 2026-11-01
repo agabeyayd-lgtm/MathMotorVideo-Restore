@@ -4,8 +4,9 @@
 - Replaced that fixed overhead with measured lane-content height + the 26dp time header + 6dp card padding. The panel now grows with added rows and is capped at 280dp normally / 154dp while the keyboard is open; overflow remains in the vertical lane scroller.
 - Added pure `TimelineLayoutMath` and JVM tests for a single video row, added layers, max-height clamping, and keyboard/empty minimums.
 - Source change commit: `80af399370530b23e13c12bcdb213d26769f48b0`.
-- [ ] Kotlin compile and JVM unit tests for this change.
-- [ ] Fresh emulator screenshot review on the new source commit; confirm the unused panel area is gone and the bottom dock remains fixed.
+- [x] The isolated `TimelineLayoutMath.kt` helper compiled with Kotlin 1.9.0 and five direct assertions passed (single lane, multiple lanes, maximum clamp, empty minimum and keyboard maximum). This is a helper-level check only.
+- [ ] Full Gradle JVM test suite and Android app compilation remain pending. GitHub Actions has not produced a run for source commit `80af399370530b23e13c12bcdb213d26769f48b0`; the earlier green workflows belong to source commit `2628167` and do not verify this change.
+- [ ] Fresh emulator screenshot review on the new source commit; confirm the unused panel area is gone and the bottom dock remains fixed. The previously downloaded APK is from the pre-fix source and must not be used to judge this layout change.
 - [ ] Recheck pinch, clip move/trim, multi-layer placement, contextual panel/keyboard and save/reopen after layout sizing changes.
 - No app version change, signed release, merge or version 395.
 
