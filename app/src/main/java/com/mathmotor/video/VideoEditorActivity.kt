@@ -5460,6 +5460,184 @@ class VideoEditorActivity : Activity() {
         timelineThumbnailRetrieverUri = null
     }
 
+    private fun hidePreviewFrameOverlay() {
+        if (!::previewFrameOverlay.isInitialized) return
+        previewFrameRequestGeneration.incrementAndGet()
+        pendingPreviewFrameTask?.let { timelineThumbnailExecutor.remove(it) }
+        pendingPreviewFrameTask = null
+        previewFrameOverlay.visibility = View.GONE
+    }
+
+    /** Cover the player immediately while a new playhead frame is being decoded. */
+    private fun showPreviewFramePending() {
+        if (!::previewFrameOverlay.isInitialized) return
+        previewFrameOverlay.setImageDrawable(null)
+        previewFrameBitmap?.let { if (!it.isRecycled) it.recycle() }
+        previewFrameBitmap = null
+        previewFrameOverlay.setBackgroundColor(Color.BLACK)
+        previewFrameOverlay.visibility = View.VISIBLE
+        resetPreviewFrameTransform()
+    }
+
+    private fun resetPreviewFrameTransform() {
+        if (!::previewFrameOverlay.isInitialized) return
+        previewFrameOverlay.pivotX = previewFrameOverlay.width / 2f
+        previewFrameOverlay.pivotY = previewFrameOverlay.height / 2f
+        previewFrameOverlay.scaleX = 1f
+        previewFrameOverlay.scaleY = 1f
+        previewFrameOverlay.rotation = 0f
+        previewFrameOverlay.translationX = 0f
+        previewFrameOverlay.translationY = 0f
+    }
+
+    private fun applyPreviewFrameTransform(clip: Clip?) {
+        if (!::previewFrameOverlay.isInitialized) return
+        if (clip == null) {
+            resetPreviewFrameTransform()
+            return
+        }
+        normalizeClipTransform(clip)
+        previewFrameOverlay.pivotX = previewFrameOverlay.width / 2f
+        previewFrameOverlay.pivotY = previewFrameOverlay.height / 2f
+        previewFrameOverlay.scaleX = clip.transformScale
+        previewFrameOverlay.scaleY = clip.transformScale
+        previewFrameOverlay.rotation = clip.transformRotationDegrees
+        previewFrameOverlay.translationX = clip.transformTranslateX * previewFrameOverlay.width / 2f
+        previewFrameOverlay.translationY = clip.transformTranslateY * previewFrameOverlay.height / 2f
+    }
+
+    /**
+     * Decode a full-quality still for the exact project timestamp under the fixed
+     * playhead. The cover stays black until that timestamp's own frame is ready;
+     * no previous/nearby frame is shown as though it were current.
+     */
+    private fun requestPreviewFrameAt(projectTimeMs: Long) {
+        if (!::previewFrameOverlay.isInitialized || clips.isEmpty()) return
+        val requestId = previewFrameRequestGeneration.incrementAndGet()
+        pendingPreviewFrameTask?.let { timelineThumbnailExecutor.remove(it) }
+        pendingPreviewFrameTask = null
+        showPreviewFramePending()
+
+        val lastFrameMs = (totalOutputDurationMs() - 1L).coerceAtLeast(0L)
+        val safeProjectTimeMs = projectTimeMs.coerceIn(0L, lastFrameMs)
+        val activeIndex = activeClipIndexAt(safeProjectTimeMs)
+        val clip = clips.getOrNull(activeIndex ?: -1)
+        if (clip == null) return // A timeline gap is intentionally rendered as black.
+
+        val segment = TimelineVideoSegment(
+            clip.timelineStartMs,
+            clip.startMs,
+            clip.endMs,
+            clip.durationMs
+        )
+        val sourceTimeMs = TimelineVideoMath.sourceTimeAtProjectTime(segment, safeProjectTimeMs)
+            ?: return
+        applyPreviewFrameTransform(clip)
+
+        val task = TimelineThumbnailTask(
+            -1L,
+            timelineThumbnailTaskSequence.incrementAndGet()
+        ) {
+            if (requestId != previewFrameRequestGeneration.get()) return@TimelineThumbnailTask
+            val decoded = decodeTimelinePreviewFrame(clip.uri, sourceTimeMs)
+            runOnUiThread {
+                if (requestId != previewFrameRequestGeneration.get() || isFinishing || isDestroyed) {
+                    decoded?.let { if (!it.isRecycled) it.recycle() }
+                    return@runOnUiThread
+                }
+                pendingPreviewFrameTask = null
+                if (decoded != null && !decoded.isRecycled) {
+                    previewFrameBitmap?.let { old ->
+                        if (old !== decoded && !old.isRecycled) old.recycle()
+                    }
+                    previewFrameBitmap = decoded
+                    previewFrameOverlay.setImageBitmap(decoded)
+                    previewFrameOverlay.setBackgroundColor(Color.TRANSPARENT)
+                    previewFrameOverlay.visibility = View.VISIBLE
+                    applyPreviewFrameTransform(clip)
+                } else {
+                    // Keep the neutral black cover rather than showing a stale frame.
+                    previewFrameOverlay.setImageDrawable(null)
+                    previewFrameOverlay.setBackgroundColor(Color.BLACK)
+                    previewFrameOverlay.visibility = View.VISIBLE
+                }
+            }
+        }
+        pendingPreviewFrameTask = task
+        try {
+            timelineThumbnailExecutor.execute(task)
+        } catch (_: java.util.concurrent.RejectedExecutionException) {
+            pendingPreviewFrameTask = null
+        }
+    }
+
+    /** Uses the same source URI and project-to-source timestamp mapping as the filmstrip. */
+    private fun decodeTimelinePreviewFrame(uri: Uri, timeMs: Long): Bitmap? {
+        val frameTimeUs = timeMs.coerceAtLeast(0L) * 1000L
+        val retriever = try {
+            if (timelineThumbnailRetriever == null || timelineThumbnailRetrieverUri != uri) {
+                releaseTimelineThumbnailRetriever()
+                val created = MediaMetadataRetriever()
+                created.setDataSource(this, uri)
+                timelineThumbnailRetriever = created
+                timelineThumbnailRetrieverUri = uri
+            }
+            timelineThumbnailRetriever
+        } catch (error: Exception) {
+            releaseTimelineThumbnailRetriever()
+            android.util.Log.w("TimelinePreviewFrame", "Could not open $uri", error)
+            null
+        }
+
+        val frame = retriever?.let { active ->
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                runCatching {
+                    active.getScaledFrameAtTime(
+                        frameTimeUs,
+                        MediaMetadataRetriever.OPTION_CLOSEST,
+                        1440,
+                        1440
+                    )
+                }.getOrNull()
+            } else {
+                runCatching {
+                    active.getFrameAtTime(frameTimeUs, MediaMetadataRetriever.OPTION_CLOSEST)
+                }.getOrNull()
+            }
+        }
+        if (frame != null) return frame
+
+        var extractor: FrameExtractor? = null
+        var future: java.util.concurrent.Future<FrameExtractor.Frame>? = null
+        return try {
+            val created = FrameExtractor.Builder(this, MediaItem.fromUri(uri)).build()
+            extractor = created
+            future = created.getFrame(timeMs.coerceAtLeast(0L))
+            future.get(2500L, TimeUnit.MILLISECONDS).bitmap
+        } catch (error: Exception) {
+            future?.cancel(true)
+            android.util.Log.w("TimelinePreviewFrame", "Frame decode failed at ${timeMs}ms", error)
+            null
+        } finally {
+            runCatching { extractor?.close() }
+        }?.let { original ->
+            val maxSide = 1440
+            val largest = maxOf(original.width, original.height)
+            if (largest <= maxSide) original
+            else {
+                val scale = maxSide.toFloat() / largest.toFloat()
+                val scaled = Bitmap.createScaledBitmap(
+                    original,
+                    (original.width * scale).toInt().coerceAtLeast(1),
+                    (original.height * scale).toInt().coerceAtLeast(1),
+                    true
+                )
+                if (scaled !== original && !original.isRecycled) original.recycle()
+                scaled
+            }
+        }
+    }
+
     private fun decodeTimelineFrame(uri: Uri, timeMs: Long): Bitmap? {
         val frameTimeUs = timeMs.coerceAtLeast(0L) * 1000L
         val retriever = try {
