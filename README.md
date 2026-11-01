@@ -783,3 +783,14 @@ Focused source follow-up on `fix/filmstrip-gap-and-stable-end-controls`:
 - The filmstrip and thumbnail loading cells use black as the neutral fallback, not a visible gray-blue rail.
 - Clip deletion now computes the surviving selected clip and new playhead before rebuilding the timeline. It sets the pending horizontal scroll from that new playhead timestamp, so the rebuilt ruler/time-zero axis and trailing video-add control use the same time origin rather than inheriting a stale scroll position from the deleted clip.
 - This is a focused source change only. Fresh build, emulator screenshot, delete-last/delete-middle regression and phone verification remain pending. PR #11 remains draft; version 395 remains blocked.
+
+
+## Adaptive CapCut-style filmstrip and thumbnail loading — 2026-11-01
+
+Source commits on PR #11:
+- `919765d4736d6b9cd7c0464a8d283ad6fc192b11` reuses one `MediaMetadataRetriever` for consecutive frames from the same video instead of reopening the source for every thumbnail. Thumbnail jobs run through one decoder worker with a priority queue, so samples nearest the fixed playhead are decoded first; Media3 remains a bounded fallback for platform decode failures.
+- `c2c163eb7a7d24203e9a12820dd0cf84ca923cc1` adds shared filmstrip sizing/sampling math. The number of thumbnail cells follows the actual clip width (`duration × px/sec`): zooming in creates more distinct timestamp samples; zooming out reduces the count. The first and last samples stay within the clip's source range.
+- `d66038dfb374bf2debefa8ba9d80e0005b29f68b` adds unit tests for zoom-dependent frame density, bounded cell count and timestamp sampling.
+- Empty thumbnail cells use black rather than gray-blue. Decoded source frames are cropped and downsampled into 192×108 cached bitmaps.
+
+**Validation still required:** run unit tests and Kotlin compilation on this exact PR head; inspect the 10-second test video at fit, medium and close zoom; confirm newly revealed cells show distinct frames without long gray/blank waits; repeat with two clips and verify the playhead, ruler, zero anchor and trailing + control remain stable. Physical-phone acceptance is still pending. PR #11 remains draft/unmerged; version 395 remains blocked.
