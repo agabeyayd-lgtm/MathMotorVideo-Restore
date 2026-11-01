@@ -88,3 +88,11 @@ See the detailed, release-blocking checklist in README.md. The active list is:
 ## Recovery background
 
 Some older physics/scenario-related source and tests remain as reconstruction leftovers; they are outside the active video-editing workflow. The original complete V7 source tree was not recoverable.
+
+
+## API 35 instrumentation crash root-cause fix — 2026-11-01
+
+- Run #435 diagnostics and source inspection identified a test-harness defect: `TimelinePinchGestureTest` invoked `am force-stop com.mathmotor.video.next` from inside that package's active instrumentation run. The force-stop terminates the target package and its running instrumentation, explaining the generic instrumentation-process crash before gesture assertions could complete.
+- Removed the in-test force-stop. The test now clears stale logcat and launches the editor test activity without killing the active test process.
+- This is a test-harness correction, **not evidence that pinch behavior passes**. The focused API 35 gesture test must run again; its result is pending.
+- No app version metadata changed. Version 395 remains blocked.
