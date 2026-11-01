@@ -1593,7 +1593,7 @@ class VideoEditorActivity : Activity() {
             editorPanelScroll.visibility = View.VISIBLE
             val params = editorPanelScroll.layoutParams as? LinearLayout.LayoutParams
             if (params != null) {
-                params.height = dp(if (keyboardLayoutActive) 124 else 168)
+                params.height = dp(if (keyboardLayoutActive) 108 else 136)
                 editorPanelScroll.layoutParams = params
             }
         }
@@ -2179,17 +2179,37 @@ class VideoEditorActivity : Activity() {
         while (rulerTimeMs < rulerEndMs) {
             val nextTimeMs = rulerTimeMs + rulerStepMs
             val nextPositionPx = TimelineScaleMath.pixelsForTime(nextTimeMs, pxPerSecond)
+            val intervalWidth = (nextPositionPx - rulerPositionPx).coerceAtLeast(1)
+            val tickCell = FrameLayout(this)
             val tick = TextView(this).apply {
                 text = TimelineScaleMath.formatRulerTime(rulerTimeMs)
                 textSize = 9f
                 setTextColor(Color.rgb(166, 184, 201))
-                gravity = Gravity.CENTER_VERTICAL or Gravity.START
+                gravity = Gravity.TOP or Gravity.START
                 setPadding(dp(2), 0, 0, 0)
                 maxLines = 1
             }
-            ruler.addView(tick, LinearLayout.LayoutParams(
-                (nextPositionPx - rulerPositionPx).coerceAtLeast(1), dp(22)
+            tickCell.addView(tick, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(15), Gravity.TOP or Gravity.START
             ))
+            // CapCut-style minor divisions: five scale-aware sub-intervals between
+            // each adaptive major label. Their pixel spacing grows/shrinks with zoom.
+            for (division in 1 until 5) {
+                val x = intervalWidth * division / 5
+                tickCell.addView(View(this).apply {
+                    setBackgroundColor(Color.rgb(91, 111, 130))
+                }, FrameLayout.LayoutParams(dp(1), dp(if (division == 0) 10 else 6)).apply {
+                    leftMargin = x
+                    topMargin = dp(15)
+                })
+            }
+            tickCell.addView(View(this).apply {
+                setBackgroundColor(Color.rgb(133, 153, 171))
+            }, FrameLayout.LayoutParams(dp(1), dp(8)).apply {
+                leftMargin = 0
+                topMargin = dp(14)
+            })
+            ruler.addView(tickCell, LinearLayout.LayoutParams(intervalWidth, dp(22)))
             rulerTimeMs = nextTimeMs
             rulerPositionPx = nextPositionPx
         }
