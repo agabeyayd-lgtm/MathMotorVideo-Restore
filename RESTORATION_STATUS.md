@@ -7,7 +7,8 @@ Source changes on `fix/frame-accurate-timeline-zoom`:
 - Timeline scrub requests and playback-synchronized playhead display are aligned to project-frame boundaries.
 - Added a timeline-scoped two-finger pinch recognizer that preserves the time under the pinch anchor after zoom.
 - Added focused unit tests for frame boundaries, snapping, alternative FPS values and pinch-anchor preservation.
-- Enabled the unit-test/debug-build verification workflow on pull requests; it does not publish an APK.
+- Added `TimelinePinchGestureTest` for real API 35 emulator pinch-in/out, anchor stability and shared video/ruler scrolling.
+- Enabled the unit-test/debug-build workflow on pull requests and configured the API 35 emulator workflow to run the targeted gesture test on relevant PR changes; neither workflow publishes an APK.
 
 Review findings retained as open:
 - Existing millisecond-to-pixel mapping is shared across timeline lanes; this part is reusable.
@@ -16,7 +17,7 @@ Review findings retained as open:
 - The playhead is still positioned by absolute timeline time minus horizontal scroll; fixed-center CapCut playhead behavior is not implemented by this change.
 - Source-video frame-rate/variable-frame-rate mapping and exact preview-frame correspondence still need verification.
 
-**Validation state:** source authored; unit tests/build/emulator/physical-device checks not yet run for this branch. Do not mark related README acceptance checkboxes complete. Version 395 remains blocked and version metadata is unchanged.
+**Validation state:** GitHub Actions run [#413](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41318203123) passed testDebugUnitTest and assembleDebug for commit `55d8cfd53266f7a858a39a078974df6d9aa5da3b`. The targeted API 35 emulator gesture test has now been added and wired into the PR workflow; its first result is pending. A physical-device check has not been run. Do not mark related README acceptance checkboxes complete until those checks pass. Version 395 remains blocked and version metadata is unchanged.
 
 ## Current direction
 
