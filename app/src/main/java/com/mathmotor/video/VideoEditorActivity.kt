@@ -522,8 +522,8 @@ class VideoEditorActivity : Activity() {
         root.addView(topBar, matchWrap())
         root.addView(gap(6))
 
-        // The XML surface_type attribute selects TextureView so the exact paused
-        // playhead-frame layer can cover the video during scrubbing.
+        // CompositionPlayer requires Surface output; the XML selects SurfaceView.
+        // The paused playhead-frame layer remains a sibling overlay above the player.
         playerView = layoutInflater.inflate(R.layout.editor_preview_player, null) as PlayerView
         previewFrame = FrameLayout(this).apply {
             setBackgroundColor(Color.rgb(5, 9, 15))
