@@ -790,3 +790,21 @@ Source commit `161a7a48b6f6114b26698af2b4f78b89d76d222c` on `fix/filmstrip-gap-a
 - [ ] Confirm on the user's phone.
 
 This is not yet visually/device verified. PR #11 remains draft/unmerged; installed versionCode 394 / build 61 is unchanged. Version 395 remains blocked.
+
+
+## Adaptive filmstrip zoom and thumbnail decode — 2026-11-01
+
+Source changes committed to PR #11:
+- [x] Make the actual thumbnail cell count follow the rendered clip width, so pinch zoom-in adds timestamp samples and zoom-out reduces sample density.
+- [x] Extract timestamps evenly across the visible source range, preserving the first frame and staying before the clip end.
+- [x] Reuse the platform frame retriever across consecutive samples from the same video URI.
+- [x] Prioritize queued thumbnail jobs by distance from the fixed project playhead.
+- [x] Retain one bounded Media3 fallback when the platform frame decoder cannot produce a sample.
+- [x] Render every cached filmstrip frame into a 192×108 bitmap and use black as the unresolved-cell fallback instead of a gray-blue tile.
+- [x] Add pure tests for zoom-dependent frame count, maximum count and sample timestamps.
+- [ ] Run unit tests and Android compilation on this exact PR head.
+- [ ] Use a 10-second video to verify at fit/medium/close zoom that each zoom level reveals additional distinct frames promptly.
+- [ ] Verify repeated zoom in/out, scrubbing and two-clip sequences; ensure ruler, fixed playhead, zero point and trailing + control remain stable.
+- [ ] Confirm frame loading and visual quality on the user's phone.
+
+The source change and tests are committed; they are not yet build-verified, emulator-verified or phone-accepted. PR #11 remains draft/unmerged. Installed versionCode 394 / build 61 is unchanged. Version 395 remains blocked.
