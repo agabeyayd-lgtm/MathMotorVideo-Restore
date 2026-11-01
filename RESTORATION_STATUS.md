@@ -1,3 +1,14 @@
+## Timeline card empty-space correction — 2026-11-01
+
+- Emulator screenshot review of artifact from run #41314535629 showed the timeline card reserving a large empty lower area on the compact 320×640 profile. The earlier sizing formula added 112–116dp of extra height after already measuring the ruler and lane rows.
+- Replaced that fixed overhead with measured lane-content height + the 26dp time header + 6dp card padding. The panel now grows with added rows and is capped at 280dp normally / 154dp while the keyboard is open; overflow remains in the vertical lane scroller.
+- Added pure `TimelineLayoutMath` and JVM tests for a single video row, added layers, max-height clamping, and keyboard/empty minimums.
+- Source change commit: `80af399370530b23e13c12bcdb213d26769f48b0`.
+- [ ] Kotlin compile and JVM unit tests for this change.
+- [ ] Fresh emulator screenshot review on the new source commit; confirm the unused panel area is gone and the bottom dock remains fixed.
+- [ ] Recheck pinch, clip move/trim, multi-layer placement, contextual panel/keyboard and save/reopen after layout sizing changes.
+- No app version change, signed release, merge or version 395.
+
 ## PR #11 verification reconciliation — 2026-11-01
 
 This entry reconciles the latest verified source commit with subsequent documentation-only commits. Older sections below are historical records and must not be read as the current head's status when they name a different commit.
