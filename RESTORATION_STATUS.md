@@ -744,3 +744,9 @@ Source implementation is committed; it is not device acceptance. PR #11 stays dr
 
 - [x] Add a unit test for midpoint timestamp anchoring plus recalculation of the time beneath the fixed centre playhead (test commit `cfb24cf97e2b0661745ddb18ece934d3fe550c7e`).
 - [ ] Confirm this test passes in Verify Android on the final PR head.
+
+
+### Pinch activation timing — 2026-11-01
+
+- [x] Capture the active two-pointer gesture as soon as the Activity ScaleGestureDetector enters scale mode, whether that happens on ACTION_POINTER_DOWN or the subsequent move; cancel the child clip/trim gesture at that point (source commit `1a764b9c63ec9638289cb8f419861bfc73dc7ea7`).
+- [ ] Verify pinch begins correctly on emulator/phone with first finger initially over clip body and trim handle.
