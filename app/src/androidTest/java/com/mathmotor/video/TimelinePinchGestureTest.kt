@@ -27,10 +27,17 @@ class TimelinePinchGestureTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val device = UiDevice.getInstance(instrumentation)
 
-        val fixtureReady = device.executeShellCommand(
-            "run-as com.mathmotor.video.next test -s /data/user/0/com.mathmotor.video.next/files/editor-test-video.mp4 && echo FIXTURE_READY"
+        // Check the fixture through the target app's own sandbox context.
+        // Shelling out to run-as from UiAutomation is unreliable on API 35 even
+        // when the file is present (the preceding ADB staging step verifies it).
+        val fixture = java.io.File(
+            instrumentation.targetContext.filesDir,
+            "editor-test-video.mp4"
         )
-        assertTrue("The deterministic editor test video was not staged", fixtureReady.contains("FIXTURE_READY"))
+        assertTrue(
+            "The deterministic editor test video was not staged at ${fixture.absolutePath}",
+            fixture.isFile && fixture.length() > 0L
+        )
 
         device.executeShellCommand("am force-stop com.mathmotor.video.next")
         device.executeShellCommand("logcat -c")
