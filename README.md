@@ -6,6 +6,7 @@
 - Scrubbing/seek requests now snap to the nearest 30 fps project frame. Continuous playback synchronization remains timestamp-based and is not rounded.
 - Filmstrip sampling now uses the clip's half-open time interval and avoids requesting a thumbnail exactly at the exclusive clip end, which could show a frame from the following cut.
 - Added unit tests for 30 fps frame counts, frame timestamps, nearest-frame snapping, adaptive frame-ruler spacing, and invalid inputs.
+- The 30 fps value is the current timeline timebase/default, not proof that the MP4 encoder is forced to 30 fps. Export frame-rate behavior must be checked separately before claiming a 30 fps output file.
 - **Verification state:** source candidate only. Run unit tests, Debug APK build and the existing emulator interaction suite (including pinch-anchor, scroll/playhead, filmstrip/trim and preview-seek tests) on this branch. Do not mark the behavior device-verified until those results pass and screenshots/logs are inspected.
 - Keep the existing #327 green evidence attached to its exact prior commit; it does not validate this new candidate. VersionCode 395 remains blocked; do not bump app version or publish an APK.
 
