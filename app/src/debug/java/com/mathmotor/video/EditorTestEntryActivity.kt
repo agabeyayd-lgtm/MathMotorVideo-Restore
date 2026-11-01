@@ -15,16 +15,36 @@ class EditorTestEntryActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val videoUri = intent.getStringExtra("video_uri")
+        val suppliedVideoUris = when (val raw = intent.extras?.get("video_uris")) {
+            is ArrayList<*> -> raw.filterIsInstance<String>().filter { it.isNotBlank() }
+            is Array<*> -> raw.filterIsInstance<String>().filter { it.isNotBlank() }
+            is String -> raw.split('|').filter { it.isNotBlank() }
+            else -> emptyList()
+        }
+        // Keep UIAutomator's shell transport free of quote and pipe parsing:
+        // the two-clip test passes each private fixture URI in its own extra.
+        val indexedVideoUris = listOfNotNull(
+            intent.getStringExtra("video_uri_1"),
+            intent.getStringExtra("video_uri_2")
+        ).filter { it.isNotBlank() }
+        val videoUris = suppliedVideoUris.ifEmpty { indexedVideoUris }
         val draftId = intent.getStringExtra("draft_id")
-        android.util.Log.i("EditorSmokeTest", "EDITOR_SMOKE_ENTRY_STARTED uri=$videoUri")
-        if (videoUri.isNullOrBlank()) {
+            ?.takeIf { VideoProjectDraftStore.isValidId(it) }
+        android.util.Log.i(
+            "EditorSmokeTest",
+            "EDITOR_SMOKE_ENTRY_STARTED uri=$videoUri videoCount=${videoUris.size} hasDraft=${draftId != null}"
+        )
+        // A draft ID is a valid launch target even when no new video URI is supplied:
+        // VideoEditorActivity restores the already-saved local project from that ID.
+        if (videoUris.isEmpty() && videoUri.isNullOrBlank() && draftId == null) {
             finish()
             return
         }
 
         android.util.Log.i("EditorSmokeTest", "EDITOR_SMOKE_STARTING_EDITOR")
         startActivity(Intent(this, VideoEditorActivity::class.java).apply {
-            putExtra("video_uri", videoUri)
+            if (videoUris.isNotEmpty()) putStringArrayListExtra("video_uris", ArrayList(videoUris))
+            if (!videoUri.isNullOrBlank()) putExtra("video_uri", videoUri)
             if (!draftId.isNullOrBlank()) putExtra("draft_id", draftId)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         })

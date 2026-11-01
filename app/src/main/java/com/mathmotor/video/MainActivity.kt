@@ -235,7 +235,7 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(11), 0, 0, 0)
             addView(label("MathMotor Video", 17f, white, true))
-            addView(label("VİDEO DÜZENLEYİCİ", 9f, muted, true))
+            addView(label("VİDEO EDİTÖRÜ", 9f, muted, true))
         }
         topBar.addView(brand, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         val localTag = label("TELEFONDA", 9f, accent, true).apply {
@@ -246,11 +246,7 @@ class MainActivity : Activity() {
         root.addView(topBar)
         root.addView(gap(16))
 
-        root.addView(label("VİDEO STÜDYOSU", 10f, accent, true))
-        root.addView(label("Videonu hazırla.", 26f, white, true))
-        root.addView(label("Kes, birleştir, yazı ve ses ekle.", 13f, muted, false).apply {
-            setLineSpacing(dp(2).toFloat(), 1f)
-        })
+        root.addView(label("Videoların", 23f, white, true))
         root.addView(gap(13))
 
         // One clear primary action, with the empty-project option kept secondary.
@@ -264,8 +260,8 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
         }
         val cardIcon = TextView(this).apply {
-            text = "✂"
-            textSize = 22f
+            text = "▶"
+            textSize = 20f
             setTextColor(accent)
             gravity = Gravity.CENTER
             background = rounded(Color.rgb(16, 57, 57), 12)
@@ -424,7 +420,7 @@ class MainActivity : Activity() {
                 setOnClickListener { openDraftEditor(draft.id) }
             }
             val mark = TextView(this).apply {
-                text = "✂"
+                text = "▤"
                 textSize = 18f
                 typeface = Typeface.DEFAULT_BOLD
                 setTextColor(accent)
