@@ -89,6 +89,17 @@ def verify(xml_path, screenshot_path, log_path):
             f"FAIL: preview did not decode the timestamp represented by the centered thumbnail "
             f"(thumbnail={sample_ms}ms, ready preview frames={ready[-5:]})."
         )
+    scrub_ready = [
+        (int(project), int(source))
+        for project, source in re.findall(
+            r"TIMELINE_SCRUB_PREVIEW_FRAME_READY projectMs=(\\d+) sourceMs=(\\d+)", log
+        )
+    ]
+    if not any(abs(project - sample_ms) <= 35 and abs(source - sample_ms) <= 35 for project, source in scrub_ready):
+        raise SystemExit(
+            f"FAIL: dragging the filmstrip did not update the preview to the centered playhead time "
+            f"(thumbnail={sample_ms}ms, scrub preview frames={scrub_ready[-5:]})."
+        )
     if not re.search(rf"TIMELINE_THUMBNAIL_READY sourceMs={sample_ms} ", log):
         raise SystemExit(f"FAIL: centered thumbnail sample {sample_ms}ms was not confirmed decoded.")
 

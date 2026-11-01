@@ -351,7 +351,9 @@ class VideoEditorActivity : Activity() {
             val targetMs = pendingTimelineScrubPreviewTargetMs ?: return
             pendingTimelineScrubPreviewTargetMs = null
             lastTimelineScrubPreviewSeekUptimeMs = SystemClock.uptimeMillis()
-            seekTimelinePreview(targetMs)
+            // A finger scrub can request frames faster than the decoder can return.
+            // Keep the last valid frame visible until the newest requested frame is ready.
+            seekTimelinePreview(targetMs, preservePreviewWhileScrubbing = true)
         }
     }
     private val textTimelineRefreshTask = object : Runnable {
@@ -1867,9 +1869,9 @@ class VideoEditorActivity : Activity() {
                                 }
                             }
                             timelinePlayheadMs = underPlayheadMs
-                            // Hide the previous frame immediately; the new exact
-                            // timestamp will replace it after the seek/decode completes.
-                            showPreviewFramePending()
+                            // Invalidate an older pending decode without flashing black;
+                            // keep the last valid frame until this scrub position is ready.
+                            showPreviewFramePending(keepPreviousFrame = true)
                             updateTimelinePlayheadLabel()
                             scheduleTimelineScrubPreviewSeek(underPlayheadMs)
                             // Emit a direct gesture-time sample even before Media3's
@@ -3402,7 +3404,10 @@ class VideoEditorActivity : Activity() {
         timelineHandler.postDelayed(timelineScrubPreviewSeekTask, delayMs)
     }
 
-    private fun seekTimelinePreview(requestedMs:Long){
+    private fun seekTimelinePreview(
+        requestedMs: Long,
+        preservePreviewWhileScrubbing: Boolean = false
+    ) {
         timelineHandler.removeCallbacks(timelineScrubPreviewSeekTask)
         pendingTimelineScrubPreviewTargetMs = null
         if(clips.isEmpty())return
@@ -3413,7 +3418,10 @@ class VideoEditorActivity : Activity() {
         val target=requestedMs.coerceIn(0L,total)
         comp.seekTo(target);timelinePlayheadMs=target
         if (comp.isPlaying || comp.playWhenReady) hidePreviewFrameOverlay()
-        else requestPreviewFrameAt(target)
+        else requestPreviewFrameAt(
+            target,
+            keepPreviousFrame = preservePreviewWhileScrubbing
+        )
         val active=activeClipIndexAt(target)
         if(active!=null&&selectedClipIndex!=active){
             // Playback/scrubbing can follow another active clip, but it must not
@@ -5587,10 +5595,16 @@ class VideoEditorActivity : Activity() {
                     previewFrameOverlay.setBackgroundColor(Color.BLACK)
                     previewFrameOverlay.visibility = View.VISIBLE
                     applyPreviewFrameTransform(clip)
-                    if (timelineSyncTestEnabled) android.util.Log.i(
-                        "TimelineFrameSyncTest",
-                        "TIMELINE_PREVIEW_FRAME_READY projectMs=$safeProjectTimeMs sourceMs=$sourceTimeMs width=${decoded.width} height=${decoded.height}"
-                    )
+                    if (timelineSyncTestEnabled) {
+                        android.util.Log.i(
+                            "TimelineFrameSyncTest",
+                            "TIMELINE_PREVIEW_FRAME_READY projectMs=$safeProjectTimeMs sourceMs=$sourceTimeMs width=${decoded.width} height=${decoded.height}"
+                        )
+                        if (keepPreviousFrame) android.util.Log.i(
+                            "TimelineFrameSyncTest",
+                            "TIMELINE_SCRUB_PREVIEW_FRAME_READY projectMs=$safeProjectTimeMs sourceMs=$sourceTimeMs"
+                        )
+                    }
                 } else {
                     if (timelineSyncTestEnabled) android.util.Log.e(
                         "TimelineFrameSyncTest",
