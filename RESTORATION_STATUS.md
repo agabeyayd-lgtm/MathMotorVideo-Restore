@@ -732,3 +732,9 @@ Source implementation is committed; it is not device acceptance. PR #11 stays dr
 
 - [x] When a pinch midpoint away from the fixed centre playhead pans the timeline, recompute the time under the centre line and update the readout/seek control/preview (source commit `69140cfb4e64d18917b8e1e65750481f58c8c39d`).
 - [ ] Verify the displayed time and decoded preview frame match the ruler/filmstrip beneath the centre playhead after pinching at both the centre and off-centre positions.
+
+
+### Pinch playback isolation — 2026-11-01
+
+- [x] Pause the active preview when an in-timeline pinch begins so playback-follow cannot fight the pinch's anchored timeline movement (source commit `88ef7ea8e06cfb3537893f7c79e8466e6173599e`).
+- [ ] Verify pause/seek/resume behavior during pinch and playback after the gesture ends.
