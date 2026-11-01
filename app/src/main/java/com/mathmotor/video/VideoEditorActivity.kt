@@ -5259,6 +5259,12 @@ class VideoEditorActivity : Activity() {
                 contentDescription = "Klip karesi"
             }
             filmstrip.addView(image, LinearLayout.LayoutParams(cellWidth, cellHeight))
+            val cellStartMs = TimelineThumbnailMath.cellStartTime(
+                clip.startMs, clip.endMs, thumbnailCount, slot
+            )
+            val cellEndMs = TimelineThumbnailMath.cellEndTime(
+                clip.startMs, clip.endMs, thumbnailCount, slot
+            )
             val frameTime = TimelineThumbnailMath.sampleTime(
                 clip.startMs, clip.endMs, thumbnailCount, slot
             )
@@ -5271,7 +5277,14 @@ class VideoEditorActivity : Activity() {
                 "TimelineFrameSyncTest",
                 "TIMELINE_THUMBNAIL_SAMPLE slot=$slot count=$thumbnailCount sourceMs=$frameTime projectMs=$projectFrameTime"
             )
-            requestTimelineThumbnail(clip.uri, frameTime, image, priorityDistanceMs)
+            requestTimelineThumbnail(
+                clip.uri,
+                frameTime,
+                image,
+                priorityDistanceMs,
+                cellStartMs,
+                cellEndMs
+            )
         }
         container.addView(filmstrip, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
@@ -5671,7 +5684,9 @@ class VideoEditorActivity : Activity() {
         uri: Uri,
         timeMs: Long,
         target: ImageView,
-        priorityDistanceMs: Long = kotlin.math.abs(timeMs - timelinePlayheadMs)
+        priorityDistanceMs: Long = kotlin.math.abs(timeMs - timelinePlayheadMs),
+        cellStartMs: Long = timeMs,
+        cellEndMs: Long = timeMs + 1L
     ) {
         val timestampMs = timeMs.coerceAtLeast(0L)
         val key = "${uri}#${timestampMs}"
@@ -5684,6 +5699,31 @@ class VideoEditorActivity : Activity() {
                 "TIMELINE_THUMBNAIL_READY sourceMs=$timestampMs width=${cached.width} height=${cached.height} cached=true"
             )
             return
+        }
+
+        // When zooming out, a newly widened cell often contains a frame that was
+        // already decoded at the previous zoom level. Reuse that in-range bitmap
+        // immediately instead of decoding the same section of the source again.
+        // Keep the cell nearest the playhead exact so preview/filmstrip sync wins.
+        if (priorityDistanceMs > 150L && cellEndMs > cellStartMs) {
+            val prefix = "${uri}#"
+            val reusable = timelineThumbnailCache.snapshot().entries.mapNotNull { entry ->
+                if (!entry.key.startsWith(prefix)) return@mapNotNull null
+                val cachedTime = entry.key.removePrefix(prefix).toLongOrNull() ?: return@mapNotNull null
+                if (cachedTime < cellStartMs || cachedTime >= cellEndMs) return@mapNotNull null
+                val bitmap = entry.value
+                if (bitmap.isRecycled) return@mapNotNull null
+                Triple(kotlin.math.abs(cachedTime - timestampMs), cachedTime, bitmap)
+            }.minByOrNull { it.first }
+            if (reusable != null) {
+                target.setImageBitmap(reusable.third)
+                target.contentDescription = "Klip karesi @${reusable.second}ms (önbellek)"
+                if (timelineSyncTestEnabled) android.util.Log.i(
+                    "TimelineFrameSyncTest",
+                    "TIMELINE_THUMBNAIL_REUSED sourceMs=${reusable.second} targetMs=$timestampMs"
+                )
+                return
+            }
         }
         // Leave the cell neutral black until its own exact sample is decoded.
         // Reusing a nearby timestamp here made stale/partial frames look current.
