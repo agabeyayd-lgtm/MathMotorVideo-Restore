@@ -2360,7 +2360,7 @@ class VideoEditorActivity : Activity() {
             })
             val videoTrack = makeLane(
                 "Video",
-                TimelineThumbnailMath.portraitCellHeightPx(dp(TimelineThumbnailMath.SHORTS_THUMBNAIL_WIDTH_DP)),
+                dp(TimelineThumbnailMath.THUMBNAIL_STRIP_HEIGHT_DP),
                 "video"
             )
             videoTrack.addView(strip, LinearLayout.LayoutParams(stripWidth, stripHeight))
