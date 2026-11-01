@@ -1751,8 +1751,10 @@ class VideoEditorActivity : Activity() {
             if (endMs < totalMs) addSpacer(track, endMs, totalMs)
         }
 
-        if (!keyboardLayoutActive && !compactEditorLayout) {
-            val ruler = makeLane("SÜRE", 22)
+        // Keep the time ruler visible on compact phones too; pinch zoom and
+        // frame/time navigation must remain available on short viewports.
+        if (!keyboardLayoutActive) {
+            val ruler = makeLane("SÜRE", if (compactEditorLayout) 18 else 22)
             val rulerEndMs = (((totalMs + 4999L) / 5000L).coerceAtLeast(1L)) * 5000L
             var rulerTimeMs = 0L
             var rulerPositionPx = 0
