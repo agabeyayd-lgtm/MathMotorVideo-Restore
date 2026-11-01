@@ -743,3 +743,6 @@ Source commit: `54daecf5864ed76694f1930eb684bddbd8499628`.
 - The existing filmstrip already uses fit/letterbox framing, edge-to-edge cells and timestamped samples. It was retained rather than replacing it with center-cropped square tiles.
 
 **Pending acceptance:** Kotlin compilation and unit tests on this commit; emulator/phone verification of one-finger swipe scrubbing, live preview response, pinch zoom in/out and midpoint anchoring, no accidental clip drag/trim during pinch, all-lane synchronization, and no false scrub after programmatic rebuild/restore. Screenshot success alone is not touch acceptance. PR #11 remains draft; version 395 remains blocked.
+
+
+Follow-up source commit `69140cfb4e64d18917b8e1e65750481f58c8c39d` closes one synchronization edge case: when the two-finger midpoint is off the fixed centre line, the committed scroll changes the time under the centre playhead. The playhead readout, seek control and preview are now updated to that actual centre time after the pinch. This remains subject to interaction verification.
