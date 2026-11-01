@@ -949,3 +949,20 @@ This is a targeted source fix, not yet verified. PR #11 remains draft/unmerged; 
 - In the same captured screenshot, sampling an interior point offset from the playhead gave matching preview/thumbnail pixels (max delta 0). Updated the assertion to sample a nearby interior point instead of the covered center. Source commit: `53a7f6e1775ced2d43926ccd66a7bb127509d54d`.
 - This diagnoses the #621 pixel mismatch as a test sampling defect for this capture; it does not yet establish full preview correctness across content/aspect ratios or rapid scrubbing. The corrected CI assertion still needs a fresh emulator run.
 - #621 did not reach forward/reverse scrub, playback synchronization, or autosave assertions. Pinch zoom and clip-edit gestures remain untested. PR #11 stays draft/unmerged; versionCode 394/build 61 unchanged; version 395 remains blocked.
+
+## User correction — complete 9:16 Shorts thumbnails (2026-11-01)
+
+The user's explicit rule supersedes earlier filmstrip notes that requested 16:9 cropping, center-cropping, or black placeholder rails:
+
+- Every thumbnail must show the entire frame at its sampled timestamp: head, arms, legs, objects and all other visible content. Do not crop any edge.
+- Shrink the decoded frame proportionally into the thumbnail; never stretch, crop, or add black letterbox/pillarbox padding.
+- Since the target source is YouTube Shorts (9:16), the thumbnail cell itself must follow 9:16 geometry. Keep the cell/track dimensions tied to the thumbnail's portrait aspect ratio instead of forcing a landscape 16:9 cell.
+- Use aspect-preserving downsampling and FIT_CENTER; do not use CENTER_CROP. A normal 9:16 source must fill its portrait cell without black gaps.
+- Keep the frame's real sample timestamp and shared timeline position unchanged. The preview and the filmstrip cell under the fixed playhead must still refer to the same instant.
+- If the source frame is not 9:16, retain its complete original aspect ratio rather than silently cutting off people or objects. The current visual target is vertical Shorts footage.
+- Source implementation added to PR #11: 162×288 decode target, full-frame fit sizing, portrait cell/lane geometry and focused unit tests. This is source-only until the PR-head test/build workflows pass and the physical phone is reviewed.
+- [ ] Confirm Kotlin unit tests pass on the resulting PR head.
+- [ ] Confirm Android debug compilation/APK build passes on the resulting PR head.
+- [ ] Review fresh emulator screenshots to ensure complete 9:16 frames, no cropping and no black gaps.
+- [ ] Confirm on the user's phone that all frame content is visible at fit/medium/maximum zoom and that thumbnail timestamps remain aligned with the preview.
+- No app version bump or version 395. PR #11 remains draft/unmerged.
