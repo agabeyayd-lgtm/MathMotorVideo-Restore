@@ -43,12 +43,19 @@ See the detailed, release-blocking checklist in README.md. The active list is:
 15. Bottom tool navigation should swap the four-item dock for the selected tool's controls in the same bottom panel, then restore the four-item dock on back/confirm; tool panels must not hide underneath the preview.
 16. Timeline thumbnails need more visible width, clearer frame content and faster prioritized loading/caching.
 17. Simplify the two-video join/add-clip area visually while preserving the actual add/order/join behavior.
+18. The filmstrip shows a gray rail between adjacent thumbnails; source inspection traced it to a 1 dp right margin. A candidate source fix removes the gap, but device verification is still required.
 
 ## Shared timeline architecture requirement
 
 - All editor content must use the same timeline time coordinate system and adaptive ruler: video clips, text overlays, music, sound effects, playhead and trim boundaries.
 - Text/audio lanes must align to the same timestamps and respond to timeline scroll/zoom without changing their actual start/end times. Do not create independent time scales for individual tools.
 - Text and audio placement, preview and playback synchronization must be verified at multiple zoom levels and after project save/reopen. These are requirements, not yet device-verified results.
+
+## Focused timeline finding — 2026-11-01
+
+- Candidate branch `fix/timeline-filmstrip-thumbnail-separators` removes the per-thumbnail 1 dp right margin and aligns the filmstrip backing color with the thumbnail placeholder color. This is source-level only until a build and actual-device check confirm the gray rail is gone.
+- In the inspected source, the `00:00` label and timeline zoom `+`/`−` controls sit outside the horizontal timeline scroll views. Their reported horizontal movement remains unverified and must not be marked fixed based on source inspection alone.
+- No version bump or version 395 release work is permitted as part of this repair.
 
 ## Verification gaps
 
