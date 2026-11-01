@@ -324,7 +324,6 @@ class VideoEditorActivity : Activity() {
             }, "timeline-thumbnail-\u0024{timelineThumbnailWorkerSequence.incrementAndGet()}")
         }
     )
-    private lateinit var timelinePlayheadSeek: SeekBar
     private lateinit var timelinePlayheadLabel: TextView
     private lateinit var timelinePlayButton: Button
     private var timelinePlayheadMs = 0L
@@ -745,15 +744,6 @@ class VideoEditorActivity : Activity() {
                 rightMargin = dp(8)
             }
         )
-        // Keep the legacy seek model detached: the visible horizontal scrubber and zoom
-        // buttons are removed. Timeline gestures now move the lanes under the fixed playhead.
-        timelinePlayheadSeek = SeekBar(this).apply {
-            max = 0
-            progress = 0
-            isEnabled = false
-            contentDescription = "Zaman çizelgesinde oynatma noktası"
-        }
-        installTimelinePlayheadListeners()
         val timelineTimeRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -1435,16 +1425,8 @@ class VideoEditorActivity : Activity() {
                 applySafeRootPadding(imeVisible, availableHeight)
                 if (imeVisible) {
                     timelineCard.setPadding(dp(5), dp(2), dp(5), dp(2))
-                    timelinePlayheadSeek.layoutParams?.let {
-                        it.height = dp(24)
-                        timelinePlayheadSeek.layoutParams = it
-                    }
                 } else {
                     timelineCard.setPadding(dp(8), dp(5), dp(8), dp(5))
-                    timelinePlayheadSeek.layoutParams?.let {
-                        it.height = dp(34)
-                        timelinePlayheadSeek.layoutParams = it
-                    }
                 }
                 rulerAwareTimelineRefresh()
                 panelScroll.requestLayout()
@@ -1700,7 +1682,7 @@ class VideoEditorActivity : Activity() {
         timelineHorizontalScrollX = preservedScrollX
         timelineTracks.removeAllViews()
         timelineScrollViews.clear()
-        if (::timelinePlayheadSeek.isInitialized) updateTimelinePlayheadControls()
+        if (::timelinePlayheadLabel.isInitialized) updateTimelinePlayheadDisplay()
 
         if (!loadingTextLayerControls) syncSelectedTextLayerFromControls()
         val totalMs = totalOutputDurationMs()
@@ -1879,11 +1861,6 @@ class VideoEditorActivity : Activity() {
                             // Hide the previous frame immediately; the new exact
                             // timestamp will replace it after the seek/decode completes.
                             showPreviewFramePending()
-                            if (::timelinePlayheadSeek.isInitialized) {
-                                timelinePlayheadSeek.progress = TimelineTrimMath.progressForTime(
-                                    underPlayheadMs, totalOutputDurationMs()
-                                )
-                            }
                             updateTimelinePlayheadLabel()
                             scheduleTimelineScrubPreviewSeek(underPlayheadMs)
                             // Emit a direct gesture-time sample even before Media3's
@@ -3221,41 +3198,10 @@ class VideoEditorActivity : Activity() {
         status.text = "Zaman çizelgesi yakınlaştırıldı."
     }
 
-    private fun installTimelinePlayheadListeners() {
-        timelinePlayheadSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                if (!fromUser) return
-                val rawTimeMs = TimelineTrimMath.timeForProgress(progress, totalOutputDurationMs())
-                timelinePlayheadMs = snapTimelineTimeToSourceFrame(rawTimeMs)
-                val snappedProgress = TimelineTrimMath.progressForTime(
-                    timelinePlayheadMs, totalOutputDurationMs()
-                )
-                if (seekBar?.progress != snappedProgress) seekBar?.progress = snappedProgress
-                updateTimelinePlayheadLabel()
-                seekTimelinePreview(timelinePlayheadMs)
-            }
-
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {
-                if (clips.isEmpty()) return
-                ensureTimelinePreviewLoaded()
-                player?.playWhenReady = false
-            }
-
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {
-                updateTimelinePlayheadLabel()
-            }
-        })
-    }
-
-    private fun updateTimelinePlayheadControls() {
-        if (!::timelinePlayheadSeek.isInitialized || !::timelinePlayheadLabel.isInitialized) return
-        val totalMs = totalOutputDurationMs()
-        timelinePlayheadSeek.max = TimelineTrimMath.progressMax(totalMs)
-        timelinePlayheadSeek.isEnabled = clips.isNotEmpty() && totalMs > 0L
-        timelinePlayheadMs = timelinePlayheadMs.coerceIn(0L, totalMs)
-        timelinePlayheadSeek.progress = TimelineTrimMath.progressForTime(timelinePlayheadMs, totalMs)
+    private fun updateTimelinePlayheadDisplay() {
+        if (!::timelinePlayheadLabel.isInitialized) return
+        timelinePlayheadMs = timelinePlayheadMs.coerceIn(0L, totalOutputDurationMs())
         updateTimelinePlayheadLabel()
-        updateTimelinePlayheadLine()
     }
 
     private fun updateTimelinePlayheadLabel() {
@@ -3471,7 +3417,6 @@ class VideoEditorActivity : Activity() {
             if (activeEditorPanel == "clip") toggleEditorPanel("clip")
             selectedClipIndex=active;refreshTimelineAfterClipChange();loadTrimControls()
         }
-        timelinePlayheadSeek.progress=TimelineTrimMath.progressForTime(target,total)
         updateTimelinePlayheadLabel()
     }
     private fun syncTimelinePlayheadFromPlayer(){
@@ -3486,8 +3431,6 @@ class VideoEditorActivity : Activity() {
             if (activeEditorPanel == "clip") toggleEditorPanel("clip")
             selectedClipIndex=active;refreshTimelineAfterClipChange();loadTrimControls()
         }
-        val progress=TimelineTrimMath.progressForTime(timelinePlayheadMs,totalOutputDurationMs())
-        if(timelinePlayheadSeek.progress!=progress)timelinePlayheadSeek.progress=progress
         scrollTimelineToPlayhead()
         updateTimelinePlayheadLabel()
     }
@@ -3496,7 +3439,6 @@ class VideoEditorActivity : Activity() {
         val clip=clips.getOrNull(selectedClipIndex)?:return
         val duration=(clip.endMs-clip.startMs).coerceAtLeast(0L)
         timelinePlayheadMs=(clip.timelineStartMs+current.currentPosition.coerceIn(0L,duration)).coerceIn(0L,totalOutputDurationMs())
-        if(::timelinePlayheadSeek.isInitialized)timelinePlayheadSeek.progress=TimelineTrimMath.progressForTime(timelinePlayheadMs,totalOutputDurationMs())
         scrollTimelineToPlayhead()
         updateTimelinePlayheadLabel()
     }
@@ -3809,7 +3751,7 @@ class VideoEditorActivity : Activity() {
 
         refreshTimelineAfterClipChange()
         loadTrimControls()
-        updateTimelinePlayheadControls()
+        updateTimelinePlayheadDisplay()
 
         if (clips.isEmpty()) {
             previewSingleClip = false
@@ -4771,7 +4713,7 @@ class VideoEditorActivity : Activity() {
             pendingTimelineScrollX = restoredScrollX
             timelineHorizontalScrollX = restoredScrollX
         }
-        updateTimelinePlayheadControls()
+        updateTimelinePlayheadDisplay()
         refreshTimelineTracks()
         status.text = "PROJE AÇILDI. Klipler, kesmeler, oynatma noktası, yazı ve ses ayarları geri yüklendi."
         loadMissingClipFrameRates()
