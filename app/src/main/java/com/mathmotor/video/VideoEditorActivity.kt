@@ -2283,34 +2283,71 @@ class VideoEditorActivity : Activity() {
             // Keep the ruler visible on compact phones so the user can read one shared
             // time scale above the actual filmstrip. Increase label density only when
             // the current zoom provides enough room for it.
-            val compactRulerStepMs = when {
-                pxPerSecond >= dp(34).toFloat() -> 1000L
-                pxPerSecond >= dp(16).toFloat() -> 2000L
-                else -> 5000L
-            }
-            val rulerStepMs = if (compactEditorLayout) compactRulerStepMs else 5000L
             val ruler = makeLane("SÜRE", if (compactEditorLayout) 18 else 22)
-            // Stop at the actual sequence duration rather than rounding up and allowing
-            // an invisible overscroll tail beyond the final clip.
+            // Use project-frame ticks only when the current zoom gives them enough
+            // screen space. At wider views keep readable second-based labels.
+            val useFrameRuler = pxPerSecond >= dp(44).toFloat()
             val rulerEndMs = totalMs.coerceAtLeast(1L)
-            var rulerTimeMs = 0L
             var rulerPositionPx = 0
-            while (rulerTimeMs < rulerEndMs) {
-                val nextTimeMs = minOf(rulerTimeMs + rulerStepMs, rulerEndMs)
-                val nextPositionPx = TimelineScaleMath.pixelsForTime(nextTimeMs, pxPerSecond)
-                val tick = TextView(this).apply {
-                    text = formatMs(rulerTimeMs) + " ┆"
-                    textSize = if (compactEditorLayout) 8f else 9f
-                    setTextColor(Color.rgb(166, 184, 201))
-                    gravity = Gravity.CENTER_VERTICAL or Gravity.START
-                    setPadding(dp(2), 0, 0, 0)
+            if (useFrameRuler) {
+                val frameRate = TimelineFrameMath.DEFAULT_FRAME_RATE
+                val frameStep = TimelineFrameMath.frameStepForPixelSpacing(
+                    pxPerSecond,
+                    dp(30).toFloat(),
+                    frameRate
+                )
+                val lastFrame = TimelineFrameMath.frameIndexAtTimeMs(rulerEndMs, frameRate)
+                var frameIndex = 0L
+                while (frameIndex <= lastFrame) {
+                    val frameTimeMs = TimelineFrameMath.timeMsForFrame(frameIndex, frameRate)
+                    if (frameTimeMs >= rulerEndMs) break
+                    val nextFrameIndex = minOf(frameIndex + frameStep, lastFrame + 1L)
+                    val nextTimeMs = minOf(
+                        TimelineFrameMath.timeMsForFrame(nextFrameIndex, frameRate),
+                        rulerEndMs
+                    )
+                    val nextPositionPx = TimelineScaleMath.pixelsForTime(nextTimeMs, pxPerSecond)
+                    val tick = TextView(this).apply {
+                        text = formatMs(frameTimeMs) + " " +
+                            (frameIndex % frameRate.toLong()) + "f"
+                        textSize = 8f
+                        setTextColor(Color.rgb(166, 184, 201))
+                        gravity = Gravity.CENTER_VERTICAL or Gravity.START
+                        setPadding(dp(2), 0, 0, 0)
+                        contentDescription = "Kare $frameIndex, ${formatTimelineMs(frameTimeMs)}"
+                    }
+                    ruler.addView(tick, LinearLayout.LayoutParams(
+                        maxOf(dp(30), (nextPositionPx - rulerPositionPx).coerceAtLeast(1)),
+                        dp(if (compactEditorLayout) 18 else 22)
+                    ))
+                    frameIndex = nextFrameIndex
+                    rulerPositionPx = nextPositionPx
                 }
-                ruler.addView(tick, LinearLayout.LayoutParams(
-                    maxOf(dp(26), (nextPositionPx - rulerPositionPx).coerceAtLeast(1)),
-                    dp(if (compactEditorLayout) 18 else 22)
-                ))
-                rulerTimeMs = nextTimeMs
-                rulerPositionPx = nextPositionPx
+            } else {
+                val compactRulerStepMs = when {
+                    pxPerSecond >= dp(34).toFloat() -> 1000L
+                    pxPerSecond >= dp(16).toFloat() -> 2000L
+                    else -> 5000L
+                }
+                val rulerStepMs = if (compactEditorLayout) compactRulerStepMs else 5000L
+                var rulerTimeMs = 0L
+                while (rulerTimeMs < rulerEndMs) {
+                    val nextTimeMs = minOf(rulerTimeMs + rulerStepMs, rulerEndMs)
+                    val nextPositionPx = TimelineScaleMath.pixelsForTime(nextTimeMs, pxPerSecond)
+                    val tick = TextView(this).apply {
+                        text = formatMs(rulerTimeMs) + " ┆"
+                        textSize = if (compactEditorLayout) 8f else 9f
+                        setTextColor(Color.rgb(166, 184, 201))
+                        gravity = Gravity.CENTER_VERTICAL or Gravity.START
+                        setPadding(dp(2), 0, 0, 0)
+                    }
+                    ruler.addView(tick, LinearLayout.LayoutParams(
+                        maxOf(dp(26), (nextPositionPx - rulerPositionPx).coerceAtLeast(1)),
+                        dp(if (compactEditorLayout) 18 else 22)
+                    ))
+                    rulerTimeMs = nextTimeMs
+                    rulerPositionPx = nextPositionPx
+                }
             }
         }
 
@@ -2576,9 +2613,15 @@ class VideoEditorActivity : Activity() {
         if (clips.isEmpty()) return
         ensureTimelinePreviewLoaded()
         if (totalOutputDurationMs() <= 0L) return
+        // Scrubbing is quantized to the 30 fps project frame grid. Playback
+        // synchronization remains timestamp-based and is deliberately not rounded.
+        val frameAlignedTimeMs = TimelineFrameMath.snapTimeMs(
+            requestedMs.coerceIn(0L, totalOutputDurationMs()),
+            TimelineFrameMath.DEFAULT_FRAME_RATE
+        ).coerceAtMost(totalOutputDurationMs())
         val position = TimelinePositionMath.locate(
             clips.map { (it.endMs - it.startMs).coerceAtLeast(0L) },
-            requestedMs
+            frameAlignedTimeMs
         ) ?: return
         val targetMs = position.clipStartMs + position.localPositionMs
         player?.seekTo(position.clipIndex, position.localPositionMs)
@@ -4581,10 +4624,10 @@ class VideoEditorActivity : Activity() {
         // Cap decode work per clip to keep long timelines responsive and avoid a stale queue.
         val thumbnailCount = (width / dp(14)).coerceIn(3, 40)
         repeat(thumbnailCount) { slot ->
-            val frameTime = if (thumbnailCount <= 1) clip.startMs else {
-                clip.startMs + (durationMs * slot.toLong() / (thumbnailCount - 1L))
-                    .coerceIn(0L, durationMs.coerceAtLeast(0L))
-            }
+            // Sample inside the half-open clip interval [start, end); asking the
+            // decoder for exactly endMs can return a frame from the following cut.
+            val frameTime = clip.startMs + (durationMs * slot.toLong() / thumbnailCount.toLong())
+                .coerceIn(0L, (durationMs - 1L).coerceAtLeast(0L))
             val image = ImageView(this).apply {
                 scaleType = ImageView.ScaleType.CENTER_CROP
                 setBackgroundColor(Color.rgb(31, 46, 59))
