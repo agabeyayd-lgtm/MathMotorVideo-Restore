@@ -749,3 +749,6 @@ Follow-up source commit `69140cfb4e64d18917b8e1e65750481f58c8c39d` closes one sy
 
 
 Follow-up source commit `88ef7ea8e06cfb3537893f7c79e8466e6173599e`: pause the active preview as soon as a timeline pinch is accepted, preventing the periodic playback-sync task from scrolling the lanes against the user's two-finger gesture. Interaction verification remains pending.
+
+
+A focused math regression test was added in `cfb24cf97e2b0661745ddb18ece934d3fe550c7e`: it checks that an off-centre pinch keeps the timestamp beneath the moving midpoint while the time beneath the fixed centre playhead is recalculated. The test still needs to pass on the latest PR head.
