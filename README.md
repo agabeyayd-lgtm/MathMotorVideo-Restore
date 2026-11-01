@@ -1,3 +1,13 @@
+## Single-path maintenance rule — 2026-11-01
+
+- One production editor only: `VideoEditorActivity`; one shared timeline model and one visible multi-track timeline. Do not add parallel editor screens, duplicate filmstrips, or detached playhead controls.
+- Keep `MainActivity` as the launcher/home and `VideoPlayerActivity` as playback/history. They are separate app roles, not competing editors.
+- Keep timeline math, trim/scale/thumbnail helpers, draft persistence and export components when referenced by the canonical editor; they are dependencies, not alternate implementations. Delete code only after a reference audit and tests prove it is unused.
+- One canonical PR build workflow: `.github/workflows/build-apk.yml` runs JVM tests, builds the debug APK and uploads the artifact. Removed the duplicate `.github/workflows/verify-android-build.yml`, which ran the same test/build command without producing an artifact.
+- `.github/workflows/android-emulator-screenshots.yml` remains a separate UI-smoke workflow because it launches an emulator and captures diagnostics; it is not a second editor or a replacement for manual interaction acceptance.
+- Historical notes below are evidence snapshots, not instructions to recreate old code. The newest source and explicit unchecked acceptance gates take precedence.
+- No merge, signed release or version 395 until the current PR head passes its fresh build and required interaction checks.
+
 ## Duration readout merged into the ruler row — 2026-11-01
 
 - Removed the separate 26dp current/total duration row above the timeline.
