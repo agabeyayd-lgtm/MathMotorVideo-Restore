@@ -240,3 +240,13 @@ Validation:
 - Main commit `bf09c70efe0fc9d63aeff5437b369a38c341b825` now explicitly removes the shared label from its previous `ViewGroup` before adding it to the newly built ruler header. This preserves the single shared playhead/time label and the 96dp ruler/lane alignment.
 - Verify Android build #479 passed before this correction; #685 did not pass and must not be treated as editor acceptance. The correction still requires a new green emulator launch/import run, followed by screenshot review.
 - Version 394 / Build 61 remains the user-approved baseline. Version 395 remains blocked; no replacement APK or release is approved by this fix alone.
+
+
+## Fixed playhead time mapping after 96dp ruler header — 2026-11-02
+
+- Emulator run #685 exposed a view-parent lifecycle crash during a responsive timeline rebuild. The shared ruler time label remained parented to the detached old header. Main commit `bf09c70efe0fc9d63aeff5437b369a38c341b825` explicitly removes that label from its prior `ViewGroup` before placing it in the rebuilt header.
+- Emulator run #686 confirmed that the crash no longer occurred: the editor opened, the 8.023-second sample clip was imported, and the thumbnail cell was aligned beneath the fixed playhead. It then failed the strict scrub assertion: the centered thumbnail represented 211ms, while preview decode events were at 542ms and 583ms.
+- Root cause of the #686 mismatch: the ruler/media header had been widened from the old 54dp grip plus 3dp row inset (57dp) to a 96dp header plus the same 3dp inset (99dp), but the origin spacer, playhead-time mapping, and fit-width calculations still used 57dp. This shifted the time readout by roughly 39dp (about 330ms at the smoke-test scale).
+- Main commit `102bdcd899b397dc439d1c2c3193b651e57fd6d6` now centralizes the actual 99dp gutter for timeline origin/end spacers and fit-to-project width. The strict 35ms preview/frame check remains unchanged. Unit geometry tests were updated in commit `3a6d6b474c6eb6cf24f8f0fb01a34601a1240653` to use the new header geometry.
+- Emulator run #687 is the first retest of the corrected mapping; its result must be green before accepting the fix. Verify build #484 is running the updated geometry tests. Neither result is yet a physical-phone acceptance.
+- Keep versionCode 394 / Build 61 as the user-approved baseline. Version 395 remains blocked; no replacement APK, signed release, or update is authorized by these changes alone.
