@@ -21,7 +21,7 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - Do not bump `versionCode` or `versionName` during this work until the release gate is met and the user explicitly authorizes the release.
 - A successful source build is not the same as a tested, published APK. Keep the original media safe; export to a new file.
 
-## Current verification state — 2026-10-31 (#413 PR-head emulator screenshot test green; #10 signed install/update-over/relaunch emulator preflight green; physical-phone acceptance and in-app updater delivery still open)
+## Current verification state — 2026-11-01 (#496 PR-head emulator screenshot test green; #10 signed install/update-over/relaunch emulator preflight green; physical-phone acceptance and in-app updater delivery still open)
 
 ## Short-viewport keyboard test — PASSED (#399, 2026-10-31)
 
@@ -400,3 +400,14 @@ Reference: the user's two screenshots with MathMotor and CapCut timelines expand
 - #413 ran the same focused screenshot method as #412. It confirms that method is still green on the tested code head but adds no new scenario; do not rerun it unchanged. Later README/status commits from this check are documentation-only.
 - This remains emulator evidence only. Physical-phone acceptance is still OPEN, and the signed install-over preflight does not prove in-app updater delivery; verify the updater through its own in-app flow separately.
 - PR #10 remains open and draft. Installed baseline remains versionCode 394 / build 61. Version 395 remains blocked; no merge, version bump, release, APK publication or updater activation without all remaining acceptance gates and explicit user authorization.
+
+
+## PR #10 CI follow-up — 2026-11-01 (#496 PASS; #624 running at last check)
+
+- [Run #496 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41200913712) completed on `fix/editor-395-mainline` (workflow run ID `41200913712`, tested head `63d8ac813cc2bb8ddb04c37332be7bb61c0e6fd5`). Unit tests, Debug APK build, deterministic FFmpeg/MP4 fixture preparation, emulator launch, the focused `EmulatorScreenshotTest#captureHomeEditorAndTextPanel` instrumentation selection, and screenshot/diagnostic artifact upload all completed successfully.
+- Artifact: [mathmotor-android-emulator-screenshots — 13042397771](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41200913712/artifacts/13042397771), expires 2026-11-14.
+- The job log contains transient ADB startup retries and emulator/GPU/Netsim setup/cleanup warnings. The connected instrumentation step subsequently reported success and the job conclusion is `success`; no failed assertion or failed job is present. These environment warnings are not evidence of an application test failure.
+- No-repeat: #496 runs the same focused screenshot method already green in #412/#413. It adds no new scenario; do not manually rerun this unchanged test.
+- At the time of this update, current PR-head workflow [run ID 41304958538](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41304958538) was still `in_progress` on head `8c5e04814cbddc90abc8e10dce9755712494e7d3`. Unit tests, Debug APK build, deterministic fixture preparation and emulator setup had passed; the launch/interaction step was still running. No final conclusion is claimed for that run here.
+- Physical-phone acceptance remains OPEN: keyboard-open text editing, timeline touch/trim/scroll/pinch, filmstrip stability and thumbnail readability/loading, preview/dock usability, and export playback/output must be checked on the actual phone. The signed install/update-over/relaunch preflight #10 passed on an emulator only; in-app updater delivery remains a separate OPEN test.
+- PR #10 remains open and draft. Installed baseline remains versionCode 394 / build 61. Version 395 remains blocked; do not merge, change version metadata, create or publish 395, publish an APK, tag a release or activate the updater without all required acceptance gates and explicit user authorization.
