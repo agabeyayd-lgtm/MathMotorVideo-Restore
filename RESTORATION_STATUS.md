@@ -775,3 +775,18 @@ The source patch is committed but all gesture acceptance checks remain open unti
 - [ ] Confirm on the user's phone that the gray gutters are gone and useful frame content remains visible.
 
 No version bump or release created. PR #11 remains draft/unmerged; installed versionCode 394 / build 61 is unchanged. Version 395 remains blocked.
+
+
+## Filmstrip full-bleed and delete-position stability — 2026-11-01
+
+Source commit `161a7a48b6f6114b26698af2b4f78b89d76d222c` on `fix/filmstrip-gap-and-stable-end-controls`:
+- [x] Crop each decoded source frame to the exact 16:9 thumbnail aspect ratio before caching it as 192×108; this removes letterbox pixels baked into thumbnails rather than relying only on ImageView scaling.
+- [x] Use black fallback backgrounds for thumbnail cells and the filmstrip container so a transient decode placeholder does not appear as a gray separator.
+- [x] On clip deletion, choose the surviving selected clip and update the playhead before rebuilding timeline rows.
+- [x] Re-anchor the pending horizontal scroll from the new playhead time before rebuilding, avoiding stale-scroll clamping that made the ruler zero mark and trailing add button jump after deletion.
+- [ ] Run Kotlin compilation and unit tests on this exact branch head.
+- [ ] Inspect a fresh emulator screenshot with portrait and landscape source clips; verify no gray rails or inter-frame gaps and ensure frame content remains useful.
+- [ ] Test deleting the last clip, a middle clip, and the only clip; confirm the plus button remains directly after the last remaining clip and the ruler zero/playhead alignment does not jump.
+- [ ] Confirm on the user's phone.
+
+This is not yet visually/device verified. PR #11 remains draft/unmerged; installed versionCode 394 / build 61 is unchanged. Version 395 remains blocked.

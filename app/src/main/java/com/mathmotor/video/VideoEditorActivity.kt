@@ -4954,18 +4954,33 @@ class VideoEditorActivity : Activity() {
 
     private fun removeClipAt(index:Int){
         if(index !in clips.indices)return
-        recordClipEdit();clips.removeAt(index);timelinePreviewLoaded=false
+        recordClipEdit()
+        clips.removeAt(index)
+        timelinePreviewLoaded=false
         selectedClipIndex=when{clips.isEmpty()->-1;index<clips.size->index;else->clips.lastIndex}
-        refreshClipList();loadTrimControls()
-        val selected=selectedClip();previewSingleClip=false
+        // Update the playhead BEFORE rebuilding the lanes. Previously refreshClipList()
+        // rebuilt the timeline with the deleted clip's old scroll position, then the
+        // shorter content clamped that scroll and made both the zero ruler mark and the
+        // trailing add button appear to jump sideways. Re-anchor scroll from the new
+        // playhead timestamp so every lane keeps the same centre-time coordinate.
+        val selected=selectedClip()
+        timelinePlayheadMs=selected?.timelineStartMs?.coerceIn(0L,totalOutputDurationMs()) ?: 0L
+        pendingTimelineScrollX=TimelineScaleMath.pixelsForTime(
+            timelinePlayheadMs, timelinePixelsPerSecond()
+        ).coerceAtLeast(0)
+        timelineHorizontalScrollX=pendingTimelineScrollX ?: 0
+        previewSingleClip=false
+        refreshClipList()
+        loadTrimControls()
         if(selected==null){
             pauseActivePreview();timelineCompositionPlayer?.release();timelineCompositionPlayer=null
             timelinePreviewLoaded=false;player?.clearMediaItems()
         }else{
-            timelinePlayheadMs=selected.timelineStartMs;ensureTimelinePreviewLoaded();seekTimelinePreview(timelinePlayheadMs)
+            ensureTimelinePreviewLoaded()
+            seekTimelinePreview(timelinePlayheadMs)
         }
         updateTimelinePlayheadLabel()
-        status.text=if(clips.isEmpty())"Zaman çizelgesi boş." else "Klip silindi; diğer konumlar korundu."
+        status.text=if(clips.isEmpty())"Zaman çizelgesi boş." else "Klip silindi; zaman cetveli ve ekleme düğmesi yeni oynatma noktasına sabitlendi."
     }
 
     private fun removeSelectedClip() {
@@ -5199,7 +5214,7 @@ class VideoEditorActivity : Activity() {
         val filmstrip = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             // Match the frame cells so no contrasting rail is exposed while thumbnails load.
-            setBackgroundColor(Color.rgb(31, 46, 59))
+            setBackgroundColor(Color.BLACK)
         }
         // Render a readable, continuous filmstrip: each frame gets a near-fixed
         // 52dp-wide cell instead of the previous 12dp sliver. The cells fill the clip
@@ -5458,19 +5473,36 @@ class VideoEditorActivity : Activity() {
                         if (attempt < 2) Thread.sleep(120L * (attempt + 1))
                     }
                     if (original != null && !original.isRecycled && original.width > 0 && original.height > 0) {
-                        val scale = minOf(192f / original.width, 108f / original.height)
-                        val scaledWidth = (original.width * scale).toInt().coerceAtLeast(1)
-                        val scaledHeight = (original.height * scale).toInt().coerceAtLeast(1)
-                        val scaled = Bitmap.createScaledBitmap(original, scaledWidth, scaledHeight, true)
-                        if (scaled !== original && !original.isRecycled) original.recycle()
-                        // Letterbox instead of center-cropping: keep the whole scene visible.
+                        // Produce a true edge-to-edge 16:9 frame bitmap. Previously the
+                        // decoder letterboxed portrait/odd-ratio sources into a 192x108
+                        // bitmap, baking the dark side/top bars into every thumbnail;
+                        // ImageView.CENTER_CROP cannot remove pixels already in the bitmap.
+                        val targetRatio = 192f / 108f
+                        val sourceRatio = original.width.toFloat() / original.height.toFloat()
+                        val cropWidth: Int
+                        val cropHeight: Int
+                        val cropLeft: Int
+                        val cropTop: Int
+                        if (sourceRatio > targetRatio) {
+                            cropHeight = original.height
+                            cropWidth = (cropHeight * targetRatio).toInt().coerceIn(1, original.width)
+                            cropLeft = (original.width - cropWidth) / 2
+                            cropTop = 0
+                        } else {
+                            cropWidth = original.width
+                            cropHeight = (cropWidth / targetRatio).toInt().coerceIn(1, original.height)
+                            cropLeft = 0
+                            cropTop = (original.height - cropHeight) / 2
+                        }
                         val framed = Bitmap.createBitmap(192, 108, Bitmap.Config.ARGB_8888)
                         val canvas = android.graphics.Canvas(framed)
-                        canvas.drawColor(Color.rgb(12, 18, 28))
-                        val left = (192 - scaled.width) / 2f
-                        val top = (108 - scaled.height) / 2f
-                        canvas.drawBitmap(scaled, left, top, android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG or android.graphics.Paint.FILTER_BITMAP_FLAG))
-                        if (!scaled.isRecycled) scaled.recycle()
+                        canvas.drawBitmap(
+                            original,
+                            android.graphics.Rect(cropLeft, cropTop, cropLeft + cropWidth, cropTop + cropHeight),
+                            android.graphics.Rect(0, 0, 192, 108),
+                            android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG or android.graphics.Paint.FILTER_BITMAP_FLAG)
+                        )
+                        if (!original.isRecycled) original.recycle()
                         result = framed
                     } else {
                         original?.let { if (!it.isRecycled) it.recycle() }
