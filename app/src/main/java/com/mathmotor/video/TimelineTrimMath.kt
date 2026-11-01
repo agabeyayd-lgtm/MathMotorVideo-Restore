@@ -304,6 +304,16 @@ internal object TimelineVideoMath {
         }
     }
 
+    /** Maps a visible project timestamp back to the exact source timestamp for one clip. */
+    fun sourceTimeAtProjectTime(segment: TimelineVideoSegment, projectTimeMs: Long): Long? {
+        val safe = normalize(segment)
+        if (safe.durationMs <= 0L ||
+            projectTimeMs < safe.timelineStartMs ||
+            projectTimeMs >= safe.timelineEndMs
+        ) return null
+        return safe.sourceStartMs + (projectTimeMs - safe.timelineStartMs)
+    }
+
     /**
      * Returns every clip for the single visual VIDEO strip.
      *
