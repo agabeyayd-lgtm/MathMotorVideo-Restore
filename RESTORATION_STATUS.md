@@ -2,6 +2,7 @@
 
 ## Canonical mainline state — 2026-11-01
 
+- Emulator run #687: filmstrip/preview alignment at 211 ms and forward/reverse scrubbing passed. The diagnostic log captured the timeline sync test flag and more than 20 live playback samples; ruler, filmstrip lanes, centered playhead and player time remained synchronized. The validator failed because the harness dumped the entire Android log buffer with a 10-second timeout, producing a truncated validation file before the startup marker/samples. Fix the harness by filtering capture to `TimelineSyncTest:I`; rerun required before marking #687's check green. This is a test-log capture defect, not evidence of an editor sync regression.
 - Active source: `main` only. The user-approved UI/editor baseline from `b82245d02ad9f51a1cca6795ba33cd31360c8de4` is now integrated in merge commit `668ed1c0653a05871b3ffb855cc3a3b3aa61435d` (PR #16).
 - Preserved the approved editor activity, filmstrip, fixed center playhead, source-frame-rate-aware scale/ruler math, thumbnail sample/alignment logic, independent track/layout helpers and matching tests. Do not replace these with the interim main-only `VideoEditorActivity.kt` or fixed-30-FPS `TimelineFrameMath` implementation.
 - PR-head checks passed on the merged tree: Verify Android build #452, debug APK build #488, and API 35 emulator editor/screenshot flow #669 (integration commit `934d9011c8afd65e4764a39b2411a50cd216047d`).
