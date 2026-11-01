@@ -5529,7 +5529,11 @@ class VideoEditorActivity : Activity() {
      * no previous/nearby frame is shown as though it were current.
      */
     private fun requestPreviewFrameAt(projectTimeMs: Long) {
-        if (!::previewFrameOverlay.isInitialized || clips.isEmpty()) return
+        if (!::previewFrameOverlay.isInitialized) return
+        if (clips.isEmpty()) {
+            hidePreviewFrameOverlay()
+            return
+        }
         val requestId = showPreviewFramePending()
 
         val lastFrameMs = (totalOutputDurationMs() - 1L).coerceAtLeast(0L)
@@ -6335,6 +6339,12 @@ class VideoEditorActivity : Activity() {
         timelineHandler.removeCallbacks(textTimelineRefreshTask)
         timelineHandler.removeCallbacks(timelineScrubPreviewSeekTask)
         pendingTimelineScrubPreviewTargetMs = null
+        previewFrameRequestGeneration.incrementAndGet()
+        pendingPreviewFrameTask?.let { timelineThumbnailExecutor.remove(it) }
+        pendingPreviewFrameTask = null
+        if (::previewFrameOverlay.isInitialized) previewFrameOverlay.setImageDrawable(null)
+        previewFrameBitmap?.let { if (!it.isRecycled) it.recycle() }
+        previewFrameBitmap = null
         // Discard stale queued cells, then release the reused decoder on its worker
         // after any in-flight frame extraction has returned.
         timelineThumbnailExecutor.queue.clear()
