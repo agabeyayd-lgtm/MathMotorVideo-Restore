@@ -1,3 +1,15 @@
+## Duration readout merged into the ruler row — 2026-11-01
+
+- Removed the separate 26dp current/total duration row above the timeline.
+- The current time and project duration now appear as a compact two-line readout inside the ruler's existing 54dp left gutter, on the same horizontal row as the time scale.
+- The ruler and all media lanes retain their existing 54dp gutter, so the time-zero alignment and shared playhead coordinate mapping are unchanged.
+- Timeline card height calculation no longer reserves a separate 26dp time row; the freed vertical space can accommodate timeline lanes within the existing card height cap.
+- Source commit: `9ba909e8a47e686cca2dc6a47c2be88d1d69233c`.
+- [x] Static source edit: separate time-row container removed; duration label moved into the ruler row; time-row height reservation set to zero.
+- [ ] Full Gradle unit tests and Android debug compilation on this commit.
+- [ ] Emulator/phone screenshot check: verify the readout is legible in the 54dp gutter, ruler ticks remain aligned with the video strip, and added lanes gain the freed vertical space.
+- No APK, merge, signed release or version 395 has been produced from this change.
+
 ## Single-editor architecture decision — 2026-11-01
 
 - The home screen remains the app's entry point. `MainActivity` stays the launcher and continues to provide gallery/new-project entry plus draft access.
