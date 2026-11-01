@@ -5363,7 +5363,10 @@ class VideoEditorActivity : Activity() {
                             view.parent?.requestDisallowInterceptTouchEvent(false)
                             if (moved) {
                                 val initial=TimelineVideoSegment(clip.timelineStartMs,initialStartMs,initialEndMs,clip.durationMs)
-                                val updated=if(isStart)TimelineVideoMath.trimStart(initial,deltaMs) else TimelineVideoMath.trimEnd(initial,deltaMs)
+                                val updated=if(isStart && initial.timelineStartMs==0L)
+                                    TimelineVideoMath.trimStartKeepingTimelinePosition(initial,deltaMs)
+                                else if(isStart) TimelineVideoMath.trimStart(initial,deltaMs)
+                                else TimelineVideoMath.trimEnd(initial,deltaMs)
                                 if(updated!=initial){
                                     clip.startMs=updated.sourceStartMs;clip.endMs=updated.sourceEndMs
                                     // Trimming source footage must not move a clip already anchored at project time zero.
