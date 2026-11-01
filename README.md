@@ -34,7 +34,7 @@ A focused source review found that the existing timeline already shares one mill
 - Extracted pinch-anchor scroll positioning into shared timeline scale math and added a regression test proving the same timestamp remains under the viewport anchor after zoom.
 - Enabled the unit-test/debug-build verification workflow for pull requests; this validates source without publishing an APK.
 - Added `TimelinePinchGestureTest`, a focused Android UI Automator test against the deterministic eight-second emulator video. It checks pinch-out, pinch-in, five-second ruler-anchor stability, and one-finger scrolling on the video lane moving the ruler in sync.
-- Updated the dedicated API 35 emulator workflow to run on relevant pull-request changes and execute this focused gesture test after preparing the sample video.
+- Wired the API 35 emulator and targeted gesture test into the already PR-triggered `Verify Android build` workflow. The dedicated screenshot workflow remains available for manual runs and main-branch pushes.
 - No app version metadata was changed. Version 395 remains blocked.
 
 ### Still open / not yet proven
