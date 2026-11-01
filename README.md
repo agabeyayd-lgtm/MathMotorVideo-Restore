@@ -992,3 +992,12 @@ The user's explicit rule supersedes earlier filmstrip notes that requested 16:9 
 - Pure math coverage added for gradual ruler density, 23.976/29.97/30/60 FPS behavior, frame-index/time conversion and subsecond label formatting.
 - Verify #400 and Build #481 passed for source commit `d9eae9f18d3e0841e81f4485d39b19c893860282`. Emulator screenshot workflow #648 was still running at this note; do not treat emulator or physical-phone frame-ruler behavior as accepted until inspected.
 - Debug APK artifact `MathMotorVideo-restored-debug` was downloaded and checked as a valid APK. It is for device evaluation only; no version bump, signed release, merge or version 395.
+
+
+## Emulator frame-ruler screenshot review — 2026-11-01
+
+- Emulator workflow #648 installed the debug APK and launched the editor with the deterministic 8.023-second vertical fixture.
+- The uploaded screenshot and window dump show frame-unit labels `0f`, `5f`, `10f`, `15f`, `20f`, `25f` at the tested zoom. The preview and portrait filmstrip are both visible.
+- Logcat records successful editor entry, clip metadata read and clip import; the timeline sync sample remained at the centered playhead.
+- The workflow's app-launch/capture step ended as **cancelled**, despite the diagnostic artifact being uploaded. Therefore this is a useful visual smoke capture, not a fully green emulator run or proof of pinch/scrub behavior.
+- Physical-phone acceptance and all four integrated filmstrip goals remain open.
