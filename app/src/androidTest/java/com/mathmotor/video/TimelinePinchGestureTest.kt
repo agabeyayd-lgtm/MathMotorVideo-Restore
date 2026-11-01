@@ -39,7 +39,10 @@ class TimelinePinchGestureTest {
             fixture.isFile && fixture.length() > 0L
         )
 
-        device.executeShellCommand("am force-stop com.mathmotor.video.next")
+        // Do not force-stop the target package from its instrumentation test.
+        // On API 35 this also terminates the active instrumentation process,
+        // producing a generic "Process crashed" before any gesture is dispatched.
+        // Clear stale logs, then launch the editor test activity in-place.
         device.executeShellCommand("logcat -c")
         device.executeShellCommand(
             "am start -n com.mathmotor.video.next/com.mathmotor.video.EditorTestEntryActivity " +
