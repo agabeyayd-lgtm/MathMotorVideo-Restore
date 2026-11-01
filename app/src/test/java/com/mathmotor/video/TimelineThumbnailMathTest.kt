@@ -32,7 +32,7 @@ class TimelineThumbnailMathTest {
     }
 
     @Test
-    fun samplesCoverTheClipWithoutSamplingPastItsEnd() {
+    fun samplesMatchTheTemporalCenterOfEachVisibleCell() {
         val start = 1_250L
         val end = 11_250L
         val count = 5
@@ -41,15 +41,31 @@ class TimelineThumbnailMathTest {
             TimelineThumbnailMath.sampleTime(start, end, count, it)
         }
 
-        assertEquals(listOf(1_250L, 3_749L, 6_249L, 8_749L, 11_249L), samples)
+        assertEquals(listOf(2_250L, 4_250L, 6_250L, 8_250L, 10_250L), samples)
         assertTrue(samples.zipWithNext().all { (left, right) -> right > left })
-        assertTrue(samples.all { it < end })
+        assertTrue(samples.all { it in start until end })
     }
 
     @Test
-    fun oneCellUsesTheFirstFrameAndIndicesAreClamped() {
-        assertEquals(500L, TimelineThumbnailMath.sampleTime(500L, 9_000L, 1, 0))
-        assertEquals(9_999L, TimelineThumbnailMath.sampleTime(500L, 10_000L, 3, 99))
-        assertEquals(500L, TimelineThumbnailMath.sampleTime(500L, 10_000L, 3, -2))
+    fun sampleTimesMapToTheCentersOfTheirTimelineCells() {
+        val clipDurationMs = 10_000L
+        val timelineWidthPx = 520
+        val count = 5
+        val cellWidthPx = timelineWidthPx / count
+
+        val sampleCentersPx = (0 until count).map { slot ->
+            val timeMs = TimelineThumbnailMath.sampleTime(0L, clipDurationMs, count, slot)
+            (timeMs * timelineWidthPx / clipDurationMs).toInt()
+        }
+
+        assertEquals(listOf(52, 156, 260, 364, 468), sampleCentersPx)
+        assertEquals((0 until count).map { it * cellWidthPx + cellWidthPx / 2 }, sampleCentersPx)
+    }
+
+    @Test
+    fun oneCellSamplesItsCenterAndIndicesAreClamped() {
+        assertEquals(4_750L, TimelineThumbnailMath.sampleTime(500L, 9_000L, 1, 0))
+        assertEquals(8_416L, TimelineThumbnailMath.sampleTime(500L, 10_000L, 3, 99))
+        assertEquals(2_083L, TimelineThumbnailMath.sampleTime(500L, 10_000L, 3, -2))
     }
 }

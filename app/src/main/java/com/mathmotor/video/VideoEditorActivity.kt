@@ -5362,8 +5362,15 @@ class VideoEditorActivity : Activity() {
             val frameTime = TimelineThumbnailMath.sampleTime(
                 clip.startMs, clip.endMs, thumbnailCount, slot
             )
+            // Expose the sample timestamp for diagnostics and accessibility. The
+            // image now represents the center of this cell's shared timeline range.
+            image.contentDescription = "Klip karesi @${frameTime}ms"
             val projectFrameTime = clip.timelineStartMs + (frameTime - clip.startMs).coerceAtLeast(0L)
             val priorityDistanceMs = kotlin.math.abs(projectFrameTime - timelinePlayheadMs)
+            if (timelineSyncTestEnabled) android.util.Log.i(
+                "TimelineFrameSyncTest",
+                "TIMELINE_THUMBNAIL_SAMPLE slot=$slot count=$thumbnailCount sourceMs=$frameTime projectMs=$projectFrameTime"
+            )
             requestTimelineThumbnail(clip.uri, frameTime, image, priorityDistanceMs)
         }
         container.addView(filmstrip, FrameLayout.LayoutParams(
@@ -5581,6 +5588,10 @@ class VideoEditorActivity : Activity() {
         )
         val sourceTimeMs = TimelineVideoMath.sourceTimeAtProjectTime(segment, safeProjectTimeMs)
             ?: return
+        if (timelineSyncTestEnabled) android.util.Log.i(
+            "TimelineFrameSyncTest",
+            "TIMELINE_PREVIEW_FRAME_REQUEST projectMs=$safeProjectTimeMs sourceMs=$sourceTimeMs"
+        )
         applyPreviewFrameTransform(clip)
 
         val task = TimelineThumbnailTask(
@@ -5603,7 +5614,15 @@ class VideoEditorActivity : Activity() {
                     previewFrameOverlay.setBackgroundColor(Color.BLACK)
                     previewFrameOverlay.visibility = View.VISIBLE
                     applyPreviewFrameTransform(clip)
+                    if (timelineSyncTestEnabled) android.util.Log.i(
+                        "TimelineFrameSyncTest",
+                        "TIMELINE_PREVIEW_FRAME_READY projectMs=$safeProjectTimeMs sourceMs=$sourceTimeMs width=${decoded.width} height=${decoded.height}"
+                    )
                 } else {
+                    if (timelineSyncTestEnabled) android.util.Log.e(
+                        "TimelineFrameSyncTest",
+                        "TIMELINE_PREVIEW_FRAME_FAILED projectMs=$safeProjectTimeMs sourceMs=$sourceTimeMs"
+                    )
                     // Keep the neutral black cover rather than showing a stale frame.
                     previewFrameOverlay.setImageDrawable(null)
                     previewFrameOverlay.setBackgroundColor(Color.BLACK)
@@ -5758,6 +5777,10 @@ class VideoEditorActivity : Activity() {
         val cached = timelineThumbnailCache.get(key)
         if (cached != null && !cached.isRecycled) {
             target.setImageBitmap(cached)
+            if (timelineSyncTestEnabled) android.util.Log.i(
+                "TimelineFrameSyncTest",
+                "TIMELINE_THUMBNAIL_READY sourceMs=$timestampMs width=${cached.width} height=${cached.height} cached=true"
+            )
             return
         }
         // Leave the cell neutral black until its own exact sample is decoded.
@@ -5822,6 +5845,10 @@ class VideoEditorActivity : Activity() {
                 val targets = pendingTimelineThumbnails.remove(key).orEmpty()
                 if (result != null && !isFinishing && !isDestroyed) {
                     timelineThumbnailCache.put(key, result)
+                    if (timelineSyncTestEnabled) android.util.Log.i(
+                        "TimelineFrameSyncTest",
+                        "TIMELINE_THUMBNAIL_READY sourceMs=$timestampMs width=${result.width} height=${result.height} cached=false"
+                    )
                     targets.forEach { ref ->
                         val image = ref.get()
                         if (image != null && image.tag == key) image.setImageBitmap(result)

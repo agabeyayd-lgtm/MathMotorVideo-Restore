@@ -18,17 +18,31 @@ internal object TimelineThumbnailMath {
     }
 
     /**
-     * Evenly samples [startMs, endMs), including the first frame and the final
-     * representable millisecond before the clip end. A single cell samples startMs.
+     * Samples the temporal center of the requested visual cell.
+     *
+     * Filmstrip cells divide the clip into [count] equal-width intervals. Sampling
+     * endpoints across count - 1 gaps shifts every frame away from the cell it
+     * represents, so a playhead centered on a cell can show a different moment
+     * from the preview. This maps each bitmap to the midpoint of its own interval.
      */
     fun sampleTime(startMs: Long, endMs: Long, count: Int, index: Int): Long {
-        if (endMs <= startMs || count <= 1) return startMs
-        val slots = count - 1
-        val slot = index.coerceIn(0, slots)
-        val span = (endMs - startMs - 1L).coerceAtLeast(0L)
-        val quotient = span / slots
-        val remainder = span % slots
-        val offset = quotient * slot + (remainder * slot) / slots
-        return startMs + offset
+        if (endMs <= startMs) return startMs
+        val safeCount = count.coerceAtLeast(1)
+        val slot = index.coerceIn(0, safeCount - 1)
+        val span = endMs - startMs
+
+        // Calculate each interval boundary with quotient/remainder arithmetic to
+        // avoid multiplying the full duration by a potentially large slot index.
+        fun boundary(cell: Int): Long {
+            val whole = span / safeCount
+            val remainder = span % safeCount
+            val cellIndex = cell.toLong()
+            return whole * cellIndex + (remainder * cellIndex) / safeCount
+        }
+
+        val cellStart = boundary(slot)
+        val cellEnd = boundary(slot + 1)
+        val midpoint = cellStart + (cellEnd - cellStart) / 2L
+        return startMs + midpoint.coerceIn(0L, (span - 1L).coerceAtLeast(0L))
     }
 }

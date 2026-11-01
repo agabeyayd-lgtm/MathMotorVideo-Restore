@@ -289,6 +289,11 @@ if [ ! -s "$fixture" ]; then
   echo "Missing generated test fixture: $fixture"
   exit 3
 fi
+# The visual frame check samples screenshot pixels. Install Pillow only when needed.
+if ! python3 -c "from PIL import Image" >/dev/null 2>&1; then
+  sudo apt-get update
+  sudo apt-get install -y python3-pil
+fi
 # Android's scoped-storage policy blocks shell access to another app's
 # /sdcard/Android/data directory. Stage the fixture in /data/local/tmp, then
 # copy it into this debuggable test APK's private files directory with run-as.
@@ -366,7 +371,26 @@ fi
 # clip is inserted into the timeline, so inaccessible UI hierarchy is diagnostic
 # only and does not turn a successful import into a false failure.
 
-echo "Step 8/10: exercise filmstrip scrubbing in both directions"
+echo "Step 8/11: align a thumbnail cell with the playhead and compare the rendered pixels"
+alignment="$(python3 .github/scripts/assert-thumbnail-alignment.py prepare emulator-screenshots/editor-window.xml)"
+read -r thumb_center_x thumb_center_y play_center_x thumb_sample_ms <<< "$alignment"
+echo "Aligning thumbnail sample ${thumb_sample_ms}ms from x=${thumb_center_x} to fixed playhead x=${play_center_x}"
+if [ "$thumb_center_x" -ne "$play_center_x" ]; then
+  timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$thumb_center_x" "$thumb_center_y" "$play_center_x" "$thumb_center_y" 450
+fi
+sleep 2
+if ! take_screen emulator-screenshots/editor-frame-aligned.png; then
+  collect_capture_diagnostics thumbnail-alignment-capture-failure
+  exit 6
+fi
+dump_hierarchy editor-frame-aligned.xml emulator-screenshots/editor-frame-aligned.xml || true
+timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime > emulator-screenshots/thumbnail-alignment-logcat.txt 2>&1
+python3 .github/scripts/assert-thumbnail-alignment.py verify \
+  emulator-screenshots/editor-frame-aligned.xml \
+  emulator-screenshots/editor-frame-aligned.png \
+  emulator-screenshots/thumbnail-alignment-logcat.txt
+
+echo "Step 9/11: exercise filmstrip scrubbing in both directions"
 clip_bounds="$(python3 - emulator-screenshots/editor-window.xml <<'PY'
 import re
 import sys
@@ -554,7 +578,7 @@ if ! python3 .github/scripts/assert-timeline-sync.py emulator-screenshots/timeli
   exit 16
 fi
 
-echo "Step 9/10: validate automatic draft save and resume list"
+echo "Step 11/11: validate automatic draft save and resume list"
 timeout -k 2s 8s adb -s emulator-5554 shell input keyevent 4 || true
 sleep 3
 timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime > emulator-screenshots/draft-autosave-logcat.txt 2>&1 || true

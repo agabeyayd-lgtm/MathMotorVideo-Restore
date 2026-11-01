@@ -1,5 +1,19 @@
 # MathMotor Video — current project status
 
+## Filmstrip frame sampling aligned with the fixed playhead — 2026-11-01
+
+- Root cause: the strip was split into `count` equal-width cells, but the decoder sampled `count` timestamps evenly across `count - 1` gaps (first frame through last frame). The sample timestamps therefore drifted away from the temporal centers of their own visible cells.
+- Updated `TimelineThumbnailMath.sampleTime` to decode the midpoint of each cell's own time interval. The image under the fixed playhead now represents the same time position as the center of that visual cell; the first and last cells no longer force the first/last source frames onto their edges.
+- Filmstrip cells expose their sample timestamp to accessibility diagnostics. Debug emulator logs now record thumbnail sample/ready timestamps and exact preview-frame request/ready/failure timestamps. No additional test-only behavior is packaged into release builds.
+- Added unit checks for cell-center sampling, time-to-pixel center alignment, one-cell behavior, index clamping and clip-end bounds.
+- Added an emulator screenshot acceptance step that moves a thumbnail cell center under the fixed playhead, confirms preview and thumbnail decode timestamps agree, and compares their rendered center pixels. This is a stronger check than playback/scroll synchronization alone.
+- [ ] PR-head Kotlin compilation, unit tests and Debug APK build after the center-sampling change.
+- [ ] Emulator screenshot/pixel comparison of the centered thumbnail and paused preview must pass. A build-green result alone does not close this item.
+- [ ] Review the new aligned screenshot and repeat on a physical phone; inspect for black/partial/stale thumbnail cells under decode load.
+- The bottom tool dock/context-panel/keyboard layout remains a separate open acceptance item; the current emulator screen without a selected panel does not validate it.
+- PR #11 remains draft and unmerged. Installed versionCode 394/build 61 remains unchanged. Version 395 remains blocked.
+
+
 ## Playback state and fit control — 2026-10-31
 - Removed a duplicate Sığdır button declaration found by PR-head Kotlin compilation; one visible fit control remains.
 - Fit now preserves the current playhead time under the fixed center marker; the scale calculation is a pure tested helper. Playback state also respects Media3 playWhenReady while buffering.
