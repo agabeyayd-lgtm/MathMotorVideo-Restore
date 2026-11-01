@@ -309,6 +309,8 @@ class VideoEditorActivity : Activity() {
     private val timelineThumbnailWorkerSequence = java.util.concurrent.atomic.AtomicLong()
     private val timelineThumbnailRetrievers =
         java.util.concurrent.ConcurrentHashMap<Long, Pair<Uri, MediaMetadataRetriever>>()
+    private val timelineThumbnailExtractors =
+        java.util.concurrent.ConcurrentHashMap<Long, Pair<Uri, FrameExtractor>>()
     private val timelineThumbnailExecutor = java.util.concurrent.ThreadPoolExecutor(
         2,
         2,
@@ -326,6 +328,7 @@ class VideoEditorActivity : Activity() {
                     worker.run()
                 } finally {
                     releaseTimelineThumbnailRetriever()
+                    releaseTimelineThumbnailExtractor()
                 }
             }, "timeline-thumbnail-\u0024{timelineThumbnailWorkerSequence.incrementAndGet()}")
         }
@@ -5448,6 +5451,32 @@ class VideoEditorActivity : Activity() {
         }
     }
 
+    private fun timelineThumbnailExtractorFor(uri: Uri): FrameExtractor? {
+        val threadId = Thread.currentThread().id
+        val current = timelineThumbnailExtractors[threadId]
+        if (current != null && current.first == uri) return current.second
+        if (current != null) {
+            runCatching { current.second.close() }
+            timelineThumbnailExtractors.remove(threadId, current)
+        }
+        return try {
+            FrameExtractor.Builder(this, MediaItem.fromUri(uri))
+                .setEffects(listOf(Presentation.createForHeight(288)))
+                .build()
+                .also { timelineThumbnailExtractors[threadId] = uri to it }
+        } catch (error: Exception) {
+            android.util.Log.w("TimelineThumbnail", "Could not open Media3 thumbnail extractor for $uri", error)
+            null
+        }
+    }
+
+    private fun releaseTimelineThumbnailExtractor() {
+        val threadId = Thread.currentThread().id
+        timelineThumbnailExtractors.remove(threadId)?.second?.let { extractor ->
+            runCatching { extractor.close() }
+        }
+    }
+
     private fun hidePreviewFrameOverlay() {
         if (!::previewFrameOverlay.isInitialized) return
         previewFrameRequestGeneration.incrementAndGet()
@@ -5663,24 +5692,18 @@ class VideoEditorActivity : Activity() {
         }
         if (platformFrame != null) return platformFrame
 
-        // Media3 is the one fallback for this timestamp. The platform retriever stays
-        // open and is reused for subsequent cells from the same video URI.
-        var extractor: FrameExtractor? = null
+        // Reuse one Media3 extractor per decoder worker and source URI. Building
+        // and closing an extractor for every cell made fallback decoding needlessly slow.
+        val extractor = timelineThumbnailExtractorFor(uri) ?: return null
         var frameFuture: java.util.concurrent.Future<FrameExtractor.Frame>? = null
-        try {
-            val createdExtractor = FrameExtractor.Builder(this, MediaItem.fromUri(uri))
-                .setEffects(listOf(Presentation.createForHeight(288)))
-                .build()
-            extractor = createdExtractor
-            val future = createdExtractor.getFrame(timeMs.coerceAtLeast(0L))
+        return try {
+            val future = extractor.getFrame(timeMs.coerceAtLeast(0L))
             frameFuture = future
-            return future.get(2500L, TimeUnit.MILLISECONDS).bitmap
+            future.get(2500L, TimeUnit.MILLISECONDS).bitmap
         } catch (error: Exception) {
             frameFuture?.cancel(true)
             android.util.Log.w("TimelineThumbnail", "No frame decoded for $uri at ${timeMs}ms", error)
-            return null
-        } finally {
-            runCatching { extractor?.close() }
+            null
         }
     }
 
