@@ -150,3 +150,23 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 - Main runs #665 and #666 passed the screenshot/editor/autosave flow. Run #666 also confirms successful APK build/install, app launch, insertion of the deterministic 8.023-second video as one clip, and draft autosave. The artifact contains screenshots/diagnostics; it is not a signed release APK.
 - No launcher ANR recurred in #666, so the Pixel/Nexus Launcher `Close app` recovery branch remains unexercised. It is scoped to the named launcher only; app-owned ANRs remain hard failures.
 - These results verify only the listed smoke and gesture checks. Thumbnail accuracy/scaling, all trim and multi-track edits, export, Undo/Redo and physical-device behavior remain open. The 394 / Build 61 baseline and release gate are unchanged.
+
+
+
+## Filmstrip thumbnail responsiveness — 2026-11-01 (source changes; emulator verification pending)
+
+- Pause/Stop preserves the last rendered video frame while the exact still-frame request runs. A failed pause-time still decode no longer clears a valid preview to black.
+- Removed the `OPTION_CLOSEST_SYNC` fallback from filmstrip extraction because sync-frame fallback can repeat one keyframe across different timestamps. The closest-frame path and Media3 fallback remain.
+- Added source-time start/end bounds for each thumbnail cell. On zoom-out, an already decoded bitmap inside the new cell's time interval is reused immediately; the playhead-nearest cell is kept exact for preview synchronization.
+- Replaced Shorts-only 9:16 cell geometry with a fixed-height strip and source-aspect-ratio-derived cell width. The first decoded thumbnail teaches the layout the actual ratio; portrait, landscape and square sources are fitted without crop/stretch, and cached bitmaps survive the one-time layout refresh.
+- Added unit tests for cell-range partitioning and portrait / landscape / square cell sizing.
+- Verify Android build #466 passed unit tests and `assembleDebug` on commit `386f708b4f95c300e90a8217dfbe9d04ec9db770`.
+- API 35 screenshot/editor run #678 is still pending. This work is not yet physically tested on the user's phone.
+
+Still open:
+- Add an emulator assertion that samples all visible filmstrip cells from a time-varying fixture and rejects repeated decoded frames for distinct sample times.
+- Measure initial thumbnail fill time and verify progressive visible-first loading.
+- Verify zoom-out reuses in-range thumbnails without launching new decode tasks, and zoom-in only decodes newly needed time intervals.
+- Visually verify Play/Stop retains the final frame, including the decode-failure path.
+- Capture and verify portrait, landscape and square filmstrip layouts and confirm the preview/filmstrip source frame correspondence.
+- Keep versionCode 394 / Build 61 as the user-approved baseline. Do not create version 395, sign/publish a release, or offer an update before all acceptance checks pass and the user explicitly authorizes it.
