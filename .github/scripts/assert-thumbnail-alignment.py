@@ -94,26 +94,62 @@ def verify(xml_path, screenshot_path, log_path):
 
     from PIL import Image
     image = Image.open(screenshot_path).convert("RGB")
+
+    # Sample a small normalized grid from every visible thumbnail. The emulator
+    # fixture changes over time, so repeated fingerprints across distinct sample
+    # timestamps expose a decoder that is returning one GOP/keyframe repeatedly.
+    thumbnail_nodes = []
+    for node in root.iter("node"):
+        match = re.fullmatch(
+            r"Klip karesi @(\\d+)ms(?: \\(önbellek\\))?",
+            node.attrib.get("content-desc", "")
+        )
+        box = bounds(node)
+        if match and box and box[2] - box[0] >= 8 and box[3] - box[1] >= 8:
+            thumbnail_nodes.append((int(match.group(1)), box))
+    if len(thumbnail_nodes) < 3:
+        raise SystemExit(
+            f"FAIL: only {len(thumbnail_nodes)} visible timestamped thumbnails; "
+            "at least three are required to verify frame diversity."
+        )
+
+    fingerprints = []
+    for timestamp, box in thumbnail_nodes:
+        fingerprint = []
+        for fy in (0.2, 0.5, 0.8):
+            for fx in (0.2, 0.5, 0.8):
+                x = round(box[0] + (box[2] - box[0]) * fx)
+                y = round(box[1] + (box[3] - box[1]) * fy)
+                fingerprint.extend(pixel_mean(image, x, y, radius=1))
+        fingerprints.append((timestamp, tuple(fingerprint)))
+    unique_fingerprints = len({fingerprint for _, fingerprint in fingerprints})
+    required_unique = max(3, (len(fingerprints) * 3 + 3) // 4)
+    if unique_fingerprints < required_unique:
+        raise SystemExit(
+            f"FAIL: filmstrip frames are not visually distinct enough: "
+            f"{unique_fingerprints}/{len(fingerprints)} unique thumbnails "
+            f"for timestamps {[timestamp for timestamp, _ in fingerprints]}."
+        )
+
     preview_x = (preview[0] + preview[2]) // 2
     preview_y = (preview[1] + preview[3]) // 2
     thumb_box = cell[1]
     thumb_x = (thumb_box[0] + thumb_box[2]) // 2
     thumb_y = (thumb_box[1] + thumb_box[3]) // 2
 
-    # The preview is rendered in a wide player viewport while each Shorts
-    # thumbnail is a narrow portrait cell. Use the same normalized horizontal
-    # source coordinate in both images; equal absolute pixel offsets would sample
-    # different parts of a frame and can falsely fail on vertical colour bars.
-    # The deterministic emulator fixture is 9:16, so calculate its fitted width
-    # separately inside the preview viewport and the thumbnail cell.
-    portrait_aspect = 9.0 / 16.0
+    # Derive the source aspect ratio from the fitted thumbnail cell instead of
+    # assuming Shorts. This keeps the preview comparison valid for portrait,
+    # landscape and square source videos.
+    cell_width = thumb_box[2] - thumb_box[0]
+    cell_height = thumb_box[3] - thumb_box[1]
+    source_aspect = cell_width / max(1, cell_height)
     preview_frame_width = min(
         preview[2] - preview[0],
-        round((preview[3] - preview[1]) * portrait_aspect)
+        round((preview[3] - preview[1]) * source_aspect)
     )
     thumbnail_frame_width = min(
-        thumb_box[2] - thumb_box[0],
-        round((thumb_box[3] - thumb_box[1]) * portrait_aspect)
+        cell_width,
+        round(cell_height * source_aspect)
     )
     sample_fraction = 0.15
     preview_sample_offset = max(2, round(preview_frame_width * sample_fraction))
@@ -129,6 +165,7 @@ def verify(xml_path, screenshot_path, log_path):
         )
 
     print("PASS: preview frame matches the filmstrip cell centered under the playhead")
+    print(f"  Visually distinct thumbnails: {unique_fingerprints}/{len(fingerprints)}")
     print(f"  Sample timestamp: {sample_ms}ms")
     print(f"  Preview comparison RGB: {preview_rgb}")
     print(f"  Thumbnail comparison RGB: {thumb_rgb}")
