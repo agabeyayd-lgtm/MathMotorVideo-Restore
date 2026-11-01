@@ -43,12 +43,25 @@ See the detailed, release-blocking checklist in README.md. The active list is:
 15. Bottom tool navigation should swap the four-item dock for the selected tool's controls in the same bottom panel, then restore the four-item dock on back/confirm; tool panels must not hide underneath the preview.
 16. Timeline thumbnails need more visible width, clearer frame content and faster prioritized loading/caching.
 17. Simplify the two-video join/add-clip area visually while preserving the actual add/order/join behavior.
+18. The filmstrip shows a gray rail between adjacent thumbnails; source inspection traced it to a 1 dp right margin. A candidate source fix removes the gap, but device verification is still required.
 
 ## Shared timeline architecture requirement
 
 - All editor content must use the same timeline time coordinate system and adaptive ruler: video clips, text overlays, music, sound effects, playhead and trim boundaries.
 - Text/audio lanes must align to the same timestamps and respond to timeline scroll/zoom without changing their actual start/end times. Do not create independent time scales for individual tools.
 - Text and audio placement, preview and playback synchronization must be verified at multiple zoom levels and after project save/reopen. These are requirements, not yet device-verified results.
+
+## Focused timeline finding — 2026-11-01
+
+- Candidate branch `fix/timeline-filmstrip-thumbnail-separators` removes the per-thumbnail 1 dp right margin and aligns the filmstrip backing color with the thumbnail placeholder color. This is source-level only until a build and actual-device check confirm the gray rail is gone.
+- In the inspected source, the `00:00` label and timeline zoom `+`/`−` controls sit outside the horizontal timeline scroll views. Their reported horizontal movement remains unverified and must not be marked fixed based on source inspection alone.
+- No version bump or version 395 release work is permitted as part of this repair.
+
+## Fixed timeline controls — source change pending verification
+
+- The ruler's `00:00` anchor is now rendered in the fixed left lane label; the scrolling ruler content begins at the 5-second position so the time scale remains aligned with the video filmstrip.
+- The video-add `＋` action remains a child of the fixed timeline header, outside the horizontal clip list and timeline lane scrollers. A source comment records this layout constraint.
+- The no-gap filmstrip change, fixed zero anchor, and fixed add-video control are source changes on `fix/timeline-filmstrip-thumbnail-separators`; none is marked complete until a successful build and visual/device verification.
 
 ## Verification gaps
 
@@ -66,3 +79,35 @@ See the detailed, release-blocking checklist in README.md. The active list is:
 ## Recovery background
 
 Some older physics/scenario-related source and tests remain as reconstruction leftovers; they are outside the active video-editing workflow. The original complete V7 source tree was not recoverable.
+
+
+## User phone comparison — new CapCut parity targets (2026-11-01)
+
+Reference: the two user-supplied screenshots captured with both editors' timelines expanded to a comparable scale. The first is MathMotor; the second is CapCut.
+
+Newly observed gaps to implement and verify:
+
+1. **Pinch/ruler separation:** current MathMotor pinch affects both the time scale and filmstrip presentation. Target behavior is to adjust the time ruler/scale without changing filmstrip height, thumbnail tile geometry, or thumbnail density. Keep clip timestamps and ruler-to-filmstrip alignment correct; never change actual clip duration or trim bounds during zoom.
+2. **Duration placement:** move the current-time / total-duration readout from the playback-button row to directly above the timeline ruler, as in CapCut. Keep one authoritative readout.
+3. **Ruler detail:** ruler marks and labels must become more precise as zoom increases, including frame subdivisions (2f/4f/6f where supported by the clip frame rate); retain readable seconds/major ticks at wider scales.
+4. **Fixed playhead/header:** playhead remains fixed in the viewport while timeline content moves beneath it. Zero-time anchor and fixed controls must not move with the horizontal filmstrip.
+5. **Filmstrip consistency:** thumbnail strip keeps stable height and tile geometry across zoom levels, with clear sequential frames and no stretching/reflow caused by pinch.
+6. **Workspace hierarchy:** keep preview above, ruler/video strip and independent audio/text lanes in the middle, compact contextual tools and bottom dock below. Reduce oversized action-panel occupation and unused space without sacrificing touch targets or preview aspect ratio.
+7. **Preview:** compare preview scale/black unused area against CapCut on the physical phone; preserve source aspect ratio and do not crop to imitate the reference.
+
+### Focused validation for these targets
+
+- Compare the same clip at equivalent timeline zoom on the physical phone.
+- Capture minimum/middle/maximum zoom before and after; prove ruler scale changes while filmstrip height/tile geometry remain stable.
+- Verify pinch does not change clip start/end, trim bounds, actual duration, total duration, playhead timestamp, preview frame or exported duration.
+- Verify duration readout is above the ruler and remains synchronized while scrubbing/playing/seeking.
+- Verify frame-level ruler subdivisions against the source frame rate.
+- Add only targeted tests for uncovered behavior; do not repeat unchanged green interaction, thumbnail or seek tests.
+
+These are **open targets**, not completed fixes. Existing emulator/CI passes remain limited to their recorded scenarios and do not constitute physical-phone acceptance.
+
+### Work boundary
+
+- Active candidate for the current filmstrip separator repair: `fix/timeline-filmstrip-thumbnail-separators`, draft PR #12. Keep PR #12 draft/unmerged while these targets are implemented and verified.
+- Installed baseline remains versionCode 394 / build 61. Do not create version 395, bump version metadata, publish/sign a release, or activate the updater until all required gates pass and the user explicitly authorizes it.
+

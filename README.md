@@ -31,6 +31,12 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - Run [#270 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40682611758) on separate branch `work/focused-instrumentation-gates`: unit tests and Debug APK build passed, but emulator interaction failed with `androidx.test.uiautomator.StaleObjectException`. It is a test failure to investigate on that branch, not a release-candidate failure and not proof by itself that an editor feature is broken or fixed.
 - Keep the distinction clear: #269 is a successful candidate-branch automated test run; visual CapCut resemblance and physical-device usability remain unverified. Version 395 remains blocked.
 
+### Focused timeline investigation — 2026-11-01
+
+- The gray rail between filmstrip frames was traced to a deliberate `1 dp` right margin on every thumbnail except the last. Candidate branch `fix/timeline-filmstrip-thumbnail-separators` removes those gaps and matches the backing color to the placeholder color; actual-device verification is still pending.
+- The `00:00` readout and timeline zoom `+`/`−` buttons are direct children of the fixed playhead row, outside the horizontal timeline scroll views in the current source. Their horizontal movement was not reproducible from the inspected source; do not change the scroll hierarchy without confirming the exact on-device element.
+- Version 395 remains blocked. No version metadata or release artifact is changed by this focused repair.
+
 ### How progress will be counted from here
 
 - Report three states separately: **implemented in source**, **automated test passed**, and **verified in actual device use**.
@@ -72,6 +78,10 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 
 ### Thumbnails
 
+- [ ] Keep the timeline's `00:00` zero-time anchor in the fixed left gutter while the ruler/filmstrip scrolls underneath; keep the video-add `＋` action in the fixed timeline header outside every horizontal scroller. Source change is present on the focused repair branch; build/device verification is still pending.
+
+
+- [ ] Render adjacent filmstrip thumbnails edge-to-edge with no per-frame margin or visible gray separator/rail; verify the strip at normal and compact heights.
 - [ ] Increase thumbnail height/visibility and use enough thumbnails to visually cover the clip; for a 10-second clip, aim for a dense, evenly spaced filmstrip comparable to common mobile editors, not a fixed arbitrary count.
 - [ ] Increase the visible width/size of timeline thumbnails so the action in each frame is understandable; prioritize the visible viewport and avoid overly narrow frame tiles.
 - [ ] Improve thumbnail generation/loading latency: prioritize frames currently on screen, prepare nearby frames next, cache results and keep scrolling/gestures responsive while extraction continues.
@@ -114,9 +124,44 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - [ ] Perform a final physical-device smoke test when possible.
 - [ ] Only after every required item is complete and verified, prepare version 395. Until then, do not bump the app version or publish an APK.
 
+
+
+## Physical-phone CapCut comparison targets — 2026-11-01
+
+The user's two expanded-timeline phone screenshots are the current visual/interaction reference. These are newly observed acceptance targets, not claims that the current source already implements them.
+
+### Timeline interaction and ruler
+- [ ] Separate two-finger pinch behavior from filmstrip presentation: pinch changes the timeline time scale/ruler only. Do not resize, stretch, distort, or change the thumbnail strip's height, tile sizing, or thumbnail density as a side effect. Keep the strip's time positions aligned with the ruler and preserve every clip's real start/end/duration.
+- [ ] Keep the playhead as a fixed vertical viewport reference while the timeline content scrolls beneath it; preserve the timestamp anchor during zoom and verify both zoom-in and zoom-out on a real phone.
+- [ ] Make ruler labels/major ticks adapt to zoom, including frame subdivisions at close zoom (e.g. 2f/4f/6f where the source frame rate supports them), while keeping labels readable and correctly mapped to elapsed time.
+- [ ] Keep the time readout (current position / total duration) directly above the timeline ruler, aligned to the ruler area; remove it from the separate playback-control row. Keep one authoritative duration display.
+- [ ] Keep the zero-time marker and fixed timeline controls stationary; horizontal timeline movement must not drag the fixed header controls.
+
+### Filmstrip and workspace layout
+- [ ] Preserve a stable filmstrip height and consistent thumbnail tile geometry at every timeline zoom level; thumbnails must remain sequential, clear and representative of their own timestamps.
+- [ ] Keep video preview, timeline ruler/filmstrip, independent audio/text lanes and bottom tool dock in a clear CapCut-like hierarchy.
+- [ ] Reduce oversized contextual action panels/unused vertical space so the timeline gets adequate working area; show contextual actions only when an item/tool is selected.
+- [ ] Review preview sizing and black/letterbox space on the actual phone without cropping or distorting the source aspect ratio.
+
+### Acceptance method
+- [ ] Use the same source clip and expanded timeline scale in MathMotor and CapCut for a like-for-like comparison.
+- [ ] Record before/after screenshots at minimum, middle and maximum zoom; confirm ruler scale changes while filmstrip height/tile geometry remain stable.
+- [ ] Confirm clip start/end, total duration, playhead time, trim handles, preview frame and export duration do not change merely from pinch zoom.
+- [ ] Do not rerun already-green tests unchanged. Add focused regression coverage only for the newly observed behavior and run build/unit/emulator verification after the relevant code change.
+- [ ] Physical-phone acceptance remains required; emulator screenshots/build success alone do not close these targets.
+
 ## Verification boundaries
 
 - Existing unit tests cover some timeline time/pixel mapping, clip trim bounds, playhead-to-clip mapping and text timing boundaries.
 - The current emulator screenshot workflow builds a debug APK and captures screens, but its script does not by itself prove all touch gestures, exports, Undo/Redo or save/reopen flows work. Add/run interaction-level tests rather than treating screenshots alone as acceptance.
 - Record a checkbox as complete only after the corresponding behavior is implemented and its relevant test passes. If a test cannot be run, leave the item unchecked and say so.
 - This repository is a reconstruction from recoverable project files, not an exact recovery of the old V7 source tree.
+
+
+## Focused timeline APK build — 2026-11-01
+
+- PR #12 candidate branch: `fix/timeline-filmstrip-thumbnail-separators`.
+- The focused change removes the per-thumbnail right margin, keeps the `00:00` zero anchor fixed, and keeps the video-add `＋` action in the fixed timeline header.
+- Android build/unit-test workflow passed before APK packaging; that workflow did not upload an APK artifact.
+- The APK packaging workflow is enabled for pushes to this candidate branch so the debug APK can be built and uploaded as a workflow artifact.
+- This is a debug verification build only. It is not version 395, a signed release, or physical-device verification.

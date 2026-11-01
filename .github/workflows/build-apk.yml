@@ -1,8 +1,11 @@
 name: Build MathMotorVideo APK
 
-# APK builds are manual-only. Source updates must not automatically create APK artifacts.
+# Manual builds remain available; this branch also builds an APK when its build workflow is updated.
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - fix/timeline-filmstrip-thumbnail-separators
 
 permissions:
   contents: read
@@ -21,7 +24,7 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.10'
+          gradle-version: '8.11.1'
       - name: Run unit tests and build APK
         run: gradle --no-daemon testDebugUnitTest assembleDebug
       - name: Upload debug APK
