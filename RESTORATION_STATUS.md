@@ -156,15 +156,15 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 ## Filmstrip thumbnail responsiveness — 2026-11-01 (source changes; emulator verification pending)
 
 - Pause/Stop preserves the last rendered video frame while the exact still-frame request runs. A failed pause-time still decode no longer clears a valid preview to black.
-- Removed the `OPTION_CLOSEST_SYNC` fallback from filmstrip extraction because sync-frame fallback can repeat one keyframe across different timestamps. The closest-frame path and Media3 fallback remain.
+- Removed the `OPTION_CLOSEST_SYNC` fallback from filmstrip extraction because sync-frame fallback can repeat one keyframe across different timestamps. The closest-frame path remains; the Media3 fallback extractor is reused per decoder worker/source URI rather than rebuilt for each cell.
 - Added source-time start/end bounds for each thumbnail cell. On zoom-out, an already decoded bitmap inside the new cell's time interval is reused immediately; the playhead-nearest cell is kept exact for preview synchronization.
 - Replaced Shorts-only 9:16 cell geometry with a fixed-height strip and source-aspect-ratio-derived cell width. The first decoded thumbnail teaches the layout the actual ratio; portrait, landscape and square sources are fitted without crop/stretch, and cached bitmaps survive the one-time layout refresh.
 - Added unit tests for cell-range partitioning and portrait / landscape / square cell sizing.
-- Verify Android build #466 passed unit tests and `assembleDebug` on commit `386f708b4f95c300e90a8217dfbe9d04ec9db770`.
-- API 35 screenshot/editor run #678 is still pending. This work is not yet physically tested on the user's phone.
+- Verify Android build #474 passed unit tests and `assembleDebug` on commit `283a09e341489d77aac964f1bd944a0250bcd2b1`.
+- API 35 screenshot/editor run #682 now fingerprints every fully visible thumbnail and checks that distinct sample timestamps produce visually distinct frames; the run is in progress. This work is not yet physically tested on the user's phone.
 
 Still open:
-- Add an emulator assertion that samples all visible filmstrip cells from a time-varying fixture and rejects repeated decoded frames for distinct sample times.
+- Complete the new emulator assertion that samples all fully visible filmstrip cells from a time-varying fixture and rejects repeated decoded frames for distinct sample times.
 - Measure initial thumbnail fill time and verify progressive visible-first loading.
 - Verify zoom-out reuses in-range thumbnails without launching new decode tasks, and zoom-in only decodes newly needed time intervals.
 - Visually verify Play/Stop retains the final frame, including the decode-failure path.
