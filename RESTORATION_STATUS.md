@@ -6,7 +6,8 @@ Source changes on `fix/frame-accurate-timeline-zoom`:
 - Added integer `TimelineFrameMath` with a 30 FPS project default and nearest-frame seek snapping.
 - Timeline scrub requests and playback-synchronized playhead display are aligned to project-frame boundaries.
 - Added a timeline-scoped two-finger pinch recognizer that preserves the time under the pinch anchor after zoom.
-- Added focused unit tests for frame boundaries, snapping and alternative FPS values.
+- Added focused unit tests for frame boundaries, snapping, alternative FPS values and pinch-anchor preservation.
+- Enabled the unit-test/debug-build verification workflow on pull requests; it does not publish an APK.
 
 Review findings retained as open:
 - Existing millisecond-to-pixel mapping is shared across timeline lanes; this part is reusable.
