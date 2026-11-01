@@ -1,3 +1,13 @@
+## Timeline frame-precision follow-up — 2026-11-01
+
+- Active candidate is PR #10 / branch `fix/editor-395-mainline`, based on `main`. Do not continue frame work on the stale `fix/editor-395-gate` branch.
+- Preserved the existing fixed-center playhead, two-finger pinch zoom anchored to the time under the playhead, shared time-to-pixel mapping, synchronized lanes and cached timestamped filmstrip.
+- Added `TimelineFrameMath` for the default 30 fps timeline grid with microsecond-accurate frame timestamps, nearest-frame seek snapping and zoom-sensitive frame ruler intervals.
+- Integrated frame labels at close zoom and retained the existing adaptive second/minute ruler at wider zoom. Timeline scrubbing snaps to the nearest 30 fps frame; continuous playback sync remains timestamp-based.
+- Corrected filmstrip sampling to stay within each clip's half-open interval and avoid the exclusive clip end.
+- Added focused JUnit coverage. CI/emulator verification for this change is pending. The 30 fps grid is the timeline timebase; exported MP4 frame rate is not yet asserted or forced by this patch.
+- Version 395 remains blocked; do not bump version metadata, sign/publish an APK or enable updater delivery.
+
 # MathMotor Video — current project status
 
 ## Current direction
