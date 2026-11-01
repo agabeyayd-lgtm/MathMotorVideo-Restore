@@ -2511,11 +2511,13 @@ class VideoEditorActivity : Activity() {
         // Size the timeline card from its real track content instead of reserving
         // a large fixed empty panel on small phones. Each added layer earns its own row.
         (timelineTracksFrame.parent?.parent as? LinearLayout)?.let { card ->
-            val desiredHeight = if (keyboardLayoutActive) {
-                (laneContentHeight + dp(112)).coerceIn(dp(148), dp(194))
-            } else {
-                (laneContentHeight + dp(116)).coerceIn(dp(190), dp(360))
-            }
+            val desiredHeight = TimelineLayoutMath.contentSizedCardHeightPx(
+                laneContentHeightPx = laneContentHeight,
+                timeRowHeightPx = dp(26),
+                verticalPaddingPx = dp(6),
+                minimumHeightPx = if (keyboardLayoutActive) dp(88) else dp(96),
+                maximumHeightPx = if (keyboardLayoutActive) dp(154) else dp(280)
+            )
             val cardParams = card.layoutParams as? LinearLayout.LayoutParams
             if (cardParams != null && cardParams.height != desiredHeight) {
                 cardParams.height = desiredHeight
