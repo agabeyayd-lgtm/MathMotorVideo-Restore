@@ -159,9 +159,10 @@ recover_system_anr() {
     if [ ! -s "$xml" ] || ! grep -Eiq "isn.t responding|not responding" "$xml"; then
       return 0
     fi
-    # Recover Android's own system-server/System UI dialog, but do not hide
-    # an ANR raised by MathMotor itself: that must fail the smoke test.
-    if ! grep -Eiq "(Process system|System UI).*isn.t responding" "$xml"; then
+    # Recover Android-owned UI ANRs, including the launcher. On cold API 35
+    # boots Pixel/Nexus Launcher can briefly ANR before the app is displayed;
+    # that is not an app failure. Never dismiss a MathMotor ANR.
+    if ! grep -Eiq "(Process system|System UI|Pixel Launcher|Nexus Launcher|NexusLauncher|com\\.google\\.android\\.apps\\.nexuslauncher).*isn.t responding" "$xml"; then
       echo "Application-level ANR detected in $xml; refusing to dismiss it as emulator noise"
       return 1
     fi
@@ -198,7 +199,7 @@ PY
     dump_hierarchy "$remote_name" "$xml" || true
   done
 
-  if [ -s "$xml" ] && grep -Eiq "(Process system|System UI).*isn.t responding" "$xml"; then
+  if [ -s "$xml" ] && grep -Eiq "(Process system|System UI|Pixel Launcher|Nexus Launcher|NexusLauncher|com\\.google\\.android\\.apps\\.nexuslauncher).*isn.t responding" "$xml"; then
     echo "System ANR dialog is still present after recovery attempts"
     return 1
   fi
