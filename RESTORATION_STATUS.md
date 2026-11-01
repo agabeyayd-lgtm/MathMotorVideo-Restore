@@ -57,6 +57,12 @@ See the detailed, release-blocking checklist in README.md. The active list is:
 - In the inspected source, the `00:00` label and timeline zoom `+`/`−` controls sit outside the horizontal timeline scroll views. Their reported horizontal movement remains unverified and must not be marked fixed based on source inspection alone.
 - No version bump or version 395 release work is permitted as part of this repair.
 
+## Fixed timeline controls — source change pending verification
+
+- The ruler's `00:00` anchor is now rendered in the fixed left lane label; the scrolling ruler content begins at the 5-second position so the time scale remains aligned with the video filmstrip.
+- The video-add `＋` action remains a child of the fixed timeline header, outside the horizontal clip list and timeline lane scrollers. A source comment records this layout constraint.
+- The no-gap filmstrip change, fixed zero anchor, and fixed add-video control are source changes on `fix/timeline-filmstrip-thumbnail-separators`; none is marked complete until a successful build and visual/device verification.
+
 ## Verification gaps
 
 - Unit tests cover some timeline time/pixel mapping, clip trim bounds, playhead-to-clip mapping and text timing boundaries.
