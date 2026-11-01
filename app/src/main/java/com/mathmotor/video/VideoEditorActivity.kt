@@ -2244,7 +2244,7 @@ class VideoEditorActivity : Activity() {
         // at close zoom, exact frame units from the source clip's real frame rate.
         val rulerFrameRate = clips.firstOrNull { it.frameRate != null }?.frameRate
         val rulerGrid = TimelineScaleMath.rulerGrid(
-            pxPerSecond, dp(48).toFloat(), rulerFrameRate
+            pxPerSecond, dp(22).toFloat(), rulerFrameRate
         )
         fun addRulerInterval(startMs: Long, endMs: Long, label: String, minorDivisions: Int) {
             val startPositionPx = TimelineScaleMath.pixelsForTime(startMs, pxPerSecond)
@@ -2262,9 +2262,9 @@ class VideoEditorActivity : Activity() {
             tickCell.addView(tick, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, dp(15), Gravity.TOP or Gravity.START
             ))
-            TimelineScaleMath.rulerMinorTickOffsetsPx(
+            (if (minorDivisions > 0) TimelineScaleMath.rulerMinorTickOffsetsPx(
                 intervalWidth, minorDivisions.coerceAtLeast(2)
-            ).forEach { x ->
+            ) else emptyList()).forEach { x ->
                 tickCell.addView(View(this).apply {
                     setBackgroundColor(Color.rgb(91, 111, 130))
                 }, FrameLayout.LayoutParams(dp(1), dp(6)).apply {
@@ -2295,7 +2295,7 @@ class VideoEditorActivity : Activity() {
                     startMs,
                     endMs,
                     "${frameIndex}f",
-                    minOf(frameStep, 5L).toInt().coerceAtLeast(2)
+                    if (frameStep <= 1L) 0 else minOf(frameStep, 5L).toInt()
                 )
                 frameIndex = nextFrameIndex
             }
@@ -3247,7 +3247,12 @@ class VideoEditorActivity : Activity() {
         timelinePlayheadSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
-                timelinePlayheadMs = TimelineTrimMath.timeForProgress(progress, totalOutputDurationMs())
+                val rawTimeMs = TimelineTrimMath.timeForProgress(progress, totalOutputDurationMs())
+                timelinePlayheadMs = snapTimelineTimeToSourceFrame(rawTimeMs)
+                val snappedProgress = TimelineTrimMath.progressForTime(
+                    timelinePlayheadMs, totalOutputDurationMs()
+                )
+                if (seekBar?.progress != snappedProgress) seekBar?.progress = snappedProgress
                 updateTimelinePlayheadLabel()
                 seekTimelinePreview(timelinePlayheadMs)
             }
