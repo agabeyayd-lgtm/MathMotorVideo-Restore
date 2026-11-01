@@ -1,5 +1,17 @@
 # MathMotor Video
 
+## Canonical mainline state — 2026-11-01
+
+- The sole active development source is `main`. The user-approved editor baseline from `b82245d02ad9f51a1cca6795ba33cd31360c8de4` was integrated by PR #16; merge commit: `668ed1c0653a05871b3ffb855cc3a3b3aa61435d`.
+- The editor implementation and timeline math were restored from the approved source, including the approved `VideoEditorActivity.kt`, source-frame-rate-aware ruler/zoom math, filmstrip sampling/alignment, fixed center playhead and independent timeline layout. The app UI was not replaced with the interim `main` editor.
+- PR-head verification passed: Verify Android build #452, APK build #488, and API 35 emulator screenshot/editor verification #669 (source commit `934d9011c8afd65e4764a39b2411a50cd216047d`; same app source tree as the merge).
+- Emulator checks confirmed APK installation, home/editor opening, deterministic video load, thumbnail/preview frame agreement at 211 ms, forward/reverse filmstrip scrubbing, live playback synchronization (16 samples; two synchronized lanes; fixed playhead at screen center), and draft autosave/resume navigation.
+- The initial emulator attempt was blocked by a Nexus Launcher system ANR, not a MathMotor app ANR. The harness was corrected to close the stalled launcher only; the successful #669 run then completed.
+- The automated emulator run is not a physical-phone acceptance test. Confirm installation and touch behavior on the user's phone separately.
+- Keep the installed baseline at **versionCode 394 / Build 61**. Version 395 remains blocked; do not change version metadata or publish a release without the user's explicit authorization and completion of the release checklist.
+- The older `Timeline frame/zoom repair` notes below describe an interim implementation that was superseded by the approved editor baseline. They are historical context, not the current source-of-truth description.
+
+
 MathMotor Video is a local-first Android video editor with a CapCut-inspired workflow. Normal editing runs on-device; AI generation, AI scoring and paid cloud APIs are outside the current product scope.
 
 ## Editing flow
