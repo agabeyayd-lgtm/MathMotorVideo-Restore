@@ -299,4 +299,34 @@ class TimelineScaleMathTest {
         )
         assertEquals(false, originalCentreTime == centreTimeAfterPinch)
     }
+
+    @Test
+    fun filmstripThumbnailCountTracksSharedHorizontalZoomScale() {
+        val normalCount = TimelineThumbnailMath.thumbnailCount(520, 52)
+        val zoomedInCount = TimelineThumbnailMath.thumbnailCount(1_040, 52)
+        val zoomedOutCount = TimelineThumbnailMath.thumbnailCount(260, 52)
+
+        assertEquals(10, normalCount)
+        assertEquals(20, zoomedInCount)
+        assertEquals(5, zoomedOutCount)
+    }
+
+    @Test
+    fun filmstripSamplesRemainSequentialAtDifferentZoomDensities() {
+        listOf(5, 10, 20, 40).forEach { count ->
+            val samples = (0 until count).map { index ->
+                TimelineThumbnailMath.sampleTime(0L, 10_000L, count, index)
+            }
+            assertEquals(count, samples.distinct().size)
+            assertEquals(true, samples.zipWithNext().all { (left, right) -> left < right })
+            assertEquals(true, samples.first() >= 0L)
+            assertEquals(true, samples.last() < 10_000L)
+        }
+    }
+
+    @Test
+    fun filmstripThumbnailCountIsBoundedForVeryWideClips() {
+        assertEquals(256, TimelineThumbnailMath.thumbnailCount(1_000_000, 1))
+    }
+
 }
