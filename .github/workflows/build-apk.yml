@@ -1,8 +1,11 @@
 name: Build MathMotorVideo APK
 
-# APK builds are manual-only. Source updates must not automatically create APK artifacts.
+# Manual builds remain available; this branch also builds an APK when its build workflow is updated.
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - fix/timeline-filmstrip-thumbnail-separators
 
 permissions:
   contents: read
