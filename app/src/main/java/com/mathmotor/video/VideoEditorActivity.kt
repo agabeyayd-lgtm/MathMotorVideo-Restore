@@ -1880,6 +1880,10 @@ class VideoEditorActivity : Activity() {
                             }
                             updateTimelinePlayheadLabel()
                             scheduleTimelineScrubPreviewSeek(underPlayheadMs)
+                            // Emit a direct gesture-time sample even before Media3's
+                            // composition player has finished preparing. The smoke test
+                            // can then validate the shared ruler/playhead scroll mapping.
+                            if (timelineSyncTestEnabled) logTimelineSyncTestSample()
                         }
                     }
                     updateTimelinePlayheadLine()
@@ -3223,10 +3227,21 @@ class VideoEditorActivity : Activity() {
 
     /** Emits real playback/timeline geometry only when the debug CI test opts in. */
     private fun logTimelineSyncTestSample() {
-        val composition = timelineCompositionPlayer ?: return
+        val composition = timelineCompositionPlayer
         val firstLane = timelineScrollViews.firstOrNull() ?: return
         if (!::timelinePlayheadLine.isInitialized || firstLane.width <= 0) return
 
+        val playingComposition = composition?.isPlaying == true
+        val singleClip = clips.getOrNull(selectedClipIndex)
+        val playingSingleClip = previewSingleClip && player?.isPlaying == true && singleClip != null
+        val playerPositionMs = when {
+            composition != null -> composition.currentPosition
+            playingSingleClip -> {
+                val clip = singleClip!!
+                clip.timelineStartMs + player!!.currentPosition.coerceIn(0L, clip.durationMs)
+            }
+            else -> timelinePlayheadMs
+        }
         val pixelsPerSecond = timelinePixelsPerSecond()
         val playheadLocation = IntArray(2)
         val playButtonLocation = IntArray(2)
@@ -3252,8 +3267,8 @@ class VideoEditorActivity : Activity() {
         }
         android.util.Log.i(
             "TimelineSyncTest",
-            "TIMELINE_SYNC_SAMPLE playing=${composition.isPlaying} " +
-                "playerMs=${composition.currentPosition} playheadMs=$timelinePlayheadMs " +
+            "TIMELINE_SYNC_SAMPLE playing=${playingComposition || playingSingleClip} " +
+                "playerMs=$playerPositionMs playheadMs=$timelinePlayheadMs " +
                 "scrollXs=$laneScrolls originRightXs=$originRightScreenXs pxPerSecond=$pixelsPerSecond " +
                 "expectedScrollPx=$expectedScrollPx playheadCenterPx=$playheadCenterPx " +
                 "playButtonCenterPx=$playButtonCenterPx expectedCenterPx=$expectedCenterPx"
