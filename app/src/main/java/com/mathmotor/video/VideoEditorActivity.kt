@@ -2293,7 +2293,7 @@ class VideoEditorActivity : Activity() {
                 val frameRate = TimelineFrameMath.DEFAULT_FRAME_RATE
                 val frameStep = TimelineFrameMath.frameStepForPixelSpacing(
                     pxPerSecond,
-                    dp(30).toFloat(),
+                    dp(28).toFloat(),
                     frameRate
                 )
                 val lastFrame = TimelineFrameMath.frameIndexAtTimeMs(rulerEndMs, frameRate)
