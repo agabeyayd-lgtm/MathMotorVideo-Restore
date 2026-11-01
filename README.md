@@ -1,3 +1,16 @@
+## PR #11 branch-head reconciliation — 2026-11-01 (commit 2628167)
+
+This entry is the authoritative verification snapshot for the current PR #11 head. Older sections below are historical records and must not be read as the current head's status when they name a different commit.
+
+- Active branch: `work/simplified-independent-timeline`; PR #11 is open, **draft**, and unmerged. Current head: `2628167ff20d6f7799ab418abbd766a912f1254d`.
+- The branch ref was checked against the PR head before this documentation update; both pointed to the same commit.
+- Verify Android run **41314535658** completed successfully on this exact head. Its job ran Kotlin unit tests and compiled the debug APK.
+- Debug APK workflow **41314535642** completed successfully on this exact head. Artifact `MathMotorVideo-restored-debug` (5,675,235 bytes) is present and not expired. This is a debug APK, not a signed release or version 395.
+- Emulator screenshot workflow **41314535629** completed successfully on this exact head. Build, deterministic fixture generation, emulator launch/capture and diagnostics upload all succeeded. Screenshot artifact `mathmotor-android-emulator-screenshots` (2,619,637 bytes) is present. The screenshot artifact has not yet been visually inspected in this audit; this run does not exercise real pinch/trim/layer gestures or physical-phone behavior.
+- The current source includes the source-FPS frame ruler and frame-aligned filmstrip sampling described in the sections below. The frame-ruler emulator attempt recorded as #648 was cancelled at its final app-launch/capture step; its uploaded screenshot is diagnostic only, not interaction acceptance.
+- Remaining acceptance gates: visually inspect the current-head emulator screenshots; exercise two-finger pinch with midpoint anchoring and synchronized lanes; test one-finger select/move/trim/split/delete; verify independent overlapping video/text/music/SFX placement and lane reorder; test contextual panels and keyboard on a compact screen; verify preview/export timing and source preservation; complete manual save-close-reopen comparison; test varied real footage under rapid decode; repeat on a physical phone.
+- No merge, release/version bump, or version 395 was performed. Installed versionCode 394 / build 61 remains the baseline.
+
 # MathMotor Video
 
 ## PR #11 existing-work audit — 2026-11-01 (after emulator #620)
