@@ -179,6 +179,10 @@ class VideoEditorActivity : Activity() {
     private var soundPreviewUri: Uri? = null
     private lateinit var playerView: PlayerView
     private lateinit var previewFrame: FrameLayout
+    private lateinit var previewFrameOverlay: ImageView
+    private val previewFrameRequestGeneration = java.util.concurrent.atomic.AtomicLong()
+    private var pendingPreviewFrameTask: TimelineThumbnailTask? = null
+    private var previewFrameBitmap: Bitmap? = null
     private lateinit var previewFocusButton: Button
     private var previewStageHeightDp = 340
     private var previewDefaultStageHeightDp = 340
@@ -523,6 +527,9 @@ class VideoEditorActivity : Activity() {
             // Native controls show the source clip duration, not the combined project duration.
             // Keep playback aligned with the edited timeline controls below.
             useController = false
+            // A texture-backed surface allows the exact paused frame layer to cover
+            // the video while scrubbing, avoiding stale decoded SurfaceView frames.
+            setUseTextureView(true)
             resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
             contentDescription = "Düzenlenmiş video önizlemesi"
         }
@@ -533,6 +540,21 @@ class VideoEditorActivity : Activity() {
         // makes the central canvas look like a narrow phone-within-a-phone.
         previewFrame.addView(
             playerView,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        )
+        previewFrameOverlay = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            setBackgroundColor(Color.BLACK)
+            visibility = View.GONE
+            contentDescription = "Oynatma noktasındaki tam video karesi"
+            isClickable = false
+            isFocusable = false
+        }
+        previewFrame.addView(
+            previewFrameOverlay,
             FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
