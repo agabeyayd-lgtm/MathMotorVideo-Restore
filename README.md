@@ -825,3 +825,15 @@ New source work on PR #11:
 - The ruler now uses scale-dependent major spacing plus five minor divisions per major interval. Minor tick offsets are extracted into tested shared math so density changes with zoom.
 
 Still required before acceptance: final PR-head Kotlin compilation and unit tests; emulator screenshots at multiple zoom values; check the portrait/landscape preview aspect ratio; exercise fast scrubbing and verify that the paused preview's source timestamp is mapped from the exact playhead time; verify playback transitions, clip transforms, gaps and thumbnail loading; verify the bottom drawer on short screens and with the keyboard; physical-phone acceptance. The current source is not yet phone/device acceptance. PR #11 remains draft/unmerged; version 395 remains blocked.
+
+
+## Composition preview surface compatibility — 2026-11-01
+
+- Emulator screenshot workflow #615 exposed a concrete preview initialization failure: `CompositionPlayer` throws `UnsupportedOperationException` when `PlayerView` supplies a `TextureView` (`Use CompositionPlayer.setVideoSurface() for Surface output`). The timeline smoke test consequently recorded zero live playback samples; this is an app surface-type mismatch, not a generic emulator startup failure.
+- Changed `editor_preview_player.xml` from `surface_type="texture_view"` to `surface_type="surface_view"`, allowing `PlayerView` to provide Surface output to `CompositionPlayer`. Updated the adjacent source comment. The paused exact-frame `ImageView` remains layered above the player.
+- [ ] Run Kotlin compilation and unit tests on the resulting PR head.
+- [ ] Re-run emulator preview/playback smoke test and confirm `TIMELINE_PREVIEW_READY`, live playback samples, and no `TIMELINE_PREVIEW_FAILED` surface exception.
+- [ ] Inspect fresh screenshots during paused scrub and playback to ensure the SurfaceView does not obscure the exact-frame overlay; verify preview/filmstrip correspondence and aspect ratio.
+- [ ] Continue the already-listed bottom-drawer/keyboard, dynamic ruler, zero-origin trim, and phone acceptance checks.
+
+This is a targeted source fix, not yet verified. PR #11 remains draft/unmerged; installed versionCode 394/build 61 is unchanged; version 395 remains blocked.
