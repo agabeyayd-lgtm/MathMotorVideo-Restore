@@ -168,3 +168,12 @@ Do not mark the existing release checklist items complete until the relevant aut
 - Root cause: the editor omitted the entire `SÜRE` ruler whenever `compactEditorLayout` was true. The 320×640 emulator uses compact layout, so the test could not find `00:05`.
 - Updated the editor to retain a compact 18 dp time-ruler lane on short phone screens; it is still hidden while the keyboard is active. This makes timeline time navigation available on compact screens rather than weakening the test.
 - Corrected build and API 35 gesture verification are pending. Pinch behavior and ruler/video-lane synchronization are not yet marked complete. Version 395 remains blocked.
+
+
+## Run #439 — pinch zoom input correction — 2026-11-01
+
+- Run #439 passed unit tests, Debug APK compilation, deterministic video generation/staging, editor load, screenshots and draft autosave. The focused API 35 gesture test then failed at `Pinch-out did not zoom in enough: 1.0454545`; this is the actual failure, while the later emulator shutdown messages are cleanup noise.
+- Replaced the timeline's `ScaleGestureDetector` callback accumulation with direct two-pointer span sampling on every `ACTION_MOVE`. The recognizer is scoped to the timeline frame, requires both fingers inside that frame, takes over the gesture after cancelling the initial one-finger child touch, and applies each current/previous span ratio.
+- The pinch anchor still uses the midpoint between the two fingers and the shared timeline time/pixel scale; on gesture end, the same project time is restored beneath that viewport offset. A pinch outside the timeline does not affect timeline zoom.
+- Added unit coverage proving that a 48 px to 184 px pinch accumulates to the full 3.83× span ratio across multiple intermediate movements, and that pinching inward reverses the scale.
+- This is a source-level input correction and unit-test addition. The API 35 end-to-end gesture test must pass before pinch, anchor stability or ruler/video-lane synchronization can be marked verified. Version 395 remains blocked; version metadata was not changed.

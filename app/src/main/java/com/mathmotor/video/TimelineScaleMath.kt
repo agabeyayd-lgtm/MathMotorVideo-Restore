@@ -33,6 +33,15 @@ internal object TimelineScaleMath {
             .coerceAtLeast(0)
     }
 
+    /** Accumulates pinch scale from successive pointer spans, regardless of MOVE event count. */
+    fun zoomForPinchSpan(currentZoom: Float, previousSpanPx: Float, currentSpanPx: Float): Float {
+        if (!currentZoom.isFinite() || currentZoom <= 0f) return 1f
+        val safeZoom = currentZoom.coerceIn(0.5f, 8.0f)
+        if (!previousSpanPx.isFinite() || !currentSpanPx.isFinite() || previousSpanPx <= 0f || currentSpanPx <= 0f) {
+            return safeZoom
+        }
+        return (safeZoom * (currentSpanPx / previousSpanPx)).coerceIn(0.5f, 8.0f)
+    }
     fun millisecondsForPixels(offsetPixels: Float, pixelsPerSecond: Float): Long {
         if (!offsetPixels.isFinite() || !pixelsPerSecond.isFinite() || pixelsPerSecond <= 0f) return 0L
         return ((offsetPixels.toDouble() / pixelsPerSecond.toDouble()) * 1000.0)

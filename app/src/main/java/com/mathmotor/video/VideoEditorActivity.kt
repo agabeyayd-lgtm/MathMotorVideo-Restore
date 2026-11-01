@@ -186,7 +186,7 @@ class VideoEditorActivity : Activity() {
     private var timelinePinchAnchorTimeMs = 0L
     private var timelinePinchAnchorOffsetPx = 0f
     private var timelinePinchRequestedZoom = 1.0f
-    private var timelineScaleGestureDetector: android.view.ScaleGestureDetector? = null
+    private var timelinePinchPreviousSpanPx = 0f
     private var timelineScrubGrabOffsetPx = 0f
     private var timelinePreviewLoaded = false
     private var previewSingleClip = false
@@ -1902,64 +1902,69 @@ class VideoEditorActivity : Activity() {
         return zoomChanged || pendingTimelineScrollX != null
     }
 
-    private fun ensureTimelineScaleGestureDetector() {
-        if (timelineScaleGestureDetector != null) return
-        timelineScaleGestureDetector = android.view.ScaleGestureDetector(
-            this,
-            object : android.view.ScaleGestureDetector.SimpleOnScaleGestureListener() {
-                override fun onScaleBegin(detector: android.view.ScaleGestureDetector): Boolean {
-                    if (!::timelineTracksFrame.isInitialized || timelineScrollViews.isEmpty()) return false
-                    val rootLocation = IntArray(2)
-                    val frameLocation = IntArray(2)
-                    window.decorView.getLocationOnScreen(rootLocation)
-                    timelineTracksFrame.getLocationOnScreen(frameLocation)
-                    val focusScreenX = rootLocation[0] + detector.focusX
-                    val focusScreenY = rootLocation[1] + detector.focusY
-                    if (focusScreenX < frameLocation[0] ||
-                        focusScreenX > frameLocation[0] + timelineTracksFrame.width ||
-                        focusScreenY < frameLocation[1] ||
-                        focusScreenY > frameLocation[1] + timelineTracksFrame.height
-                    ) return false
+    /** Starts a timeline-only pinch using the actual coordinates of both pointers. */
+    private fun beginTimelinePinch(event: android.view.MotionEvent): Boolean {
+        if (!::timelineTracksFrame.isInitialized || timelineScrollViews.isEmpty() || event.pointerCount < 2) return false
+        val rootLocation = IntArray(2)
+        val frameLocation = IntArray(2)
+        window.decorView.getLocationOnScreen(rootLocation)
+        timelineTracksFrame.getLocationOnScreen(frameLocation)
+        val firstX = rootLocation[0] + event.getX(0)
+        val firstY = rootLocation[1] + event.getY(0)
+        val secondX = rootLocation[0] + event.getX(1)
+        val secondY = rootLocation[1] + event.getY(1)
+        fun insideTimeline(x: Float, y: Float): Boolean =
+            x >= frameLocation[0] && x <= frameLocation[0] + timelineTracksFrame.width &&
+                y >= frameLocation[1] && y <= frameLocation[1] + timelineTracksFrame.height
+        // Both fingers must start in the timeline, never in the preview or tool dock.
+        if (!insideTimeline(firstX, firstY) || !insideTimeline(secondX, secondY)) return false
+        val dx = secondX - firstX
+        val dy = secondY - firstY
+        val span = kotlin.math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
+        if (!span.isFinite() || span <= 1f) return false
+        val scroll = timelineScrollViews.firstOrNull() ?: return false
+        val scrollLocation = IntArray(2)
+        scroll.getLocationOnScreen(scrollLocation)
+        val focusScreenX = (firstX + secondX) / 2f
+        timelinePinchAnchorOffsetPx = (focusScreenX - scrollLocation[0]).coerceIn(0f, scroll.width.toFloat())
+        val anchorContentPx = scroll.scrollX.toFloat() + timelinePinchAnchorOffsetPx
+        timelinePinchAnchorTimeMs = TimelineScaleMath.millisecondsForPixels(anchorContentPx, timelinePixelsPerSecond()).coerceAtLeast(0L)
+        timelinePinchRequestedZoom = timelineZoom
+        timelinePinchPreviousSpanPx = span
+        timelinePinchInProgress = true
+        timelinePinchConsumed = true
+        return true
+    }
 
-                    val scroll = timelineScrollViews.firstOrNull() ?: return false
-                    val scrollLocation = IntArray(2)
-                    scroll.getLocationOnScreen(scrollLocation)
-                    timelinePinchAnchorOffsetPx =
-                        (focusScreenX - scrollLocation[0]).toFloat().coerceIn(0f, scroll.width.toFloat())
-                    val anchorContentPx = scroll.scrollX.toFloat() + timelinePinchAnchorOffsetPx
-                    timelinePinchAnchorTimeMs = TimelineScaleMath.millisecondsForPixels(
-                        anchorContentPx, timelinePixelsPerSecond()
-                    ).coerceAtLeast(0L)
-                    timelinePinchRequestedZoom = timelineZoom
-                    timelinePinchInProgress = true
-                    return true
-                }
-
-                override fun onScale(detector: android.view.ScaleGestureDetector): Boolean {
-                    timelinePinchRequestedZoom =
-                        (timelinePinchRequestedZoom * detector.scaleFactor).coerceIn(0.5f, 8.0f)
-                    return true
-                }
-
-                override fun onScaleEnd(detector: android.view.ScaleGestureDetector) {
-                    val targetZoom = timelinePinchRequestedZoom.coerceIn(0.5f, 8.0f)
-                    if (targetZoom != timelineZoom) {
-                        timelineZoom = targetZoom
-                        val anchoredScroll = TimelineScaleMath.scrollForTimeAtViewportOffset(
-                            timelinePinchAnchorTimeMs,
-                            timelinePixelsPerSecond(),
-                            timelinePinchAnchorOffsetPx
-                        )
-                        pendingTimelineScrollX = anchoredScroll
-                        timelineHorizontalScrollX = anchoredScroll
-                        refreshTimelineTracks()
-                        status.text = "Zaman çizelgesi: ${timelineZoom}×"
-                    }
-                    timelinePinchInProgress = false
-                    timelinePinchConsumed = true
-                }
-            }
+    /** Accumulates the real distance ratio on every delivered two-pointer MOVE. */
+    private fun updateTimelinePinch(event: android.view.MotionEvent) {
+        if (!timelinePinchInProgress || event.pointerCount < 2) return
+        val dx = event.getX(1) - event.getX(0)
+        val dy = event.getY(1) - event.getY(0)
+        val currentSpan = kotlin.math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
+        if (!currentSpan.isFinite() || currentSpan <= 1f) return
+        timelinePinchRequestedZoom = TimelineScaleMath.zoomForPinchSpan(
+            timelinePinchRequestedZoom, timelinePinchPreviousSpanPx, currentSpan
         )
+        timelinePinchPreviousSpanPx = currentSpan
+    }
+
+    private fun finishTimelinePinch() {
+        if (!timelinePinchInProgress) return
+        val targetZoom = timelinePinchRequestedZoom.coerceIn(0.5f, 8.0f)
+        if (kotlin.math.abs(targetZoom - timelineZoom) > 0.0001f) {
+            timelineZoom = targetZoom
+            val anchoredScroll = TimelineScaleMath.scrollForTimeAtViewportOffset(
+                timelinePinchAnchorTimeMs, timelinePixelsPerSecond(), timelinePinchAnchorOffsetPx
+            )
+            pendingTimelineScrollX = anchoredScroll
+            timelineHorizontalScrollX = anchoredScroll
+            refreshTimelineTracks()
+            status.text = "Zaman çizelgesi: " + timelineZoom + "×"
+        }
+        timelinePinchInProgress = false
+        timelinePinchPreviousSpanPx = 0f
+        timelinePinchConsumed = true
     }
 
     private fun isTouchInsideTimeline(rawX: Float, rawY: Float): Boolean {
@@ -1971,28 +1976,56 @@ class VideoEditorActivity : Activity() {
     }
 
     override fun dispatchTouchEvent(event: android.view.MotionEvent): Boolean {
-        when (event.actionMasked) {
-            android.view.MotionEvent.ACTION_DOWN -> {
-                timelineGestureTracking = isTouchInsideTimeline(event.rawX, event.rawY)
-                timelinePinchConsumed = false
+        if (event.actionMasked == android.view.MotionEvent.ACTION_DOWN) {
+            timelineGestureTracking = isTouchInsideTimeline(event.rawX, event.rawY)
+            timelinePinchConsumed = false
+            timelinePinchInProgress = false
+            timelinePinchPreviousSpanPx = 0f
+        }
+        if (!timelineGestureTracking) return super.dispatchTouchEvent(event)
+
+        if (event.actionMasked == android.view.MotionEvent.ACTION_POINTER_DOWN &&
+            !timelinePinchInProgress && event.pointerCount >= 2 && beginTimelinePinch(event)
+        ) {
+            // Cancel the first finger's child touch before taking over the multi-touch.
+            val cancel = android.view.MotionEvent.obtain(event)
+            try {
+                cancel.action = android.view.MotionEvent.ACTION_CANCEL
+                super.dispatchTouchEvent(cancel)
+            } finally {
+                cancel.recycle()
             }
+            return true
         }
 
-        if (timelineGestureTracking) {
-            ensureTimelineScaleGestureDetector()
-            val wasPinchConsumed = timelinePinchConsumed
-            timelineScaleGestureDetector?.onTouchEvent(event)
-            val consumePinch = wasPinchConsumed || timelinePinchConsumed || timelinePinchInProgress
+        if (timelinePinchInProgress) {
+            when (event.actionMasked) {
+                android.view.MotionEvent.ACTION_MOVE,
+                android.view.MotionEvent.ACTION_POINTER_UP -> updateTimelinePinch(event)
+            }
+            if (event.actionMasked == android.view.MotionEvent.ACTION_POINTER_UP) {
+                finishTimelinePinch()
+            } else if (event.actionMasked == android.view.MotionEvent.ACTION_UP ||
+                event.actionMasked == android.view.MotionEvent.ACTION_CANCEL
+            ) {
+                finishTimelinePinch()
+                timelineGestureTracking = false
+                timelinePinchConsumed = false
+                return true
+            }
+            return true
+        }
+
+        if (timelinePinchConsumed) {
             if (event.actionMasked == android.view.MotionEvent.ACTION_UP ||
                 event.actionMasked == android.view.MotionEvent.ACTION_CANCEL
             ) {
                 timelineGestureTracking = false
                 timelinePinchConsumed = false
-                if (consumePinch) return true
-            } else if (consumePinch) {
-                return true
             }
+            return true
         }
+        if (event.actionMasked == android.view.MotionEvent.ACTION_CANCEL) timelineGestureTracking = false
         return super.dispatchTouchEvent(event)
     }
 
