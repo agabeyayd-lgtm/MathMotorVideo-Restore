@@ -1069,3 +1069,14 @@ Implementation on PR #11 (`d9eae9f18d3e0841e81f4485d39b19c893860282`):
 - [ ] Recheck the four filmstrip goals as one integrated interaction: complete undistorted 9:16 thumbnails, zoom-only horizontal scale, exact preview/thumbnail timestamp and fast loading without stale frames.
 
 No version bump, release signing, merge or version 395. PR #11 remains draft/unmerged; installed baseline remains versionCode 394 / build 61.
+
+
+## Emulator #648 frame-ruler screenshot review — 2026-11-01
+
+- [x] Debug APK installed successfully in the emulator and editor entry activity launched with the deterministic video fixture.
+- [x] Screenshot/window dump visibly contain frame labels `0f`, `5f`, `10f`, `15f`, `20f`, `25f` at the test zoom; portrait preview and filmstrip are visible.
+- [x] Logcat confirms editor entry, 8,023 ms clip metadata read, clip import and a centered timeline sync sample.
+- [ ] Emulator workflow #648 is **cancelled** at the launch/capture step; do not mark this workflow green. Its diagnostic artifact is retained as limited screenshot evidence only.
+- [ ] User's physical-phone test must confirm gradual seconds → subdivisions → frame labels, frame stepping/preview, thumbnail timestamp match and quick loading during repeated pinch/scrub.
+
+Latest debug APK built from source commit `d9eae9f18d3e0841e81f4485d39b19c893860282` (Verify #400 green; Build #481 green). No version bump, release signing, merge or version 395.
