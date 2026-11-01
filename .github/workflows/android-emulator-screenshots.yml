@@ -1,4 +1,5 @@
 name: Android emulator screenshots
+# Keep this workflow_dispatch entry available for manual PR-head verification.
 
 on:
   workflow_dispatch:
