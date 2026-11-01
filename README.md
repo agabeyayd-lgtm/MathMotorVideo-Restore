@@ -755,3 +755,14 @@ A focused math regression test was added in `cfb24cf97e2b0661745ddb18ece934d3fe5
 
 
 Pinch-capture follow-up commit `1a764b9c63ec9638289cb8f419861bfc73dc7ea7`: the Activity now takes over any two-pointer event as soon as its scale detector becomes active, not only the initial ACTION_POINTER_DOWN. This also handles devices where ScaleGestureDetector begins scaling on the first subsequent move.
+
+
+## Whole timeline-strip gesture routing — 2026-11-01 (source change; interaction verification pending)
+
+Source commit `5117d594ddd33a7d2fb319fae8fb975ed0658d80`:
+- Horizontal one-finger swipes can now reach the shared HorizontalScrollView scrub path from video, text, music and sound-effect strip bodies. Audio/text bodies no longer claim the first finger movement as an immediate item drag.
+- Moving a text, music or sound-effect strip now uses hold-then-drag, matching the existing video-filmstrip interaction. The dedicated trim handles remain direct one-finger controls.
+- The Activity-level two-finger pinch hit test and lane-origin calculation now consistently use window-local coordinates. This removes the previous screen/window coordinate-space mismatch when deciding whether a pinch began in the timeline.
+- Empty gray portions and ruler/lane spaces continue to use the shared horizontal scroll path; all lanes remain synchronized to the same horizontal offset and zoom.
+
+**Still pending:** fresh PR-head compile/unit verification, emulator interaction proof for one-finger scrubbing from each row and blank area, two-finger pinch from top/middle/bottom rows, preview response, trim handles, and hold-drag item movement. Source changes are not device acceptance. PR #11 remains draft/unmerged; version 395 remains blocked.
