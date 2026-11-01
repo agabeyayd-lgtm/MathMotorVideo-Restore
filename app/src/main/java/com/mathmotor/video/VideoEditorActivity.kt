@@ -5198,7 +5198,8 @@ class VideoEditorActivity : Activity() {
         }
         val filmstrip = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(Color.rgb(26, 37, 51))
+            // Match the frame cells so no contrasting rail is exposed while thumbnails load.
+            setBackgroundColor(Color.rgb(31, 46, 59))
         }
         // Render a readable, continuous filmstrip: each frame gets a near-fixed
         // 52dp-wide cell instead of the previous 12dp sliver. The cells fill the clip
@@ -5214,7 +5215,9 @@ class VideoEditorActivity : Activity() {
         val sampleSpanMs = (durationMs - 1L).coerceAtLeast(0L)
         repeat(thumbnailCount) { slot ->
             val image = ImageView(this).apply {
-                scaleType = ImageView.ScaleType.FIT_CENTER
+                // Fill each landscape timeline cell. FIT_CENTER letterboxed portrait
+                // source frames and exposed the gray cell background between thumbnails.
+                scaleType = ImageView.ScaleType.CENTER_CROP
                 setBackgroundColor(Color.rgb(31, 46, 59))
                 contentDescription = "Klip karesi"
             }
