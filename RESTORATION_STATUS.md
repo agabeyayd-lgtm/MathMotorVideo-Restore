@@ -981,3 +981,17 @@ The user supplied two screenshots with both editors' timelines expanded. Add the
 - State: **implemented in source; build/unit/emulator verification pending**. Do not mark this visual target passed until a fresh PR-head screenshot confirms the readout is above the ruler and not clipped on short/keyboard layouts.
 - No app version metadata changed. PR #11 remains draft/unmerged; installed baseline remains 394/build 61; version 395 remains blocked.
 
+
+
+## User clarification — CapCut-matched pinch behavior (2026-11-01)
+
+The user confirmed the target is exactly CapCut's behavior, not a frozen thumbnail count or horizontal thumbnail layout.
+
+- Pinch adjusts the shared timeline horizontal scale (pixels/second) and ruler visible range.
+- Filmstrip thumbnails follow that same scale; their visible count/spacing may naturally change with zoom exactly as in CapCut.
+- Keep the filmstrip lane height and aspect-correct thumbnail rendering stable. Never independently pinch/stretch/squash thumbnail images or distort their aspect ratio.
+- Ruler, video, audio and text lanes must share one time-to-pixel mapping.
+- Zoom is navigation only: do not change clip start/end, trim bounds, clip duration, audio/text timing or exported duration.
+- Keep playhead fixed in the viewport and preserve the time anchored under the pinch midpoint, matching CapCut's interaction.
+- Compare same clip, same playhead position and equivalent zoom levels on the physical phone. Acceptance is CapCut behavioral parity, not an arbitrary fixed thumbnail density.
+
