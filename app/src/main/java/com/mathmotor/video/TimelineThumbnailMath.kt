@@ -7,6 +7,40 @@ package com.mathmotor.video
  * thumbnail cells grows with pinch zoom and shrinks when the user zooms out.
  */
 internal object TimelineThumbnailMath {
+    const val SHORTS_THUMBNAIL_WIDTH_DP = 52
+    const val SHORTS_ASPECT_WIDTH = 9
+    const val SHORTS_ASPECT_HEIGHT = 16
+
+    /** Exact pixel height for a full-frame 9:16 cell at the supplied pixel width. */
+    fun portraitCellHeightPx(widthPx: Int): Int {
+        val safeWidth = widthPx.coerceAtLeast(1).toLong()
+        return ((safeWidth * SHORTS_ASPECT_HEIGHT + SHORTS_ASPECT_WIDTH / 2L) /
+            SHORTS_ASPECT_WIDTH).toInt().coerceAtLeast(1)
+    }
+
+    /**
+     * Shrinks a decoded frame inside the requested bounds without cropping,
+     * padding, distortion, or upscaling. The returned bitmap can then be drawn
+     * in a cell that has the same source aspect ratio.
+     */
+    fun fitDimensions(
+        sourceWidth: Int,
+        sourceHeight: Int,
+        maxWidth: Int,
+        maxHeight: Int
+    ): Pair<Int, Int> {
+        val width = sourceWidth.coerceAtLeast(1)
+        val height = sourceHeight.coerceAtLeast(1)
+        val boundWidth = maxWidth.coerceAtLeast(1)
+        val boundHeight = maxHeight.coerceAtLeast(1)
+        val scale = minOf(
+            1.0,
+            boundWidth.toDouble() / width.toDouble(),
+            boundHeight.toDouble() / height.toDouble()
+        )
+        return (width * scale).toInt().coerceIn(1, boundWidth) to
+            (height * scale).toInt().coerceIn(1, boundHeight)
+    }
     fun thumbnailCount(widthPx: Int, cellWidthPx: Int, maxCount: Int = 256): Int {
         val safeWidth = widthPx.coerceAtLeast(1).toLong()
         val safeCellWidth = cellWidthPx.coerceAtLeast(1).toLong()
