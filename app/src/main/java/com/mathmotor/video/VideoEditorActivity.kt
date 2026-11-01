@@ -3147,7 +3147,7 @@ class VideoEditorActivity : Activity() {
         if (totalMs <= 0L) return
         val frameWidth = timelineTracksFrame.width.takeIf { it > 0 }
             ?: resources.displayMetrics.widthPixels
-        val availableWidth = (frameWidth - dp(57) - dp(3)).coerceAtLeast(dp(80))
+        val availableWidth = (frameWidth - timelineHeaderGutterWidthPx() - dp(3)).coerceAtLeast(dp(80))
         timelinePxPerSec = TimelineScaleMath.fitPixelsPerSecond(
             durationMs = totalMs,
             availableWidthPx = availableWidth,
@@ -3164,9 +3164,16 @@ class VideoEditorActivity : Activity() {
         updateTimelinePlayheadLabel()
     }
 
+    /**
+     * Horizontal space consumed before a lane's scrolling content: the 96dp
+     * ruler/media header plus the row's 3dp leading inset. Keep this in sync
+     * with makeLane(), otherwise the fixed playhead maps to the wrong project time.
+     */
+    private fun timelineHeaderGutterWidthPx(): Int = dp(99)
+
     /** Width of the leading blank time-zero spacer inside each horizontally scrolling lane. */
     private fun timelineFrameWidth(viewportWidth: Int): Int {
-        val gutterPx = dp(57)
+        val gutterPx = timelineHeaderGutterWidthPx()
         return timelineTracksFrame.width.takeIf { it > 0 }
             ?: if (viewportWidth > 0) viewportWidth + gutterPx
             else resources.displayMetrics.widthPixels
@@ -3175,13 +3182,13 @@ class VideoEditorActivity : Activity() {
     private fun timelineOriginSpacerWidth(viewportWidth: Int = 0): Int =
         TimelineScaleMath.originSpacerWidthForCenteredPlayhead(
             timelineFrameWidth(viewportWidth),
-            dp(57)
+            timelineHeaderGutterWidthPx()
         )
 
     private fun timelineEndSpacerWidth(viewportWidth: Int = 0): Int =
         TimelineScaleMath.endSpacerWidthForCenteredPlayhead(
             timelineFrameWidth(viewportWidth),
-            dp(57),
+            timelineHeaderGutterWidthPx(),
             dp(3)
         )
 
