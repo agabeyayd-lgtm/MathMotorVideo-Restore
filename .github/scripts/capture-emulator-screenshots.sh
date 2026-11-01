@@ -298,6 +298,11 @@ if [ ! -s "$fixture" ]; then
   echo "Missing generated test fixture: $fixture"
   exit 3
 fi
+# The visual frame check samples screenshot pixels. Install Pillow only when needed.
+if ! python3 -c "from PIL import Image" >/dev/null 2>&1; then
+  sudo apt-get update
+  sudo apt-get install -y python3-pil
+fi
 # Android's scoped-storage policy blocks shell access to another app's
 # /sdcard/Android/data directory. Stage the fixture in /data/local/tmp, then
 # copy it into this debuggable test APK's private files directory with run-as.
@@ -323,7 +328,9 @@ timeout -k 2s 5s adb -s emulator-5554 logcat -c || true
 timeout -k 2s 15s adb -s emulator-5554 shell am start \
   -n com.mathmotor.video.next/com.mathmotor.video.EditorTestEntryActivity \
   --es video_uri "file://$app_internal_video" \
-  --es draft_id "11111111-1111-4111-8111-111111111111" | tee emulator-screenshots/editor-video-launch.txt
+  --es draft_id "11111111-1111-4111-8111-111111111111" \
+  --ez timeline_sync_test true \
+  --ef timeline_test_px_per_sec_dp 120 | tee emulator-screenshots/editor-video-launch.txt
 
 # Do not assert that a filename appears in uiautomator XML: on these images
 # uiautomator frequently fails, and the editor is free to display a friendly
@@ -373,7 +380,234 @@ fi
 # clip is inserted into the timeline, so inaccessible UI hierarchy is diagnostic
 # only and does not turn a successful import into a false failure.
 
-echo "Step 8/9: validate automatic draft save and resume list"
+echo "Step 8/11: align a thumbnail cell with the playhead and compare the rendered pixels"
+# HorizontalScrollView consumes touch slop before scrolling. Re-measure after
+# every drag and add the measured 12px touch-slop allowance so the cell center
+# actually reaches the fixed playhead instead of stopping short.
+thumbnail_aligned=false
+for attempt in 1 2 3 4 5; do
+  hierarchy="emulator-screenshots/editor-frame-align-${attempt}.xml"
+  dump_hierarchy "editor-frame-align-${attempt}.xml" "$hierarchy" || true
+  alignment="$(python3 .github/scripts/assert-thumbnail-alignment.py prepare "$hierarchy")"
+  read -r thumb_center_x thumb_center_y play_center_x thumb_sample_ms <<< "$alignment"
+  delta_x="$((play_center_x - thumb_center_x))"
+  absolute_delta="$((delta_x < 0 ? -delta_x : delta_x))"
+  echo "Alignment attempt $attempt: sample=${thumb_sample_ms}ms center=${thumb_center_x}px playhead=${play_center_x}px delta=${delta_x}px"
+  if [ "$absolute_delta" -le 2 ]; then
+    thumbnail_aligned=true
+    break
+  fi
+  gesture_delta="$((delta_x + (delta_x < 0 ? -12 : 12)))"
+  gesture_end_x="$((thumb_center_x + gesture_delta))"
+  timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$thumb_center_x" "$thumb_center_y" "$gesture_end_x" "$thumb_center_y" 400
+  sleep 1
+done
+if [ "$thumbnail_aligned" != true ]; then
+  echo "Could not center any filmstrip thumbnail under the fixed playhead after 5 measured drags."
+  collect_capture_diagnostics thumbnail-alignment-not-centered
+  exit 24
+fi
+sleep 1
+if ! take_screen emulator-screenshots/editor-frame-aligned.png; then
+  collect_capture_diagnostics thumbnail-alignment-capture-failure
+  exit 6
+fi
+dump_hierarchy editor-frame-aligned.xml emulator-screenshots/editor-frame-aligned.xml || true
+timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime > emulator-screenshots/thumbnail-alignment-logcat.txt 2>&1
+python3 .github/scripts/assert-thumbnail-alignment.py verify \
+  emulator-screenshots/editor-frame-aligned.xml \
+  emulator-screenshots/editor-frame-aligned.png \
+  emulator-screenshots/thumbnail-alignment-logcat.txt
+
+echo "Step 9/11: exercise filmstrip scrubbing in both directions"
+clip_bounds="$(python3 - emulator-screenshots/editor-window.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+try:
+    root = ET.parse(sys.argv[1]).getroot()
+except (OSError, ET.ParseError):
+    raise SystemExit(0)
+for node in root.iter("node"):
+    desc = node.attrib.get("content-desc", "")
+    bounds = node.attrib.get("bounds", "")
+    if desc.startswith("Klip 1:"):
+        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", bounds)
+        if match:
+            print(*map(int, match.groups()))
+            break
+PY
+)"
+if [ -z "$clip_bounds" ]; then
+  echo "Could not locate the first video filmstrip for the scrub test."
+  collect_capture_diagnostics filmstrip-scrub-target-missing
+  exit 17
+fi
+read -r clip_x1 clip_y1 clip_x2 clip_y2 <<< "$clip_bounds"
+scrub_y="$(((clip_y1 + clip_y2) / 2))"
+clip_width="$((clip_x2 - clip_x1))"
+# UIAutomator reports the visible intersection of a long clip with the lane
+# viewport, not the clip's full off-screen width. Scale the inset to that
+# visible width instead of discarding a fixed 35px from both sides.
+swipe_inset="$((clip_width / 10))"
+if [ "$swipe_inset" -lt 10 ]; then swipe_inset=10; fi
+if [ "$swipe_inset" -gt 24 ]; then swipe_inset=24; fi
+forward_start="$((clip_x2 - swipe_inset))"
+forward_end="$((clip_x1 + swipe_inset))"
+forward_distance="$((forward_start - forward_end))"
+if [ "$forward_distance" -lt 80 ]; then
+  echo "The visible filmstrip range is too small for a meaningful scrub (${clip_width}px wide; ${forward_distance}px usable after ${swipe_inset}px insets)."
+  collect_capture_diagnostics filmstrip-scrub-distance-too-small
+  exit 18
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$forward_start" "$scrub_y" "$forward_end" "$scrub_y" 700
+sleep 1
+timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime > emulator-screenshots/filmstrip-scrub-forward-logcat.txt 2>&1
+forward_values="$(python3 - emulator-screenshots/filmstrip-scrub-forward-logcat.txt <<'PY'
+import re
+import sys
+latest = None
+for line in open(sys.argv[1], errors="replace"):
+    if "TIMELINE_SYNC_SAMPLE" not in line:
+        continue
+    p = re.search(r"playheadMs=(\d+)", line)
+    s = re.search(r"scrollXs=([0-9,]+)", line)
+    c = re.search(r"playheadCenterPx=(\d+)", line)
+    if p and s and c:
+        latest = (int(p.group(1)), int(s.group(1).split(",")[0]), int(c.group(1)))
+if latest:
+    print(*latest)
+PY
+)"
+if [ -z "$forward_values" ]; then
+  echo "No timeline synchronization sample was recorded after dragging the filmstrip left."
+  collect_capture_diagnostics filmstrip-scrub-forward-no-sample
+  exit 19
+fi
+read -r forward_ms forward_scroll playhead_center <<< "$forward_values"
+if [ "$forward_ms" -le 0 ] || [ "$forward_scroll" -le 0 ]; then
+  echo "Dragging the filmstrip left did not advance the shared playhead."
+  echo "Observed playheadMs=$forward_ms scrollX=$forward_scroll"
+  collect_capture_diagnostics filmstrip-scrub-forward-not-advanced
+  exit 20
+fi
+dump_hierarchy editor-after-forward-scrub.xml emulator-screenshots/editor-after-forward-scrub.xml || true
+reverse_bounds="$(python3 - emulator-screenshots/editor-after-forward-scrub.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+try:
+    root = ET.parse(sys.argv[1]).getroot()
+except (OSError, ET.ParseError):
+    raise SystemExit(0)
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").startswith("Klip 1:"):
+        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+        if match:
+            print(*map(int, match.groups()))
+            break
+PY
+)"
+if [ -z "$reverse_bounds" ]; then
+  echo "Could not relocate the filmstrip after forward scrubbing."
+  collect_capture_diagnostics filmstrip-scrub-reverse-target-missing
+  exit 21
+fi
+read -r reverse_x1 reverse_y1 reverse_x2 reverse_y2 <<< "$reverse_bounds"
+reverse_y="$(((reverse_y1 + reverse_y2) / 2))"
+reverse_width="$((reverse_x2 - reverse_x1))"
+reverse_inset="$((reverse_width / 10))"
+if [ "$reverse_inset" -lt 10 ]; then reverse_inset=10; fi
+if [ "$reverse_inset" -gt 24 ]; then reverse_inset=24; fi
+# Keep the reverse gesture entirely to the right of the fixed playhead's
+# 28dp touch target. Crossing that overlay hands the gesture to playhead seeking
+# instead of the HorizontalScrollView and can falsely look like reverse scrub.
+reverse_start="$((reverse_x1 + reverse_inset))"
+playhead_safe_start="$((playhead_center + 20))"
+if [ "$reverse_start" -lt "$playhead_safe_start" ]; then
+  reverse_start="$playhead_safe_start"
+fi
+reverse_end="$((reverse_x2 - reverse_inset))"
+reverse_distance="$((reverse_end - reverse_start))"
+if [ "$reverse_distance" -lt 80 ]; then
+  echo "The visible filmstrip range became too small for the reverse scrub (${reverse_width}px wide; ${reverse_distance}px usable after ${reverse_inset}px insets)."
+  collect_capture_diagnostics filmstrip-scrub-reverse-distance-too-small
+  exit 23
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$reverse_start" "$reverse_y" "$reverse_end" "$reverse_y" 700
+sleep 1
+timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime > emulator-screenshots/filmstrip-scrub-reverse-logcat.txt 2>&1
+reverse_ms="$(python3 - emulator-screenshots/filmstrip-scrub-reverse-logcat.txt <<'PY'
+import re
+import sys
+latest = None
+for line in open(sys.argv[1], errors="replace"):
+    if "TIMELINE_SYNC_SAMPLE" not in line:
+        continue
+    p = re.search(r"playheadMs=(\d+)", line)
+    if p:
+        latest = int(p.group(1))
+if latest is not None:
+    print(latest)
+PY
+)"
+if [ -z "$reverse_ms" ] || [ "$reverse_ms" -ge "$forward_ms" ]; then
+  echo "Dragging the filmstrip right did not move the playhead backward."
+  echo "Forward=$forward_ms ms reverse=$reverse_ms ms"
+  collect_capture_diagnostics filmstrip-scrub-reverse-not-reversed
+  exit 22
+fi
+echo "PASS: filmstrip left advanced to \${forward_ms}ms; right returned to \${reverse_ms}ms"
+
+echo "Step 9/11: exercise live playback and validate ruler/filmstrip synchronization"
+dump_hierarchy timeline-play-button.xml emulator-screenshots/timeline-play-button.xml || true
+play_coords="$(python3 - emulator-screenshots/timeline-play-button.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+try:
+    root = ET.parse(sys.argv[1]).getroot()
+except (OSError, ET.ParseError):
+    raise SystemExit(0)
+
+for node in root.iter("node"):
+    description = node.attrib.get("content-desc", "")
+    bounds = node.attrib.get("bounds", "")
+    if "Önizlemeyi oynat" in description:
+        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", bounds)
+        if match:
+            x1, y1, x2, y2 = map(int, match.groups())
+            print((x1 + x2) // 2, (y1 + y2) // 2)
+            break
+PY
+)"
+if [ -z "$play_coords" ]; then
+  echo "Could not locate the editor's accessible Play button; refusing to infer a tap coordinate."
+  collect_capture_diagnostics timeline-play-button-missing
+  exit 14
+fi
+echo "Tapping the real editor Play button at $play_coords"
+# Keep the test-enabled marker emitted at editor startup; logcat was already
+# cleared immediately before the editor launch above.
+if ! timeout -k 2s 8s adb -s emulator-5554 shell input tap $play_coords; then
+  echo "Could not tap the editor Play button."
+  collect_capture_diagnostics timeline-play-tap-failed
+  exit 15
+fi
+sleep 4
+if ! take_screen emulator-screenshots/editor-playing.png; then
+  collect_capture_diagnostics timeline-playing-capture-failure
+  exit 6
+fi
+timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime > emulator-screenshots/timeline-sync-logcat.txt 2>&1 || true
+if ! python3 .github/scripts/assert-timeline-sync.py emulator-screenshots/timeline-sync-logcat.txt 2>&1 | tee emulator-screenshots/timeline-sync-validation.txt; then
+  echo "Live playback/timeline synchronization assertions failed."
+  collect_capture_diagnostics timeline-sync-assertion-failure
+  exit 16
+fi
+
+echo "Step 11/11: validate automatic draft save and resume list"
 timeout -k 2s 8s adb -s emulator-5554 shell input keyevent 4 || true
 sleep 3
 timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime > emulator-screenshots/draft-autosave-logcat.txt 2>&1 || true
@@ -406,7 +640,7 @@ timeout -k 2s 8s adb -s emulator-5554 logcat -d > emulator-screenshots/logcat.tx
 test -s emulator-screenshots/home.png
 test -s emulator-screenshots/editor-empty.png
 test -s emulator-screenshots/editor.png
+test -s emulator-screenshots/editor-playing.png
+test -s emulator-screenshots/timeline-sync-validation.txt
 test -s emulator-screenshots/home-with-drafts.png
-echo "Home, empty editor, sample-video editor, and autosaved-draft home screenshots captured. Editor auto-save verified."
-
-echo "Screenshot and autosave capture flow complete; the isolated gesture test runs in the next workflow step."
+echo "Home, empty editor, initial and playing editor, live timeline sync, and autosaved-draft home screenshots captured."
