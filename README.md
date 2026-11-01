@@ -807,3 +807,6 @@ The user reviewed the current phone build and requested one focused editor polis
 - [ ] **Dynamic CapCut-style ruler:** use scale-dependent major/minor tick intervals and labels (e.g. seconds and intermediate subdivisions), updating smoothly as timeline zoom changes; avoid a fixed 1-second-only ruler.
 
 **Acceptance before release:** add/update focused math and UI tests; run Kotlin compilation and unit tests on the final PR head; inspect fresh emulator screenshots and exercise preview/filmstrip sync, rapid scrubbing, trim-at-zero, ruler density at multiple zoom levels, bottom drawer on short screen/keyboard, and all retained editing controls on the user's phone. Keep PR #11 draft/unmerged and version 395 blocked until the user accepts the complete batch.
+
+
+Implementation started on 2026-11-01: source commit `e6cbc2b73012d12afce49b64533d68b89f2ae446` keeps a clip already at timeline zero anchored at zero when its source start is trimmed, removes the redundant clip-panel heading/selected-source line, and moves the contextual tool panel below the timeline immediately above the bottom dock. These are source changes only; panel sizing/keyboard behavior and the remaining preview/ruler requirements are still pending verification and follow-up work.
