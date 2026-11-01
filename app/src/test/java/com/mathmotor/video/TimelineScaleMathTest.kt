@@ -40,6 +40,41 @@ class TimelineScaleMathTest {
     }
 
     @Test
+    fun zoomKeepsTheSameTimelineTimeAtThePinchAnchor() {
+        val anchorTimeMs = 5_000L
+        val anchorOffsetPx = 80f
+        val zoomedPixelsPerSecond = 44f
+        val scrollX = TimelineScaleMath.scrollForTimeAtViewportOffset(
+            anchorTimeMs, zoomedPixelsPerSecond, anchorOffsetPx
+        )
+        val timeUnderAnchor = TimelineScaleMath.millisecondsForPixels(
+            scrollX + anchorOffsetPx, zoomedPixelsPerSecond
+        )
+        assertEquals(anchorTimeMs, timeUnderAnchor)
+    }
+
+    @Test
+    fun pinchZoomAccumulatesEveryPointerSpanChange() {
+        var zoom = 1.0f
+        val spans = listOf(48f, 56f, 73f, 101f, 139f, 184f)
+        spans.zipWithNext().forEach { (previous, current) ->
+            zoom = TimelineScaleMath.zoomForPinchSpan(zoom, previous, current)
+        }
+        assertEquals(184f / 48f, zoom, 0.0001f)
+
+        val inwardSpans = listOf(184f, 150f, 112f, 82f, 66f)
+        inwardSpans.zipWithNext().forEach { (previous, current) ->
+            zoom = TimelineScaleMath.zoomForPinchSpan(zoom, previous, current)
+        }
+        assertEquals(66f / 48f, zoom, 0.0001f)
+    }
+
+    @Test
+    fun invalidPinchSpanDoesNotChangeCurrentZoom() {
+        assertEquals(2.0f, TimelineScaleMath.zoomForPinchSpan(2.0f, 0f, 90f), 0.0001f)
+    }
+
+    @Test
     fun invalidScaleAndNegativeTimeAreSafe() {
         assertEquals(0, TimelineScaleMath.pixelsForTime(-100L, 22f))
         assertEquals(0, TimelineScaleMath.pixelsForTime(1_000L, 0f))

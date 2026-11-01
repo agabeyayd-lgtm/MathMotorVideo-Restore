@@ -397,3 +397,5 @@ test -s emulator-screenshots/editor-empty.png
 test -s emulator-screenshots/editor.png
 test -s emulator-screenshots/home-with-drafts.png
 echo "Home, empty editor, sample-video editor, and autosaved-draft home screenshots captured. Editor auto-save verified."
+
+echo "Screenshot and autosave capture flow complete; the isolated gesture test runs in the next workflow step."

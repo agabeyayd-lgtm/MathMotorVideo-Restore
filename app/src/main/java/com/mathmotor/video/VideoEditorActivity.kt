@@ -180,6 +180,13 @@ class VideoEditorActivity : Activity() {
     private lateinit var timelinePlayheadSeek: SeekBar
     private lateinit var timelinePlayheadLabel: TextView
     private var timelinePlayheadMs = 0L
+    private var timelineGestureTracking = false
+    private var timelinePinchConsumed = false
+    private var timelinePinchInProgress = false
+    private var timelinePinchAnchorTimeMs = 0L
+    private var timelinePinchAnchorOffsetPx = 0f
+    private var timelinePinchRequestedZoom = 1.0f
+    private var timelinePinchPreviousSpanPx = 0f
     private var timelineScrubGrabOffsetPx = 0f
     private var timelinePreviewLoaded = false
     private var previewSingleClip = false
@@ -1744,8 +1751,10 @@ class VideoEditorActivity : Activity() {
             if (endMs < totalMs) addSpacer(track, endMs, totalMs)
         }
 
-        if (!keyboardLayoutActive && !compactEditorLayout) {
-            val ruler = makeLane("SÜRE", 22)
+        // Keep the time ruler visible on compact phones too; pinch zoom and
+        // frame/time navigation must remain available on short viewports.
+        if (!keyboardLayoutActive) {
+            val ruler = makeLane("SÜRE", if (compactEditorLayout) 18 else 22)
             val rulerEndMs = (((totalMs + 4999L) / 5000L).coerceAtLeast(1L)) * 5000L
             var rulerTimeMs = 0L
             var rulerPositionPx = 0
@@ -1893,6 +1902,133 @@ class VideoEditorActivity : Activity() {
         return zoomChanged || pendingTimelineScrollX != null
     }
 
+    /** Starts a timeline-only pinch using the actual coordinates of both pointers. */
+    private fun beginTimelinePinch(event: android.view.MotionEvent): Boolean {
+        if (!::timelineTracksFrame.isInitialized || timelineScrollViews.isEmpty() || event.pointerCount < 2) return false
+        val rootLocation = IntArray(2)
+        val frameLocation = IntArray(2)
+        window.decorView.getLocationOnScreen(rootLocation)
+        timelineTracksFrame.getLocationOnScreen(frameLocation)
+        val firstX = rootLocation[0] + event.getX(0)
+        val firstY = rootLocation[1] + event.getY(0)
+        val secondX = rootLocation[0] + event.getX(1)
+        val secondY = rootLocation[1] + event.getY(1)
+        fun insideTimeline(x: Float, y: Float): Boolean =
+            x >= frameLocation[0] && x <= frameLocation[0] + timelineTracksFrame.width &&
+                y >= frameLocation[1] && y <= frameLocation[1] + timelineTracksFrame.height
+        // Both fingers must start in the timeline, never in the preview or tool dock.
+        if (!insideTimeline(firstX, firstY) || !insideTimeline(secondX, secondY)) return false
+        val dx = secondX - firstX
+        val dy = secondY - firstY
+        val span = kotlin.math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
+        if (!span.isFinite() || span <= 1f) return false
+        val scroll = timelineScrollViews.firstOrNull() ?: return false
+        val scrollLocation = IntArray(2)
+        scroll.getLocationOnScreen(scrollLocation)
+        val focusScreenX = (firstX + secondX) / 2f
+        timelinePinchAnchorOffsetPx = (focusScreenX - scrollLocation[0]).coerceIn(0f, scroll.width.toFloat())
+        val anchorContentPx = scroll.scrollX.toFloat() + timelinePinchAnchorOffsetPx
+        timelinePinchAnchorTimeMs = TimelineScaleMath.millisecondsForPixels(anchorContentPx, timelinePixelsPerSecond()).coerceAtLeast(0L)
+        timelinePinchRequestedZoom = timelineZoom
+        timelinePinchPreviousSpanPx = span
+        timelinePinchInProgress = true
+        timelinePinchConsumed = true
+        return true
+    }
+
+    /** Accumulates the real distance ratio on every delivered two-pointer MOVE. */
+    private fun updateTimelinePinch(event: android.view.MotionEvent) {
+        if (!timelinePinchInProgress || event.pointerCount < 2) return
+        val dx = event.getX(1) - event.getX(0)
+        val dy = event.getY(1) - event.getY(0)
+        val currentSpan = kotlin.math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
+        if (!currentSpan.isFinite() || currentSpan <= 1f) return
+        timelinePinchRequestedZoom = TimelineScaleMath.zoomForPinchSpan(
+            timelinePinchRequestedZoom, timelinePinchPreviousSpanPx, currentSpan
+        )
+        timelinePinchPreviousSpanPx = currentSpan
+    }
+
+    private fun finishTimelinePinch() {
+        if (!timelinePinchInProgress) return
+        val targetZoom = timelinePinchRequestedZoom.coerceIn(0.5f, 8.0f)
+        if (kotlin.math.abs(targetZoom - timelineZoom) > 0.0001f) {
+            timelineZoom = targetZoom
+            val anchoredScroll = TimelineScaleMath.scrollForTimeAtViewportOffset(
+                timelinePinchAnchorTimeMs, timelinePixelsPerSecond(), timelinePinchAnchorOffsetPx
+            )
+            pendingTimelineScrollX = anchoredScroll
+            timelineHorizontalScrollX = anchoredScroll
+            refreshTimelineTracks()
+            status.text = "Zaman çizelgesi: " + timelineZoom + "×"
+        }
+        timelinePinchInProgress = false
+        timelinePinchPreviousSpanPx = 0f
+        timelinePinchConsumed = true
+    }
+
+    private fun isTouchInsideTimeline(rawX: Float, rawY: Float): Boolean {
+        if (!::timelineTracksFrame.isInitialized) return false
+        val location = IntArray(2)
+        timelineTracksFrame.getLocationOnScreen(location)
+        return rawX >= location[0] && rawX <= location[0] + timelineTracksFrame.width &&
+            rawY >= location[1] && rawY <= location[1] + timelineTracksFrame.height
+    }
+
+    override fun dispatchTouchEvent(event: android.view.MotionEvent): Boolean {
+        if (event.actionMasked == android.view.MotionEvent.ACTION_DOWN) {
+            timelineGestureTracking = isTouchInsideTimeline(event.rawX, event.rawY)
+            timelinePinchConsumed = false
+            timelinePinchInProgress = false
+            timelinePinchPreviousSpanPx = 0f
+        }
+        if (!timelineGestureTracking) return super.dispatchTouchEvent(event)
+
+        if (event.actionMasked == android.view.MotionEvent.ACTION_POINTER_DOWN &&
+            !timelinePinchInProgress && event.pointerCount >= 2 && beginTimelinePinch(event)
+        ) {
+            // Cancel the first finger's child touch before taking over the multi-touch.
+            val cancel = android.view.MotionEvent.obtain(event)
+            try {
+                cancel.action = android.view.MotionEvent.ACTION_CANCEL
+                super.dispatchTouchEvent(cancel)
+            } finally {
+                cancel.recycle()
+            }
+            return true
+        }
+
+        if (timelinePinchInProgress) {
+            when (event.actionMasked) {
+                android.view.MotionEvent.ACTION_MOVE,
+                android.view.MotionEvent.ACTION_POINTER_UP -> updateTimelinePinch(event)
+            }
+            if (event.actionMasked == android.view.MotionEvent.ACTION_POINTER_UP) {
+                finishTimelinePinch()
+            } else if (event.actionMasked == android.view.MotionEvent.ACTION_UP ||
+                event.actionMasked == android.view.MotionEvent.ACTION_CANCEL
+            ) {
+                finishTimelinePinch()
+                timelineGestureTracking = false
+                timelinePinchConsumed = false
+                return true
+            }
+            return true
+        }
+
+        if (timelinePinchConsumed) {
+            if (event.actionMasked == android.view.MotionEvent.ACTION_UP ||
+                event.actionMasked == android.view.MotionEvent.ACTION_CANCEL
+            ) {
+                timelineGestureTracking = false
+                timelinePinchConsumed = false
+            }
+            return true
+        }
+        if (event.actionMasked == android.view.MotionEvent.ACTION_CANCEL) timelineGestureTracking = false
+        return super.dispatchTouchEvent(event)
+    }
+
     private fun adjustTimelineZoom(factor: Float) {
         val newZoom = (timelineZoom * factor).coerceIn(0.5f, 8.0f)
         if (newZoom == timelineZoom) return
@@ -1980,9 +2116,10 @@ class VideoEditorActivity : Activity() {
         if (clips.isEmpty()) return
         ensureTimelinePreviewLoaded()
         if (totalOutputDurationMs() <= 0L) return
+        val frameAlignedMs = TimelineFrameMath.snapToFrameMs(requestedMs, TimelineFrameMath.DEFAULT_PROJECT_FPS)
         val position = TimelinePositionMath.locate(
             clips.map { (it.endMs - it.startMs).coerceAtLeast(0L) },
-            requestedMs
+            frameAlignedMs
         ) ?: return
         val targetMs = position.clipStartMs + position.localPositionMs
         player?.seekTo(position.clipIndex, position.localPositionMs)
@@ -2002,7 +2139,10 @@ class VideoEditorActivity : Activity() {
         val index = currentPlayer.currentMediaItemIndex
         if (index !in clips.indices) return
         val offsetMs = clips.take(index).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
-        timelinePlayheadMs = (offsetMs + currentPlayer.currentPosition).coerceIn(0L, totalOutputDurationMs())
+        timelinePlayheadMs = TimelineFrameMath.snapToFrameMs(
+            (offsetMs + currentPlayer.currentPosition).coerceIn(0L, totalOutputDurationMs()),
+            TimelineFrameMath.DEFAULT_PROJECT_FPS
+        ).coerceAtMost(totalOutputDurationMs())
         if (selectedClipIndex != index) {
             selectedClipIndex = index
             refreshClipList()
@@ -2019,8 +2159,11 @@ class VideoEditorActivity : Activity() {
         val clip = clips.getOrNull(index) ?: return
         val beforeMs = clips.take(index).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
         val clipDuration = (clip.endMs - clip.startMs).coerceAtLeast(0L)
-        timelinePlayheadMs = (beforeMs + currentPlayer.currentPosition.coerceIn(0L, clipDuration))
-            .coerceIn(0L, totalOutputDurationMs())
+        timelinePlayheadMs = TimelineFrameMath.snapToFrameMs(
+            (beforeMs + currentPlayer.currentPosition.coerceIn(0L, clipDuration))
+                .coerceIn(0L, totalOutputDurationMs()),
+            TimelineFrameMath.DEFAULT_PROJECT_FPS
+        ).coerceAtMost(totalOutputDurationMs())
         if (::timelinePlayheadSeek.isInitialized) {
             timelinePlayheadSeek.progress = TimelineTrimMath.progressForTime(timelinePlayheadMs, totalOutputDurationMs())
         }
@@ -3504,72 +3647,8 @@ class VideoEditorActivity : Activity() {
             isClickable = true
             isFocusable = true
             setOnClickListener { selectTimelineClip(index) }
-            var filmstripTouchActive = false
-            var filmstripMoved = false
-            var filmstripLongPressed = false
-            var filmstripDownX = 0f
-            val filmstripLongPress = Runnable {
-                if (filmstripTouchActive && !filmstripMoved) {
-                    filmstripLongPressed = performLongClick()
-                }
-            }
-            setOnTouchListener { view, event ->
-                when (event.actionMasked) {
-                    android.view.MotionEvent.ACTION_DOWN -> {
-                        filmstripTouchActive = true
-                        filmstripMoved = false
-                        filmstripLongPressed = false
-                        filmstripDownX = event.x
-                        player?.playWhenReady = false
-                        // The strip itself implements scrubbing and press-and-hold actions.
-                        // Prevent its horizontal parent from stealing the gesture mid-press.
-                        view.parent?.requestDisallowInterceptTouchEvent(true)
-                        timelineHandler.postDelayed(
-                            filmstripLongPress,
-                            android.view.ViewConfiguration.getLongPressTimeout().toLong()
-                        )
-                        true
-                    }
-                    android.view.MotionEvent.ACTION_MOVE -> {
-                        if (kotlin.math.abs(event.x - filmstripDownX) > android.view.ViewConfiguration.get(this@VideoEditorActivity).scaledTouchSlop) {
-                            filmstripMoved = true
-                            timelineHandler.removeCallbacks(filmstripLongPress)
-                            if (!filmstripLongPressed) {
-                                val safeWidth = view.width.coerceAtLeast(1)
-                                val fraction = (event.x / safeWidth.toFloat()).coerceIn(0f, 1f)
-                                val offsetBeforeClip = clips.take(index).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
-                                val clipDuration = (clip.endMs - clip.startMs).coerceAtLeast(0L)
-                                val targetMs = offsetBeforeClip + (clipDuration * fraction).toLong()
-                                seekTimelinePreview(targetMs.coerceIn(0L, totalOutputDurationMs()))
-                            }
-                        }
-                        true
-                    }
-                    android.view.MotionEvent.ACTION_UP -> {
-                        timelineHandler.removeCallbacks(filmstripLongPress)
-                        filmstripTouchActive = false
-                        view.parent?.requestDisallowInterceptTouchEvent(false)
-                        if (!filmstripLongPressed) {
-                            val safeWidth = view.width.coerceAtLeast(1)
-                            val fraction = (event.x / safeWidth.toFloat()).coerceIn(0f, 1f)
-                            val offsetBeforeClip = clips.take(index).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
-                            val clipDuration = (clip.endMs - clip.startMs).coerceAtLeast(0L)
-                            val targetMs = (offsetBeforeClip + (clipDuration * fraction).toLong())
-                                .coerceIn(0L, totalOutputDurationMs().coerceAtLeast(1L) - 1L)
-                            if (!filmstripMoved) selectTimelineClip(index)
-                            seekTimelinePreview(targetMs)
-                        }
-                        true
-                    }
-                    android.view.MotionEvent.ACTION_CANCEL -> {
-                        timelineHandler.removeCallbacks(filmstripLongPress)
-                        filmstripTouchActive = false
-                        view.parent?.requestDisallowInterceptTouchEvent(false)
-                        true
-                    }
-                    else -> true
-                }
-            }
+            // Let the HorizontalScrollView own one-finger horizontal swipes.
+            // Tap still selects the clip; long-press still opens its edit menu.
             setOnLongClickListener {
                 val menu = android.widget.PopupMenu(this@VideoEditorActivity, this)
                 menu.menu.add(0, 1, 0, "Kopyala")

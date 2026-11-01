@@ -19,6 +19,7 @@ concurrency:
 jobs:
   test-and-build:
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -36,3 +37,60 @@ jobs:
 
       - name: Run unit tests and compile debug APK
         run: gradle --no-daemon testDebugUnitTest assembleDebug
+
+      - name: Generate a deterministic sample video for editor gesture tests
+        if: github.event_name == 'pull_request'
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+          mkdir -p app/build/test-fixtures
+          ffmpeg -hide_banner -loglevel error -y \
+            -f lavfi -i "testsrc2=size=360x640:rate=24" \
+            -f lavfi -i "sine=frequency=440:sample_rate=44100" \
+            -t 8 -c:v mpeg4 -q:v 5 -pix_fmt yuv420p \
+            -c:a aac -b:a 64k -shortest \
+            app/build/test-fixtures/editor-test-video.mp4
+          test -s app/build/test-fixtures/editor-test-video.mp4
+
+      - name: Enable KVM acceleration for the emulator
+        if: github.event_name == 'pull_request'
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          if [ -e /dev/kvm ]; then
+            sudo chmod 0666 /dev/kvm
+            ls -l /dev/kvm
+          else
+            echo "WARNING: /dev/kvm is unavailable; emulator may run without hardware acceleration"
+          fi
+
+      - name: Run API 35 emulator screenshot and timeline gesture checks
+        if: github.event_name == 'pull_request'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          cores: 2
+          ram-size: 2048M
+          heap-size: 512M
+          force-avd-creation: true
+          emulator-port: 5554
+          disable-animations: true
+          disable-spellchecker: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -wipe-data
+          emulator-boot-timeout: 600
+          script: |
+            bash .github/scripts/run-emulator-checks.sh
+
+      - name: Upload emulator screenshots and diagnostics
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mathmotor-android-emulator-screenshots
+          path: emulator-screenshots/
+          if-no-files-found: warn
+          retention-days: 14

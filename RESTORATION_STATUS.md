@@ -1,5 +1,27 @@
 # MathMotor Video — current project status
 
+## Timeline frame/zoom repair — 2026-11-01
+
+Source changes on `fix/frame-accurate-timeline-zoom`:
+- Added integer `TimelineFrameMath` with a 30 FPS project default and nearest-frame seek snapping.
+- Timeline scrub requests and playback-synchronized playhead display are aligned to project-frame boundaries.
+- Added a timeline-scoped two-finger pinch recognizer that preserves the time under the pinch anchor after zoom.
+- Added focused unit tests for frame boundaries, snapping, alternative FPS values and pinch-anchor preservation.
+- Added `TimelinePinchGestureTest` for real API 35 emulator pinch-in/out, anchor stability and shared video/ruler scrolling.
+- Wired the API 35 emulator and targeted gesture test into the existing PR-triggered `Verify Android build` workflow; the dedicated screenshot workflow remains for manual runs and main-branch pushes. These workflows do not publish an APK.
+- Isolated the pinch instrumentation run in `.github/scripts/run-timeline-pinch-test.sh`; `.github/scripts/run-emulator-checks.sh` now runs the screenshot and gesture checks through one Bash wrapper. The gesture test no longer reinstalls the APK after the screenshot flow stages the deterministic video; the instrumentation assertion checks its absolute app-private path.
+- Run #426 failed in the test harness before gesture dispatch: unit tests/build and screenshot/autosave passed, but the second APK installation invalidated the staged fixture. The inline emulator-runner multiline shell block also ended with a syntax error. Pinch zoom, anchor stability and lane/ruler synchronization remain unverified; corrected harness rerun pending.
+- Run #430: unit tests/build, deterministic fixture generation/staging, editor video-load, screenshots and autosave passed. The instrumentation's `UiDevice.executeShellCommand("run-as ... test")` fixture check failed before touch events, although the preceding ADB script listed the file in the app-private directory. Replaced that check with `targetContext.filesDir` file validation; actual pinch/anchor/shared-scroll assertions remain unverified until rerun.
+
+Review findings retained as open:
+- Existing millisecond-to-pixel mapping is shared across timeline lanes; this part is reusable.
+- Existing thumbnail extraction/cache is timestamp-based, but its visual accuracy and loading behavior remain unverified.
+- No dedicated adaptive ruler renderer was found in the inspected editor source.
+- The playhead is still positioned by absolute timeline time minus horizontal scroll; fixed-center CapCut playhead behavior is not implemented by this change.
+- Source-video frame-rate/variable-frame-rate mapping and exact preview-frame correspondence still need verification.
+
+**Validation state:** Unit tests and `assembleDebug` passed in runs #413, #430 and #432. Run #432's API 35 pinch instrumentation started but failed with an instrumentation process crash; the exact crash cause is not yet known. Diagnostic capture has been added for the next run. A physical-device check has not been run. Do not mark related README acceptance checkboxes complete until those checks pass. Version 395 remains blocked and version metadata is unchanged.
+
 ## Current direction
 
 MathMotor Video is a local Android video editor with a CapCut-inspired workflow. Normal editing should work on-device without a cloud account or paid AI service.
@@ -66,3 +88,36 @@ See the detailed, release-blocking checklist in README.md. The active list is:
 ## Recovery background
 
 Some older physics/scenario-related source and tests remain as reconstruction leftovers; they are outside the active video-editing workflow. The original complete V7 source tree was not recoverable.
+
+
+## API 35 instrumentation crash root-cause fix — 2026-11-01
+
+- Run #435 diagnostics and source inspection identified a test-harness defect: `TimelinePinchGestureTest` invoked `am force-stop com.mathmotor.video.next` from inside that package's active instrumentation run. The force-stop terminates the target package and its running instrumentation, explaining the generic instrumentation-process crash before gesture assertions could complete.
+- Removed the in-test force-stop. The test now clears stale logcat and launches the editor test activity without killing the active test process.
+- This is a test-harness correction, **not evidence that pinch behavior passes**. The focused API 35 gesture test must run again; its result is pending.
+- No app version metadata changed. Version 395 remains blocked.
+
+
+## Run #437 — compact-layout ruler omission fixed — 2026-11-01
+
+- Run #437 confirms the earlier instrumentation-process crash was removed: the focused test started and executed on API 35. Unit tests and `assembleDebug` passed; the emulator screenshot/autosave smoke flow and fixture staging also completed.
+- The actual assertion failure was `The five-second ruler marker did not appear`. Source inspection found the cause: `refreshTimelineTracks` created the `SÜRE` ruler only when both `!keyboardLayoutActive` and `!compactEditorLayout` were true. The 320×640 API 35 emulator is classified as compact, so the ruler was intentionally omitted and the test could not find `00:05`.
+- Corrected the UI to keep the time ruler visible on compact phone layouts (18 dp lane instead of 22 dp); it remains hidden while the keyboard is active. This is a real responsive-editor behavior correction, not merely weakening the test.
+- Next validation: rerun unit/build and the focused API 35 gesture test. Pinch-in/out, anchor preservation and video-lane/ruler shared scrolling are still **unverified** until the test completes successfully.
+- The emulator termination messages (`stop: Not implemented`, snapshot and Netsim cleanup warnings) occurred after the failing assertion while the runner shut down the emulator; they were not the root cause.
+- Version 395 remains blocked; no version metadata or release artifact was changed.
+
+
+## Run #439 — pinch zoom input correction — 2026-11-01
+
+- Confirmed #439's primary failure was the real UI assertion `Pinch-out did not zoom in enough: 1.0454545`; unit tests, Debug APK build, fixture staging, editor load, screenshots and autosave all passed. Emulator shutdown warnings occurred after the assertion and are not the root cause.
+- Replaced the sampled `ScaleGestureDetector` callback path with direct two-pointer span ratios applied on every move event. Pinch ownership begins only when both pointers are inside the timeline; the initial child touch is cancelled so clip/trim controls do not continue processing the same gesture.
+- Preserved anchor math: the midpoint time is captured at pinch start and restored to the same viewport offset after zoom. Added unit tests for complete multi-event outward/inward span accumulation and invalid span safety.
+- Await the new API 35 instrumentation result. Do not mark gesture/anchor/shared-lane checks complete until it passes. No app version metadata changed; version 395 remains blocked.
+
+
+## Timeline one-finger scroll conflict — 2026-11-01
+
+- Found that the custom video-filmstrip touch listener consumed all touch events and explicitly disallowed parent interception, preventing one-finger horizontal scrolling of the timeline.
+- Removed the competing listener so the lane's HorizontalScrollView receives swipe gestures; clip taps and long-press menu remain available.
+- Await API 35 interaction verification for shared ruler/video-lane movement and preserved clip selection. Version 395 remains blocked.
