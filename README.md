@@ -975,7 +975,7 @@ The user's explicit rule supersedes earlier filmstrip notes that requested 16:9 
 - [x] PR-head Kotlin unit tests and debug APK compilation passed in Verify #393 (`41312913395`).
 - [x] Debug APK build passed in Build #474 (`41312913393`).
 - [x] Emulator workflow #641 (`41312913945`) passed its live timeline synchronization and draft autosave smoke checks; 17 playback samples were synchronized and the fixed playhead/ruler zero edge aligned.
-- [ ] Measure the new filmstrip's 19-frame decode duration from the #641 artifact and compare against the previous 7.5-second baseline. Do not claim a speedup until measured.
+- [x] Measured the #641 artifact: all 19 thumbnail frames (211–7811ms samples) became ready in 4.107s, versus the previous #640 baseline of about 7.5s for 19 frames — approximately 45% lower total elapsed time in this emulator fixture. This is a measured emulator improvement, not yet physical-phone acceptance.
 - [ ] Confirm preview/thumbnail timestamp alignment and no decoder race/regression under rapid scrub, pinch zoom and scroll.
 - [ ] Add CapCut-style frame ruler: as zoom increases, transition from seconds/subdivisions to frame labels such as `1f`, `2f`, `3f`, using the source video's actual FPS (including non-integer frame rates where applicable). Frame labels must represent frame indices/time accurately, not assume every source is 30 FPS.
 - [ ] At maximum zoom, support precise frame-level playhead navigation and ensure the paused preview decodes the exact selected frame. Frame ruler and filmstrip must share one time-to-pixel mapping; zoom must not change clip timing or export duration.
