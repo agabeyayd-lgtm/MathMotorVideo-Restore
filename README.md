@@ -35,6 +35,7 @@ A focused source review found that the existing timeline already shares one mill
 - Enabled the unit-test/debug-build verification workflow for pull requests; this validates source without publishing an APK.
 - Added `TimelinePinchGestureTest`, a focused Android UI Automator test against the deterministic eight-second emulator video. It checks pinch-out, pinch-in, five-second ruler-anchor stability, and one-finger scrolling on the video lane moving the ruler in sync.
 - Wired the API 35 emulator and targeted gesture test into the already PR-triggered `Verify Android build` workflow. The dedicated screenshot workflow remains available for manual runs and main-branch pushes.
+- Split the pinch interaction check into `.github/scripts/run-timeline-pinch-test.sh`. The workflow now attempts that test even if the preceding screenshot/autosave capture script fails; the gesture script independently installs the debug APK and stages its own deterministic video fixture. This prevents screenshot failures from silently skipping the gesture test.
 - No app version metadata was changed. Version 395 remains blocked.
 
 ### Still open / not yet proven
