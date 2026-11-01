@@ -971,3 +971,13 @@ The user supplied two screenshots with both editors' timelines expanded. Add the
 - Add/run only targeted tests for uncovered behavior; do not repeat already-green scenarios unchanged.
 - These targets remain OPEN until physical-phone verification; emulator/build evidence is not device acceptance.
 
+
+
+## Duration readout relocation — source change (2026-11-01)
+
+- On the active PR #11 branch, moved the current-time / total-duration label out of the centered playback-control row and into a dedicated row directly above the shared ruler and filmstrip in the timeline card.
+- The central Play/Pause control remains centered in its playback row; the time readout remains a single authoritative label and continues to use the existing playhead/duration update path.
+- Source commit: `f8110bbed2ae23b6cc81c8e0d7122f472929f69f`.
+- State: **implemented in source; build/unit/emulator verification pending**. Do not mark this visual target passed until a fresh PR-head screenshot confirms the readout is above the ruler and not clipped on short/keyboard layouts.
+- No app version metadata changed. PR #11 remains draft/unmerged; installed baseline remains 394/build 61; version 395 remains blocked.
+
