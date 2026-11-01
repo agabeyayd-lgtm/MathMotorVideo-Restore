@@ -861,3 +861,15 @@ Implementation status on PR #11:
 - [ ] Confirm the zero-origin left trim on the user's phone and confirm the gray lead-in never appears.
 
 All listed source changes are implementation-only until the pending verification and phone acceptance are completed. PR #11 stays draft/unmerged; installed versionCode 394/build 61 stays unchanged; version 395 is blocked.
+
+
+## Composition preview surface compatibility — 2026-11-01
+
+- Emulator screenshot workflow #615 exposed a concrete preview initialization failure: `CompositionPlayer` throws `UnsupportedOperationException` when `PlayerView` supplies a `TextureView` (`Use CompositionPlayer.setVideoSurface() for Surface output`). The timeline smoke test consequently recorded zero live playback samples; this is an app surface-type mismatch, not a generic emulator startup failure.
+- Changed `editor_preview_player.xml` from `surface_type="texture_view"` to `surface_type="surface_view"`, allowing `PlayerView` to provide Surface output to `CompositionPlayer`. Updated the adjacent source comment. The paused exact-frame `ImageView` remains layered above the player.
+- [ ] Run Kotlin compilation and unit tests on the resulting PR head.
+- [ ] Re-run emulator preview/playback smoke test and confirm `TIMELINE_PREVIEW_READY`, live playback samples, and no `TIMELINE_PREVIEW_FAILED` surface exception.
+- [ ] Inspect fresh screenshots during paused scrub and playback to ensure the SurfaceView does not obscure the exact-frame overlay; verify preview/filmstrip correspondence and aspect ratio.
+- [ ] Continue the already-listed bottom-drawer/keyboard, dynamic ruler, zero-origin trim, and phone acceptance checks.
+
+This is a targeted source fix, not yet verified. PR #11 remains draft/unmerged; installed versionCode 394/build 61 is unchanged; version 395 remains blocked.
