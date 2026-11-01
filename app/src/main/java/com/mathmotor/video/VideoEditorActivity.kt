@@ -682,11 +682,13 @@ class VideoEditorActivity : Activity() {
                     currentPlayer.pause()
                     currentPlayer.playWhenReady = false
                     timelinePlaybackState = TimelinePlaybackState.PAUSED
+                    requestPreviewFrameAt(timelinePlayheadMs)
                     status.text = "Önizleme duraklatıldı."
                 } else {
                     timelinePreviewError = null
                     timelinePlaybackState = TimelinePlaybackState.PLAYING
                     currentPlayer?.seekTo(timelinePlayheadMs)
+                    hidePreviewFrameOverlay()
                     currentPlayer?.playWhenReady = true
                     status.text = "Proje önizlemesi oynatılıyor."
                 }
@@ -1876,6 +1878,9 @@ class VideoEditorActivity : Activity() {
                                 }
                             }
                             timelinePlayheadMs = underPlayheadMs
+                            // Hide the previous frame immediately; the new exact
+                            // timestamp will replace it after the seek/decode completes.
+                            showPreviewFramePending()
                             if (::timelinePlayheadSeek.isInitialized) {
                                 timelinePlayheadSeek.progress = TimelineTrimMath.progressForTime(
                                     underPlayheadMs, totalOutputDurationMs()
@@ -3290,6 +3295,7 @@ class VideoEditorActivity : Activity() {
         timelineCompositionPlayer?.playWhenReady=false
     }
     private fun showSingleClipPreview(){
+        hidePreviewFrameOverlay()
         timelineCompositionPlayer?.release()
         timelineCompositionPlayer=null
         timelinePreviewLoaded=false
@@ -3314,6 +3320,9 @@ class VideoEditorActivity : Activity() {
         try{
             val comp=CompositionPlayer.Builder(this).build()
             comp.addListener(object:androidx.media3.common.Player.Listener{
+                override fun onIsPlayingChanged(isPlaying: Boolean) {
+                    if (isPlaying) hidePreviewFrameOverlay()
+                }
                 override fun onVideoSizeChanged(videoSize:androidx.media3.common.VideoSize){
                     playerView.post{updatePreviewCanvasSize()}
                 }
@@ -3329,6 +3338,7 @@ class VideoEditorActivity : Activity() {
                         timelinePlayheadMs = totalOutputDurationMs()
                         timelinePlaybackState = TimelinePlaybackState.PAUSED
                         timelineCompositionPlayer?.playWhenReady = false
+                        requestPreviewFrameAt((totalOutputDurationMs() - 1L).coerceAtLeast(0L))
                         scrollTimelineToPlayhead()
                         updateTimelinePlayheadLabel()
                         updateTimelinePlayButtonState()
@@ -3373,6 +3383,8 @@ class VideoEditorActivity : Activity() {
         if(total<=0L)return
         val target=requestedMs.coerceIn(0L,total)
         comp.seekTo(target);timelinePlayheadMs=target
+        if (comp.isPlaying || comp.playWhenReady) hidePreviewFrameOverlay()
+        else requestPreviewFrameAt(target)
         val active=activeClipIndexAt(target)
         if(active!=null&&selectedClipIndex!=active){
             // Playback/scrubbing can follow another active clip, but it must not
@@ -3443,6 +3455,7 @@ class VideoEditorActivity : Activity() {
         playerView.rotation = 0f
         playerView.translationX = 0f
         playerView.translationY = 0f
+        resetPreviewFrameTransform()
     }
 
     private fun applyTemporaryClipTransform(clip: Clip) {
@@ -3455,6 +3468,7 @@ class VideoEditorActivity : Activity() {
         playerView.rotation = clip.transformRotationDegrees
         playerView.translationX = clip.transformTranslateX * playerView.width / 2f
         playerView.translationY = clip.transformTranslateY * playerView.height / 2f
+        applyPreviewFrameTransform(clip)
     }
 
     private fun finishClipTransformGesture(
@@ -5940,6 +5954,7 @@ class VideoEditorActivity : Activity() {
         if(clip==null){status.text="Önizleme için önce video seç.";return}
         timelinePreviewLoaded=false;previewSingleClip=false;timelinePlayheadMs=clip.timelineStartMs
         updateTimelinePlayheadLabel();ensureTimelinePreviewLoaded();seekTimelinePreview(timelinePlayheadMs)
+        hidePreviewFrameOverlay()
         timelineCompositionPlayer?.playWhenReady=true
         status.text="Seçili klibin dönüşüm ve kesme ayarlarıyla önizlemesi başladı."
     }
