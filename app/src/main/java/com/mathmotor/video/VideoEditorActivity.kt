@@ -5765,127 +5765,15 @@ class VideoEditorActivity : Activity() {
         }
     }
 
-    private fun requestTimelineThumbnail(
+    private fun queueExactTimelineThumbnail(
         uri: Uri,
-        timeMs: Long,
-        target: ImageView,
-        priorityDistanceMs: Long = kotlin.math.abs(timeMs - timelinePlayheadMs),
-        cellStartMs: Long = timeMs,
-        cellEndMs: Long = timeMs + 1L
+        timestampMs: Long,
+        key: String,
+        priorityDistanceMs: Long,
+        requestStartedAt: Long
     ) {
-        val requestStartedAt = SystemClock.uptimeMillis()
-        val timestampMs = timeMs.coerceAtLeast(0L)
-        val key = "${uri}#${timestampMs}"
-        val previewKey = "${uri}#preview:${timestampMs}"
-        target.tag = key
-
-        val cached = timelineThumbnailCache.get(key)
-        if (cached != null && !cached.isRecycled) {
-            target.setImageBitmap(cached)
-            if (timelineSyncTestEnabled) android.util.Log.i(
-                "TimelineFrameSyncTest",
-                "TIMELINE_THUMBNAIL_READY sourceMs=$timestampMs width=${cached.width} height=${cached.height} cached=true"
-            )
-            return
-        }
-
-        // When zooming out, reuse a decoded exact frame already inside the new
-        // cell's time interval. The cell nearest the playhead remains exact.
-        if (priorityDistanceMs > 150L && cellEndMs > cellStartMs) {
-            val prefix = "${uri}#"
-            val reusable = timelineThumbnailCache.snapshot().entries.mapNotNull { entry ->
-                if (!entry.key.startsWith(prefix)) return@mapNotNull null
-                val cachedTime = entry.key.removePrefix(prefix).toLongOrNull() ?: return@mapNotNull null
-                if (cachedTime < cellStartMs || cachedTime >= cellEndMs) return@mapNotNull null
-                val bitmap = entry.value
-                if (bitmap.isRecycled) return@mapNotNull null
-                Triple(kotlin.math.abs(cachedTime - timestampMs), cachedTime, bitmap)
-            }.minByOrNull { it.first }
-            if (reusable != null) {
-                target.setImageBitmap(reusable.third)
-                target.contentDescription = "Klip karesi @${reusable.second}ms (önbellek)"
-                if (timelineSyncTestEnabled) android.util.Log.i(
-                    "TimelineFrameSyncTest",
-                    "TIMELINE_THUMBNAIL_REUSED sourceMs=${reusable.second} targetMs=$timestampMs"
-                )
-                return
-            }
-        }
-
-        // Requests for a cell already being decoded only add another weak UI target.
-        val waiting = pendingTimelineThumbnails[key]
-        if (waiting != null) {
-            waiting.add(WeakReference(target))
-            return
-        }
-        pendingTimelineThumbnails[key] = mutableListOf(WeakReference(target))
-
-        val isPlayheadCell = priorityDistanceMs <= 150L
-        val timelineViewportWidthPx = timelineScrollViews.firstOrNull()?.width
-            ?.takeIf { it > 0 } ?: dp(320)
-        val nearViewportPreviewWindowMs = (
-            timelineViewportWidthPx.toFloat() * 1000f /
-                timelinePixelsPerSecond().coerceAtLeast(1f)
-            ).toLong() + 750L
-        val needsFastPreview = !isPlayheadCell &&
-            priorityDistanceMs <= nearViewportPreviewWindowMs
-        if (needsFastPreview) {
-            // Put a low-cost sync-frame image on screen first. It is only a temporary
-            // visual placeholder: the exact timestamp is still decoded below and
-            // replaces this bitmap. Never use this approximation for the playhead cell.
-            val cachedPreview = timelineThumbnailCache.get(previewKey)
-            if (cachedPreview != null && !cachedPreview.isRecycled) {
-                target.setImageBitmap(cachedPreview)
-            } else if (pendingTimelineThumbnailPreviews.add(key)) {
-                val previewQueuedAt = SystemClock.uptimeMillis()
-                val previewTask = TimelineThumbnailTask(
-                    priorityDistanceMs.coerceAtLeast(0L),
-                    timelineThumbnailTaskSequence.incrementAndGet(),
-                    priorityPhase = 1
-                ) {
-                    val decodeStartedAt = SystemClock.uptimeMillis()
-                    val preview = runCatching {
-                        decodeTimelineFrame(
-                            uri,
-                            timestampMs,
-                            MediaMetadataRetriever.OPTION_CLOSEST_SYNC
-                        )?.let(::scaleTimelineThumbnailFrame)
-                    }.onFailure { error ->
-                        android.util.Log.w(
-                            "TimelineThumbnail",
-                            "Provisional thumbnail failed for $uri at ${timestampMs}ms",
-                            error
-                        )
-                    }.getOrNull()
-                    val decodeDurationMs = SystemClock.uptimeMillis() - decodeStartedAt
-                    runOnUiThread {
-                        pendingTimelineThumbnailPreviews.remove(key)
-                        if (preview != null && !preview.isRecycled && !isFinishing && !isDestroyed) {
-                            timelineThumbnailCache.put(previewKey, preview)
-                            if (timelineSyncTestEnabled) android.util.Log.i(
-                                "TimelineFrameSyncTest",
-                                "TIMELINE_THUMBNAIL_PREVIEW_READY sourceMs=$timestampMs decodeMs=$decodeDurationMs queueMs=${decodeStartedAt - previewQueuedAt}"
-                            )
-                            pendingTimelineThumbnails[key].orEmpty().forEach { ref ->
-                                val image = ref.get()
-                                if (image != null && image.tag == key) image.setImageBitmap(preview)
-                            }
-                        } else {
-                            preview?.let { if (!it.isRecycled) it.recycle() }
-                        }
-                    }
-                }
-                try {
-                    timelineThumbnailExecutor.execute(previewTask)
-                } catch (_: java.util.concurrent.RejectedExecutionException) {
-                    pendingTimelineThumbnailPreviews.remove(key)
-                }
-            }
-        }
-
-        // Full-precision extraction replaces every provisional frame. Tiles outside
-        // the near-viewport preview window go directly to exact decoding.
-        val exactPhase = if (isPlayheadCell) 0 else 2
+        if (!pendingTimelineThumbnails.containsKey(key)) return
+        val exactPhase = if (priorityDistanceMs <= 150L) 0 else 2
         val exactTask = TimelineThumbnailTask(
             priorityDistanceMs.coerceAtLeast(0L),
             timelineThumbnailTaskSequence.incrementAndGet(),
@@ -5942,7 +5830,147 @@ class VideoEditorActivity : Activity() {
         } catch (_: java.util.concurrent.RejectedExecutionException) {
             pendingTimelineThumbnails.remove(key)
             pendingTimelineThumbnailPreviews.remove(key)
-            target.setBackgroundColor(Color.TRANSPARENT)
+        }
+    }
+
+    private fun requestTimelineThumbnail(
+        uri: Uri,
+        timeMs: Long,
+        target: ImageView,
+        priorityDistanceMs: Long = kotlin.math.abs(timeMs - timelinePlayheadMs),
+        cellStartMs: Long = timeMs,
+        cellEndMs: Long = timeMs + 1L
+    ) {
+        val requestStartedAt = SystemClock.uptimeMillis()
+        val timestampMs = timeMs.coerceAtLeast(0L)
+        val key = "${uri}#${timestampMs}"
+        val previewKey = "${uri}#preview:${timestampMs}"
+        target.tag = key
+
+        val cached = timelineThumbnailCache.get(key)
+        if (cached != null && !cached.isRecycled) {
+            target.setImageBitmap(cached)
+            if (timelineSyncTestEnabled) android.util.Log.i(
+                "TimelineFrameSyncTest",
+                "TIMELINE_THUMBNAIL_READY sourceMs=$timestampMs width=${cached.width} height=${cached.height} cached=true"
+            )
+            return
+        }
+
+        // When zooming out, reuse a decoded exact frame already inside the new
+        // cell's time interval. The cell nearest the playhead remains exact.
+        if (priorityDistanceMs > 150L && cellEndMs > cellStartMs) {
+            val prefix = "${uri}#"
+            val reusable = timelineThumbnailCache.snapshot().entries.mapNotNull { entry ->
+                if (!entry.key.startsWith(prefix)) return@mapNotNull null
+                val cachedTime = entry.key.removePrefix(prefix).toLongOrNull() ?: return@mapNotNull null
+                if (cachedTime < cellStartMs || cachedTime >= cellEndMs) return@mapNotNull null
+                val bitmap = entry.value
+                if (bitmap.isRecycled) return@mapNotNull null
+                Triple(kotlin.math.abs(cachedTime - timestampMs), cachedTime, bitmap)
+            }.minByOrNull { it.first }
+            if (reusable != null) {
+                target.setImageBitmap(reusable.third)
+                target.contentDescription = "Klip karesi @${reusable.second}ms (önbellek)"
+                if (timelineSyncTestEnabled) android.util.Log.i(
+                    "TimelineFrameSyncTest",
+                    "TIMELINE_THUMBNAIL_REUSED sourceMs=${reusable.second} targetMs=$timestampMs"
+                )
+                return
+            }
+        }
+
+        // A cell gets one shared decode chain, even if a responsive layout refresh
+        // creates another ImageView while its current bitmap is being prepared.
+        val waiting = pendingTimelineThumbnails[key]
+        if (waiting != null) {
+            waiting.add(WeakReference(target))
+            return
+        }
+        pendingTimelineThumbnails[key] = mutableListOf(WeakReference(target))
+
+        val isPlayheadCell = priorityDistanceMs <= 150L
+        val timelineViewportWidthPx = timelineScrollViews.firstOrNull()?.width
+            ?.takeIf { it > 0 } ?: dp(320)
+        val nearViewportPreviewWindowMs = (
+            timelineViewportWidthPx.toFloat() * 1000f /
+                timelinePixelsPerSecond().coerceAtLeast(1f)
+            ).toLong() + 750L
+        val needsFastPreview = !isPlayheadCell &&
+            priorityDistanceMs <= nearViewportPreviewWindowMs
+
+        if (!needsFastPreview) {
+            // Distant cells skip the approximate stage and go directly to exact decode.
+            queueExactTimelineThumbnail(uri, timestampMs, key, priorityDistanceMs, requestStartedAt)
+            return
+        }
+
+        // A lower-cost sync frame is only a temporary visual stand-in. Queue exact
+        // extraction after this provisional decode completes so the two decoder
+        // workers can never let a late preview overwrite a finished exact frame.
+        val cachedPreview = timelineThumbnailCache.get(previewKey)
+        if (cachedPreview != null && !cachedPreview.isRecycled) {
+            target.setImageBitmap(cachedPreview)
+            queueExactTimelineThumbnail(uri, timestampMs, key, priorityDistanceMs, requestStartedAt)
+            return
+        }
+
+        if (!pendingTimelineThumbnailPreviews.add(key)) {
+            // Another view already owns the preview decode. Its completion will queue
+            // the exact pass and update every current weak target for this timestamp.
+            return
+        }
+
+        val previewQueuedAt = SystemClock.uptimeMillis()
+        val previewTask = TimelineThumbnailTask(
+            priorityDistanceMs.coerceAtLeast(0L),
+            timelineThumbnailTaskSequence.incrementAndGet(),
+            priorityPhase = 1
+        ) {
+            val decodeStartedAt = SystemClock.uptimeMillis()
+            val preview = runCatching {
+                decodeTimelineFrame(
+                    uri,
+                    timestampMs,
+                    MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+                )?.let(::scaleTimelineThumbnailFrame)
+            }.onFailure { error ->
+                android.util.Log.w(
+                    "TimelineThumbnail",
+                    "Provisional thumbnail failed for $uri at ${timestampMs}ms",
+                    error
+                )
+            }.getOrNull()
+            val decodeDurationMs = SystemClock.uptimeMillis() - decodeStartedAt
+            runOnUiThread {
+                pendingTimelineThumbnailPreviews.remove(key)
+                if (preview != null && !preview.isRecycled && !isFinishing && !isDestroyed) {
+                    timelineThumbnailCache.put(previewKey, preview)
+                    // A provisional frame must never downgrade an exact result.
+                    val exactAlreadyReady = timelineThumbnailCache.get(key)
+                    if (exactAlreadyReady == null || exactAlreadyReady.isRecycled) {
+                        if (timelineSyncTestEnabled) android.util.Log.i(
+                            "TimelineFrameSyncTest",
+                            "TIMELINE_THUMBNAIL_PREVIEW_READY sourceMs=$timestampMs decodeMs=$decodeDurationMs queueMs=${decodeStartedAt - previewQueuedAt}"
+                        )
+                        pendingTimelineThumbnails[key].orEmpty().forEach { ref ->
+                            val image = ref.get()
+                            if (image != null && image.tag == key) image.setImageBitmap(preview)
+                        }
+                    } else {
+                        preview.recycle()
+                    }
+                } else {
+                    preview?.let { if (!it.isRecycled) it.recycle() }
+                }
+                queueExactTimelineThumbnail(uri, timestampMs, key, priorityDistanceMs, requestStartedAt)
+            }
+        }
+        try {
+            timelineThumbnailExecutor.execute(previewTask)
+        } catch (_: java.util.concurrent.RejectedExecutionException) {
+            pendingTimelineThumbnailPreviews.remove(key)
+            queueExactTimelineThumbnail(uri, timestampMs, key, priorityDistanceMs, requestStartedAt)
         }
     }
 
