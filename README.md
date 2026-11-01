@@ -980,3 +980,15 @@ The user's explicit rule supersedes earlier filmstrip notes that requested 16:9 
 - [ ] Add CapCut-style frame ruler: as zoom increases, transition from seconds/subdivisions to frame labels such as `1f`, `2f`, `3f`, using the source video's actual FPS (including non-integer frame rates where applicable). Frame labels must represent frame indices/time accurately, not assume every source is 30 FPS.
 - [ ] At maximum zoom, support precise frame-level playhead navigation and ensure the paused preview decodes the exact selected frame. Frame ruler and filmstrip must share one time-to-pixel mapping; zoom must not change clip timing or export duration.
 - Physical-phone comparison and acceptance remain open. PR #11 stays draft/unmerged; do not bump version or create version 395.
+
+
+## Source-FPS frame ruler — 2026-11-01
+
+- The timeline ruler now selects readable whole-second/subsecond intervals at normal and medium zoom, then switches to frame labels as the view is enlarged.
+- Source FPS is read from `MediaMetadataRetriever` capture-frame-rate metadata, with `MediaExtractor` video-track frame-rate fallback. The value is persisted per clip; older drafts recover missing FPS asynchronously.
+- Frame tick timestamps are derived from the absolute frame index and source FPS, so fractional rates such as 29.97 do not accumulate rounded-frame-duration drift.
+- Timeline scrubbing and the playhead seek control snap to the nearest source-frame boundary while over a clip; gaps remain unsnapped. The preview seek uses the resulting exact timeline timestamp.
+- Pinch maximum was raised to 720 dp/s so common 24/30 FPS footage can reveal individual frames while preserving the accepted 52 dp portrait thumbnail geometry.
+- Pure math coverage added for gradual ruler density, 23.976/29.97/30/60 FPS behavior, frame-index/time conversion and subsecond label formatting.
+- Verify #400 and Build #481 passed for source commit `d9eae9f18d3e0841e81f4485d39b19c893860282`. Emulator screenshot workflow #648 was still running at this note; do not treat emulator or physical-phone frame-ruler behavior as accepted until inspected.
+- Debug APK artifact `MathMotorVideo-restored-debug` was downloaded and checked as a valid APK. It is for device evaluation only; no version bump, signed release, merge or version 395.
