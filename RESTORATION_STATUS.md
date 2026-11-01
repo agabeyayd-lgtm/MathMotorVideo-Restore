@@ -1018,8 +1018,8 @@ The user's explicit rule supersedes earlier filmstrip notes that requested 16:9 
 - Keep the frame's real sample timestamp and shared timeline position unchanged. The preview and the filmstrip cell under the fixed playhead must still refer to the same instant.
 - If the source frame is not 9:16, retain its complete original aspect ratio rather than silently cutting off people or objects. The current visual target is vertical Shorts footage.
 - Source implementation added to PR #11: 162×288 decode target, full-frame fit sizing, portrait cell/lane geometry and focused unit tests. This is source-only until the PR-head test/build workflows pass and the physical phone is reviewed.
-- [ ] Confirm Kotlin unit tests pass on the resulting PR head.
-- [ ] Confirm Android debug compilation/APK build passes on the resulting PR head.
+- [x] Kotlin unit tests and Android debug compilation passed on PR-head Verify #390 (`41307522355`, head `b215bc902ea374be71857b76904ae5735814d56a`).
+- [x] Debug APK build and artifact upload passed on PR-head Build #471 (`41307522234`, same head; artifact `MathMotorVideo-restored-debug`). This is a test/debug APK, not a signed release.
 - [ ] Review fresh emulator screenshots to ensure complete 9:16 frames, no cropping and no black gaps.
 - [ ] Confirm on the user's phone that all frame content is visible at fit/medium/maximum zoom and that thumbnail timestamps remain aligned with the preview.
 - No app version bump or version 395. PR #11 remains draft/unmerged.
