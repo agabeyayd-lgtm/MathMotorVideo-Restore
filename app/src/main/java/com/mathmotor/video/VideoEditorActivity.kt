@@ -5346,7 +5346,7 @@ class VideoEditorActivity : Activity() {
             // Otherwise short trimmed clips cannot be expanded back toward the source boundaries.
             val handleWidth = minOf(dp(40), (width / 2).coerceAtLeast(1))
             fun allowedDeltaPx(startMs:Long,endMs:Long):Pair<Float,Float>{
-                val minDelta=if(isStart)-minOf(startMs,clip.timelineStartMs) else TimelineTrimMath.minEndMs(startMs,clip.durationMs)-endMs
+                val minDelta=if(isStart) -(if(clip.timelineStartMs==0L) startMs else minOf(startMs,clip.timelineStartMs)) else TimelineTrimMath.minEndMs(startMs,clip.durationMs)-endMs
                 val maxDelta=if(isStart)TimelineTrimMath.maxStartMs(endMs,clip.durationMs)-startMs else clip.durationMs-endMs
                 val scale=timelinePixelsPerSecond()/1000f
                 return minDelta*scale to maxDelta*scale
