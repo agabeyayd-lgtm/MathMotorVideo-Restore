@@ -221,13 +221,13 @@ Do not mark the existing release checklist items complete until the relevant aut
 Source changes now on `main` (Build 61 remains the installed baseline; version 395 is still blocked):
 
 - Pause/Stop now keeps the last rendered preview visible while the exact still frame is requested. If that still-frame decode fails during pause, the app no longer replaces the valid last frame with a black cover.
-- Removed the `OPTION_CLOSEST_SYNC` thumbnail fallback. It can return the same GOP keyframe for different requested timestamps; the normal closest-frame path remains, with Media3 as the fallback when platform decoding fails.
+- Removed the `OPTION_CLOSEST_SYNC` thumbnail fallback. It can return the same GOP keyframe for different requested timestamps; the normal closest-frame path remains, with Media3 as the fallback when platform decoding fails. The Media3 fallback extractor is now reused per decoder worker/source URI instead of being rebuilt for every cell.
 - Filmstrip cells now expose their source-time intervals. When zooming out, a cell can immediately reuse an already decoded thumbnail that falls inside that cell's time range. The cell nearest the playhead remains exact to protect preview alignment.
 - Removed the Shorts-only 9:16 cell geometry. The video lane retains its portrait-reference height, while each cell's width is derived from the actual decoded frame aspect ratio. Portrait, landscape and square sources are fitted without cropping or stretching. A restored/imported clip uses the portrait fallback only until its first thumbnail reveals the actual ratio; the cached frames are retained when the lane is rebuilt.
 - Added unit coverage for filmstrip cell ranges and portrait / landscape / square thumbnail sizing.
 
 Validation:
-- Verify Android build #466: unit tests and `assembleDebug` passed on commit `386f708b4f95c300e90a8217dfbe9d04ec9db770`.
-- API 35 screenshot/editor run #678 is checking the same app-source changes; result pending at the time of this update.
+- Verify Android build #474: unit tests and `assembleDebug` passed on commit `283a09e341489d77aac964f1bd944a0250bcd2b1`.
+- The API 35 screenshot/editor workflow now also fingerprints every fully visible thumbnail and requires distinct frames for distinct sample times; run #682 is in progress.
 - Still required before calling this complete: prove distinct timestamps produce distinct fixture frames, measure initial filmstrip fill time, verify zoom-out causes no unnecessary re-decodes, exercise Play/Stop visually, and capture landscape/square filmstrips. No physical-phone acceptance is claimed.
 - No app version metadata was changed. No APK is being offered as a replacement, and version 395 remains blocked.
