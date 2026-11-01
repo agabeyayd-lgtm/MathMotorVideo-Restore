@@ -1,3 +1,15 @@
+## Single visible timeline cleanup — 2026-11-01
+
+- Removed the obsolete horizontal clip-card strip (`clipScroll` / `clipList`) from the editor layout. It was created as a hidden child of the timeline card, then responsive keyboard-close handling could set it visible again; that created a second, competing clip row beside the real multi-track timeline.
+- Removed the old clip-list drag-reorder renderer and its now-unused `reorderClip` path. Clip selection, context actions, position drag, and trim remain on the visible video lane; independent text/audio lanes remain in the shared timeline.
+- Replaced the old list refresh wrapper with `refreshTimelineAfterClipChange()`, which updates the preview empty state and rebuilds the one visible timeline. Removed a duplicate timeline rebuild in `selectTimelineClip`.
+- Updated the add-video status message to describe long-press drag as changing the clip's timeline position.
+- Source commits: `0e59f9120dfc4e1799fe1a59ab8d4e947dcf7a2b` (remove old strip) and `7706d01d773e5c7631638f7d88949c32901f2688` (interaction copy / redundant refresh cleanup).
+- [x] Static source audit: no remaining `clipList`, `clipScroll`, `refreshClipList`, or `reorderClip` references in `VideoEditorActivity.kt`.
+- [ ] Full Gradle unit tests and Android debug compilation on this commit.
+- [ ] Fresh emulator screenshots: confirm only one timeline appears before, during and after keyboard open/close; recheck selected clip actions, drag-to-position, trim handles and multi-layer alignment.
+- No APK has been built from this source change; no merge, signed release or version 395.
+
 ## Timeline card empty-space correction — 2026-11-01
 
 - Emulator screenshot review of artifact from run #41314535629 showed the timeline card reserving a large empty lower area on the compact 320×640 profile. The earlier sizing formula added 112–116dp of extra height after already measuring the ruler and lane rows.
