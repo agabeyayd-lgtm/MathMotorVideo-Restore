@@ -5239,10 +5239,9 @@ class VideoEditorActivity : Activity() {
             // The surrounding area matches the clip surface; it is not a black letterbox.
             setBackgroundColor(Color.rgb(27, 39, 54))
         }
-        // Render a readable, continuous filmstrip: each frame gets a near-fixed
-        // 52dp-wide cell instead of the previous 12dp sliver. The cells fill the clip
-        // exactly, so there is no second independently moving strip behind them.
-        // Bound the count to keep thumbnail decoding and cache pressure predictable.
+        // Render one continuous filmstrip. Cell width follows the source aspect
+        // ratio at a shared strip height; cells fill the clip without a second
+        // independently moving strip. Bound the count to control decode/cache pressure.
         val targetThumbnailWidth = TimelineThumbnailMath.thumbnailCellWidthPx(
             height,
             timelineVideoAspectRatio(clip.uri)
@@ -5257,8 +5256,8 @@ class VideoEditorActivity : Activity() {
             val cellWidth = baseCellWidth + if (slot < extraPixels) 1 else 0
             val cellHeight = height.coerceAtLeast(1)
             val image = ImageView(this).apply {
-                // The complete Shorts frame is reduced into a matching 9:16 cell.
-                // FIT_CENTER preserves every edge; no source pixels are cropped.
+                // Fit the complete source frame into its aspect-aware cell.
+                // FIT_CENTER preserves every edge; no source pixels are cropped or stretched.
                 scaleType = ImageView.ScaleType.FIT_CENTER
                 setBackgroundColor(Color.TRANSPARENT)
                 contentDescription = "Klip karesi"
