@@ -794,3 +794,16 @@ Source commits on PR #11:
 - Empty thumbnail cells use black rather than gray-blue. Decoded source frames are cropped and downsampled into 192×108 cached bitmaps.
 
 **Validation still required:** run unit tests and Kotlin compilation on this exact PR head; inspect the 10-second test video at fit, medium and close zoom; confirm newly revealed cells show distinct frames without long gray/blank waits; repeat with two clips and verify the playhead, ruler, zero anchor and trailing + control remain stable. Physical-phone acceptance is still pending. PR #11 remains draft/unmerged; version 395 remains blocked.
+
+
+## Editor polish batch — 2026-11-01 (requested; implementation and verification pending)
+
+The user reviewed the current phone build and requested one focused editor polish batch. Keep all work on PR #11; do not create version 395 or merge until the complete batch is implemented and verified.
+
+- [ ] **Preview/filmstrip frame synchronization:** the preview frame at the playhead must match the timestamp represented by the filmstrip under the fixed playhead. Prevent stale/partial frames during fast scrubbing or thumbnail decoding; do not present an old frame as the current timestamp. Preserve source aspect ratio in the preview.
+- [ ] **CapCut-style bottom tools:** change Edit/Text/Audio/Project contextual tools from the current panel that appears above the preview to a bottom-anchored, independently scrollable tool drawer above the fixed bottom dock. Keep the preview and timeline usable/visible; handle short screens and the software keyboard without clipping or pushing controls off-screen.
+- [ ] **Remove redundant UI copy:** remove the “KLİP DÜZENLEME” heading, the selected-clip/source-duration information line, and the redundant bottom “Başlangıç/Bitiş” status strip. Preserve actual trim controls and editing functionality.
+- [ ] **Zero-origin trim invariant:** when a clip is timeline-aligned at 0, trimming its source start must not move its timeline start to the right or create a leading gray gap. Keep source trim time and timeline placement independent.
+- [ ] **Dynamic CapCut-style ruler:** use scale-dependent major/minor tick intervals and labels (e.g. seconds and intermediate subdivisions), updating smoothly as timeline zoom changes; avoid a fixed 1-second-only ruler.
+
+**Acceptance before release:** add/update focused math and UI tests; run Kotlin compilation and unit tests on the final PR head; inspect fresh emulator screenshots and exercise preview/filmstrip sync, rapid scrubbing, trim-at-zero, ruler density at multiple zoom levels, bottom drawer on short screen/keyboard, and all retained editing controls on the user's phone. Keep PR #11 draft/unmerged and version 395 blocked until the user accepts the complete batch.
