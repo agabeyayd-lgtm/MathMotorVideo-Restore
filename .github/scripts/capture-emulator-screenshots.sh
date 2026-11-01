@@ -159,17 +159,25 @@ recover_system_anr() {
     if [ ! -s "$xml" ] || ! grep -Eiq "isn.t responding|not responding" "$xml"; then
       return 0
     fi
-    # Recover Android's own system-server/System UI dialog, but do not hide
-    # an ANR raised by MathMotor itself: that must fail the smoke test.
-    # Pixel Launcher/Nexus Launcher is an emulator system surface, not MathMotor.
-    # Recover only these known Android shell dialogs; app-process ANRs still fail.
-    if ! grep -Eiq "(Process system|System UI|Pixel Launcher|com\\.google\\.android\\.apps\\.nexuslauncher|com\\.android\\.launcher3).*isn.t responding" "$xml"; then
+    # Recover Android-owned UI ANRs, including the launcher. On cold API 35
+    # boots Pixel/Nexus Launcher can briefly ANR before the app is displayed;
+    # that is not an app failure. Never dismiss a MathMotor ANR.
+    if ! grep -Eiq "(Process system|System UI|Pixel Launcher|Nexus Launcher|NexusLauncher|com\\.google\\.android\\.apps\\.nexuslauncher).*isn.t responding" "$xml"; then
       echo "Application-level ANR detected in $xml; refusing to dismiss it as emulator noise"
       return 1
     fi
 
-    local wait_coords
-    wait_coords="$(python3 - "$xml" <<'PY'
+    # The API 35 Google APIs image can leave a stalled Pixel/Nexus Launcher
+    # ANR dialog above an already-running app. Close that launcher process so
+    # Android can restart it; do not leave the modal dialog covering MathMotor.
+    # For other explicitly system-owned ANRs, retain the non-destructive Wait action.
+    local recovery_action="wait"
+    if grep -Eiq "(Pixel Launcher|Nexus Launcher|NexusLauncher|com\\.google\\.android\\.apps\\.nexuslauncher).*isn.t responding" "$xml"; then
+      recovery_action="close app"
+    fi
+
+    local recovery_coords
+    recovery_coords="$(python3 - "$xml" "$recovery_action" <<'PY'
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -179,8 +187,9 @@ try:
 except (OSError, ET.ParseError):
     raise SystemExit(0)
 
+wanted = sys.argv[2]
 for node in root.iter("node"):
-    if node.attrib.get("text", "").strip().lower() == "wait":
+    if node.attrib.get("text", "").strip().lower() == wanted:
         match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
         if match:
             x1, y1, x2, y2 = map(int, match.groups())
@@ -188,19 +197,19 @@ for node in root.iter("node"):
             break
 PY
 )"
-    if [ -z "$wait_coords" ]; then
-      echo "System ANR dialog detected but its Wait button could not be located in $xml"
+    if [ -z "$recovery_coords" ]; then
+      echo "System ANR dialog detected but its '$recovery_action' button could not be located in $xml"
       return 1
     fi
 
-    echo "System ANR dialog detected (attempt $attempt/3); tapping Wait at $wait_coords"
-    timeout -k 2s 8s adb -s emulator-5554 shell input tap $wait_coords || true
+    echo "System ANR dialog detected (attempt $attempt/3); tapping '$recovery_action' at $recovery_coords"
+    timeout -k 2s 8s adb -s emulator-5554 shell input tap $recovery_coords || true
     SYSTEM_ANR_RECOVERED=true
     sleep 5
     dump_hierarchy "$remote_name" "$xml" || true
   done
 
-  if [ -s "$xml" ] && grep -Eiq "(Process system|System UI|Pixel Launcher|com\\.google\\.android\\.apps\\.nexuslauncher|com\\.android\\.launcher3).*isn.t responding" "$xml"; then
+  if [ -s "$xml" ] && grep -Eiq "(Process system|System UI|Pixel Launcher|Nexus Launcher|NexusLauncher|com\\.google\\.android\\.apps\\.nexuslauncher).*isn.t responding" "$xml"; then
     echo "System ANR dialog is still present after recovery attempts"
     return 1
   fi
