@@ -2,7 +2,7 @@
 
 ## Timeline frame/zoom repair — 2026-11-01
 
-Source changes on `fix/frame-accurate-timeline-zoom`:
+Implementation from PR #15 was merged into `main` in commit `0acdbb3`. The feature branch is historical; continue development only on `main`.
 - Added integer `TimelineFrameMath` with a 30 FPS project default and nearest-frame seek snapping.
 - Timeline scrub requests and playback-synchronized playhead display are aligned to project-frame boundaries.
 - Added a timeline-scoped two-finger pinch recognizer that preserves the time under the pinch anchor after zoom.
@@ -126,5 +126,6 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 
 - **Confirmed before failure:** debug APK build succeeded; deterministic fixture generation succeeded; ADB install succeeded; `MainActivity` launched and Android logged it as displayed after 2.584 seconds.
 - **Actual failure:** the screenshot workflow exited 8 after UI hierarchy inspection found `Pixel Launcher isn't responding`. `dumpsys window lastanr` identifies `com.google.android.apps.nexuslauncher/.NexusLauncherActivity`; the app activity is present behind the system dialog. Available diagnostics do not identify a MathMotor crash or MathMotor-owned ANR.
-- **Harness correction:** for a confirmed Pixel/Nexus Launcher ANR only, dismiss the launcher with its `Close app` action so Android can restart it; retain the existing `Wait` recovery for other explicitly system-owned ANRs. Any MathMotor-owned ANR remains a hard failure and must never be dismissed as emulator noise.
+- **Root cause at #664:** the system-ANR allowlist did not include Pixel/Nexus Launcher, so the dialog was misclassified as an app-level ANR and the script exited before pressing `Wait`. Commit `1baa987` added launcher recognition; #665 then completed the screenshot/editor/autosave smoke flow. No launcher ANR appeared in #665, so its recovery action was not exercised.
+- **Follow-up harness change:** when a Pixel/Nexus Launcher ANR is actually present, select its `Close app` action to clear the stalled launcher process; retain `Wait` for other explicitly system-owned ANRs. Any MathMotor-owned ANR remains a hard failure and must never be dismissed as emulator noise.
 - No application source or version metadata is changed by this correction. The full screenshot/editor/autosave smoke flow still needs a successful rerun. No physical-device validation has occurred. VersionCode 394 / Build 61 remains the only baseline; version 395 remains blocked.
