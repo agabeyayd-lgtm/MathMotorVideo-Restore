@@ -213,3 +213,21 @@ Do not mark the existing release checklist items complete until the relevant aut
 - Main-branch runs #665 and #666 both passed the screenshot/editor/autosave smoke flow. In #666, APK assembly and installation succeeded, the app opened, the eight-second fixture was inserted (`durationMs=8023`, `clipCount=1`), and the draft autosave marker was recorded. Home, empty-editor, video-editor and drafts-home screenshots were uploaded.
 - No launcher ANR appeared in #666's captured accessibility hierarchies, so the newly added Pixel/Nexus Launcher `Close app` fallback was not exercised. The earlier #664 recognition failure remains explained by the missing launcher allowlist entry, corrected in commit `1baa987`.
 - These checks do not verify thumbnail-frame fidelity, every trim/drag interaction, audio/text editing, export correctness, Undo/Redo, or physical-device behavior. Keep the broader README acceptance checklist open and version 395 blocked. The screenshot workflow uploads diagnostics/screenshots, not a signed release APK.
+
+
+
+## Filmstrip thumbnail responsiveness work — 2026-11-01
+
+Source changes now on `main` (Build 61 remains the installed baseline; version 395 is still blocked):
+
+- Pause/Stop now keeps the last rendered preview visible while the exact still frame is requested. If that still-frame decode fails during pause, the app no longer replaces the valid last frame with a black cover.
+- Removed the `OPTION_CLOSEST_SYNC` thumbnail fallback. It can return the same GOP keyframe for different requested timestamps; the normal closest-frame path remains, with Media3 as the fallback when platform decoding fails.
+- Filmstrip cells now expose their source-time intervals. When zooming out, a cell can immediately reuse an already decoded thumbnail that falls inside that cell's time range. The cell nearest the playhead remains exact to protect preview alignment.
+- Removed the Shorts-only 9:16 cell geometry. The video lane retains its portrait-reference height, while each cell's width is derived from the actual decoded frame aspect ratio. Portrait, landscape and square sources are fitted without cropping or stretching. A restored/imported clip uses the portrait fallback only until its first thumbnail reveals the actual ratio; the cached frames are retained when the lane is rebuilt.
+- Added unit coverage for filmstrip cell ranges and portrait / landscape / square thumbnail sizing.
+
+Validation:
+- Verify Android build #466: unit tests and `assembleDebug` passed on commit `386f708b4f95c300e90a8217dfbe9d04ec9db770`.
+- API 35 screenshot/editor run #678 is checking the same app-source changes; result pending at the time of this update.
+- Still required before calling this complete: prove distinct timestamps produce distinct fixture frames, measure initial filmstrip fill time, verify zoom-out causes no unnecessary re-decodes, exercise Play/Stop visually, and capture landscape/square filmstrips. No physical-phone acceptance is claimed.
+- No app version metadata was changed. No APK is being offered as a replacement, and version 395 remains blocked.
