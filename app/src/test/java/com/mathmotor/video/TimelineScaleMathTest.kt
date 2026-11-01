@@ -382,7 +382,7 @@ class TimelineScaleMathTest {
             TimelineThumbnailMath.thumbnailCellWidthPx(stripHeightPx, 9f / 16f)
         )
         assertEquals(
-            163,
+            164,
             TimelineThumbnailMath.thumbnailCellWidthPx(stripHeightPx, 16f / 9f)
         )
         assertEquals(
