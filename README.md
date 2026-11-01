@@ -1070,3 +1070,13 @@ The user's explicit rule supersedes earlier filmstrip notes that requested 16:9 
 - Logcat records successful editor entry, clip metadata read and clip import; the timeline sync sample remained at the centered playhead.
 - The workflow's app-launch/capture step ended as **cancelled**, despite the diagnostic artifact being uploaded. Therefore this is a useful visual smoke capture, not a fully green emulator run or proof of pinch/scrub behavior.
 - Physical-phone acceptance and all four integrated filmstrip goals remain open.
+
+
+## Duration readout aligned with the ruler — 2026-11-01
+
+- [x] The current/total duration readout is placed in the ruler row's existing 54dp left gutter; it no longer consumes a separate vertical row.
+- [x] Ruler ticks and all timeline lanes retain the same horizontal origin.
+- [x] Timeline card sizing reserves zero extra height for a separate time row.
+- [ ] Run fresh PR-head unit tests and debug APK build for the exact current PR head; earlier Build #486 used an older SHA and is not evidence for this source.
+- [ ] Review fresh emulator screenshot and verify the reduced timeline height on a physical phone.
+- PR #11 remains draft/unmerged. No release, merge, or version 395.
