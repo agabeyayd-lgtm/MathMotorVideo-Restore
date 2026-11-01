@@ -21,7 +21,7 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - Do not bump `versionCode` or `versionName` during this work until the release gate is met and the user explicitly authorizes the release.
 - A successful source build is not the same as a tested, published APK. Keep the original media safe; export to a new file.
 
-## Timeline frame/zoom repair — 2026-11-01 (source changed; verification pending)
+## Timeline frame/zoom repair — 2026-11-01 (unit/build green; emulator verification pending)
 
 A focused source review found that the existing timeline already shares one millisecond-to-pixel scale across its lanes and caches timestamped thumbnails, but it did not have a project-frame conversion layer. The timeline zoom controls also had no two-pointer pinch detector, and zoom did not preserve the time under a gesture anchor. The current UI code does not contain a dedicated adaptive ruler renderer; adaptive ruler ticks/labels therefore remain open work, not an existing feature.
 
@@ -32,13 +32,15 @@ A focused source review found that the existing timeline already shares one mill
 - Added a two-finger pinch recognizer scoped to the timeline area. It calculates the time beneath the pinch focus and restores that same time to the same screen offset after zooming, within the scrollable range.
 - Added unit tests for 30 FPS boundaries, nearest-frame snapping, long-timeline conversion consistency, custom FPS values and invalid FPS rejection.
 - Extracted pinch-anchor scroll positioning into shared timeline scale math and added a regression test proving the same timestamp remains under the viewport anchor after zoom.
-- Enabled the unit-test/debug-build verification workflow for pull requests; this is intended to validate source without publishing an APK.
+- Enabled the unit-test/debug-build verification workflow for pull requests; this validates source without publishing an APK.
+- Added `TimelinePinchGestureTest`, a focused Android UI Automator test against the deterministic eight-second emulator video. It checks pinch-out, pinch-in, five-second ruler-anchor stability, and one-finger scrolling on the video lane moving the ruler in sync.
+- Updated the dedicated API 35 emulator workflow to run on relevant pull-request changes and execute this focused gesture test after preparing the sample video.
 - No app version metadata was changed. Version 395 remains blocked.
 
 ### Still open / not yet proven
 
-- [ ] Run the new `TimelineFrameMathTest` and all existing unit tests.
-- [ ] Build the Debug APK and run the focused emulator interaction test for pinch-in/pinch-out, anchor stability, scroll synchronization across all lanes, and one-finger scroll after pinch.
+- [x] Run `testDebugUnitTest` and `assembleDebug` — GitHub Actions run [#413](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41318203123) completed successfully on commit `55d8cfd53266f7a858a39a078974df6d9aa5da3b`.
+- [ ] Run the new `TimelinePinchGestureTest` on the API 35 emulator: pinch-out/in, five-second ruler-anchor stability, and one-finger video-lane scrolling that must move the ruler with it. The PR-triggered emulator workflow has been wired but its first result is still pending.
 - [ ] Confirm on a real phone that the timeline gestures do not interfere with trim handles, text/audio lane dragging, or clip selection.
 - [ ] Implement the missing adaptive ruler renderer (coarse intervals when zoomed out; seconds and frame ticks when zoomed in).
 - [ ] Implement and verify the requested stationary center playhead behavior. The current playhead line is still positioned from absolute timeline time minus scroll; this source change does not claim to have completed the CapCut center-playhead interaction.
