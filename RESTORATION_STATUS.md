@@ -1,5 +1,47 @@
 # MathMotor Video — current project status
 
+## PR #11 existing-work audit — 2026-11-01 (after emulator #620)
+
+This audit separates implementation already present from behavior actually exercised. Do not restart or re-implement the source items below just because older checklist entries remain unchecked.
+
+### Confirmed on the current PR head `6ae6a9d4964ffbdbd4b7101370c58f964280ed45`
+
+- [x] Verify Android #376: Kotlin compilation and unit tests passed.
+- [x] Debug APK build #455 passed. This is a debug verification artifact, not a version 395 release.
+- [x] Emulator #620 passed live playback synchronization: 17 samples, player position 283→4653 ms, two horizontal timeline lanes remained synchronized, fixed playhead/Play center at x=160, and ruler/video zero edges shared a coordinate.
+- [x] Emulator #620 exercised filmstrip scrubbing in both directions: left advanced to 1025 ms; right returned to 233 ms.
+- [x] Emulator #620 aligned one filmstrip cell with the playhead and verified one preview/thumbnail pair: sample 211 ms, preview/thumbnail center RGB delta 29 (threshold 55). This proves one sampled frame match, not all timestamps or behavior under sustained decode load.
+- [x] Emulator #620 confirmed automatic draft save and that the draft appears in the home-screen draft list. It did not exercise a complete manual save → close → reopen → compare workflow.
+- [x] Screenshot review: the current screen has the top export bar, large preview, one centered Play/Pause control, time/ruler row, timeline filmstrip and bottom tool dock.
+
+### Already implemented in source (do not rebuild from scratch; acceptance still required)
+
+- [x] Activity-level two-finger pinch handling, cancellation of an in-progress child gesture, anchored zoom math, and unit coverage exist.
+- [x] Shared px/sec scale, common horizontal scroll synchronization, fixed center playhead, fit calculation and furthest-layer project-duration calculation exist with pure unit tests.
+- [x] Clip body/edge interaction handlers, trim math, zero-origin trim behavior, independent timeline strip ordering/placement and overlap-aware video sequence construction exist in source.
+- [x] Text timing/appearance controls, music source in/out controls, sound-effect controls, and independent layer timing/state exist in source.
+- [x] Bottom contextual panel, fixed bottom dock, responsive-height/keyboard state handling exist in source.
+- [x] MP4 export path, local project draft persistence and draft resume list exist in source.
+- [x] Adaptive filmstrip sampling, prioritized asynchronous thumbnail decoding, paused exact-frame preview overlay and stale-generation protection exist in source.
+
+### Still genuinely unverified (these are the remaining acceptance tasks, not missing source by default)
+
+- [ ] Exercise real two-finger pinch in/out on emulator: midpoint anchor, every lane/ruler staying aligned, and no accidental first-finger clip move/trim.
+- [ ] Exercise one-finger clip selection, body move, left/right trim, split/delete and empty-area deselection; verify unrelated items never move.
+- [ ] Exercise independent positioning and overlap for multiple video clips, multiple text layers, music and sound effects; verify lane reorder and save/reopen persistence.
+- [ ] Open each bottom contextual panel and test scroll/touch targets; test text editing with the software keyboard open on the compact viewport. The #620 screenshot has the panel closed, so it does not prove this.
+- [ ] Verify text/audio preview and final MP4 timing, selected audio source range/looping, silence outside the range, duration and source-video preservation.
+- [ ] Complete a manual project save → close editor/app → reopen project → compare all clip/layer positions, durations, zoom and scroll state.
+- [ ] Inspect a varied real-content video (portrait and landscape) under rapid scrubbing/decode load; #620 used a deterministic colour-bar test clip and one pixel-match sample.
+- [ ] Physical-phone acceptance remains outstanding.
+
+### Checklist reconciliation note
+
+Older checklist sections contain duplicated or superseded requirements (including conflicting playhead colour and contextual-panel placement). The latest user-provided CapCut reference is authoritative: white fixed playhead over the timeline; bottom dock fixed to the bottom; selected contextual drawer above that dock. Treat older conflicting entries as historical notes, not new work.
+
+PR #11 remains draft and unmerged. Installed versionCode 394 / build 61 is unchanged. Do not create version 395 until the remaining acceptance gates pass and the user explicitly authorizes release.
+
+
 ## Thumbnail-alignment emulator attempt — 2026-11-01
 
 - PR-head Verify #375 and APK build #454 passed after changing filmstrip samples to cell-time midpoints.
