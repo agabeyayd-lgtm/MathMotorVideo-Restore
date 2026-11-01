@@ -59,24 +59,35 @@ internal object TimelineThumbnailMath {
      * represents, so a playhead centered on a cell can show a different moment
      * from the preview. This maps each bitmap to the midpoint of its own interval.
      */
-    fun sampleTime(startMs: Long, endMs: Long, count: Int, index: Int): Long {
+    private fun boundary(span: Long, count: Int, cell: Int): Long {
+        val safeCount = count.coerceAtLeast(1)
+        val whole = span / safeCount
+        val remainder = span % safeCount
+        val cellIndex = cell.coerceIn(0, safeCount).toLong()
+        return whole * cellIndex + (remainder * cellIndex) / safeCount
+    }
+
+    /** Inclusive source-time start of a filmstrip cell. */
+    fun cellStartTime(startMs: Long, endMs: Long, count: Int, index: Int): Long {
         if (endMs <= startMs) return startMs
         val safeCount = count.coerceAtLeast(1)
         val slot = index.coerceIn(0, safeCount - 1)
-        val span = endMs - startMs
+        return startMs + boundary(endMs - startMs, safeCount, slot)
+    }
 
-        // Calculate each interval boundary with quotient/remainder arithmetic to
-        // avoid multiplying the full duration by a potentially large slot index.
-        fun boundary(cell: Int): Long {
-            val whole = span / safeCount
-            val remainder = span % safeCount
-            val cellIndex = cell.toLong()
-            return whole * cellIndex + (remainder * cellIndex) / safeCount
-        }
+    /** Exclusive source-time end of a filmstrip cell. */
+    fun cellEndTime(startMs: Long, endMs: Long, count: Int, index: Int): Long {
+        if (endMs <= startMs) return startMs
+        val safeCount = count.coerceAtLeast(1)
+        val slot = index.coerceIn(0, safeCount - 1)
+        return startMs + boundary(endMs - startMs, safeCount, slot + 1)
+    }
 
-        val cellStart = boundary(slot)
-        val cellEnd = boundary(slot + 1)
+    fun sampleTime(startMs: Long, endMs: Long, count: Int, index: Int): Long {
+        if (endMs <= startMs) return startMs
+        val cellStart = cellStartTime(startMs, endMs, count, index)
+        val cellEnd = cellEndTime(startMs, endMs, count, index)
         val midpoint = cellStart + (cellEnd - cellStart) / 2L
-        return startMs + midpoint.coerceIn(0L, (span - 1L).coerceAtLeast(0L))
+        return midpoint.coerceIn(startMs, (endMs - 1L).coerceAtLeast(startMs))
     }
 }
