@@ -690,7 +690,7 @@ class VideoEditorActivity : Activity() {
                     currentPlayer.pause()
                     currentPlayer.playWhenReady = false
                     timelinePlaybackState = TimelinePlaybackState.PAUSED
-                    requestPreviewFrameAt(timelinePlayheadMs)
+                    requestPreviewFrameAt(timelinePlayheadMs, keepPreviousFrame = true)
                     status.text = "Önizleme duraklatıldı."
                 } else {
                     timelinePreviewError = null
@@ -5440,11 +5440,15 @@ class VideoEditorActivity : Activity() {
     }
 
     /** Cover the player immediately while a new playhead frame is being decoded. */
-    private fun showPreviewFramePending(): Long {
+    private fun showPreviewFramePending(keepPreviousFrame: Boolean = false): Long {
         val requestId = previewFrameRequestGeneration.incrementAndGet()
         pendingPreviewFrameTask?.let { timelineThumbnailExecutor.remove(it) }
         pendingPreviewFrameTask = null
         if (!::previewFrameOverlay.isInitialized) return requestId
+        // Pausing playback must not blank the last frame while a still is decoded.
+        // The PlayerView already contains the last rendered video frame; if an overlay
+        // is visible, keep that bitmap until the replacement is ready.
+        if (keepPreviousFrame) return requestId
         previewFrameOverlay.setImageDrawable(null)
         previewFrameBitmap?.let { if (!it.isRecycled) it.recycle() }
         previewFrameBitmap = null
@@ -5486,13 +5490,16 @@ class VideoEditorActivity : Activity() {
      * playhead. The cover stays black until that timestamp's own frame is ready;
      * no previous/nearby frame is shown as though it were current.
      */
-    private fun requestPreviewFrameAt(projectTimeMs: Long) {
+    private fun requestPreviewFrameAt(
+        projectTimeMs: Long,
+        keepPreviousFrame: Boolean = false
+    ) {
         if (!::previewFrameOverlay.isInitialized) return
         if (clips.isEmpty()) {
             hidePreviewFrameOverlay()
             return
         }
-        val requestId = showPreviewFramePending()
+        val requestId = showPreviewFramePending(keepPreviousFrame)
 
         val lastFrameMs = (totalOutputDurationMs() - 1L).coerceAtLeast(0L)
         val safeProjectTimeMs = projectTimeMs.coerceIn(0L, lastFrameMs)
@@ -5543,10 +5550,13 @@ class VideoEditorActivity : Activity() {
                         "TimelineFrameSyncTest",
                         "TIMELINE_PREVIEW_FRAME_FAILED projectMs=$safeProjectTimeMs sourceMs=$sourceTimeMs"
                     )
-                    // Keep the neutral black cover rather than showing a stale frame.
-                    previewFrameOverlay.setImageDrawable(null)
-                    previewFrameOverlay.setBackgroundColor(Color.BLACK)
-                    previewFrameOverlay.visibility = View.VISIBLE
+                    // When pausing, preserve the last rendered frame if decoding
+                    // the exact still fails; never replace a valid preview with black.
+                    if (!keepPreviousFrame) {
+                        previewFrameOverlay.setImageDrawable(null)
+                        previewFrameOverlay.setBackgroundColor(Color.BLACK)
+                        previewFrameOverlay.visibility = View.VISIBLE
+                    }
                 }
             }
         }
@@ -5632,8 +5642,6 @@ class VideoEditorActivity : Activity() {
                 null
             } ?: runCatching {
                 activeRetriever.getFrameAtTime(frameTimeUs, MediaMetadataRetriever.OPTION_CLOSEST)
-            }.getOrNull() ?: runCatching {
-                activeRetriever.getFrameAtTime(frameTimeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
             }.getOrNull()
         }
         if (platformFrame != null) return platformFrame
