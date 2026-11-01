@@ -3331,12 +3331,15 @@ class VideoEditorActivity : Activity() {
     private fun ensureTimelinePreviewLoaded(){
         if(timelinePreviewLoaded&&timelineCompositionPlayer!=null)return
         if(clips.isEmpty())return
+        if (timelineSyncTestEnabled) android.util.Log.i("TimelineSyncTest",
+            "TIMELINE_PREVIEW_INIT clips=${clips.size} playheadMs=$timelinePlayheadMs playerViewInitialized=${::playerView.isInitialized}")
         previewSingleClip=false
         pauseActivePreview()
         runCatching{timelineCompositionPlayer?.release()}
         timelineCompositionPlayer=null
         try{
             val comp=CompositionPlayer.Builder(this).build()
+            if (timelineSyncTestEnabled) android.util.Log.i("TimelineSyncTest", "TIMELINE_PREVIEW_BUILDER_OK")
             comp.addListener(object:androidx.media3.common.Player.Listener{
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
                     if (isPlaying) hidePreviewFrameOverlay()
@@ -3364,12 +3367,18 @@ class VideoEditorActivity : Activity() {
                 }
             })
             comp.setComposition(buildVideoTimelineComposition())
+            if (timelineSyncTestEnabled) android.util.Log.i("TimelineSyncTest", "TIMELINE_PREVIEW_COMPOSITION_OK")
             comp.prepare()
             comp.playWhenReady=false
             timelineCompositionPlayer=comp
+            if (timelineSyncTestEnabled) android.util.Log.i("TimelineSyncTest", "TIMELINE_PREVIEW_ASSIGNED")
             playerView.player=comp
             timelinePreviewLoaded=true
+            if (timelineSyncTestEnabled) android.util.Log.i("TimelineSyncTest", "TIMELINE_PREVIEW_READY")
         }catch(error:Throwable){
+            android.util.Log.e("MathMotorTimeline", "Timeline preview setup failed", error)
+            if (timelineSyncTestEnabled) android.util.Log.e("TimelineSyncTest",
+                "TIMELINE_PREVIEW_FAILED type=${error.javaClass.name} message=${error.message}", error)
             timelineCompositionPlayer?.release();timelineCompositionPlayer=null;timelinePreviewLoaded=false
             playerView.player=player
             status.text="Zaman çizelgesi önizlemesi kurulamadı: ${error.message ?: error.javaClass.simpleName}"
