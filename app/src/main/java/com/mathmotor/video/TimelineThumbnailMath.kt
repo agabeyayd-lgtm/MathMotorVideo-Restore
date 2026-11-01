@@ -7,6 +7,7 @@ package com.mathmotor.video
  * thumbnail cells grows with pinch zoom and shrinks when the user zooms out.
  */
 internal object TimelineThumbnailMath {
+    private fun Float.roundToInt(): Int = kotlin.math.roundToInt(this)
     // Keep the video lane tall enough for the current portrait reference, but
     // calculate each thumbnail's width from the actual source aspect ratio.
     const val THUMBNAIL_STRIP_HEIGHT_DP = 92
@@ -17,7 +18,7 @@ internal object TimelineThumbnailMath {
         val height = stripHeightPx.coerceAtLeast(1)
         val ratio = sourceAspectRatio.takeIf { it.isFinite() && it > 0f }
             ?.coerceIn(0.25f, 4f) ?: DEFAULT_SOURCE_ASPECT_RATIO
-        return (height * ratio).toInt().coerceAtLeast(1)
+        return (height * ratio).roundToInt().coerceAtLeast(1)
     }
 
     /**
