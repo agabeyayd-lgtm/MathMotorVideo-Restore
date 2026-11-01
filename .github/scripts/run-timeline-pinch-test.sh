@@ -15,15 +15,11 @@ if [ "$device_state" != "device" ]; then
   exit 1
 fi
 
-echo "Install the debug APK for the isolated timeline gesture test"
-timeout -k 3s 180s adb -s emulator-5554 install --no-streaming -r app/build/outputs/apk/debug/app-debug.apk
-
-echo "Stage the deterministic video directly into the app's private files directory"
-timeout -k 2s 30s adb -s emulator-5554 shell -T \
-  "run-as com.mathmotor.video.next sh -c 'mkdir -p files && cat > files/editor-test-video.mp4'" \
-  < "$fixture"
+echo "Verify the deterministic video staged by the preceding editor smoke flow"
+# Do not reinstall the app here: install -r can reset app state on some runners.
+# The screenshot flow already installed the exact same debug APK and staged the fixture.
 timeout -k 2s 8s adb -s emulator-5554 shell \
-  "run-as com.mathmotor.video.next test -s files/editor-test-video.mp4"
+  "run-as com.mathmotor.video.next test -s /data/user/0/com.mathmotor.video.next/files/editor-test-video.mp4"
 
 echo "Run only the targeted pinch/anchor/shared-scroll instrumentation test"
 gradle --no-daemon --console=plain connectedDebugAndroidTest \
