@@ -374,15 +374,32 @@ class TimelineScaleMathTest {
 
 
     @Test
-    fun shortsThumbnailCellUsesTheFullPortraitFrameAspectRatio() {
-        val cellWidthPx = 156
-        val cellHeightPx = TimelineThumbnailMath.portraitCellHeightPx(cellWidthPx)
+    fun thumbnailCellWidthFollowsPortraitLandscapeAndSquareSourceRatios() {
+        val stripHeightPx = 92
 
-        assertEquals(277, cellHeightPx)
         assertEquals(
-            9f / 16f,
-            cellWidthPx.toFloat() / cellHeightPx.toFloat(),
-            0.002f
+            52,
+            TimelineThumbnailMath.thumbnailCellWidthPx(stripHeightPx, 9f / 16f)
+        )
+        assertEquals(
+            163,
+            TimelineThumbnailMath.thumbnailCellWidthPx(stripHeightPx, 16f / 9f)
+        )
+        assertEquals(
+            92,
+            TimelineThumbnailMath.thumbnailCellWidthPx(stripHeightPx, 1f)
+        )
+    }
+
+    @Test
+    fun invalidThumbnailAspectRatioFallsBackToPortraitWithoutCrashing() {
+        assertEquals(
+            52,
+            TimelineThumbnailMath.thumbnailCellWidthPx(92, Float.NaN)
+        )
+        assertEquals(
+            52,
+            TimelineThumbnailMath.thumbnailCellWidthPx(92, 0f)
         )
     }
 
