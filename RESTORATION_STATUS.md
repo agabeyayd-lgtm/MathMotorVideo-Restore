@@ -334,3 +334,26 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 - Current-branch signed install → update-over → relaunch preflight #10 is PASS on emulator. It is not physical-device acceptance and does not validate in-app updater delivery.
 - Next acceptance is on the actual phone: keyboard-open editing, timeline gestures/trim/scroll/pinch, thumbnail readability/loading, preview/dock usability and exported-video playback/output. Separately test delivery through the in-app updater flow.
 - Installed baseline remains versionCode 394 / build 61. Version 395 remains blocked. Do not merge PR #10, bump versionCode/versionName, create or publish 395, publish an APK, tag a release or activate the updater unless all required gates pass and the user explicitly authorizes release.
+
+
+## Physical-phone CapCut comparison — newly observed targets (2026-11-01)
+
+Using the user's two expanded-timeline screenshots (MathMotor vs CapCut), add these as open acceptance items:
+
+1. Two-finger pinch must change the timeline time scale/ruler without changing filmstrip height, thumbnail tile geometry or thumbnail density. Keep all rows aligned to the same time mapping; clip start/end, trim bounds and actual duration must remain unchanged.
+2. Move current-time / total-duration readout from the playback row to directly above the ruler, with one authoritative display.
+3. Adapt ruler granularity to zoom, including frame subdivisions (2f/4f/6f where supported by the clip frame rate).
+4. Keep playhead and fixed zero/header controls stationary while timeline content scrolls underneath.
+5. Keep filmstrip height and thumbnail geometry stable across zoom levels; preserve clear, sequential frames.
+6. Refine workspace hierarchy: preview above, shared ruler/video and independent audio/text lanes in the middle, compact contextual tools and bottom dock below. Reduce oversized action panel/unused space without shrinking touch targets or distorting preview aspect ratio.
+7. Review preview size/unused black area against CapCut on the physical phone; preserve the source aspect ratio.
+
+### Targeted proof required
+
+- Same source clip and comparable timeline scale on the actual phone.
+- Screenshots at minimum/middle/maximum zoom showing ruler zoom changes while filmstrip geometry remains stable.
+- Confirm zoom alone does not change clip timing, trim bounds, total duration, playhead time, preview frame or export duration.
+- Confirm duration readout placement and synchronization; confirm frame ticks against source FPS.
+- Add/run only tests for uncovered behavior; do not repeat green scenarios unchanged.
+- These targets remain OPEN until physical-phone verification; existing emulator/CI passes are limited to their recorded paths.
+
