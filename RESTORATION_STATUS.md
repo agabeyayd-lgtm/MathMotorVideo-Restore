@@ -750,3 +750,17 @@ Source implementation is committed; it is not device acceptance. PR #11 stays dr
 
 - [x] Capture the active two-pointer gesture as soon as the Activity ScaleGestureDetector enters scale mode, whether that happens on ACTION_POINTER_DOWN or the subsequent move; cancel the child clip/trim gesture at that point (source commit `1a764b9c63ec9638289cb8f419861bfc73dc7ea7`).
 - [ ] Verify pinch begins correctly on emulator/phone with first finger initially over clip body and trim handle.
+
+
+## Full timeline-area gesture coverage — 2026-11-01
+
+Source commit `5117d594ddd33a7d2fb319fae8fb975ed0658d80`:
+- [x] Let ordinary one-finger horizontal swipes on video/text/music/sound-effect strip bodies reach shared timeline scrubbing; no immediate item movement on swipe.
+- [x] Change text/music/sound-effect body movement to hold-then-drag so the same strip area can scrub with a normal swipe; existing trim handles remain direct controls.
+- [x] Use window-local coordinates consistently for Activity-level pinch hit testing and lane anchoring.
+- [ ] Verify one-finger scrubbing from every row and empty gray/ruler area on emulator/phone.
+- [ ] Verify two-finger pinch from upper, middle and lower timeline rows, anchored zoom and no accidental clip move/trim.
+- [ ] Regression-check text/music/sound-effect hold-drag and all dedicated trim handles.
+- [ ] Confirm live preview follows the centre playhead during scrubbing and pinch.
+
+The source patch is committed but all gesture acceptance checks remain open until actual interaction testing. PR #11 remains draft and unmerged. Installed versionCode 394 / build 61 is unchanged. Version 395 remains blocked.
