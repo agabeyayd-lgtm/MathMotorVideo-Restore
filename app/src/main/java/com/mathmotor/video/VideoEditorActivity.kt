@@ -219,6 +219,9 @@ class VideoEditorActivity : Activity() {
             override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
                 val lane = timelineScrollViews.firstOrNull() ?: return false
                 if (lane.width <= 0 || !isScreenPointInsideTimeline(detector.focusX, detector.focusY)) return false
+                // Freeze playback before the lane is visually transformed; otherwise
+                // periodic player sync could scroll against the active pinch.
+                pauseActivePreview()
                 val location = IntArray(2)
                 lane.getLocationOnScreen(location)
                 timelineScaleAnchorViewportX = detector.focusX - location[0]
