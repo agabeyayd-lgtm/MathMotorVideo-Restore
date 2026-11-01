@@ -1325,8 +1325,8 @@ class VideoEditorActivity : Activity() {
         }
         root.addView(dock, matchWrap())
 
-        // Contextual settings live above the preview; the lower dock remains pinned
-        // at the bottom and the shared timeline stays between preview and dock.
+        // Contextual settings live in a bottom drawer above the pinned tool dock;
+        // the preview and shared timeline remain above that drawer.
         root.removeView(editorPanelScroll)
         root.addView(editorPanelScroll, (root.childCount - 1).coerceAtLeast(0), LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(196)
@@ -5565,11 +5565,10 @@ class VideoEditorActivity : Activity() {
                 }
                 pendingPreviewFrameTask = null
                 if (decoded != null && !decoded.isRecycled) {
-                    previewFrameBitmap?.let { old ->
-                        if (old !== decoded && !old.isRecycled) old.recycle()
-                    }
+                    val previous = previewFrameBitmap
                     previewFrameBitmap = decoded
                     previewFrameOverlay.setImageBitmap(decoded)
+                    if (previous !== decoded && previous != null && !previous.isRecycled) previous.recycle()
                     previewFrameOverlay.setBackgroundColor(Color.TRANSPARENT)
                     previewFrameOverlay.visibility = View.VISIBLE
                     applyPreviewFrameTransform(clip)
