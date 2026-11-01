@@ -78,6 +78,9 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 
 ### Thumbnails
 
+- [ ] Keep the timeline's `00:00` zero-time anchor in the fixed left gutter while the ruler/filmstrip scrolls underneath; keep the video-add `＋` action in the fixed timeline header outside every horizontal scroller. Source change is present on the focused repair branch; build/device verification is still pending.
+
+
 - [ ] Render adjacent filmstrip thumbnails edge-to-edge with no per-frame margin or visible gray separator/rail; verify the strip at normal and compact heights.
 - [ ] Increase thumbnail height/visibility and use enough thumbnails to visually cover the clip; for a 10-second clip, aim for a dense, evenly spaced filmstrip comparable to common mobile editors, not a fixed arbitrary count.
 - [ ] Increase the visible width/size of timeline thumbnails so the action in each frame is understandable; prioritize the visible viewport and avoid overly narrow frame tiles.
