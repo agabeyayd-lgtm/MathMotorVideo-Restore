@@ -87,7 +87,8 @@ class VideoEditorActivity : Activity() {
         var transformScale: Float = 1f,
         var transformRotationDegrees: Float = 0f,
         var transformTranslateX: Float = 0f,
-        var transformTranslateY: Float = 0f
+        var transformTranslateY: Float = 0f,
+        var frameRate: Double? = null
     )
 
     private data class ClipEditSnapshot(
@@ -254,12 +255,12 @@ class VideoEditorActivity : Activity() {
                     timelinePinchBasePxPerSecond *
                         timelinePinchPreviewRatio *
                         detector.scaleFactor
-                    ).coerceIn(dp(11).toFloat(), dp(176).toFloat())
+                    ).coerceIn(dp(11).toFloat(), dp(720).toFloat())
                 timelinePinchPreviewRatio =
                     (nextPxPerSecond / timelinePinchBasePxPerSecond.coerceAtLeast(1f))
                         .coerceIn(
                             dp(11).toFloat() / timelinePinchBasePxPerSecond.coerceAtLeast(1f),
-                            dp(176).toFloat() / timelinePinchBasePxPerSecond.coerceAtLeast(1f)
+                            dp(720).toFloat() / timelinePinchBasePxPerSecond.coerceAtLeast(1f)
                         )
 
                 // Preview the zoom with a view transform instead of rebuilding every
@@ -1885,9 +1886,10 @@ class VideoEditorActivity : Activity() {
                         // The fixed center playhead stays still while the filmstrip moves
                         // underneath it. Update the visible time immediately on every drag.
                         val originPx = timelineOriginSpacerWidth(view.width).toFloat()
-                        val underPlayheadMs = TimelineScaleMath.timeAtViewportX(
+                        val rawPlayheadMs = TimelineScaleMath.timeAtViewportX(
                             scrollX, originPx, originPx, timelinePixelsPerSecond()
                         ).coerceIn(0L, totalOutputDurationMs())
+                        val underPlayheadMs = snapTimelineTimeToSourceFrame(rawPlayheadMs)
                         if (underPlayheadMs != timelinePlayheadMs) {
                             // A manual scrub takes control from playback so the periodic
                             // player sync cannot pull the ruler back to an older frame.
@@ -2238,18 +2240,19 @@ class VideoEditorActivity : Activity() {
         // already reduces row height for IME mode; hiding this row makes the time
         // axis disappear exactly when text controls are being edited.
         val ruler = makeLane("", 26, "__ruler__", reorderable = false)
-        // Tick spacing adapts to the single px/sec value; labels never use a fixed one-second grid.
-        val rulerStepMs = TimelineScaleMath.rulerStepMs(pxPerSecond, dp(48).toFloat())
-        val rulerEndMs = (((totalMs + rulerStepMs - 1L) / rulerStepMs).coerceAtLeast(1L)) * rulerStepMs
-        var rulerTimeMs = 0L
-        var rulerPositionPx = 0
-        while (rulerTimeMs < rulerEndMs) {
-            val nextTimeMs = rulerTimeMs + rulerStepMs
-            val nextPositionPx = TimelineScaleMath.pixelsForTime(nextTimeMs, pxPerSecond)
-            val intervalWidth = (nextPositionPx - rulerPositionPx).coerceAtLeast(1)
+        // One shared ruler progresses from seconds to subsecond divisions and,
+        // at close zoom, exact frame units from the source clip's real frame rate.
+        val rulerFrameRate = clips.firstOrNull { it.frameRate != null }?.frameRate
+        val rulerGrid = TimelineScaleMath.rulerGrid(
+            pxPerSecond, dp(48).toFloat(), rulerFrameRate
+        )
+        fun addRulerInterval(startMs: Long, endMs: Long, label: String, minorDivisions: Int) {
+            val startPositionPx = TimelineScaleMath.pixelsForTime(startMs, pxPerSecond)
+            val nextPositionPx = TimelineScaleMath.pixelsForTime(endMs, pxPerSecond)
+            val intervalWidth = (nextPositionPx - startPositionPx).coerceAtLeast(1)
             val tickCell = FrameLayout(this)
             val tick = TextView(this).apply {
-                text = TimelineScaleMath.formatRulerTime(rulerTimeMs)
+                text = label
                 textSize = 9f
                 setTextColor(Color.rgb(166, 184, 201))
                 gravity = Gravity.TOP or Gravity.START
@@ -2259,9 +2262,9 @@ class VideoEditorActivity : Activity() {
             tickCell.addView(tick, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, dp(15), Gravity.TOP or Gravity.START
             ))
-            // CapCut-style minor divisions: five scale-aware sub-intervals between
-            // each adaptive major label. Their pixel spacing grows/shrinks with zoom.
-            TimelineScaleMath.rulerMinorTickOffsetsPx(intervalWidth, 5).forEach { x ->
+            TimelineScaleMath.rulerMinorTickOffsetsPx(
+                intervalWidth, minorDivisions.coerceAtLeast(2)
+            ).forEach { x ->
                 tickCell.addView(View(this).apply {
                     setBackgroundColor(Color.rgb(91, 111, 130))
                 }, FrameLayout.LayoutParams(dp(1), dp(6)).apply {
@@ -2276,8 +2279,40 @@ class VideoEditorActivity : Activity() {
                 topMargin = dp(14)
             })
             ruler.addView(tickCell, LinearLayout.LayoutParams(intervalWidth, dp(22)))
-            rulerTimeMs = nextTimeMs
-            rulerPositionPx = nextPositionPx
+        }
+
+        if (rulerGrid.frameStep != null && rulerGrid.frameRate != null) {
+            val fps = rulerGrid.frameRate
+            val frameStep = rulerGrid.frameStep
+            val lastFrame = kotlin.math.ceil(totalMs.toDouble() * fps / 1_000.0)
+                .toLong().coerceAtLeast(1L)
+            var frameIndex = 0L
+            while (frameIndex < lastFrame) {
+                val nextFrameIndex = frameIndex + frameStep
+                val startMs = TimelineScaleMath.frameTimeMs(frameIndex, fps)
+                val endMs = TimelineScaleMath.frameTimeMs(nextFrameIndex, fps)
+                addRulerInterval(
+                    startMs,
+                    endMs,
+                    "${frameIndex}f",
+                    minOf(frameStep, 5L).toInt().coerceAtLeast(2)
+                )
+                frameIndex = nextFrameIndex
+            }
+        } else {
+            val rulerStepMs = rulerGrid.intervalMs
+            val rulerEndMs = (((totalMs + rulerStepMs - 1L) / rulerStepMs).coerceAtLeast(1L)) * rulerStepMs
+            var rulerTimeMs = 0L
+            while (rulerTimeMs < rulerEndMs) {
+                val nextTimeMs = rulerTimeMs + rulerStepMs
+                addRulerInterval(
+                    rulerTimeMs,
+                    nextTimeMs,
+                    TimelineScaleMath.formatRulerTime(rulerTimeMs),
+                    5
+                )
+                rulerTimeMs = nextTimeMs
+            }
         }
 
         if (clips.isEmpty()) {
@@ -3035,7 +3070,7 @@ class VideoEditorActivity : Activity() {
 
         val finalPxPerSecond = (
             timelinePinchBasePxPerSecond * timelinePinchPreviewRatio
-        ).coerceIn(dp(11).toFloat(), dp(176).toFloat())
+        ).coerceIn(dp(11).toFloat(), dp(720).toFloat())
 
         // Remove the temporary transform before rebuilding real timeline geometry.
         timelineScrollViews.toList().forEach { laneScroll ->
@@ -3201,7 +3236,7 @@ class VideoEditorActivity : Activity() {
 
     private fun adjustTimelineZoom(factor: Float) {
         val newPxPerSec = (timelinePixelsPerSecond() * factor)
-            .coerceIn(dp(11).toFloat(), dp(176).toFloat())
+            .coerceIn(dp(11).toFloat(), dp(720).toFloat())
         if (newPxPerSec == timelinePixelsPerSecond()) return
         timelinePxPerSec = newPxPerSec
         refreshTimelineTracks()
@@ -4364,15 +4399,20 @@ class VideoEditorActivity : Activity() {
         } catch (_: Exception) { }
         status.text = "Video bilgileri okunuyor…"
         Thread {
+            var sourceFrameRate: Double? = null
             val duration = runCatching {
                 val retriever = MediaMetadataRetriever()
                 try {
                     retriever.setDataSource(this, uri)
+                    sourceFrameRate = retriever.extractMetadata(
+                        MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE
+                    )?.toDoubleOrNull()?.takeIf { it.isFinite() && it in 1.0..240.0 }
                     retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
                 } finally {
                     retriever.release()
                 }
             }.getOrDefault(0L)
+            if (sourceFrameRate == null) sourceFrameRate = readFrameRateFromMediaExtractor(uri)
             val title = queryDisplayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Video klibi"
             if (smokeTest) android.util.Log.i(
                 "EditorSmokeTest",
@@ -4397,7 +4437,7 @@ class VideoEditorActivity : Activity() {
                 // Append after the furthest VIDEO clip, not after a longer music/text layer.
                 // This prevents unrelated tracks from creating a gray gap before a new clip.
                 val timelineStartMs = TimelineVideoMath.totalDuration(videoTimelineSegments())
-                clips.add(Clip(uri,title,duration,0L,duration,timelineStartMs))
+                clips.add(Clip(uri,title,duration,0L,duration,timelineStartMs, frameRate = sourceFrameRate))
                 selectedClipIndex = clips.lastIndex
                 clipHandlesVisible = false
                 showSingleClipPreview()
@@ -4478,6 +4518,7 @@ class VideoEditorActivity : Activity() {
                 put("startMs", clip.startMs)
                 put("endMs", clip.endMs)
                 put("timelineStartMs",clip.timelineStartMs)
+                clip.frameRate?.let { put("frameRate", it) }
                 put("transformScale", clip.transformScale)
                 put("transformRotationDegrees", clip.transformRotationDegrees)
                 put("transformTranslateX", clip.transformTranslateX)
@@ -4559,6 +4600,8 @@ class VideoEditorActivity : Activity() {
                 startMs = start,
                 endMs = end,
                 timelineStartMs = timelineStartMs,
+                frameRate = item.optDouble("frameRate", Double.NaN)
+                    .takeIf { it.isFinite() && it in 1.0..240.0 },
                 transformScale = item.optDouble("transformScale", 1.0).toFloat(),
                 transformRotationDegrees = item.optDouble("transformRotationDegrees", 0.0).toFloat(),
                 transformTranslateX = item.optDouble("transformTranslateX", 0.0).toFloat(),
@@ -4588,7 +4631,7 @@ class VideoEditorActivity : Activity() {
         timelinePxPerSec = json.optDouble(
             "timelinePxPerSec", (dp(22).toFloat() * legacyZoom).toDouble()
         ).toFloat().takeIf { it.isFinite() }?.coerceIn(
-            dp(11).toFloat(), dp(176).toFloat()
+            dp(11).toFloat(), dp(720).toFloat()
         ) ?: dp(22).toFloat()
         val savedTimelineScrollMs: Long? = when {
             json.has("timelineHorizontalScrollMs") ->
@@ -4748,6 +4791,7 @@ class VideoEditorActivity : Activity() {
         updateTimelinePlayheadControls()
         refreshTimelineTracks()
         status.text = "PROJE AÇILDI. Klipler, kesmeler, oynatma noktası, yazı ve ses ayarları geri yüklendi."
+        loadMissingClipFrameRates()
     }
 
     private fun chooseVideo(append: Boolean) {
@@ -5985,6 +6029,78 @@ class VideoEditorActivity : Activity() {
 
     private fun activeClipIndexAt(projectTimeMs:Long):Int? =
         TimelineVideoMath.activeSegmentIndexAt(videoTimelineSegments(),projectTimeMs)
+
+    /** Snap only while the playhead is over an actual clip; timeline gaps remain exact gaps. */
+    private fun snapTimelineTimeToSourceFrame(projectTimeMs: Long): Long {
+        val index = activeClipIndexAt(projectTimeMs) ?: return projectTimeMs
+        val clip = clips.getOrNull(index) ?: return projectTimeMs
+        val fps = clip.frameRate?.takeIf { it.isFinite() && it in 1.0..240.0 } ?: return projectTimeMs
+        val sourceTimeMs = clip.startMs + (projectTimeMs - clip.timelineStartMs).coerceAtLeast(0L)
+        val snappedSourceMs = TimelineScaleMath.snapTimeToFrameMs(sourceTimeMs, fps)
+            .coerceIn(clip.startMs, (clip.endMs - 1L).coerceAtLeast(clip.startMs))
+        return (clip.timelineStartMs + (snappedSourceMs - clip.startMs))
+            .coerceIn(clip.timelineStartMs, clip.timelineStartMs + (clip.endMs - clip.startMs))
+    }
+
+    /** Older drafts did not persist FPS; read it off the original media without blocking the UI. */
+    private fun loadMissingClipFrameRates() {
+        val missingUris = clips.filter { it.frameRate == null }.map { it.uri }.distinct()
+        if (missingUris.isEmpty()) return
+        Thread {
+            val loadedRates = missingUris.associateWith { uri ->
+                readSourceFrameRate(uri)
+            }
+            runOnUiThread {
+                var changed = false
+                clips.filter { it.frameRate == null }.forEach { clip ->
+                    val rate = loadedRates[clip.uri]
+                    if (rate != null) {
+                        clip.frameRate = rate
+                        changed = true
+                    }
+                }
+                if (changed && ::timelineTracks.isInitialized) refreshTimelineTracks()
+            }
+        }.start()
+    }
+
+    private fun readSourceFrameRate(uri: Uri): Double? {
+        val capturedRate = runCatching {
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(this, uri)
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)
+                    ?.toDoubleOrNull()?.takeIf { it.isFinite() && it in 1.0..240.0 }
+            } finally {
+                retriever.release()
+            }
+        }.getOrNull()
+        return capturedRate ?: readFrameRateFromMediaExtractor(uri)
+    }
+
+    private fun readFrameRateFromMediaExtractor(uri: Uri): Double? {
+        val extractor = android.media.MediaExtractor()
+        return try {
+            extractor.setDataSource(this, uri, null)
+            (0 until extractor.trackCount).firstNotNullOfOrNull { index ->
+                val format = extractor.getTrackFormat(index)
+                val mime = format.getString(android.media.MediaFormat.KEY_MIME).orEmpty()
+                if (!mime.startsWith("video/") ||
+                    !format.containsKey(android.media.MediaFormat.KEY_FRAME_RATE)
+                ) {
+                    null
+                } else {
+                    runCatching {
+                        format.getInteger(android.media.MediaFormat.KEY_FRAME_RATE).toDouble()
+                    }.getOrNull()?.takeIf { it.isFinite() && it in 1.0..240.0 }
+                }
+            }
+        } catch (_: Exception) {
+            null
+        } finally {
+            runCatching { extractor.release() }
+        }
+    }
 
     private fun totalOutputDurationMs(): Long =
         TimelineProjectDurationMath.totalDuration(
