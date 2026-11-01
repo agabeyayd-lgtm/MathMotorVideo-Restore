@@ -2855,9 +2855,26 @@ class VideoEditorActivity : Activity() {
         ).coerceAtLeast(0)
         val scrollChanged = anchoredScrollX != lane.scrollX
         if (scaleChanged || scrollChanged) {
+            // If the pinch midpoint is not at the fixed centre playhead, moving the
+            // timeline changes the time now beneath that playhead. Keep the readout,
+            // seek control and preview synchronized with the visible centre frame.
+            val centreX = timelineOriginSpacerWidth(lane.width).toFloat()
+            val playheadAfterPinch = TimelineScaleMath.timeAtViewportX(
+                anchoredScrollX,
+                centreX,
+                centreX,
+                timelinePixelsPerSecond()
+            ).coerceIn(0L, totalOutputDurationMs())
+            val playheadChanged = playheadAfterPinch != timelinePlayheadMs
+            if (playheadChanged) timelinePlayheadMs = playheadAfterPinch
+
             pendingTimelineScrollX = anchoredScrollX
             timelineHorizontalScrollX = anchoredScrollX
             refreshTimelineTracks()
+            if (playheadChanged) {
+                updateTimelinePlayheadLabel()
+                scheduleTimelineScrubPreviewSeek(playheadAfterPinch)
+            }
         }
     }
 
