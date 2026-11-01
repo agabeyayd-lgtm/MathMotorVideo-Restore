@@ -309,6 +309,19 @@ Reference: the user's two screenshots with MathMotor and CapCut timelines expand
 - [ ] Add only targeted regression coverage for newly uncovered behavior; do not repeat unchanged green tests.
 - [ ] Physical-phone acceptance is required; CI/build/emulator screenshots alone do not close these targets.
 
+
+
+### User clarification: match CapCut's complete pinch behavior (2026-11-01)
+
+The user explicitly confirmed: **“CapCut'ta neyse bizde de o olsun.”** Do not freeze the thumbnail strip's horizontal presentation or force a fixed thumbnail count. Reproduce CapCut's natural timeline zoom behavior:
+
+- Pinch changes the shared horizontal time scale (pixels per second) and the ruler's visible time range.
+- The filmstrip follows that same time scale: visible thumbnail count/spacing may naturally change as more or less timeline time is shown, matching CapCut.
+- The filmstrip's vertical lane height and aspect-correct thumbnail rendering remain stable; thumbnails must not be independently pinched, stretched, squashed, or distorted.
+- Ruler, video, audio and text lanes share one consistent time-to-pixel mapping. Pinch must not edit clip timing, trim handles, clip duration or content.
+- The playhead remains fixed in the viewport while timeline content moves beneath it; zoom should preserve the time anchored under the pinch midpoint in the same way CapCut does.
+- Compare directly against CapCut using the same clip, same starting playhead position and equivalent zoom levels. Acceptance is behavioral parity, not an arbitrary fixed thumbnail density.
+
 ## Verification boundaries
 
 - Existing unit tests cover some timeline time/pixel mapping, clip trim bounds, playhead-to-clip mapping and text timing boundaries.
