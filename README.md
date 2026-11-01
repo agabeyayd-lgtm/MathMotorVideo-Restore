@@ -177,3 +177,10 @@ Do not mark the existing release checklist items complete until the relevant aut
 - The pinch anchor still uses the midpoint between the two fingers and the shared timeline time/pixel scale; on gesture end, the same project time is restored beneath that viewport offset. A pinch outside the timeline does not affect timeline zoom.
 - Added unit coverage proving that a 48 px to 184 px pinch accumulates to the full 3.83× span ratio across multiple intermediate movements, and that pinching inward reverses the scale.
 - This is a source-level input correction and unit-test addition. The API 35 end-to-end gesture test must pass before pinch, anchor stability or ruler/video-lane synchronization can be marked verified. Version 395 remains blocked; version metadata was not changed.
+
+
+## Timeline one-finger scroll conflict — 2026-11-01
+
+- Follow-up source review found that each video filmstrip had a custom touch listener which called `requestDisallowInterceptTouchEvent(true)` on DOWN and consumed every event. That prevented its parent `HorizontalScrollView` from performing the required one-finger horizontal timeline scroll.
+- Removed that bespoke filmstrip touch handler. Clip tap selection and the existing long-press action menu remain; horizontal swipes are now left to the shared horizontal scroll lane, whose scroll listener synchronizes the ruler and other timeline lanes.
+- This is an input-routing correction. Verify shared lane movement and clip selection in the API 35 instrumentation run; do not mark the interaction complete until it passes. The previous in-progress emulator run may be superseded by this commit. Version 395 remains blocked.

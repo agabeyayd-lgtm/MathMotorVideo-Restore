@@ -3647,72 +3647,8 @@ class VideoEditorActivity : Activity() {
             isClickable = true
             isFocusable = true
             setOnClickListener { selectTimelineClip(index) }
-            var filmstripTouchActive = false
-            var filmstripMoved = false
-            var filmstripLongPressed = false
-            var filmstripDownX = 0f
-            val filmstripLongPress = Runnable {
-                if (filmstripTouchActive && !filmstripMoved) {
-                    filmstripLongPressed = performLongClick()
-                }
-            }
-            setOnTouchListener { view, event ->
-                when (event.actionMasked) {
-                    android.view.MotionEvent.ACTION_DOWN -> {
-                        filmstripTouchActive = true
-                        filmstripMoved = false
-                        filmstripLongPressed = false
-                        filmstripDownX = event.x
-                        player?.playWhenReady = false
-                        // The strip itself implements scrubbing and press-and-hold actions.
-                        // Prevent its horizontal parent from stealing the gesture mid-press.
-                        view.parent?.requestDisallowInterceptTouchEvent(true)
-                        timelineHandler.postDelayed(
-                            filmstripLongPress,
-                            android.view.ViewConfiguration.getLongPressTimeout().toLong()
-                        )
-                        true
-                    }
-                    android.view.MotionEvent.ACTION_MOVE -> {
-                        if (kotlin.math.abs(event.x - filmstripDownX) > android.view.ViewConfiguration.get(this@VideoEditorActivity).scaledTouchSlop) {
-                            filmstripMoved = true
-                            timelineHandler.removeCallbacks(filmstripLongPress)
-                            if (!filmstripLongPressed) {
-                                val safeWidth = view.width.coerceAtLeast(1)
-                                val fraction = (event.x / safeWidth.toFloat()).coerceIn(0f, 1f)
-                                val offsetBeforeClip = clips.take(index).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
-                                val clipDuration = (clip.endMs - clip.startMs).coerceAtLeast(0L)
-                                val targetMs = offsetBeforeClip + (clipDuration * fraction).toLong()
-                                seekTimelinePreview(targetMs.coerceIn(0L, totalOutputDurationMs()))
-                            }
-                        }
-                        true
-                    }
-                    android.view.MotionEvent.ACTION_UP -> {
-                        timelineHandler.removeCallbacks(filmstripLongPress)
-                        filmstripTouchActive = false
-                        view.parent?.requestDisallowInterceptTouchEvent(false)
-                        if (!filmstripLongPressed) {
-                            val safeWidth = view.width.coerceAtLeast(1)
-                            val fraction = (event.x / safeWidth.toFloat()).coerceIn(0f, 1f)
-                            val offsetBeforeClip = clips.take(index).sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
-                            val clipDuration = (clip.endMs - clip.startMs).coerceAtLeast(0L)
-                            val targetMs = (offsetBeforeClip + (clipDuration * fraction).toLong())
-                                .coerceIn(0L, totalOutputDurationMs().coerceAtLeast(1L) - 1L)
-                            if (!filmstripMoved) selectTimelineClip(index)
-                            seekTimelinePreview(targetMs)
-                        }
-                        true
-                    }
-                    android.view.MotionEvent.ACTION_CANCEL -> {
-                        timelineHandler.removeCallbacks(filmstripLongPress)
-                        filmstripTouchActive = false
-                        view.parent?.requestDisallowInterceptTouchEvent(false)
-                        true
-                    }
-                    else -> true
-                }
-            }
+            // Let the HorizontalScrollView own one-finger horizontal swipes.
+            // Tap still selects the clip; long-press still opens its edit menu.
             setOnLongClickListener {
                 val menu = android.widget.PopupMenu(this@VideoEditorActivity, this)
                 menu.menu.add(0, 1, 0, "Kopyala")
