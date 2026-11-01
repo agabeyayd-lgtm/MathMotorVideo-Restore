@@ -86,7 +86,7 @@ class TimelinePinchGestureTest {
         assertTrue("Pinch-in did not reduce zoom ($zoomedIn -> $zoomedOut)", zoomedOut < zoomedIn)
         val markerBeforeLaneSwipe = findMarkerLeft(device)
 
-        val swipeStartX = (device.displayWidth * 0.75f).toInt()
+        val swipeStartX = (device.displayWidth * 0.30f).toInt()
         val swipeEndX = (device.displayWidth * 0.55f).toInt()
         assertTrue(
             "One-finger swipe on the video lane was not dispatched",
@@ -97,7 +97,7 @@ class TimelinePinchGestureTest {
         assertTrue(
             "Swiping the VIDEO lane did not move the ruler with it " +
                 "(marker left: $markerBeforeLaneSwipe -> $markerAfterLaneSwipe)",
-            markerAfterLaneSwipe < markerBeforeLaneSwipe - 12
+            markerAfterLaneSwipe > markerBeforeLaneSwipe + 12
         )
     }
 
