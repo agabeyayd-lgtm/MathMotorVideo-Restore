@@ -100,12 +100,26 @@ def verify(xml_path, screenshot_path, log_path):
     thumb_x = (thumb_box[0] + thumb_box[2]) // 2
     thumb_y = (thumb_box[1] + thumb_box[3]) // 2
 
-    # The fixed white playhead is drawn over the exact center of the filmstrip
-    # cell. Sampling that center measures the playhead, not the thumbnail.
-    # Compare a nearby interior point on both rendered frames instead.
-    sample_offset = max(6, min(10, (thumb_box[2] - thumb_box[0]) // 6))
-    preview_rgb = pixel_mean(image, preview_x + sample_offset, preview_y)
-    thumb_rgb = pixel_mean(image, thumb_x + sample_offset, thumb_y)
+    # The preview is rendered in a wide player viewport while each Shorts
+    # thumbnail is a narrow portrait cell. Use the same normalized horizontal
+    # source coordinate in both images; equal absolute pixel offsets would sample
+    # different parts of a frame and can falsely fail on vertical colour bars.
+    # The deterministic emulator fixture is 9:16, so calculate its fitted width
+    # separately inside the preview viewport and the thumbnail cell.
+    portrait_aspect = 9.0 / 16.0
+    preview_frame_width = min(
+        preview[2] - preview[0],
+        round((preview[3] - preview[1]) * portrait_aspect)
+    )
+    thumbnail_frame_width = min(
+        thumb_box[2] - thumb_box[0],
+        round((thumb_box[3] - thumb_box[1]) * portrait_aspect)
+    )
+    sample_fraction = 0.15
+    preview_sample_offset = max(2, round(preview_frame_width * sample_fraction))
+    thumbnail_sample_offset = max(2, round(thumbnail_frame_width * sample_fraction))
+    preview_rgb = pixel_mean(image, preview_x + preview_sample_offset, preview_y)
+    thumb_rgb = pixel_mean(image, thumb_x + thumbnail_sample_offset, thumb_y)
     channel_delta = max(abs(preview_rgb[i] - thumb_rgb[i]) for i in range(3))
     if channel_delta > 55:
         raise SystemExit(
