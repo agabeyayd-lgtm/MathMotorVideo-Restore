@@ -398,6 +398,4 @@ test -s emulator-screenshots/editor.png
 test -s emulator-screenshots/home-with-drafts.png
 echo "Home, empty editor, sample-video editor, and autosaved-draft home screenshots captured. Editor auto-save verified."
 
-echo "Step 10/10: run the targeted timeline pinch/scroll interaction test"
-gradle --no-daemon --console=plain connectedDebugAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.class=com.mathmotor.video.TimelinePinchGestureTest
+echo "Screenshot and autosave capture flow complete; the isolated gesture test runs in the next workflow step."
