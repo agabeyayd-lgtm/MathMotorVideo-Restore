@@ -5,6 +5,7 @@
 - Added `TimelineFrameMath` for the 30 fps project grid: 30 frames/second, microsecond-accurate frame timestamps, nearest-frame scrub snapping, and zoom-sensitive frame tick spacing.
 - Integrated frame labels into the ruler at close zoom and nearest-frame snapping into timeline seeks. Playback position synchronization remains continuous timestamp-based.
 - Corrected filmstrip sampling to stay inside each clip's half-open interval, avoiding an exact-end thumbnail that may belong to the next clip.
+- The 30 fps value currently defines the timeline's default frame grid; this change does not yet prove or force the exported MP4 encoder frame rate. Verify output FPS separately before claiming the exported file is 30 fps.
 - Added focused JUnit coverage for frame arithmetic, frame snapping and frame ruler intervals. These tests and the full emulator suite are **pending on the new branch**; source presence is not a pass.
 - Prior #327 green results belong to commit `63914154182f99368e5ed361b6d38b4f123918f2` and are not evidence for this new candidate.
 - Version 395 remains blocked. Do not change version metadata, sign/publish a release, or offer an update.
