@@ -1,3 +1,14 @@
+## Timeline frame-precision follow-up — 2026-11-01
+
+- Corrected the branch audit: the active candidate is `fix/editor-395-gate`, not the repository default branch. Its existing code already includes shared time-to-pixel mapping, synchronized track scrolling, centered playhead geometry, manual two-finger pinch zoom with anchor-time preservation, responsive second-based ruler intervals, dense cached filmstrips, and timestamped thumbnail decoding. These existing implementations are being preserved; they must not be rewritten as if absent.
+- New candidate work on `fix/timeline-frame-precision` adds a dedicated 30 fps project-frame math layer: frame index/time conversion, microsecond timestamps, nearest-frame scrub quantization, and zoom-dependent readable frame tick spacing.
+- The time ruler now switches to frame labels at close zoom (30 fps frame numbers within each second); at wider zoom it retains the existing adaptive second intervals.
+- Scrubbing/seek requests now snap to the nearest 30 fps project frame. Continuous playback synchronization remains timestamp-based and is not rounded.
+- Filmstrip sampling now uses the clip's half-open time interval and avoids requesting a thumbnail exactly at the exclusive clip end, which could show a frame from the following cut.
+- Added unit tests for 30 fps frame counts, frame timestamps, nearest-frame snapping, adaptive frame-ruler spacing, and invalid inputs.
+- **Verification state:** source candidate only. Run unit tests, Debug APK build and the existing emulator interaction suite (including pinch-anchor, scroll/playhead, filmstrip/trim and preview-seek tests) on this branch. Do not mark the behavior device-verified until those results pass and screenshots/logs are inspected.
+- Keep the existing #327 green evidence attached to its exact prior commit; it does not validate this new candidate. VersionCode 395 remains blocked; do not bump app version or publish an APK.
+
 ## Current release readiness — #327 GREEN (2026-10-30)
 
 - [Emulator workflow #327 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41008440350), candidate commit `63914154182f99368e5ed361b6d38b4f123918f2`. Unit tests, Debug APK build, FFmpeg/fixture setup, the connected Android emulator run, and artifact upload all completed successfully.
