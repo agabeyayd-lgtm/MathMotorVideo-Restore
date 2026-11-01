@@ -1023,3 +1023,29 @@ The user's explicit rule supersedes earlier filmstrip notes that requested 16:9 
 - [ ] Review fresh emulator screenshots to ensure complete 9:16 frames, no cropping and no black gaps.
 - [ ] Confirm on the user's phone that all frame content is visible at fit/medium/maximum zoom and that thumbnail timestamps remain aligned with the preview.
 - No app version bump or version 395. PR #11 remains draft/unmerged.
+
+
+## Filmstrip speed + CapCut frame ruler — 2026-11-01
+
+User explicitly prioritized solving fast filmstrip creation and confirmed the CapCut ruler behavior: after sufficient zoom, the ruler switches to frame units (`1f`, `2f`, etc.). Keep work restricted to the four filmstrip goals until all are verified.
+
+- Performance implementation: commit `237a47b00a386505b563975c9bcf3f17bd853536` uses two parallel timeline decode workers with isolated per-thread `MediaMetadataRetriever` instances and existing playhead-distance priority.
+- Verify #393 (`41312913395`): **green** — Kotlin tests and debug compilation.
+- Build #474 (`41312913393`): **green** — debug APK build.
+- Emulator #641 (`41312913945`): **green** — live timeline sync smoke check passed (17 playback samples; two timeline lanes synchronized; fixed playhead/ruler zero edge aligned) and draft autosave check passed.
+- Performance result is **not yet established**: inspect #641 thumbnail decode timestamps and compare the same 19-frame fixture with the earlier 7.5-second baseline before claiming improvement.
+
+### Required frame-ruler behavior
+- Ruler zoom levels progress from seconds/subdivisions to frame units when the visible scale is sufficiently fine.
+- Labels such as `1f`, `2f`, `3f` denote actual source-frame intervals; calculate using the clip/source FPS, not a hard-coded 30 FPS assumption. Handle fractional rates such as 29.97 accurately.
+- At frame-level zoom, playhead movement/scrubbing can select exact frame boundaries and the paused preview must show that exact frame.
+- Ruler, filmstrip and all timeline lanes use the same time-to-pixel mapping. Pinch changes navigation scale only; never alter source timing, trims, clip duration or export duration.
+- Preserve the accepted 52dp-wide 9:16 thumbnail cell geometry and full-frame/no-crop rendering. Do not trade image correctness for speed.
+
+### Remaining focused acceptance
+- [ ] Inspect #641 artifact and calculate new 19-frame decode duration; compare with 7.5-second baseline.
+- [ ] Verify no race/stale frame under rapid scrub, zoom and scroll; preview and filmstrip remain timestamp-identical.
+- [ ] Implement and unit-test source-FPS-aware frame ruler and frame-accurate scrub/preview.
+- [ ] Confirm all four filmstrip goals on physical phone.
+
+No version bump, release or merge. PR #11 remains draft; version 395 remains blocked.
