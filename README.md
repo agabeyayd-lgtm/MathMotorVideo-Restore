@@ -966,3 +966,17 @@ The user's explicit rule supersedes earlier filmstrip notes that requested 16:9 
 - [ ] Review fresh emulator screenshots to ensure complete 9:16 frames, no cropping and no black gaps.
 - [ ] Confirm on the user's phone that all frame content is visible at fit/medium/maximum zoom and that thumbnail timestamps remain aligned with the preview.
 - No app version bump or version 395. PR #11 remains draft/unmerged.
+
+
+## Filmstrip decode performance and frame-based ruler — 2026-11-01
+
+- User priority remains the four filmstrip goals: preserve the full-frame 9:16 thumbnail appearance; keep pinch zoom horizontal-only without distorting thumbnail geometry; keep the thumbnail under the playhead frame-identical to preview; and populate the visible filmstrip quickly without scroll/zoom stalls.
+- Performance experiment commit `237a47b00a386505b563975c9bcf3f17bd853536` changes thumbnail extraction from one shared decoder worker to two parallel workers, each owning and releasing its own `MediaMetadataRetriever`. Priority ordering remains in place.
+- [x] PR-head Kotlin unit tests and debug APK compilation passed in Verify #393 (`41312913395`).
+- [x] Debug APK build passed in Build #474 (`41312913393`).
+- [x] Emulator workflow #641 (`41312913945`) passed its live timeline synchronization and draft autosave smoke checks; 17 playback samples were synchronized and the fixed playhead/ruler zero edge aligned.
+- [ ] Measure the new filmstrip's 19-frame decode duration from the #641 artifact and compare against the previous 7.5-second baseline. Do not claim a speedup until measured.
+- [ ] Confirm preview/thumbnail timestamp alignment and no decoder race/regression under rapid scrub, pinch zoom and scroll.
+- [ ] Add CapCut-style frame ruler: as zoom increases, transition from seconds/subdivisions to frame labels such as `1f`, `2f`, `3f`, using the source video's actual FPS (including non-integer frame rates where applicable). Frame labels must represent frame indices/time accurately, not assume every source is 30 FPS.
+- [ ] At maximum zoom, support precise frame-level playhead navigation and ensure the paused preview decodes the exact selected frame. Frame ruler and filmstrip must share one time-to-pixel mapping; zoom must not change clip timing or export duration.
+- Physical-phone comparison and acceptance remain open. PR #11 stays draft/unmerged; do not bump version or create version 395.
