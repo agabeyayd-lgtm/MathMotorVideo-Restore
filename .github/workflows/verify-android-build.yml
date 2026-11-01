@@ -84,19 +84,7 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -wipe-data
           emulator-boot-timeout: 600
           script: |
-            screenshot_status=0
-            bash .github/scripts/capture-emulator-screenshots.sh || screenshot_status=$?
-
-            # Run the interaction test independently: screenshot/ANR capture
-            # failures must not silently skip pinch and shared-scroll coverage.
-            gesture_status=0
-            bash .github/scripts/run-timeline-pinch-test.sh || gesture_status=$?
-
-            if [ "$screenshot_status" -ne 0 ]; then
-              echo "Emulator screenshot flow failed with status $screenshot_status"
-              exit "$screenshot_status"
-            fi
-            exit "$gesture_status"
+            bash .github/scripts/run-emulator-checks.sh
 
       - name: Upload emulator screenshots and diagnostics
         if: always() && github.event_name == 'pull_request'
