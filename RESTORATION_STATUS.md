@@ -79,3 +79,35 @@ See the detailed, release-blocking checklist in README.md. The active list is:
 ## Recovery background
 
 Some older physics/scenario-related source and tests remain as reconstruction leftovers; they are outside the active video-editing workflow. The original complete V7 source tree was not recoverable.
+
+
+## User phone comparison — new CapCut parity targets (2026-11-01)
+
+Reference: the two user-supplied screenshots captured with both editors' timelines expanded to a comparable scale. The first is MathMotor; the second is CapCut.
+
+Newly observed gaps to implement and verify:
+
+1. **Pinch/ruler separation:** current MathMotor pinch affects both the time scale and filmstrip presentation. Target behavior is to adjust the time ruler/scale without changing filmstrip height, thumbnail tile geometry, or thumbnail density. Keep clip timestamps and ruler-to-filmstrip alignment correct; never change actual clip duration or trim bounds during zoom.
+2. **Duration placement:** move the current-time / total-duration readout from the playback-button row to directly above the timeline ruler, as in CapCut. Keep one authoritative readout.
+3. **Ruler detail:** ruler marks and labels must become more precise as zoom increases, including frame subdivisions (2f/4f/6f where supported by the clip frame rate); retain readable seconds/major ticks at wider scales.
+4. **Fixed playhead/header:** playhead remains fixed in the viewport while timeline content moves beneath it. Zero-time anchor and fixed controls must not move with the horizontal filmstrip.
+5. **Filmstrip consistency:** thumbnail strip keeps stable height and tile geometry across zoom levels, with clear sequential frames and no stretching/reflow caused by pinch.
+6. **Workspace hierarchy:** keep preview above, ruler/video strip and independent audio/text lanes in the middle, compact contextual tools and bottom dock below. Reduce oversized action-panel occupation and unused space without sacrificing touch targets or preview aspect ratio.
+7. **Preview:** compare preview scale/black unused area against CapCut on the physical phone; preserve source aspect ratio and do not crop to imitate the reference.
+
+### Focused validation for these targets
+
+- Compare the same clip at equivalent timeline zoom on the physical phone.
+- Capture minimum/middle/maximum zoom before and after; prove ruler scale changes while filmstrip height/tile geometry remain stable.
+- Verify pinch does not change clip start/end, trim bounds, actual duration, total duration, playhead timestamp, preview frame or exported duration.
+- Verify duration readout is above the ruler and remains synchronized while scrubbing/playing/seeking.
+- Verify frame-level ruler subdivisions against the source frame rate.
+- Add only targeted tests for uncovered behavior; do not repeat unchanged green interaction, thumbnail or seek tests.
+
+These are **open targets**, not completed fixes. Existing emulator/CI passes remain limited to their recorded scenarios and do not constitute physical-phone acceptance.
+
+### Work boundary
+
+- Active candidate for the current filmstrip separator repair: `fix/timeline-filmstrip-thumbnail-separators`, draft PR #12. Keep PR #12 draft/unmerged while these targets are implemented and verified.
+- Installed baseline remains versionCode 394 / build 61. Do not create version 395, bump version metadata, publish/sign a release, or activate the updater until all required gates pass and the user explicitly authorizes it.
+
