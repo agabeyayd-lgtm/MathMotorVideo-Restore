@@ -812,3 +812,16 @@ The user reviewed the current phone build and requested one focused editor polis
 Implementation started on 2026-11-01: source commit `e6cbc2b73012d12afce49b64533d68b89f2ae446` keeps a clip already at timeline zero anchored at zero when its source start is trimmed, removes the redundant clip-panel heading/selected-source line, and moves the contextual tool panel below the timeline immediately above the bottom dock. These are source changes only; panel sizing/keyboard behavior and the remaining preview/ruler requirements are still pending verification and follow-up work.
 
 Follow-up source commit `1be67ecc7d2ba7e71381399863d76ee732a236b4` adds five minor ruler divisions between each adaptive major label and compacts the bottom tool panel in normal/keyboard layouts. This improves ruler granularity and panel placement, but preview/filmstrip exact-frame synchronization remains unimplemented and all visual/device checks are pending.
+
+
+## Preview sync, CapCut drawer and ruler completion pass — 2026-11-01
+
+New source work on PR #11:
+- The zero-time source trim path is now an explicit TimelineVideoMath.trimStartKeepingTimelinePosition operation. When a clip begins at project time zero, advancing/restoring its source in-point no longer moves its project start. Regression tests cover both directions and verify that no leading gap can be created.
+- The preview now resolves the fixed playhead's project timestamp to the active clip's source timestamp through TimelineVideoMath.sourceTimeAtProjectTime. When paused/scrubbing, the old rendered frame is covered immediately; a still frame decoded for that exact source timestamp replaces the cover only when ready. Requests are generation-guarded, queued stale preview requests are removed, and no stale/nearby thumbnail is reused as though it were the requested frame.
+- The exact paused-frame layer is texture-surface compatible, preserves source aspect ratio and applies the selected clip's preview transform. Timeline gaps intentionally remain black. Playback hides the still layer and returns to Media3.
+- The thumbnail strip no longer temporarily displays a different cached timestamp when a cell's own frame is loading; unresolved cells stay neutral black until their exact sample is ready.
+- Edit/Text/Audio/Project panels are moved into a rounded, bottom-anchored scroll drawer directly above the fixed tool dock. The panel height adapts for keyboard mode and is scrollable. The redundant persistent status strip is removed from the visible root layout.
+- The ruler now uses scale-dependent major spacing plus five minor divisions per major interval. Minor tick offsets are extracted into tested shared math so density changes with zoom.
+
+Still required before acceptance: final PR-head Kotlin compilation and unit tests; emulator screenshots at multiple zoom values; check the portrait/landscape preview aspect ratio; exercise fast scrubbing and verify that the paused preview's source timestamp is mapped from the exact playhead time; verify playback transitions, clip transforms, gaps and thumbnail loading; verify the bottom drawer on short screens and with the keyboard; physical-phone acceptance. The current source is not yet phone/device acceptance. PR #11 remains draft/unmerged; version 395 remains blocked.
