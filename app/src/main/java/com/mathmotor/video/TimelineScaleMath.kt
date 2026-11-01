@@ -74,6 +74,15 @@ internal object TimelineScaleMath {
         return (seconds * 1000f).toLong().coerceAtLeast(1L)
     }
 
+    /** Pixel offsets for evenly spaced minor divisions between two major ruler ticks. */
+    fun rulerMinorTickOffsetsPx(intervalWidthPx: Int, divisionCount: Int = 5): List<Int> {
+        val width = intervalWidthPx.coerceAtLeast(0)
+        val divisions = divisionCount.coerceAtLeast(2)
+        return (1 until divisions).map { division -> width * division / divisions }
+            .filter { it in 1 until width }
+            .distinct()
+    }
+
     fun formatRulerTime(timeMs: Long): String {
         val safeMs = timeMs.coerceAtLeast(0L)
         val totalSeconds = safeMs / 1000L
