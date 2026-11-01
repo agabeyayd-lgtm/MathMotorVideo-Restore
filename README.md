@@ -774,3 +774,12 @@ Source commit `5117d594ddd33a7d2fb319fae8fb975ed0658d80`:
 - The filmstrip background now matches the thumbnail loading-cell background. Existing fixed-width, edge-to-edge cells and timestamp sampling are preserved.
 - [ ] Build and inspect a fresh PR #11 emulator screenshot; confirm the gray gutters disappear and frame content remains legible.
 - [ ] Confirm on the user's phone. This source change is not yet device acceptance. No version bump; version 395 remains blocked.
+
+
+## Filmstrip edge-to-edge and delete-anchor follow-up — 2026-11-01
+
+Focused source follow-up on `fix/filmstrip-gap-and-stable-end-controls`:
+- Thumbnail decoding now crops the source frame to 16:9 before creating the cached 192×108 bitmap. This removes dark bars baked into the bitmap itself; the previous ImageView `CENTER_CROP` could not remove those already-rendered pixels.
+- The filmstrip and thumbnail loading cells use black as the neutral fallback, not a visible gray-blue rail.
+- Clip deletion now computes the surviving selected clip and new playhead before rebuilding the timeline. It sets the pending horizontal scroll from that new playhead timestamp, so the rebuilt ruler/time-zero axis and trailing video-add control use the same time origin rather than inheriting a stale scroll position from the deleted clip.
+- This is a focused source change only. Fresh build, emulator screenshot, delete-last/delete-middle regression and phone verification remain pending. PR #11 remains draft; version 395 remains blocked.
