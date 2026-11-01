@@ -286,6 +286,12 @@ class VideoEditorActivity : Activity() {
         override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount.coerceAtLeast(1)
     }
     private val pendingTimelineThumbnails = mutableMapOf<String, MutableList<WeakReference<ImageView>>>()
+    // Learned from the actual decoded frame, so imported and restored clips share
+    // the same aspect-ratio-aware filmstrip path without blocking the UI for metadata.
+    private val timelineVideoAspectRatios = java.util.concurrent.ConcurrentHashMap<String, Float>()
+    private fun timelineVideoAspectRatio(uri: Uri): Float =
+        timelineVideoAspectRatios[uri.toString()] ?: TimelineThumbnailMath.DEFAULT_SOURCE_ASPECT_RATIO
+
     private class TimelineThumbnailTask(
         private val distanceFromPlayheadMs: Long,
         private val sequence: Long,
@@ -1883,9 +1889,7 @@ class VideoEditorActivity : Activity() {
             }
             scroll.addView(track)
             val responsiveLaneHeightPx = if (reorderable && tag == "Video") {
-                TimelineThumbnailMath.portraitCellHeightPx(
-                    dp(TimelineThumbnailMath.SHORTS_THUMBNAIL_WIDTH_DP)
-                )
+                dp(TimelineThumbnailMath.THUMBNAIL_STRIP_HEIGHT_DP)
             } else {
                 val responsiveLaneHeightDp = when {
                     keyboardLayoutActive -> minOf(heightDp, 28)
@@ -2273,7 +2277,7 @@ class VideoEditorActivity : Activity() {
             // transparent plus. Do not create a fake 5-second timeline block.
             val lane = makeLane(
                 "Video",
-                TimelineThumbnailMath.portraitCellHeightPx(dp(TimelineThumbnailMath.SHORTS_THUMBNAIL_WIDTH_DP)),
+                dp(TimelineThumbnailMath.THUMBNAIL_STRIP_HEIGHT_DP),
                 "video"
             )
             val addVideoButton = TextView(this).apply {
@@ -2296,9 +2300,7 @@ class VideoEditorActivity : Activity() {
             // Clips retain their real project start/end positions; overlaps are
             // stacked inside this same strip instead of creating extra VIDEO rows.
             val placements = TimelineVideoMath.singleTrackPlacements(videoTimelineSegments())
-            val stripHeight = TimelineThumbnailMath.portraitCellHeightPx(
-                dp(TimelineThumbnailMath.SHORTS_THUMBNAIL_WIDTH_DP)
-            )
+            val stripHeight = dp(TimelineThumbnailMath.THUMBNAIL_STRIP_HEIGHT_DP)
             val furthestClipEndPx = placements.maxOfOrNull {
                 widthBetween(0L, it.timelineEndMs)
             } ?: 0
@@ -5241,7 +5243,10 @@ class VideoEditorActivity : Activity() {
         // 52dp-wide cell instead of the previous 12dp sliver. The cells fill the clip
         // exactly, so there is no second independently moving strip behind them.
         // Bound the count to keep thumbnail decoding and cache pressure predictable.
-        val targetThumbnailWidth = dp(TimelineThumbnailMath.SHORTS_THUMBNAIL_WIDTH_DP).coerceAtLeast(1)
+        val targetThumbnailWidth = TimelineThumbnailMath.thumbnailCellWidthPx(
+            height,
+            timelineVideoAspectRatio(clip.uri)
+        ).coerceAtLeast(1)
         // Cell count follows the real clip width (duration × px/sec): zooming in
         // creates more timestamp samples; zooming out reduces their density.
         val thumbnailCount = TimelineThumbnailMath.thumbnailCount(width, targetThumbnailWidth)
@@ -5250,7 +5255,7 @@ class VideoEditorActivity : Activity() {
         val extraPixels = availableCellWidth % thumbnailCount
         repeat(thumbnailCount) { slot ->
             val cellWidth = baseCellWidth + if (slot < extraPixels) 1 else 0
-            val cellHeight = TimelineThumbnailMath.portraitCellHeightPx(cellWidth).coerceAtMost(height)
+            val cellHeight = height.coerceAtLeast(1)
             val image = ImageView(this).apply {
                 // The complete Shorts frame is reduced into a matching 9:16 cell.
                 // FIT_CENTER preserves every edge; no source pixels are cropped.
@@ -5776,6 +5781,15 @@ class VideoEditorActivity : Activity() {
                 val targets = pendingTimelineThumbnails.remove(key).orEmpty()
                 if (result != null && !isFinishing && !isDestroyed) {
                     timelineThumbnailCache.put(key, result)
+                    val decodedAspectRatio = result.width.toFloat() / result.height.coerceAtLeast(1).toFloat()
+                    val previousAspectRatio = timelineVideoAspectRatios.putIfAbsent(uri.toString(), decodedAspectRatio)
+                    if (previousAspectRatio == null &&
+                        kotlin.math.abs(decodedAspectRatio - TimelineThumbnailMath.DEFAULT_SOURCE_ASPECT_RATIO) > 0.02f
+                    ) {
+                        // First decoded frame reveals the source's real orientation/ratio.
+                        // Rebuild once with aspect-aware cell widths; all decoded frames remain cached.
+                        refreshTimelineTracks()
+                    }
                     if (timelineSyncTestEnabled) android.util.Log.i(
                         "TimelineFrameSyncTest",
                         "TIMELINE_THUMBNAIL_READY sourceMs=$timestampMs width=${result.width} height=${result.height} cached=false"
