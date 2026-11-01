@@ -121,3 +121,10 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 - Found that the custom video-filmstrip touch listener consumed all touch events and explicitly disallowed parent interception, preventing one-finger horizontal scrolling of the timeline.
 - Removed the competing listener so the lane's HorizontalScrollView receives swipe gestures; clip taps and long-press menu remain available.
 - Await API 35 interaction verification for shared ruler/video-lane movement and preserved clip selection. Version 395 remains blocked.
+
+## Run #664 — API 35 launcher ANR recovery — 2026-11-01
+
+- **Confirmed before failure:** debug APK build succeeded; deterministic fixture generation succeeded; ADB install succeeded; `MainActivity` launched and Android logged it as displayed after 2.584 seconds.
+- **Actual failure:** the screenshot workflow exited 8 after UI hierarchy inspection found `Pixel Launcher isn't responding`. `dumpsys window lastanr` identifies `com.google.android.apps.nexuslauncher/.NexusLauncherActivity`; the app activity is present behind the system dialog. Available diagnostics do not identify a MathMotor crash or MathMotor-owned ANR.
+- **Harness correction:** for a confirmed Pixel/Nexus Launcher ANR only, dismiss the launcher with its `Close app` action so Android can restart it; retain the existing `Wait` recovery for other explicitly system-owned ANRs. Any MathMotor-owned ANR remains a hard failure and must never be dismissed as emulator noise.
+- No application source or version metadata is changed by this correction. The full screenshot/editor/autosave smoke flow still needs a successful rerun. No physical-device validation has occurred. VersionCode 394 / Build 61 remains the only baseline; version 395 remains blocked.
