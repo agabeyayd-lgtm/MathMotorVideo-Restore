@@ -218,12 +218,12 @@ class VideoEditorActivity : Activity() {
         ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
             override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
                 val lane = timelineScrollViews.firstOrNull() ?: return false
-                if (lane.width <= 0 || !isScreenPointInsideTimeline(detector.focusX, detector.focusY)) return false
+                if (lane.width <= 0 || !isWindowPointInsideTimeline(detector.focusX, detector.focusY)) return false
                 // Freeze playback before the lane is visually transformed; otherwise
                 // periodic player sync could scroll against the active pinch.
                 pauseActivePreview()
                 val location = IntArray(2)
-                lane.getLocationOnScreen(location)
+                lane.getLocationInWindow(location)
                 timelineScaleAnchorViewportX = detector.focusX - location[0]
                 timelineScaleAnchorTimeMs = TimelineScaleMath.timeAtViewportX(
                     lane.scrollX,
@@ -243,7 +243,7 @@ class VideoEditorActivity : Activity() {
                 if (!timelineScaleGestureActive) return false
                 val lane = timelineScrollViews.firstOrNull() ?: return false
                 val location = IntArray(2)
-                lane.getLocationOnScreen(location)
+                lane.getLocationInWindow(location)
                 timelineScaleAnchorViewportX = detector.focusX - location[0]
 
                 val nextPxPerSecond = (
@@ -1957,6 +1957,15 @@ class VideoEditorActivity : Activity() {
             var bodyInitialStartMs = startMs
             var bodyInitialEndMs = endMs
             var bodyMoved = false
+            var bodyTouchActive = false
+            var bodyLongPressed = false
+            val bodyLongPressAction = Runnable {
+                if (bodyTouchActive && !bodyMoved) {
+                    bodyLongPressed = true
+                    body.parent?.requestDisallowInterceptTouchEvent(true)
+                    frame.animate().scaleX(0.96f).scaleY(0.96f).setDuration(100L).start()
+                }
+            }
             body.setOnTouchListener { view, event ->
                 when (event.actionMasked) {
                     android.view.MotionEvent.ACTION_DOWN -> {
@@ -1964,28 +1973,43 @@ class VideoEditorActivity : Activity() {
                         bodyInitialStartMs = layer.startMs
                         bodyInitialEndMs = layer.endMs
                         bodyMoved = false
+                        bodyTouchActive = true
+                        bodyLongPressed = false
                         player?.playWhenReady = false
-                        // Own this gesture from the start so the horizontal timeline does not steal it.
-                        view.parent?.requestDisallowInterceptTouchEvent(true)
+                        // A normal horizontal swipe belongs to the shared timeline.
+                        // Only a hold-then-drag moves this text strip.
+                        view.parent?.requestDisallowInterceptTouchEvent(false)
+                        timelineHandler.postDelayed(
+                            bodyLongPressAction,
+                            android.view.ViewConfiguration.getLongPressTimeout().toLong()
+                        )
                         true
                     }
                     android.view.MotionEvent.ACTION_MOVE -> {
                         val deltaPx = event.rawX - bodyDownRawX
                         if (kotlin.math.abs(deltaPx) > android.view.ViewConfiguration.get(this).scaledTouchSlop) {
-                            bodyMoved = true
-                            view.parent?.requestDisallowInterceptTouchEvent(true)
-                            val pps = timelinePixelsPerSecond()
-                            val leftLimitPx = bodyInitialStartMs / 1000f * pps
-                            val rightLimitPx = (totalMs - bodyInitialEndMs).coerceAtLeast(0L) / 1000f * pps
-                            frame.translationX = deltaPx.coerceIn(-leftLimitPx, rightLimitPx)
+                            timelineHandler.removeCallbacks(bodyLongPressAction)
+                            if (bodyLongPressed) {
+                                bodyMoved = true
+                                view.parent?.requestDisallowInterceptTouchEvent(true)
+                                val pps = timelinePixelsPerSecond()
+                                val leftLimitPx = bodyInitialStartMs / 1000f * pps
+                                val rightLimitPx = (totalMs - bodyInitialEndMs).coerceAtLeast(0L) / 1000f * pps
+                                frame.translationX = deltaPx.coerceIn(-leftLimitPx, rightLimitPx)
+                            } else {
+                                view.parent?.requestDisallowInterceptTouchEvent(false)
+                            }
                         }
                         true
                     }
                     android.view.MotionEvent.ACTION_UP -> {
-                        val deltaPx = event.rawX - bodyDownRawX
+                        timelineHandler.removeCallbacks(bodyLongPressAction)
+                        bodyTouchActive = false
                         frame.translationX = 0f
+                        frame.animate().scaleX(1f).scaleY(1f).setDuration(100L).start()
                         view.parent?.requestDisallowInterceptTouchEvent(false)
-                        if (bodyMoved) {
+                        if (bodyLongPressed && bodyMoved) {
+                            val deltaPx = event.rawX - bodyDownRawX
                             val deltaMs = TimelineScaleMath.millisecondsForPixels(
                                 deltaPx, timelinePixelsPerSecond()
                             )
@@ -2000,14 +2024,17 @@ class VideoEditorActivity : Activity() {
                             loadTextLayerIntoControls(layer)
                             status.text = "Yazı katmanı zaman çizelgesinde taşındı."
                             refreshTimelineTracks()
-                        } else {
+                        } else if (!bodyMoved) {
                             view.performClick()
                             refreshTimelineTracks()
                         }
                         true
                     }
                     android.view.MotionEvent.ACTION_CANCEL -> {
+                        timelineHandler.removeCallbacks(bodyLongPressAction)
+                        bodyTouchActive = false
                         frame.translationX = 0f
+                        frame.animate().scaleX(1f).scaleY(1f).setDuration(100L).start()
                         view.parent?.requestDisallowInterceptTouchEvent(false)
                         true
                     }
@@ -2448,33 +2475,57 @@ class VideoEditorActivity : Activity() {
 
         var bodyDownX = 0f
         var bodyMoved = false
+        var bodyTouchActive = false
+        var bodyLongPressed = false
         var bodyInitial = normalized
+        val bodyLongPressAction = Runnable {
+            if (bodyTouchActive && !bodyMoved) {
+                bodyLongPressed = true
+                body.parent?.requestDisallowInterceptTouchEvent(true)
+                frame.animate().scaleX(0.96f).scaleY(0.96f).setDuration(100L).start()
+            }
+        }
         body.setOnTouchListener { view, event ->
             when (event.actionMasked) {
                 android.view.MotionEvent.ACTION_DOWN -> {
                     bodyDownX = event.rawX
                     bodyInitial = TimelineRange(musicStartMs, musicDurationMs)
                     bodyMoved = false
+                    bodyTouchActive = true
+                    bodyLongPressed = false
                     player?.playWhenReady = false
-                    view.parent?.requestDisallowInterceptTouchEvent(true)
+                    view.parent?.requestDisallowInterceptTouchEvent(false)
+                    timelineHandler.postDelayed(
+                        bodyLongPressAction,
+                        android.view.ViewConfiguration.getLongPressTimeout().toLong()
+                    )
                     true
                 }
                 android.view.MotionEvent.ACTION_MOVE -> {
                     val deltaPx = event.rawX - bodyDownX
                     if (kotlin.math.abs(deltaPx) > android.view.ViewConfiguration.get(this).scaledTouchSlop) {
-                        bodyMoved = true
-                        val minPx = -bodyInitial.startMs / 1000f * pixelsPerSecond
-                        val maxPx = (totalMs - bodyInitial.startMs - bodyInitial.durationMs)
-                            .coerceAtLeast(0L) / 1000f * pixelsPerSecond
-                        frame.translationX = deltaPx.coerceIn(minPx, maxPx)
+                        timelineHandler.removeCallbacks(bodyLongPressAction)
+                        if (bodyLongPressed) {
+                            bodyMoved = true
+                            view.parent?.requestDisallowInterceptTouchEvent(true)
+                            val minPx = -bodyInitial.startMs / 1000f * pixelsPerSecond
+                            val maxPx = (totalMs - bodyInitial.startMs - bodyInitial.durationMs)
+                                .coerceAtLeast(0L) / 1000f * pixelsPerSecond
+                            frame.translationX = deltaPx.coerceIn(minPx, maxPx)
+                        } else {
+                            view.parent?.requestDisallowInterceptTouchEvent(false)
+                        }
                     }
                     true
                 }
                 android.view.MotionEvent.ACTION_UP -> {
-                    val deltaPx = event.rawX - bodyDownX
+                    timelineHandler.removeCallbacks(bodyLongPressAction)
+                    bodyTouchActive = false
                     frame.translationX = 0f
+                    frame.animate().scaleX(1f).scaleY(1f).setDuration(100L).start()
                     view.parent?.requestDisallowInterceptTouchEvent(false)
-                    if (bodyMoved) {
+                    if (bodyLongPressed && bodyMoved) {
+                        val deltaPx = event.rawX - bodyDownX
                         val deltaMs = TimelineScaleMath.millisecondsForPixels(deltaPx, pixelsPerSecond)
                         val moved = TimelineRangeMath.move(
                             bodyInitial,
@@ -2486,14 +2537,17 @@ class VideoEditorActivity : Activity() {
                         updateMusicTimingLabel()
                         status.text = "Müzik zaman çizelgesinde taşındı."
                         refreshTimelineTracks()
-                    } else {
+                    } else if (!bodyMoved) {
                         showEditorPanel("audio")
                         view.performClick()
                     }
                     true
                 }
                 android.view.MotionEvent.ACTION_CANCEL -> {
+                    timelineHandler.removeCallbacks(bodyLongPressAction)
+                    bodyTouchActive = false
                     frame.translationX = 0f
+                    frame.animate().scaleX(1f).scaleY(1f).setDuration(100L).start()
                     view.parent?.requestDisallowInterceptTouchEvent(false)
                     true
                 }
@@ -2632,33 +2686,57 @@ class VideoEditorActivity : Activity() {
 
         var bodyDownX = 0f
         var bodyMoved = false
+        var bodyTouchActive = false
+        var bodyLongPressed = false
         var bodyInitial = normalized
+        val bodyLongPressAction = Runnable {
+            if (bodyTouchActive && !bodyMoved) {
+                bodyLongPressed = true
+                body.parent?.requestDisallowInterceptTouchEvent(true)
+                frame.animate().scaleX(0.96f).scaleY(0.96f).setDuration(100L).start()
+            }
+        }
         body.setOnTouchListener { view, event ->
             when (event.actionMasked) {
                 android.view.MotionEvent.ACTION_DOWN -> {
                     bodyDownX = event.rawX
                     bodyInitial = TimelineAudioSegment(soundStartMs, soundSourceStartMs, soundDurationMs)
                     bodyMoved = false
+                    bodyTouchActive = true
+                    bodyLongPressed = false
                     player?.playWhenReady = false
-                    view.parent?.requestDisallowInterceptTouchEvent(true)
+                    view.parent?.requestDisallowInterceptTouchEvent(false)
+                    timelineHandler.postDelayed(
+                        bodyLongPressAction,
+                        android.view.ViewConfiguration.getLongPressTimeout().toLong()
+                    )
                     true
                 }
                 android.view.MotionEvent.ACTION_MOVE -> {
                     val deltaPx = event.rawX - bodyDownX
                     if (kotlin.math.abs(deltaPx) > android.view.ViewConfiguration.get(this).scaledTouchSlop) {
-                        bodyMoved = true
-                        val minPx = -bodyInitial.timelineStartMs / 1000f * pixelsPerSecond
-                        val maxPx = (totalMs - bodyInitial.timelineStartMs - bodyInitial.durationMs)
-                            .coerceAtLeast(0L) / 1000f * pixelsPerSecond
-                        frame.translationX = deltaPx.coerceIn(minPx, maxPx)
+                        timelineHandler.removeCallbacks(bodyLongPressAction)
+                        if (bodyLongPressed) {
+                            bodyMoved = true
+                            view.parent?.requestDisallowInterceptTouchEvent(true)
+                            val minPx = -bodyInitial.timelineStartMs / 1000f * pixelsPerSecond
+                            val maxPx = (totalMs - bodyInitial.timelineStartMs - bodyInitial.durationMs)
+                                .coerceAtLeast(0L) / 1000f * pixelsPerSecond
+                            frame.translationX = deltaPx.coerceIn(minPx, maxPx)
+                        } else {
+                            view.parent?.requestDisallowInterceptTouchEvent(false)
+                        }
                     }
                     true
                 }
                 android.view.MotionEvent.ACTION_UP -> {
-                    val deltaPx = event.rawX - bodyDownX
+                    timelineHandler.removeCallbacks(bodyLongPressAction)
+                    bodyTouchActive = false
                     frame.translationX = 0f
+                    frame.animate().scaleX(1f).scaleY(1f).setDuration(100L).start()
                     view.parent?.requestDisallowInterceptTouchEvent(false)
-                    if (bodyMoved) {
+                    if (bodyLongPressed && bodyMoved) {
+                        val deltaPx = event.rawX - bodyDownX
                         val deltaMs = TimelineScaleMath.millisecondsForPixels(deltaPx, pixelsPerSecond)
                         val moved = TimelineAudioMath.move(
                             bodyInitial,
@@ -2672,14 +2750,17 @@ class VideoEditorActivity : Activity() {
                         updateSoundControls()
                         status.text = "Ses efekti zaman çizelgesinde taşındı."
                         refreshTimelineTracks()
-                    } else {
+                    } else if (!bodyMoved) {
                         showEditorPanel("audio")
                         view.performClick()
                     }
                     true
                 }
                 android.view.MotionEvent.ACTION_CANCEL -> {
+                    timelineHandler.removeCallbacks(bodyLongPressAction)
+                    bodyTouchActive = false
                     frame.translationX = 0f
+                    frame.animate().scaleX(1f).scaleY(1f).setDuration(100L).start()
                     view.parent?.requestDisallowInterceptTouchEvent(false)
                     true
                 }
@@ -2881,10 +2962,12 @@ class VideoEditorActivity : Activity() {
         }
     }
 
-    private fun isScreenPointInsideTimeline(screenX: Float, screenY: Float): Boolean {
+    private fun isWindowPointInsideTimeline(screenX: Float, screenY: Float): Boolean {
         if (!::timelineTracksFrame.isInitialized) return false
         val location = IntArray(2)
-        timelineTracksFrame.getLocationOnScreen(location)
+        // Activity.dispatchTouchEvent / ScaleGestureDetector coordinates are window-local.
+        // Compare them with getLocationInWindow(), not absolute screen coordinates.
+        timelineTracksFrame.getLocationInWindow(location)
         return screenX >= location[0] && screenX <= location[0] + timelineTracksFrame.width &&
             screenY >= location[1] && screenY <= location[1] + timelineTracksFrame.height
     }
