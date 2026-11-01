@@ -839,3 +839,25 @@ No build/phone acceptance claimed. PR #11 remains draft/unmerged; version 395 re
 - [x] Reduce the bottom contextual panel height in normal and IME layouts to reserve more preview/timeline space.
 - [ ] Implement exact preview/filmstrip timestamp matching and stale/partial frame suppression; this is still outstanding.
 - [ ] Compile and run unit tests after the latest source commits; inspect fresh emulator layout and phone behavior.
+
+
+## Preview sync, zero-origin trim, bottom drawer and dynamic ruler — 2026-11-01
+
+Implementation status on PR #11:
+- [x] Extract a dedicated zero-origin trim operation that changes source in-point/duration while preserving the clip's project timeline start.
+- [x] Add regression tests for trimming and restoring a source range at project time zero without creating a leading gap.
+- [x] Add tested project-time-to-source-time mapping for a clip, returning no frame for a timeline gap.
+- [x] Add a paused/scrub preview still layer. It covers stale frames immediately and only reveals the decoded frame for the current playhead request; generation checks prevent out-of-order decodes from replacing newer frames.
+- [x] Reuse the shared decoder worker at highest priority for preview stills, remove queued stale preview work, bound decoded preview dimensions, and clean up bitmap/decoder resources.
+- [x] Keep thumbnail cells black until their own timestamp is decoded; remove the nearby-frame fallback that could show an incorrect timestamp during loading.
+- [x] Add the still-preview layer above a texture-backed PlayerView; preserve aspect ratio and apply the active clip's transform.
+- [x] Move contextual Edit/Text/Audio/Project tools into a rounded, scrollable bottom drawer above the fixed dock; adapt drawer height for the IME.
+- [x] Remove the persistent status strip from the visible editor layout; keep the internal status sink for diagnostics.
+- [x] Add five zoom-responsive minor ruler divisions between each adaptive major mark and a unit test for their pixel offsets.
+- [ ] Verify final PR-head compile, unit tests and emulator screenshot workflow after these preview/UI changes.
+- [ ] Verify exact preview/filmstrip frame correspondence during rapid scrub on emulator and phone; include portrait/landscape and transformed clips.
+- [ ] Verify play/pause transitions do not reveal a stale frame, and gaps remain black.
+- [ ] Verify bottom drawer usability, scroll and keyboard/short-screen behavior.
+- [ ] Confirm the zero-origin left trim on the user's phone and confirm the gray lead-in never appears.
+
+All listed source changes are implementation-only until the pending verification and phone acceptance are completed. PR #11 stays draft/unmerged; installed versionCode 394/build 61 stays unchanged; version 395 is blocked.
