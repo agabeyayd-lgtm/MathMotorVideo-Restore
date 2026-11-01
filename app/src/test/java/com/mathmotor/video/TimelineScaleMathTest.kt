@@ -216,13 +216,56 @@ class TimelineScaleMathTest {
     }
 
     @Test
-    fun rulerTickSpacingAdaptsWithoutFractionalSeconds() {
+    fun rulerTickSpacingMovesFromSecondsIntoReadableSubseconds() {
         assertEquals(3_000L, TimelineScaleMath.rulerStepMs(22f, 48f))
         assertEquals(1_000L, TimelineScaleMath.rulerStepMs(83f, 48f))
         assertEquals(5_000L, TimelineScaleMath.rulerStepMs(11f, 48f))
-        listOf(11f, 22f, 83f, 176f).forEach { scale ->
-            assertEquals(0L, TimelineScaleMath.rulerStepMs(scale, 48f) % 1_000L)
-        }
+        assertEquals(500L, TimelineScaleMath.rulerStepMs(176f, 48f))
+        assertEquals(100L, TimelineScaleMath.rulerStepMs(720f, 48f))
+    }
+
+    @Test
+    fun frameRulerSwitchesToActualSourceFramesOnlyWhenZoomCanReadLabels() {
+        val normal = TimelineScaleMath.rulerGrid(22f, 48f, 29.97)
+        assertEquals(null, normal.frameStep)
+        assertEquals(3_000L, normal.intervalMs)
+
+        val medium = TimelineScaleMath.rulerGrid(83f, 48f, 29.97)
+        assertEquals(null, medium.frameStep)
+        assertEquals(1_000L, medium.intervalMs)
+
+        val close = TimelineScaleMath.rulerGrid(176f, 48f, 29.97)
+        assertEquals(10L, close.frameStep)
+        assertEquals(334L, close.intervalMs)
+        assertEquals(29.97, close.frameRate!!, 0.0001)
+    }
+
+    @Test
+    fun maximumTimelineZoomCanDisplayIndividualFramesAtCommonSourceRates() {
+        val fps23976 = TimelineScaleMath.rulerGrid(720f, 22f, 23.976)
+        val fps30 = TimelineScaleMath.rulerGrid(720f, 22f, 30.0)
+        val fps60 = TimelineScaleMath.rulerGrid(720f, 22f, 60.0)
+
+        assertEquals(1L, fps23976.frameStep)
+        assertEquals(1L, fps30.frameStep)
+        assertEquals(2L, fps60.frameStep)
+    }
+
+    @Test
+    fun fractionalFrameRateUsesAbsoluteFrameIndicesWithoutCumulativeDrift() {
+        assertEquals(1_001L, TimelineScaleMath.frameTimeMs(30L, 29.97))
+        assertEquals(2_002L, TimelineScaleMath.frameTimeMs(60L, 29.97))
+        assertEquals(30L, TimelineScaleMath.frameIndexAtTimeMs(1_001L, 29.97))
+        assertEquals(1_001L, TimelineScaleMath.snapTimeToFrameMs(1_000L, 29.97))
+        assertEquals(1_000L, TimelineScaleMath.frameTimeMs(30L, 30.0))
+    }
+
+    @Test
+    fun rulerTimeLabelsShowSubsecondPrecisionWithoutTrailingZeroes() {
+        assertEquals("0.5", TimelineScaleMath.formatRulerTime(500L))
+        assertEquals("0.25", TimelineScaleMath.formatRulerTime(250L))
+        assertEquals("0.05", TimelineScaleMath.formatRulerTime(50L))
+        assertEquals("1:05.25", TimelineScaleMath.formatRulerTime(65_250L))
     }
 
     @Test
