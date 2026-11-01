@@ -3720,7 +3720,7 @@ class VideoEditorActivity : Activity() {
         selectedClipIndex=index;timelinePlayheadMs=clips[index].timelineStartMs
         ensureTrimHandlesReachable(index)
         val clip=clips[index]
-        refreshTimelineAfterClipChange();loadTrimControls();refreshTimelineTracks()
+        refreshTimelineAfterClipChange();loadTrimControls()
         ensureTimelinePreviewLoaded();seekTimelinePreview(timelinePlayheadMs)
         showEditorPanel("clip")
         updateClipTransformTouchAvailability()
@@ -5000,7 +5000,7 @@ class VideoEditorActivity : Activity() {
                 }
                 val skipped = uris.size - ready.size
                 status.text = buildString {
-                    append("${ready.size} video zaman çizelgesine eklendi. Klibe dokun: seç; basılı tutup sürükle: sırala.")
+                    append("${ready.size} video zaman çizelgesine eklendi. Klibe dokun: seç; basılı tutup sürükle: zaman konumunu değiştir.")
                     if (skipped > 0) append(" $skipped dosya okunamadığı için atlandı.")
                     append(" İstediğin sırada tek MP4 olarak dışa aktarabilirsin.")
                 }
