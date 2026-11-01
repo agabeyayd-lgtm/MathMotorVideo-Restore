@@ -2362,28 +2362,65 @@ class VideoEditorActivity : Activity() {
                 coarseScaleThresholdPx = dp(16).toFloat()
             )
             val ruler = makeLane("SÜRE", if (compactEditorLayout) 18 else 22)
-            // Stop at the actual sequence duration rather than rounding up and allowing
-            // an invisible overscroll tail beyond the final clip.
+            // At close zoom, switch from millisecond/second labels to the actual
+            // 30 fps project-frame grid. Wider zoom keeps the existing adaptive ruler.
+            val useFrameRuler = pxPerSecond >= dp(44).toFloat()
             val rulerEndMs = totalMs.coerceAtLeast(1L)
-            var rulerTimeMs = 0L
             var rulerPositionPx = 0
-            while (rulerTimeMs < rulerEndMs) {
-                val nextTimeMs = minOf(rulerTimeMs + rulerStepMs, rulerEndMs)
-                val nextPositionPx = TimelineScaleMath.pixelsForTime(nextTimeMs, pxPerSecond)
-                val tick = TextView(this).apply {
-                    text = formatMs(rulerTimeMs) + " ┆"
-                    contentDescription = "Zaman çizelgesi işareti: ${formatMs(rulerTimeMs)}; aralık ${rulerStepMs} ms"
-                    textSize = if (compactEditorLayout) 8f else 9f
-                    setTextColor(Color.rgb(166, 184, 201))
-                    gravity = Gravity.CENTER_VERTICAL or Gravity.START
-                    setPadding(dp(2), 0, 0, 0)
+            if (useFrameRuler) {
+                val frameRate = TimelineFrameMath.DEFAULT_FRAME_RATE
+                val frameStep = TimelineFrameMath.frameStepForPixelSpacing(
+                    pxPerSecond, dp(28).toFloat(), frameRate
+                )
+                val lastFrame = TimelineFrameMath.frameIndexAtTimeMs(rulerEndMs, frameRate)
+                var frameIndex = 0L
+                while (frameIndex <= lastFrame) {
+                    val frameTimeMs = TimelineFrameMath.timeMsForFrame(frameIndex, frameRate)
+                    if (frameTimeMs >= rulerEndMs) break
+                    val nextFrameIndex = minOf(frameIndex + frameStep, lastFrame + 1L)
+                    val nextTimeMs = minOf(
+                        TimelineFrameMath.timeMsForFrame(nextFrameIndex, frameRate),
+                        rulerEndMs
+                    )
+                    val nextPositionPx = TimelineScaleMath.pixelsForTime(nextTimeMs, pxPerSecond)
+                    val tick = TextView(this).apply {
+                        text = formatMs(frameTimeMs) + " " +
+                            (frameIndex % frameRate.toLong()) + "f"
+                        contentDescription = "Kare $frameIndex, ${formatTimelineMs(frameTimeMs)}"
+                        textSize = 8f
+                        setTextColor(Color.rgb(166, 184, 201))
+                        gravity = Gravity.CENTER_VERTICAL or Gravity.START
+                        setPadding(dp(2), 0, 0, 0)
+                    }
+                    ruler.addView(tick, LinearLayout.LayoutParams(
+                        maxOf(dp(30), (nextPositionPx - rulerPositionPx).coerceAtLeast(1)),
+                        dp(if (compactEditorLayout) 18 else 22)
+                    ))
+                    frameIndex = nextFrameIndex
+                    rulerPositionPx = nextPositionPx
                 }
-                ruler.addView(tick, LinearLayout.LayoutParams(
-                    maxOf(dp(26), (nextPositionPx - rulerPositionPx).coerceAtLeast(1)),
-                    dp(if (compactEditorLayout) 18 else 22)
-                ))
-                rulerTimeMs = nextTimeMs
-                rulerPositionPx = nextPositionPx
+            } else {
+                // Stop at the actual sequence duration rather than rounding up and allowing
+                // an invisible overscroll tail beyond the final clip.
+                var rulerTimeMs = 0L
+                while (rulerTimeMs < rulerEndMs) {
+                    val nextTimeMs = minOf(rulerTimeMs + rulerStepMs, rulerEndMs)
+                    val nextPositionPx = TimelineScaleMath.pixelsForTime(nextTimeMs, pxPerSecond)
+                    val tick = TextView(this).apply {
+                        text = formatMs(rulerTimeMs) + " ┆"
+                        contentDescription = "Zaman çizelgesi işareti: ${formatMs(rulerTimeMs)}; aralık ${rulerStepMs} ms"
+                        textSize = if (compactEditorLayout) 8f else 9f
+                        setTextColor(Color.rgb(166, 184, 201))
+                        gravity = Gravity.CENTER_VERTICAL or Gravity.START
+                        setPadding(dp(2), 0, 0, 0)
+                    }
+                    ruler.addView(tick, LinearLayout.LayoutParams(
+                        maxOf(dp(26), (nextPositionPx - rulerPositionPx).coerceAtLeast(1)),
+                        dp(if (compactEditorLayout) 18 else 22)
+                    ))
+                    rulerTimeMs = nextTimeMs
+                    rulerPositionPx = nextPositionPx
+                }
             }
         }
 
@@ -2642,9 +2679,15 @@ class VideoEditorActivity : Activity() {
         if (clips.isEmpty()) return
         ensureTimelinePreviewLoaded()
         if (totalOutputDurationMs() <= 0L) return
+        // User scrubbing follows the 30 fps timeline frame grid. Continuous
+        // playback sync remains timestamp-based and is intentionally not quantized.
+        val frameAlignedTimeMs = TimelineFrameMath.snapTimeMs(
+            requestedMs.coerceIn(0L, totalOutputDurationMs()),
+            TimelineFrameMath.DEFAULT_FRAME_RATE
+        ).coerceAtMost(totalOutputDurationMs())
         val position = TimelinePositionMath.locate(
             clips.map { (it.endMs - it.startMs).coerceAtLeast(0L) },
-            requestedMs
+            frameAlignedTimeMs
         ) ?: return
         val targetMs = position.clipStartMs + position.localPositionMs
         player?.seekTo(position.clipIndex, position.localPositionMs)
@@ -4644,10 +4687,10 @@ class VideoEditorActivity : Activity() {
         // made of overly narrow slivers while still increasing density naturally when zoomed in.
         val thumbnailCount = (width / dp(22)).coerceIn(3, 40)
         repeat(thumbnailCount) { slot ->
-            val frameTime = if (thumbnailCount <= 1) clip.startMs else {
-                clip.startMs + (durationMs * slot.toLong() / (thumbnailCount - 1L))
-                    .coerceIn(0L, durationMs.coerceAtLeast(0L))
-            }
+            // The clip interval is half-open [start, end). Never request the
+            // exclusive end timestamp: it can decode a frame from the following cut.
+            val frameTime = clip.startMs + (durationMs * slot.toLong() / thumbnailCount.toLong())
+                .coerceIn(0L, (durationMs - 1L).coerceAtLeast(0L))
             val image = ImageView(this).apply {
                 scaleType = ImageView.ScaleType.CENTER_CROP
                 setBackgroundColor(Color.rgb(31, 46, 59))
