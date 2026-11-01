@@ -226,6 +226,14 @@ class TimelineScaleMathTest {
     }
 
     @Test
+    fun rulerMinorTicksScaleWithEachAdaptiveMajorInterval() {
+        assertEquals(listOf(10, 20, 30, 40), TimelineScaleMath.rulerMinorTickOffsetsPx(50))
+        assertEquals(listOf(16, 33, 49, 66), TimelineScaleMath.rulerMinorTickOffsetsPx(83))
+        assertEquals(emptyList<Int>(), TimelineScaleMath.rulerMinorTickOffsetsPx(1))
+        assertEquals(listOf(5), TimelineScaleMath.rulerMinorTickOffsetsPx(10, 2))
+    }
+
+    @Test
     fun rulerLabelsFormatWholeSecondsAndMinutes() {
         assertEquals("0", TimelineScaleMath.formatRulerTime(0L))
         assertEquals("3", TimelineScaleMath.formatRulerTime(3_000L))
