@@ -705,3 +705,24 @@ PR #11 remains draft and unmerged. Installed versionCode 394 / build 61 is uncha
 - [ ] Regression-check one-finger clip drag/trim and empty-area deselection on multiple lanes.
 
 No release created. PR #11 remains draft/unmerged. Installed versionCode 394 / build 61 is unchanged. Version 395 remains blocked.
+
+
+## Fixed playhead and single-owner timeline gestures — 2026-11-01
+
+Source commit `54daecf5864ed76694f1930eb684bddbd8499628`.
+
+- [x] Make the center white playhead visual-only so timeline swipes reach the scrolling strips.
+- [x] Retain the existing shared horizontal-scroll listener as the single one-finger scrub path; it synchronizes lanes, updates the center time and schedules coalesced preview seeks.
+- [x] Guard scroll restoration after timeline rebuilds as programmatic movement, preventing it from being mistaken for a user scrub.
+- [x] Keep the Activity-level `ScaleGestureDetector` as the only timeline pinch detector; do not add a competing detector to each lane.
+- [x] Preview pinch movement using a temporary lane-content transform and commit the anchored real timeline scale/scroll when the pinch ends.
+- [x] Preserve existing leading/trailing spacers, which already place time zero and the last frame under the fixed center playhead.
+- [x] Retain the current full-frame FIT_CENTER filmstrip rendering rather than introducing center cropping.
+
+- [ ] Run PR-head Kotlin compilation and unit tests for this change.
+- [ ] Verify horizontal swipe scrubs the preview and all timeline lanes remain aligned.
+- [ ] Verify two-finger zoom in/out and midpoint anchoring without accidental clip movement or trimming.
+- [ ] Verify one-finger clip selection, long-press move and trim still work.
+- [ ] Verify programmatic timeline rebuild/playback-follow does not trigger a false scrub/seek.
+
+Source implementation is committed; it is not device acceptance. PR #11 stays draft/unmerged. Installed versionCode 394 / build 61 remains unchanged. Version 395 remains blocked.
