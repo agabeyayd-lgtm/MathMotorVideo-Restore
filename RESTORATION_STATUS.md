@@ -357,3 +357,14 @@ Using the user's two expanded-timeline screenshots (MathMotor vs CapCut), add th
 - Add/run only tests for uncovered behavior; do not repeat green scenarios unchanged.
 - These targets remain OPEN until physical-phone verification; existing emulator/CI passes are limited to their recorded paths.
 
+
+
+## PR #10 CI follow-up — 2026-11-01 (#496 PASS; #624 running at last check)
+
+- [Run #496 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41200913712) completed on `fix/editor-395-mainline`, tested head `63d8ac813cc2bb8ddb04c37332be7bb61c0e6fd5`. The `emulator-ui` job passed unit tests, Debug APK build, FFmpeg/MP4 fixture preparation, emulator startup, `EmulatorScreenshotTest#captureHomeEditorAndTextPanel`, screenshot/diagnostic collection and artifact upload.
+- Artifact [mathmotor-android-emulator-screenshots — 13042397771](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41200913712/artifacts/13042397771) is available until 2026-11-14.
+- Log review: ADB startup retries and emulator/GPU/Netsim setup/cleanup warnings occurred, but the connected instrumentation step completed successfully and the job conclusion is `success`. No failing assertion or failed job was found; do not classify these environment warnings as an application defect.
+- No-repeat: #496 repeats the already-green `EmulatorScreenshotTest#captureHomeEditorAndTextPanel` scenario from #412/#413. It adds no new behavior coverage; no manual rerun is warranted.
+- At the last check, PR-head workflow [run ID 41304958538](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41304958538) was `in_progress` on head `8c5e04814cbddc90abc8e10dce9755712494e7d3`. Unit tests, Debug APK build, deterministic fixture preparation and emulator setup had passed; app launch/interaction instrumentation was still running. Final result is pending and no failure is inferred from an in-progress job.
+- Physical-phone acceptance remains OPEN: keyboard-open text editing; timeline touch, trim, scroll and pinch; filmstrip geometry stability and thumbnail readability/loading; preview/dock usability; and export playback/output. The #10 signed install/update-over/relaunch preflight is emulator-only. In-app updater delivery is a separate OPEN gate and must be verified through the app's own update flow.
+- PR #10 remains open and draft. Installed baseline remains versionCode 394 / build 61. Version 395 remains blocked. Do not merge, change versionCode/versionName, create or publish 395, publish an APK, tag a release or activate the updater without all remaining acceptance gates and explicit user authorization.
