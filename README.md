@@ -31,6 +31,8 @@ A focused source review found that the existing timeline already shares one mill
 - Applied frame snapping to timeline seek requests and to the displayed playhead position synchronized from playback.
 - Added a two-finger pinch recognizer scoped to the timeline area. It calculates the time beneath the pinch focus and restores that same time to the same screen offset after zooming, within the scrollable range.
 - Added unit tests for 30 FPS boundaries, nearest-frame snapping, long-timeline conversion consistency, custom FPS values and invalid FPS rejection.
+- Extracted pinch-anchor scroll positioning into shared timeline scale math and added a regression test proving the same timestamp remains under the viewport anchor after zoom.
+- Enabled the unit-test/debug-build verification workflow for pull requests; this is intended to validate source without publishing an APK.
 - No app version metadata was changed. Version 395 remains blocked.
 
 ### Still open / not yet proven
