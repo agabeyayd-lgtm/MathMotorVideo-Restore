@@ -231,3 +231,12 @@ Validation:
 - The API 35 screenshot/editor workflow now also fingerprints every fully visible thumbnail and requires distinct frames for distinct sample times; run #682 is in progress.
 - Still required before calling this complete: prove distinct timestamps produce distinct fixture frames, measure initial filmstrip fill time, verify zoom-out causes no unnecessary re-decodes, exercise Play/Stop visually, and capture landscape/square filmstrips. No physical-phone acceptance is claimed.
 - No app version metadata was changed. No APK is being offered as a replacement, and version 395 remains blocked.
+
+
+## Ruler header refresh crash — 2026-11-02
+
+- Emulator screenshot workflow #685 (run ID 41349936764) failed after the debug APK built and the editor test entry launched. Its diagnostic log records `IllegalStateException: The specified child already has a parent` at `VideoEditorActivity.refreshTimelineTracks$makeLane` while reattaching `timelinePlayheadLabel` to the rebuilt ruler header. The 30-second clip-import timeout was a downstream symptom; the app had already crashed.
+- Root cause: responsive-layout handling invokes `refreshTimelineTracks()` a second time. `timelineTracks.removeAllViews()` detaches the old lane row, but does not detach its nested label. Reusing the same label in the new ruler header therefore attempts to add a View that still has a parent.
+- Main commit `bf09c70efe0fc9d63aeff5437b369a38c341b825` now explicitly removes the shared label from its previous `ViewGroup` before adding it to the newly built ruler header. This preserves the single shared playhead/time label and the 96dp ruler/lane alignment.
+- Verify Android build #479 passed before this correction; #685 did not pass and must not be treated as editor acceptance. The correction still requires a new green emulator launch/import run, followed by screenshot review.
+- Version 394 / Build 61 remains the user-approved baseline. Version 395 remains blocked; no replacement APK or release is approved by this fix alone.
