@@ -99,8 +99,13 @@ def verify(xml_path, screenshot_path, log_path):
     thumb_box = cell[1]
     thumb_x = (thumb_box[0] + thumb_box[2]) // 2
     thumb_y = (thumb_box[1] + thumb_box[3]) // 2
-    preview_rgb = pixel_mean(image, preview_x, preview_y)
-    thumb_rgb = pixel_mean(image, thumb_x, thumb_y)
+
+    # The fixed white playhead is drawn over the exact center of the filmstrip
+    # cell. Sampling that center measures the playhead, not the thumbnail.
+    # Compare a nearby interior point on both rendered frames instead.
+    sample_offset = max(6, min(10, (thumb_box[2] - thumb_box[0]) // 6))
+    preview_rgb = pixel_mean(image, preview_x + sample_offset, preview_y)
+    thumb_rgb = pixel_mean(image, thumb_x + sample_offset, thumb_y)
     channel_delta = max(abs(preview_rgb[i] - thumb_rgb[i]) for i in range(3))
     if channel_delta > 55:
         raise SystemExit(
@@ -111,8 +116,8 @@ def verify(xml_path, screenshot_path, log_path):
 
     print("PASS: preview frame matches the filmstrip cell centered under the playhead")
     print(f"  Sample timestamp: {sample_ms}ms")
-    print(f"  Preview center RGB: {preview_rgb}")
-    print(f"  Thumbnail center RGB: {thumb_rgb}")
+    print(f"  Preview comparison RGB: {preview_rgb}")
+    print(f"  Thumbnail comparison RGB: {thumb_rgb}")
     print(f"  Maximum channel delta: {channel_delta}")
 
 if __name__ == "__main__":
