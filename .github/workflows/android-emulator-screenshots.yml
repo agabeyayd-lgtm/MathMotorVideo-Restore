@@ -11,6 +11,7 @@ on:
       - "app/src/main/**"
       - ".github/workflows/android-emulator-screenshots.yml"
       - ".github/scripts/capture-emulator-screenshots.sh"
+      - ".github/scripts/assert-thumbnail-alignment.py"
   push:
     branches:
       - main
@@ -19,6 +20,7 @@ on:
       - "app/src/main/**"
       - ".github/workflows/android-emulator-screenshots.yml"
       - ".github/scripts/capture-emulator-screenshots.sh"
+      - ".github/scripts/assert-thumbnail-alignment.py"
 
 permissions:
   contents: read
