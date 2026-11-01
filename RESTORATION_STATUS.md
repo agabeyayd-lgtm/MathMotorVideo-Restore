@@ -183,3 +183,17 @@ Verification still required:
 - Review the newly captured editor/ruler screenshot and verify ruler ticks remain aligned with every media lane.
 - Only after that proceed to broader timeline/thumbnail acceptance checks. The #685 failure is not a green test and #479 only verifies compilation/unit tests.
 - Keep versionCode 394 / Build 61 as the approved baseline. Do not create version 395, publish/sign a release, or offer a replacement APK until all acceptance checks pass and the user explicitly authorizes it.
+
+
+## 2026-11-02 — corrected scrub time offset from ruler header width
+
+- Run #685 was a pre-import editor crash: a repeated timeline refresh tried to add `timelinePlayheadLabel` to a new parent while it still belonged to the old detached header. Main commit `bf09c70efe0fc9d63aeff5437b369a38c341b825` detaches the label from its former `ViewGroup` before reusing it.
+- Run #686 passed editor launch and sample-clip import and reached the frame-alignment assertion. The filmstrip's centered cell was at 211ms, but ready preview frames were at 542ms and 583ms; the strict check correctly failed. This is not the old view-parent crash.
+- The mismatch came from stale gutter geometry: the visible ruler/media header is 96dp wide and the row has a 3dp leading inset (99dp total), while spacer and time conversion helpers still subtracted the former 57dp grip gutter. At 120dp/s this explains approximately 330ms of error.
+- Commit `102bdcd899b397dc439d1c2c3193b651e57fd6d6` centralizes the 99dp header gutter for leading/trailing spacer geometry and fit-to-project width. Commit `3a6d6b474c6eb6cf24f8f0fb01a34601a1240653` updates `TimelineScaleMathTest` geometry to the new header width. The preview/frame tolerance was not relaxed.
+
+Verification pending:
+- Emulator screenshot run #687 validates whether the corrected gutter makes the centered 211ms thumbnail and preview request the same source frame.
+- Verify Android build #484 validates the revised geometry unit tests and APK compilation.
+- On green, continue the existing acceptance sequence for forward/reverse scrub, zoom, thumbnail reuse/fill speed, Stop frame retention, and portrait/landscape/square source ratios. The CI emulator is not physical-phone acceptance.
+- Keep versionCode 394 / Build 61 as the approved baseline. Do not create version 395, sign/publish a release, or offer a replacement APK until all acceptance checks pass and the user explicitly authorizes it.
