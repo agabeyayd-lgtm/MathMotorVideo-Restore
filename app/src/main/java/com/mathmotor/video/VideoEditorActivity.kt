@@ -735,13 +735,14 @@ class VideoEditorActivity : Activity() {
             ViewGroup.LayoutParams.MATCH_PARENT, dp(48)
         ))
 
-        // The time readout now belongs to the timeline, not the playback row.
-        // It is inserted directly above the shared ruler/filmstrip below.
-        timelinePlayheadLabel = label("00:00.0 / 00:00.0", 10f, Color.rgb(225, 233, 237), true).apply {
+        // Compact playback time lives in the ruler's left header cell, on the
+        // same row as the ruler ticks (CapCut-style), not in a separate extra row.
+        timelinePlayheadLabel = label("00:00.0 / 00:00.0", 8.5f, Color.rgb(225, 233, 237), true).apply {
             maxLines = 1
             gravity = Gravity.CENTER_VERTICAL or Gravity.START
             setSingleLine(true)
-            setPadding(dp(4), 0, dp(2), 0)
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(dp(3), 0, dp(2), 0)
             contentDescription = "Oynatma zamanı ve toplam video süresi"
         }
         val fitTimelineButton = miniButton("Sığdır") { fitTimelineToProject() }.apply {
@@ -755,18 +756,6 @@ class VideoEditorActivity : Activity() {
                 rightMargin = dp(8)
             }
         )
-        val timelineTimeRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(8), dp(2), dp(8), dp(2))
-            addView(
-                timelinePlayheadLabel,
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(22))
-            )
-        }
-        timelineCard.addView(timelineTimeRow, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(26)
-        ))
         timelineTracksFrame = FrameLayout(this)
         timelineTracks = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         timelineTracksFrame.addView(
@@ -1752,6 +1741,9 @@ class VideoEditorActivity : Activity() {
             }
             if (reorderable) {
                 row.addView(grip, LinearLayout.LayoutParams(dp(54), ViewGroup.LayoutParams.MATCH_PARENT))
+                // Reserve the rest of the shared 96dp header so every media lane
+                // begins at exactly the same x-coordinate as the ruler ticks.
+                row.addView(View(this), LinearLayout.LayoutParams(dp(42), ViewGroup.LayoutParams.MATCH_PARENT))
             if (reorderable && tag == "Video") {
                 grip.contentDescription = if (keepSourceAudio.isChecked) {
                     "Video sesini kapat"
@@ -1766,11 +1758,18 @@ class VideoEditorActivity : Activity() {
                 }
             }
             } else {
-                // Match the 54dp layer-grip width. A wider ruler header shifts
-                // every ruler tick away from the matching video-thumbnail time.
-                row.addView(View(this).apply {
-                    contentDescription = "Zaman cetveli başlığı"
-                }, LinearLayout.LayoutParams(dp(54), ViewGroup.LayoutParams.MATCH_PARENT))
+                // The current/total time readout shares this fixed header cell
+                // with the ruler row; media lanes reserve the same 96dp width.
+                row.addView(FrameLayout(this).apply {
+                    contentDescription = "Zaman cetveli başlığı ve oynatma süresi"
+                    addView(
+                        timelinePlayheadLabel,
+                        FrameLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                    )
+                }, LinearLayout.LayoutParams(dp(96), ViewGroup.LayoutParams.MATCH_PARENT))
             }
 
             if (reorderable) {
