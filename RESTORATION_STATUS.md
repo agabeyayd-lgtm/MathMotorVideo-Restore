@@ -834,3 +834,8 @@ Validation checklist remains open until the final PR-head build/unit tests, fres
 - [ ] Fix exact preview/filmstrip frame synchronization and stale/partial frames during rapid scrubbing.
 
 No build/phone acceptance claimed. PR #11 remains draft/unmerged; version 395 remains blocked.
+
+- [x] Add five zoom-scaled minor tick divisions between adaptive major ruler labels (source commit `1be67ecc7d2ba7e71381399863d76ee732a236b4`).
+- [x] Reduce the bottom contextual panel height in normal and IME layouts to reserve more preview/timeline space.
+- [ ] Implement exact preview/filmstrip timestamp matching and stale/partial frame suppression; this is still outstanding.
+- [ ] Compile and run unit tests after the latest source commits; inspect fresh emulator layout and phone behavior.
