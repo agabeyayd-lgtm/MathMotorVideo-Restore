@@ -160,3 +160,11 @@ Do not mark the existing release checklist items complete until the relevant aut
 - Removed that force-stop command. The test clears stale logcat and launches the test editor activity without terminating the active instrumentation.
 - The fix only addresses the test harness. Pinch-in/out, anchor preservation and ruler/video-lane synchronization remain **unverified** until the corrected API 35 emulator test passes.
 - Version 395 remains blocked; no version metadata or release artifact was changed.
+
+
+## Run #437 finding and compact-layout ruler fix — 2026-11-01
+
+- Unit tests and Debug APK compilation passed. The API 35 instrumentation now ran (the previous force-stop crash was eliminated), but its first assertion failed because the five-second ruler marker was absent.
+- Root cause: the editor omitted the entire `SÜRE` ruler whenever `compactEditorLayout` was true. The 320×640 emulator uses compact layout, so the test could not find `00:05`.
+- Updated the editor to retain a compact 18 dp time-ruler lane on short phone screens; it is still hidden while the keyboard is active. This makes timeline time navigation available on compact screens rather than weakening the test.
+- Corrected build and API 35 gesture verification are pending. Pinch behavior and ruler/video-lane synchronization are not yet marked complete. Version 395 remains blocked.
