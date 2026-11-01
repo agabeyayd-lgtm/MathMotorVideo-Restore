@@ -1149,3 +1149,13 @@ No version bump, release signing, merge or version 395. PR #11 remains draft/unm
 - [ ] User's physical-phone test must confirm gradual seconds → subdivisions → frame labels, frame stepping/preview, thumbnail timestamp match and quick loading during repeated pinch/scrub.
 
 Latest debug APK built from source commit `d9eae9f18d3e0841e81f4485d39b19c893860282` (Verify #400 green; Build #481 green). No version bump, release signing, merge or version 395.
+
+
+## Duration readout aligned with the ruler — 2026-11-01
+
+- [x] Current and total project time share the ruler row's existing 54dp left gutter; the redundant separate time row is absent.
+- [x] The ruler and media lanes retain a common horizontal origin.
+- [x] Timeline card-height calculation reserves zero height for a separate time row.
+- [ ] Fresh PR-head Kotlin tests and debug APK build are required. Build #486 is older and must not be used as proof for this source.
+- [ ] Fresh emulator screenshot review and physical-phone layout/touch acceptance remain open.
+- No merge, release, or version 395. PR #11 remains draft/unmerged.
