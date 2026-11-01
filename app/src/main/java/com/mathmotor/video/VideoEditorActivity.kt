@@ -4339,6 +4339,9 @@ class VideoEditorActivity : Activity() {
                 refreshClipList()
                 loadTrimControls()
                 refreshTimelineTracks()
+                // Show the actual frame beneath the fixed playhead immediately,
+                // even while the single-clip player is still preparing.
+                requestPreviewFrameAt(timelinePlayheadMs)
                 // A debug-only signal lets CI verify clip import even when the
                 // emulator accessibility tree cannot be captured reliably.
                 if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) android.util.Log.i(
@@ -5561,7 +5564,7 @@ class VideoEditorActivity : Activity() {
                     previewFrameBitmap = decoded
                     previewFrameOverlay.setImageBitmap(decoded)
                     if (previous !== decoded && previous != null && !previous.isRecycled) previous.recycle()
-                    previewFrameOverlay.setBackgroundColor(Color.TRANSPARENT)
+                    previewFrameOverlay.setBackgroundColor(Color.BLACK)
                     previewFrameOverlay.visibility = View.VISIBLE
                     applyPreviewFrameTransform(clip)
                 } else {
