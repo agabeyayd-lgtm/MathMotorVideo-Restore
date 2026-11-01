@@ -1226,6 +1226,16 @@ class VideoEditorActivity : Activity() {
         editorPanelScroll = ScrollView(this).apply {
             isFillViewport = true
             overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+            clipToOutline = true
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.rgb(12, 19, 28))
+                cornerRadii = floatArrayOf(
+                    dp(14).toFloat(), dp(14).toFloat(),
+                    dp(14).toFloat(), dp(14).toFloat(),
+                    0f, 0f, 0f, 0f
+                )
+                setStroke(dp(1), Color.rgb(37, 53, 69))
+            }
         }
         val panelHolder = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -1259,9 +1269,8 @@ class VideoEditorActivity : Activity() {
             setPadding(dp(8), dp(3), dp(8), dp(3))
             setBackgroundColor(Color.rgb(23, 32, 45))
         }
-        root.addView(status, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(26)
-        ).apply { topMargin = dp(3) })
+        // Keep status as an internal diagnostic/message sink only. The old
+        // persistent strip above the dock is intentionally not part of the editor UI.
 
         val dock = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1296,7 +1305,7 @@ class VideoEditorActivity : Activity() {
         // at the bottom and the shared timeline stays between preview and dock.
         root.removeView(editorPanelScroll)
         root.addView(editorPanelScroll, (root.childCount - 1).coerceAtLeast(0), LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(136)
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(196)
         ))
         editorPanelScroll.visibility = View.GONE
 
@@ -1593,7 +1602,7 @@ class VideoEditorActivity : Activity() {
             editorPanelScroll.visibility = View.VISIBLE
             val params = editorPanelScroll.layoutParams as? LinearLayout.LayoutParams
             if (params != null) {
-                params.height = dp(if (keyboardLayoutActive) 108 else 136)
+                params.height = dp(if (keyboardLayoutActive) 112 else 196)
                 editorPanelScroll.layoutParams = params
             }
         }
