@@ -808,3 +808,16 @@ Source changes committed to PR #11:
 - [ ] Confirm frame loading and visual quality on the user's phone.
 
 The source change and tests are committed; they are not yet build-verified, emulator-verified or phone-accepted. PR #11 remains draft/unmerged. Installed versionCode 394 / build 61 is unchanged. Version 395 remains blocked.
+
+
+## Editor polish batch — 2026-11-01
+
+User-approved work scope for the current PR #11; no version 395 or merge until every item is implemented and verified.
+
+- [ ] Synchronize the preview with the exact filmstrip timestamp beneath the fixed playhead; prevent stale/partial frames from appearing current during rapid scrubbing/decoding; preserve preview aspect ratio.
+- [ ] Rebuild Edit/Text/Audio/Project contextual tools as a CapCut-style bottom-anchored scrollable drawer above the fixed dock. It must not open at the top or clip on short displays/when the keyboard is visible.
+- [ ] Remove redundant “KLİP DÜZENLEME” heading, selected-clip/source-duration line, and bottom “Başlangıç/Bitiş” status strip. Keep the trim functionality itself.
+- [ ] Enforce the zero-origin invariant: trimming the source start of a clip placed at timeline 0 must not shift its timeline start or introduce a leading empty gray region.
+- [ ] Implement a zoom-responsive ruler with major/minor tick subdivisions and adaptive labels similar to CapCut, instead of fixed whole-second labels only.
+
+Validation checklist remains open until the final PR-head build/unit tests, fresh emulator inspection, and phone acceptance cover all five items plus regressions in trim, preview, and timeline gestures. PR #11 stays draft/unmerged; installed versionCode 394/build 61 unchanged; version 395 blocked.
