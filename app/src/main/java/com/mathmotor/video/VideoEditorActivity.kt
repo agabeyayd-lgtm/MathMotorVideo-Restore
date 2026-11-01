@@ -177,7 +177,6 @@ class VideoEditorActivity : Activity() {
     private val timelineThumbnailCache = object : android.util.LruCache<String, Bitmap>(256) {}
     private val pendingTimelineThumbnails = mutableMapOf<String, MutableList<WeakReference<ImageView>>>()
     private val timelineThumbnailExecutor = java.util.concurrent.Executors.newFixedThreadPool(2)
-    private lateinit var timelinePlayheadSeek: SeekBar
     private lateinit var timelinePlayheadLabel: TextView
     private var timelinePlayheadMs = 0L
     private var timelineGestureTracking = false
@@ -580,26 +579,15 @@ class VideoEditorActivity : Activity() {
             contentDescription = "Klibe uzun basarak taşı, sil veya kopyala; kesmek için kenarları sürükle"
         }, matchWrap())
 
-        val playheadRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(3), dp(3), dp(3), 0)
+        // Current and total duration share the ruler's fixed left gutter.
+        timelinePlayheadLabel = label("00:00.0\n00:00.0", 8f, Color.rgb(225, 233, 237), true).apply {
+            maxLines = 2
+            gravity = Gravity.CENTER
+            setSingleLine(false)
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(dp(1), 0, dp(1), 0)
+            contentDescription = "Oynatma zamanı ve toplam video süresi"
         }
-        timelinePlayheadLabel = label("00:00.0 / 00:00.0", 9f, Color.rgb(225, 233, 237), true).apply { maxLines = 2; setLineSpacing(-dp(2).toFloat(), 1f) }
-        playheadRow.addView(timelinePlayheadLabel, LinearLayout.LayoutParams(dp(128), ViewGroup.LayoutParams.WRAP_CONTENT))
-        timelinePlayheadSeek = SeekBar(this).apply {
-            max = 0
-            progress = 0
-            isEnabled = false
-            contentDescription = "Zaman çizelgesinde oynatma noktası"
-        }
-        playheadRow.addView(timelinePlayheadSeek, LinearLayout.LayoutParams(0, dp(34), 1f))
-        playheadRow.addView(miniButton("−") { adjustTimelineZoom(0.75f) },
-            LinearLayout.LayoutParams(dp(42), dp(42)).apply { leftMargin = dp(3) })
-        playheadRow.addView(miniButton("+") { adjustTimelineZoom(1.35f) },
-            LinearLayout.LayoutParams(dp(42), dp(42)).apply { leftMargin = dp(2) })
-        timelineCard.addView(playheadRow, matchWrap())
-        installTimelinePlayheadListeners()
         root.addView(timelineCard, matchWrap())
         root.addView(gap(8))
 
@@ -1159,16 +1147,8 @@ class VideoEditorActivity : Activity() {
                 applySafeRootPadding(imeVisible, availableHeight)
                 if (imeVisible) {
                     timelineCard.setPadding(dp(5), dp(2), dp(5), dp(2))
-                    timelinePlayheadSeek.layoutParams?.let {
-                        it.height = dp(24)
-                        timelinePlayheadSeek.layoutParams = it
-                    }
                 } else {
                     timelineCard.setPadding(dp(8), dp(5), dp(8), dp(5))
-                    timelinePlayheadSeek.layoutParams?.let {
-                        it.height = dp(34)
-                        timelinePlayheadSeek.layoutParams = it
-                    }
                 }
                 rulerAwareTimelineRefresh()
                 panelScroll.requestLayout()
@@ -1213,11 +1193,6 @@ class VideoEditorActivity : Activity() {
                     dp(if (compactEditorLayout) 2 else 5)
                 )
                 if (compactEditorLayout) {
-                    val timeLabelParams = timelinePlayheadLabel.layoutParams as? LinearLayout.LayoutParams
-                    if (timeLabelParams != null) {
-                        timeLabelParams.width = dp(94)
-                        timelinePlayheadLabel.layoutParams = timeLabelParams
-                    }
                 }
                 rulerAwareTimelineRefresh()
             }
@@ -1435,7 +1410,7 @@ class VideoEditorActivity : Activity() {
         timelineHorizontalScrollX = preservedScrollX
         timelineTracks.removeAllViews()
         timelineScrollViews.clear()
-        if (::timelinePlayheadSeek.isInitialized) updateTimelinePlayheadControls()
+        if (::timelinePlayheadLabel.isInitialized) updateTimelinePlayheadLabel()
 
         if (!loadingTextLayerControls) syncSelectedTextLayerFromControls()
         val totalMs = totalOutputDurationMs()
@@ -1470,13 +1445,18 @@ class VideoEditorActivity : Activity() {
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(3), dp(1), dp(3), dp(1))
             }
-            row.addView(TextView(this).apply {
-                text = tag
-                textSize = 9f
-                setTextColor(Color.rgb(166, 184, 201))
-                typeface = Typeface.DEFAULT_BOLD
-                gravity = Gravity.CENTER_VERTICAL
-            }, LinearLayout.LayoutParams(dp(54), ViewGroup.LayoutParams.MATCH_PARENT))
+            if (tag == "SÜRE" && ::timelinePlayheadLabel.isInitialized) {
+                (timelinePlayheadLabel.parent as? ViewGroup)?.removeView(timelinePlayheadLabel)
+                row.addView(timelinePlayheadLabel, LinearLayout.LayoutParams(dp(54), ViewGroup.LayoutParams.MATCH_PARENT))
+            } else {
+                row.addView(TextView(this).apply {
+                    text = tag
+                    textSize = 9f
+                    setTextColor(Color.rgb(166, 184, 201))
+                    typeface = Typeface.DEFAULT_BOLD
+                    gravity = Gravity.CENTER_VERTICAL
+                }, LinearLayout.LayoutParams(dp(54), ViewGroup.LayoutParams.MATCH_PARENT))
+            }
 
             val scroll = android.widget.HorizontalScrollView(this).apply {
                 isHorizontalScrollBarEnabled = false
@@ -2047,56 +2027,14 @@ class VideoEditorActivity : Activity() {
         seekTimelinePreview(requestedMs.coerceIn(0L, totalOutputDurationMs()))
     }
 
-    private fun installTimelinePlayheadListeners() {
-        timelinePlayheadSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                if (!fromUser) return
-                timelinePlayheadMs = TimelineTrimMath.timeForProgress(progress, totalOutputDurationMs())
-                updateTimelinePlayheadLabel()
-                seekTimelinePreview(timelinePlayheadMs)
-            }
-
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {
-                if (clips.isEmpty()) return
-                ensureTimelinePreviewLoaded()
-                player?.playWhenReady = false
-            }
-
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {
-                updateTimelinePlayheadLabel()
-            }
-        })
-    }
-
-    private fun updateTimelinePlayheadControls() {
-        if (!::timelinePlayheadSeek.isInitialized || !::timelinePlayheadLabel.isInitialized) return
-        val totalMs = totalOutputDurationMs()
-        timelinePlayheadSeek.max = TimelineTrimMath.progressMax(totalMs)
-        timelinePlayheadSeek.isEnabled = clips.isNotEmpty() && totalMs > 0L
-        timelinePlayheadMs = timelinePlayheadMs.coerceIn(0L, totalMs)
-        timelinePlayheadSeek.progress = TimelineTrimMath.progressForTime(timelinePlayheadMs, totalMs)
-        updateTimelinePlayheadLabel()
-        updateTimelinePlayheadLine()
-    }
-
     private fun updateTimelinePlayheadLabel() {
         if (!::timelinePlayheadLabel.isInitialized) return
         val totalMs = totalOutputDurationMs()
         val projectPositionMs = timelinePlayheadMs.coerceIn(0L, totalMs)
-        val projectText = "Proje ${formatTimelineMs(projectPositionMs)} / ${formatTimelineMs(totalMs)}"
-        val clip = selectedClip()
-        timelinePlayheadLabel.text = if (previewSingleClip && clip != null) {
-            val projectOffsetMs = clips.take(selectedClipIndex).sumOf {
-                (it.endMs - it.startMs).coerceAtLeast(0L)
-            }
-            val clipDurationMs = (clip.endMs - clip.startMs).coerceAtLeast(0L)
-            val clipPositionMs = (projectPositionMs - projectOffsetMs).coerceIn(0L, clipDurationMs)
-            // Lead with the combined project/output duration. The selected clip's
-            // local time is useful, but must not look like the final video duration.
-            "$projectText\nKlip ${formatTimelineMs(clipPositionMs)} / ${formatTimelineMs(clipDurationMs)}"
-        } else {
-            projectText
-        }
+        timelinePlayheadLabel.text =
+            "${formatTimelineMs(projectPositionMs)}\n${formatTimelineMs(totalMs)}"
+        timelinePlayheadLabel.contentDescription =
+            "Proje süresi: ${formatTimelineMs(projectPositionMs)} / ${formatTimelineMs(totalMs)}"
         updateTimelinePlayheadLine()
         updatePreviewTextOverlay()
     }
@@ -2129,7 +2067,6 @@ class VideoEditorActivity : Activity() {
             refreshClipList()
             loadTrimControls()
         }
-        timelinePlayheadSeek.progress = TimelineTrimMath.progressForTime(targetMs, totalOutputDurationMs())
         updateTimelinePlayheadLabel()
     }
 
@@ -2148,8 +2085,6 @@ class VideoEditorActivity : Activity() {
             refreshClipList()
             loadTrimControls()
         }
-        val progress = TimelineTrimMath.progressForTime(timelinePlayheadMs, totalOutputDurationMs())
-        if (timelinePlayheadSeek.progress != progress) timelinePlayheadSeek.progress = progress
         updateTimelinePlayheadLabel()
     }
 
@@ -2164,9 +2099,6 @@ class VideoEditorActivity : Activity() {
                 .coerceIn(0L, totalOutputDurationMs()),
             TimelineFrameMath.DEFAULT_PROJECT_FPS
         ).coerceAtMost(totalOutputDurationMs())
-        if (::timelinePlayheadSeek.isInitialized) {
-            timelinePlayheadSeek.progress = TimelineTrimMath.progressForTime(timelinePlayheadMs, totalOutputDurationMs())
-        }
         updateTimelinePlayheadLabel()
     }
 
@@ -2260,7 +2192,7 @@ class VideoEditorActivity : Activity() {
 
         refreshClipList()
         loadTrimControls()
-        updateTimelinePlayheadControls()
+        updateTimelinePlayheadLabel()
 
         if (clips.isEmpty()) {
             previewSingleClip = false
@@ -3152,7 +3084,7 @@ class VideoEditorActivity : Activity() {
             pendingTimelineScrollX = restoredScrollX
             timelineHorizontalScrollX = restoredScrollX
         }
-        updateTimelinePlayheadControls()
+        updateTimelinePlayheadLabel()
         refreshTimelineTracks()
         status.text = "PROJE AÇILDI. Klipler, kesmeler, oynatma noktası, yazı ve ses ayarları geri yüklendi."
     }
