@@ -298,11 +298,14 @@ class VideoEditorActivity : Activity() {
         override fun run() = work()
     }
     private val timelineThumbnailTaskSequence = java.util.concurrent.atomic.AtomicLong()
-    // One decoder worker avoids competing hardware decoders. Its priority queue extracts
-    // frames nearest the fixed playhead first, rather than filling off-screen cells first.
+    // Two isolated decoder workers overlap independent frame extraction. Each worker
+    // owns its own MediaMetadataRetriever; priority still favours frames nearest playhead.
+    private val timelineThumbnailWorkerSequence = java.util.concurrent.atomic.AtomicLong()
+    private val timelineThumbnailRetrievers =
+        java.util.concurrent.ConcurrentHashMap<Long, Pair<Uri, MediaMetadataRetriever>>()
     private val timelineThumbnailExecutor = java.util.concurrent.ThreadPoolExecutor(
-        1,
-        1,
+        2,
+        2,
         0L,
         java.util.concurrent.TimeUnit.MILLISECONDS,
         java.util.concurrent.PriorityBlockingQueue<Runnable>(
@@ -310,11 +313,17 @@ class VideoEditorActivity : Activity() {
             java.util.Comparator { first, second ->
                 (first as TimelineThumbnailTask).compareTo(second as TimelineThumbnailTask)
             }
-        )
+        ),
+        java.util.concurrent.ThreadFactory { worker ->
+            Thread({
+                try {
+                    worker.run()
+                } finally {
+                    releaseTimelineThumbnailRetriever()
+                }
+            }, "timeline-thumbnail-\u0024{timelineThumbnailWorkerSequence.incrementAndGet()}")
+        }
     )
-    // Accessed only on timelineThumbnailExecutor's single worker thread.
-    private var timelineThumbnailRetriever: MediaMetadataRetriever? = null
-    private var timelineThumbnailRetrieverUri: Uri? = null
     private lateinit var timelinePlayheadSeek: SeekBar
     private lateinit var timelinePlayheadLabel: TextView
     private lateinit var timelinePlayButton: Button
@@ -5530,10 +5539,30 @@ class VideoEditorActivity : Activity() {
         return container
     }
 
+    private fun timelineThumbnailRetrieverFor(uri: Uri, tag: String): MediaMetadataRetriever? {
+        val threadId = Thread.currentThread().id
+        val current = timelineThumbnailRetrievers[threadId]
+        if (current != null && current.first == uri) return current.second
+        if (current != null) {
+            runCatching { current.second.release() }
+            timelineThumbnailRetrievers.remove(threadId, current)
+        }
+        return try {
+            MediaMetadataRetriever().also { retriever ->
+                retriever.setDataSource(this, uri)
+                timelineThumbnailRetrievers[threadId] = uri to retriever
+            }
+        } catch (error: Exception) {
+            android.util.Log.w(tag, "Could not open thumbnail source $uri", error)
+            null
+        }
+    }
+
     private fun releaseTimelineThumbnailRetriever() {
-        runCatching { timelineThumbnailRetriever?.release() }
-        timelineThumbnailRetriever = null
-        timelineThumbnailRetrieverUri = null
+        val threadId = Thread.currentThread().id
+        timelineThumbnailRetrievers.remove(threadId)?.second?.let { retriever ->
+            runCatching { retriever.release() }
+        }
     }
 
     private fun hidePreviewFrameOverlay() {
@@ -5666,20 +5695,7 @@ class VideoEditorActivity : Activity() {
     /** Uses the same source URI and project-to-source timestamp mapping as the filmstrip. */
     private fun decodeTimelinePreviewFrame(uri: Uri, timeMs: Long): Bitmap? {
         val frameTimeUs = timeMs.coerceAtLeast(0L) * 1000L
-        val retriever = try {
-            if (timelineThumbnailRetriever == null || timelineThumbnailRetrieverUri != uri) {
-                releaseTimelineThumbnailRetriever()
-                val created = MediaMetadataRetriever()
-                created.setDataSource(this, uri)
-                timelineThumbnailRetriever = created
-                timelineThumbnailRetrieverUri = uri
-            }
-            timelineThumbnailRetriever
-        } catch (error: Exception) {
-            releaseTimelineThumbnailRetriever()
-            android.util.Log.w("TimelinePreviewFrame", "Could not open $uri", error)
-            null
-        }
+        val retriever = timelineThumbnailRetrieverFor(uri, "TimelinePreviewFrame")
 
         val frame = retriever?.let { active ->
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
@@ -5734,20 +5750,7 @@ class VideoEditorActivity : Activity() {
 
     private fun decodeTimelineFrame(uri: Uri, timeMs: Long): Bitmap? {
         val frameTimeUs = timeMs.coerceAtLeast(0L) * 1000L
-        val retriever = try {
-            if (timelineThumbnailRetriever == null || timelineThumbnailRetrieverUri != uri) {
-                releaseTimelineThumbnailRetriever()
-                val created = MediaMetadataRetriever()
-                created.setDataSource(this, uri)
-                timelineThumbnailRetriever = created
-                timelineThumbnailRetrieverUri = uri
-            }
-            timelineThumbnailRetriever
-        } catch (error: Exception) {
-            releaseTimelineThumbnailRetriever()
-            android.util.Log.w("TimelineThumbnail", "Platform decoder could not open $uri", error)
-            null
-        }
+        val retriever = timelineThumbnailRetrieverFor(uri, "TimelineThumbnail")
 
         val platformFrame = retriever?.let { activeRetriever ->
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
@@ -6416,20 +6419,10 @@ class VideoEditorActivity : Activity() {
         if (::previewFrameOverlay.isInitialized) previewFrameOverlay.setImageDrawable(null)
         previewFrameBitmap?.let { if (!it.isRecycled) it.recycle() }
         previewFrameBitmap = null
-        // Discard stale queued cells, then release the reused decoder on its worker
-        // after any in-flight frame extraction has returned.
+        // Drop queued thumbnail work. Each decoder worker releases its own retriever
+        // in the worker-thread finally block when the executor shuts down.
         timelineThumbnailExecutor.queue.clear()
-        runCatching {
-            timelineThumbnailExecutor.execute(
-                TimelineThumbnailTask(Long.MIN_VALUE, timelineThumbnailTaskSequence.incrementAndGet()) {
-                    releaseTimelineThumbnailRetriever()
-                }
-            )
-            timelineThumbnailExecutor.shutdown()
-        }.onFailure {
-            timelineThumbnailExecutor.shutdownNow()
-            releaseTimelineThumbnailRetriever()
-        }
+        timelineThumbnailExecutor.shutdownNow()
         pendingTimelineThumbnails.clear()
         timelineThumbnailCache.evictAll()
         playerView.player = null
