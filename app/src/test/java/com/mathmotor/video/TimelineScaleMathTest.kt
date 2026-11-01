@@ -57,24 +57,24 @@ class TimelineScaleMathTest {
     @Test
     fun timeZeroAndFirstVideoFrameShareTheFullPlayCenter() {
         val frameWidthPx = 320
-        val gripAndLabelGutterPx = 57
+        val rulerHeaderAndLeadingInsetPx = 99
         val originSpacerPx = TimelineScaleMath.originSpacerWidthForCenteredPlayhead(
             frameWidthPx,
-            gripAndLabelGutterPx
+            rulerHeaderAndLeadingInsetPx
         )
 
         val trailingRowInsetPx = 3
         val endSpacerPx = TimelineScaleMath.endSpacerWidthForCenteredPlayhead(
             frameWidthPx,
-            gripAndLabelGutterPx,
+            rulerHeaderAndLeadingInsetPx,
             trailingRowInsetPx
         )
-        val scrollViewportWidthPx = frameWidthPx - gripAndLabelGutterPx - trailingRowInsetPx
+        val scrollViewportWidthPx = frameWidthPx - rulerHeaderAndLeadingInsetPx - trailingRowInsetPx
 
-        assertEquals(103, originSpacerPx)
+        assertEquals(61, originSpacerPx)
         assertEquals(157, endSpacerPx)
         assertEquals(scrollViewportWidthPx, originSpacerPx + endSpacerPx)
-        assertEquals(frameWidthPx / 2, gripAndLabelGutterPx + originSpacerPx)
+        assertEquals(frameWidthPx / 2, rulerHeaderAndLeadingInsetPx + originSpacerPx)
         assertEquals(
             0L,
             TimelineScaleMath.timeAtViewportX(
@@ -89,7 +89,7 @@ class TimelineScaleMathTest {
     @Test
     fun playbackScrollMovesBothRulerAndVideoUnderTheSameFixedCenter() {
         val frameWidthPx = 320
-        val gutterPx = 57
+        val gutterPx = 99
         val originSpacerPx = TimelineScaleMath.originSpacerWidthForCenteredPlayhead(frameWidthPx, gutterPx)
         val pixelsPerSecond = 22f
         val elapsedMs = 2_000L
@@ -108,7 +108,7 @@ class TimelineScaleMathTest {
     fun zoomAnchorClampsAtTimelineStart() {
         assertEquals(
             0,
-            TimelineScaleMath.scrollForAnchoredZoom(0L, 20f, 57f, 44f)
+            TimelineScaleMath.scrollForAnchoredZoom(0L, 20f, 99f, 44f)
         )
     }
 
