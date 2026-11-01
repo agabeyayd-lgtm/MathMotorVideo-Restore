@@ -6,7 +6,7 @@
 - Timeline seek/scrub requests now snap to the nearest 30 fps frame. Continuous playback synchronization remains timestamp-based and is not rounded.
 - Filmstrip sampling now stays inside each clip's half-open interval `[start, end)`, avoiding a request exactly at the exclusive end that could display a frame from the next cut.
 - Added focused JUnit tests for 30 fps frame counts/timestamps, nearest-frame snapping, zoom-based frame ruler intervals and invalid inputs.
-- **Verification pending:** these source changes need unit/build and emulator interaction validation on PR #10. The 30 fps value defines the current timeline timebase; this patch does not prove or force the MP4 encoder output frame rate. Verify encoded FPS separately before claiming exported files are 30 fps.
+- **Verification update:** PR #10 workflow [#654](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41317126059) has started on this candidate. The new and existing unit tests passed; Debug APK build and emulator interaction tests are still running. Do not mark the feature fully verified until the workflow completes and its result/artifacts are inspected. The 30 fps value defines the current timeline timebase; this patch does not prove or force the MP4 encoder output frame rate. Verify encoded FPS separately before claiming exported files are 30 fps.
 - VersionCode 395 remains blocked. No version metadata change or release APK is included.
 
 # MathMotor Video
