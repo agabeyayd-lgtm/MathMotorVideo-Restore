@@ -183,6 +183,7 @@ class VideoEditorActivity : Activity() {
     private var timelinePlayheadMs = 0L
     private var timelineGestureTracking = false
     private var timelinePinchConsumed = false
+    private var timelinePinchInProgress = false
     private var timelinePinchAnchorTimeMs = 0L
     private var timelinePinchAnchorOffsetPx = 0f
     private var timelinePinchStartZoom = 1.0f
@@ -1931,6 +1932,7 @@ class VideoEditorActivity : Activity() {
                     ).coerceAtLeast(0L)
                     timelinePinchStartZoom = timelineZoom
                     timelinePinchRequestedZoom = timelineZoom
+                    timelinePinchInProgress = true
                     return true
                 }
 
@@ -1954,6 +1956,7 @@ class VideoEditorActivity : Activity() {
                         refreshTimelineTracks()
                         status.text = "Zaman çizelgesi: ${timelineZoom}×"
                     }
+                    timelinePinchInProgress = false
                     timelinePinchConsumed = true
                 }
             }
@@ -1980,7 +1983,7 @@ class VideoEditorActivity : Activity() {
             ensureTimelineScaleGestureDetector()
             val wasPinchConsumed = timelinePinchConsumed
             timelineScaleGestureDetector?.onTouchEvent(event)
-            val consumePinch = wasPinchConsumed || timelinePinchConsumed
+            val consumePinch = wasPinchConsumed || timelinePinchConsumed || timelinePinchInProgress
             if (event.actionMasked == android.view.MotionEvent.ACTION_UP ||
                 event.actionMasked == android.view.MotionEvent.ACTION_CANCEL
             ) {
