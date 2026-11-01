@@ -752,3 +752,6 @@ Follow-up source commit `88ef7ea8e06cfb3537893f7c79e8466e6173599e`: pause the ac
 
 
 A focused math regression test was added in `cfb24cf97e2b0661745ddb18ece934d3fe550c7e`: it checks that an off-centre pinch keeps the timestamp beneath the moving midpoint while the time beneath the fixed centre playhead is recalculated. The test still needs to pass on the latest PR head.
+
+
+Pinch-capture follow-up commit `1a764b9c63ec9638289cb8f419861bfc73dc7ea7`: the Activity now takes over any two-pointer event as soon as its scale detector becomes active, not only the initial ACTION_POINTER_DOWN. This also handles devices where ScaleGestureDetector begins scaling on the first subsequent move.
