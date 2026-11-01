@@ -5483,14 +5483,18 @@ class VideoEditorActivity : Activity() {
     }
 
     /** Cover the player immediately while a new playhead frame is being decoded. */
-    private fun showPreviewFramePending() {
-        if (!::previewFrameOverlay.isInitialized) return
+    private fun showPreviewFramePending(): Long {
+        val requestId = previewFrameRequestGeneration.incrementAndGet()
+        pendingPreviewFrameTask?.let { timelineThumbnailExecutor.remove(it) }
+        pendingPreviewFrameTask = null
+        if (!::previewFrameOverlay.isInitialized) return requestId
         previewFrameOverlay.setImageDrawable(null)
         previewFrameBitmap?.let { if (!it.isRecycled) it.recycle() }
         previewFrameBitmap = null
         previewFrameOverlay.setBackgroundColor(Color.BLACK)
         previewFrameOverlay.visibility = View.VISIBLE
         resetPreviewFrameTransform()
+        return requestId
     }
 
     private fun resetPreviewFrameTransform() {
@@ -5527,10 +5531,7 @@ class VideoEditorActivity : Activity() {
      */
     private fun requestPreviewFrameAt(projectTimeMs: Long) {
         if (!::previewFrameOverlay.isInitialized || clips.isEmpty()) return
-        val requestId = previewFrameRequestGeneration.incrementAndGet()
-        pendingPreviewFrameTask?.let { timelineThumbnailExecutor.remove(it) }
-        pendingPreviewFrameTask = null
-        showPreviewFramePending()
+        val requestId = showPreviewFramePending()
 
         val lastFrameMs = (totalOutputDurationMs() - 1L).coerceAtLeast(0L)
         val safeProjectTimeMs = projectTimeMs.coerceIn(0L, lastFrameMs)
@@ -5724,19 +5725,8 @@ class VideoEditorActivity : Activity() {
             target.setImageBitmap(cached)
             return
         }
-        // Keep a nearby cached frame visible while this zoom level's exact sample loads.
-        if (target.drawable == null) {
-            val prefix = uri.toString() + "#"
-            val nearby = timelineThumbnailCache.snapshot().entries
-                .asSequence()
-                .filter { it.key.startsWith(prefix) && !it.value.isRecycled }
-                .minByOrNull { entry ->
-                    kotlin.math.abs(
-                        (entry.key.substringAfterLast("#").toLongOrNull() ?: Long.MAX_VALUE) - timestampMs
-                    )
-                }?.value
-            if (nearby != null) target.setImageBitmap(nearby)
-        }
+        // Leave the cell neutral black until its own exact sample is decoded.
+        // Reusing a nearby timestamp here made stale/partial frames look current.
         val waiting = pendingTimelineThumbnails[key]
         if (waiting != null) {
             waiting.add(WeakReference(target))
