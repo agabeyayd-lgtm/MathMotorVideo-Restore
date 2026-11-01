@@ -31,9 +31,9 @@ class TimelineFrameMathTest {
 
     @Test
     fun frameRulerUsesReadableIntervalsAtDifferentZoomLevels() {
-        assertEquals(5L, TimelineFrameMath.frameStepForPixelSpacing(176f, 30f))
-        assertEquals(10L, TimelineFrameMath.frameStepForPixelSpacing(88f, 30f))
-        assertEquals(60L, TimelineFrameMath.frameStepForPixelSpacing(22f, 30f))
+        assertEquals(5L, TimelineFrameMath.frameStepForPixelSpacing(176f, 28f))
+        assertEquals(10L, TimelineFrameMath.frameStepForPixelSpacing(88f, 28f))
+        assertEquals(60L, TimelineFrameMath.frameStepForPixelSpacing(22f, 28f))
     }
 
     @Test
@@ -41,6 +41,6 @@ class TimelineFrameMathTest {
         assertEquals(0L, TimelineFrameMath.frameIndexAtTimeMs(-1L))
         assertEquals(0L, TimelineFrameMath.timeUsForFrame(12L, 0))
         assertEquals(0L, TimelineFrameMath.snapTimeMs(300L, 0))
-        assertEquals(1L, TimelineFrameMath.frameStepForPixelSpacing(0f, 30f))
+        assertEquals(1L, TimelineFrameMath.frameStepForPixelSpacing(0f, 28f))
     }
 }
