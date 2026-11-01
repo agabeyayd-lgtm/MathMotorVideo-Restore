@@ -240,4 +240,55 @@ class TimelineScaleMathTest {
         assertEquals(0, TimelineScaleMath.widthBetween(2_000L, 1_000L, 22f))
         assertEquals(0L, TimelineScaleMath.millisecondsForPixels(100f, 0f))
     }
+
+    @Test
+    fun offCentrePinchKeepsMidpointTimestampAndUpdatesFixedCentreTime() {
+        val oldScale = 22f
+        val newScale = 44f
+        val scrollBefore = 320
+        val originSpacer = 103f
+        val firstMidpointX = 75f
+        val movedMidpointX = 130f
+
+        val midpointTime = TimelineScaleMath.timeAtViewportX(
+            scrollBefore,
+            firstMidpointX,
+            originSpacer,
+            oldScale
+        )
+        val scrollAfter = TimelineScaleMath.scrollForAnchoredZoom(
+            midpointTime,
+            movedMidpointX,
+            originSpacer,
+            newScale
+        )
+
+        assertEquals(
+            midpointTime,
+            TimelineScaleMath.timeAtViewportX(
+                scrollAfter,
+                movedMidpointX,
+                originSpacer,
+                newScale
+            )
+        )
+
+        val originalCentreTime = TimelineScaleMath.timeAtViewportX(
+            scrollBefore,
+            originSpacer,
+            originSpacer,
+            oldScale
+        )
+        val centreTimeAfterPinch = TimelineScaleMath.timeAtViewportX(
+            scrollAfter,
+            originSpacer,
+            originSpacer,
+            newScale
+        )
+        assertEquals(
+            TimelineScaleMath.millisecondsForPixels(scrollAfter.toFloat(), newScale),
+            centreTimeAfterPinch
+        )
+        assertEquals(false, originalCentreTime == centreTimeAfterPinch)
+    }
 }
