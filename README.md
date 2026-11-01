@@ -184,3 +184,10 @@ Do not mark the existing release checklist items complete until the relevant aut
 - Follow-up source review found that each video filmstrip had a custom touch listener which called `requestDisallowInterceptTouchEvent(true)` on DOWN and consumed every event. That prevented its parent `HorizontalScrollView` from performing the required one-finger horizontal timeline scroll.
 - Removed that bespoke filmstrip touch handler. Clip tap selection and the existing long-press action menu remain; horizontal swipes are now left to the shared horizontal scroll lane, whose scroll listener synchronizes the ruler and other timeline lanes.
 - This is an input-routing correction. Verify shared lane movement and clip selection in the API 35 instrumentation run; do not mark the interaction complete until it passes. The previous in-progress emulator run may be superseded by this commit. Version 395 remains blocked.
+
+## Run #664 — API 35 launcher ANR recovery — 2026-11-01
+
+- Run #664 successfully built the debug APK, generated the deterministic video fixture, installed the APK, and launched `com.mathmotor.video.MainActivity`. Logcat records `Displayed com.mathmotor.video.next/com.mathmotor.video.MainActivity` after 2.584 seconds.
+- The screenshot smoke step then stopped with exit code 8 because the captured accessibility hierarchy contained the Android system dialog `Pixel Launcher isn't responding`. Window diagnostics attribute the ANR to `com.google.android.apps.nexuslauncher/.NexusLauncherActivity`, not MathMotor. No MathMotor fatal-exception or app-owned ANR was identified in the captured evidence.
+- The harness previously pressed `Wait` for every recognized system-owned ANR, leaving the stalled launcher dialog on top of the app. Update the harness to choose `Close app` specifically for Pixel/Nexus Launcher ANRs; keep app-owned ANRs as hard failures and do not dismiss them as emulator noise.
+- This is an emulator-test recovery change only. The editor source, versionCode 394, versionName, and release state remain unchanged. Screenshot/editor/autosave completion and physical-device behavior remain unverified; version 395 remains blocked.
