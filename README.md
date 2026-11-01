@@ -903,3 +903,12 @@ Still required before acceptance: final PR-head Kotlin compilation and unit test
 - [ ] Continue the already-listed bottom-drawer/keyboard, dynamic ruler, zero-origin trim, and phone acceptance checks.
 
 This is a targeted source fix, not yet verified. PR #11 remains draft/unmerged; installed versionCode 394/build 61 is unchanged; version 395 remains blocked.
+
+
+## Emulator #621 thumbnail comparison correction — 2026-11-01
+
+- #621 launched the app, imported the 8.023s fixture, aligned the 211ms filmstrip cell under the fixed playhead, and captured the preview/filmstrip screenshot. It stopped at the pixel assertion before later scrub/playback/autosave checks.
+- Artifact inspection identified a false-failure mechanism in `.github/scripts/assert-thumbnail-alignment.py`: the fixed white playhead overlays the exact center of the thumbnail cell, while the assertion sampled that covered center pixel. The preview sample was blue `(103,102,153)` and the covered thumbnail sample was gray `(215,215,142)` (max delta 113).
+- In the same captured screenshot, sampling an interior point offset from the playhead gave matching preview/thumbnail pixels (max delta 0). Updated the assertion to sample a nearby interior point instead of the covered center. Source commit: `53a7f6e1775ced2d43926ccd66a7bb127509d54d`.
+- This diagnoses the #621 pixel mismatch as a test sampling defect for this capture; it does not yet establish full preview correctness across content/aspect ratios or rapid scrubbing. The corrected CI assertion still needs a fresh emulator run.
+- #621 did not reach forward/reverse scrub, playback synchronization, or autosave assertions. Pinch zoom and clip-edit gestures remain untested. PR #11 stays draft/unmerged; versionCode 394/build 61 unchanged; version 395 remains blocked.
