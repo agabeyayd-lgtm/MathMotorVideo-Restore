@@ -21,6 +21,30 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - Do not bump `versionCode` or `versionName` during this work until the release gate is met and the user explicitly authorizes the release.
 - A successful source build is not the same as a tested, published APK. Keep the original media safe; export to a new file.
 
+## Timeline frame/zoom repair — 2026-11-01 (source changed; verification pending)
+
+A focused source review found that the existing timeline already shares one millisecond-to-pixel scale across its lanes and caches timestamped thumbnails, but it did not have a project-frame conversion layer. The timeline zoom controls also had no two-pointer pinch detector, and zoom did not preserve the time under a gesture anchor. The current UI code does not contain a dedicated adaptive ruler renderer; adaptive ruler ticks/labels therefore remain open work, not an existing feature.
+
+### Changes made on `fix/frame-accurate-timeline-zoom`
+
+- Added `TimelineFrameMath`: integer frame/time conversion with a 30 FPS default project rate; frame 1 maps to approximately 33 ms, frame 2 to 67 ms, and frame 30 to 1,000 ms. Milliseconds remain the storage/Media3 boundary, while user seek positions are snapped to the nearest project frame.
+- Applied frame snapping to timeline seek requests and to the displayed playhead position synchronized from playback.
+- Added a two-finger pinch recognizer scoped to the timeline area. It calculates the time beneath the pinch focus and restores that same time to the same screen offset after zooming, within the scrollable range.
+- Added unit tests for 30 FPS boundaries, nearest-frame snapping, long-timeline conversion consistency, custom FPS values and invalid FPS rejection.
+- No app version metadata was changed. Version 395 remains blocked.
+
+### Still open / not yet proven
+
+- [ ] Run the new `TimelineFrameMathTest` and all existing unit tests.
+- [ ] Build the Debug APK and run the focused emulator interaction test for pinch-in/pinch-out, anchor stability, scroll synchronization across all lanes, and one-finger scroll after pinch.
+- [ ] Confirm on a real phone that the timeline gestures do not interfere with trim handles, text/audio lane dragging, or clip selection.
+- [ ] Implement the missing adaptive ruler renderer (coarse intervals when zoomed out; seconds and frame ticks when zoomed in).
+- [ ] Implement and verify the requested stationary center playhead behavior. The current playhead line is still positioned from absolute timeline time minus scroll; this source change does not claim to have completed the CapCut center-playhead interaction.
+- [ ] Verify that preview decoding lands on the expected source frame. Project-frame snapping aligns the requested project time; it does not guarantee every source video is constant-frame-rate or that a decoder returns a unique source frame for every request.
+- [ ] Verify thumbnail timestamps, density and preview correspondence after zooming.
+
+Do not mark the existing release checklist items complete until the relevant automated and device checks pass. This source work is not a release APK and does not authorize version 395.
+
 ## Progress reality check — 2026-10-28
 
 **Honest assessment: recent work has not yet produced a newly verified, user-facing improvement that we can confidently call finished.** The project is not starting from zero: editing/export code and earlier focused checks exist. But repeated CI/emulator failures mean we have spent too much time cycling through test failures without closing the main phone-use problems. From the user's perspective, progress has therefore felt stalled; that concern is justified.
