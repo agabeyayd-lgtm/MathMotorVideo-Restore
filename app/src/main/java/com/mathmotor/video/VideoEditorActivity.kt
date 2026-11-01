@@ -522,17 +522,9 @@ class VideoEditorActivity : Activity() {
         root.addView(topBar, matchWrap())
         root.addView(gap(6))
 
-        playerView = PlayerView(this).apply {
-            setBackgroundColor(Color.BLACK)
-            // Native controls show the source clip duration, not the combined project duration.
-            // Keep playback aligned with the edited timeline controls below.
-            useController = false
-            // A texture-backed surface allows the exact paused frame layer to cover
-            // the video while scrubbing, avoiding stale decoded SurfaceView frames.
-            setUseTextureView(true)
-            resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
-            contentDescription = "Düzenlenmiş video önizlemesi"
-        }
+        // The XML surface_type attribute selects TextureView so the exact paused
+        // playhead-frame layer can cover the video during scrubbing.
+        playerView = layoutInflater.inflate(R.layout.editor_preview_player, null) as PlayerView
         previewFrame = FrameLayout(this).apply {
             setBackgroundColor(Color.rgb(5, 9, 15))
         }
