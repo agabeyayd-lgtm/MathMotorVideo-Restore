@@ -1049,3 +1049,23 @@ User explicitly prioritized solving fast filmstrip creation and confirmed the Ca
 - [ ] Confirm all four filmstrip goals on physical phone.
 
 No version bump, release or merge. PR #11 remains draft; version 395 remains blocked.
+
+
+## Source-FPS frame ruler — 2026-11-01
+
+Implementation on PR #11 (`d9eae9f18d3e0841e81f4485d39b19c893860282`):
+
+- [x] Read per-clip source FPS from capture metadata, with MediaExtractor track metadata fallback.
+- [x] Persist FPS in project JSON and recover missing FPS for older drafts in the background.
+- [x] Use adaptive seconds/subsecond ruler ticks at wider zoom and source-frame labels at close zoom.
+- [x] Calculate frame timestamps from absolute frame indices for fractional rates including 29.97 FPS.
+- [x] Snap timeline scroll scrubbing and the playhead seek control to source-frame boundaries while over a video clip; preserve gaps.
+- [x] Raise maximum manual timeline zoom to 720 dp/s to make individual-frame labels reachable without changing the accepted 52 dp 9:16 thumbnail cells.
+- [x] Add pure unit tests for frame-rate modes, fractional FPS drift, frame snapping math and subsecond labels.
+- [x] Verify #400 passed Kotlin unit tests and Android debug compilation.
+- [x] Build #481 passed and produced the debug APK artifact. APK copied to `MathMotorVideo-frame-ruler-debug.apk`; file integrity checked.
+- [ ] Inspect Emulator #648 screenshots and runtime diagnostics. Run was still in progress when this note was written.
+- [ ] Confirm ruler transitions, one-frame stepping and preview/filmstrip frame correspondence on the user's phone.
+- [ ] Recheck the four filmstrip goals as one integrated interaction: complete undistorted 9:16 thumbnails, zoom-only horizontal scale, exact preview/thumbnail timestamp and fast loading without stale frames.
+
+No version bump, release signing, merge or version 395. PR #11 remains draft/unmerged; installed baseline remains versionCode 394 / build 61.
