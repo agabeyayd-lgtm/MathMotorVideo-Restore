@@ -28,7 +28,7 @@ def prepare(xml_path):
     center = play_button_center(root)
     cells = []
     for node in root.iter("node"):
-        match = re.fullmatch(r"Klip karesi @(\d+)ms", node.attrib.get("content-desc", ""))
+        match = re.fullmatch(r"Klip karesi @(\d+)ms(?: \(önbellek\))?", node.attrib.get("content-desc", ""))
         box = bounds(node)
         if match and box:
             x = (box[0] + box[2]) // 2
@@ -58,7 +58,7 @@ def verify(xml_path, screenshot_path, log_path):
     cell = None
     sample_ms = None
     for node in root.iter("node"):
-        match = re.fullmatch(r"Klip karesi @(\d+)ms", node.attrib.get("content-desc", ""))
+        match = re.fullmatch(r"Klip karesi @(\d+)ms(?: \(önbellek\))?", node.attrib.get("content-desc", ""))
         box = bounds(node)
         if match and box:
             x = (box[0] + box[2]) // 2
@@ -101,7 +101,7 @@ def verify(xml_path, screenshot_path, log_path):
     thumbnail_nodes = []
     for node in root.iter("node"):
         match = re.fullmatch(
-            r"Klip karesi @(\\d+)ms(?: \\(önbellek\\))?",
+            r"Klip karesi @(\d+)ms(?: \(önbellek\))?",
             node.attrib.get("content-desc", "")
         )
         box = bounds(node)
