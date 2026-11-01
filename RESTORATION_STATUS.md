@@ -726,3 +726,9 @@ Source commit `54daecf5864ed76694f1930eb684bddbd8499628`.
 - [ ] Verify programmatic timeline rebuild/playback-follow does not trigger a false scrub/seek.
 
 Source implementation is committed; it is not device acceptance. PR #11 stays draft/unmerged. Installed versionCode 394 / build 61 remains unchanged. Version 395 remains blocked.
+
+
+### Off-centre pinch synchronization — 2026-11-01
+
+- [x] When a pinch midpoint away from the fixed centre playhead pans the timeline, recompute the time under the centre line and update the readout/seek control/preview (source commit `69140cfb4e64d18917b8e1e65750481f58c8c39d`).
+- [ ] Verify the displayed time and decoded preview frame match the ruler/filmstrip beneath the centre playhead after pinching at both the centre and off-centre positions.
