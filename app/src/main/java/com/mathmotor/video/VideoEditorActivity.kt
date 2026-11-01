@@ -2230,11 +2230,10 @@ class VideoEditorActivity : Activity() {
             ))
             // CapCut-style minor divisions: five scale-aware sub-intervals between
             // each adaptive major label. Their pixel spacing grows/shrinks with zoom.
-            for (division in 1 until 5) {
-                val x = intervalWidth * division / 5
+            TimelineScaleMath.rulerMinorTickOffsetsPx(intervalWidth, 5).forEach { x ->
                 tickCell.addView(View(this).apply {
                     setBackgroundColor(Color.rgb(91, 111, 130))
-                }, FrameLayout.LayoutParams(dp(1), dp(if (division == 0) 10 else 6)).apply {
+                }, FrameLayout.LayoutParams(dp(1), dp(6)).apply {
                     leftMargin = x
                     topMargin = dp(15)
                 })
