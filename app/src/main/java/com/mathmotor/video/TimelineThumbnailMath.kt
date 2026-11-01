@@ -7,15 +7,17 @@ package com.mathmotor.video
  * thumbnail cells grows with pinch zoom and shrinks when the user zooms out.
  */
 internal object TimelineThumbnailMath {
-    const val SHORTS_THUMBNAIL_WIDTH_DP = 52
-    const val SHORTS_ASPECT_WIDTH = 9
-    const val SHORTS_ASPECT_HEIGHT = 16
+    // Keep the video lane tall enough for the current portrait reference, but
+    // calculate each thumbnail's width from the actual source aspect ratio.
+    const val THUMBNAIL_STRIP_HEIGHT_DP = 92
+    const val DEFAULT_SOURCE_ASPECT_RATIO = 9f / 16f
 
-    /** Exact pixel height for a full-frame 9:16 cell at the supplied pixel width. */
-    fun portraitCellHeightPx(widthPx: Int): Int {
-        val safeWidth = widthPx.coerceAtLeast(1).toLong()
-        return ((safeWidth * SHORTS_ASPECT_HEIGHT + SHORTS_ASPECT_WIDTH / 2L) /
-            SHORTS_ASPECT_WIDTH).toInt().coerceAtLeast(1)
+    /** Width of a full-frame thumbnail at the fixed strip height, without cropping. */
+    fun thumbnailCellWidthPx(stripHeightPx: Int, sourceAspectRatio: Float): Int {
+        val height = stripHeightPx.coerceAtLeast(1)
+        val ratio = sourceAspectRatio.takeIf { it.isFinite() && it > 0f }
+            ?.coerceIn(0.25f, 4f) ?: DEFAULT_SOURCE_ASPECT_RATIO
+        return (height * ratio).toInt().coerceAtLeast(1)
     }
 
     /**
