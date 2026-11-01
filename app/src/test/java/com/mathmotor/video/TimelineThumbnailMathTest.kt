@@ -63,6 +63,43 @@ class TimelineThumbnailMathTest {
     }
 
     @Test
+    fun cellRangesPartitionTheClipAndContainTheirSampleCenters() {
+        val start = 1_250L
+        val end = 11_250L
+        val count = 5
+
+        val ranges = (0 until count).map { slot ->
+            TimelineThumbnailMath.cellStartTime(start, end, count, slot) to
+                TimelineThumbnailMath.cellEndTime(start, end, count, slot)
+        }
+        val samples = (0 until count).map {
+            TimelineThumbnailMath.sampleTime(start, end, count, it)
+        }
+
+        assertEquals(start, ranges.first().first)
+        assertEquals(end, ranges.last().second)
+        assertTrue(ranges.zipWithNext().all { (left, right) -> left.second == right.first })
+        assertTrue(samples.indices.all { samples[it] in ranges[it].first until ranges[it].second })
+    }
+
+    @Test
+    fun cellRangesStayOrderedWhenClipDurationIsNotDivisibleByCellCount() {
+        val start = 17L
+        val end = 1_024L
+        val count = 7
+
+        val ranges = (0 until count).map { slot ->
+            TimelineThumbnailMath.cellStartTime(start, end, count, slot) to
+                TimelineThumbnailMath.cellEndTime(start, end, count, slot)
+        }
+
+        assertEquals(start, ranges.first().first)
+        assertEquals(end, ranges.last().second)
+        assertTrue(ranges.all { it.second > it.first })
+        assertTrue(ranges.zipWithNext().all { (left, right) -> left.second == right.first })
+    }
+
+    @Test
     fun oneCellSamplesItsCenterAndIndicesAreClamped() {
         assertEquals(4_750L, TimelineThumbnailMath.sampleTime(500L, 9_000L, 1, 0))
         assertEquals(8_416L, TimelineThumbnailMath.sampleTime(500L, 10_000L, 3, 99))
