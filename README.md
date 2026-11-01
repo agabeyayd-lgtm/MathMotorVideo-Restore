@@ -729,3 +729,17 @@ Commit `75885369fdb3f136abb451ae6e8fb135e2d413cd`:
 - The Activity keeps ownership of the captured two-finger gesture until the final finger lifts; the existing anchored zoom calculation remains in place.
 
 **Pending:** compile/unit checks, emulator/phone pinch zoom and pan, confirm the first finger does not move/trim a clip, verify one-finger clip drag/trim and empty-lane deselection. Screenshot smoke tests alone do not prove touch behavior.
+
+
+## Fixed playhead, scroll-to-scrub and single-owner pinch — 2026-11-01 (source change; verification pending)
+
+Source commit: `54daecf5864ed76694f1930eb684bddbd8499628`.
+
+- The white playhead remains a visual-only guide at the center of the timeline viewport. It no longer intercepts touch; one-finger horizontal movement on the timeline strip is the scrubbing gesture.
+- Existing horizontal lane scrolling remains the single scrub input: every lane follows the same scroll offset, the time beneath the center playhead updates, and preview seeks continue through the existing coalesced seek path.
+- Programmatic scroll restoration after a timeline rebuild now uses the same guarded scroll path as playback-follow. A layout refresh or zoom commit must not be mistaken for a user's scrub and seek the preview to an unrelated time.
+- Kept exactly one `ScaleGestureDetector`, at Activity level. A pinch that begins inside the timeline cancels the child clip/trim touch before Activity-level capture; there is no competing detector inside each HorizontalScrollView.
+- Pinch feedback now uses a temporary scale/translation on lane content while fingers move, then commits the real pixels-per-second value and anchored scroll once when the pinch ends. The timestamp under the moving pinch midpoint remains the anchor; the same origin/end spacers continue to let time zero and the final frame reach the center playhead.
+- The existing filmstrip already uses fit/letterbox framing, edge-to-edge cells and timestamped samples. It was retained rather than replacing it with center-cropped square tiles.
+
+**Pending acceptance:** Kotlin compilation and unit tests on this commit; emulator/phone verification of one-finger swipe scrubbing, live preview response, pinch zoom in/out and midpoint anchoring, no accidental clip drag/trim during pinch, all-lane synchronization, and no false scrub after programmatic rebuild/restore. Screenshot success alone is not touch acceptance. PR #11 remains draft; version 395 remains blocked.
