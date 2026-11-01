@@ -68,7 +68,6 @@ import java.lang.ref.WeakReference
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import kotlin.math.ceil
-import kotlin.math.roundToInt
 
 @OptIn(UnstableApi::class)
 class VideoEditorActivity : Activity() {
