@@ -31,6 +31,12 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - Run [#270 — FAILED](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/40682611758) on separate branch `work/focused-instrumentation-gates`: unit tests and Debug APK build passed, but emulator interaction failed with `androidx.test.uiautomator.StaleObjectException`. It is a test failure to investigate on that branch, not a release-candidate failure and not proof by itself that an editor feature is broken or fixed.
 - Keep the distinction clear: #269 is a successful candidate-branch automated test run; visual CapCut resemblance and physical-device usability remain unverified. Version 395 remains blocked.
 
+### Focused timeline investigation — 2026-11-01
+
+- The gray rail between filmstrip frames was traced to a deliberate `1 dp` right margin on every thumbnail except the last. Candidate branch `fix/timeline-filmstrip-thumbnail-separators` removes those gaps and matches the backing color to the placeholder color; actual-device verification is still pending.
+- The `00:00` readout and timeline zoom `+`/`−` buttons are direct children of the fixed playhead row, outside the horizontal timeline scroll views in the current source. Their horizontal movement was not reproducible from the inspected source; do not change the scroll hierarchy without confirming the exact on-device element.
+- Version 395 remains blocked. No version metadata or release artifact is changed by this focused repair.
+
 ### How progress will be counted from here
 
 - Report three states separately: **implemented in source**, **automated test passed**, and **verified in actual device use**.
@@ -72,6 +78,7 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 
 ### Thumbnails
 
+- [ ] Render adjacent filmstrip thumbnails edge-to-edge with no per-frame margin or visible gray separator/rail; verify the strip at normal and compact heights.
 - [ ] Increase thumbnail height/visibility and use enough thumbnails to visually cover the clip; for a 10-second clip, aim for a dense, evenly spaced filmstrip comparable to common mobile editors, not a fixed arbitrary count.
 - [ ] Increase the visible width/size of timeline thumbnails so the action in each frame is understandable; prioritize the visible viewport and avoid overly narrow frame tiles.
 - [ ] Improve thumbnail generation/loading latency: prioritize frames currently on screen, prepare nearby frames next, cache results and keep scrolling/gestures responsive while extraction continues.
