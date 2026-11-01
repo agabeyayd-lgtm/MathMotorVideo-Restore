@@ -1,6 +1,8 @@
 package com.mathmotor.video
 
-import android.graphics.Point
+import android.os.SystemClock
+import android.view.InputDevice
+import android.view.MotionEvent
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
@@ -64,9 +66,9 @@ class TimelinePinchGestureTest {
         val anchorX = initialMarkerLeft.coerceIn(1, device.displayWidth - 1)
         val videoLane = device.findObject(By.text("VIDEO"))
             ?: throw AssertionError("Could not locate the VIDEO lane")
-        val gestureY = videoLane.visibleBounds.centerY
+        val gestureY = videoLane.visibleBounds.centerY()
 
-        performPinch(device, anchorX, gestureY, device.displayWidth, startHalfSpan = 24, endHalfSpan = 92)
+        performPinch(instrumentation, anchorX, gestureY, device.displayWidth, startHalfSpan = 24, endHalfSpan = 92)
         assertTrue(
             "Pinch-out did not update the timeline zoom status",
             device.wait(Until.hasObject(By.textContains("Zaman çizelgesi:")), 5_000)
@@ -80,7 +82,7 @@ class TimelinePinchGestureTest {
             kotlin.math.abs(markerAfterZoomIn - initialMarkerLeft) <= 12
         )
 
-        performPinch(device, markerAfterZoomIn, gestureY, device.displayWidth, startHalfSpan = 92, endHalfSpan = 66)
+        performPinch(instrumentation, markerAfterZoomIn, gestureY, device.displayWidth, startHalfSpan = 92, endHalfSpan = 66)
         device.waitForIdle()
         val zoomedOut = readZoom(device)
         assertTrue("Pinch-in did not reduce zoom ($zoomedIn -> $zoomedOut)", zoomedOut < zoomedIn)
@@ -102,7 +104,7 @@ class TimelinePinchGestureTest {
     }
 
     private fun performPinch(
-        device: UiDevice,
+        instrumentation: android.app.Instrumentation,
         anchorX: Int,
         y: Int,
         screenWidth: Int,
@@ -114,14 +116,94 @@ class TimelinePinchGestureTest {
             "Pinch anchor is too close to the right screen edge",
             anchorX < screenWidth - endHalfSpan - 8
         )
-        val performed = device.performTwoPointerGesture(
-            Point(anchorX - startHalfSpan, y),
-            Point(anchorX + startHalfSpan, y),
-            Point(anchorX - endHalfSpan, y),
-            Point(anchorX + endHalfSpan, y),
-            24
+
+        val downTime = SystemClock.uptimeMillis()
+        injectTouch(instrumentation, downTime, downTime, MotionEvent.ACTION_DOWN,
+            listOf(anchorX - startHalfSpan to y))
+        injectTouch(
+            instrumentation,
+            downTime,
+            SystemClock.uptimeMillis(),
+            MotionEvent.ACTION_POINTER_DOWN or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT),
+            listOf(anchorX - startHalfSpan to y, anchorX + startHalfSpan to y)
         )
-        assertTrue("Android did not dispatch the two-pointer pinch", performed)
+
+        val steps = 18
+        for (step in 1..steps) {
+            val fraction = step.toFloat() / steps.toFloat()
+            val halfSpan = (startHalfSpan + (endHalfSpan - startHalfSpan) * fraction).toInt()
+            injectTouch(
+                instrumentation,
+                downTime,
+                SystemClock.uptimeMillis(),
+                MotionEvent.ACTION_MOVE,
+                listOf(anchorX - halfSpan to y, anchorX + halfSpan to y)
+            )
+            SystemClock.sleep(8)
+        }
+
+        val finalPoints = listOf(anchorX - endHalfSpan to y, anchorX + endHalfSpan to y)
+        injectTouch(
+            instrumentation,
+            downTime,
+            SystemClock.uptimeMillis(),
+            MotionEvent.ACTION_POINTER_UP or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT),
+            finalPoints
+        )
+        injectTouch(
+            instrumentation,
+            downTime,
+            SystemClock.uptimeMillis(),
+            MotionEvent.ACTION_UP,
+            listOf(finalPoints[0])
+        )
+    }
+
+    private fun injectTouch(
+        instrumentation: android.app.Instrumentation,
+        downTime: Long,
+        eventTime: Long,
+        action: Int,
+        points: List<Pair<Int, Int>>
+    ) {
+        val properties = Array(points.size) { index ->
+            MotionEvent.PointerProperties().apply {
+                id = index
+                toolType = MotionEvent.TOOL_TYPE_FINGER
+            }
+        }
+        val coordinates = Array(points.size) { index ->
+            MotionEvent.PointerCoords().apply {
+                x = points[index].first.toFloat()
+                y = points[index].second.toFloat()
+                pressure = 1f
+                size = 1f
+            }
+        }
+        val event = MotionEvent.obtain(
+            downTime,
+            eventTime.coerceAtLeast(downTime),
+            action,
+            points.size,
+            properties,
+            coordinates,
+            0,
+            0,
+            1f,
+            1f,
+            0,
+            0,
+            InputDevice.SOURCE_TOUCHSCREEN,
+            0
+        )
+        try {
+            assertTrue(
+                "Android rejected injected touch event action=$action pointerCount=${points.size}",
+                instrumentation.uiAutomation.injectInputEvent(event, true)
+            )
+        } finally {
+            event.recycle()
+        }
     }
 
     private fun findMarkerLeft(device: UiDevice): Int {
