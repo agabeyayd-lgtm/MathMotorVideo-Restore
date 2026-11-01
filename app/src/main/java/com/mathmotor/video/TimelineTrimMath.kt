@@ -344,6 +344,21 @@ internal object TimelineVideoMath {
         )
     }
 
+    /**
+     * Trim source footage from the left while preserving its project placement.
+     * For a first clip anchored at timeline zero, advancing the source in-point
+     * shortens the clip without creating an empty leading timeline gap.
+     */
+    fun trimStartKeepingTimelinePosition(
+        segment: TimelineVideoSegment,
+        deltaMs: Long,
+        minimumDurationMs: Long = 500L
+    ): TimelineVideoSegment {
+        val safe = normalize(segment)
+        return trimStart(safe, deltaMs, minimumDurationMs)
+            .copy(timelineStartMs = safe.timelineStartMs)
+    }
+
     /** Right trim changes source out-point only. */
     fun trimEnd(
         segment: TimelineVideoSegment,
