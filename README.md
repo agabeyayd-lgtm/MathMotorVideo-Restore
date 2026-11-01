@@ -152,3 +152,11 @@ Do not mark the existing release checklist items complete until the relevant aut
 - The current emulator screenshot workflow builds a debug APK and captures screens, but its script does not by itself prove all touch gestures, exports, Undo/Redo or save/reopen flows work. Add/run interaction-level tests rather than treating screenshots alone as acceptance.
 - Record a checkbox as complete only after the corresponding behavior is implemented and its relevant test passes. If a test cannot be run, leave the item unchecked and say so.
 - This repository is a reconstruction from recoverable project files, not an exact recovery of the old V7 source tree.
+
+
+## API 35 pinch-test harness correction — 2026-11-01
+
+- Inspected the #435 diagnostic artifact and the instrumentation source. The test itself ran `am force-stop com.mathmotor.video.next` while executing against that package; this could terminate the active target/instrumentation process and explains the generic process-crash result before the gesture assertions.
+- Removed that force-stop command. The test clears stale logcat and launches the test editor activity without terminating the active instrumentation.
+- The fix only addresses the test harness. Pinch-in/out, anchor preservation and ruler/video-lane synchronization remain **unverified** until the corrected API 35 emulator test passes.
+- Version 395 remains blocked; no version metadata or release artifact was changed.
