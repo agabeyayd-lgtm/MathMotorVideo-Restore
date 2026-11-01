@@ -1,5 +1,22 @@
 # MathMotor Video — current project status
 
+## Timeline frame/zoom repair — 2026-11-01
+
+Source changes on `fix/frame-accurate-timeline-zoom`:
+- Added integer `TimelineFrameMath` with a 30 FPS project default and nearest-frame seek snapping.
+- Timeline scrub requests and playback-synchronized playhead display are aligned to project-frame boundaries.
+- Added a timeline-scoped two-finger pinch recognizer that preserves the time under the pinch anchor after zoom.
+- Added focused unit tests for frame boundaries, snapping and alternative FPS values.
+
+Review findings retained as open:
+- Existing millisecond-to-pixel mapping is shared across timeline lanes; this part is reusable.
+- Existing thumbnail extraction/cache is timestamp-based, but its visual accuracy and loading behavior remain unverified.
+- No dedicated adaptive ruler renderer was found in the inspected editor source.
+- The playhead is still positioned by absolute timeline time minus horizontal scroll; fixed-center CapCut playhead behavior is not implemented by this change.
+- Source-video frame-rate/variable-frame-rate mapping and exact preview-frame correspondence still need verification.
+
+**Validation state:** source authored; unit tests/build/emulator/physical-device checks not yet run for this branch. Do not mark related README acceptance checkboxes complete. Version 395 remains blocked and version metadata is unchanged.
+
 ## Current direction
 
 MathMotor Video is a local Android video editor with a CapCut-inspired workflow. Normal editing should work on-device without a cloud account or paid AI service.
