@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: verify-android-main
+  group: verify-android-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
