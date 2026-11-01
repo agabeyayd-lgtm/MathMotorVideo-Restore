@@ -33,8 +33,7 @@ def prepare(xml_path):
         if match and box:
             x = (box[0] + box[2]) // 2
             y = (box[1] + box[3]) // 2
-            if abs(x - center) > 2:
-                cells.append((abs(x - center), x, y, int(match.group(1))))
+            cells.append((abs(x - center), x, y, int(match.group(1))))
     if not cells:
         raise SystemExit("FAIL: timestamped filmstrip thumbnail cells are not exposed in the editor hierarchy.")
     _, x, y, sample_ms = min(cells)

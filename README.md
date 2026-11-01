@@ -1,5 +1,15 @@
 # MathMotor Video
 
+## Thumbnail-alignment emulator attempt — 2026-11-01
+
+- PR-head Verify #375 and APK build #454 passed after changing filmstrip samples to cell-time midpoints.
+- Emulator #619 reached the new screenshot-alignment assertion, then stopped because the first automated swipe moved the filmstrip only 13px for a 25px gesture. The observed Android touch-slop consumption left the nearest cell center at x=172px while the fixed playhead remained at x=160px.
+- Logs show the exact pending state: the centered-cell candidate represented 211ms, while the preview correctly decoded the current playhead at 108ms. This was not a failed pixel comparison; the cell had not actually been centered, so the validator correctly refused to compare different timestamps.
+- Updated the validator to report even an already-centered cell and updated the emulator flow to re-dump the hierarchy after each drag, compensate for the measured 12px touch slop, and retry until the cell is within 2px of the fixed playhead (up to five measured attempts).
+- [ ] Re-run emulator screenshot/pixel comparison with the measured alignment loop.
+- The actual preview-versus-thumbnail pixel match remains unverified. Bottom dock/context-panel/keyboard acceptance remains separate and open. PR #11 remains draft; installed 394/build 61 unchanged; version 395 blocked.
+
+
 ## Filmstrip frame sampling aligned with the fixed playhead — 2026-11-01
 
 - Root cause: the strip was split into `count` equal-width cells, but the decoder sampled `count` timestamps evenly across `count - 1` gaps (first frame through last frame). The sample timestamps therefore drifted away from the temporal centers of their own visible cells.

@@ -372,13 +372,33 @@ fi
 # only and does not turn a successful import into a false failure.
 
 echo "Step 8/11: align a thumbnail cell with the playhead and compare the rendered pixels"
-alignment="$(python3 .github/scripts/assert-thumbnail-alignment.py prepare emulator-screenshots/editor-window.xml)"
-read -r thumb_center_x thumb_center_y play_center_x thumb_sample_ms <<< "$alignment"
-echo "Aligning thumbnail sample ${thumb_sample_ms}ms from x=${thumb_center_x} to fixed playhead x=${play_center_x}"
-if [ "$thumb_center_x" -ne "$play_center_x" ]; then
-  timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$thumb_center_x" "$thumb_center_y" "$play_center_x" "$thumb_center_y" 450
+# HorizontalScrollView consumes touch slop before scrolling. Re-measure after
+# every drag and add the measured 12px touch-slop allowance so the cell center
+# actually reaches the fixed playhead instead of stopping short.
+thumbnail_aligned=false
+for attempt in 1 2 3 4 5; do
+  hierarchy="emulator-screenshots/editor-frame-align-${attempt}.xml"
+  dump_hierarchy "editor-frame-align-${attempt}.xml" "$hierarchy" || true
+  alignment="$(python3 .github/scripts/assert-thumbnail-alignment.py prepare "$hierarchy")"
+  read -r thumb_center_x thumb_center_y play_center_x thumb_sample_ms <<< "$alignment"
+  delta_x="$((play_center_x - thumb_center_x))"
+  absolute_delta="$((delta_x < 0 ? -delta_x : delta_x))"
+  echo "Alignment attempt $attempt: sample=${thumb_sample_ms}ms center=${thumb_center_x}px playhead=${play_center_x}px delta=${delta_x}px"
+  if [ "$absolute_delta" -le 2 ]; then
+    thumbnail_aligned=true
+    break
+  fi
+  gesture_delta="$((delta_x + (delta_x < 0 ? -12 : 12)))"
+  gesture_end_x="$((thumb_center_x + gesture_delta))"
+  timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$thumb_center_x" "$thumb_center_y" "$gesture_end_x" "$thumb_center_y" 400
+  sleep 1
+done
+if [ "$thumbnail_aligned" != true ]; then
+  echo "Could not center any filmstrip thumbnail under the fixed playhead after 5 measured drags."
+  collect_capture_diagnostics thumbnail-alignment-not-centered
+  exit 24
 fi
-sleep 2
+sleep 1
 if ! take_screen emulator-screenshots/editor-frame-aligned.png; then
   collect_capture_diagnostics thumbnail-alignment-capture-failure
   exit 6
