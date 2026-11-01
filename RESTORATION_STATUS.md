@@ -1,3 +1,13 @@
+## Remove detached playhead SeekBar model — 2026-11-01
+
+- Removed `timelinePlayheadSeek`, which was instantiated but never attached to the view hierarchy. Its inactive listener and progress-mirroring writes duplicated timeline state without providing a usable control.
+- `timelinePlayheadMs` remains the single playhead-time value used by playback synchronization, timeline scrubbing, preview seeking and the visible time readout. The actual clip in/out trim SeekBars remain because they edit source boundaries and are not playhead controls.
+- Source commit: `539ac771ca1891b5a1172930baacfb34a1768c34`.
+- [x] Static source audit: no remaining `timelinePlayheadSeek`, `installTimelinePlayheadListeners`, or `updateTimelinePlayheadControls` references.
+- [ ] Full Gradle unit tests and Android debug compilation on the updated PR head.
+- [ ] Emulator interaction/screenshot verification of playback, scrub, pinch, trim, preview synchronization and keyboard layout after removing the detached model.
+- No APK, merge, signed release or version 395 has been produced from this change.
+
 ## Single visible timeline cleanup — 2026-11-01
 
 - Removed the obsolete horizontal clip-card strip (`clipScroll` / `clipList`) from the editor layout. It was created as a hidden child of the timeline card, then responsive keyboard-close handling could set it visible again; that created a second, competing clip row beside the real multi-track timeline.
