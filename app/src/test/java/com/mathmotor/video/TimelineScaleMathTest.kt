@@ -329,4 +329,38 @@ class TimelineScaleMathTest {
         assertEquals(256, TimelineThumbnailMath.thumbnailCount(1_000_000, 1))
     }
 
+
+    @Test
+    fun shortsThumbnailCellUsesTheFullPortraitFrameAspectRatio() {
+        val cellWidthPx = 156
+        val cellHeightPx = TimelineThumbnailMath.portraitCellHeightPx(cellWidthPx)
+
+        assertEquals(277, cellHeightPx)
+        assertEquals(
+            9f / 16f,
+            cellWidthPx.toFloat() / cellHeightPx.toFloat(),
+            0.002f
+        )
+    }
+
+    @Test
+    fun thumbnailDownsamplingKeepsEveryEdgeAndTheOriginalAspectRatio() {
+        assertEquals(
+            162 to 288,
+            TimelineThumbnailMath.fitDimensions(1080, 1920, 162, 288)
+        )
+        assertEquals(
+            162 to 91,
+            TimelineThumbnailMath.fitDimensions(1920, 1080, 162, 288)
+        )
+    }
+
+    @Test
+    fun thumbnailDownsamplingNeverUpscalesSmallFrames() {
+        assertEquals(
+            90 to 160,
+            TimelineThumbnailMath.fitDimensions(90, 160, 162, 288)
+        )
+    }
+
 }
