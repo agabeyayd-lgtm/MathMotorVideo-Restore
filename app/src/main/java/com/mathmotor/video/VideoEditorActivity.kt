@@ -5597,7 +5597,8 @@ class VideoEditorActivity : Activity() {
 
         val task = TimelineThumbnailTask(
             -1L,
-            timelineThumbnailTaskSequence.incrementAndGet()
+            timelineThumbnailTaskSequence.incrementAndGet(),
+            priorityPhase = 0
         ) {
             if (requestId != previewFrameRequestGeneration.get()) return@TimelineThumbnailTask
             val decoded = decodeTimelinePreviewFrame(clip.uri, sourceTimeMs)
@@ -5820,7 +5821,15 @@ class VideoEditorActivity : Activity() {
         pendingTimelineThumbnails[key] = mutableListOf(WeakReference(target))
 
         val isPlayheadCell = priorityDistanceMs <= 150L
-        if (!isPlayheadCell) {
+        val timelineViewportWidthPx = timelineScrollViews.firstOrNull()?.width
+            ?.takeIf { it > 0 } ?: dp(320)
+        val nearViewportPreviewWindowMs = (
+            timelineViewportWidthPx.toFloat() * 1000f /
+                timelinePixelsPerSecond().coerceAtLeast(1f)
+            ).toLong() + 750L
+        val needsFastPreview = !isPlayheadCell &&
+            priorityDistanceMs <= nearViewportPreviewWindowMs
+        if (needsFastPreview) {
             // Put a low-cost sync-frame image on screen first. It is only a temporary
             // visual placeholder: the exact timestamp is still decoded below and
             // replaces this bitmap. Never use this approximation for the playhead cell.
@@ -5874,8 +5883,8 @@ class VideoEditorActivity : Activity() {
             }
         }
 
-        // Full-precision extraction follows the provisional pass. The playhead cell
-        // skips the provisional stage and enters the queue at the highest priority.
+        // Full-precision extraction replaces every provisional frame. Tiles outside
+        // the near-viewport preview window go directly to exact decoding.
         val exactPhase = if (isPlayheadCell) 0 else 2
         val exactTask = TimelineThumbnailTask(
             priorityDistanceMs.coerceAtLeast(0L),
