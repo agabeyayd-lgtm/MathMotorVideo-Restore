@@ -287,6 +287,36 @@ class TimelineVideoMathTest {
     }
 
     @Test
+    fun trimmingSourceStartAtTimelineZeroDoesNotCreateLeadingGap() {
+        val first = TimelineVideoSegment(
+            timelineStartMs = 0L,
+            sourceStartMs = 0L,
+            sourceEndMs = 6_320L,
+            sourceDurationMs = 10_030L
+        )
+        val trimmed = TimelineVideoMath.trimStartKeepingTimelinePosition(first, 1_280L)
+        assertEquals(0L, trimmed.timelineStartMs)
+        assertEquals(1_280L, trimmed.sourceStartMs)
+        assertEquals(6_320L, trimmed.sourceEndMs)
+        assertEquals(5_040L, trimmed.durationMs)
+        assertEquals(5_040L, trimmed.timelineEndMs)
+    }
+
+    @Test
+    fun restoringSourceAtTimelineZeroKeepsProjectStartAtZero() {
+        val first = TimelineVideoSegment(
+            timelineStartMs = 0L,
+            sourceStartMs = 1_280L,
+            sourceEndMs = 6_320L,
+            sourceDurationMs = 10_030L
+        )
+        val restored = TimelineVideoMath.trimStartKeepingTimelinePosition(first, -1_280L)
+        assertEquals(0L, restored.timelineStartMs)
+        assertEquals(0L, restored.sourceStartMs)
+        assertEquals(6_320L, restored.sourceEndMs)
+    }
+
+    @Test
     fun rightTrimChangesOnlySourceOutAndRespectsMinimumSpan() {
         val source = TimelineVideoSegment(3_000L, 2_000L, 8_000L, 10_000L)
         assertEquals(
