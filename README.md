@@ -152,6 +152,30 @@ The editor uses Android's document picker and AndroidX Media3 for playback/expor
 - [ ] Perform a final physical-device smoke test when possible.
 - [ ] Only after every required item is complete and verified, prepare version 395. Until then, do not bump the app version or publish an APK.
 
+
+
+## Physical-phone CapCut comparison targets — 2026-11-01
+
+Reference: the user's two screenshots with MathMotor and CapCut timelines expanded to comparable scales. These are new acceptance targets, not claims that the current source already implements them.
+
+- [ ] **Separate pinch from filmstrip presentation:** two-finger pinch changes the timeline time scale/ruler only. It must not resize, stretch, distort, or change the filmstrip's height, thumbnail tile geometry, or thumbnail density. Keep ruler-to-filmstrip time alignment and preserve every clip's actual start/end/duration.
+- [ ] **Move the duration readout:** show current position / total duration directly above the timeline ruler, not in the playback-control row. Keep one authoritative readout.
+- [ ] **Adaptive ruler detail:** marks/labels become more precise as zoom increases, including frame subdivisions (2f/4f/6f where supported by source frame rate), while remaining readable at wider zoom levels.
+- [ ] **Fixed playhead/header:** the playhead remains fixed in the viewport while timeline content moves beneath it; fixed zero-time anchor and header controls do not scroll with the filmstrip.
+- [ ] **Stable filmstrip:** maintain consistent strip height and thumbnail tile geometry at every zoom level; frames remain sequential and representative of their timestamps.
+- [ ] **Workspace hierarchy:** preview at top, ruler/video strip and independent audio/text lanes in the middle, compact contextual tools and bottom dock below. Reduce oversized action panels and unused space without sacrificing touch targets or preview aspect ratio.
+- [ ] **Preview review:** compare preview scale/unused black area against CapCut on the physical phone; preserve source aspect ratio and do not crop to imitate the reference.
+
+### Focused acceptance
+
+- [ ] Compare the same source clip at equivalent timeline zoom on the physical phone.
+- [ ] Capture minimum/middle/maximum zoom; prove ruler scale changes while filmstrip height/tile geometry remain stable.
+- [ ] Verify pinch does not change clip start/end, trim bounds, actual/total duration, playhead timestamp, preview frame or exported duration.
+- [ ] Verify the readout is above the ruler and remains synchronized during playback, scrubbing and seeking.
+- [ ] Verify frame subdivisions against the source frame rate.
+- [ ] Add only targeted regression coverage for newly uncovered behavior; do not repeat unchanged green tests.
+- [ ] Physical-phone acceptance is required; CI/build/emulator screenshots alone do not close these targets.
+
 ## Verification boundaries
 
 - Existing unit tests cover some timeline time/pixel mapping, clip trim bounds, playhead-to-clip mapping and text timing boundaries.
