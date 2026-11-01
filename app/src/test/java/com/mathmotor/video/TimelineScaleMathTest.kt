@@ -40,6 +40,20 @@ class TimelineScaleMathTest {
     }
 
     @Test
+    fun zoomKeepsTheSameTimelineTimeAtThePinchAnchor() {
+        val anchorTimeMs = 5_000L
+        val anchorOffsetPx = 80f
+        val zoomedPixelsPerSecond = 44f
+        val scrollX = TimelineScaleMath.scrollForTimeAtViewportOffset(
+            anchorTimeMs, zoomedPixelsPerSecond, anchorOffsetPx
+        )
+        val timeUnderAnchor = TimelineScaleMath.millisecondsForPixels(
+            scrollX + anchorOffsetPx, zoomedPixelsPerSecond
+        )
+        assertEquals(anchorTimeMs, timeUnderAnchor)
+    }
+
+    @Test
     fun invalidScaleAndNegativeTimeAreSafe() {
         assertEquals(0, TimelineScaleMath.pixelsForTime(-100L, 22f))
         assertEquals(0, TimelineScaleMath.pixelsForTime(1_000L, 0f))
