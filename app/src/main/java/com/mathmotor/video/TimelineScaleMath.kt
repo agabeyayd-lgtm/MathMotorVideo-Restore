@@ -23,6 +23,16 @@ internal object TimelineScaleMath {
             pixelsForTime(start, pixelsPerSecond)).coerceAtLeast(0)
     }
 
+    fun scrollForTimeAtViewportOffset(
+        timeMs: Long,
+        pixelsPerSecond: Float,
+        viewportOffsetPx: Float
+    ): Int {
+        if (!viewportOffsetPx.isFinite()) return 0
+        return (pixelsForTime(timeMs, pixelsPerSecond) - viewportOffsetPx.roundToInt())
+            .coerceAtLeast(0)
+    }
+
     fun millisecondsForPixels(offsetPixels: Float, pixelsPerSecond: Float): Long {
         if (!offsetPixels.isFinite() || !pixelsPerSecond.isFinite() || pixelsPerSecond <= 0f) return 0L
         return ((offsetPixels.toDouble() / pixelsPerSecond.toDouble()) * 1000.0)
