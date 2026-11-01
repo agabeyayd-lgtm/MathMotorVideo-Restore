@@ -92,7 +92,7 @@ def verify(xml_path, screenshot_path, log_path):
     scrub_ready = [
         (int(project), int(source))
         for project, source in re.findall(
-            r"TIMELINE_SCRUB_PREVIEW_FRAME_READY projectMs=(\\d+) sourceMs=(\\d+)", log
+            r"TIMELINE_SCRUB_PREVIEW_FRAME_READY projectMs=(\d+) sourceMs=(\d+)", log
         )
     ]
     if not any(abs(project - sample_ms) <= 35 and abs(source - sample_ms) <= 35 for project, source in scrub_ready):
