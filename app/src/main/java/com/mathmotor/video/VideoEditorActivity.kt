@@ -1918,13 +1918,20 @@ class VideoEditorActivity : Activity() {
                 setOnClickListener { clearTimelineClipSelection() }
             }
             scroll.addView(track)
-            val responsiveLaneHeight = when {
-                keyboardLayoutActive -> minOf(heightDp, 28)
-                !reorderable -> heightDp
-                compactEditorLayout -> maxOf(heightDp, 52)
-                else -> heightDp
+            val responsiveLaneHeightPx = if (reorderable && tag == "Video") {
+                TimelineThumbnailMath.portraitCellHeightPx(
+                    dp(TimelineThumbnailMath.SHORTS_THUMBNAIL_WIDTH_DP)
+                )
+            } else {
+                val responsiveLaneHeightDp = when {
+                    keyboardLayoutActive -> minOf(heightDp, 28)
+                    !reorderable -> heightDp
+                    compactEditorLayout -> maxOf(heightDp, 52)
+                    else -> heightDp
+                }
+                dp(responsiveLaneHeightDp)
             }
-            row.addView(scroll, LinearLayout.LayoutParams(0, dp(responsiveLaneHeight), 1f))
+            row.addView(scroll, LinearLayout.LayoutParams(0, responsiveLaneHeightPx, 1f))
 
             if (!reorderable) {
                 timelineTracks.addView(row, 0)
@@ -2267,7 +2274,11 @@ class VideoEditorActivity : Activity() {
         if (clips.isEmpty()) {
             // Keep the empty-state add action in the video lane as a floating,
             // transparent plus. Do not create a fake 5-second timeline block.
-            val lane = makeLane("Video", if (keyboardLayoutActive || compactEditorLayout) 44 else 60, "video")
+            val lane = makeLane(
+                "Video",
+                TimelineThumbnailMath.portraitCellHeightPx(dp(TimelineThumbnailMath.SHORTS_THUMBNAIL_WIDTH_DP)),
+                "video"
+            )
             val addVideoButton = TextView(this).apply {
                 text = "＋"
                 textSize = 30f
@@ -2288,7 +2299,9 @@ class VideoEditorActivity : Activity() {
             // Clips retain their real project start/end positions; overlaps are
             // stacked inside this same strip instead of creating extra VIDEO rows.
             val placements = TimelineVideoMath.singleTrackPlacements(videoTimelineSegments())
-            val stripHeight = dp(if (keyboardLayoutActive) 28 else 60)
+            val stripHeight = TimelineThumbnailMath.portraitCellHeightPx(
+                dp(TimelineThumbnailMath.SHORTS_THUMBNAIL_WIDTH_DP)
+            )
             val furthestClipEndPx = placements.maxOfOrNull {
                 widthBetween(0L, it.timelineEndMs)
             } ?: 0
@@ -2346,7 +2359,11 @@ class VideoEditorActivity : Activity() {
                 leftMargin = addButtonLeft
                 gravity = Gravity.TOP or Gravity.LEFT
             })
-            val videoTrack = makeLane("Video", if (keyboardLayoutActive) 44 else 60, "video")
+            val videoTrack = makeLane(
+                "Video",
+                TimelineThumbnailMath.portraitCellHeightPx(dp(TimelineThumbnailMath.SHORTS_THUMBNAIL_WIDTH_DP)),
+                "video"
+            )
             videoTrack.addView(strip, LinearLayout.LayoutParams(stripWidth, stripHeight))
         }
 
@@ -5341,14 +5358,15 @@ class VideoEditorActivity : Activity() {
         }
         val filmstrip = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            // Match the frame cells so no contrasting rail is exposed while thumbnails load.
-            setBackgroundColor(Color.BLACK)
+            gravity = Gravity.CENTER_VERTICAL
+            // The surrounding area matches the clip surface; it is not a black letterbox.
+            setBackgroundColor(Color.rgb(27, 39, 54))
         }
         // Render a readable, continuous filmstrip: each frame gets a near-fixed
         // 52dp-wide cell instead of the previous 12dp sliver. The cells fill the clip
         // exactly, so there is no second independently moving strip behind them.
         // Bound the count to keep thumbnail decoding and cache pressure predictable.
-        val targetThumbnailWidth = dp(52).coerceAtLeast(1)
+        val targetThumbnailWidth = dp(TimelineThumbnailMath.SHORTS_THUMBNAIL_WIDTH_DP).coerceAtLeast(1)
         // Cell count follows the real clip width (duration × px/sec): zooming in
         // creates more timestamp samples; zooming out reduces their density.
         val thumbnailCount = TimelineThumbnailMath.thumbnailCount(width, targetThumbnailWidth)
@@ -5356,16 +5374,16 @@ class VideoEditorActivity : Activity() {
         val baseCellWidth = (availableCellWidth / thumbnailCount).coerceAtLeast(1)
         val extraPixels = availableCellWidth % thumbnailCount
         repeat(thumbnailCount) { slot ->
+            val cellWidth = baseCellWidth + if (slot < extraPixels) 1 else 0
+            val cellHeight = TimelineThumbnailMath.portraitCellHeightPx(cellWidth).coerceAtMost(height)
             val image = ImageView(this).apply {
-                // Cells stay edge-to-edge; black is the loading fallback, never a gray rail.
-                scaleType = ImageView.ScaleType.CENTER_CROP
-                setBackgroundColor(Color.BLACK)
+                // The complete Shorts frame is reduced into a matching 9:16 cell.
+                // FIT_CENTER preserves every edge; no source pixels are cropped.
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                setBackgroundColor(Color.TRANSPARENT)
                 contentDescription = "Klip karesi"
             }
-            val cellWidth = baseCellWidth + if (slot < extraPixels) 1 else 0
-            filmstrip.addView(image, LinearLayout.LayoutParams(cellWidth, ViewGroup.LayoutParams.MATCH_PARENT).apply {
-                if (slot < thumbnailCount - 1) rightMargin = 0
-            })
+            filmstrip.addView(image, LinearLayout.LayoutParams(cellWidth, cellHeight))
             val frameTime = TimelineThumbnailMath.sampleTime(
                 clip.startMs, clip.endMs, thumbnailCount, slot
             )
@@ -5737,8 +5755,8 @@ class VideoEditorActivity : Activity() {
                     activeRetriever.getScaledFrameAtTime(
                         frameTimeUs,
                         MediaMetadataRetriever.OPTION_CLOSEST,
-                        192,
-                        108
+                        162,
+                        288
                     )
                 }.getOrNull()
             } else {
@@ -5757,7 +5775,7 @@ class VideoEditorActivity : Activity() {
         var frameFuture: java.util.concurrent.Future<FrameExtractor.Frame>? = null
         try {
             val createdExtractor = FrameExtractor.Builder(this, MediaItem.fromUri(uri))
-                .setEffects(listOf(Presentation.createForHeight(108)))
+                .setEffects(listOf(Presentation.createForHeight(288)))
                 .build()
             extractor = createdExtractor
             val future = createdExtractor.getFrame(timeMs.coerceAtLeast(0L))
@@ -5808,38 +5826,27 @@ class VideoEditorActivity : Activity() {
                 if (original != null && !original.isRecycled &&
                     original.width > 0 && original.height > 0
                 ) {
-                    // Crop to 16:9, then downsample into the actual thumbnail bitmap.
-                    // The ImageView receives 192×108 pixels, not a full-size frame.
-                    val targetRatio = 192f / 108f
-                    val sourceRatio = original.width.toFloat() / original.height.toFloat()
-                    val cropWidth: Int
-                    val cropHeight: Int
-                    val cropLeft: Int
-                    val cropTop: Int
-                    if (sourceRatio > targetRatio) {
-                        cropHeight = original.height
-                        cropWidth = (cropHeight * targetRatio).toInt().coerceIn(1, original.width)
-                        cropLeft = (original.width - cropWidth) / 2
-                        cropTop = 0
-                    } else {
-                        cropWidth = original.width
-                        cropHeight = (cropWidth / targetRatio).toInt().coerceIn(1, original.height)
-                        cropLeft = 0
-                        cropTop = (original.height - cropHeight) / 2
-                    }
-                    val framed = Bitmap.createBitmap(192, 108, Bitmap.Config.ARGB_8888)
-                    val canvas = android.graphics.Canvas(framed)
-                    canvas.drawBitmap(
-                        original,
-                        android.graphics.Rect(cropLeft, cropTop, cropLeft + cropWidth, cropTop + cropHeight),
-                        android.graphics.Rect(0, 0, 192, 108),
-                        android.graphics.Paint(
-                            android.graphics.Paint.ANTI_ALIAS_FLAG or
-                                android.graphics.Paint.FILTER_BITMAP_FLAG
-                        )
+                    // Reduce the complete source frame to thumbnail bounds. Keep its
+                    // original aspect ratio; never crop, pad with bars, or stretch it.
+                    val (thumbnailWidth, thumbnailHeight) = TimelineThumbnailMath.fitDimensions(
+                        original.width,
+                        original.height,
+                        162,
+                        288
                     )
-                    if (!original.isRecycled) original.recycle()
-                    decoded = framed
+                    val thumbnail = if (
+                        original.width == thumbnailWidth && original.height == thumbnailHeight
+                    ) {
+                        original
+                    } else {
+                        Bitmap.createScaledBitmap(
+                            original,
+                            thumbnailWidth,
+                            thumbnailHeight,
+                            true
+                        ).also { if (!original.isRecycled) original.recycle() }
+                    }
+                    decoded = thumbnail
                 } else {
                     original?.let { if (!it.isRecycled) it.recycle() }
                 }
@@ -5866,7 +5873,7 @@ class VideoEditorActivity : Activity() {
                     targets.forEach { ref ->
                         val image = ref.get()
                         if (image != null && image.tag == key && image.drawable == null) {
-                            image.setBackgroundColor(Color.BLACK)
+                            image.setBackgroundColor(Color.TRANSPARENT)
                         }
                     }
                 }
@@ -5876,7 +5883,7 @@ class VideoEditorActivity : Activity() {
             timelineThumbnailExecutor.execute(task)
         } catch (_: java.util.concurrent.RejectedExecutionException) {
             pendingTimelineThumbnails.remove(key)
-            target.setBackgroundColor(Color.BLACK)
+            target.setBackgroundColor(Color.TRANSPARENT)
         }
     }
 
