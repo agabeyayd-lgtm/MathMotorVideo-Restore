@@ -25,6 +25,16 @@
 - Keep versionCode 394 / Build 61. Version 395 remains blocked; no release APK, version bump or update offer is authorized.
 
 
+## Progressive filmstrip thumbnail pipeline — 2026-11-02 (source change; verification pending)
+
+- Non-playhead cells in the near-playhead viewport now use a two-pass path: first request a fast sync-frame bitmap for immediate visual feedback, then request the exact timestamp and replace the provisional image. The exact frame under/nearest the playhead skips the provisional pass and stays highest priority.
+- Only the near-viewport range receives provisional previews; cells further away go straight to exact timestamp decoding so a long clip does not spend time preparing temporary images for the whole timeline.
+- Each cell's exact task is queued only after its provisional attempt has completed. This preserves the two-worker decoder while preventing a late provisional frame from overwriting an already-rendered exact frame.
+- Debug-only markers record provisional and exact decode/queue timings. This is diagnostic instrumentation, not proof of a latency target.
+- Android API guidance supports scaled frame retrieval and identifies sync-frame seeking as a faster option when exact precision is not required. The sync frame is used only as a temporary visual preview; the existing OPTION_CLOSEST path remains authoritative for final thumbnails and the playhead cell.
+- **Verification pending:** #688 predates this change and does not validate it. Run unit/build and API 35 emulator checks; measure first visible preview and exact completion, confirm the final visible samples remain distinct, verify the centered preview/thumbnail pixel match and scrubbing, then test portrait, landscape, square and longer real videos. Also verify scrolling remains responsive and no stale preview replaces a final frame.
+- No version metadata changed. Keep versionCode 394 / Build 61; version 395 remains blocked until all acceptance checks pass and the user authorizes release.
+
 ## Timeline frame/zoom repair — 2026-11-01
 
 Implementation from PR #15 was merged into `main` in commit `0acdbb3`. The feature branch is historical; continue development only on `main`.
