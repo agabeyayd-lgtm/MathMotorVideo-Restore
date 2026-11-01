@@ -1,3 +1,14 @@
+## Timeline frame-precision follow-up — 2026-11-01
+
+- Work is applied to the active PR #10 candidate branch `fix/editor-395-mainline` (based on `main`), not the stale `fix/editor-395-gate` branch. Existing PR #10 work for fixed-playhead pinch zoom, preserved zoom anchor, shared track scale and current thumbnail loading is retained.
+- Added `TimelineFrameMath` for the default 30 fps timeline grid: frame-index/time conversion, microsecond timestamps, nearest-frame scrub snapping, and zoom-dependent frame tick spacing.
+- At close zoom, the ruler now displays frame numbers within each second; at wider zoom it keeps the existing adaptive millisecond/second/minute intervals.
+- Timeline seek/scrub requests now snap to the nearest 30 fps frame. Continuous playback synchronization remains timestamp-based and is not rounded.
+- Filmstrip sampling now stays inside each clip's half-open interval `[start, end)`, avoiding a request exactly at the exclusive end that could display a frame from the next cut.
+- Added focused JUnit tests for 30 fps frame counts/timestamps, nearest-frame snapping, zoom-based frame ruler intervals and invalid inputs.
+- **Verification pending:** these source changes need unit/build and emulator interaction validation on PR #10. The 30 fps value defines the current timeline timebase; this patch does not prove or force the MP4 encoder output frame rate. Verify encoded FPS separately before claiming exported files are 30 fps.
+- VersionCode 395 remains blocked. No version metadata change or release APK is included.
+
 # MathMotor Video
 
 MathMotor Video is a local-first Android video editor with a CapCut-inspired workflow. Normal editing runs on-device; AI generation, AI scoring and paid cloud APIs are outside the current product scope.
