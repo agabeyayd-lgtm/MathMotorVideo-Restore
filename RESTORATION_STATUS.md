@@ -1,3 +1,13 @@
+## Single-editor architecture decision — 2026-11-01
+
+- The home screen remains the app's entry point. `MainActivity` stays the launcher and continues to provide gallery/new-project entry plus draft access.
+- There is exactly one production editor: `VideoEditorActivity`. All editor improvements belong in this existing activity and its shared timeline implementation; do not add a second editor screen, alternate editor layout, duplicate filmstrip, or competing timeline model.
+- `VideoPlayerActivity` is retained as the separate video playback/history screen. It is not an editor and must not be removed as part of editor simplification.
+- Timeline math, project draft storage, media/export, and supporting UI helpers are core dependencies, not alternative designs. Do not delete them merely because they are separate files.
+- Static source audit on PR #11 head `b82245d02ad9f51a1cca6795ba33cd31360c8de4`: the manifest registers MainActivity, VideoEditorActivity, and VideoPlayerActivity; MainActivity launches the existing editor for new/edit flows and the player for playback/history. The PR changed-file list contains one production editor implementation (`VideoEditorActivity.kt`), not a second editor.
+- No production source files were deleted or redesigned in this audit. Future cleanup must be based on verified unused references and tests, not file names alone.
+- Keep PR #11 draft and unmerged. Do not change the installed 394/build 61 baseline or create version 395 until the remaining acceptance gates pass and release is explicitly approved.
+
 ## Remove detached playhead SeekBar model — 2026-11-01
 
 - Removed `timelinePlayheadSeek`, which was instantiated but never attached to the view hierarchy. Its inactive listener and progress-mirroring writes duplicated timeline state without providing a usable control.
