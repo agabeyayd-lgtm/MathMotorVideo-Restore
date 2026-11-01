@@ -105,7 +105,12 @@ def verify(xml_path, screenshot_path, log_path):
             node.attrib.get("content-desc", "")
         )
         box = bounds(node)
-        if match and box and box[2] - box[0] >= 8 and box[3] - box[1] >= 8:
+        if (
+            match and box
+            and box[0] >= 0 and box[1] >= 0
+            and box[2] <= image.width and box[3] <= image.height
+            and box[2] - box[0] >= 8 and box[3] - box[1] >= 8
+        ):
             thumbnail_nodes.append((int(match.group(1)), box))
     if len(thumbnail_nodes) < 3:
         raise SystemExit(
