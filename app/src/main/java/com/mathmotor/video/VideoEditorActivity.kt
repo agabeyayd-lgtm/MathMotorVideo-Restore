@@ -5773,6 +5773,8 @@ class VideoEditorActivity : Activity() {
         requestStartedAt: Long
     ) {
         if (!pendingTimelineThumbnails.containsKey(key)) return
+        val exactQueuedAt = SystemClock.uptimeMillis()
+        val previewKey = "${uri}#preview:${timestampMs}"
         val exactPhase = if (priorityDistanceMs <= 150L) 0 else 2
         val exactTask = TimelineThumbnailTask(
             priorityDistanceMs.coerceAtLeast(0L),
@@ -5794,6 +5796,7 @@ class VideoEditorActivity : Activity() {
                 val targets = pendingTimelineThumbnails.remove(key).orEmpty()
                 pendingTimelineThumbnailPreviews.remove(key)
                 if (result != null && !result.isRecycled && !isFinishing && !isDestroyed) {
+                    timelineThumbnailCache.remove(previewKey)
                     timelineThumbnailCache.put(key, result)
                     val decodedAspectRatio = result.width.toFloat() / result.height.coerceAtLeast(1).toFloat()
                     val previousAspectRatio = timelineVideoAspectRatios.putIfAbsent(uri.toString(), decodedAspectRatio)
@@ -5806,7 +5809,7 @@ class VideoEditorActivity : Activity() {
                     }
                     if (timelineSyncTestEnabled) android.util.Log.i(
                         "TimelineFrameSyncTest",
-                        "TIMELINE_THUMBNAIL_READY sourceMs=$timestampMs width=${result.width} height=${result.height} cached=false decodeMs=$decodeDurationMs queueMs=${decodeStartedAt - requestStartedAt}"
+                        "TIMELINE_THUMBNAIL_READY sourceMs=$timestampMs width=${result.width} height=${result.height} cached=false decodeMs=$decodeDurationMs queueMs=${decodeStartedAt - exactQueuedAt} totalMs=${decodeStartedAt - requestStartedAt}"
                     )
                     targets.forEach { ref ->
                         val image = ref.get()
@@ -5945,10 +5948,10 @@ class VideoEditorActivity : Activity() {
             runOnUiThread {
                 pendingTimelineThumbnailPreviews.remove(key)
                 if (preview != null && !preview.isRecycled && !isFinishing && !isDestroyed) {
-                    timelineThumbnailCache.put(previewKey, preview)
                     // A provisional frame must never downgrade an exact result.
                     val exactAlreadyReady = timelineThumbnailCache.get(key)
                     if (exactAlreadyReady == null || exactAlreadyReady.isRecycled) {
+                        timelineThumbnailCache.put(previewKey, preview)
                         if (timelineSyncTestEnabled) android.util.Log.i(
                             "TimelineFrameSyncTest",
                             "TIMELINE_THUMBNAIL_PREVIEW_READY sourceMs=$timestampMs decodeMs=$decodeDurationMs queueMs=${decodeStartedAt - previewQueuedAt}"
@@ -5958,6 +5961,7 @@ class VideoEditorActivity : Activity() {
                             if (image != null && image.tag == key) image.setImageBitmap(preview)
                         }
                     } else {
+                        timelineThumbnailCache.remove(previewKey)
                         preview.recycle()
                     }
                 } else {
