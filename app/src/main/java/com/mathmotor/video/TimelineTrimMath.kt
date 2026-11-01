@@ -365,8 +365,13 @@ internal object TimelineVideoMath {
         minimumDurationMs: Long = 500L
     ): TimelineVideoSegment {
         val safe = normalize(segment)
-        return trimStart(safe, deltaMs, minimumDurationMs)
-            .copy(timelineStartMs = safe.timelineStartMs)
+        if (safe.durationMs <= 0L) return safe
+        val minimum = minimumDurationMs.coerceAtLeast(1L).coerceAtMost(safe.durationMs)
+        val delta = deltaMs.coerceIn(
+            -safe.sourceStartMs,
+            (safe.durationMs - minimum).coerceAtLeast(0L)
+        )
+        return safe.copy(sourceStartMs = safe.sourceStartMs + delta)
     }
 
     /** Right trim changes source out-point only. */
