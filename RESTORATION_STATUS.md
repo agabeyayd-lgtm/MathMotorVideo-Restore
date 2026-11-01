@@ -717,7 +717,8 @@ Source commit `54daecf5864ed76694f1930eb684bddbd8499628`.
 - [x] Keep the Activity-level `ScaleGestureDetector` as the only timeline pinch detector; do not add a competing detector to each lane.
 - [x] Preview pinch movement using a temporary lane-content transform and commit the anchored real timeline scale/scroll when the pinch ends.
 - [x] Preserve existing leading/trailing spacers, which already place time zero and the last frame under the fixed center playhead.
-- [x] Retain the current full-frame FIT_CENTER filmstrip rendering rather than introducing center cropping.
+- [x] Remove the gray gutters caused by FIT_CENTER letterboxing: timeline thumbnail cells now use CENTER_CROP and the strip/loading-cell backgrounds match, with zero inter-frame margin.
+- [ ] Verify the gray gutters are gone in the latest emulator screenshot and on the user's phone; check that the crop still shows useful action in each frame.
 
 - [ ] Run PR-head Kotlin compilation and unit tests for this change.
 - [ ] Verify horizontal swipe scrubs the preview and all timeline lanes remain aligned.
@@ -764,3 +765,13 @@ Source commit `5117d594ddd33a7d2fb319fae8fb975ed0658d80`:
 - [ ] Confirm live preview follows the centre playhead during scrubbing and pinch.
 
 The source patch is committed but all gesture acceptance checks remain open until actual interaction testing. PR #11 remains draft and unmerged. Installed versionCode 394 / build 61 is unchanged. Version 395 remains blocked.
+
+
+## Filmstrip gray-gutter repair — 2026-11-01
+
+- [x] Trace the visible gray rail in the PR #11 screenshot to portrait frames being letterboxed by `FIT_CENTER` inside landscape timeline cells (not a remaining 1 dp separator).
+- [x] Change thumbnail rendering to `CENTER_CROP`, preserving edge-to-edge cell widths and timestamp sampling; match the strip background to the thumbnail loading background (source commit `581d5141d3f0aecbf1bbcf93a0a28c132051a4bc`).
+- [ ] Rebuild PR #11 and inspect a fresh emulator screenshot for continuous, gap-free thumbnails.
+- [ ] Confirm on the user's phone that the gray gutters are gone and useful frame content remains visible.
+
+No version bump or release created. PR #11 remains draft/unmerged; installed versionCode 394 / build 61 is unchanged. Version 395 remains blocked.
