@@ -1,3 +1,14 @@
+## Timeline frame-precision follow-up — 2026-11-01
+
+- Active work branch: `fix/timeline-frame-precision`, based on the existing `fix/editor-395-gate` candidate. Do not confuse it with the repository default branch during future inspections.
+- Existing candidate code already contains two-finger timeline pinch with a preserved time anchor, synchronized lane scrolling, centered playhead, adaptive second ruler intervals, timestamped thumbnail extraction/cache and a dense filmstrip. Preserve these implementations.
+- Added `TimelineFrameMath` for the 30 fps project grid: 30 frames/second, microsecond-accurate frame timestamps, nearest-frame scrub snapping, and zoom-sensitive frame tick spacing.
+- Integrated frame labels into the ruler at close zoom and nearest-frame snapping into timeline seeks. Playback position synchronization remains continuous timestamp-based.
+- Corrected filmstrip sampling to stay inside each clip's half-open interval, avoiding an exact-end thumbnail that may belong to the next clip.
+- Added focused JUnit coverage for frame arithmetic, frame snapping and frame ruler intervals. These tests and the full emulator suite are **pending on the new branch**; source presence is not a pass.
+- Prior #327 green results belong to commit `63914154182f99368e5ed361b6d38b4f123918f2` and are not evidence for this new candidate.
+- Version 395 remains blocked. Do not change version metadata, sign/publish a release, or offer an update.
+
 ## Current release readiness — #327 GREEN (2026-10-30)
 
 - [Emulator workflow #327 — SUCCESS](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41008440350), candidate commit `63914154182f99368e5ed361b6d38b4f123918f2`. Unit tests, Debug APK build, FFmpeg/fixture setup, the connected Android emulator run, and artifact upload all completed successfully.
