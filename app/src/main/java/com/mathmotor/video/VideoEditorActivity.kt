@@ -773,16 +773,6 @@ class VideoEditorActivity : Activity() {
         timelineTracksFrame.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
             updateTimelinePlayheadLine()
         }
-        timelineCard.addView(timelineTracksFrame, matchWrap())
-        val timelineGestureHint = label("Uzun bas: klibi taşı / sil / kopyala  •  Kenarlardan: kes", 9f, Color.rgb(180, 202, 216), false).apply {
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            setPadding(dp(3), dp(2), dp(3), 0)
-            contentDescription = "Klibe uzun basarak taşı, sil veya kopyala; kesmek için kenarları sürükle"
-            visibility = View.GONE
-        }
-        timelineCard.addView(timelineGestureHint, matchWrap())
-
         val playheadRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -802,6 +792,19 @@ class VideoEditorActivity : Activity() {
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         )
         timelineCard.addView(playheadRow, matchWrap())
+
+        // Place the time readout immediately above the shared ruler/filmstrip, not
+        // beside or underneath playback controls. Keep one authoritative duration display.
+        timelineCard.addView(timelineTracksFrame, matchWrap())
+        val timelineGestureHint = label("Uzun bas: klibi taşı / sil / kopyala  •  Kenarlardan: kes", 9f, Color.rgb(180, 202, 216), false).apply {
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(dp(3), dp(2), dp(3), 0)
+            contentDescription = "Klibe uzun basarak taşı, sil veya kopyala; kesmek için kenarları sürükle"
+            visibility = View.GONE
+        }
+        timelineCard.addView(timelineGestureHint, matchWrap())
+
         root.addView(timelineCard, matchWrap())
         root.addView(gap(4))
 
