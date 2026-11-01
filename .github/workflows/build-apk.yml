@@ -2,6 +2,9 @@ name: Build MathMotorVideo APK
 
 # Build an unsigned debug APK for PR device verification; signed publishing remains separate.
 on:
+  push:
+    branches:
+      - debug/apk-preview-394
   pull_request:
     branches:
       - main
