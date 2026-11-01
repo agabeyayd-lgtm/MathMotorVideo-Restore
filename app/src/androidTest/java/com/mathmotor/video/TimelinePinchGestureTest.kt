@@ -28,7 +28,7 @@ class TimelinePinchGestureTest {
         val device = UiDevice.getInstance(instrumentation)
 
         val fixtureReady = device.executeShellCommand(
-            "run-as com.mathmotor.video.next test -s files/editor-test-video.mp4 && echo FIXTURE_READY"
+            "run-as com.mathmotor.video.next test -s /data/user/0/com.mathmotor.video.next/files/editor-test-video.mp4 && echo FIXTURE_READY"
         )
         assertTrue("The deterministic editor test video was not staged", fixtureReady.contains("FIXTURE_READY"))
 
