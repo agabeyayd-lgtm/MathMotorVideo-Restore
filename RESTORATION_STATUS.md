@@ -738,3 +738,9 @@ Source implementation is committed; it is not device acceptance. PR #11 stays dr
 
 - [x] Pause the active preview when an in-timeline pinch begins so playback-follow cannot fight the pinch's anchored timeline movement (source commit `88ef7ea8e06cfb3537893f7c79e8466e6173599e`).
 - [ ] Verify pause/seek/resume behavior during pinch and playback after the gesture ends.
+
+
+### Off-centre pinch math regression — 2026-11-01
+
+- [x] Add a unit test for midpoint timestamp anchoring plus recalculation of the time beneath the fixed centre playhead (test commit `cfb24cf97e2b0661745ddb18ece934d3fe550c7e`).
+- [ ] Confirm this test passes in Verify Android on the final PR head.
