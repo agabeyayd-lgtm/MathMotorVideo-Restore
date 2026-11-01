@@ -600,7 +600,10 @@ if ! take_screen emulator-screenshots/editor-playing.png; then
   collect_capture_diagnostics timeline-playing-capture-failure
   exit 6
 fi
-timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime > emulator-screenshots/timeline-sync-logcat.txt 2>&1 || true
+# The full Android log buffer can exceed the 10-second timeout and leave this
+# file truncated before the editor's playback samples. Keep only the dedicated
+# debug sync tag so the validator receives the startup marker and all samples.
+timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime -s TimelineSyncTest:I > emulator-screenshots/timeline-sync-logcat.txt 2>&1 || true
 if ! python3 .github/scripts/assert-timeline-sync.py emulator-screenshots/timeline-sync-logcat.txt 2>&1 | tee emulator-screenshots/timeline-sync-validation.txt; then
   echo "Live playback/timeline synchronization assertions failed."
   collect_capture_diagnostics timeline-sync-assertion-failure
