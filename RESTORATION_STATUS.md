@@ -2,9 +2,9 @@
 
 This entry reconciles the latest verified source commit with subsequent documentation-only commits. Older sections below are historical records and must not be read as the current head's status when they name a different commit.
 
-- Active branch: `work/simplified-independent-timeline`; PR #11 is open, **draft**, and unmerged. Source commit tested: `2628167ff20d6f7799ab418abbd766a912f1254d`. Two documentation-only commits followed; the current PR head is `50c615cadd7ae52a1fcd97c706b309a43819e2ab`.
-- The tested source commit and all three successful workflow runs refer to `2628167`. The subsequent commits `0945b968731bc507d7a24a52922dcaa900dc0d2a` and `50c615cadd7ae52a1fcd97c706b309a43819e2ab` only prepend this reconciliation note to README and RESTORATION_STATUS; no Kotlin or workflow source changed.
-- Verify Android run **41314535658** completed successfully on this exact head. Its job ran Kotlin unit tests and compiled the debug APK.
+- Active branch: `work/simplified-independent-timeline`; PR #11 is open, **draft**, and unmerged. Source commit tested: `2628167ff20d6f7799ab418abbd766a912f1254d`. Documentation-only reconciliation updates followed; no Kotlin or workflow source changed.
+- The tested source commit and all three successful workflow runs refer to `2628167`. Subsequent commits only prepend this reconciliation note to README and RESTORATION_STATUS; no Kotlin or workflow source changed.
+- Verify Android run **41314535658** completed successfully on source commit `2628167`. Its job ran Kotlin unit tests and compiled the debug APK.
 - Debug APK workflow **41314535642** completed successfully on this exact head. Artifact `MathMotorVideo-restored-debug` (5,675,235 bytes) is present and not expired. This is a debug APK, not a signed release or version 395.
 - Emulator screenshot workflow **41314535629** completed successfully on this exact head. Build, deterministic fixture generation, emulator launch/capture and diagnostics upload all succeeded. Screenshot artifact `mathmotor-android-emulator-screenshots` (2,619,637 bytes) is present. The screenshot artifact has not yet been visually inspected in this audit; this run does not exercise real pinch/trim/layer gestures or physical-phone behavior.
 - The current source includes the source-FPS frame ruler and frame-aligned filmstrip sampling described in the sections below. The frame-ruler emulator attempt recorded as #648 was cancelled at its final app-launch/capture step; its uploaded screenshot is diagnostic only, not interaction acceptance.
