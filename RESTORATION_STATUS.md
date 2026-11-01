@@ -2,7 +2,7 @@
 
 ## Canonical mainline state — 2026-11-01
 
-- Emulator run #687: filmstrip/preview alignment at 211 ms and forward/reverse scrubbing passed. The diagnostic log captured the timeline sync test flag and more than 20 live playback samples; ruler, filmstrip lanes, centered playhead and player time remained synchronized. The validator failed because the harness dumped the entire Android log buffer with a 10-second timeout, producing a truncated validation file before the startup marker/samples. Fix the harness by filtering capture to `TimelineSyncTest:I`; rerun required before marking #687's check green. This is a test-log capture defect, not evidence of an editor sync regression.
+- Emulator run #687 itself remains red because its full Android log capture was truncated. The filtered-log correction was validated in #688; see the 2026-11-02 evidence section below for successful frame-match, scrub, playback-sync and autosave checks.
 - Active source: `main` only. The user-approved UI/editor baseline from `b82245d02ad9f51a1cca6795ba33cd31360c8de4` is now integrated in merge commit `668ed1c0653a05871b3ffb855cc3a3b3aa61435d` (PR #16).
 - Preserved the approved editor activity, filmstrip, fixed center playhead, source-frame-rate-aware scale/ruler math, thumbnail sample/alignment logic, independent track/layout helpers and matching tests. Do not replace these with the interim main-only `VideoEditorActivity.kt` or fixed-30-FPS `TimelineFrameMath` implementation.
 - PR-head checks passed on the merged tree: Verify Android build #452, debug APK build #488, and API 35 emulator editor/screenshot flow #669 (integration commit `934d9011c8afd65e4764a39b2411a50cd216047d`).
@@ -11,6 +11,18 @@
 - Physical-device validation remains outstanding. The debug APK is not a signed release. No user-phone installation is claimed.
 - Release baseline remains versionCode 394 / Build 61. Version 395 remains blocked pending the user's remaining acceptance checklist and explicit release approval.
 - Older timeline/frame repair notes below are historical notes for an interim implementation. They must not override this canonical approved-source state.
+
+
+## Verified mainline state — 2026-11-02 (supersedes older pending notes)
+
+- **#688 passed** ([Actions](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41352473376)): API 35 debug APK install and editor smoke flow; deterministic 8.023-second fixture import; centered preview/filmstrip match at 211ms with RGB delta 0; 4/4 visible thumbnail samples distinct; forward and reverse filmstrip scrubbing; 18 playback samples from 333ms to 4716ms with ruler/video lanes synchronized and fixed playhead/Play center at x=160px; draft autosave and return to draft list.
+- **#489 passed** ([Actions](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41352479949)): `testDebugUnitTest` and `assembleDebug`.
+- **#441 passed** on PR #15: pinch-out/in, five-second anchor stability within 12px, and one-finger VIDEO-lane scrolling that moves the ruler with it.
+- Current main source already contains adaptive ruler-grid rendering (`TimelineScaleMath.rulerGrid`) and source-frame ticks at close zoom; unit tests cover interval changes, source frame rates, pinch-anchor math and thumbnail sample sequencing. Visual checks at multiple zoom states and physical-phone confirmation remain open.
+- Confirmed implementation gap: Undo/Redo is backed by `ClipEditSnapshot` and only restores clip state. Text and audio changes are not part of a shared project history.
+- #688 screenshots show one ruler/time header and no old bottom green zoom slider/+/- controls, “Klip 1/2” labels or timeline navigation arrows. This is visual evidence at the API 35 emulator size, not full multi-screen UI acceptance.
+- Still open: trim-handle and clip-selection gestures; timeline beginning/end access after zoom; shared text/music/sound alignment and edit interactions; text timing/size through preview/export; global Undo/Redo; multi-clip order/trim/join/export; MP4 video/audio/duration validation; project save-close-reopen; thumbnail latency/cache reuse/black-placeholder behavior across portrait/landscape/square sources; keyboard responsiveness and physical-phone smoke testing.
+- Keep versionCode 394 / Build 61. Version 395 remains blocked; no release APK, version bump or update offer is authorized.
 
 
 ## Timeline frame/zoom repair — 2026-11-01
@@ -58,23 +70,23 @@ MathMotor Video is a local Android video editor with a CapCut-inspired workflow.
 - JSON project save/load and local draft autosave, including playhead time, zoom and horizontal scroll.
 - Responsive preview/timeline layout, reduced keyboard mode and compact dock.
 
-## User-reported problems for the next release (all remain open)
+## User-reported problems for the next release (end-to-end acceptance remains open)
 
-See the detailed, release-blocking checklist in README.md. The active list is:
-1. One-finger timeline gestures and two-finger zoom are not usable/reliable.
+Some implementation and narrow automated checks have since passed. The active list below describes remaining full acceptance, not a claim that every underlying code path is absent. See the 2026-11-02 verified mainline section above.
+1. One-finger and pinch basics have partial API 35 evidence (#441 and #688); clip selection, trim handles, text/audio-lane gestures and physical-device conflicts remain unverified.
 2. Timeline appears locked to the left and cannot be moved freely.
 3. Timeline filmstrip thumbnails are too small and too sparse.
-4. Thumbnails repeat the same frame and initially show black before resolving.
-5. The red playhead does not behave like CapCut's playhead; time, preview, playback and split position must stay aligned.
+4. #688 confirmed 4/4 visible samples are distinct and the centered 211ms thumbnail matches preview exactly on the deterministic fixture; black-placeholder behavior, load latency, caching and varied source-video coverage remain open.
+5. #688 confirmed fixed-center playback synchronization and forward/reverse scrubbing; exact split-at-playhead behavior and multi-clip scrubbing still need validation.
 6. Text start/end timing cannot be set reliably and text size is not adjustable as expected.
 7. A separate project-duration control is confusing or conflicts with actual timeline duration; use one unified timeline track/ruler and one source of truth for total duration.
-8. Timeline ruler labels must automatically adapt to pinch zoom: coarser minute/large-interval labels when zoomed out, seconds when zoomed in, and finer second spacing at close zoom.
-9. Undo/Redo may not work; current known implementation records clip edits only and does not include text/audio in one global history.
+8. Adaptive ruler-grid logic and unit tests now exist in main; visible minute/second/frame transitions still need interactive multi-zoom review.
+9. Confirmed code gap: Undo/Redo currently snapshots clip edits only; text and audio do not participate in one global project history.
 10. Home screen has redundant explanatory copy/menus and needs a simpler professional layout.
 11. Scissors icons are overused; cut/split/trim/delete actions need distinct, restrained controls.
-12. The redundant bottom timeline strip (duration + green slider + +/- controls) should be removed; keep one unified timeline/ruler, show time once, and zoom with two-finger pinch gestures.
-13. Remove "Klip 1" / "Klip 2" labels and give the reclaimed space to a larger video preview; retain clip selection and boundaries without the labels.
-14. Remove timeline navigation/scroll/zoom arrow buttons entirely; use direct touch gestures (one-finger drag/swipe, two-finger pinch, tap-to-select and draggable trim handles) rather than arrow buttons. Keep only functional affordances such as the playhead and trim handles.
+12. #688 screenshots show the old green slider and +/- bottom zoom strip are gone; the pinch interaction passed #441. Full device-level gesture review remains.
+13. “Klip 1/2” labels are absent from #688 editor screenshots; clip selection/boundary interactions still need acceptance tests.
+14. Navigation arrows are absent from #688 screenshots; pinch and one-finger VIDEO-lane scroll passed #441. Tap-to-select and draggable trim handles remain unverified.
 15. Bottom tool navigation should swap the four-item dock for the selected tool's controls in the same bottom panel, then restore the four-item dock on back/confirm; tool panels must not hide underneath the preview.
 16. Timeline thumbnails need more visible width, clearer frame content and faster prioritized loading/caching.
 17. Simplify the two-video join/add-clip area visually while preserving the actual add/order/join behavior.
@@ -162,10 +174,10 @@ Some older physics/scenario-related source and tests remain as reconstruction le
 - Replaced Shorts-only 9:16 cell geometry with a fixed-height strip and source-aspect-ratio-derived cell width. The first decoded thumbnail teaches the layout the actual ratio; portrait, landscape and square sources are fitted without crop/stretch, and cached bitmaps survive the one-time layout refresh.
 - Added unit tests for cell-range partitioning and portrait / landscape / square cell sizing.
 - Verify Android build #474 passed unit tests and `assembleDebug` on commit `283a09e341489d77aac964f1bd944a0250bcd2b1`.
-- API 35 screenshot/editor run #682 now fingerprints every fully visible thumbnail and checks that distinct sample timestamps produce visually distinct frames; the run is in progress. This work is not yet physically tested on the user's phone.
+- API 35 run #682 failed the preview/thumbnail pixel check at 211ms (different RGB values). Mainline run #688 subsequently passed the centered preview/filmstrip pixel check exactly (RGB delta 0) and confirmed 4/4 visible samples distinct on the deterministic fixture. Physical-phone testing remains open.
 
 Still open:
-- Complete the new emulator assertion that samples all fully visible filmstrip cells from a time-varying fixture and rejects repeated decoded frames for distinct sample times.
+- Extend the passing #688 thumbnail distinctness/frame-match checks beyond the deterministic fixture to varied real source videos, orientations and zoom levels.
 - Measure initial thumbnail fill time and verify progressive visible-first loading.
 - Verify zoom-out reuses in-range thumbnails without launching new decode tasks, and zoom-in only decodes newly needed time intervals.
 - Visually verify Play/Stop retains the final frame, including the decode-failure path.
@@ -194,7 +206,7 @@ Verification still required:
 - Commit `102bdcd899b397dc439d1c2c3193b651e57fd6d6` centralizes the 99dp header gutter for leading/trailing spacer geometry and fit-to-project width. Commit `3a6d6b474c6eb6cf24f8f0fb01a34601a1240653` updates `TimelineScaleMathTest` geometry to the new header width. The preview/frame tolerance was not relaxed.
 
 Verification pending:
-- Emulator screenshot run #687 validates whether the corrected gutter makes the centered 211ms thumbnail and preview request the same source frame.
+- Emulator run #688 passed the corrected 211ms alignment check: the preview and centered filmstrip sample had exact RGB agreement (maximum channel delta 0).
 - Verify Android build #484 validates the revised geometry unit tests and APK compilation.
-- On green, continue the existing acceptance sequence for forward/reverse scrub, zoom, thumbnail reuse/fill speed, Stop frame retention, and portrait/landscape/square source ratios. The CI emulator is not physical-phone acceptance.
+- Run #688 also passed forward/reverse scrub and live ruler/video playback synchronization. Continue with still-open checks for thumbnail reuse/fill speed, Stop frame retention, portrait/landscape/square sources and physical-phone acceptance.
 - Keep versionCode 394 / Build 61 as the approved baseline. Do not create version 395, sign/publish a release, or offer a replacement APK until all acceptance checks pass and the user explicitly authorizes it.
