@@ -740,7 +740,7 @@ Source commit: `54daecf5864ed76694f1930eb684bddbd8499628`.
 - Programmatic scroll restoration after a timeline rebuild now uses the same guarded scroll path as playback-follow. A layout refresh or zoom commit must not be mistaken for a user's scrub and seek the preview to an unrelated time.
 - Kept exactly one `ScaleGestureDetector`, at Activity level. A pinch that begins inside the timeline cancels the child clip/trim touch before Activity-level capture; there is no competing detector inside each HorizontalScrollView.
 - Pinch feedback now uses a temporary scale/translation on lane content while fingers move, then commits the real pixels-per-second value and anchored scroll once when the pinch ends. The timestamp under the moving pinch midpoint remains the anchor; the same origin/end spacers continue to let time zero and the final frame reach the center playhead.
-- The existing filmstrip already uses fit/letterbox framing, edge-to-edge cells and timestamped samples. It was retained rather than replacing it with center-cropped square tiles.
+- The filmstrip uses edge-to-edge cells and timestamped samples. The earlier `FIT_CENTER` mode letterboxed portrait source frames inside landscape timeline cells, exposing the cell background as gray gaps. The latest focused fix switches the cells to `CENTER_CROP` and matches the strip background to the loading-cell background; this fills each thumbnail tile without inter-frame margins. Visual verification on the latest PR-head build is still pending.
 
 **Pending acceptance:** Kotlin compilation and unit tests on this commit; emulator/phone verification of one-finger swipe scrubbing, live preview response, pinch zoom in/out and midpoint anchoring, no accidental clip drag/trim during pinch, all-lane synchronization, and no false scrub after programmatic rebuild/restore. Screenshot success alone is not touch acceptance. PR #11 remains draft; version 395 remains blocked.
 
@@ -766,3 +766,11 @@ Source commit `5117d594ddd33a7d2fb319fae8fb975ed0658d80`:
 - Empty gray portions and ruler/lane spaces continue to use the shared horizontal scroll path; all lanes remain synchronized to the same horizontal offset and zoom.
 
 **Still pending:** fresh PR-head compile/unit verification, emulator interaction proof for one-finger scrubbing from each row and blank area, two-finger pinch from top/middle/bottom rows, preview response, trim handles, and hold-drag item movement. Source changes are not device acceptance. PR #11 remains draft/unmerged; version 395 remains blocked.
+
+
+## Filmstrip gray-gutter repair — 2026-11-01
+
+- Source commit `581d5141d3f0aecbf1bbcf93a0a28c132051a4bc` changes timeline thumbnails from `FIT_CENTER` to `CENTER_CROP`. The screenshot showed portrait source frames letterboxed inside wide timeline cells; the exposed cell background looked like a gray rail even though there was no per-frame margin.
+- The filmstrip background now matches the thumbnail loading-cell background. Existing fixed-width, edge-to-edge cells and timestamp sampling are preserved.
+- [ ] Build and inspect a fresh PR #11 emulator screenshot; confirm the gray gutters disappear and frame content remains legible.
+- [ ] Confirm on the user's phone. This source change is not yet device acceptance. No version bump; version 395 remains blocked.
