@@ -3610,7 +3610,9 @@ class VideoEditorActivity : Activity() {
         }
         val filmstrip = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(Color.rgb(26, 37, 51))
+            // Match the thumbnail placeholder color so weighted-pixel rounding can
+            // never expose a contrasting rail between adjacent frame tiles.
+            setBackgroundColor(Color.rgb(31, 46, 59))
         }
         // Cap decode work per clip to keep long timelines responsive and avoid a stale queue.
         val thumbnailCount = (width / dp(18)).coerceIn(2, 24)
@@ -3620,9 +3622,11 @@ class VideoEditorActivity : Activity() {
                 setBackgroundColor(Color.rgb(31, 46, 59))
                 contentDescription = "Klip karesi"
             }
-            filmstrip.addView(image, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply {
-                if (slot < thumbnailCount - 1) rightMargin = dp(1)
-            })
+            // Keep frames edge-to-edge: a per-thumbnail margin revealed the
+            // darker filmstrip background as a repeated gray separator/rail.
+            filmstrip.addView(image, LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.MATCH_PARENT, 1f
+            ))
             val frameTime = clip.startMs + (durationMs * (slot + 1L) / (thumbnailCount + 1L))
             requestTimelineThumbnail(clip.uri, frameTime, image)
         }
