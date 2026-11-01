@@ -1923,7 +1923,7 @@ class VideoEditorActivity : Activity() {
                     val scrollLocation = IntArray(2)
                     scroll.getLocationOnScreen(scrollLocation)
                     timelinePinchAnchorOffsetPx =
-                        (focusScreenX - scrollLocation[0]).coerceIn(0, scroll.width.toFloat())
+                        (focusScreenX - scrollLocation[0]).toFloat().coerceIn(0f, scroll.width.toFloat())
                     val anchorContentPx = scroll.scrollX.toFloat() + timelinePinchAnchorOffsetPx
                     timelinePinchAnchorTimeMs = TimelineScaleMath.millisecondsForPixels(
                         anchorContentPx, timelinePixelsPerSecond()
