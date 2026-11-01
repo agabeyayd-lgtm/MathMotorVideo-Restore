@@ -5623,19 +5623,21 @@ class VideoEditorActivity : Activity() {
         if (frame != null) return frame
 
         var extractor: FrameExtractor? = null
+        var decoded: Bitmap? = null
         var future: java.util.concurrent.Future<FrameExtractor.Frame>? = null
-        return try {
+        try {
             val created = FrameExtractor.Builder(this, MediaItem.fromUri(uri)).build()
             extractor = created
-            future = created.getFrame(timeMs.coerceAtLeast(0L))
-            future.get(2500L, TimeUnit.MILLISECONDS).bitmap
+            val frameFuture = created.getFrame(timeMs.coerceAtLeast(0L))
+            future = frameFuture
+            decoded = frameFuture.get(2500L, TimeUnit.MILLISECONDS).bitmap
         } catch (error: Exception) {
             future?.cancel(true)
             android.util.Log.w("TimelinePreviewFrame", "Frame decode failed at ${timeMs}ms", error)
-            null
         } finally {
             runCatching { extractor?.close() }
-        }?.let { original ->
+        }
+        return decoded?.let { original ->
             val maxSide = 1440
             val largest = maxOf(original.width, original.height)
             if (largest <= maxSide) original
