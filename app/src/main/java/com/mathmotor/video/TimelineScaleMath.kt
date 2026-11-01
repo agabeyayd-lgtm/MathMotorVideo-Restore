@@ -62,17 +62,73 @@ internal object TimelineScaleMath {
         return raw.toFloat().coerceIn(minimum, maximum)
     }
 
-    /** Select a readable ruler step from the current physical px/sec scale. */
+    /** Select a readable seconds/subseconds ruler interval for the current zoom. */
     fun rulerStepMs(pixelsPerSecond: Float, minimumLabelSpacingPx: Float): Long {
         if (!pixelsPerSecond.isFinite() || pixelsPerSecond <= 0f) return 1_000L
-        val targetSeconds = (minimumLabelSpacingPx.coerceAtLeast(1f) / pixelsPerSecond)
-            .coerceAtLeast(0.001f)
-        // The editor ruler is a seconds counter: never emit fractional-second ticks.
-        val niceSteps = floatArrayOf(1f, 2f, 3f, 5f, 10f, 15f, 30f, 60f, 120f, 300f, 600f)
-        val seconds = niceSteps.firstOrNull { it >= targetSeconds }
-            ?: (kotlin.math.ceil(targetSeconds / 600f) * 600f)
-        return (seconds * 1000f).toLong().coerceAtLeast(1L)
+        val targetMs = (
+            minimumLabelSpacingPx.coerceAtLeast(1f).toDouble() /
+                pixelsPerSecond.toDouble() * 1_000.0
+            ).coerceAtLeast(1.0)
+        val niceStepsMs = longArrayOf(
+            10L, 20L, 50L, 100L, 200L, 250L, 500L,
+            1_000L, 2_000L, 3_000L, 5_000L, 10_000L,
+            15_000L, 30_000L, 60_000L, 120_000L, 300_000L, 600_000L
+        )
+        return niceStepsMs.firstOrNull { it.toDouble() >= targetMs }
+            ?: (kotlin.math.ceil(targetMs / 600_000.0) * 600_000.0).toLong().coerceAtLeast(1L)
     }
+
+    data class RulerGrid(
+        val intervalMs: Long,
+        val frameStep: Long? = null,
+        val frameRate: Double? = null
+    )
+
+    /**
+     * Seconds become readable subdivisions as zoom increases. At close zoom the
+     * same ruler switches to source-frame units. Frame timestamps are calculated
+     * from the absolute frame index, avoiding cumulative drift at 29.97 fps.
+     */
+    fun rulerGrid(
+        pixelsPerSecond: Float,
+        minimumLabelSpacingPx: Float,
+        sourceFrameRate: Double?
+    ): RulerGrid {
+        val fps = sourceFrameRate?.takeIf { it.isFinite() && it in 1.0..240.0 }
+        if (fps != null && pixelsPerSecond.isFinite() && pixelsPerSecond > 0f) {
+            val targetFrames = (
+                minimumLabelSpacingPx.coerceAtLeast(1f).toDouble() * fps /
+                    pixelsPerSecond.toDouble()
+                ).coerceAtLeast(1.0)
+            val frameStep = niceFrameStep(kotlin.math.ceil(targetFrames).toLong())
+            val intervalMs = frameTimeMs(frameStep, fps).coerceAtLeast(1L)
+            if (intervalMs <= 500L) {
+                return RulerGrid(intervalMs, frameStep, fps)
+            }
+        }
+        return RulerGrid(rulerStepMs(pixelsPerSecond, minimumLabelSpacingPx))
+    }
+
+    private fun niceFrameStep(target: Long): Long {
+        val safeTarget = target.coerceAtLeast(1L)
+        val nice = longArrayOf(1L, 2L, 3L, 4L, 5L, 6L, 8L, 10L, 12L, 15L, 20L, 24L, 30L, 40L, 48L, 60L)
+        return nice.firstOrNull { it >= safeTarget }
+            ?: (kotlin.math.ceil(safeTarget / 60.0) * 60.0).toLong().coerceAtLeast(1L)
+    }
+
+    /** Exact frame-index to timestamp conversion; do not repeatedly add a rounded frame duration. */
+    fun frameTimeMs(frameIndex: Long, framesPerSecond: Double): Long {
+        if (!framesPerSecond.isFinite() || framesPerSecond <= 0.0) return 0L
+        return (frameIndex.coerceAtLeast(0L).toDouble() * 1_000.0 / framesPerSecond).roundToLong()
+    }
+
+    fun frameIndexAtTimeMs(timeMs: Long, framesPerSecond: Double): Long {
+        if (!framesPerSecond.isFinite() || framesPerSecond <= 0.0) return 0L
+        return (timeMs.coerceAtLeast(0L).toDouble() * framesPerSecond / 1_000.0).roundToLong()
+    }
+
+    fun snapTimeToFrameMs(timeMs: Long, framesPerSecond: Double): Long =
+        frameTimeMs(frameIndexAtTimeMs(timeMs, framesPerSecond), framesPerSecond)
 
     /** Pixel offsets for evenly spaced minor divisions between two major ruler ticks. */
     fun rulerMinorTickOffsetsPx(intervalWidthPx: Int, divisionCount: Int = 5): List<Int> {
@@ -88,13 +144,13 @@ internal object TimelineScaleMath {
         val totalSeconds = safeMs / 1000L
         val minutes = totalSeconds / 60L
         val seconds = totalSeconds % 60L
-        val tenth = (safeMs % 1000L) / 100L
+        val fraction = (safeMs % 1_000L).toInt()
+        val decimal = if (fraction == 0) "" else {
+            "." + "%03d".format(java.util.Locale.US, fraction).trimEnd('0')
+        }
         return when {
-            minutes > 0L && tenth > 0L ->
-                "%d:%02d.%d".format(java.util.Locale.US, minutes, seconds, tenth)
-            minutes > 0L -> "%d:%02d".format(java.util.Locale.US, minutes, seconds)
-            safeMs % 1000L > 0L -> "$totalSeconds.$tenth"
-            else -> seconds.toString()
+            minutes > 0L -> "%d:%02d".format(java.util.Locale.US, minutes, seconds) + decimal
+            else -> totalSeconds.toString() + decimal
         }
     }
 
