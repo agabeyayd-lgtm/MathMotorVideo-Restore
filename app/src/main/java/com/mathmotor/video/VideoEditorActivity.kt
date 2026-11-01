@@ -1938,7 +1938,7 @@ class VideoEditorActivity : Activity() {
 
                 override fun onScale(detector: android.view.ScaleGestureDetector): Boolean {
                     timelinePinchRequestedZoom =
-                        (timelinePinchStartZoom * detector.scaleFactor).coerceIn(0.5f, 8.0f)
+                        (timelinePinchRequestedZoom * detector.scaleFactor).coerceIn(0.5f, 8.0f)
                     return true
                 }
 
