@@ -810,3 +810,5 @@ The user reviewed the current phone build and requested one focused editor polis
 
 
 Implementation started on 2026-11-01: source commit `e6cbc2b73012d12afce49b64533d68b89f2ae446` keeps a clip already at timeline zero anchored at zero when its source start is trimmed, removes the redundant clip-panel heading/selected-source line, and moves the contextual tool panel below the timeline immediately above the bottom dock. These are source changes only; panel sizing/keyboard behavior and the remaining preview/ruler requirements are still pending verification and follow-up work.
+
+Follow-up source commit `1be67ecc7d2ba7e71381399863d76ee732a236b4` adds five minor ruler divisions between each adaptive major label and compacts the bottom tool panel in normal/keyboard layouts. This improves ruler granularity and panel placement, but preview/filmstrip exact-frame synchronization remains unimplemented and all visual/device checks are pending.
