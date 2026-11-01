@@ -716,20 +716,15 @@ class VideoEditorActivity : Activity() {
             ViewGroup.LayoutParams.MATCH_PARENT, dp(48)
         ))
 
-        // Keep the live time readout in the playback header. The ruler and every
-        // content lane then use the same 54dp left grip/gutter and the same time-zero axis.
+        // The time readout now belongs to the timeline, not the playback row.
+        // It is inserted directly above the shared ruler/filmstrip below.
         timelinePlayheadLabel = label("00:00.0 / 00:00.0", 10f, Color.rgb(225, 233, 237), true).apply {
             maxLines = 1
             gravity = Gravity.CENTER_VERTICAL or Gravity.START
             setSingleLine(true)
             setPadding(dp(4), 0, dp(2), 0)
+            contentDescription = "Oynatma zamanı ve toplam video süresi"
         }
-        centeredPlaybackRow.addView(
-            timelinePlayheadLabel,
-            FrameLayout.LayoutParams(dp(112), dp(42), Gravity.START or Gravity.CENTER_VERTICAL).apply {
-                leftMargin = dp(8)
-            }
-        )
         val fitTimelineButton = miniButton("Sığdır") { fitTimelineToProject() }.apply {
             textSize = 10f
             minWidth = dp(58)
@@ -764,6 +759,18 @@ class VideoEditorActivity : Activity() {
         clipScroll.visibility = View.GONE
         timelineCard.addView(clipScroll, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, 0
+        ))
+        val timelineTimeRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(8), dp(2), dp(8), dp(2))
+            addView(
+                timelinePlayheadLabel,
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(22))
+            )
+        }
+        timelineCard.addView(timelineTimeRow, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(26)
         ))
         timelineTracksFrame = FrameLayout(this)
         timelineTracks = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
