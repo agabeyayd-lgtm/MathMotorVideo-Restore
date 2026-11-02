@@ -2,7 +2,18 @@
 
 ## New editor layout target — CapCut-inspired mobile arrangement (2026-11-02)
 
-**Status: DESIGN TARGET RECORDED — implementation and verification not yet started.** This is a layout-only redesign of the existing editor, based on the user's complete 720×1600 portrait reference specification. The installed 394 / Build 61 experience remains the baseline; do not create version 395 or publish an APK for this documentation update.
+**Status: SOURCE LAYOUT DRAFT IMPLEMENTED — API/unit verification passed; emulator and device acceptance pending.** The draft is isolated on feature/capcut-layout-recompose; main remains unchanged. The installed 394 / Build 61 experience remains the baseline. No APK was packaged, and version 395 was not created.
+
+### Implementation progress — 2026-11-02
+
+- Recomposed the existing editor layout without replacing the editor activity: preview remains responsive; fullscreen/time moved to the playback row; play is unboxed; existing clip undo/redo and fit controls sit on the right.
+- Expanded the timeline workspace to a 220dp target, reduced the video filmstrip to 48dp, and added persistent audio/text lanes with Ses ekle / Metin ekle controls. The YZ badge, Kapak, and lane plus are visual-only placeholders.
+- Ruler labels now appear at five-second marks (00:00, 00:05); tick geometry, shared time mapping, frame-rate-aware math, scrub/zoom behavior and centered playhead logic were not rewritten.
+- Added the horizontally scrollable seven-tool dock in the requested order. Existing Düzenle, Ses, Metin, and Proje destinations remain connected; Efektler, Bindirme, and Yazılar show Yakında.
+- Klip sesini reuses the existing source-audio mute state. Ses ekle and Metin ekle open their existing panels. Selected-clip actions and trim controls remain in the existing contextual clip panel; undo/redo remain in the playback row.
+- **Verification:** no-APK workflow run [#2 passed](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41450804106). compileDebugKotlin, compileDebugUnitTestKotlin, and testDebugUnitTest passed. The workflow did not run assembleDebug, package an APK, or upload an artifact. The temporary test workflow was removed after the run.
+- **Not yet accepted:** no emulator screenshot/layout review, keyboard/inset test, smaller-screen test, interaction regression run, or physical-phone acceptance has been performed. All layout acceptance checkboxes below remain open.
+- Tested source commit: 4ec9cf5a6eeb2af16dac42bd5f583b25a4cbcbbd. Current branch head after removing the temporary workflow: 7f5be8ff47868039158749602112c2aee3a5a681. Main remains at 4d83ba84551e82b704953209fb7427bc4af0d544.
 
 ### Non-negotiable scope
 
@@ -35,7 +46,7 @@
 
 - The video clip is unselected on initial editor entry: no selection border or trim handles.
 - Tapping a clip selects it and opens its contextual bottom tool row.
-- Move these existing actions out of the always-visible main layout and into that selected-clip tool row: `Önizle`, `Kopyala`, `Klibi kaldır`, `Böl`, `Öne al`, `Sona al`, `Klip geri al`, `Klip yinele`, and the `Başlangıç/Bitiş` controls. Preserve their current handlers and exact behavior.
+- Move these existing actions out of the always-visible main layout and into that selected-clip tool row: `Önizle`, `Kopyala`, `Klibi kaldır`, `Böl`, `Öne al`, `Sona al`, and the `Başlangıç/Bitiş` controls. Keep the existing `Klip geri al/yinele` buttons on the playback row as specified above. Preserve their current handlers and exact behavior.
 - `Ses ekle` opens the existing `Ses` tool; `Metin ekle` opens the existing `Metin` tool.
 - The four existing tools `Düzenle`, `Ses`, `Metin`, `Proje` remain functional in the bottom navigation.
 - `Kapak`, `Efektler`, `Bindirme`, `Yazılar`, the video-lane `+`, and `YZ` are appearance-only placeholders. Do not implement new feature logic. If tapped, show a brief `Yakında` message at most; no navigation into broken or empty flows.
