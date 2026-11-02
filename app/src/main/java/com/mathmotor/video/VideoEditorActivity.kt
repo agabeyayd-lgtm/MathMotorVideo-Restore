@@ -4985,6 +4985,207 @@ class VideoEditorActivity : Activity() {
         }
     }
 
+    private fun chooseOverlayAsset() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*"))
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+        try {
+            startActivityForResult(intent, REQUEST_OVERLAY_ASSET)
+        } catch (error: Exception) {
+            status.text = "Fotoğraf/video seçici açılamadı: ${error.message}"
+        }
+    }
+
+    private fun addOverlayAsset(uri: Uri) {
+        val mimeType = contentResolver.getType(uri).orEmpty().lowercase(Locale.US)
+        val extension = (uri.lastPathSegment ?: "").substringAfterLast('.', "").lowercase(Locale.US)
+        val isImage = mimeType.startsWith("image/") ||
+            (mimeType.isBlank() && extension in setOf("jpg", "jpeg", "png", "webp", "gif", "heic", "heif"))
+        val isVideo = mimeType.startsWith("video/") ||
+            (mimeType.isBlank() && extension in setOf("mp4", "m4v", "mov", "webm", "mkv", "3gp"))
+        if (!isImage && !isVideo) {
+            status.text = "Bindirme için yalnızca fotoğraf veya video dosyası seçebilirsin."
+            return
+        }
+        val title = queryDisplayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Bindirme"
+        status.text = "Bindirme dosyası hazırlanıyor…"
+        Thread {
+            val sourceDuration = if (isImage) 60_000L else runCatching {
+                val retriever = MediaMetadataRetriever()
+                try {
+                    retriever.setDataSource(this, uri)
+                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                } finally {
+                    retriever.release()
+                }
+            }.getOrDefault(0L)
+            runOnUiThread {
+                if (sourceDuration <= 0L) {
+                    status.text = "Bindirme dosyasının süresi okunamadı. Başka bir görsel veya video seç."
+                    return@runOnUiThread
+                }
+                val projectDuration = TimelineVideoMath.totalDuration(videoTimelineSegments()).coerceAtLeast(1_000L)
+                val startMs = timelinePlayheadMs.coerceIn(0L, projectDuration - 1L)
+                val defaultDuration = if (isImage) {
+                    3_000L
+                } else {
+                    minOf(sourceDuration, (projectDuration - startMs).coerceAtLeast(1_000L))
+                }
+                val overlay = OverlayClip(
+                    id = nextOverlayId++,
+                    uri = uri,
+                    title = title,
+                    isImage = isImage,
+                    sourceDurationMs = sourceDuration,
+                    sourceStartMs = 0L,
+                    timelineStartMs = startMs,
+                    durationMs = defaultDuration.coerceIn(1L, sourceDuration)
+                )
+                overlayClips.add(overlay)
+                selectedOverlayId = overlay.id
+                showEditorPanel("overlay")
+                loadOverlayControls()
+                refreshTimelineTracks()
+                rebuildTimelinePreviewForOverlayEdit()
+                status.text = if (isImage) {
+                    "Fotoğraf bindirme olarak eklendi. Süre, boyut ve konumu aşağıdan düzenle."
+                } else {
+                    "Video bindirme olarak eklendi. Süre, boyut ve konumu aşağıdan düzenle."
+                }
+            }
+        }.start()
+    }
+
+    private fun selectedOverlay(): OverlayClip? =
+        overlayClips.firstOrNull { it.id == selectedOverlayId }
+
+    private fun selectOverlay(id: Long) {
+        selectedOverlayId = id
+        loadOverlayControls()
+        showEditorPanel("overlay")
+        refreshTimelineTracks()
+    }
+
+    private fun removeSelectedOverlay() {
+        val selected = selectedOverlay() ?: run {
+            status.text = "Kaldırmak için önce zaman çizelgesinden bir bindirme seç."
+            return
+        }
+        overlayClips.removeAll { it.id == selected.id }
+        selectedOverlayId = overlayClips.lastOrNull()?.id
+        loadOverlayControls()
+        refreshTimelineTracks()
+        rebuildTimelinePreviewForOverlayEdit()
+        status.text = "Bindirme katmanı kaldırıldı."
+    }
+
+    private fun installOverlayControlListeners() {
+        fun attach(seek: SeekBar, update: (OverlayClip, Int) -> Unit) {
+            seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                    if (!fromUser || updatingOverlayControls) return
+                    val overlay = selectedOverlay() ?: return
+                    update(overlay, progress)
+                    updateOverlayControlLabels(overlay)
+                }
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                    pauseActivePreview()
+                }
+                override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                    if (!updatingOverlayControls) {
+                        loadOverlayControls()
+                        refreshTimelineTracks()
+                        rebuildTimelinePreviewForOverlayEdit()
+                    }
+                }
+            })
+        }
+        attach(overlayStartSeek) { overlay, progress ->
+            val rangeMs = TimelineTrimMath.timeForProgress(progress, overlayStartSeek.max.toLong().coerceAtLeast(1L))
+            overlay.timelineStartMs = rangeMs.coerceAtLeast(0L)
+        }
+        attach(overlayDurationSeek) { overlay, progress ->
+            val requested = TimelineTrimMath.timeForProgress(progress, overlay.sourceDurationMs)
+                .coerceAtLeast(1_000L)
+            overlay.durationMs = requested.coerceAtMost(overlay.sourceDurationMs)
+        }
+        attach(overlayScaleSeek) { overlay, progress ->
+            overlay.scale = (0.10f + progress / 1000f * 1.40f).coerceIn(0.10f, 1.50f)
+        }
+        attach(overlayXSeek) { overlay, progress -> overlay.xFraction = progress / 1000f }
+        attach(overlayYSeek) { overlay, progress -> overlay.yFraction = progress / 1000f }
+        attach(overlayRotationSeek) { overlay, progress ->
+            overlay.rotationDegrees = progress / 10f - 180f
+        }
+    }
+
+    private fun loadOverlayControls() {
+        if (!::overlayTitleLabel.isInitialized) return
+        val overlay = selectedOverlay()
+        updatingOverlayControls = true
+        try {
+            if (overlay == null) {
+                overlayTitleLabel.text = "Henüz bindirme seçilmedi. Fotoğraf veya video ekle."
+                listOf(overlayStartSeek, overlayDurationSeek, overlayScaleSeek,
+                    overlayXSeek, overlayYSeek, overlayRotationSeek).forEach { it.isEnabled = false }
+                overlayStartLabel.text = "Başlangıç"
+                overlayDurationLabel.text = "Katman süresi"
+                overlayScaleLabel.text = "Boyut"
+                overlayPositionLabel.text = "Konum • yatay / dikey"
+                overlayRotationLabel.text = "Döndürme"
+                return
+            }
+            listOf(overlayStartSeek, overlayDurationSeek, overlayScaleSeek,
+                overlayXSeek, overlayYSeek, overlayRotationSeek).forEach { it.isEnabled = true }
+            val projectDuration = maxOf(
+                TimelineVideoMath.totalDuration(videoTimelineSegments()),
+                overlay.timelineStartMs + overlay.durationMs,
+                1_000L
+            )
+            overlayStartSeek.max = TimelineTrimMath.progressMax(projectDuration)
+            overlayStartSeek.progress = TimelineTrimMath.progressForTime(
+                overlay.timelineStartMs, projectDuration
+            )
+            overlayDurationSeek.max = TimelineTrimMath.progressMax(overlay.sourceDurationMs)
+            overlayDurationSeek.progress = TimelineTrimMath.progressForTime(
+                overlay.durationMs, overlay.sourceDurationMs
+            )
+            overlayScaleSeek.progress = (((overlay.scale - 0.10f) / 1.40f) * 1000f).toInt().coerceIn(0, 1000)
+            overlayXSeek.progress = (overlay.xFraction * 1000f).toInt().coerceIn(0, 1000)
+            overlayYSeek.progress = (overlay.yFraction * 1000f).toInt().coerceIn(0, 1000)
+            overlayRotationSeek.progress = ((overlay.rotationDegrees + 180f) * 10f).toInt().coerceIn(0, 3600)
+            updateOverlayControlLabels(overlay)
+        } finally {
+            updatingOverlayControls = false
+        }
+    }
+
+    private fun updateOverlayControlLabels(overlay: OverlayClip) {
+        overlayTitleLabel.text = "${if (overlay.isImage) "Fotoğraf" else "Video"} • ${overlay.title}"
+        overlayStartLabel.text = "Başlangıç: ${formatTimelineMs(overlay.timelineStartMs)}"
+        overlayDurationLabel.text = "Süre: ${formatTimelineMs(overlay.durationMs)} / Kaynak: ${formatTimelineMs(overlay.sourceDurationMs)}"
+        overlayScaleLabel.text = "Boyut: ${(overlay.scale * 100f).toInt()}%"
+        overlayPositionLabel.text = "Konum: X ${(overlay.xFraction * 100f).toInt()}% • Y ${(overlay.yFraction * 100f).toInt()}%"
+        overlayRotationLabel.text = "Döndürme: ${overlay.rotationDegrees.toInt()}°"
+    }
+
+    private fun rebuildTimelinePreviewForOverlayEdit() {
+        val wasPlaying = timelineCompositionPlayer?.playWhenReady == true
+        val position = timelinePlayheadMs
+        pauseActivePreview()
+        runCatching { timelineCompositionPlayer?.release() }
+        timelineCompositionPlayer = null
+        timelinePreviewLoaded = false
+        if (clips.isNotEmpty()) {
+            ensureTimelinePreviewLoaded()
+            seekTimelinePreview(position.coerceAtMost(totalOutputDurationMs()))
+            timelineCompositionPlayer?.playWhenReady = wasPlaying
+        }
+    }
+
     private fun chooseAudio(forMusic: Boolean) {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
@@ -5090,6 +5291,7 @@ class VideoEditorActivity : Activity() {
                     }
                 }.start()
             }
+            REQUEST_OVERLAY_ASSET -> addOverlayAsset(uri)
             REQUEST_SOUND -> {
                 status.text = "Ses dosyasının süresi okunuyor…"
                 Thread {
