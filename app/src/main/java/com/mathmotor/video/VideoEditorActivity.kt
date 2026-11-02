@@ -5970,7 +5970,10 @@ class VideoEditorActivity : Activity() {
                     }
                     targets.forEach { ref ->
                         val image = ref.get()
-                        if (image != null && image.tag == key) image.setImageBitmap(result)
+                        if (image != null && image.tag == key) {
+                            image.setImageBitmap(result)
+                            image.contentDescription = "Klip karesi @${timestampMs}ms"
+                        }
                     }
                     val imageReadyAt = SystemClock.uptimeMillis()
                     if (timelineSyncTestEnabled) android.util.Log.i(
