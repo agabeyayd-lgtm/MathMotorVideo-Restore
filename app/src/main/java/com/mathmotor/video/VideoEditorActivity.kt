@@ -208,6 +208,8 @@ class VideoEditorActivity : Activity() {
     private var previewFrameBitmap: Bitmap? = null
     private lateinit var previewFocusButton: Button
     private lateinit var playbackLeft: LinearLayout
+    private lateinit var centeredPlaybackRow: FrameLayout
+    private lateinit var fullscreenPlaybackOverlay: FrameLayout
     private var previewStageHeightDp = 340
     private var previewDefaultStageHeightDp = 340
     private var previewHeightAutoSized = false
@@ -306,7 +308,7 @@ class VideoEditorActivity : Activity() {
         })
     }
     private var deferTimelineRefresh = false
-    private val timelineThumbnailCache = object : android.util.LruCache<String, Bitmap>(16 * 1024 * 1024) {
+    private val timelineThumbnailCache = object : android.util.LruCache<String, Bitmap>(32 * 1024 * 1024) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount.coerceAtLeast(1)
     }
     // Provider-generated poster appears only in the first cell while its exact frame is decoding.
@@ -741,7 +743,7 @@ class VideoEditorActivity : Activity() {
             setBackgroundColor(Color.rgb(8, 12, 18))
         }
         // One playback control, fixed to the phone's horizontal center axis.
-        val centeredPlaybackRow = FrameLayout(this)
+        centeredPlaybackRow = FrameLayout(this)
         timelinePlayButton = miniButton("▶") {
             if (clips.isEmpty()) {
                 chooseVideo(true)
@@ -1752,10 +1754,28 @@ class VideoEditorActivity : Activity() {
         previewFocusMode = !previewFocusMode
         if (previewFocusMode) {
             previewFocusOriginalVisibility.clear()
-            // In fullscreen, put the exit control on the preview itself near the
-            // top safe area. The playback row can then disappear completely, so
-            // the control is never stranded at the bottom edge of a tall screen.
+            // Keep the fullscreen exit affordance near the top safe area and move
+            // the same play/time controls onto the preview, as in CapCut.
             (previewFocusButton.parent as? ViewGroup)?.removeView(previewFocusButton)
+            (timelinePlayheadLabel.parent as? ViewGroup)?.removeView(timelinePlayheadLabel)
+            (timelinePlayButton.parent as? ViewGroup)?.removeView(timelinePlayButton)
+            fullscreenPlaybackOverlay = FrameLayout(this).apply {
+                setBackgroundColor(Color.argb(150, 0, 0, 0))
+                addView(
+                    timelinePlayheadLabel,
+                    FrameLayout.LayoutParams(dp(142), dp(40), Gravity.START or Gravity.CENTER_VERTICAL).apply {
+                        leftMargin = dp(12)
+                    }
+                )
+                addView(
+                    timelinePlayButton,
+                    FrameLayout.LayoutParams(dp(48), dp(44), Gravity.CENTER)
+                )
+            }
+            previewFrame.addView(
+                fullscreenPlaybackOverlay,
+                FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(56), Gravity.BOTTOM)
+            )
             previewFrame.addView(
                 previewFocusButton,
                 FrameLayout.LayoutParams(dp(44), dp(44), Gravity.TOP or Gravity.END).apply {
@@ -1778,13 +1798,22 @@ class VideoEditorActivity : Activity() {
             previewFocusButton.text = "↙"
             previewFocusButton.contentDescription = "Düzenleme ekranına dön"
         } else {
-            // Return the same button and click handler to its normal playback-row
-            // position before restoring the rest of the editor.
+            // Return the same controls and click handlers to their normal rows.
             (previewFocusButton.parent as? ViewGroup)?.removeView(previewFocusButton)
+            (fullscreenPlaybackOverlay.parent as? ViewGroup)?.removeView(fullscreenPlaybackOverlay)
             playbackLeft.addView(
                 previewFocusButton,
                 0,
                 LinearLayout.LayoutParams(dp(38), dp(36))
+            )
+            playbackLeft.addView(
+                timelinePlayheadLabel,
+                1,
+                LinearLayout.LayoutParams(0, dp(36), 1f).apply { leftMargin = dp(3) }
+            )
+            centeredPlaybackRow.addView(
+                timelinePlayButton,
+                FrameLayout.LayoutParams(dp(46), dp(38), Gravity.CENTER)
             )
             previewFocusOriginalVisibility.forEach { (view, visibility) -> view.visibility = visibility }
             previewFocusOriginalVisibility.clear()
@@ -3765,7 +3794,8 @@ class VideoEditorActivity : Activity() {
         val delayMs = TimelineScaleMath.scrubSeekDelayMs(
             nowMs = SystemClock.uptimeMillis(),
             lastSeekUptimeMs = lastTimelineScrubPreviewSeekUptimeMs,
-            minimumIntervalMs = 120L
+            // Target roughly 30fps while scrubbing; the newest target replaces stale work.
+            minimumIntervalMs = 33L
         )
         timelineHandler.removeCallbacks(timelineScrubPreviewSeekTask)
         timelineHandler.postDelayed(timelineScrubPreviewSeekTask, delayMs)
@@ -6635,13 +6665,19 @@ class VideoEditorActivity : Activity() {
         // Keep the cell nearest the playhead exact so preview/filmstrip sync wins.
         if (priorityDistanceMs > 150L && cellEndMs > cellStartMs) {
             val prefix = "${uri}#"
+            // A zoomed-in cell is usually narrower than the samples decoded at
+            // the previous scale. Reuse the nearest cached frame even when its
+            // timestamp is just outside this new cell, then decode the exact
+            // sample in the background only when no sufficiently close frame exists.
+            val maxReusableDistanceMs = maxOf(750L, (cellEndMs - cellStartMs) / 2L)
             val reusable = timelineThumbnailCache.snapshot().entries.mapNotNull { entry ->
                 if (!entry.key.startsWith(prefix)) return@mapNotNull null
                 val cachedTime = entry.key.removePrefix(prefix).toLongOrNull() ?: return@mapNotNull null
-                if (cachedTime < cellStartMs || cachedTime >= cellEndMs) return@mapNotNull null
+                val distanceMs = kotlin.math.abs(cachedTime - timestampMs)
+                if (distanceMs > maxReusableDistanceMs) return@mapNotNull null
                 val bitmap = entry.value
                 if (bitmap.isRecycled) return@mapNotNull null
-                Triple(kotlin.math.abs(cachedTime - timestampMs), cachedTime, bitmap)
+                Triple(distanceMs, cachedTime, bitmap)
             }.minByOrNull { it.first }
             if (reusable != null) {
                 target.setImageBitmap(reusable.third)
@@ -6955,10 +6991,18 @@ class VideoEditorActivity : Activity() {
                     dialog.dismiss()
                     return@setOnClickListener
                 }
+                val bitmap = previewBitmap
+                if (bitmap == null || bitmap.isRecycled) {
+                    status.text = "Kapak karesi henüz hazır değil; görüntünün yüklenmesini bekle."
+                    requestCoverPreview()
+                    return@setOnClickListener
+                }
                 recordClipEdit()
                 clip.coverTimeMs = selectedSourceTimeMs
                 loadTrimControls()
-                status.text = "Kapak karesi ${formatTimelineMs(selectedSourceTimeMs)} olarak seçildi. Projeyi kaydettiğinde seçim korunur."
+                // “Kapak yap” now produces the visible JPG as well as persisting
+                // the selected source timestamp in the project.
+                saveClipCoverImage(bitmap, clip, selectedSourceTimeMs)
                 dialog.dismiss()
             }
             dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
