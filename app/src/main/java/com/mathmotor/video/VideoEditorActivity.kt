@@ -1389,7 +1389,7 @@ class VideoEditorActivity : Activity() {
                 if (key != "clip") leftMargin = dp(2)
             })
         }
-        dockScroll.addView(dock, android.widget.HorizontalScrollView.LayoutParams(
+        dockScroll.addView(dock, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT
         ))
         root.addView(dockScroll, LinearLayout.LayoutParams(
@@ -1840,7 +1840,7 @@ class VideoEditorActivity : Activity() {
                     setTextColor(Color.rgb(166, 184, 201))
                     isClickable = text.isNotBlank()
                     isFocusable = text.isNotBlank()
-                    contentDescription = text.replace("\n", " ")
+                    contentDescription = text.toString().replace("\n", " ")
                     setOnClickListener {
                         when (tag) {
                             "Video" -> android.widget.Toast.makeText(this@VideoEditorActivity, "Yakında", android.widget.Toast.LENGTH_SHORT).show()
