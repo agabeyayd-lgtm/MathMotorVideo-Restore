@@ -374,3 +374,17 @@ Validation:
 - Updated the source comment to describe the 84dp gutter. No ruler math implementation, frame-rate mapping, timestamp data, zoom behavior, trim logic, clip state, or media/export behavior was changed.
 - **Verification status:** the prior no-APK run #2 does not include this refinement. The GitHub workflow/status lookup has not yet returned a run or check result for the refinement commits; treat the updated unit test and compilation as **pending**, not passed. No APK was assembled or uploaded.
 - Review gate: after the checks run, capture the same populated/empty editor states and verify the narrower controls remain readable/tappable while ruler, filmstrip, audio/text lanes, and fixed-center playhead remain aligned. Keep versionCode 394 / Build 61; do not create version 395.
+
+
+## 2026-11-02 — physical-phone feedback after debug APK review
+
+The user tested the debug APK from the `feature/capcut-layout-recompose` branch and reported four remaining acceptance issues:
+
+1. The fullscreen minimize/restore control is now reachable and works, but fullscreen mode hides the playback row entirely. Keep a CapCut-style Play/Pause control and current/total duration visible in fullscreen as well.
+2. The selected clip cover image is not appearing/being created as expected. Trace the complete cover-picker flow, distinguish saving the selected timestamp in the project from creating a visible JPG cover image, and make the expected result explicit and reliable.
+3. Filmstrip thumbnails are only slightly faster and remain too slow. Zooming the filmstrip causes the user to wait for thumbnails to be generated again. Reuse already-decoded frames immediately across zoom levels and fill missing samples asynchronously; avoid unnecessary re-decodes.
+4. During manual filmstrip drag, the preview does not update as soon as the fixed playhead passes a new frame. Reduce scrub latency and keep preview requests aligned with the latest playhead position without allowing stale decode results to overwrite newer frames.
+
+Initial source inspection on this branch found: `togglePreviewFocusMode()` hides every root child except `previewFrame`, including the playback row; `scheduleTimelineScrubPreviewSeek()` enforces a 120ms minimum interval; thumbnail cache reuse currently requires a cached timestamp to fall inside the newly generated cell interval, which often fails after zoom-in; and the cover picker stores `coverTimeMs` when “Kapak yap” is pressed while JPG creation is a separate “JPG kaydet” action. These are investigation findings, not yet fixes.
+
+**Status:** feedback documented; source changes and verification are pending. Keep work on this feature branch and draft PR only. Do not merge, modify `main`, create version 395, or publish a release. The just-tested debug APK is not to be treated as acceptance of these four behaviors.
