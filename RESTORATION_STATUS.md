@@ -25,15 +25,16 @@
 - Keep versionCode 394 / Build 61. Version 395 remains blocked; no release APK, version bump or update offer is authorized.
 
 
-## Single-pass filmstrip thumbnail pipeline — 2026-11-02 (source change; verification pending)
+## Sequential filmstrip thumbnail decoder — 2026-11-02 (source change; verification pending)
 
-- The two-pass sync-preview experiment was removed after its emulator timings showed that it added a second decode for every visible cell and still delivered the first provisional image only after roughly 1.5 seconds.
-- Each timeline sample now queues one authoritative timestamp decode. Requests are sorted by distance from the playhead; duplicate timestamps share one in-flight request and attach any newly created ImageViews.
-- A cached exact frame may be reused only when its timestamp lies within the cell's represented source-time interval. Nearby sync frames are not presented as though they were exact cell samples.
-- Diagnostics separately record queue wait, decode time, and request-to-ImageView-ready time. This fixes the earlier metric that measured only up to the start of decoding.
-- **Verification pending:** unit/build and targeted API 35 runtime checks must confirm exact frame/preview match, distinct visible samples, first-frame latency, total visible-strip fill time, bidirectional scrubbing, and cache reuse. Compare results with the preceding two-pass run before claiming any speed improvement.
-- This one-pass scheduler is a corrective step, not yet an accepted final zero-wait solution. A sequential decoder and/or persistent thumbnail cache may still be needed based on measured results.
-- No version metadata changed. Keep versionCode 394 / Build 61. Version 395 remains blocked until the full release checklist passes and the user authorizes release.
+- The two-pass sync-preview experiment was withdrawn. API 35 timings showed that it added a second decode per visible cell and still delayed the first provisional image.
+- Filmstrip thumbnails now use one persistent Media3 `FrameExtractor` for the current source URI. Media3's internal implementation manages a shared ExoPlayer and serializes extraction requests; the app now feeds it from a single bounded worker rather than maintaining two competing per-thread platform decoders.
+- Seek mode is explicitly `EXACT`. The existing `Presentation.createForHeight(288)` effect downscales during frame extraction; timestamped exact frames remain the authoritative cell images. `MediaMetadataRetriever` is retained only as a compatibility fallback if Media3 extraction fails.
+- Duplicate requests caused by a rebuilt timeline view attach to one in-flight request. Existing exact-frame cache reuse inside a cell's source-time interval remains enabled.
+- Diagnostics separately record queue wait, decode duration, request-to-ImageView assignment, and the actual presentation timestamp returned by Media3.
+- **Verification pending:** API 35 runtime checks must confirm actual returned timestamps, exact playhead/preview match, distinct visible samples, first-frame latency, full visible-strip fill time, bidirectional scrubbing, and fallback behavior. Compare measured results against the prior two-pass run; no speed improvement is claimed yet.
+- A persistent on-device disk cache and further sequential prefetch decisions remain dependent on measured first-load and reopen performance.
+- No version metadata changed. Keep versionCode 394 / Build 61. Version 395 remains blocked until the complete release checklist passes and the user authorizes release.
 
 ## Timeline frame/zoom repair — 2026-11-01
 
