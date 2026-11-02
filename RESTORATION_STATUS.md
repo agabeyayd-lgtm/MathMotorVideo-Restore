@@ -33,7 +33,11 @@
 - Duplicate requests caused by a rebuilt timeline view attach to one in-flight request. Existing exact-frame cache reuse inside a cell's source-time interval remains enabled.
 - Diagnostics separately record queue wait, decode duration, request-to-ImageView assignment, and the actual presentation timestamp returned by Media3.
 - **Verification pending:** API 35 runtime checks must confirm actual returned timestamps, exact playhead/preview match, distinct visible samples, first-frame latency, full visible-strip fill time, bidirectional scrubbing, and fallback behavior. Compare measured results against the prior two-pass run; no speed improvement is claimed yet.
-- A persistent on-device disk cache and further sequential prefetch decisions remain dependent on measured first-load and reopen performance.
+- The first clip cell now requests an Android document/media-provider poster asynchronously; it is a temporary cover for slot 0 only, and exact extraction replaces it. The poster is never repeated across the strip or treated as a timestamp-accurate frame.
+- The first cell also schedules a high-priority Media3 warmup for that cell's actual sample timestamp. The normal queued task rechecks the in-memory cache before decoding, avoiding a duplicate decode of the warmup frame.
+- The poster path uses `ContentResolver.loadThumbnail` on API 29+ and a one-frame `MediaMetadataRetriever` fallback on older/unsupported providers. The timeline's exact-frame decoder and timestamp mapping remain authoritative.
+- No persistent disk cache is included yet; first-load and reopen measurements will decide whether it is needed.
+- **Verification pending:** measure poster-ready time, first exact-frame time, warmup decode time and full-strip fill time on API 35; verify the temporary cover is replaced, only slot 0 uses it, provider-failure fallback works, and portrait/landscape/square videos remain correctly aligned. A successful build alone will not close this item.
 - No version metadata changed. Keep versionCode 394 / Build 61. Version 395 remains blocked until the complete release checklist passes and the user authorizes release.
 
 ## Timeline frame/zoom repair — 2026-11-01
