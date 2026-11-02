@@ -719,6 +719,8 @@ class VideoEditorActivity : Activity() {
             minimumWidth = dp(46)
             textSize = 17f
             setPadding(0, 0, 0, 0)
+            background = android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
+            elevation = 0f
             contentDescription = "Önizlemeyi oynat veya duraklat"
         }
         centeredPlaybackRow.addView(
@@ -1855,7 +1857,7 @@ class VideoEditorActivity : Activity() {
                 grip.setOnClickListener {
                     keepSourceAudio.isChecked = !keepSourceAudio.isChecked
                     player?.volume = if (keepSourceAudio.isChecked) sourceAudioVolume / 100f else 0f
-                    grip.text = if (keepSourceAudio.isChecked) "🔊\nKlip sesi" else "🔇\nKlip sesi"
+                    grip.text = if (keepSourceAudio.isChecked) "🔊\nKlip\nsesini" else "🔇\nKlip\nsesini"
                     grip.contentDescription = if (keepSourceAudio.isChecked) {
                         "Klip sesini kapat"
                     } else "Klip sesini aç"
