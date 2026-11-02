@@ -2518,6 +2518,21 @@ class VideoEditorActivity : Activity() {
         // and the stationary playhead on one vertical axis.
         timelineScrollViews.forEach { laneScroll ->
             val laneTrack = laneScroll.getChildAt(0) as? LinearLayout ?: return@forEach
+            // Empty persistent lanes still represent the same project time axis.
+            // Give them an invisible duration span so their HorizontalScrollView
+            // remains scrollable and follows the shared ruler/video playhead.
+            // Without this, an empty Text/Music lane stays at scrollX=0 while the
+            // populated ruler/video lanes move during playback.
+            if (laneTrack.childCount == 0 && totalMs > 0L) {
+                val durationWidth = widthBetween(0L, totalMs).coerceAtLeast(dp(1))
+                laneTrack.addView(
+                    View(this).apply {
+                        tag = "timeline-empty-duration-spacer"
+                        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                    },
+                    LinearLayout.LayoutParams(durationWidth, dp(24))
+                )
+            }
             fun updateLaneOriginSpacer(viewportWidth: Int) {
                 if (viewportWidth <= 0 || laneTrack.childCount == 0) return
                 // The scroll viewport can be measured after the timeline is first built,
