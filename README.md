@@ -329,3 +329,42 @@ Validation:
 - Main commit `102bdcd899b397dc439d1c2c3193b651e57fd6d6` now centralizes the actual 99dp gutter for timeline origin/end spacers and fit-to-project width. The strict 35ms preview/frame check remains unchanged. Unit geometry tests were updated in commit `3a6d6b474c6eb6cf24f8f0fb01a34601a1240653` to use the new header geometry.
 - Emulator run #687 is the first retest of the corrected mapping; its result must be green before accepting the fix. Verify build #484 is running the updated geometry tests. Neither result is yet a physical-phone acceptance.
 - Keep versionCode 394 / Build 61 as the user-approved baseline. Version 395 remains blocked; no replacement APK, signed release, or update is authorized by these changes alone.
+
+
+## Chat handoff — 2026-11-02 (latest user checkpoint)
+
+**Purpose:** This section is the restart point when continuing from a different ChatGPT account/session. Read this section first, then reconcile it with the latest GitHub branch, commits and Actions before changing code.
+
+### Where we stopped
+
+- Project: `agabeyayd-lgtm/MathMotorVideo-Restore`.
+- The approved working baseline remains **main / versionCode 394 / Build 61**. Do not create version 395, change version metadata, sign/publish a release, or offer an update until the release gates are complete and the user explicitly authorizes it.
+- The user has a TEST ZIP described in the conversation as containing `app-debug.apk`; the archive was reported to open successfully. **That only confirms the ZIP archive was readable; installation and real-phone runtime behavior have not yet been confirmed.** The exact ZIP filename, source branch/commit and Actions run that produced this latest ZIP were not established in the handoff conversation. Do not claim it is a main build or a release APK until its provenance is checked.
+- Do not assume the latest ZIP is the same as the previously documented PR #11 artifact. Identify its source commit/workflow before using it as evidence.
+- No new release/version should be created as part of this handoff.
+
+### Latest user-reported issues to verify on the phone
+
+1. **Fullscreen exit control:** after entering fullscreen, the control that returns to the normal/smaller preview is positioned too close to the bottom edge and is difficult/impossible to reach. Move it into a safe, reachable control area and respect system/navigation insets; verify on the actual phone.
+2. **Filmstrip thumbnail speed:** thumbnail generation/loading appears slow again. Measure time to first visible thumbnail and full visible-strip fill; inspect decode scheduling, caching and progressive visible-first loading before changing implementation. Do not sacrifice frame accuracy or preview/thumbnail synchronization.
+3. **Cover image:** the cover/thumbnail image is not being generated/shown. Reproduce and trace the cover-generation/display path; distinguish a missing image from a delayed/failed decode. Do not mark fixed until tested.
+
+These are fresh phone observations and are separate from the existing #688 emulator evidence. #688 passed deterministic-fixture frame agreement (211ms preview/thumbnail RGB delta 0), 4/4 distinct visible samples, forward/reverse scrubbing and 18 playback synchronization samples. It did **not** prove fast thumbnail loading, cover generation, or physical-phone behavior.
+
+### Exact next steps
+
+1. Inspect GitHub `main`, open PRs/branches and the latest APK ZIP/workflow metadata. Establish the exact source commit and branch for the ZIP before treating it as the test candidate.
+2. Keep the user's installed baseline at 394 / Build 61; do not bump version or create 395.
+3. Reproduce the three reported issues on the supplied test APK/phone and capture device dimensions, Android version, logs and screenshots/video where possible.
+4. Trace and fix the fullscreen exit-control position/insets first, then thumbnail loading latency/cache/progressive scheduling, then cover-image generation/display. Preserve the approved editor implementation, timeline math, frame alignment and all working controls.
+5. Add focused regression tests for each fix. Run unit tests, debug build and targeted API 35 emulator tests; inspect logs and screenshots rather than relying on a green compile alone.
+6. Rebuild a TEST APK ZIP only after the targeted fixes and checks; state the exact branch, commit, workflow run and artifact filename. Ask the user to install and verify on the phone.
+7. Update this README and RESTORATION_STATUS.md with actual evidence and remaining failures. Only consider release 395 after all release gates pass and the user explicitly authorizes it.
+
+### Continuation rules
+
+- Start with **“HATIRLA BAĞLAN DÜZELT”** and this handoff section.
+- Do not repeat already-passed tests without a specific reason; do not report a test as green unless its exact run and scope are confirmed.
+- Preserve working functionality. Make the smallest targeted correction supported by evidence.
+- Keep README.md and RESTORATION_STATUS.md synchronized as work progresses; do not create a new version just to test.
+- The user's immediate request was to preserve the restart point in the repository so work can continue from another ChatGPT account/session.
