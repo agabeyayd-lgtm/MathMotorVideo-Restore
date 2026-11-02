@@ -6681,12 +6681,13 @@ class VideoEditorActivity : Activity() {
             }.minByOrNull { it.first }
             if (reusable != null) {
                 target.setImageBitmap(reusable.third)
-                target.contentDescription = "Klip karesi @${reusable.second}ms (önbellek)"
+                target.contentDescription = "Klip karesi @${reusable.second}ms (önbellek; kesin kare yükleniyor)"
                 if (timelineSyncTestEnabled) android.util.Log.i(
                     "TimelineFrameSyncTest",
                     "TIMELINE_THUMBNAIL_REUSED sourceMs=${reusable.second} targetMs=$timestampMs"
                 )
-                return
+                // Do not return: keep the cached image visible immediately while
+                // the exact sample is decoded and replaces it asynchronously.
             }
         }
         // Leave the cell neutral black until its own exact sample is decoded.
