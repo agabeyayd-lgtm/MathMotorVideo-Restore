@@ -428,6 +428,7 @@ class VideoEditorActivity : Activity() {
     private lateinit var overlayRotationSeek: SeekBar
     private var updatingOverlayControls = false
     private var clipCoverButton: Button? = null
+    private var pendingCoverSaveBitmap: Bitmap? = null
     private lateinit var startLabel: TextView
     private lateinit var endLabel: TextView
     private lateinit var startSeek: SeekBar
@@ -470,6 +471,7 @@ class VideoEditorActivity : Activity() {
         private const val REQUEST_OPEN_PROJECT = 5106
         private const val REQUEST_LEGACY_STORAGE = 5107
         private const val REQUEST_OVERLAY_ASSET = 5108
+        private const val REQUEST_SAVE_COVER_IMAGE = 5109
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -5526,6 +5528,10 @@ class VideoEditorActivity : Activity() {
     @Deprecated("Use Activity Result API")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_SAVE_COVER_IMAGE) {
+            savePendingCoverImage(if (resultCode == RESULT_OK) data?.data else null)
+            return
+        }
         if (resultCode != RESULT_OK) return
         if (requestCode == REQUEST_MAIN_VIDEO || requestCode == REQUEST_ADD_VIDEO) {
             val selectedUris = mutableListOf<Uri>()
@@ -6972,38 +6978,45 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun saveClipCoverImage(bitmap: Bitmap, clip: Clip, sourceTimeMs: Long) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
-            checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
-        ) {
-            requestPermissions(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), REQUEST_LEGACY_STORAGE)
-            status.text = "Galeride kapak görseli oluşturmak için depolama izni gerekiyor."
-            return
-        }
-
         val safeTitle = clip.title.substringBeforeLast('.', clip.title)
             .replace(Regex("[^A-Za-z0-9_-]+"), "_")
             .trim('_')
             .take(36)
             .ifBlank { "MathMotorVideo" }
         val fileName = "${safeTitle}_Kapak_${sourceTimeMs}.jpg"
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            val copy = runCatching { bitmap.copy(Bitmap.Config.ARGB_8888, false) }.getOrNull()
+            if (copy == null) {
+                status.text = "Kapak görseli belleğe kopyalanamadı."
+                return
+            }
+            pendingCoverSaveBitmap?.let { if (!it.isRecycled) it.recycle() }
+            pendingCoverSaveBitmap = copy
+            val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "image/jpeg"
+                putExtra(Intent.EXTRA_TITLE, fileName)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            }
+            try {
+                startActivityForResult(intent, REQUEST_SAVE_COVER_IMAGE)
+                status.text = "Kapak görselini kaydedeceğin klasörü seç."
+            } catch (error: Exception) {
+                pendingCoverSaveBitmap = null
+                if (!copy.isRecycled) copy.recycle()
+                status.text = "Kapak kaydetme penceresi açılamadı: ${error.message ?: error.javaClass.simpleName}"
+            }
+            return
+        }
+
         var outputUri: Uri? = null
         try {
             val values = ContentValues().apply {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
                 put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/MathMotor/Kapaklar")
-                    put(MediaStore.MediaColumns.IS_PENDING, 1)
-                } else {
-                    val directory = java.io.File(
-                        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
-                        "MathMotor/Kapaklar"
-                    )
-                    if (!directory.exists() && !directory.mkdirs()) {
-                        throw IllegalStateException("Kapak klasörü oluşturulamadı.")
-                    }
-                    put(MediaStore.MediaColumns.DATA, java.io.File(directory, fileName).absolutePath)
-                }
+                put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/MathMotor/Kapaklar")
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
             }
             outputUri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
                 ?: throw IllegalStateException("Galeriye kayıt konumu oluşturulamadı.")
@@ -7014,11 +7027,9 @@ class VideoEditorActivity : Activity() {
                     throw IllegalStateException("JPEG kapak görseli oluşturulamadı.")
                 }
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                contentResolver.update(outputUri, ContentValues().apply {
-                    put(MediaStore.MediaColumns.IS_PENDING, 0)
-                }, null, null)
-            }
+            contentResolver.update(outputUri, ContentValues().apply {
+                put(MediaStore.MediaColumns.IS_PENDING, 0)
+            }, null, null)
             android.util.Log.i("ClipCover", "COVER_JPG_SAVED sourceMs=${sourceTimeMs} uri=${outputUri}")
             status.text = "Kapak görseli Galeri > Resimler > MathMotor > Kapaklar içine kaydedildi."
         } catch (error: Exception) {
@@ -7026,6 +7037,32 @@ class VideoEditorActivity : Activity() {
             status.text = "Kapak görseli kaydedilemedi: ${error.message ?: error.javaClass.simpleName}"
         }
     }
+
+    private fun savePendingCoverImage(uri: Uri?) {
+        val bitmap = pendingCoverSaveBitmap
+        pendingCoverSaveBitmap = null
+        if (bitmap == null || bitmap.isRecycled) {
+            status.text = "Kaydedilecek kapak görseli bulunamadı."
+            return
+        }
+        try {
+            if (uri == null) throw IllegalStateException("Kayıt konumu seçilmedi.")
+            val output = contentResolver.openOutputStream(uri)
+                ?: throw IllegalStateException("Seçilen dosya açılamadı.")
+            output.use { stream ->
+                if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 94, stream)) {
+                    throw IllegalStateException("JPEG kapak görseli oluşturulamadı.")
+                }
+            }
+            android.util.Log.i("ClipCover", "COVER_JPG_SAVED uri=$uri")
+            status.text = "Kapak görseli seçtiğin klasöre kaydedildi."
+        } catch (error: Exception) {
+            status.text = "Kapak görseli kaydedilemedi: ${error.message ?: error.javaClass.simpleName}"
+        } finally {
+            if (!bitmap.isRecycled) bitmap.recycle()
+        }
+    }
+
 
     private fun videoTimelineSegments(): List<TimelineVideoSegment> =
         clips.map { TimelineVideoSegment(it.timelineStartMs,it.startMs,it.endMs,it.durationMs) }
@@ -7546,6 +7583,8 @@ class VideoEditorActivity : Activity() {
         previewFrameBitmap = null
         // Drop queued thumbnail work. Each decoder worker releases its own retriever
         // in the worker-thread finally block when the executor shuts down.
+        pendingCoverSaveBitmap?.let { if (!it.isRecycled) it.recycle() }
+        pendingCoverSaveBitmap = null
         timelineThumbnailExecutor.queue.clear()
         timelineThumbnailExecutor.shutdownNow()
         timelinePosterExecutor.shutdownNow()
