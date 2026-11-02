@@ -401,3 +401,15 @@ Source changes on `feature/capcut-layout-recompose` now:
 - Add a unit test for the 33ms interactive scrub cadence.
 
 **Verification:** source and unit-test changes are committed, but compilation, unit tests, emulator interaction, and physical-phone behavior are still pending. The 33ms cadence is a request throttle, not a guarantee of 30fps decoding on every device. Zoom reuse is provisional until the emulator and phone confirm immediate display and background exact-frame replacement. Do not offer a new APK until the checks pass. Keep `main` and version 394 / Build 61 unchanged; no merge or release is authorized.
+
+
+## 2026-11-02 — scrub preview cache and pause-clock synchronization
+
+On the existing `feature/capcut-layout-recompose` branch (PR #18), the editor now:
+
+- Refreshes the playback/timeline synchronization loop every 50ms instead of 250ms so the visible ruler/playhead follows playback more closely.
+- On pause, freezes the composition player first and copies its actual `currentPosition` into `timelinePlayheadMs`, then updates the time readout and scroll position. Pending scrub work is cleared so an old request cannot pull the paused frame backward.
+- On resume, clears pending scrub work and seeks from that frozen playhead before enabling playback.
+- During manual scrubbing, looks for a same-source filmstrip bitmap within 500ms of the requested source timestamp and immediately displays a private copy as a temporary preview; the exact timestamp is still decoded asynchronously and replaces it when ready. The cache bitmap itself is never recycled by the preview.
+
+**Verification:** source change committed; build, unit tests, emulator interaction, decoder latency measurements, and physical-phone acceptance are pending. The nearby cached frame is intentionally provisional and can be up to 500ms away until the exact frame arrives; this is a responsiveness improvement, not a claim of frame-perfect instant decoding. Keep PR #18 draft, do not merge or modify `main`, and keep versionCode 394 / Build 61 unchanged.
