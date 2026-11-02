@@ -1374,6 +1374,8 @@ class VideoEditorActivity : Activity() {
             }.apply {
                 textSize = 10f
                 gravity = Gravity.CENTER
+                minWidth = dp(52)
+                minimumWidth = dp(52)
                 minHeight = dp(58)
                 setPadding(dp(1), dp(2), dp(1), dp(2))
                 maxLines = 2
@@ -1381,7 +1383,7 @@ class VideoEditorActivity : Activity() {
                 setTextColor(Color.rgb(205, 216, 228))
             }
             editorTabButtons[key] = tab
-            dock.addView(tab, LinearLayout.LayoutParams(dp(72), dp(58)).apply {
+            dock.addView(tab, LinearLayout.LayoutParams(dp(52), dp(58)).apply {
                 if (key != "clip") leftMargin = dp(2)
             })
         }
@@ -2565,7 +2567,7 @@ class VideoEditorActivity : Activity() {
             val lane = row.getChildAt(if (row.tag == "__ruler__") 1 else 2)
             val laneHeight = lane?.layoutParams?.height?.takeIf { it > 0 } ?: dp(24)
             laneHeight + row.paddingTop + row.paddingBottom
-        }.coerceAtLeast(dp(24))
+        }.coerceAtLeast(if (keyboardLayoutActive) dp(24) else dp(188))
         (timelineTracksFrame.layoutParams as? FrameLayout.LayoutParams)?.let { params ->
             if (params.height != laneContentHeight) {
                 params.height = laneContentHeight
