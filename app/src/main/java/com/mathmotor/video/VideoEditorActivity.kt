@@ -3625,10 +3625,12 @@ class VideoEditorActivity : Activity() {
         private val layers: List<OverlayClip>,
         private val baseVideoInputId: Int
     ) : VideoCompositorSettings {
-        override fun getOutputSize(inputSizes: MutableList<android.util.Size>): android.util.Size {
+        override fun getOutputSize(
+            inputSizes: MutableList<androidx.media3.common.util.Size>
+        ): androidx.media3.common.util.Size {
             return inputSizes.getOrNull(baseVideoInputId)
                 ?: inputSizes.lastOrNull()
-                ?: android.util.Size(1080, 1920)
+                ?: androidx.media3.common.util.Size(1080, 1920)
         }
 
         override fun getOverlaySettings(inputId: Int, presentationTimeUs: Long): OverlaySettings {
