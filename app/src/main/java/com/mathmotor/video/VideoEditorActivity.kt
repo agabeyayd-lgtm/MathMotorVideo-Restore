@@ -828,7 +828,7 @@ class VideoEditorActivity : Activity() {
             ViewGroup.LayoutParams.MATCH_PARENT,
             // Give the central timeline more vertical room for the ruler and
             // thumbnail strip; the preview remains flexible and yields this space.
-            dp(210)
+            dp(144)
         ))
         root.addView(gap(8))
 
@@ -2504,8 +2504,8 @@ class VideoEditorActivity : Activity() {
         (timelineTracksFrame.parent?.parent as? LinearLayout)?.let { card ->
             val desiredHeight = TimelineLayoutMath.contentSizedCardHeightPx(
                 laneContentHeightPx = laneContentHeight,
-                timeRowHeightPx = dp(26),
-                verticalPaddingPx = dp(6),
+                timeRowHeightPx = dp(28),
+                verticalPaddingPx = dp(8),
                 minimumHeightPx = if (keyboardLayoutActive) dp(88) else dp(96),
                 maximumHeightPx = if (keyboardLayoutActive) dp(154) else dp(280)
             )
