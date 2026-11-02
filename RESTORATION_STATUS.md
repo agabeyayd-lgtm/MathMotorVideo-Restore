@@ -1,15 +1,28 @@
 # MathMotor Video — current project status
-## Active implementation checkpoint — 2026-11-02 (after latest user approval)
+## Active implementation checkpoint — 2026-11-02 (latest user-approved batch)
 
-**Current working head:** `3c2ee1eb459cca8ca34dc59a1a676ef872595b28` on the existing draft PR #18 branch. Main is unchanged. Installed/release baseline remains 394 / Build 61; version 395, signing, publishing and updater activation remain blocked.
+**Working branch:** `feature/capcut-layout-recompose`  
+**Latest source head:** `94684935404ae9b3bb4a099266703a9e6d65a378`  
+**Review:** existing draft PR #18; main is unchanged. Installed/release baseline remains versionCode 394 / Build 61. Do not create 395, sign, publish, merge, or produce an updater release without explicit approval.
 
-- **Clip reorder source change added, verification pending:** long-press + horizontal drag now calculates a drop position and requests an insertion reorder for the main video sequence. A successful reorder reflows the non-overlapping video clips sequentially; split pieces remain independent items. Four pure-math test cases cover insertion before/after, duration/source preservation, overlap rejection and gap-preserving no-op. The expected end-position assertion was corrected before validation.
-- **Overlap safety:** the reorder planner rejects any existing overlapping video ranges rather than silently flattening multi-layer timing. This is deliberate until main-video and overlay layers have separate explicit semantics.
-- **Fullscreen exit control:** the working branch moves the fullscreen exit affordance to the preview's top safe corner and returns it to the playback row on exit. This is a source change, not yet build- or phone-verified.
-- **Latest validation boundary:** commit `3c2ee1e` has no completed GitHub Actions run/check result at the time of this note. Earlier green checks for `c72542a` predate these changes and do not verify this head. No APK from this change set is verified or offered.
-- **Still open:** port and verify the provider poster / first-cell thumbnail and clip-cover picker improvements; implement real overlay image/video track, independent timing/transform, project persistence, preview and export; then run build/unit/emulator checks and phone acceptance. Existing PR #17 contains candidate poster/cover work, but its branch is divergent and is not bulk-merged into this branch.
-- Do not assume timeline text/audio layers automatically follow a reordered video clip: their current positions are absolute project time. Confirm intended attachment behavior and cover it with tests before changing it.
-- README and RESTORATION_STATUS are updated as a handoff checkpoint only; this does not mark pending behavior accepted.
+### Implemented in source; verification pending
+
+- **CapCut-style clip reorder:** long-press a main video segment and drag it to an insertion position. The sequence planner reorders independent split pieces and reflows the non-overlapping main video lane. It refuses to reorder when existing main-video segments overlap, rather than silently changing layer timing.
+- **Reorder unit coverage added:** four tests cover insertion between clips, moving the first clip to the end, overlap rejection, and preserving gaps on a no-op drop. The expected end position was corrected to 4,500 ms before verification.
+- **Fullscreen reachability:** the fullscreen exit control is placed in the preview's upper safe corner; outside fullscreen it returns to the playback row.
+- **Filmstrip first-cell poster:** the first cell can display a temporary provider thumbnail while its exact timestamp sample is being decoded. This is a placeholder, not a replacement for timestamp-accurate frames. Overall thumbnail speed has not been measured on the user's phone.
+- **Clip cover selection:** a per-clip frame picker previews frames from the selected trimmed range, stores the selected source timestamp in project JSON, and exposes a JPG save action. Android 10+ saves to Pictures/MathMotor/Kapaklar; older Android versions use the system document picker.
+- **Image/video overlay lane:** the overlay panel can add a still image or a video as a distinct timeline layer. Start time, duration, scale, horizontal/vertical position and rotation can be adjusted with controls; preview touch gestures support one-finger movement and two-finger scale/rotation. The layer metadata and persistent URI are stored/restored with the editable project.
+- **Preview/export composition path:** overlay sequences are composed separately from the main video. Preview uses Media3 `MultipleInputVideoGraph.Factory` when overlays exist; export uses the same video sequence order and compositor settings. Overlay-video source audio is intentionally removed so it does not unexpectedly mix with the main soundtrack.
+
+### Explicit limitations and verification boundary
+
+- **No successful build or test result exists for the latest source head.** GitHub Actions has no check run for `9468493`; the most recent green workflow runs are for older SHA `c72542a`, before this batch, so they do not validate these changes. No APK has been built or verified from this source head.
+- No emulator or physical-phone acceptance has been completed for drag reorder, poster latency, cover save, multi-input preview, seek/scrub, or MP4 overlay output.
+- Media3 `VideoCompositorSettings` is a beta API. Multi-input preview, overlay order/transparency, image and video rendering, seek stability, and export output must be validated before treating the feature as complete. <Cite refs={["turn345976search0","turn920181search0","turn958686search1"]} />
+- Overlay source in-point trimming is not yet exposed as a user control; current video overlays start from source time zero. Timeline text/audio layers also remain absolute project-time layers and are not automatically attached to a reordered main-video clip.
+- Thumbnail performance beyond the provisional first-cell poster remains open; collect device timings before changing decoder or thread strategy.
+- PR #18 remains a draft and unmerged. Do not interpret source presence as acceptance or release readiness.
 
 ## New editor layout target — CapCut-inspired mobile arrangement (2026-11-02)
 
