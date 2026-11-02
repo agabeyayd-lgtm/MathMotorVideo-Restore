@@ -246,3 +246,14 @@ Verification pending:
 - Reduced the fixed left timeline header gutter from 99dp to 82dp to reclaim horizontal room for the clip strip while retaining the time label/control column.
 - These are layout changes only; no thumbnail decoding, timestamp mapping, or playback behavior was changed. Verify on the API 35 emulator and a physical phone that the timeline is visibly taller, the first/last clip cells remain reachable, and the preview/bottom dock are not clipped on short screens and with the keyboard open.
 - Keep versionCode 394 / Build 61. Do not create version 395 before the full release checklist and user authorization.
+
+
+## Clip cover picker + workspace sizing — 2026-11-02 (implementation added; validation pending)
+- Added a **Kapak** action to the selected-clip edit controls. It opens a frame picker limited to the clip's active trim range, previews the selected source timestamp, and stores `coverTimeMs` in the project JSON. Older version-1 project files without this optional field remain compatible.
+- Cover-time edits are part of the existing clip undo/redo snapshot. When later trimming excludes the selected cover timestamp, it is clamped back into the active clip range.
+- The selected cover can be saved as a separate JPEG in Pictures/MathMotor/Kapaklar. This sidecar image is the share/post cover; it is not inserted into the exported MP4 and never replaces timestamped filmstrip samples.
+- The first-cell provider poster remains a temporary visual placeholder only. It has no role in the chosen cover metadata and must not be reused as another timeline cell.
+- Central timeline card height is now 210dp (was 178dp); fixed left time/control gutter is 82dp (was 99dp). The preview remains flexible. Verify on short/tall screens that the filmstrip gains both vertical and horizontal room without clipping the preview, bottom dock, first/last clip cells, or keyboard workflows.
+- Emulator smoke flow now opens the Edit drawer, opens the cover picker, waits for a decoded cover preview, commits the selected frame, and checks that the selected state is retained. The filmstrip/preview alignment check now uses a streaming logcat capture and a best-effort dump fallback, so a final ADB log read cannot discard already-captured evidence.
+- Runs #724 and #526 were cancelled before their emulator/build validations completed. Do not count them as passing. Latest code and workflow changes require a fresh green emulator run and successful unit/debug build before acceptance. Physical-phone verification is still required.
+- Keep versionCode 394 / Build 61. Version 395 remains blocked; no signed release or replacement APK is authorized.
