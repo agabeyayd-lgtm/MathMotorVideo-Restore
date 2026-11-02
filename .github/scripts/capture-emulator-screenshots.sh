@@ -325,6 +325,20 @@ timeout -k 2s 8s adb -s emulator-5554 shell am force-stop com.mathmotor.video.ne
 # Avoid -W for the same slow-emulator first-frame wait that affected the home launch.
 # Clear stale markers so only this launch can satisfy the smoke assertion.
 timeout -k 2s 5s adb -s emulator-5554 logcat -c || true
+thumbnail_alignment_logcat="emulator-screenshots/thumbnail-session-logcat.txt"
+thumbnail_alignment_logcat_pid=""
+stop_thumbnail_alignment_logcat() {
+  if [ -n "${thumbnail_alignment_logcat_pid:-}" ]; then
+    kill "$thumbnail_alignment_logcat_pid" 2>/dev/null || true
+    wait "$thumbnail_alignment_logcat_pid" 2>/dev/null || true
+    thumbnail_alignment_logcat_pid=""
+  fi
+}
+trap stop_thumbnail_alignment_logcat EXIT
+# Keep a streaming log snapshot while the editor is imported, scrubbed and aligned.
+# A final logcat dump can fail after a valid screenshot if the emulator ADB transport drops.
+adb -s emulator-5554 logcat -v threadtime > "$thumbnail_alignment_logcat" 2>&1 &
+thumbnail_alignment_logcat_pid=$!
 timeout -k 2s 15s adb -s emulator-5554 shell am start \
   -n com.mathmotor.video.next/com.mathmotor.video.EditorTestEntryActivity \
   --es video_uri "file://$app_internal_video" \
@@ -413,7 +427,15 @@ if ! take_screen emulator-screenshots/editor-frame-aligned.png; then
   exit 6
 fi
 dump_hierarchy editor-frame-aligned.xml emulator-screenshots/editor-frame-aligned.xml || true
-timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime > emulator-screenshots/thumbnail-alignment-logcat.txt 2>&1
+stop_thumbnail_alignment_logcat
+cp "$thumbnail_alignment_logcat" emulator-screenshots/thumbnail-alignment-logcat.txt || true
+if [ ! -s emulator-screenshots/thumbnail-alignment-logcat.txt ] ||
+   ! grep -q "TIMELINE_PREVIEW_FRAME_READY" emulator-screenshots/thumbnail-alignment-logcat.txt; then
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime \
+    > emulator-screenshots/thumbnail-alignment-logcat-recovery.txt 2>&1 || true
+  cat emulator-screenshots/thumbnail-alignment-logcat-recovery.txt \
+    >> emulator-screenshots/thumbnail-alignment-logcat.txt 2>/dev/null || true
+fi
 python3 .github/scripts/assert-thumbnail-alignment.py verify \
   emulator-screenshots/editor-frame-aligned.xml \
   emulator-screenshots/editor-frame-aligned.png \
