@@ -26,6 +26,7 @@
 
 
 ## Sequential filmstrip thumbnail decoder — 2026-11-02 (source change; verification pending)
+- Latest PR #17 source commit `697222321332f7996a2be909a4e30d2b785c930c`: Verify #501 passed unit tests and debug compilation; APK build #500 passed and uploaded a debug artifact. Emulator #699 built the debug APK and fixture and advanced to app launch/screenshot capture; final emulator conclusion and progressive thumbnail timing are pending. This draft branch has not been merged to main.
 
 - The two-pass sync-preview experiment was withdrawn. API 35 timings showed that it added a second decode per visible cell and still delayed the first provisional image.
 - Filmstrip thumbnails now use one persistent Media3 `FrameExtractor` for the current source URI. Media3's internal implementation manages a shared ExoPlayer and serializes extraction requests; the app now feeds it from a single bounded worker rather than maintaining two competing per-thread platform decoders.
