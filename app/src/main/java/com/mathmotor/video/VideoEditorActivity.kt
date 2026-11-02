@@ -309,16 +309,16 @@ class VideoEditorActivity : Activity() {
         override fun run() = work()
     }
     private val timelineThumbnailTaskSequence = java.util.concurrent.atomic.AtomicLong()
-    // Two bounded decoder workers process only authoritative requested timestamps.
-    // The priority queue puts exact playhead-near frames first and avoids duplicate preview passes.
+    // One bounded worker feeds Media3's shared, sequential FrameExtractor session.
+    // This avoids competing per-thread platform decoders for adjacent filmstrip samples.
     private val timelineThumbnailWorkerSequence = java.util.concurrent.atomic.AtomicLong()
     private val timelineThumbnailRetrievers =
         java.util.concurrent.ConcurrentHashMap<Long, Pair<Uri, MediaMetadataRetriever>>()
     private val timelineThumbnailExtractors =
         java.util.concurrent.ConcurrentHashMap<Long, Pair<Uri, FrameExtractor>>()
     private val timelineThumbnailExecutor = java.util.concurrent.ThreadPoolExecutor(
-        2,
-        2,
+        1,
+        1,
         0L,
         java.util.concurrent.TimeUnit.MILLISECONDS,
         java.util.concurrent.PriorityBlockingQueue<Runnable>(
@@ -5486,6 +5486,7 @@ class VideoEditorActivity : Activity() {
         }
         return try {
             FrameExtractor.Builder(this, MediaItem.fromUri(uri))
+                .setSeekParameters(androidx.media3.exoplayer.SeekParameters.EXACT)
                 .setEffects(listOf(Presentation.createForHeight(288)))
                 .build()
                 .also { timelineThumbnailExtractors[threadId] = uri to it }
@@ -5704,42 +5705,54 @@ class VideoEditorActivity : Activity() {
 
     private fun decodeTimelineFrame(
         uri: Uri,
-        timeMs: Long,
-        frameOption: Int = MediaMetadataRetriever.OPTION_CLOSEST
+        timeMs: Long
     ): Bitmap? {
+        // FrameExtractor uses a shared ExoPlayer and serializes frame requests internally.
+        // Reuse one instance for this URI so consecutive filmstrip samples seek through the
+        // same prepared media session instead of opening a platform retriever per cell.
+        val extractor = timelineThumbnailExtractorFor(uri)
+        if (extractor != null) {
+            var frameFuture: java.util.concurrent.Future<FrameExtractor.Frame>? = null
+            try {
+                val future = extractor.getFrame(timeMs.coerceAtLeast(0L))
+                frameFuture = future
+                val frame = future.get(5000L, TimeUnit.MILLISECONDS)
+                if (timelineSyncTestEnabled) android.util.Log.i(
+                    "TimelineFrameSyncTest",
+                    "TIMELINE_THUMBNAIL_DECODED requestedMs=$timeMs actualFrameMs=${frame.presentationTimeMs} decoder=media3-shared"
+                )
+                return frame.bitmap
+            } catch (error: Exception) {
+                frameFuture?.cancel(true)
+                android.util.Log.w(
+                    "TimelineThumbnail",
+                    "Shared Media3 frame extraction failed for $uri at ${timeMs}ms; trying platform fallback",
+                    error
+                )
+            }
+        }
+
+        // Compatibility fallback for unusual containers/codecs unsupported by Media3.
         val frameTimeUs = timeMs.coerceAtLeast(0L) * 1000L
         val retriever = timelineThumbnailRetrieverFor(uri, "TimelineThumbnail")
-
-        val platformFrame = retriever?.let { activeRetriever ->
+        return retriever?.let { activeRetriever ->
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                 runCatching {
                     activeRetriever.getScaledFrameAtTime(
                         frameTimeUs,
-                        frameOption,
+                        MediaMetadataRetriever.OPTION_CLOSEST,
                         162,
                         288
                     )
                 }.getOrNull()
             } else {
-                null
-            } ?: runCatching {
-                activeRetriever.getFrameAtTime(frameTimeUs, frameOption)
-            }.getOrNull()
-        }
-        if (platformFrame != null) return platformFrame
-
-        // Reuse one Media3 extractor per decoder worker and source URI. Building
-        // and closing an extractor for every cell made fallback decoding needlessly slow.
-        val extractor = timelineThumbnailExtractorFor(uri) ?: return null
-        var frameFuture: java.util.concurrent.Future<FrameExtractor.Frame>? = null
-        return try {
-            val future = extractor.getFrame(timeMs.coerceAtLeast(0L))
-            frameFuture = future
-            future.get(2500L, TimeUnit.MILLISECONDS).bitmap
-        } catch (error: Exception) {
-            frameFuture?.cancel(true)
-            android.util.Log.w("TimelineThumbnail", "No frame decoded for $uri at ${timeMs}ms", error)
-            null
+                runCatching {
+                    activeRetriever.getFrameAtTime(
+                        frameTimeUs,
+                        MediaMetadataRetriever.OPTION_CLOSEST
+                    )
+                }.getOrNull()
+            }
         }
     }
 
