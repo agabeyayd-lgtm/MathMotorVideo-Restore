@@ -278,11 +278,11 @@ Validation:
 - Keep versionCode 394 / Build 61 as the user-approved baseline. Version 395 remains blocked; no replacement APK, signed release, or update is authorized by these changes alone.
 
 
-## 2026-11-02 — filmstrip decoder experiments and next direction
+## 2026-11-02 — Media3 decoder-selection experiment (verification pending)
 
-- Run #709 measured the native-retriever-first one-worker path: 19 exact cells, first exact ready at 1,249 ms, final cell ready at 9,595 ms, and 8,354 ms summed queue-task decode time. The 9,316 ms wait on the final cell shows the serial queue was the dominant delay.
-- Run #712 tested two independent workers and confirmed they really ran on two thread IDs. It still finished at 9,694 ms (99 ms slower than #709); summed queue-task decode time increased to 18,218 ms, with some individual decoder calls up to 2,695 ms. The extra decoder caused contention rather than useful throughput. Reject this two-worker approach.
-- Restored a single thumbnail worker and the shared Media3 FrameExtractor as the primary sequential decoder; MediaMetadataRetriever remains a compatibility fallback. The separate first-cell warmup is still removed, so the first exact sample is decoded once by its normal priority task.
-- Historical pre-experiment measurement for the shared Media3 sequential path was 5.98 seconds. Re-measure the restored path; do not assume the historical number still holds after the queue/warmup changes.
-- A different candidate is batched frame extraction with Android MediaMetadataRetriever.getFramesAtIndex (API 28+), but it returns a list of full frame bitmaps and only helps for consecutive frame indices. Do not implement it blindly: evaluate frame spacing, memory use, and small-batch behavior first. The likely longer-term direction is a single decode session that advances through the clip and retains only requested thumbnails, avoiding repeated random seeks.
-- Required next verification: 19 unique samples, preview/thumbnail pixel alignment, scrub both directions, first exact-frame time, and full-strip completion. Keep Build 394 / Build 61; no version 395 or release APK.
+- Run #713 restored the single shared Media3 extractor and passed all editor smoke checks. Its 19-frame timing log exposed the dominant delay: the first exact frame at 211 ms took 4,060 ms; later frames took 80–456 ms each (3,298 ms combined after the first), with the full strip ready in 7,877 ms.
+- Root cause candidate: Media3 FrameExtractor 1.10.1 defaults to MediaCodecSelector.PREFER_SOFTWARE, which moves software decoders ahead of the normal platform-preferred order. Its own source documents this default. The default selector is a distinct supported option.
+- New bounded experiment: keep one shared FrameExtractor, exact timestamps and the same 288px output, but ask for MediaCodecSelector.DEFAULT. No parallel decoders and no looser seek accuracy. Decoder errors remain caught; the existing retriever path can still supply a compatibility frame.
+- Risk: Media3's own FrameExtractor source warns some hardware decoders can crash when flushed during repeated seeks with video effects. Therefore the API 35 run must pass all thumbnail/preview pixel checks, unique timestamp checks, forward/reverse scrubbing and playback sync before retaining this selector.
+- Target: improve first-frame startup and finish the 19-frame strip below the 5.98-second historical baseline. A green compile alone is not a speed result. Revert to the safer selector if any decoder error, black/mismatched frame, or worse timing appears.
+- Build 394 / Build 61 remains unchanged; no signed release or replacement APK is being issued.
