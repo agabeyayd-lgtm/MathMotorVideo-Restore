@@ -278,10 +278,12 @@ Validation:
 - Keep versionCode 394 / Build 61 as the user-approved baseline. Version 395 remains blocked; no replacement APK, signed release, or update is authorized by these changes alone.
 
 
-## 2026-11-02 — filmstrip decoder fast path (verification pending)
+## 2026-11-02 — bounded parallel filmstrip decode experiment (verification pending)
 
-- Changed normal filmstrip still extraction to try Android's persistent, scaled `MediaMetadataRetriever` first. The previous shared Media3 `FrameExtractor` remains the fallback for containers/codecs the platform retriever cannot decode.
-- This targets the startup cost of preparing a Media3 extraction session before the first exact thumbnail. The retriever is reused on the bounded thumbnail worker for adjacent samples rather than being reopened per cell.
-- Added debug-only decoder timing markers (`TIMELINE_THUMBNAIL_DECODER` / `TIMELINE_THUMBNAIL_DECODED`) so the next API 35 emulator run can distinguish platform decode time from Media3 fallback time.
-- This is a performance hypothesis, not yet an accepted speed improvement. Verify strict preview/thumbnail frame alignment, distinct adjacent timestamps, first-frame latency and complete visible-strip fill time before retaining it. Revert the fast-path change if correctness regresses.
-- VersionCode 394 / Build 61 remains unchanged. Version 395 remains blocked; no release or APK was created.
+- Run #709 is a successful editor/emulator smoke, but its frame logs show the native-retriever-first serial path did not meet the speed target: 19 exact thumbnail requests, final frame ready at 9,595 ms, and 8,354 ms of summed decoder time. The last request waited 9,316 ms in the one-worker queue.
+- This regressed against the previously measured 5.98-second full-strip baseline. The native retriever fast-path is therefore not accepted as a speed improvement.
+- New experiment: use exactly two thumbnail workers, each with its own thread-confined MediaMetadataRetriever (and its own Media3 fallback if needed). Prioritize the first exact cell as phase 0, then other visible cells, then off-screen cells.
+- Removed the separate first-cell warmup job. The OS/provider poster remains a clearly temporary placeholder; the normal exact first-cell request now performs the only decode for that timestamp. This avoids two workers racing to decode the same first frame.
+- Added worker IDs to the debug decoder timing marker so the next run can prove whether the two workers actually overlap.
+- Verification pending: confirm 19 distinct exact timestamps, preview/thumbnail pixel alignment, forward/reverse scrubbing, first exact-frame latency, and full-strip completion below 5.98 seconds. Also check decoder failures and memory stability. If speed or correctness regresses, revert this experiment rather than treating a green launch smoke as proof.
+- VersionCode 394 / Build 61 remains unchanged. Version 395 remains blocked; no release APK was created.
