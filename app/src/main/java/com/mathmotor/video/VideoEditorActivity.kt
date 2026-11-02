@@ -3562,8 +3562,94 @@ class VideoEditorActivity : Activity() {
         }
         return builder.build()
     }
-    private fun buildVideoTimelineComposition():Composition =
-        Composition.Builder(listOf(buildFlattenedVideoSequence())).build()
+    private fun buildOverlayVideoSequence(
+        overlay: OverlayClip,
+        outputDurationMs: Long
+    ): EditedMediaItemSequence {
+        val safeStartMs = overlay.timelineStartMs.coerceIn(0L, outputDurationMs)
+        val safeDurationMs = overlay.durationMs.coerceAtLeast(1L)
+            .coerceAtMost(outputDurationMs - safeStartMs)
+        require(safeDurationMs > 0L) { "Bindirme süresi zaman çizelgesinin dışında." }
+        val sequenceBuilder = EditedMediaItemSequence.Builder(
+            setOf(androidx.media3.common.C.TRACK_TYPE_VIDEO)
+        )
+        if (safeStartMs > 0L) sequenceBuilder.addGap(safeStartMs * 1000L)
+
+        val mediaItem = if (overlay.isImage) {
+            MediaItem.Builder()
+                .setUri(overlay.uri)
+                .setImageDurationMs(safeDurationMs)
+                .build()
+        } else {
+            MediaItem.Builder()
+                .setUri(overlay.uri)
+                .setClippingConfiguration(
+                    MediaItem.ClippingConfiguration.Builder()
+                        .setStartPositionMs(overlay.sourceStartMs)
+                        .setEndPositionMs(overlay.sourceStartMs + safeDurationMs)
+                        .build()
+                )
+                .build()
+        }
+        val editedItem = EditedMediaItem.Builder(mediaItem)
+            .apply { if (!overlay.isImage) setRemoveAudio(true) }
+            .build()
+        sequenceBuilder.addItem(editedItem)
+
+        val trailingGapMs = (outputDurationMs - safeStartMs - safeDurationMs).coerceAtLeast(0L)
+        if (trailingGapMs > 0L) sequenceBuilder.addGap(trailingGapMs * 1000L)
+        return sequenceBuilder.build()
+    }
+
+    private inner class OverlayVideoCompositorSettings(
+        private val layers: List<OverlayClip>,
+        private val baseVideoInputId: Int
+    ) : VideoCompositorSettings {
+        override fun getOutputSize(inputSizes: MutableList<android.util.Size>): android.util.Size {
+            return inputSizes.getOrNull(baseVideoInputId)
+                ?: inputSizes.lastOrNull()
+                ?: android.util.Size(1080, 1920)
+        }
+
+        override fun getOverlaySettings(inputId: Int, presentationTimeUs: Long): OverlaySettings {
+            val layer = layers.getOrNull(inputId) ?: return StaticOverlaySettings.Builder().build()
+            val timeMs = presentationTimeUs / 1_000L
+            val visible = timeMs >= layer.timelineStartMs &&
+                timeMs < layer.timelineStartMs + layer.durationMs
+            return StaticOverlaySettings.Builder()
+                .setAlphaScale(if (visible) 1f else 0f)
+                .setScale(layer.scale, layer.scale)
+                .setBackgroundFrameAnchor(
+                    layer.xFraction * 2f - 1f,
+                    1f - layer.yFraction * 2f
+                )
+                .setRotationDegrees(layer.rotationDegrees)
+                .build()
+        }
+    }
+
+    private fun buildVideoCompositionSequences(): List<EditedMediaItemSequence> {
+        val outputDurationMs = totalOutputDurationMs().coerceAtLeast(1L)
+        val orderedOverlays = overlayClips.sortedBy { it.id }
+        val overlaySequences = orderedOverlays.map { overlay ->
+            buildOverlayVideoSequence(overlay, outputDurationMs)
+        }
+        // Media3 uses the first sequence as a foreground input. Keep the main edited
+        // video last so it remains the full-frame background under every bindirme.
+        return overlaySequences + buildFlattenedVideoSequence()
+    }
+
+    private fun buildOverlayCompositorSettings(): VideoCompositorSettings =
+        OverlayVideoCompositorSettings(overlayClips.sortedBy { it.id }, overlayClips.size)
+
+    private fun buildVideoTimelineComposition():Composition {
+        val sequences = buildVideoCompositionSequences()
+        val builder = Composition.Builder(sequences)
+        if (overlayClips.isNotEmpty()) {
+            builder.setVideoCompositorSettings(buildOverlayCompositorSettings())
+        }
+        return builder.build()
+    }
 
     private fun pauseActivePreview(){
         player?.playWhenReady=false
@@ -7027,8 +7113,8 @@ class VideoEditorActivity : Activity() {
 
         syncSelectedTextLayerFromControls()
         val requestedExportName = exportNameInput.text?.toString().orEmpty()
-        val videoSequence = try {
-            buildFlattenedVideoSequence()
+        val videoSequences = try {
+            buildVideoCompositionSequences()
         } catch (e: Exception) {
             status.text = "Düzenleme hazırlanamadı: ${e.message ?: e.javaClass.simpleName}"
             return
@@ -7041,7 +7127,7 @@ class VideoEditorActivity : Activity() {
         exportButton.isEnabled = false
         status.text = "MP4 dışa aktarılıyor…\nKlipler seçtiğin sırayla birleştiriliyor; yazı, müzik ve ses katmanları uygulanıyor. Uygulamayı kapatma."
         val tempOutput = File(cacheDir, "mm_editor_${System.currentTimeMillis()}.mp4")
-        val compositionSequences = mutableListOf(videoSequence)
+        val compositionSequences = videoSequences.toMutableList()
         musicUri?.let { uri ->
             val outputDurationMs = totalOutputDurationMs()
             val musicRange = TimelineRangeMath.normalize(
@@ -7114,6 +7200,9 @@ class VideoEditorActivity : Activity() {
             compositionSequences.add(soundSequenceBuilder.build())
         }
         val compositionBuilder = Composition.Builder(compositionSequences)
+        if (overlayClips.isNotEmpty()) {
+            compositionBuilder.setVideoCompositorSettings(buildOverlayCompositorSettings())
+        }
         val outputVideoEffects = mutableListOf<androidx.media3.common.Effect>()
         when (exportResolutionShortSide) {
             720 -> outputVideoEffects.add(Presentation.createForShortSide(720))
