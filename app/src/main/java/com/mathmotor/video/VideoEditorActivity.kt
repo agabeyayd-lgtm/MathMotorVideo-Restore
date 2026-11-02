@@ -1827,7 +1827,7 @@ class VideoEditorActivity : Activity() {
                 } else tag
             }
             if (reorderable) {
-                row.addView(grip, LinearLayout.LayoutParams(dp(54), ViewGroup.LayoutParams.MATCH_PARENT))
+                row.addView(grip, LinearLayout.LayoutParams(dp(44), ViewGroup.LayoutParams.MATCH_PARENT))
                 val sideAction = TextView(this).apply {
                     text = when {
                         tag == "Video" -> "Kapak"
@@ -1849,7 +1849,7 @@ class VideoEditorActivity : Activity() {
                         }
                     }
                 }
-                row.addView(sideAction, LinearLayout.LayoutParams(dp(42), ViewGroup.LayoutParams.MATCH_PARENT))
+                row.addView(sideAction, LinearLayout.LayoutParams(dp(40), ViewGroup.LayoutParams.MATCH_PARENT))
             if (reorderable && tag == "Video") {
                 grip.contentDescription = if (keepSourceAudio.isChecked) {
                     "Klip sesini kapat"
@@ -1864,8 +1864,8 @@ class VideoEditorActivity : Activity() {
                 }
             }
             } else {
-                // Reserve the same 96dp control gutter used by every media lane.
-                row.addView(View(this), LinearLayout.LayoutParams(dp(96), ViewGroup.LayoutParams.MATCH_PARENT))
+                // Reserve the same 84dp control gutter used by every media lane.
+                row.addView(View(this), LinearLayout.LayoutParams(dp(84), ViewGroup.LayoutParams.MATCH_PARENT))
             }
 
             if (reorderable) {
@@ -3283,11 +3283,11 @@ class VideoEditorActivity : Activity() {
     }
 
     /**
-     * Horizontal space consumed before a lane's scrolling content: the 96dp
+     * Horizontal space consumed before a lane's scrolling content: the 84dp
      * ruler/media header plus the row's 3dp leading inset. Keep this in sync
      * with makeLane(), otherwise the fixed playhead maps to the wrong project time.
      */
-    private fun timelineHeaderGutterWidthPx(): Int = dp(99)
+    private fun timelineHeaderGutterWidthPx(): Int = dp(87)
 
     /** Width of the leading blank time-zero spacer inside each horizontally scrolling lane. */
     private fun timelineFrameWidth(viewportWidth: Int): Int {
