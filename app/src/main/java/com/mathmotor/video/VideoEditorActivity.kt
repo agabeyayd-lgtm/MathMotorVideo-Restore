@@ -89,7 +89,9 @@ class VideoEditorActivity : Activity() {
         var transformRotationDegrees: Float = 0f,
         var transformTranslateX: Float = 0f,
         var transformTranslateY: Float = 0f,
-        var frameRate: Double? = null
+        var frameRate: Double? = null,
+        // Source timestamp for the selected clip cover, independent of filmstrip samples.
+        var coverTimeMs: Long? = null
     )
 
     private data class ClipEditSnapshot(
@@ -400,6 +402,7 @@ class VideoEditorActivity : Activity() {
     private var activeEditorPanel: String? = null
     private var textOverlayEditingEnabled: Boolean = false
     private lateinit var selectedClipLabel: TextView
+    private var clipCoverButton: Button? = null
     private lateinit var startLabel: TextView
     private lateinit var endLabel: TextView
     private lateinit var startSeek: SeekBar
@@ -832,8 +835,12 @@ class VideoEditorActivity : Activity() {
         val clipPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         selectedClipLabel = label("Önce bir video seç.", 12f, Color.WHITE, true)
         val clipActions1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        clipCoverButton = miniButton("Kapak") { showClipCoverPicker() }.apply {
+            contentDescription = "Seçili klibin kapak karesini seç"
+        }
+        clipActions1.addView(clipCoverButton, LinearLayout.LayoutParams(0, dp(46), 1f))
         clipActions1.addView(miniButton("Önizle") { previewSelectedClip() },
-            LinearLayout.LayoutParams(0, dp(46), 1f))
+            LinearLayout.LayoutParams(0, dp(46), 1f).apply { leftMargin = dp(3) })
         clipActions1.addView(miniButton("Kopyala") {
             if (selectedClipIndex in clips.indices) {
                 duplicateClipAt(selectedClipIndex)
@@ -4496,6 +4503,7 @@ class VideoEditorActivity : Activity() {
                 put("transformRotationDegrees", clip.transformRotationDegrees)
                 put("transformTranslateX", clip.transformTranslateX)
                 put("transformTranslateY", clip.transformTranslateY)
+                put("coverTimeMs", clip.coverTimeMs ?: JSONObject.NULL)
             })
         }
         return JSONObject().apply {
@@ -4578,7 +4586,10 @@ class VideoEditorActivity : Activity() {
                 transformScale = item.optDouble("transformScale", 1.0).toFloat(),
                 transformRotationDegrees = item.optDouble("transformRotationDegrees", 0.0).toFloat(),
                 transformTranslateX = item.optDouble("transformTranslateX", 0.0).toFloat(),
-                transformTranslateY = item.optDouble("transformTranslateY", 0.0).toFloat()
+                transformTranslateY = item.optDouble("transformTranslateY", 0.0).toFloat(),
+                coverTimeMs = if (item.has("coverTimeMs") && !item.isNull("coverTimeMs")) {
+                    item.optLong("coverTimeMs", start).coerceIn(start, (end - 1L).coerceAtLeast(start))
+                } else null
             )
             normalizeClipTransform(loadedClip)
             loadedClips.add(loadedClip)
@@ -6187,6 +6198,14 @@ class VideoEditorActivity : Activity() {
         startSeek.progress = TimelineTrimMath.progressForTime(clip.startMs, clip.durationMs)
         endSeek.progress = TimelineTrimMath.progressForTime(clip.endMs, clip.durationMs)
         selectedClipLabel.text = ""
+        clipCoverButton?.apply {
+            text = if (clip.coverTimeMs == null) "Kapak" else "Kapak ✓"
+            contentDescription = if (clip.coverTimeMs == null) {
+                "Kapak karesi seç"
+            } else {
+                "Kapak karesi seçildi: ${formatTimelineMs(clip.coverTimeMs!!)}"
+            }
+        }
         updateTrimLabels()
     }
 
@@ -6306,6 +6325,197 @@ class VideoEditorActivity : Activity() {
         soundStartSeek.isEnabled = soundUri != null && total > 0L
         val soundEndMs = soundStartMs + soundDurationMs
         soundStartLabel.text = "Ses: ${formatTimelineMs(soundStartMs)} – ${formatTimelineMs(soundEndMs)}"
+    }
+
+
+    /**
+     * Lets the user choose a source frame as the clip's cover. The selection is
+     * project metadata and a separate JPEG; it never replaces timestamped filmstrip
+     * cells or changes the exported video frames.
+     */
+    private fun showClipCoverPicker() {
+        val clipIndex = selectedClipIndex
+        val clip = selectedClip()
+        if (clip == null) {
+            status.text = "Kapak seçmek için önce zaman çizgisinden bir klip seç."
+            return
+        }
+
+        pauseActivePreview()
+        val firstAllowedMs = clip.startMs.coerceIn(0L, clip.durationMs)
+        val lastAllowedMs = (clip.endMs - 1L).coerceIn(firstAllowedMs, (clip.durationMs - 1L).coerceAtLeast(firstAllowedMs))
+        val selectableDurationMs = (lastAllowedMs - firstAllowedMs).coerceAtLeast(1L)
+        var selectedSourceTimeMs = (clip.coverTimeMs ?: firstAllowedMs).coerceIn(firstAllowedMs, lastAllowedMs)
+        var previewBitmap: Bitmap? = null
+        var previewRequestGeneration = 0L
+        var dialogOpen = true
+
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(4), dp(12), dp(4))
+        }
+        val coverPreview = ImageView(this).apply {
+            setBackgroundColor(Color.BLACK)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            contentDescription = "Seçilen kapak karesinin önizlemesi"
+        }
+        content.addView(coverPreview, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(210)
+        ))
+        val timestampLabel = label("Kapak zamanı: \${formatTimelineMs(selectedSourceTimeMs)}", 12f, Color.WHITE, true)
+        timestampLabel.setPadding(dp(2), dp(10), dp(2), dp(2))
+        content.addView(timestampLabel)
+        content.addView(label("Kaydırarak videodan kullanmak istediğin kareyi seç.", 11f, Color.rgb(160, 177, 194), false))
+        val coverSeek = SeekBar(this).apply {
+            max = TimelineTrimMath.progressMax(selectableDurationMs)
+            progress = TimelineTrimMath.progressForTime(selectedSourceTimeMs - firstAllowedMs, selectableDurationMs)
+            contentDescription = "Kapak karesi zaman seçici"
+        }
+        content.addView(coverSeek, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+
+        fun requestCoverPreview() {
+            val requestId = ++previewRequestGeneration
+            val requestedTimeMs = selectedSourceTimeMs
+            val task = TimelineThumbnailTask(
+                -2L,
+                timelineThumbnailTaskSequence.incrementAndGet(),
+                priorityPhase = 0
+            ) {
+                val decoded = decodeTimelinePreviewFrame(clip.uri, requestedTimeMs)
+                runOnUiThread {
+                    if (!dialogOpen || requestId != previewRequestGeneration || isFinishing || isDestroyed) {
+                        decoded?.let { if (!it.isRecycled) it.recycle() }
+                        return@runOnUiThread
+                    }
+                    if (decoded != null && !decoded.isRecycled) {
+                        val previous = previewBitmap
+                        previewBitmap = decoded
+                        coverPreview.setImageBitmap(decoded)
+                        if (previous !== decoded && previous != null && !previous.isRecycled) previous.recycle()
+                    } else {
+                        timestampLabel.text = "Bu kare okunamadı: \${formatTimelineMs(requestedTimeMs)}"
+                    }
+                }
+            }
+            try {
+                timelineThumbnailExecutor.execute(task)
+            } catch (_: java.util.concurrent.RejectedExecutionException) {
+                timestampLabel.text = "Kapak karesi çözücü şu anda meşgul."
+            }
+        }
+
+        coverSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                selectedSourceTimeMs = (firstAllowedMs + TimelineTrimMath.timeForProgress(
+                    progress, selectableDurationMs
+                )).coerceIn(firstAllowedMs, lastAllowedMs)
+                timestampLabel.text = "Kapak zamanı: \${formatTimelineMs(selectedSourceTimeMs)}"
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
+
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                requestCoverPreview()
+            }
+        })
+
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("Kapak karesi")
+            .setView(content)
+            .setNegativeButton("Vazgeç", null)
+            .setNeutralButton("JPG kaydet", null)
+            .setPositiveButton("Kapak yap", null)
+            .create()
+
+        dialog.setOnShowListener {
+            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                if (clips.getOrNull(clipIndex) !== clip) {
+                    status.text = "Seçili klip değişti. Kapak seçimini yeniden aç."
+                    dialog.dismiss()
+                    return@setOnClickListener
+                }
+                recordClipEdit()
+                clip.coverTimeMs = selectedSourceTimeMs
+                loadTrimControls()
+                status.text = "Kapak karesi \${formatTimelineMs(selectedSourceTimeMs)} olarak seçildi. Projeyi kaydettiğinde seçim korunur."
+                dialog.dismiss()
+            }
+            dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                val bitmap = previewBitmap
+                if (bitmap == null || bitmap.isRecycled) {
+                    status.text = "Önce seçilen kapak karesinin önizlemesi yüklensin."
+                    return@setOnClickListener
+                }
+                saveClipCoverImage(bitmap, clip, selectedSourceTimeMs)
+            }
+            requestCoverPreview()
+        }
+        dialog.setOnDismissListener {
+            dialogOpen = false
+            previewRequestGeneration++
+            coverPreview.setImageDrawable(null)
+            previewBitmap?.let { if (!it.isRecycled) it.recycle() }
+            previewBitmap = null
+        }
+        dialog.show()
+    }
+
+    private fun saveClipCoverImage(bitmap: Bitmap, clip: Clip, sourceTimeMs: Long) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
+            checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), REQUEST_LEGACY_STORAGE)
+            status.text = "Galeride kapak görseli oluşturmak için depolama izni gerekiyor."
+            return
+        }
+
+        val safeTitle = clip.title.substringBeforeLast('.', clip.title)
+            .replace(Regex("[^A-Za-z0-9_-]+"), "_")
+            .trim('_')
+            .take(36)
+            .ifBlank { "MathMotorVideo" }
+        val fileName = "\${safeTitle}_Kapak_\${sourceTimeMs}.jpg"
+        var outputUri: Uri? = null
+        try {
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, "\${Environment.DIRECTORY_PICTURES}/MathMotor/Kapaklar")
+                    put(MediaStore.MediaColumns.IS_PENDING, 1)
+                } else {
+                    val directory = java.io.File(
+                        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+                        "MathMotor/Kapaklar"
+                    )
+                    if (!directory.exists() && !directory.mkdirs()) {
+                        throw IllegalStateException("Kapak klasörü oluşturulamadı.")
+                    }
+                    put(MediaStore.MediaColumns.DATA, java.io.File(directory, fileName).absolutePath)
+                }
+            }
+            outputUri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                ?: throw IllegalStateException("Galeriye kayıt konumu oluşturulamadı.")
+            val stream = contentResolver.openOutputStream(outputUri)
+                ?: throw IllegalStateException("Kapak görseli dosyası açılamadı.")
+            stream.use { output ->
+                if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 94, output)) {
+                    throw IllegalStateException("JPEG kapak görseli oluşturulamadı.")
+                }
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                contentResolver.update(outputUri, ContentValues().apply {
+                    put(MediaStore.MediaColumns.IS_PENDING, 0)
+                }, null, null)
+            }
+            status.text = "Kapak görseli Galeri > Resimler > MathMotor > Kapaklar içine kaydedildi."
+        } catch (error: Exception) {
+            outputUri?.let { runCatching { contentResolver.delete(it, null, null) } }
+            status.text = "Kapak görseli kaydedilemedi: \${error.message ?: error.javaClass.simpleName}"
+        }
     }
 
     private fun previewSelectedClip(){
