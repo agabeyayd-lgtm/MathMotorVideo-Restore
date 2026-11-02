@@ -22,15 +22,16 @@ This section supersedes older “pending” statements below where newer run evi
 - Current source audit confirms a real gap: Undo/Redo stores `ClipEditSnapshot` only and the visible actions are “Klip geri al/yinele”. Text and audio changes are not covered by one shared project history.
 - The #688 screenshots show one ruler/time header and no old green zoom slider, +/- zoom row, “Klip 1/2” labels or timeline navigation arrows. This is screenshot-level confirmation on the API 35 emulator, not full interaction/device acceptance.
 
-## Single-pass filmstrip thumbnail pipeline — 2026-11-02 (source change; verification pending)
+## Sequential filmstrip thumbnail decoder — 2026-11-02 (source change; verification pending)
 
-- The previous two-pass experiment is withdrawn: the emulator logs showed that sync-frame previews still took about 1.5 seconds to appear and then delayed the exact pass. It doubled extraction work and did not meet the perceived-zero-wait goal.
-- The current path queues each requested cell's authoritative timestamp once. The bounded worker queue prioritizes samples nearest the playhead; duplicate requests from a rebuilt lane attach to the same in-flight decode.
-- Exact frames remain authoritative. A frame from a nearby sync timestamp is not displayed as though it represented another cell. Existing exact-frame cache reuse inside the cell's time interval remains enabled.
-- Debug timing now distinguishes queue wait, decode duration, and actual request-to-ImageView-ready time. The previous total timing stopped at decoder start and was not an end-to-end latency measure.
-- **Verification pending:** run targeted unit/build checks and the API 35 filmstrip flow. Compare first exact frame, time to populate all visible cells, distinct sample count, playhead/preview match, bidirectional scrub, and cache-hit behavior against the two-pass run. Do not claim a latency improvement until those measurements are available.
-- This is a measured simplification of the current extraction path, not yet the final sequential-decoder/cache architecture. Further device results determine whether a shared sequential decoder or persistent disk cache is required.
-- No version metadata changed. Keep versionCode 394 / Build 61; version 395 remains blocked until all release checks pass and the user authorizes release.
+- The two-pass sync-preview experiment was withdrawn. API 35 timings showed that it added a second decode per visible cell and still delayed the first provisional image.
+- Filmstrip thumbnails now use one persistent Media3 `FrameExtractor` for the current source URI. Media3's internal implementation manages a shared ExoPlayer and serializes extraction requests; the app now feeds it from a single bounded worker rather than maintaining two competing per-thread platform decoders.
+- Seek mode is explicitly `EXACT`. The existing `Presentation.createForHeight(288)` effect downscales during frame extraction; timestamped exact frames remain the authoritative cell images. `MediaMetadataRetriever` is retained only as a compatibility fallback if Media3 extraction fails.
+- Duplicate requests caused by a rebuilt timeline view attach to one in-flight request. Existing exact-frame cache reuse inside a cell's source-time interval remains enabled.
+- Diagnostics separately record queue wait, decode duration, request-to-ImageView assignment, and the actual presentation timestamp returned by Media3.
+- **Verification pending:** API 35 runtime checks must confirm actual returned timestamps, exact playhead/preview match, distinct visible samples, first-frame latency, full visible-strip fill time, bidirectional scrubbing, and fallback behavior. Compare measured results against the prior two-pass run; no speed improvement is claimed yet.
+- A persistent on-device disk cache and further sequential prefetch decisions remain dependent on measured first-load and reopen performance.
+- No version metadata changed. Keep versionCode 394 / Build 61. Version 395 remains blocked until the complete release checklist passes and the user authorizes release.
 
 ## Editing flow
 
