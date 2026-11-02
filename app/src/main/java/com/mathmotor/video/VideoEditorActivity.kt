@@ -5473,6 +5473,7 @@ class VideoEditorActivity : Activity() {
             updateOverlayControlLabels(overlay)
         } finally {
             updatingOverlayControls = false
+            updateOverlayTransformTouchAvailability()
         }
     }
 
