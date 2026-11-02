@@ -1,4 +1,15 @@
 # MathMotor Video
+## Active implementation checkpoint — 2026-11-02 (after latest user approval)
+
+**Current working head:** `3c2ee1eb459cca8ca34dc59a1a676ef872595b28` on the existing draft PR #18 branch. Main is unchanged. Installed/release baseline remains 394 / Build 61; version 395, signing, publishing and updater activation remain blocked.
+
+- **Clip reorder source change added, verification pending:** long-press + horizontal drag now calculates a drop position and requests an insertion reorder for the main video sequence. A successful reorder reflows the non-overlapping video clips sequentially; split pieces remain independent items. Four pure-math test cases cover insertion before/after, duration/source preservation, overlap rejection and gap-preserving no-op. The expected end-position assertion was corrected before validation.
+- **Overlap safety:** the reorder planner rejects any existing overlapping video ranges rather than silently flattening multi-layer timing. This is deliberate until main-video and overlay layers have separate explicit semantics.
+- **Fullscreen exit control:** the working branch moves the fullscreen exit affordance to the preview's top safe corner and returns it to the playback row on exit. This is a source change, not yet build- or phone-verified.
+- **Latest validation boundary:** commit `3c2ee1e` has no completed GitHub Actions run/check result at the time of this note. Earlier green checks for `c72542a` predate these changes and do not verify this head. No APK from this change set is verified or offered.
+- **Still open:** port and verify the provider poster / first-cell thumbnail and clip-cover picker improvements; implement real overlay image/video track, independent timing/transform, project persistence, preview and export; then run build/unit/emulator checks and phone acceptance. Existing PR #17 contains candidate poster/cover work, but its branch is divergent and is not bulk-merged into this branch.
+- Do not assume timeline text/audio layers automatically follow a reordered video clip: their current positions are absolute project time. Confirm intended attachment behavior and cover it with tests before changing it.
+- README and RESTORATION_STATUS are updated as a handoff checkpoint only; this does not mark pending behavior accepted.
 
 ## New editor layout target — CapCut-inspired mobile arrangement (2026-11-02)
 
