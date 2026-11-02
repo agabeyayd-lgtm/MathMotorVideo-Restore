@@ -22,12 +22,23 @@ This section supersedes older “pending” statements below where newer run evi
 - Current source audit confirms a real gap: Undo/Redo stores `ClipEditSnapshot` only and the visible actions are “Klip geri al/yinele”. Text and audio changes are not covered by one shared project history.
 - The #688 screenshots show one ruler/time header and no old green zoom slider, +/- zoom row, “Klip 1/2” labels or timeline navigation arrows. This is screenshot-level confirmation on the API 35 emulator, not full interaction/device acceptance.
 
-**Still not accepted:** trim-handle and clip-selection interactions; full timeline endpoint movement after zoom; text/audio lane editing and alignment across layers; text timing/size in the live preview and export; global Undo/Redo; two-or-more-clip edit/export; MP4 content/audio/duration checks; project save-close-reopen; thumbnail fill latency/cache reuse/black-placeholder behavior across portrait, landscape and square sources; keyboard and physical-phone use. Keep versionCode 394 / Build 61 and do not create version 395 until those release checks pass and the user authorizes it.
+## Sequential filmstrip thumbnail decoder — 2026-11-02 (source change; verification pending)
+- Latest PR #17 source is `d12a3088fb2c61eec0e3b49755e6bd55c1b52c02`. Verify #505 passed `testDebugUnitTest` and `assembleDebug`; APK build #504 passed and uploaded a debug artifact. Emulator #703 was cancelled immediately after Android 35 boot, before the app-launch script began; it produced no new app screenshots/log archive. This is infrastructure cancellation, not an app-test failure. These checks cover the draft branch only and do not change canonical mainline/release state.
+- API 35 evidence from emulator #699 on the immediately preceding source (`6972223`): provider poster ready in 1.626s; first exact timestamp frame assigned in 3.182s; all 19 distinct samples assigned by 5.977s. The prior sequential-only run filled 19 samples by 9.355s, so full-strip fill improved by about 36%. The `#699` job was cancelled during its final playback wait, after screenshots/log collection; it is not counted as a fully green emulator run. Forward/reverse scrub logs recorded preview updates at 667ms, 1500ms and 625ms. The latest source starts poster loading at URI selection to overlap metadata reads; its new timing is pending in #703.
 
-- The older `Timeline frame/zoom repair` notes below describe an interim implementation that was superseded by the approved editor baseline. They are historical context, not the current source-of-truth description.
-
-
-MathMotor Video is a local-first Android video editor with a CapCut-inspired workflow. Normal editing runs on-device; AI generation, AI scoring and paid cloud APIs are outside the current product scope.
+- The two-pass sync-preview experiment was withdrawn. API 35 timings showed that it added a second decode per visible cell and still delayed the first provisional image.
+- Filmstrip thumbnails now use one persistent Media3 `FrameExtractor` for the current source URI. Media3's internal implementation manages a shared ExoPlayer and serializes extraction requests; the app now feeds it from a single bounded worker rather than maintaining two competing per-thread platform decoders.
+- Seek mode is explicitly `EXACT`. The existing `Presentation.createForHeight(288)` effect downscales during frame extraction; timestamped exact frames remain the authoritative cell images. `MediaMetadataRetriever` is retained only as a compatibility fallback if Media3 extraction fails.
+- Duplicate requests caused by a rebuilt timeline view attach to one in-flight request. Existing exact-frame cache reuse inside a cell's source-time interval remains enabled.
+- Diagnostics separately record queue wait, decode duration, request-to-ImageView assignment, and the actual presentation timestamp returned by Media3.
+- **Verification pending:** API 35 runtime checks must confirm actual returned timestamps, exact playhead/preview match, distinct visible samples, first-frame latency, full visible-strip fill time, bidirectional scrubbing, and fallback behavior. Compare measured results against the prior two-pass run; no speed improvement is claimed yet.
+- The first clip cell now requests an Android document/media-provider poster asynchronously; it is a temporary cover for slot 0 only, and exact extraction replaces it. The poster is never repeated across the strip or treated as a timestamp-accurate frame.
+- The first cell also schedules a high-priority Media3 warmup for that cell's actual sample timestamp. The normal queued task rechecks the in-memory cache before decoding, avoiding a duplicate decode of the warmup frame.
+- Visible timestamp samples within half the centered timeline viewport are scheduled ahead of off-screen samples; off-screen filmstrip completion remains background work.
+- The poster path uses `ContentResolver.loadThumbnail` on API 29+ and a one-frame `MediaMetadataRetriever` fallback on older/unsupported providers. The timeline's exact-frame decoder and timestamp mapping remain authoritative.
+- No persistent disk cache is included yet; first-load and reopen measurements will decide whether it is needed.
+- **Verification pending:** measure poster-ready time, first exact-frame time, warmup decode time and full-strip fill time on API 35; verify the temporary cover is replaced, only slot 0 uses it, provider-failure fallback works, and portrait/landscape/square videos remain correctly aligned. A successful build alone will not close this item.
+- No version metadata changed. Keep versionCode 394 / Build 61. Version 395 remains blocked until the complete release checklist passes and the user authorizes release.
 
 ## Editing flow
 
@@ -265,3 +276,32 @@ Validation:
 - Main commit `102bdcd899b397dc439d1c2c3193b651e57fd6d6` now centralizes the actual 99dp gutter for timeline origin/end spacers and fit-to-project width. The strict 35ms preview/frame check remains unchanged. Unit geometry tests were updated in commit `3a6d6b474c6eb6cf24f8f0fb01a34601a1240653` to use the new header geometry.
 - Emulator run #687 is the first retest of the corrected mapping; its result must be green before accepting the fix. Verify build #484 is running the updated geometry tests. Neither result is yet a physical-phone acceptance.
 - Keep versionCode 394 / Build 61 as the user-approved baseline. Version 395 remains blocked; no replacement APK, signed release, or update is authorized by these changes alone.
+
+
+## 2026-11-02 — first-frame warmup restored and measured
+
+- Emulator run #722 passed on API 35. The restored one-worker, shared Media3 `FrameExtractor` path produced all 19 exact filmstrip timestamps. The first exact 211ms sample was prewarmed once and assigned from cache at **2,435ms**; the provider poster arrived at 489ms; the last of 19 exact thumbnails was ready at **4,058ms** from the initial sample request.
+- Compared with the historical 5,977ms full-strip measurement from commit `6972223`, this run is about **32.1% faster**. It is also faster than #713 (7,877ms), #718 platform-default selector (9,799ms), #709 MMR-first (9,595ms), and #712 two-worker MMR (9,694ms).
+- Correctness also passed: 19 distinct requested timestamps; centered 211ms filmstrip image matched the preview (maximum RGB channel delta 8); 4/4 checked visible thumbnails were distinct; forward and reverse filmstrip scrubs passed; live playback/timeline synchronization passed across 17 playing samples and two lanes.
+- The exact first-cell warmup and normal cell request share the same timestamp cache, so the exact first frame is decoded once. The poster is a temporary visual cover only; it is not copied to other cells or presented as an exact sample.
+- Keep one bounded worker and Media3's default `PREFER_SOFTWARE` selector. Reject two-worker decoding and `MediaCodecSelector.DEFAULT` for this path based on measured regressions. Do not loosen exact seek semantics or substitute arbitrary sync frames.
+- Verify Android build #524 and debug APK build #523 passed on the same branch head. Emulator #722 passed. This is API 35 emulator evidence, not a physical-phone acceptance test.
+- VersionCode 394 / Build 61 remains unchanged. PR #17 stays draft; no signed release or version 395 was created.
+
+
+## Timeline workspace sizing — 2026-11-02 (implementation added; verification pending)
+- Increased the central timeline card from 178dp to 210dp so the ruler and filmstrip have more vertical room. The preview remains flexible and yields the additional height.
+- Reduced the fixed left timeline header gutter from 99dp to 82dp to reclaim horizontal room for the clip strip while retaining the time label/control column.
+- These are layout changes only; no thumbnail decoding, timestamp mapping, or playback behavior was changed. Verify on the API 35 emulator and a physical phone that the timeline is visibly taller, the first/last clip cells remain reachable, and the preview/bottom dock are not clipped on short screens and with the keyboard open.
+- Keep versionCode 394 / Build 61. Do not create version 395 before the full release checklist and user authorization.
+
+
+## Clip cover picker + workspace sizing — 2026-11-02 (implementation added; validation pending)
+- Added a **Kapak** action to the selected-clip edit controls. It opens a frame picker limited to the clip's active trim range, previews the selected source timestamp, and stores `coverTimeMs` in the project JSON. Older version-1 project files without this optional field remain compatible.
+- Cover-time edits are part of the existing clip undo/redo snapshot. When later trimming excludes the selected cover timestamp, it is clamped back into the active clip range.
+- The selected cover can be saved as a separate JPEG in Pictures/MathMotor/Kapaklar. This sidecar image is the share/post cover; it is not inserted into the exported MP4 and never replaces timestamped filmstrip samples.
+- The first-cell provider poster remains a temporary visual placeholder only. It has no role in the chosen cover metadata and must not be reused as another timeline cell.
+- Central timeline card height is now 210dp (was 178dp); fixed left time/control gutter is 82dp (was 99dp). The preview remains flexible. Verify on short/tall screens that the filmstrip gains both vertical and horizontal room without clipping the preview, bottom dock, first/last clip cells, or keyboard workflows.
+- Emulator smoke flow now opens the Edit drawer, opens the cover picker, waits for a decoded cover preview, commits the selected frame, and checks that the selected state is retained. The filmstrip/preview alignment check now uses a streaming logcat capture and a best-effort dump fallback, so a final ADB log read cannot discard already-captured evidence.
+- Runs #724 and #526 were cancelled before their emulator/build validations completed. Do not count them as passing. Latest code and workflow changes require a fresh green emulator run and successful unit/debug build before acceptance. Physical-phone verification is still required.
+- Keep versionCode 394 / Build 61. Version 395 remains blocked; no signed release or replacement APK is authorized.

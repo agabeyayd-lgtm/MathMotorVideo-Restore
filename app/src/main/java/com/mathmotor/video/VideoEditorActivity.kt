@@ -13,6 +13,7 @@ import android.graphics.Typeface
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
+import android.os.CancellationSignal
 import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
@@ -88,7 +89,9 @@ class VideoEditorActivity : Activity() {
         var transformRotationDegrees: Float = 0f,
         var transformTranslateX: Float = 0f,
         var transformTranslateY: Float = 0f,
-        var frameRate: Double? = null
+        var frameRate: Double? = null,
+        // Source timestamp for the selected clip cover, independent of filmstrip samples.
+        var coverTimeMs: Long? = null
     )
 
     private data class ClipEditSnapshot(
@@ -285,6 +288,15 @@ class VideoEditorActivity : Activity() {
     private val timelineThumbnailCache = object : android.util.LruCache<String, Bitmap>(16 * 1024 * 1024) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount.coerceAtLeast(1)
     }
+    // A provider-generated poster is a temporary first-cell placeholder only. It is
+    // never copied across the filmstrip or reported as an exact timestamp sample.
+    private val timelinePosterCache = object : android.util.LruCache<String, Bitmap>(4 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount.coerceAtLeast(1)
+    }
+    private val pendingTimelinePosterTargets = mutableMapOf<String, MutableList<WeakReference<ImageView>>>()
+    private val pendingTimelinePosterLoads = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val timelinePosterExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
+    private val timelineThumbnailWarmupKeys = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private val pendingTimelineThumbnails = mutableMapOf<String, MutableList<WeakReference<ImageView>>>()
     // Learned from the actual decoded frame, so imported and restored clips share
     // the same aspect-ratio-aware filmstrip path without blocking the UI for metadata.
@@ -295,25 +307,32 @@ class VideoEditorActivity : Activity() {
     private class TimelineThumbnailTask(
         private val distanceFromPlayheadMs: Long,
         private val sequence: Long,
+        private val priorityPhase: Int = 1,
         private val work: () -> Unit
     ) : Runnable, Comparable<TimelineThumbnailTask> {
         override fun compareTo(other: TimelineThumbnailTask): Int {
-            val priority = distanceFromPlayheadMs.compareTo(other.distanceFromPlayheadMs)
-            return if (priority != 0) priority else sequence.compareTo(other.sequence)
+            // Lower phase values run first. Preview stills and the first exact cell
+            // outrank the remaining visible samples; those are nearest-playhead first.
+            val phaseOrder = priorityPhase.compareTo(other.priorityPhase)
+            if (phaseOrder != 0) return phaseOrder
+            val distanceOrder = distanceFromPlayheadMs.compareTo(other.distanceFromPlayheadMs)
+            return if (distanceOrder != 0) distanceOrder else sequence.compareTo(other.sequence)
         }
         override fun run() = work()
     }
     private val timelineThumbnailTaskSequence = java.util.concurrent.atomic.AtomicLong()
-    // Two isolated decoder workers overlap independent frame extraction. Each worker
-    // owns its own MediaMetadataRetriever; priority still favours frames nearest playhead.
+    // One decoder session handles ordered timestamp requests. Concurrent platform
+    // retrievers contended on the tested Android emulator and made each seek slower.
     private val timelineThumbnailWorkerSequence = java.util.concurrent.atomic.AtomicLong()
     private val timelineThumbnailRetrievers =
         java.util.concurrent.ConcurrentHashMap<Long, Pair<Uri, MediaMetadataRetriever>>()
     private val timelineThumbnailExtractors =
         java.util.concurrent.ConcurrentHashMap<Long, Pair<Uri, FrameExtractor>>()
+    // A hardware-selector failure switches only this source to the conservative
+    // software selector for the rest of the editor session.
     private val timelineThumbnailExecutor = java.util.concurrent.ThreadPoolExecutor(
-        2,
-        2,
+        1,
+        1,
         0L,
         java.util.concurrent.TimeUnit.MILLISECONDS,
         java.util.concurrent.PriorityBlockingQueue<Runnable>(
@@ -383,6 +402,7 @@ class VideoEditorActivity : Activity() {
     private var activeEditorPanel: String? = null
     private var textOverlayEditingEnabled: Boolean = false
     private lateinit var selectedClipLabel: TextView
+    private var clipCoverButton: Button? = null
     private lateinit var startLabel: TextView
     private lateinit var endLabel: TextView
     private lateinit var startSeek: SeekBar
@@ -806,15 +826,21 @@ class VideoEditorActivity : Activity() {
         // The track rows scroll horizontally; the editor shell keeps its own height.
         root.addView(timelineCard, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(178)
+            // Give the central timeline more vertical room for the ruler and
+            // thumbnail strip; the preview remains flexible and yields this space.
+            dp(144)
         ))
         root.addView(gap(8))
 
         val clipPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         selectedClipLabel = label("Önce bir video seç.", 12f, Color.WHITE, true)
         val clipActions1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        clipCoverButton = miniButton("Kapak") { showClipCoverPicker() }.apply {
+            contentDescription = "Seçili klibin kapak karesini seç"
+        }
+        clipActions1.addView(clipCoverButton, LinearLayout.LayoutParams(0, dp(46), 1f))
         clipActions1.addView(miniButton("Önizle") { previewSelectedClip() },
-            LinearLayout.LayoutParams(0, dp(46), 1f))
+            LinearLayout.LayoutParams(0, dp(46), 1f).apply { leftMargin = dp(3) })
         clipActions1.addView(miniButton("Kopyala") {
             if (selectedClipIndex in clips.indices) {
                 duplicateClipAt(selectedClipIndex)
@@ -1720,7 +1746,9 @@ class VideoEditorActivity : Activity() {
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(3), dp(1), dp(3), dp(1))
+                // The 82dp header already accounts for the full horizontal gutter.
+                // No extra leading inset: it shifted the shared time-zero origin by 3px.
+                setPadding(0, dp(1), dp(3), dp(1))
                 this.tag = if (reorderable) laneKey else "__ruler__"
                 isClickable = true
                 setOnClickListener { clearTimelineClipSelection() }
@@ -1740,10 +1768,9 @@ class VideoEditorActivity : Activity() {
                 } else tag
             }
             if (reorderable) {
-                row.addView(grip, LinearLayout.LayoutParams(dp(54), ViewGroup.LayoutParams.MATCH_PARENT))
-                // Reserve the rest of the shared 96dp header so every media lane
-                // begins at exactly the same x-coordinate as the ruler ticks.
-                row.addView(View(this), LinearLayout.LayoutParams(dp(42), ViewGroup.LayoutParams.MATCH_PARENT))
+                row.addView(grip, LinearLayout.LayoutParams(dp(44), ViewGroup.LayoutParams.MATCH_PARENT))
+                // Match the shared 82dp header geometry used by the ruler origin math.
+                row.addView(View(this), LinearLayout.LayoutParams(dp(38), ViewGroup.LayoutParams.MATCH_PARENT))
             if (reorderable && tag == "Video") {
                 grip.contentDescription = if (keepSourceAudio.isChecked) {
                     "Video sesini kapat"
@@ -1758,8 +1785,8 @@ class VideoEditorActivity : Activity() {
                 }
             }
             } else {
-                // The current/total time readout shares this fixed header cell
-                // with the ruler row; media lanes reserve the same 96dp width.
+                // The current/total time readout shares the same 82dp header width
+                // reserved by the video/audio/text lane rows.
                 row.addView(FrameLayout(this).apply {
                     contentDescription = "Zaman cetveli başlığı ve oynatma süresi"
                     // refreshTimelineTracks() can run again after the responsive layout
@@ -1775,7 +1802,7 @@ class VideoEditorActivity : Activity() {
                             ViewGroup.LayoutParams.MATCH_PARENT
                         )
                     )
-                }, LinearLayout.LayoutParams(dp(96), ViewGroup.LayoutParams.MATCH_PARENT))
+                }, LinearLayout.LayoutParams(dp(82), ViewGroup.LayoutParams.MATCH_PARENT))
             }
 
             if (reorderable) {
@@ -2409,7 +2436,7 @@ class VideoEditorActivity : Activity() {
             addSoundEffectTimelineBlock(effectTrack, totalMs)
             addSpacer(effectTrack, endMs, totalMs)
         }
-        // All lane origins are offset from the 57dp label/grip gutter so time zero
+        // All lane origins are offset from the 82dp header gutter so time zero
         // lands on the full timeline/Play center, not the center of the smaller
         // scroll viewport to the right of that gutter. This keeps ruler, filmstrip
         // and the stationary playhead on one vertical axis.
@@ -2478,8 +2505,8 @@ class VideoEditorActivity : Activity() {
         (timelineTracksFrame.parent?.parent as? LinearLayout)?.let { card ->
             val desiredHeight = TimelineLayoutMath.contentSizedCardHeightPx(
                 laneContentHeightPx = laneContentHeight,
-                timeRowHeightPx = dp(26),
-                verticalPaddingPx = dp(6),
+                timeRowHeightPx = dp(28),
+                verticalPaddingPx = dp(8),
                 minimumHeightPx = if (keyboardLayoutActive) dp(88) else dp(96),
                 maximumHeightPx = if (keyboardLayoutActive) dp(154) else dp(280)
             )
@@ -2990,7 +3017,7 @@ class VideoEditorActivity : Activity() {
     private fun updateTimelinePlayheadLine() {
         if (!::timelinePlayheadLine.isInitialized || !::timelineTracksFrame.isInitialized) return
         // Match the Play control's center in the full editor content area. Do not
-        // center relative to the narrower scroll viewport after its 57dp grip gutter.
+        // center relative to the narrower scroll viewport after its 82dp header gutter.
         val centerX = timelineTracksFrame.width / 2
         timelinePlayheadLine.visibility = View.VISIBLE
         val params = timelinePlayheadLine.layoutParams as? FrameLayout.LayoutParams ?: return
@@ -3165,11 +3192,11 @@ class VideoEditorActivity : Activity() {
     }
 
     /**
-     * Horizontal space consumed before a lane's scrolling content: the 96dp
-     * ruler/media header plus the row's 3dp leading inset. Keep this in sync
+     * Horizontal space consumed before a lane's scrolling content: the 82dp
+     * ruler/media header. Lane rows have no extra leading inset; keep this in sync
      * with makeLane(), otherwise the fixed playhead maps to the wrong project time.
      */
-    private fun timelineHeaderGutterWidthPx(): Int = dp(99)
+    private fun timelineHeaderGutterWidthPx(): Int = dp(82)
 
     /** Width of the leading blank time-zero spacer inside each horizontally scrolling lane. */
     private fun timelineFrameWidth(viewportWidth: Int): Int {
@@ -4347,6 +4374,9 @@ class VideoEditorActivity : Activity() {
         try {
             contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
         } catch (_: Exception) { }
+        // Start the cheap temporary cover as soon as the selected URI is known,
+        // overlapping provider work with duration/name metadata reads.
+        requestTimelinePoster(uri)
         status.text = "Video bilgileri okunuyor…"
         Thread {
             var sourceFrameRate: Double? = null
@@ -4395,12 +4425,12 @@ class VideoEditorActivity : Activity() {
                 player?.prepare()
                 // Keep the imported clip paused so the user can align the initial frame, ruler and fixed playhead.
                 player?.playWhenReady = false
-                refreshTimelineAfterClipChange()
                 loadTrimControls()
-                refreshTimelineTracks()
-                // Show the actual frame beneath the fixed playhead immediately,
-                // even while the single-clip player is still preparing.
+                // Queue the preview still before the first track rebuild. The
+                // helper below refreshes the tracks itself; calling it first used
+                // to start the cold filmstrip decoder before the preview was queued.
                 requestPreviewFrameAt(timelinePlayheadMs)
+                refreshTimelineAfterClipChange()
                 // A debug-only signal lets CI verify clip import even when the
                 // emulator accessibility tree cannot be captured reliably.
                 if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) android.util.Log.i(
@@ -4473,6 +4503,7 @@ class VideoEditorActivity : Activity() {
                 put("transformRotationDegrees", clip.transformRotationDegrees)
                 put("transformTranslateX", clip.transformTranslateX)
                 put("transformTranslateY", clip.transformTranslateY)
+                put("coverTimeMs", clip.coverTimeMs ?: JSONObject.NULL)
             })
         }
         return JSONObject().apply {
@@ -4555,7 +4586,10 @@ class VideoEditorActivity : Activity() {
                 transformScale = item.optDouble("transformScale", 1.0).toFloat(),
                 transformRotationDegrees = item.optDouble("transformRotationDegrees", 0.0).toFloat(),
                 transformTranslateX = item.optDouble("transformTranslateX", 0.0).toFloat(),
-                transformTranslateY = item.optDouble("transformTranslateY", 0.0).toFloat()
+                transformTranslateY = item.optDouble("transformTranslateY", 0.0).toFloat(),
+                coverTimeMs = if (item.has("coverTimeMs") && !item.isNull("coverTimeMs")) {
+                    item.optLong("coverTimeMs", start).coerceIn(start, (end - 1L).coerceAtLeast(start))
+                } else null
             )
             normalizeClipTransform(loadedClip)
             loadedClips.add(loadedClip)
@@ -4899,6 +4933,9 @@ class VideoEditorActivity : Activity() {
 
     private fun addClipsInOrder(uris: List<Uri>, replaceExisting: Boolean) {
         if (uris.isEmpty()) return
+        // The first imported clip is the initially visible lane; request its
+        // temporary poster while metadata for the selected clips is being read.
+        requestTimelinePoster(uris.first())
         status.text = "Seçilen ${uris.size} video sırayla hazırlanıyor…"
         Thread {
             val ready = uris.mapNotNull { uri ->
@@ -5310,7 +5347,8 @@ class VideoEditorActivity : Activity() {
                 image,
                 priorityDistanceMs,
                 cellStartMs,
-                cellEndMs
+                cellEndMs,
+                usePosterPlaceholder = slot == 0
             )
         }
         container.addView(filmstrip, FrameLayout.LayoutParams(
@@ -5471,6 +5509,151 @@ class VideoEditorActivity : Activity() {
         }
     }
 
+    private fun requestTimelinePoster(uri: Uri) {
+        val cacheKey = uri.toString()
+        val cached = timelinePosterCache.get(cacheKey)
+        if (cached != null && !cached.isRecycled) return
+        if (!pendingTimelinePosterLoads.add(cacheKey)) return
+
+        val queuedAt = SystemClock.uptimeMillis()
+        try {
+            timelinePosterExecutor.execute {
+                val startedAt = SystemClock.uptimeMillis()
+                val poster = runCatching { decodeTimelinePoster(uri) }.getOrNull()
+                val decodeMs = SystemClock.uptimeMillis() - startedAt
+                val readyMs = SystemClock.uptimeMillis() - queuedAt
+                runOnUiThread {
+                    pendingTimelinePosterLoads.remove(cacheKey)
+                    if (isFinishing || isDestroyed) {
+                        poster?.let { if (!it.isRecycled) it.recycle() }
+                        pendingTimelinePosterTargets.remove(cacheKey)
+                        return@runOnUiThread
+                    }
+                    if (poster == null || poster.isRecycled) {
+                        pendingTimelinePosterTargets.remove(cacheKey)
+                        if (timelineSyncTestEnabled) android.util.Log.w(
+                            "TimelineFrameSyncTest",
+                            "TIMELINE_POSTER_UNAVAILABLE uri=$cacheKey queueMs=${startedAt - queuedAt} decodeMs=$decodeMs readyMs=$readyMs"
+                        )
+                        return@runOnUiThread
+                    }
+                    timelinePosterCache.put(cacheKey, poster)
+                    pendingTimelinePosterTargets.remove(cacheKey).orEmpty().forEach { reference ->
+                        val target = reference.get() ?: return@forEach
+                        val targetKey = target.tag?.toString() ?: return@forEach
+                        // An exact frame may have arrived while the OS poster was loading.
+                        if (targetKey.startsWith("$cacheKey#") && target.drawable == null) {
+                            target.setImageBitmap(poster)
+                            target.contentDescription = "Klip kapak karesi (geçici)"
+                        }
+                    }
+                    if (timelineSyncTestEnabled) android.util.Log.i(
+                        "TimelineFrameSyncTest",
+                        "TIMELINE_POSTER_READY queueMs=${startedAt - queuedAt} decodeMs=$decodeMs readyMs=$readyMs width=${poster.width} height=${poster.height}"
+                    )
+                }
+            }
+        } catch (_: java.util.concurrent.RejectedExecutionException) {
+            pendingTimelinePosterLoads.remove(cacheKey)
+        }
+    }
+
+    private fun decodeTimelinePoster(uri: Uri): Bitmap? {
+        // Android's document/media provider can return its cached representative
+        // thumbnail without starting the editor's full timestamp decoder.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val providerPoster = runCatching {
+                contentResolver.loadThumbnail(
+                    uri,
+                    android.util.Size(dp(162), dp(96)),
+                    CancellationSignal()
+                )
+            }.getOrNull()
+            if (providerPoster != null) return providerPoster
+        }
+
+        // Older providers get a single low-priority cover fallback. This bitmap is
+        // used only as a visibly temporary first-cell cover, never as exact filmstrip data.
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(this, uri)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                retriever.getScaledFrameAtTime(
+                    0L,
+                    MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                    dp(162).coerceAtLeast(1),
+                    dp(288).coerceAtLeast(1)
+                )
+            } else {
+                retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+            }
+        } catch (error: Exception) {
+            android.util.Log.w("TimelineThumbnail", "Could not load temporary poster for $uri", error)
+            null
+        } finally {
+            runCatching { retriever.release() }
+        }
+    }
+
+    private fun scheduleTimelineThumbnailWarmup(uri: Uri, timeMs: Long) {
+        val timestampMs = timeMs.coerceAtLeast(0L)
+        val key = "$uri#$timestampMs"
+        val cached = timelineThumbnailCache.get(key)
+        if (cached != null && !cached.isRecycled) return
+        if (!timelineThumbnailWarmupKeys.add(key)) return
+
+        val task = TimelineThumbnailTask(
+            0L,
+            timelineThumbnailTaskSequence.incrementAndGet(),
+            priorityPhase = 0
+        ) {
+            val startedAt = SystemClock.uptimeMillis()
+            val result = runCatching {
+                // The first request can pay Media3's cold decoder startup cost.
+                // Bound only this warmup; if it stalls, the exact-time MMR fallback
+                // supplies the first cell and later samples retain the shared fast extractor.
+                decodeTimelineFrame(uri, timestampMs, media3WaitMs = 2_500L)?.let(::scaleTimelineThumbnailFrame)
+            }.onFailure { error ->
+                android.util.Log.w(
+                    "TimelineThumbnail",
+                    "Initial decoder warmup failed for $uri at ${timestampMs}ms",
+                    error
+                )
+            }.getOrNull()
+            val decodeMs = SystemClock.uptimeMillis() - startedAt
+            if (result != null && !result.isRecycled && !isFinishing && !isDestroyed) {
+                // Cache the same timestamp requested by the first cell. Its normal
+                // queued task checks this cache again, so the warmup is not decoded twice.
+                timelineThumbnailCache.put(key, result)
+                val aspectRatio = result.width.toFloat() / result.height.coerceAtLeast(1).toFloat()
+                val previousAspectRatio = timelineVideoAspectRatios.putIfAbsent(uri.toString(), aspectRatio)
+                if (previousAspectRatio == null &&
+                    kotlin.math.abs(aspectRatio - TimelineThumbnailMath.DEFAULT_SOURCE_ASPECT_RATIO) > 0.02f
+                ) {
+                    runOnUiThread {
+                        if (!isFinishing && !isDestroyed) refreshTimelineTracks()
+                    }
+                }
+                if (timelineSyncTestEnabled) android.util.Log.i(
+                    "TimelineFrameSyncTest",
+                    "TIMELINE_THUMBNAIL_PREWARM_READY sourceMs=$timestampMs decodeMs=$decodeMs width=${result.width} height=${result.height}"
+                )
+            } else {
+                timelineThumbnailWarmupKeys.remove(key)
+                result?.let { if (!it.isRecycled) it.recycle() }
+                if (timelineSyncTestEnabled) android.util.Log.w(
+                    "TimelineFrameSyncTest",
+                    "TIMELINE_THUMBNAIL_PREWARM_FAILED sourceMs=$timestampMs decodeMs=$decodeMs"
+                )
+            }
+        }
+        try {
+            timelineThumbnailExecutor.execute(task)
+        } catch (_: java.util.concurrent.RejectedExecutionException) {
+            timelineThumbnailWarmupKeys.remove(key)
+        }
+    }
+
     private fun timelineThumbnailExtractorFor(uri: Uri): FrameExtractor? {
         val threadId = Thread.currentThread().id
         val current = timelineThumbnailExtractors[threadId]
@@ -5481,6 +5664,7 @@ class VideoEditorActivity : Activity() {
         }
         return try {
             FrameExtractor.Builder(this, MediaItem.fromUri(uri))
+                .setSeekParameters(androidx.media3.exoplayer.SeekParameters.EXACT)
                 .setEffects(listOf(Presentation.createForHeight(288)))
                 .build()
                 .also { timelineThumbnailExtractors[threadId] = uri to it }
@@ -5589,10 +5773,13 @@ class VideoEditorActivity : Activity() {
 
         val task = TimelineThumbnailTask(
             -1L,
-            timelineThumbnailTaskSequence.incrementAndGet()
+            timelineThumbnailTaskSequence.incrementAndGet(),
+            priorityPhase = 0
         ) {
             if (requestId != previewFrameRequestGeneration.get()) return@TimelineThumbnailTask
-            val decoded = decodeTimelinePreviewFrame(clip.uri, sourceTimeMs)
+            // A phone preview does not need the source's full 1440px frame.
+            // Keep cover-picker decoding at its higher default resolution.
+            val decoded = decodeTimelinePreviewFrame(clip.uri, sourceTimeMs, maxSide = 1080)
             runOnUiThread {
                 if (requestId != previewFrameRequestGeneration.get() || isFinishing || isDestroyed) {
                     decoded?.let { if (!it.isRecycled) it.recycle() }
@@ -5641,7 +5828,12 @@ class VideoEditorActivity : Activity() {
     }
 
     /** Uses the same source URI and project-to-source timestamp mapping as the filmstrip. */
-    private fun decodeTimelinePreviewFrame(uri: Uri, timeMs: Long): Bitmap? {
+    private fun decodeTimelinePreviewFrame(
+        uri: Uri,
+        timeMs: Long,
+        maxSide: Int = 1440
+    ): Bitmap? {
+        val requestedMaxSide = maxSide.coerceIn(360, 1920)
         val frameTimeUs = timeMs.coerceAtLeast(0L) * 1000L
         val retriever = timelineThumbnailRetrieverFor(uri, "TimelinePreviewFrame")
 
@@ -5651,8 +5843,8 @@ class VideoEditorActivity : Activity() {
                     active.getScaledFrameAtTime(
                         frameTimeUs,
                         MediaMetadataRetriever.OPTION_CLOSEST,
-                        1440,
-                        1440
+                        requestedMaxSide,
+                        requestedMaxSide
                     )
                 }.getOrNull()
             } else {
@@ -5679,11 +5871,10 @@ class VideoEditorActivity : Activity() {
             runCatching { extractor?.close() }
         }
         return decoded?.let { original ->
-            val maxSide = 1440
             val largest = maxOf(original.width, original.height)
-            if (largest <= maxSide) original
+            if (largest <= requestedMaxSide) original
             else {
-                val scale = maxSide.toFloat() / largest.toFloat()
+                val scale = requestedMaxSide.toFloat() / largest.toFloat()
                 val scaled = Bitmap.createScaledBitmap(
                     original,
                     (original.width * scale).toInt().coerceAtLeast(1),
@@ -5696,41 +5887,161 @@ class VideoEditorActivity : Activity() {
         }
     }
 
-    private fun decodeTimelineFrame(uri: Uri, timeMs: Long): Bitmap? {
-        val frameTimeUs = timeMs.coerceAtLeast(0L) * 1000L
-        val retriever = timelineThumbnailRetrieverFor(uri, "TimelineThumbnail")
+    private fun decodeTimelineFrame(
+        uri: Uri,
+        timeMs: Long,
+        media3WaitMs: Long = 5_000L
+    ): Bitmap? {
+        // Reuse one prepared Media3 extraction session for the sequential filmstrip
+        // samples. This was the faster measured path on the API 35 emulator; keep
+        // one bounded worker so decoder seeks do not contend with each other.
+        val extractor = timelineThumbnailExtractorFor(uri)
+        if (extractor != null) {
+            var frameFuture: java.util.concurrent.Future<FrameExtractor.Frame>? = null
+            try {
+                val startedAt = SystemClock.uptimeMillis()
+                val future = extractor.getFrame(timeMs.coerceAtLeast(0L))
+                frameFuture = future
+                val frame = future.get(media3WaitMs.coerceAtLeast(1L), TimeUnit.MILLISECONDS)
+                if (timelineSyncTestEnabled) android.util.Log.i(
+                    "TimelineFrameSyncTest",
+                    "TIMELINE_THUMBNAIL_DECODED requestedMs=$timeMs actualFrameMs=${frame.presentationTimeMs} decoder=media3-shared worker=${Thread.currentThread().id} decodeMs=${SystemClock.uptimeMillis() - startedAt}"
+                )
+                return frame.bitmap
+            } catch (error: Exception) {
+                frameFuture?.cancel(true)
+                android.util.Log.w(
+                    "TimelineThumbnail",
+                    "Shared Media3 frame extraction failed for $uri at ${timeMs}ms; trying platform fallback",
+                    error
+                )
+            }
+        }
 
-        val platformFrame = retriever?.let { activeRetriever ->
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                runCatching {
-                    activeRetriever.getScaledFrameAtTime(
-                        frameTimeUs,
-                        MediaMetadataRetriever.OPTION_CLOSEST,
-                        162,
-                        288
-                    )
-                }.getOrNull()
-            } else {
-                null
-            } ?: runCatching {
-                activeRetriever.getFrameAtTime(frameTimeUs, MediaMetadataRetriever.OPTION_CLOSEST)
+        // Compatibility fallback for providers/codecs not handled by Media3.
+        val frameTimeUs = timeMs.coerceAtLeast(0L) * 1000L
+        val retriever = timelineThumbnailRetrieverFor(uri, "TimelineThumbnail") ?: return null
+        val startedAt = SystemClock.uptimeMillis()
+        val frame = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            runCatching {
+                retriever.getScaledFrameAtTime(
+                    frameTimeUs,
+                    MediaMetadataRetriever.OPTION_CLOSEST,
+                    162,
+                    288
+                )
+            }.getOrNull()
+        } else {
+            runCatching {
+                retriever.getFrameAtTime(frameTimeUs, MediaMetadataRetriever.OPTION_CLOSEST)
             }.getOrNull()
         }
-        if (platformFrame != null) return platformFrame
-
-        // Reuse one Media3 extractor per decoder worker and source URI. Building
-        // and closing an extractor for every cell made fallback decoding needlessly slow.
-        val extractor = timelineThumbnailExtractorFor(uri) ?: return null
-        var frameFuture: java.util.concurrent.Future<FrameExtractor.Frame>? = null
-        return try {
-            val future = extractor.getFrame(timeMs.coerceAtLeast(0L))
-            frameFuture = future
-            future.get(2500L, TimeUnit.MILLISECONDS).bitmap
-        } catch (error: Exception) {
-            frameFuture?.cancel(true)
-            android.util.Log.w("TimelineThumbnail", "No frame decoded for $uri at ${timeMs}ms", error)
-            null
+        if (timelineSyncTestEnabled && frame != null) android.util.Log.i(
+            "TimelineFrameSyncTest",
+            "TIMELINE_THUMBNAIL_DECODED requestedMs=$timeMs decoder=platform-mmr-fallback worker=${Thread.currentThread().id} decodeMs=${SystemClock.uptimeMillis() - startedAt}"
+        )
+        return frame
+    }
+    private fun scaleTimelineThumbnailFrame(original: Bitmap): Bitmap {
+        val (thumbnailWidth, thumbnailHeight) = TimelineThumbnailMath.fitDimensions(
+            original.width,
+            original.height,
+            162,
+            288
+        )
+        return if (original.width == thumbnailWidth && original.height == thumbnailHeight) {
+            original
+        } else {
+            Bitmap.createScaledBitmap(
+                original,
+                thumbnailWidth,
+                thumbnailHeight,
+                true
+            ).also { if (!original.isRecycled) original.recycle() }
         }
+    }
+
+    private fun queueExactTimelineThumbnail(
+        uri: Uri,
+        timestampMs: Long,
+        key: String,
+        priorityDistanceMs: Long,
+        requestStartedAt: Long,
+        priorityPhase: Int
+    ) {
+        if (!pendingTimelineThumbnails.containsKey(key)) return
+        val exactQueuedAt = SystemClock.uptimeMillis()
+        // The first exact cell is phase 0; other visible cells are phase 1;
+        // off-screen cells are phase 2. Within each phase, decode nearest the playhead.
+        val exactTask = TimelineThumbnailTask(
+            priorityDistanceMs.coerceAtLeast(0L),
+            timelineThumbnailTaskSequence.incrementAndGet(),
+            priorityPhase = priorityPhase
+        ) {
+            val cachedAtExecution = timelineThumbnailCache.get(key)?.takeUnless { it.isRecycled }
+            val decodeStartedAt = SystemClock.uptimeMillis()
+            val result = cachedAtExecution ?: runCatching {
+                decodeTimelineFrame(uri, timestampMs)?.let(::scaleTimelineThumbnailFrame)
+            }.onFailure { error ->
+                android.util.Log.w(
+                    "TimelineThumbnail",
+                    "Thumbnail creation failed for $uri at ${timestampMs}ms",
+                    error
+                )
+            }.getOrNull()
+            val decodeDurationMs = if (cachedAtExecution != null) 0L else SystemClock.uptimeMillis() - decodeStartedAt
+            runOnUiThread {
+                val targets = pendingTimelineThumbnails.remove(key).orEmpty()
+                if (result != null && !result.isRecycled && !isFinishing && !isDestroyed) {
+                    if (cachedAtExecution == null) timelineThumbnailCache.put(key, result)
+                    val decodedAspectRatio = result.width.toFloat() / result.height.coerceAtLeast(1).toFloat()
+                    val previousAspectRatio = timelineVideoAspectRatios.putIfAbsent(uri.toString(), decodedAspectRatio)
+                    if (previousAspectRatio == null &&
+                        kotlin.math.abs(decodedAspectRatio - TimelineThumbnailMath.DEFAULT_SOURCE_ASPECT_RATIO) > 0.02f
+                    ) {
+                        // First decoded frame reveals the source's real orientation/ratio.
+                        // Rebuild once with aspect-aware cell widths; the exact frame stays cached.
+                        refreshTimelineTracks()
+                    }
+                    targets.forEach { ref ->
+                        val image = ref.get()
+                        if (image != null && image.tag == key) {
+                            image.setImageBitmap(result)
+                            image.contentDescription = "Klip karesi @${timestampMs}ms"
+                        }
+                    }
+                    val imageReadyAt = SystemClock.uptimeMillis()
+                    if (timelineSyncTestEnabled) android.util.Log.i(
+                        "TimelineFrameSyncTest",
+                        "TIMELINE_THUMBNAIL_READY sourceMs=$timestampMs width=${result.width} height=${result.height} cached=${cachedAtExecution != null} queueMs=${decodeStartedAt - exactQueuedAt} decodeMs=$decodeDurationMs readyMs=${imageReadyAt - requestStartedAt}"
+                    )
+                } else {
+                    result?.let { if (!it.isRecycled) it.recycle() }
+                    // No approximate timestamp is passed off as the requested frame.
+                    targets.forEach { ref ->
+                        val image = ref.get()
+                        if (image != null && image.tag == key && image.drawable == null) {
+                            image.setBackgroundColor(Color.TRANSPARENT)
+                        }
+                    }
+                }
+            }
+        }
+        try {
+            timelineThumbnailExecutor.execute(exactTask)
+        } catch (_: java.util.concurrent.RejectedExecutionException) {
+            pendingTimelineThumbnails.remove(key)
+        }
+    }
+
+    private fun timelineThumbnailVisibleWindowMs(): Long {
+        // The playhead is centered in the viewport. Decode the portion visible around
+        // it first, then allow queued off-screen samples to fill the rest of the clip.
+        val viewportWidth = timelineScrollViews.firstOrNull()?.width?.takeIf { it > 0 }
+            ?: timelineTracksFrame.width.takeIf { it > 0 }
+            ?: dp(320)
+        val halfViewportMs = (viewportWidth / 2f / timelinePixelsPerSecond().coerceAtLeast(1f) * 1000f).toLong()
+        return halfViewportMs.coerceAtLeast(500L)
     }
 
     private fun requestTimelineThumbnail(
@@ -5739,11 +6050,14 @@ class VideoEditorActivity : Activity() {
         target: ImageView,
         priorityDistanceMs: Long = kotlin.math.abs(timeMs - timelinePlayheadMs),
         cellStartMs: Long = timeMs,
-        cellEndMs: Long = timeMs + 1L
+        cellEndMs: Long = timeMs + 1L,
+        usePosterPlaceholder: Boolean = false
     ) {
+        val requestStartedAt = SystemClock.uptimeMillis()
         val timestampMs = timeMs.coerceAtLeast(0L)
         val key = "${uri}#${timestampMs}"
         target.tag = key
+
         val cached = timelineThumbnailCache.get(key)
         if (cached != null && !cached.isRecycled) {
             target.setImageBitmap(cached)
@@ -5754,10 +6068,22 @@ class VideoEditorActivity : Activity() {
             return
         }
 
-        // When zooming out, a newly widened cell often contains a frame that was
-        // already decoded at the previous zoom level. Reuse that in-range bitmap
-        // immediately instead of decoding the same section of the source again.
-        // Keep the cell nearest the playhead exact so preview/filmstrip sync wins.
+        val primeFirstCell = usePosterPlaceholder &&
+            priorityDistanceMs <= timelineThumbnailVisibleWindowMs()
+        if (primeFirstCell) {
+            requestTimelinePoster(uri)
+            val poster = timelinePosterCache.get(uri.toString())
+            if (poster != null && !poster.isRecycled) {
+                target.setImageBitmap(poster)
+                target.contentDescription = "Klip kapak karesi (geçici)"
+            } else {
+                pendingTimelinePosterTargets.getOrPut(uri.toString()) { mutableListOf() }
+                    .add(WeakReference(target))
+            }
+        }
+
+        // On zoom-out, a correct exact frame already inside this cell's time interval
+        // may be reused. A merely-near sync frame is never treated as this cell's image.
         if (priorityDistanceMs > 150L && cellEndMs > cellStartMs) {
             val prefix = "${uri}#"
             val reusable = timelineThumbnailCache.snapshot().entries.mapNotNull { entry ->
@@ -5778,98 +6104,36 @@ class VideoEditorActivity : Activity() {
                 return
             }
         }
-        // Leave the cell neutral black until its own exact sample is decoded.
-        // Reusing a nearby timestamp here made stale/partial frames look current.
+
+        // Warm the first exact cell before its normal request. The separate task
+        // fills the shared timestamp cache; the normal queued task reuses that bitmap.
+        if (primeFirstCell) scheduleTimelineThumbnailWarmup(uri, timestampMs)
+        // Rebuilt lane views can request the same timestamp while its frame is pending.
+        // Share one in-flight request and attach the new ImageView instead of decoding twice.
         val waiting = pendingTimelineThumbnails[key]
         if (waiting != null) {
             waiting.add(WeakReference(target))
             return
         }
         pendingTimelineThumbnails[key] = mutableListOf(WeakReference(target))
-        val task = TimelineThumbnailTask(
-            priorityDistanceMs.coerceAtLeast(0L),
-            timelineThumbnailTaskSequence.incrementAndGet()
-        ) {
-            var decoded: Bitmap? = null
-            try {
-                val original = decodeTimelineFrame(uri, timestampMs)
-                if (original != null && !original.isRecycled &&
-                    original.width > 0 && original.height > 0
-                ) {
-                    // Reduce the complete source frame to thumbnail bounds. Keep its
-                    // original aspect ratio; never crop, pad with bars, or stretch it.
-                    val (thumbnailWidth, thumbnailHeight) = TimelineThumbnailMath.fitDimensions(
-                        original.width,
-                        original.height,
-                        162,
-                        288
-                    )
-                    val thumbnail = if (
-                        original.width == thumbnailWidth && original.height == thumbnailHeight
-                    ) {
-                        original
-                    } else {
-                        Bitmap.createScaledBitmap(
-                            original,
-                            thumbnailWidth,
-                            thumbnailHeight,
-                            true
-                        ).also { if (!original.isRecycled) original.recycle() }
-                    }
-                    decoded = thumbnail
-                } else {
-                    original?.let { if (!it.isRecycled) it.recycle() }
-                }
-            } catch (error: Exception) {
-                android.util.Log.w("TimelineThumbnail", "Thumbnail creation failed for $uri at ${timestampMs}ms", error)
-            }
 
-            val result = decoded
-            runOnUiThread {
-                val targets = pendingTimelineThumbnails.remove(key).orEmpty()
-                if (result != null && !isFinishing && !isDestroyed) {
-                    timelineThumbnailCache.put(key, result)
-                    val decodedAspectRatio = result.width.toFloat() / result.height.coerceAtLeast(1).toFloat()
-                    val previousAspectRatio = timelineVideoAspectRatios.putIfAbsent(uri.toString(), decodedAspectRatio)
-                    if (previousAspectRatio == null &&
-                        kotlin.math.abs(decodedAspectRatio - TimelineThumbnailMath.DEFAULT_SOURCE_ASPECT_RATIO) > 0.02f
-                    ) {
-                        // First decoded frame reveals the source's real orientation/ratio.
-                        // Rebuild once with aspect-aware cell widths; all decoded frames remain cached.
-                        refreshTimelineTracks()
-                    }
-                    if (timelineSyncTestEnabled) android.util.Log.i(
-                        "TimelineFrameSyncTest",
-                        "TIMELINE_THUMBNAIL_READY sourceMs=$timestampMs width=${result.width} height=${result.height} cached=false"
-                    )
-                    targets.forEach { ref ->
-                        val image = ref.get()
-                        if (image != null && image.tag == key) image.setImageBitmap(result)
-                    }
-                } else {
-                    result?.recycle()
-                    // Do not leave a gray-blue empty tile when a decoder rejects a frame.
-                    targets.forEach { ref ->
-                        val image = ref.get()
-                        if (image != null && image.tag == key && image.drawable == null) {
-                            image.setBackgroundColor(Color.TRANSPARENT)
-                        }
-                    }
-                }
-            }
+        // One authoritative decode per requested sample. There is no sync-frame pass
+        // followed by a second exact pass; that doubled decoder work and delayed the strip.
+        val priorityPhase = when {
+            primeFirstCell -> 0
+            priorityDistanceMs <= timelineThumbnailVisibleWindowMs() -> 1
+            else -> 2
         }
-        try {
-            timelineThumbnailExecutor.execute(task)
-        } catch (_: java.util.concurrent.RejectedExecutionException) {
-            pendingTimelineThumbnails.remove(key)
-            target.setBackgroundColor(Color.TRANSPARENT)
-        }
+        queueExactTimelineThumbnail(
+            uri, timestampMs, key, priorityDistanceMs, requestStartedAt, priorityPhase
+        )
     }
 
     private fun finishTrimControlGesture(){
         deferTimelineRefresh=false;finishTrimHistoryGesture()
         val clip=selectedClip()
         if(clip!=null){
+            clip.coverTimeMs = clip.coverTimeMs?.coerceIn(clip.startMs, (clip.endMs - 1L).coerceAtLeast(clip.startMs))
             timelinePreviewLoaded=false;previewSingleClip=false;pauseActivePreview();timelinePlayheadMs=clip.timelineStartMs
             ensureTrimHandlesReachable(selectedClipIndex)
             ensureTimelinePreviewLoaded();seekTimelinePreview(timelinePlayheadMs)
@@ -5927,6 +6191,7 @@ class VideoEditorActivity : Activity() {
     private fun loadTrimControls() {
         val clip = selectedClip()
         if (clip == null) {
+            clipCoverButton?.apply { isEnabled = false; text = "Kapak" }
             selectedClipLabel.text = "Önce bir video seç."
             startSeek.max = 1
             endSeek.max = 1
@@ -5939,12 +6204,21 @@ class VideoEditorActivity : Activity() {
         }
         startSeek.isEnabled = true
         endSeek.isEnabled = true
+        clipCoverButton?.isEnabled = true
         val durationProgressMax = TimelineTrimMath.progressMax(clip.durationMs)
         startSeek.max = durationProgressMax
         endSeek.max = durationProgressMax
         startSeek.progress = TimelineTrimMath.progressForTime(clip.startMs, clip.durationMs)
         endSeek.progress = TimelineTrimMath.progressForTime(clip.endMs, clip.durationMs)
         selectedClipLabel.text = ""
+        clipCoverButton?.apply {
+            text = if (clip.coverTimeMs == null) "Kapak" else "Kapak ✓"
+            contentDescription = if (clip.coverTimeMs == null) {
+                "Seçili klibin kapak karesini seç"
+            } else {
+                "Kapak karesi seçildi: ${formatTimelineMs(clip.coverTimeMs!!)}"
+            }
+        }
         updateTrimLabels()
     }
 
@@ -6064,6 +6338,200 @@ class VideoEditorActivity : Activity() {
         soundStartSeek.isEnabled = soundUri != null && total > 0L
         val soundEndMs = soundStartMs + soundDurationMs
         soundStartLabel.text = "Ses: ${formatTimelineMs(soundStartMs)} – ${formatTimelineMs(soundEndMs)}"
+    }
+
+
+    /**
+     * Lets the user choose a source frame as the clip's cover. The selection is
+     * project metadata and a separate JPEG; it never replaces timestamped filmstrip
+     * cells or changes the exported video frames.
+     */
+    private fun showClipCoverPicker() {
+        val clipIndex = selectedClipIndex
+        val clip = selectedClip()
+        if (clip == null) {
+            status.text = "Kapak seçmek için önce zaman çizgisinden bir klip seç."
+            return
+        }
+
+        pauseActivePreview()
+        val firstAllowedMs = clip.startMs.coerceIn(0L, clip.durationMs)
+        val lastAllowedMs = (clip.endMs - 1L).coerceIn(firstAllowedMs, (clip.durationMs - 1L).coerceAtLeast(firstAllowedMs))
+        val selectableDurationMs = (lastAllowedMs - firstAllowedMs).coerceAtLeast(1L)
+        var selectedSourceTimeMs = (clip.coverTimeMs ?: firstAllowedMs).coerceIn(firstAllowedMs, lastAllowedMs)
+        var previewBitmap: Bitmap? = null
+        var previewRequestGeneration = 0L
+        var dialogOpen = true
+
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(4), dp(12), dp(4))
+        }
+        val coverPreview = ImageView(this).apply {
+            setBackgroundColor(Color.BLACK)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            contentDescription = "Seçilen kapak karesinin önizlemesi"
+        }
+        content.addView(coverPreview, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(210)
+        ))
+        val timestampLabel = label("Kapak zamanı: ${formatTimelineMs(selectedSourceTimeMs)}", 12f, Color.WHITE, true)
+        timestampLabel.setPadding(dp(2), dp(10), dp(2), dp(2))
+        content.addView(timestampLabel)
+        content.addView(label("Kaydırarak videodan kullanmak istediğin kareyi seç.", 11f, Color.rgb(160, 177, 194), false))
+        val coverSeek = SeekBar(this).apply {
+            max = TimelineTrimMath.progressMax(selectableDurationMs)
+            progress = TimelineTrimMath.progressForTime(selectedSourceTimeMs - firstAllowedMs, selectableDurationMs)
+            contentDescription = "Kapak karesi zaman seçici"
+        }
+        content.addView(coverSeek, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+
+        fun requestCoverPreview() {
+            val requestId = ++previewRequestGeneration
+            val requestedTimeMs = selectedSourceTimeMs
+            val task = TimelineThumbnailTask(
+                -2L,
+                timelineThumbnailTaskSequence.incrementAndGet(),
+                priorityPhase = 0
+            ) {
+                val decoded = decodeTimelinePreviewFrame(clip.uri, requestedTimeMs)
+                runOnUiThread {
+                    if (!dialogOpen || requestId != previewRequestGeneration || isFinishing || isDestroyed) {
+                        decoded?.let { if (!it.isRecycled) it.recycle() }
+                        return@runOnUiThread
+                    }
+                    if (decoded != null && !decoded.isRecycled) {
+                        android.util.Log.i("ClipCover", "COVER_PREVIEW_READY sourceMs=${requestedTimeMs} width=${decoded.width} height=${decoded.height}")
+                        val previous = previewBitmap
+                        previewBitmap = decoded
+                        coverPreview.setImageBitmap(decoded)
+                        if (previous !== decoded && previous != null && !previous.isRecycled) previous.recycle()
+                    } else {
+                        timestampLabel.text = "Bu kare okunamadı: ${formatTimelineMs(requestedTimeMs)}"
+                    }
+                }
+            }
+            try {
+                timelineThumbnailExecutor.execute(task)
+            } catch (_: java.util.concurrent.RejectedExecutionException) {
+                timestampLabel.text = "Kapak karesi çözücü şu anda meşgul."
+            }
+        }
+
+        coverSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                selectedSourceTimeMs = (firstAllowedMs + TimelineTrimMath.timeForProgress(
+                    progress, selectableDurationMs
+                )).coerceIn(firstAllowedMs, lastAllowedMs)
+                timestampLabel.text = "Kapak zamanı: ${formatTimelineMs(selectedSourceTimeMs)}"
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
+
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                requestCoverPreview()
+            }
+        })
+
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("Kapak karesi")
+            .setView(content)
+            .setNegativeButton("Vazgeç", null)
+            .setNeutralButton("JPG kaydet", null)
+            .setPositiveButton("Kapak yap", null)
+            .create()
+
+        dialog.setOnShowListener {
+            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                if (clips.getOrNull(clipIndex) !== clip) {
+                    status.text = "Seçili klip değişti. Kapak seçimini yeniden aç."
+                    dialog.dismiss()
+                    return@setOnClickListener
+                }
+                recordClipEdit()
+                clip.coverTimeMs = selectedSourceTimeMs
+                android.util.Log.i("ClipCover", "COVER_SELECTED clipIndex=${clipIndex} sourceMs=${selectedSourceTimeMs}")
+                loadTrimControls()
+                status.text = "Kapak karesi ${formatTimelineMs(selectedSourceTimeMs)} olarak seçildi. Projeyi kaydettiğinde seçim korunur."
+                dialog.dismiss()
+            }
+            dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                val bitmap = previewBitmap
+                if (bitmap == null || bitmap.isRecycled) {
+                    status.text = "Önce seçilen kapak karesinin önizlemesi yüklensin."
+                    return@setOnClickListener
+                }
+                saveClipCoverImage(bitmap, clip, selectedSourceTimeMs)
+            }
+            requestCoverPreview()
+        }
+        dialog.setOnDismissListener {
+            dialogOpen = false
+            previewRequestGeneration++
+            coverPreview.setImageDrawable(null)
+            previewBitmap?.let { if (!it.isRecycled) it.recycle() }
+            previewBitmap = null
+        }
+        dialog.show()
+    }
+
+    private fun saveClipCoverImage(bitmap: Bitmap, clip: Clip, sourceTimeMs: Long) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
+            checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), REQUEST_LEGACY_STORAGE)
+            status.text = "Galeride kapak görseli oluşturmak için depolama izni gerekiyor."
+            return
+        }
+
+        val safeTitle = clip.title.substringBeforeLast('.', clip.title)
+            .replace(Regex("[^A-Za-z0-9_-]+"), "_")
+            .trim('_')
+            .take(36)
+            .ifBlank { "MathMotorVideo" }
+        val fileName = "${safeTitle}_Kapak_${sourceTimeMs}.jpg"
+        var outputUri: Uri? = null
+        try {
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/MathMotor/Kapaklar")
+                    put(MediaStore.MediaColumns.IS_PENDING, 1)
+                } else {
+                    val directory = java.io.File(
+                        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+                        "MathMotor/Kapaklar"
+                    )
+                    if (!directory.exists() && !directory.mkdirs()) {
+                        throw IllegalStateException("Kapak klasörü oluşturulamadı.")
+                    }
+                    put(MediaStore.MediaColumns.DATA, java.io.File(directory, fileName).absolutePath)
+                }
+            }
+            outputUri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                ?: throw IllegalStateException("Galeriye kayıt konumu oluşturulamadı.")
+            val stream = contentResolver.openOutputStream(outputUri)
+                ?: throw IllegalStateException("Kapak görseli dosyası açılamadı.")
+            stream.use { output ->
+                if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 94, output)) {
+                    throw IllegalStateException("JPEG kapak görseli oluşturulamadı.")
+                }
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                contentResolver.update(outputUri, ContentValues().apply {
+                    put(MediaStore.MediaColumns.IS_PENDING, 0)
+                }, null, null)
+            }
+            android.util.Log.i("ClipCover", "COVER_JPG_SAVED sourceMs=${sourceTimeMs} uri=${outputUri}")
+            status.text = "Kapak görseli Galeri > Resimler > MathMotor > Kapaklar içine kaydedildi."
+        } catch (error: Exception) {
+            outputUri?.let { runCatching { contentResolver.delete(it, null, null) } }
+            status.text = "Kapak görseli kaydedilemedi: ${error.message ?: error.javaClass.simpleName}"
+        }
     }
 
     private fun previewSelectedClip(){
@@ -6473,6 +6941,11 @@ class VideoEditorActivity : Activity() {
         timelineThumbnailExecutor.shutdownNow()
         pendingTimelineThumbnails.clear()
         timelineThumbnailCache.evictAll()
+        timelinePosterCache.evictAll()
+        timelineThumbnailWarmupKeys.clear()
+        pendingTimelinePosterTargets.clear()
+        pendingTimelinePosterLoads.clear()
+        timelinePosterExecutor.shutdownNow()
         playerView.player = null
         player?.release()
         player = null
