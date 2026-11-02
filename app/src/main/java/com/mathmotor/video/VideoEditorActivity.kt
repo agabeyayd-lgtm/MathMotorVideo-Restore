@@ -6204,7 +6204,7 @@ class VideoEditorActivity : Activity() {
         clipCoverButton?.apply {
             text = if (clip.coverTimeMs == null) "Kapak" else "Kapak ✓"
             contentDescription = if (clip.coverTimeMs == null) {
-                "Kapak karesi seç"
+                "Seçili klibin kapak karesini seç"
             } else {
                 "Kapak karesi seçildi: ${formatTimelineMs(clip.coverTimeMs!!)}"
             }
