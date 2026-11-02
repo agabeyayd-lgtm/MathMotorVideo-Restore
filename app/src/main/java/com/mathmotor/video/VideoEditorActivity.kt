@@ -185,6 +185,7 @@ class VideoEditorActivity : Activity() {
     private var pendingPreviewFrameTask: TimelineThumbnailTask? = null
     private var previewFrameBitmap: Bitmap? = null
     private lateinit var previewFocusButton: Button
+    private lateinit var playbackLeft: LinearLayout
     private var previewStageHeightDp = 340
     private var previewDefaultStageHeightDp = 340
     private var previewHeightAutoSized = false
@@ -744,7 +745,7 @@ class VideoEditorActivity : Activity() {
             setPadding(dp(3), 0, dp(2), 0)
             contentDescription = "Oynatma zamanı ve toplam video süresi"
         }
-        val playbackLeft = LinearLayout(this).apply {
+        playbackLeft = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
@@ -1645,12 +1646,20 @@ class VideoEditorActivity : Activity() {
         previewFocusMode = !previewFocusMode
         if (previewFocusMode) {
             previewFocusOriginalVisibility.clear()
-            // The fullscreen toggle now lives in the playback row. Keep that
-            // row visible in focus mode so the user can always return to editing.
-            val playbackControls = previewFocusButton.parent?.parent as? View
+            // In fullscreen, put the exit control on the preview itself near the
+            // top safe area. The playback row can then disappear completely, so
+            // the control is never stranded at the bottom edge of a tall screen.
+            (previewFocusButton.parent as? ViewGroup)?.removeView(previewFocusButton)
+            previewFrame.addView(
+                previewFocusButton,
+                FrameLayout.LayoutParams(dp(44), dp(44), Gravity.TOP or Gravity.END).apply {
+                    topMargin = dp(12)
+                    rightMargin = dp(12)
+                }
+            )
             for (index in 0 until root.childCount) {
                 val child = root.getChildAt(index)
-                if (child !== previewFrame && child !== playbackControls) {
+                if (child !== previewFrame) {
                     previewFocusOriginalVisibility[child] = child.visibility
                     child.visibility = View.GONE
                 }
@@ -1663,6 +1672,14 @@ class VideoEditorActivity : Activity() {
             previewFocusButton.text = "↙"
             previewFocusButton.contentDescription = "Düzenleme ekranına dön"
         } else {
+            // Return the same button and click handler to its normal playback-row
+            // position before restoring the rest of the editor.
+            (previewFocusButton.parent as? ViewGroup)?.removeView(previewFocusButton)
+            playbackLeft.addView(
+                previewFocusButton,
+                0,
+                LinearLayout.LayoutParams(dp(38), dp(36))
+            )
             previewFocusOriginalVisibility.forEach { (view, visibility) -> view.visibility = visibility }
             previewFocusOriginalVisibility.clear()
             root.setPadding(dp(8), dp(4), dp(8), dp(4))
