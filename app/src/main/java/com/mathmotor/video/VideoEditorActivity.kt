@@ -1766,10 +1766,9 @@ class VideoEditorActivity : Activity() {
                 } else tag
             }
             if (reorderable) {
-                row.addView(grip, LinearLayout.LayoutParams(dp(54), ViewGroup.LayoutParams.MATCH_PARENT))
-                // Reserve the rest of the shared 96dp header so every media lane
-                // begins at exactly the same x-coordinate as the ruler ticks.
-                row.addView(View(this), LinearLayout.LayoutParams(dp(42), ViewGroup.LayoutParams.MATCH_PARENT))
+                row.addView(grip, LinearLayout.LayoutParams(dp(44), ViewGroup.LayoutParams.MATCH_PARENT))
+                // Match the shared 82dp header geometry used by the ruler origin math.
+                row.addView(View(this), LinearLayout.LayoutParams(dp(38), ViewGroup.LayoutParams.MATCH_PARENT))
             if (reorderable && tag == "Video") {
                 grip.contentDescription = if (keepSourceAudio.isChecked) {
                     "Video sesini kapat"
@@ -1784,8 +1783,8 @@ class VideoEditorActivity : Activity() {
                 }
             }
             } else {
-                // The current/total time readout shares this fixed header cell
-                // with the ruler row; media lanes reserve the same 96dp width.
+                // The current/total time readout shares the same 82dp header width
+                // reserved by the video/audio/text lane rows.
                 row.addView(FrameLayout(this).apply {
                     contentDescription = "Zaman cetveli başlığı ve oynatma süresi"
                     // refreshTimelineTracks() can run again after the responsive layout
@@ -1801,7 +1800,7 @@ class VideoEditorActivity : Activity() {
                             ViewGroup.LayoutParams.MATCH_PARENT
                         )
                     )
-                }, LinearLayout.LayoutParams(dp(96), ViewGroup.LayoutParams.MATCH_PARENT))
+                }, LinearLayout.LayoutParams(dp(82), ViewGroup.LayoutParams.MATCH_PARENT))
             }
 
             if (reorderable) {
