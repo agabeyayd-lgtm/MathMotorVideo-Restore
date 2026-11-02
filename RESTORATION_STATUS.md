@@ -230,10 +230,12 @@ Verification pending:
 - Keep versionCode 394 / Build 61 as the approved baseline. Do not create version 395, sign/publish a release, or offer a replacement APK until all acceptance checks pass and the user explicitly authorizes it.
 
 
-## 2026-11-02 — filmstrip decoder fast path (verification pending)
+## 2026-11-02 — bounded parallel filmstrip decode experiment (verification pending)
 
-- Normal filmstrip extraction now attempts the reusable Android `MediaMetadataRetriever` first, requesting a scaled closest frame at the cell's exact requested timestamp. The shared Media3 `FrameExtractor` remains the fallback for unsupported providers/codecs.
-- Rationale: the previous path initialized a Media3 extraction session before decoding the first still; the platform retriever is already reused per worker/source and avoids that setup for supported media.
-- Added debug-only per-decoder timing markers to measure native retriever decode time and Media3 fallback time on the next emulator pass.
-- **Not yet verified:** no speedup is claimed until the API 35 test confirms preview/filmstrip pixel alignment, distinct adjacent timestamps, first exact-frame latency and full visible-strip fill time. Revert this change if frame accuracy regresses.
-- Build 394 / Build 61 remains the baseline; do not create version 395 or issue a release APK.
+- The API 35 emulator run #709 completed successfully as an editor smoke, but its timestamp logs show the native-retriever-first serial path is slower: 19 exact thumbnail requests, final frame ready at 9,595 ms, with 8,354 ms summed decoder time. The final queued request waited 9,316 ms before decoding.
+- This is worse than the previously measured 5.98-second full-strip baseline; the MMR-first change is not accepted as a performance win.
+- Current experiment uses a fixed two-worker pool. Each worker owns its own MediaMetadataRetriever and Media3 fallback instance, so independent timestamp seeks can overlap without sharing decoder state.
+- The first exact thumbnail now enters the normal queue at priority phase 0. The separate warmup task was removed to prevent duplicate work for the first timestamp; the provider poster remains temporary only.
+- Debug decoder logs now include the worker thread ID. Next verification must prove two-worker overlap and measure all 19 exact frames, full-strip completion below 5.98 seconds, first exact-frame latency, distinct timestamps, preview-pixel agreement, and forward/reverse scrub behavior.
+- Not yet verified: parallelism may contend for hardware decoder resources on some phones. Retain the experiment only if emulator correctness and physical-device behavior remain stable. Revert if it does not improve time or causes decoder/memory problems.
+- Build 394 / Build 61 remains the baseline. Do not create version 395 or issue a release APK.
