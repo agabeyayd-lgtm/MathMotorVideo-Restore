@@ -13,6 +13,7 @@ import android.graphics.Typeface
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
+import android.os.CancellationSignal
 import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
@@ -285,6 +286,15 @@ class VideoEditorActivity : Activity() {
     private val timelineThumbnailCache = object : android.util.LruCache<String, Bitmap>(16 * 1024 * 1024) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount.coerceAtLeast(1)
     }
+    // A provider-generated poster is a temporary first-cell placeholder only. It is
+    // never copied across the filmstrip or reported as an exact timestamp sample.
+    private val timelinePosterCache = object : android.util.LruCache<String, Bitmap>(4 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount.coerceAtLeast(1)
+    }
+    private val pendingTimelinePosterTargets = mutableMapOf<String, MutableList<WeakReference<ImageView>>>()
+    private val pendingTimelinePosterLoads = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val timelinePosterExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
+    private val timelineThumbnailWarmupKeys = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private val pendingTimelineThumbnails = mutableMapOf<String, MutableList<WeakReference<ImageView>>>()
     // Learned from the actual decoded frame, so imported and restored clips share
     // the same aspect-ratio-aware filmstrip path without blocking the UI for metadata.
@@ -299,8 +309,8 @@ class VideoEditorActivity : Activity() {
         private val work: () -> Unit
     ) : Runnable, Comparable<TimelineThumbnailTask> {
         override fun compareTo(other: TimelineThumbnailTask): Int {
-            // Exact playhead samples first, then quick provisional filmstrip frames,
-            // then the full-precision refinement of the remaining cells.
+            // Lower phase values run first. Preview stills and the first-cell warmup
+            // outrank normal visible filmstrip samples; those are nearest-playhead first.
             val phaseOrder = priorityPhase.compareTo(other.priorityPhase)
             if (phaseOrder != 0) return phaseOrder
             val distanceOrder = distanceFromPlayheadMs.compareTo(other.distanceFromPlayheadMs)
@@ -5315,7 +5325,8 @@ class VideoEditorActivity : Activity() {
                 image,
                 priorityDistanceMs,
                 cellStartMs,
-                cellEndMs
+                cellEndMs,
+                usePosterPlaceholder = slot == 0
             )
         }
         container.addView(filmstrip, FrameLayout.LayoutParams(
@@ -5473,6 +5484,146 @@ class VideoEditorActivity : Activity() {
         val threadId = Thread.currentThread().id
         timelineThumbnailRetrievers.remove(threadId)?.second?.let { retriever ->
             runCatching { retriever.release() }
+        }
+    }
+
+    private fun requestTimelinePoster(uri: Uri) {
+        val cacheKey = uri.toString()
+        val cached = timelinePosterCache.get(cacheKey)
+        if (cached != null && !cached.isRecycled) return
+        if (!pendingTimelinePosterLoads.add(cacheKey)) return
+
+        try {
+            timelinePosterExecutor.execute {
+                val startedAt = SystemClock.uptimeMillis()
+                val poster = runCatching { decodeTimelinePoster(uri) }.getOrNull()
+                val decodeMs = SystemClock.uptimeMillis() - startedAt
+                runOnUiThread {
+                    pendingTimelinePosterLoads.remove(cacheKey)
+                    if (isFinishing || isDestroyed) {
+                        poster?.let { if (!it.isRecycled) it.recycle() }
+                        pendingTimelinePosterTargets.remove(cacheKey)
+                        return@runOnUiThread
+                    }
+                    if (poster == null || poster.isRecycled) {
+                        pendingTimelinePosterTargets.remove(cacheKey)
+                        if (timelineSyncTestEnabled) android.util.Log.w(
+                            "TimelineFrameSyncTest",
+                            "TIMELINE_POSTER_UNAVAILABLE uri=$cacheKey decodeMs=$decodeMs"
+                        )
+                        return@runOnUiThread
+                    }
+                    timelinePosterCache.put(cacheKey, poster)
+                    pendingTimelinePosterTargets.remove(cacheKey).orEmpty().forEach { reference ->
+                        val target = reference.get() ?: return@forEach
+                        val targetKey = target.tag?.toString() ?: return@forEach
+                        // An exact frame may have arrived while the OS poster was loading.
+                        if (targetKey.startsWith("$cacheKey#") && target.drawable == null) {
+                            target.setImageBitmap(poster)
+                            target.contentDescription = "Klip kapak karesi (geçici)"
+                        }
+                    }
+                    if (timelineSyncTestEnabled) android.util.Log.i(
+                        "TimelineFrameSyncTest",
+                        "TIMELINE_POSTER_READY decodeMs=$decodeMs width=${poster.width} height=${poster.height}"
+                    )
+                }
+            }
+        } catch (_: java.util.concurrent.RejectedExecutionException) {
+            pendingTimelinePosterLoads.remove(cacheKey)
+        }
+    }
+
+    private fun decodeTimelinePoster(uri: Uri): Bitmap? {
+        // Android's document/media provider can return its cached representative
+        // thumbnail without starting the editor's full timestamp decoder.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val providerPoster = runCatching {
+                contentResolver.loadThumbnail(
+                    uri,
+                    android.util.Size(dp(162), dp(96)),
+                    CancellationSignal()
+                )
+            }.getOrNull()
+            if (providerPoster != null) return providerPoster
+        }
+
+        // Older providers get a single low-priority cover fallback. This bitmap is
+        // used only as a visibly temporary first-cell cover, never as exact filmstrip data.
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(this, uri)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                retriever.getScaledFrameAtTime(
+                    0L,
+                    MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                    dp(162).coerceAtLeast(1),
+                    dp(288).coerceAtLeast(1)
+                )
+            } else {
+                retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+            }
+        } catch (error: Exception) {
+            android.util.Log.w("TimelineThumbnail", "Could not load temporary poster for $uri", error)
+            null
+        } finally {
+            runCatching { retriever.release() }
+        }
+    }
+
+    private fun scheduleTimelineThumbnailWarmup(uri: Uri, timeMs: Long) {
+        val timestampMs = timeMs.coerceAtLeast(0L)
+        val key = "$uri#$timestampMs"
+        val cached = timelineThumbnailCache.get(key)
+        if (cached != null && !cached.isRecycled) return
+        if (!timelineThumbnailWarmupKeys.add(key)) return
+
+        val task = TimelineThumbnailTask(
+            -2L,
+            timelineThumbnailTaskSequence.incrementAndGet(),
+            priorityPhase = 0
+        ) {
+            val startedAt = SystemClock.uptimeMillis()
+            val result = runCatching {
+                decodeTimelineFrame(uri, timestampMs)?.let(::scaleTimelineThumbnailFrame)
+            }.onFailure { error ->
+                android.util.Log.w(
+                    "TimelineThumbnail",
+                    "Initial decoder warmup failed for $uri at ${timestampMs}ms",
+                    error
+                )
+            }.getOrNull()
+            val decodeMs = SystemClock.uptimeMillis() - startedAt
+            if (result != null && !result.isRecycled && !isFinishing && !isDestroyed) {
+                // Cache the same timestamp requested by the first cell. Its normal
+                // queued task checks this cache again, so the warmup is not decoded twice.
+                timelineThumbnailCache.put(key, result)
+                val aspectRatio = result.width.toFloat() / result.height.coerceAtLeast(1).toFloat()
+                val previousAspectRatio = timelineVideoAspectRatios.putIfAbsent(uri.toString(), aspectRatio)
+                if (previousAspectRatio == null &&
+                    kotlin.math.abs(aspectRatio - TimelineThumbnailMath.DEFAULT_SOURCE_ASPECT_RATIO) > 0.02f
+                ) {
+                    runOnUiThread {
+                        if (!isFinishing && !isDestroyed) refreshTimelineTracks()
+                    }
+                }
+                if (timelineSyncTestEnabled) android.util.Log.i(
+                    "TimelineFrameSyncTest",
+                    "TIMELINE_THUMBNAIL_PREWARM_READY sourceMs=$timestampMs decodeMs=$decodeMs width=${result.width} height=${result.height}"
+                )
+            } else {
+                timelineThumbnailWarmupKeys.remove(key)
+                result?.let { if (!it.isRecycled) it.recycle() }
+                if (timelineSyncTestEnabled) android.util.Log.w(
+                    "TimelineFrameSyncTest",
+                    "TIMELINE_THUMBNAIL_PREWARM_FAILED sourceMs=$timestampMs decodeMs=$decodeMs"
+                )
+            }
+        }
+        try {
+            timelineThumbnailExecutor.execute(task)
+        } catch (_: java.util.concurrent.RejectedExecutionException) {
+            timelineThumbnailWarmupKeys.remove(key)
         }
     }
 
@@ -5791,8 +5942,9 @@ class VideoEditorActivity : Activity() {
             timelineThumbnailTaskSequence.incrementAndGet(),
             priorityPhase = 1
         ) {
+            val cachedAtExecution = timelineThumbnailCache.get(key)?.takeUnless { it.isRecycled }
             val decodeStartedAt = SystemClock.uptimeMillis()
-            val result = runCatching {
+            val result = cachedAtExecution ?: runCatching {
                 decodeTimelineFrame(uri, timestampMs)?.let(::scaleTimelineThumbnailFrame)
             }.onFailure { error ->
                 android.util.Log.w(
@@ -5801,11 +5953,11 @@ class VideoEditorActivity : Activity() {
                     error
                 )
             }.getOrNull()
-            val decodeDurationMs = SystemClock.uptimeMillis() - decodeStartedAt
+            val decodeDurationMs = if (cachedAtExecution != null) 0L else SystemClock.uptimeMillis() - decodeStartedAt
             runOnUiThread {
                 val targets = pendingTimelineThumbnails.remove(key).orEmpty()
                 if (result != null && !result.isRecycled && !isFinishing && !isDestroyed) {
-                    timelineThumbnailCache.put(key, result)
+                    if (cachedAtExecution == null) timelineThumbnailCache.put(key, result)
                     val decodedAspectRatio = result.width.toFloat() / result.height.coerceAtLeast(1).toFloat()
                     val previousAspectRatio = timelineVideoAspectRatios.putIfAbsent(uri.toString(), decodedAspectRatio)
                     if (previousAspectRatio == null &&
@@ -5822,7 +5974,7 @@ class VideoEditorActivity : Activity() {
                     val imageReadyAt = SystemClock.uptimeMillis()
                     if (timelineSyncTestEnabled) android.util.Log.i(
                         "TimelineFrameSyncTest",
-                        "TIMELINE_THUMBNAIL_READY sourceMs=$timestampMs width=${result.width} height=${result.height} cached=false queueMs=${decodeStartedAt - exactQueuedAt} decodeMs=$decodeDurationMs readyMs=${imageReadyAt - requestStartedAt}"
+                        "TIMELINE_THUMBNAIL_READY sourceMs=$timestampMs width=${result.width} height=${result.height} cached=${cachedAtExecution != null} queueMs=${decodeStartedAt - exactQueuedAt} decodeMs=$decodeDurationMs readyMs=${imageReadyAt - requestStartedAt}"
                     )
                 } else {
                     result?.let { if (!it.isRecycled) it.recycle() }
@@ -5849,7 +6001,8 @@ class VideoEditorActivity : Activity() {
         target: ImageView,
         priorityDistanceMs: Long = kotlin.math.abs(timeMs - timelinePlayheadMs),
         cellStartMs: Long = timeMs,
-        cellEndMs: Long = timeMs + 1L
+        cellEndMs: Long = timeMs + 1L,
+        usePosterPlaceholder: Boolean = false
     ) {
         val requestStartedAt = SystemClock.uptimeMillis()
         val timestampMs = timeMs.coerceAtLeast(0L)
@@ -5864,6 +6017,18 @@ class VideoEditorActivity : Activity() {
                 "TIMELINE_THUMBNAIL_READY sourceMs=$timestampMs width=${cached.width} height=${cached.height} cached=true"
             )
             return
+        }
+
+        if (usePosterPlaceholder) {
+            requestTimelinePoster(uri)
+            val poster = timelinePosterCache.get(uri.toString())
+            if (poster != null && !poster.isRecycled) {
+                target.setImageBitmap(poster)
+                target.contentDescription = "Klip kapak karesi (geçici)"
+            } else {
+                pendingTimelinePosterTargets.getOrPut(uri.toString()) { mutableListOf() }
+                    .add(WeakReference(target))
+            }
         }
 
         // On zoom-out, a correct exact frame already inside this cell's time interval
@@ -5888,6 +6053,10 @@ class VideoEditorActivity : Activity() {
                 return
             }
         }
+
+        // Warm the first exact cell before the normal cell queue. The OS poster above
+        // keeps this cell visually useful while the timestamp decoder is preparing.
+        if (usePosterPlaceholder) scheduleTimelineThumbnailWarmup(uri, timestampMs)
 
         // Rebuilt lane views can request the same timestamp while its frame is pending.
         // Share one in-flight request and attach the new ImageView instead of decoding twice.
@@ -6510,6 +6679,11 @@ class VideoEditorActivity : Activity() {
         timelineThumbnailExecutor.shutdownNow()
         pendingTimelineThumbnails.clear()
         timelineThumbnailCache.evictAll()
+        timelinePosterCache.evictAll()
+        pendingTimelinePosterTargets.clear()
+        pendingTimelinePosterLoads.clear()
+        timelineThumbnailWarmupKeys.clear()
+        timelinePosterExecutor.shutdownNow()
         playerView.player = null
         player?.release()
         player = null
