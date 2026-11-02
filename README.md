@@ -278,11 +278,11 @@ Validation:
 - Keep versionCode 394 / Build 61 as the user-approved baseline. Version 395 remains blocked; no replacement APK, signed release, or update is authorized by these changes alone.
 
 
-## 2026-11-02 — Media3 decoder-selection experiment (verification pending)
+## 2026-11-02 — decoder selection rejected; restore proven first-frame warmup
 
-- Run #713 restored the single shared Media3 extractor and passed all editor smoke checks. Its 19-frame timing log exposed the dominant delay: the first exact frame at 211 ms took 4,060 ms; later frames took 80–456 ms each (3,298 ms combined after the first), with the full strip ready in 7,877 ms.
-- Root cause candidate: Media3 FrameExtractor 1.10.1 defaults to MediaCodecSelector.PREFER_SOFTWARE, which moves software decoders ahead of the normal platform-preferred order. Its own source documents this default. The default selector is a distinct supported option.
-- New bounded experiment: keep one shared FrameExtractor, exact timestamps and the same 288px output, but ask for MediaCodecSelector.DEFAULT. No parallel decoders and no looser seek accuracy. Decoder errors remain caught; the existing retriever path can still supply a compatibility frame.
-- Risk: Media3's own FrameExtractor source warns some hardware decoders can crash when flushed during repeated seeks with video effects. Therefore the API 35 run must pass all thumbnail/preview pixel checks, unique timestamp checks, forward/reverse scrubbing and playback sync before retaining this selector.
-- Target: improve first-frame startup and finish the 19-frame strip below the 5.98-second historical baseline. A green compile alone is not a speed result. Revert to the safer selector if any decoder error, black/mismatched frame, or worse timing appears.
-- Build 394 / Build 61 remains unchanged; no signed release or replacement APK is being issued.
+- API 35 emulator run #718 attempt 2 passed the editor checks. It produced 19 distinct timestamp samples; the centered 211ms filmstrip cell matched the preview with maximum RGB channel delta 8; 4/4 visible samples were distinct; forward and reverse scrubbing passed; live playback synchronization passed over 16 samples with two synchronized lanes.
+- Performance result rejected: Media3 `MediaCodecSelector.DEFAULT` delivered the first exact thumbnail in 4,900 ms and completed the full strip in 9,799 ms. This is slower than both #713 (7,877 ms) and the historical 5,977 ms baseline. The first decoder call itself took 4,781 ms. Do not retain the platform-default selector for this path.
+- The current source restores Media3's default `PREFER_SOFTWARE` selector and the previously measured first-cell exact-frame warmup. The warmup uses the same one-worker, one-extractor session and caches the exact first-cell timestamp; the normal visible-cell task reuses that cached bitmap rather than decoding it twice. The temporary provider poster still only fills slot 0 until the exact frame arrives.
+- This is the previously measured configuration that produced 19 distinct frames in 5.977 seconds (commit `6972223`). The current source has changed since that measurement, so a fresh API 35 run must confirm that it still meets the 5.98-second target.
+- Two-worker decoding and platform-default Media3 decoder selection are rejected based on measured contention/slower output. Do not change codec accuracy or use sync-frame approximations to hide latency.
+- Build 394 / Build 61 remains unchanged. PR #17 stays draft; no release APK.
