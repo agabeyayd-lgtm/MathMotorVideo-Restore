@@ -5777,7 +5777,9 @@ class VideoEditorActivity : Activity() {
             priorityPhase = 0
         ) {
             if (requestId != previewFrameRequestGeneration.get()) return@TimelineThumbnailTask
-            val decoded = decodeTimelinePreviewFrame(clip.uri, sourceTimeMs)
+            // A phone preview does not need the source's full 1440px frame.
+            // Keep cover-picker decoding at its higher default resolution.
+            val decoded = decodeTimelinePreviewFrame(clip.uri, sourceTimeMs, maxSide = 1080)
             runOnUiThread {
                 if (requestId != previewFrameRequestGeneration.get() || isFinishing || isDestroyed) {
                     decoded?.let { if (!it.isRecycled) it.recycle() }
@@ -5826,7 +5828,12 @@ class VideoEditorActivity : Activity() {
     }
 
     /** Uses the same source URI and project-to-source timestamp mapping as the filmstrip. */
-    private fun decodeTimelinePreviewFrame(uri: Uri, timeMs: Long): Bitmap? {
+    private fun decodeTimelinePreviewFrame(
+        uri: Uri,
+        timeMs: Long,
+        maxSide: Int = 1440
+    ): Bitmap? {
+        val requestedMaxSide = maxSide.coerceIn(360, 1920)
         val frameTimeUs = timeMs.coerceAtLeast(0L) * 1000L
         val retriever = timelineThumbnailRetrieverFor(uri, "TimelinePreviewFrame")
 
@@ -5836,8 +5843,8 @@ class VideoEditorActivity : Activity() {
                     active.getScaledFrameAtTime(
                         frameTimeUs,
                         MediaMetadataRetriever.OPTION_CLOSEST,
-                        1440,
-                        1440
+                        requestedMaxSide,
+                        requestedMaxSide
                     )
                 }.getOrNull()
             } else {
@@ -5864,11 +5871,10 @@ class VideoEditorActivity : Activity() {
             runCatching { extractor?.close() }
         }
         return decoded?.let { original ->
-            val maxSide = 1440
             val largest = maxOf(original.width, original.height)
-            if (largest <= maxSide) original
+            if (largest <= requestedMaxSide) original
             else {
-                val scale = maxSide.toFloat() / largest.toFloat()
+                val scale = requestedMaxSide.toFloat() / largest.toFloat()
                 val scaled = Bitmap.createScaledBitmap(
                     original,
                     (original.width * scale).toInt().coerceAtLeast(1),
