@@ -582,12 +582,6 @@ class VideoEditorActivity : Activity() {
         super.onPause()
     }
 
-    override fun onStop() {
-        timelineLifecycleState = "stopped"
-        logTimelineLifecycle("onStop")
-        super.onStop()
-    }
-
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         logTimelineLifecycle("onSaveInstanceState")
@@ -596,12 +590,6 @@ class VideoEditorActivity : Activity() {
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
         logTimelineLifecycle("onTrimMemory", "level=$level")
-    }
-
-    override fun onDestroy() {
-        timelineLifecycleState = "destroyed"
-        logTimelineLifecycle("onDestroy")
-        super.onDestroy()
     }
 
     // CapCut-reference workspace: preview, fixed centered playback, live centered time readout, scrolling shared timeline, pinned dock.
@@ -7771,6 +7759,8 @@ class VideoEditorActivity : Activity() {
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
     override fun onStop() {
+        timelineLifecycleState = "stopped"
+        logTimelineLifecycle("onStop")
         saveLocalDraftIfNeeded()
         pauseActivePreview()
         musicPreviewPlayer?.pause()
@@ -7796,6 +7786,8 @@ class VideoEditorActivity : Activity() {
     }
 
     override fun onDestroy() {
+        timelineLifecycleState = "destroyed"
+        logTimelineLifecycle("onDestroy")
         timelineHandler.removeCallbacks(timelineSyncTask)
         timelineHandler.removeCallbacks(textTimelineRefreshTask)
         timelineHandler.removeCallbacks(timelineScrubPreviewSeekTask)
