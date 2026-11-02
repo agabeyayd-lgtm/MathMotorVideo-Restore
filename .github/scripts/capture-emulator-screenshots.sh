@@ -469,7 +469,7 @@ try:
 except Exception:
     raise SystemExit(1)
 for node in root.iter("node"):
-    if node.attrib.get("text") == "Kapak yap":
+    if node.attrib.get("text", "").strip().casefold() == "kapak yap":
         found = re.search(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
         if found:
             x1, y1, x2, y2 = map(int, found.groups())
@@ -482,7 +482,7 @@ read -r confirm_x confirm_y <<< "$cover_confirm_bounds"
 timeout -k 2s 8s adb -s emulator-5554 shell input tap "$confirm_x" "$confirm_y"
 sleep 1
 dump_hierarchy cover-selected.xml emulator-screenshots/cover-selected.xml || true
-if ! grep -q "Kapak ✓" emulator-screenshots/cover-selected.xml; then
+if ! grep -q "Kapak karesi seçildi:" emulator-screenshots/cover-selected.xml; then
   echo "Selected cover frame was not reflected in the editor controls."
   collect_capture_diagnostics cover-selection-not-retained
   exit 32
