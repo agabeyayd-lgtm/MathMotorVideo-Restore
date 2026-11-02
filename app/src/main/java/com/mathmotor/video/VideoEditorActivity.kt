@@ -1295,9 +1295,9 @@ class VideoEditorActivity : Activity() {
         overlayPanel.addView(label("GÖRSEL / VİDEO BİNDİRME", 13f, Color.rgb(121, 202, 218), true))
         overlayPanel.addView(label("Ana videonun üzerinde bağımsız bir katman oluştur.", 11f, Color.rgb(154, 171, 190), false))
         val overlayActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        overlayActions.addView(miniButton("＋ Fotoğraf") { chooseOverlayAsset() },
+        overlayActions.addView(miniButton("＋ Fotoğraf") { chooseOverlayAsset(imagesOnly = true) },
             LinearLayout.LayoutParams(0, dp(42), 1f))
-        overlayActions.addView(miniButton("＋ Video") { chooseOverlayAsset() },
+        overlayActions.addView(miniButton("＋ Video") { chooseOverlayAsset(imagesOnly = false) },
             LinearLayout.LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(4) })
         overlayActions.addView(miniButton("Kaldır") { removeSelectedOverlay() },
             LinearLayout.LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(4) })
@@ -5150,11 +5150,10 @@ class VideoEditorActivity : Activity() {
         }
     }
 
-    private fun chooseOverlayAsset() {
+    private fun chooseOverlayAsset(imagesOnly: Boolean) {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
-            type = "*/*"
-            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*"))
+            type = if (imagesOnly) "image/*" else "video/*"
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
         }
         try {
@@ -5228,10 +5227,14 @@ class VideoEditorActivity : Activity() {
         overlayClips.firstOrNull { it.id == selectedOverlayId }
 
     private fun selectOverlay(id: Long) {
+        val overlay = overlayClips.firstOrNull { it.id == id } ?: return
         selectedOverlayId = id
+        timelinePlayheadMs = overlay.timelineStartMs
         loadOverlayControls()
         showEditorPanel("overlay")
         refreshTimelineTracks()
+        updateTimelinePlayheadDisplay()
+        if (timelinePreviewLoaded) seekTimelinePreview(timelinePlayheadMs)
     }
 
     private fun removeSelectedOverlay() {
@@ -5306,6 +5309,7 @@ class VideoEditorActivity : Activity() {
             listOf(overlayStartSeek, overlayDurationSeek, overlayScaleSeek,
                 overlayXSeek, overlayYSeek, overlayRotationSeek).forEach { it.isEnabled = true }
             val projectDuration = maxOf(
+                totalOutputDurationMs(),
                 TimelineVideoMath.totalDuration(videoTimelineSegments()),
                 overlay.timelineStartMs + overlay.durationMs,
                 1_000L
