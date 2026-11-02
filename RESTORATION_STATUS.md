@@ -228,3 +228,12 @@ Verification pending:
 - Verify Android build #484 validates the revised geometry unit tests and APK compilation.
 - Run #688 also passed forward/reverse scrub and live ruler/video playback synchronization. Continue with still-open checks for thumbnail reuse/fill speed, Stop frame retention, portrait/landscape/square sources and physical-phone acceptance.
 - Keep versionCode 394 / Build 61 as the approved baseline. Do not create version 395, sign/publish a release, or offer a replacement APK until all acceptance checks pass and the user explicitly authorizes it.
+
+
+## 2026-11-02 — filmstrip decoder fast path (verification pending)
+
+- Normal filmstrip extraction now attempts the reusable Android `MediaMetadataRetriever` first, requesting a scaled closest frame at the cell's exact requested timestamp. The shared Media3 `FrameExtractor` remains the fallback for unsupported providers/codecs.
+- Rationale: the previous path initialized a Media3 extraction session before decoding the first still; the platform retriever is already reused per worker/source and avoids that setup for supported media.
+- Added debug-only per-decoder timing markers to measure native retriever decode time and Media3 fallback time on the next emulator pass.
+- **Not yet verified:** no speedup is claimed until the API 35 test confirms preview/filmstrip pixel alignment, distinct adjacent timestamps, first exact-frame latency and full visible-strip fill time. Revert this change if frame accuracy regresses.
+- Build 394 / Build 61 remains the baseline; do not create version 395 or issue a release APK.
