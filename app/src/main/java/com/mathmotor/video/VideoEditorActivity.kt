@@ -5882,7 +5882,7 @@ class VideoEditorActivity : Activity() {
                 val frame = future.get(5000L, TimeUnit.MILLISECONDS)
                 if (timelineSyncTestEnabled) android.util.Log.i(
                     "TimelineFrameSyncTest",
-                    "TIMELINE_THUMBNAIL_DECODED requestedMs=$timeMs actualFrameMs=${frame.presentationTimeMs} decoder=media3-default-selector worker=${Thread.currentThread().id} decodeMs=${SystemClock.uptimeMillis() - startedAt}"
+                    "TIMELINE_THUMBNAIL_DECODED requestedMs=$timeMs actualFrameMs=${frame.presentationTimeMs} decoder=media3-shared worker=${Thread.currentThread().id} decodeMs=${SystemClock.uptimeMillis() - startedAt}"
                 )
                 return frame.bitmap
             } catch (error: Exception) {
