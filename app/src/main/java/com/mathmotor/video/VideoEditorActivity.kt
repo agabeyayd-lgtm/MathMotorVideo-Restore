@@ -55,6 +55,7 @@ import androidx.media3.effect.MatrixTransformation
 import androidx.media3.effect.OverlayEffect
 import androidx.media3.effect.Presentation
 import androidx.media3.common.OverlaySettings
+import androidx.media3.common.VideoCompositorSettings
 import androidx.media3.effect.StaticOverlaySettings
 import androidx.media3.effect.TextOverlay
 import androidx.media3.inspector.frame.FrameExtractor
@@ -93,6 +94,21 @@ class VideoEditorActivity : Activity() {
         var coverTimeMs: Long? = null
     )
 
+    private data class OverlayClip(
+        val id: Long,
+        val uri: Uri,
+        val title: String,
+        val isImage: Boolean,
+        val sourceDurationMs: Long,
+        var sourceStartMs: Long = 0L,
+        var timelineStartMs: Long = 0L,
+        var durationMs: Long = sourceDurationMs,
+        var scale: Float = 0.35f,
+        var xFraction: Float = 0.78f,
+        var yFraction: Float = 0.22f,
+        var rotationDegrees: Float = 0f
+    )
+
     private data class ClipEditSnapshot(
         val clips: List<Clip>,
         val selectedClipIndex: Int,
@@ -101,6 +117,9 @@ class VideoEditorActivity : Activity() {
     )
 
     private val clips = mutableListOf<Clip>()
+    private val overlayClips = mutableListOf<OverlayClip>()
+    private var nextOverlayId = 1L
+    private var selectedOverlayId: Long? = null
     private var draftId: String? = null
     private val undoClipHistory = mutableListOf<ClipEditSnapshot>()
     private val redoClipHistory = mutableListOf<ClipEditSnapshot>()
@@ -393,6 +412,19 @@ class VideoEditorActivity : Activity() {
     private var activeEditorPanel: String? = null
     private var textOverlayEditingEnabled: Boolean = false
     private lateinit var selectedClipLabel: TextView
+    private lateinit var overlayTitleLabel: TextView
+    private lateinit var overlayStartLabel: TextView
+    private lateinit var overlayDurationLabel: TextView
+    private lateinit var overlayScaleLabel: TextView
+    private lateinit var overlayPositionLabel: TextView
+    private lateinit var overlayRotationLabel: TextView
+    private lateinit var overlayStartSeek: SeekBar
+    private lateinit var overlayDurationSeek: SeekBar
+    private lateinit var overlayScaleSeek: SeekBar
+    private lateinit var overlayXSeek: SeekBar
+    private lateinit var overlayYSeek: SeekBar
+    private lateinit var overlayRotationSeek: SeekBar
+    private var updatingOverlayControls = false
     private var clipCoverButton: Button? = null
     private lateinit var startLabel: TextView
     private lateinit var endLabel: TextView
@@ -435,6 +467,7 @@ class VideoEditorActivity : Activity() {
         private const val REQUEST_SAVE_PROJECT = 5105
         private const val REQUEST_OPEN_PROJECT = 5106
         private const val REQUEST_LEGACY_STORAGE = 5107
+        private const val REQUEST_OVERLAY_ASSET = 5108
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -1258,6 +1291,45 @@ class VideoEditorActivity : Activity() {
         })
         audioPanel.addView(sourceVolumeSeek, matchWrap())
 
+        val overlayPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        overlayPanel.addView(label("GÖRSEL / VİDEO BİNDİRME", 13f, Color.rgb(121, 202, 218), true))
+        overlayPanel.addView(label("Ana videonun üzerinde bağımsız bir katman oluştur.", 11f, Color.rgb(154, 171, 190), false))
+        val overlayActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        overlayActions.addView(miniButton("＋ Fotoğraf") { chooseOverlayAsset() },
+            LinearLayout.LayoutParams(0, dp(42), 1f))
+        overlayActions.addView(miniButton("＋ Video") { chooseOverlayAsset() },
+            LinearLayout.LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(4) })
+        overlayActions.addView(miniButton("Kaldır") { removeSelectedOverlay() },
+            LinearLayout.LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(4) })
+        overlayPanel.addView(overlayActions)
+        overlayTitleLabel = label("Henüz bindirme eklenmedi.", 12f, Color.WHITE, true)
+        overlayPanel.addView(overlayTitleLabel)
+        overlayStartLabel = label("Başlangıç", 11f, Color.rgb(205, 218, 231), false)
+        overlayPanel.addView(overlayStartLabel)
+        overlayStartSeek = SeekBar(this)
+        overlayPanel.addView(overlayStartSeek, matchWrap())
+        overlayDurationLabel = label("Katman süresi", 11f, Color.rgb(205, 218, 231), false)
+        overlayPanel.addView(overlayDurationLabel)
+        overlayDurationSeek = SeekBar(this)
+        overlayPanel.addView(overlayDurationSeek, matchWrap())
+        overlayScaleLabel = label("Boyut", 11f, Color.rgb(205, 218, 231), false)
+        overlayPanel.addView(overlayScaleLabel)
+        overlayScaleSeek = SeekBar(this).apply { max = 1000 }
+        overlayPanel.addView(overlayScaleSeek, matchWrap())
+        overlayPositionLabel = label("Konum • yatay / dikey", 11f, Color.rgb(205, 218, 231), false)
+        overlayPanel.addView(overlayPositionLabel)
+        val overlayPositionRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        overlayXSeek = SeekBar(this).apply { max = 1000 }
+        overlayYSeek = SeekBar(this).apply { max = 1000 }
+        overlayPositionRow.addView(overlayXSeek, LinearLayout.LayoutParams(0, dp(38), 1f))
+        overlayPositionRow.addView(overlayYSeek, LinearLayout.LayoutParams(0, dp(38), 1f).apply { leftMargin = dp(5) })
+        overlayPanel.addView(overlayPositionRow)
+        overlayRotationLabel = label("Döndürme", 11f, Color.rgb(205, 218, 231), false)
+        overlayPanel.addView(overlayRotationLabel)
+        overlayRotationSeek = SeekBar(this).apply { max = 3600; progress = 1800 }
+        overlayPanel.addView(overlayRotationSeek, matchWrap())
+        installOverlayControlListeners()
+
         val exportPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         exportPanel.addView(label("PROJE / DIŞA AKTARMA", 13f, Color.rgb(121, 202, 218), true))
         exportPanel.addView(label("Dosya adı", 11f, Color.rgb(154, 171, 190), false))
@@ -1309,6 +1381,7 @@ class VideoEditorActivity : Activity() {
         exportPanel.addView(exportButton)
 
         editorPanels["clip"] = clipPanel
+        editorPanels["overlay"] = overlayPanel
         editorPanels["text"] = textPanel
         editorPanels["audio"] = audioPanel
         editorPanels["export"] = exportPanel
