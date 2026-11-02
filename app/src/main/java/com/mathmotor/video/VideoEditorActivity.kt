@@ -308,8 +308,8 @@ class VideoEditorActivity : Activity() {
         private val work: () -> Unit
     ) : Runnable, Comparable<TimelineThumbnailTask> {
         override fun compareTo(other: TimelineThumbnailTask): Int {
-            // Lower phase values run first. Preview stills and the first-cell warmup
-            // outrank normal visible filmstrip samples; those are nearest-playhead first.
+            // Lower phase values run first. Preview stills and the first exact cell
+            // outrank the remaining visible samples; those are nearest-playhead first.
             val phaseOrder = priorityPhase.compareTo(other.priorityPhase)
             if (phaseOrder != 0) return phaseOrder
             val distanceOrder = distanceFromPlayheadMs.compareTo(other.distanceFromPlayheadMs)
