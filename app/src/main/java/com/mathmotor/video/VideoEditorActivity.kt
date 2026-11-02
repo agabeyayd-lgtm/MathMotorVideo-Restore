@@ -2436,7 +2436,7 @@ class VideoEditorActivity : Activity() {
             addSoundEffectTimelineBlock(effectTrack, totalMs)
             addSpacer(effectTrack, endMs, totalMs)
         }
-        // All lane origins are offset from the 57dp label/grip gutter so time zero
+        // All lane origins are offset from the 82dp header gutter so time zero
         // lands on the full timeline/Play center, not the center of the smaller
         // scroll viewport to the right of that gutter. This keeps ruler, filmstrip
         // and the stationary playhead on one vertical axis.
@@ -3017,7 +3017,7 @@ class VideoEditorActivity : Activity() {
     private fun updateTimelinePlayheadLine() {
         if (!::timelinePlayheadLine.isInitialized || !::timelineTracksFrame.isInitialized) return
         // Match the Play control's center in the full editor content area. Do not
-        // center relative to the narrower scroll viewport after its 57dp grip gutter.
+        // center relative to the narrower scroll viewport after its 82dp header gutter.
         val centerX = timelineTracksFrame.width / 2
         timelinePlayheadLine.visibility = View.VISIBLE
         val params = timelinePlayheadLine.layoutParams as? FrameLayout.LayoutParams ?: return
@@ -3192,8 +3192,8 @@ class VideoEditorActivity : Activity() {
     }
 
     /**
-     * Horizontal space consumed before a lane's scrolling content: the 96dp
-     * ruler/media header plus the row's 3dp leading inset. Keep this in sync
+     * Horizontal space consumed before a lane's scrolling content: the 82dp
+     * ruler/media header. Lane rows have no extra leading inset; keep this in sync
      * with makeLane(), otherwise the fixed playhead maps to the wrong project time.
      */
     private fun timelineHeaderGutterWidthPx(): Int = dp(82)
@@ -6375,7 +6375,7 @@ class VideoEditorActivity : Activity() {
         content.addView(coverPreview, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(210)
         ))
-        val timestampLabel = label("Kapak zamanı: \${formatTimelineMs(selectedSourceTimeMs)}", 12f, Color.WHITE, true)
+        val timestampLabel = label("Kapak zamanı: ${formatTimelineMs(selectedSourceTimeMs)}", 12f, Color.WHITE, true)
         timestampLabel.setPadding(dp(2), dp(10), dp(2), dp(2))
         content.addView(timestampLabel)
         content.addView(label("Kaydırarak videodan kullanmak istediğin kareyi seç.", 11f, Color.rgb(160, 177, 194), false))
@@ -6409,7 +6409,7 @@ class VideoEditorActivity : Activity() {
                         coverPreview.setImageBitmap(decoded)
                         if (previous !== decoded && previous != null && !previous.isRecycled) previous.recycle()
                     } else {
-                        timestampLabel.text = "Bu kare okunamadı: \${formatTimelineMs(requestedTimeMs)}"
+                        timestampLabel.text = "Bu kare okunamadı: ${formatTimelineMs(requestedTimeMs)}"
                     }
                 }
             }
@@ -6426,7 +6426,7 @@ class VideoEditorActivity : Activity() {
                 selectedSourceTimeMs = (firstAllowedMs + TimelineTrimMath.timeForProgress(
                     progress, selectableDurationMs
                 )).coerceIn(firstAllowedMs, lastAllowedMs)
-                timestampLabel.text = "Kapak zamanı: \${formatTimelineMs(selectedSourceTimeMs)}"
+                timestampLabel.text = "Kapak zamanı: ${formatTimelineMs(selectedSourceTimeMs)}"
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
@@ -6455,7 +6455,7 @@ class VideoEditorActivity : Activity() {
                 clip.coverTimeMs = selectedSourceTimeMs
                 android.util.Log.i("ClipCover", "COVER_SELECTED clipIndex=${clipIndex} sourceMs=${selectedSourceTimeMs}")
                 loadTrimControls()
-                status.text = "Kapak karesi \${formatTimelineMs(selectedSourceTimeMs)} olarak seçildi. Projeyi kaydettiğinde seçim korunur."
+                status.text = "Kapak karesi ${formatTimelineMs(selectedSourceTimeMs)} olarak seçildi. Projeyi kaydettiğinde seçim korunur."
                 dialog.dismiss()
             }
             dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
@@ -6492,14 +6492,14 @@ class VideoEditorActivity : Activity() {
             .trim('_')
             .take(36)
             .ifBlank { "MathMotorVideo" }
-        val fileName = "\${safeTitle}_Kapak_\${sourceTimeMs}.jpg"
+        val fileName = "${safeTitle}_Kapak_${sourceTimeMs}.jpg"
         var outputUri: Uri? = null
         try {
             val values = ContentValues().apply {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
                 put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    put(MediaStore.MediaColumns.RELATIVE_PATH, "\${Environment.DIRECTORY_PICTURES}/MathMotor/Kapaklar")
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/MathMotor/Kapaklar")
                     put(MediaStore.MediaColumns.IS_PENDING, 1)
                 } else {
                     val directory = java.io.File(
@@ -6530,7 +6530,7 @@ class VideoEditorActivity : Activity() {
             status.text = "Kapak görseli Galeri > Resimler > MathMotor > Kapaklar içine kaydedildi."
         } catch (error: Exception) {
             outputUri?.let { runCatching { contentResolver.delete(it, null, null) } }
-            status.text = "Kapak görseli kaydedilemedi: \${error.message ?: error.javaClass.simpleName}"
+            status.text = "Kapak görseli kaydedilemedi: ${error.message ?: error.javaClass.simpleName}"
         }
     }
 
