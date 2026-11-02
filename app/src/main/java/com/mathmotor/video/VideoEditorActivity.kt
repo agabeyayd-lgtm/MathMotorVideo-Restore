@@ -372,6 +372,9 @@ class VideoEditorActivity : Activity() {
     private var timelinePlayheadMs = 0L
     // Enabled only by the debug emulator test bridge; no telemetry is emitted in normal app use.
     private var timelineSyncTestEnabled = false
+    // Local diagnostics are enabled only in debuggable builds; nothing is uploaded.
+    private var timelineLifecycleDiagnosticsEnabled = false
+    private var timelineLifecycleState = "not-created"
     private var timelinePreviewLoaded = false
     private var previewSingleClip = false
     private enum class TimelinePlaybackState { PAUSED, PLAYING, ERROR }
@@ -481,9 +484,16 @@ class VideoEditorActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        timelineLifecycleDiagnosticsEnabled =
+            (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
         timelineSyncTestEnabled =
             (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0 &&
                 intent.getBooleanExtra("timeline_sync_test", false)
+        timelineLifecycleState = "created"
+        logTimelineLifecycle(
+            "onCreate",
+            "savedStatePresent=${savedInstanceState != null} incomingVideo=${!intent.getStringExtra("video_uri").isNullOrBlank()}"
+        )
         if (timelineSyncTestEnabled) {
             android.util.Log.i("TimelineSyncTest", "TIMELINE_SYNC_TEST_ENABLED")
         }
@@ -527,6 +537,71 @@ class VideoEditorActivity : Activity() {
         } else if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
             android.util.Log.e("EditorSmokeTest", "EDITOR_SMOKE_MISSING_VIDEO_URI")
         }
+        logTimelineLifecycle("onCreateComplete", "draftId=$draftId clips=${clips.size}")
+    }
+
+    private fun logTimelineLifecycle(event: String, details: String = "") {
+        if (!timelineLifecycleDiagnosticsEnabled) return
+        val waitingTargets = pendingTimelineThumbnails.values.fold(0) { total, refs -> total + refs.size }
+        val detailsSuffix = if (details.isBlank()) "" else " $details"
+        android.util.Log.i(
+            "TimelineLifecycle",
+            "TIMELINE_LIFECYCLE event=$event pid=${android.os.Process.myPid()} " +
+                "instance=${System.identityHashCode(this).toString(16)} state=$timelineLifecycleState " +
+                "finishing=$isFinishing changingConfig=$isChangingConfigurations destroyed=$isDestroyed " +
+                "thumbCacheBytes=${timelineThumbnailCache.size()} thumbCacheMaxBytes=${timelineThumbnailCache.maxSize()} " +
+                "thumbCacheHits=${timelineThumbnailCache.hitCount()} thumbCacheMisses=${timelineThumbnailCache.missCount()} " +
+                "thumbCacheEvictions=${timelineThumbnailCache.evictionCount()} posterCacheBytes=${timelinePosterCache.size()} " +
+                "pendingKeys=${pendingTimelineThumbnails.size} pendingTargets=$waitingTargets " +
+                "queuedTasks=${timelineThumbnailExecutor.queue.size} activeWorkers=${timelineThumbnailExecutor.activeCount}" +
+                detailsSuffix
+        )
+    }
+
+    override fun onRestart() {
+        super.onRestart()
+        timelineLifecycleState = "restarted"
+        logTimelineLifecycle("onRestart")
+    }
+
+    override fun onStart() {
+        super.onStart()
+        timelineLifecycleState = "started"
+        logTimelineLifecycle("onStart")
+    }
+
+    override fun onResume() {
+        super.onResume()
+        timelineLifecycleState = "resumed"
+        logTimelineLifecycle("onResume")
+    }
+
+    override fun onPause() {
+        timelineLifecycleState = "paused"
+        logTimelineLifecycle("onPause")
+        super.onPause()
+    }
+
+    override fun onStop() {
+        timelineLifecycleState = "stopped"
+        logTimelineLifecycle("onStop")
+        super.onStop()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        logTimelineLifecycle("onSaveInstanceState")
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        logTimelineLifecycle("onTrimMemory", "level=$level")
+    }
+
+    override fun onDestroy() {
+        timelineLifecycleState = "destroyed"
+        logTimelineLifecycle("onDestroy")
+        super.onDestroy()
     }
 
     // CapCut-reference workspace: preview, fixed centered playback, live centered time readout, scrolling shared timeline, pinned dock.
@@ -1925,6 +2000,15 @@ class VideoEditorActivity : Activity() {
 
     private fun refreshTimelineTracks() {
         if (!::timelineTracks.isInitialized) return
+        if (timelineLifecycleDiagnosticsEnabled) {
+            val caller = Throwable().stackTrace.getOrNull(2)?.let {
+                "${it.className.substringAfterLast('.')}.${it.methodName}"
+            } ?: "unknown"
+            logTimelineLifecycle(
+                "timelineRefresh",
+                "caller=$caller rowsBefore=${timelineTracks.childCount}"
+            )
+        }
         // The scroll listener keeps this value current. Reading a freshly rebuilt
         // child view here can return zero before its posted scroll restoration runs.
         val preservedScrollX = pendingTimelineScrollX ?: timelineHorizontalScrollX
@@ -6689,6 +6773,11 @@ class VideoEditorActivity : Activity() {
         val cached = timelineThumbnailCache.get(key)
         if (cached != null && !cached.isRecycled) {
             target.setImageBitmap(cached)
+            if (timelineLifecycleDiagnosticsEnabled) android.util.Log.i(
+                "TimelineThumbnail",
+                "TIMELINE_THUMBNAIL_CACHE_HIT sourceMs=$timestampMs cacheBytes=${timelineThumbnailCache.size()} " +
+                    "attached=${target.isAttachedToWindow}"
+            )
             if (timelineSyncTestEnabled) android.util.Log.i(
                 "TimelineFrameSyncTest",
                 "TIMELINE_THUMBNAIL_READY sourceMs=$timestampMs width=${cached.width} height=${cached.height} cached=true"
@@ -6745,21 +6834,39 @@ class VideoEditorActivity : Activity() {
         val waiting = pendingTimelineThumbnails[key]
         if (waiting != null) {
             waiting.add(WeakReference(target))
+            if (timelineLifecycleDiagnosticsEnabled) android.util.Log.i(
+                "TimelineThumbnail",
+                "TIMELINE_THUMBNAIL_DEDUP sourceMs=$timestampMs waitingTargets=${waiting.size}"
+            )
             return
         }
         pendingTimelineThumbnails[key] = mutableListOf(WeakReference(target))
+        val enqueuedAtUptimeMs = SystemClock.uptimeMillis()
+        if (timelineLifecycleDiagnosticsEnabled) android.util.Log.i(
+            "TimelineThumbnail",
+            "TIMELINE_THUMBNAIL_CACHE_MISS sourceMs=$timestampMs queueDepth=${timelineThumbnailExecutor.queue.size} " +
+                "activeWorkers=${timelineThumbnailExecutor.activeCount} pendingKeys=${pendingTimelineThumbnails.size}"
+        )
         val task = TimelineThumbnailTask(
             priorityDistanceMs.coerceAtLeast(0L),
             timelineThumbnailTaskSequence.incrementAndGet()
         ) {
+            val taskStartedAtUptimeMs = SystemClock.uptimeMillis()
+            val queueWaitMs = taskStartedAtUptimeMs - enqueuedAtUptimeMs
+            var frameDecodeDurationMs = -1L
+            var bitmapScaleDurationMs = 0L
             var decoded: Bitmap? = null
             try {
+                val frameDecodeStartedAtUptimeMs = SystemClock.uptimeMillis()
                 val original = decodeTimelineFrame(uri, timestampMs)
+                val frameDecodedAtUptimeMs = SystemClock.uptimeMillis()
+                frameDecodeDurationMs = frameDecodedAtUptimeMs - frameDecodeStartedAtUptimeMs
                 if (original != null && !original.isRecycled &&
                     original.width > 0 && original.height > 0
                 ) {
                     // Reduce the complete source frame to thumbnail bounds. Keep its
                     // original aspect ratio; never crop, pad with bars, or stretch it.
+                    val scaleStartedAtUptimeMs = SystemClock.uptimeMillis()
                     val (thumbnailWidth, thumbnailHeight) = TimelineThumbnailMath.fitDimensions(
                         original.width,
                         original.height,
@@ -6778,6 +6885,7 @@ class VideoEditorActivity : Activity() {
                             true
                         ).also { if (!original.isRecycled) original.recycle() }
                     }
+                    bitmapScaleDurationMs = SystemClock.uptimeMillis() - scaleStartedAtUptimeMs
                     decoded = thumbnail
                 } else {
                     original?.let { if (!it.isRecycled) it.recycle() }
@@ -6787,8 +6895,12 @@ class VideoEditorActivity : Activity() {
             }
 
             val result = decoded
+            val workerCompletedAtUptimeMs = SystemClock.uptimeMillis()
             runOnUiThread {
+                val uiCallbackStartedAtUptimeMs = SystemClock.uptimeMillis()
+                val uiDispatchWaitMs = uiCallbackStartedAtUptimeMs - workerCompletedAtUptimeMs
                 val targets = pendingTimelineThumbnails.remove(key).orEmpty()
+                var appliedTargets = 0
                 if (result != null && !isFinishing && !isDestroyed) {
                     timelineThumbnailCache.put(key, result)
                     val decodedAspectRatio = result.width.toFloat() / result.height.coerceAtLeast(1).toFloat()
@@ -6806,7 +6918,10 @@ class VideoEditorActivity : Activity() {
                     )
                     targets.forEach { ref ->
                         val image = ref.get()
-                        if (image != null && image.tag == key) image.setImageBitmap(result)
+                        if (image != null && image.tag == key) {
+                            image.setImageBitmap(result)
+                            appliedTargets++
+                        }
                     }
                 } else {
                     result?.recycle()
@@ -6817,6 +6932,17 @@ class VideoEditorActivity : Activity() {
                             image.setBackgroundColor(Color.TRANSPARENT)
                         }
                     }
+                }
+                if (timelineLifecycleDiagnosticsEnabled) {
+                    android.util.Log.i(
+                        "TimelineThumbnail",
+                        "TIMELINE_THUMBNAIL_TIMING sourceMs=$timestampMs success=${result != null} " +
+                            "queueWaitMs=$queueWaitMs frameDecodeMs=$frameDecodeDurationMs " +
+                            "bitmapScaleMs=$bitmapScaleDurationMs uiDispatchWaitMs=$uiDispatchWaitMs " +
+                            "uiApplyMs=${SystemClock.uptimeMillis() - uiCallbackStartedAtUptimeMs} " +
+                            "targets=${targets.size} applied=$appliedTargets " +
+                            "cacheBytes=${timelineThumbnailCache.size()} queueDepth=${timelineThumbnailExecutor.queue.size}"
+                    )
                 }
             }
         }
