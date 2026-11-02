@@ -59,6 +59,7 @@ import androidx.media3.effect.StaticOverlaySettings
 import androidx.media3.effect.TextOverlay
 import androidx.media3.inspector.frame.FrameExtractor
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.ui.PlayerView
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.CompositionPlayer
@@ -5590,6 +5591,12 @@ class VideoEditorActivity : Activity() {
         return try {
             FrameExtractor.Builder(this, MediaItem.fromUri(uri))
                 .setSeekParameters(androidx.media3.exoplayer.SeekParameters.EXACT)
+                // FrameExtractor defaults to PREFER_SOFTWARE. The first 211ms sample
+                // took 4.06s on API 35, while later seeks took 80–456ms. Prefer the
+                // platform's normal decoder ordering for this bounded thumbnail session.
+                // Media3 warns that some hardware codecs can fail on flush/seek, so every
+                // request remains guarded and falls back to the compatibility retriever.
+                .setMediaCodecSelector(MediaCodecSelector.DEFAULT)
                 .setEffects(listOf(Presentation.createForHeight(288)))
                 .build()
                 .also { timelineThumbnailExtractors[threadId] = uri to it }
@@ -5823,7 +5830,7 @@ class VideoEditorActivity : Activity() {
                 val frame = future.get(5000L, TimeUnit.MILLISECONDS)
                 if (timelineSyncTestEnabled) android.util.Log.i(
                     "TimelineFrameSyncTest",
-                    "TIMELINE_THUMBNAIL_DECODED requestedMs=$timeMs actualFrameMs=${frame.presentationTimeMs} decoder=media3-shared worker=${Thread.currentThread().id} decodeMs=${SystemClock.uptimeMillis() - startedAt}"
+                    "TIMELINE_THUMBNAIL_DECODED requestedMs=$timeMs actualFrameMs=${frame.presentationTimeMs} decoder=media3-default-selector worker=${Thread.currentThread().id} decodeMs=${SystemClock.uptimeMillis() - startedAt}"
                 )
                 return frame.bitmap
             } catch (error: Exception) {
