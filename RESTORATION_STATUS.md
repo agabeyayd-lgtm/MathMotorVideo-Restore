@@ -1,5 +1,69 @@
 # MathMotor Video — current project status
 
+## New editor layout target — CapCut-inspired mobile arrangement (2026-11-02)
+
+**Status: DESIGN TARGET RECORDED — implementation and verification not yet started.** This is a layout-only redesign of the existing editor, based on the user's complete 720×1600 portrait reference specification. The installed 394 / Build 61 experience remains the baseline; do not create version 395 or publish an APK for this documentation update.
+
+### Non-negotiable scope
+
+- Change only layout, sizing, positioning and ordering. Preserve existing colors, icons, typography, button styling, labels and visual language.
+- Do not rewrite editor logic, replace the editor screen, remove working controls or alter media/project data behavior.
+- Make the layout responsive to actual device dimensions and insets. The 720×1600 coordinates below are a reference composition, not hard-coded pixel dimensions.
+- Preserve all existing actions and connect moved controls to the same existing handlers/state.
+- Keep the approved editor source, shared timeline coordinate system, source-frame-rate-aware ruler/zoom math, thumbnail alignment and fixed-center playhead behavior. Do not revive interim editor implementations.
+
+### Target vertical composition (720×1600 reference)
+
+1. Status/system bar: approximately y=0–60.
+2. Existing top bar: approximately y=60–150; keep X, search, `YZ UHD ▾`, and `Dışa Aktar` in their current style.
+3. Video preview: approximately y=150–860; centered, about 400 px wide in the reference, with side space. Reduce its current oversized footprint. Remove the fullscreen control from inside the preview and move it to the control row.
+4. Playback/control row: approximately y=860–925. Left: fullscreen and current/total time. Center: existing play action without its enclosing box. Right: existing undo/redo actions. Keep `Sığdır` compact on this row. Undo/redo must retain their current behavior; do not imply they become global project history as part of this layout-only task.
+5. Timeline workspace: approximately y=940–1380 (about 440 px in the reference, roughly 27% of the full screen). It must be a clearly separated, usable multi-lane area; the video filmstrip must not consume the entire vertical space.
+   - Ruler near y=957 with sparse labels such as `00:00` and `00:05`, replacing dense `0 1 2 ... 10` labels while preserving accurate time mapping and scrubbing.
+   - A thin vertical playhead aligned across ruler and all lanes, from approximately y=990 to y=1370 in the reference.
+   - Video lane around y=1015–1110 (about 95 px reference height), with visible, distinct frame thumbnails. Add a 55×55 reference `+` affordance at its right edge as visual-only.
+   - Two compact controls to the left of the video lane: `Klip sesini` and `Kapak`. `Klip sesini` must call the existing clip-audio mute/unmute behavior. `Kapak` is visual-only.
+   - Audio lane around y=1137–1192 with a small music-note tile and `Ses ekle` affordance.
+   - Text lane around y=1207–1262 with a small `T` tile and `Metin ekle` affordance.
+   - Small round `YZ` visual-only affordance near the lower-left of the timeline.
+   - Move the current speaker/mute control into the `Klip sesini` control; do not create a second independent mute state.
+   - Keep video, text, music, sound effects, ruler, playhead and trim boundaries on the same shared time coordinate system. Scrolling/zooming must not alter layer timestamps.
+6. Bottom tool navigation: approximately y=1380–1510; horizontal scrolling. Order: `Düzenle`, `Ses`, `Metin`, `Efektler`, `Bindirme`, `Yazılar`, `Proje`, with the next item partly visible at the right edge. Preserve existing styling; icon above label. Existing `Düzenle`, `Ses`, `Metin`, and `Proje` functions remain connected.
+7. System navigation area: approximately y=1510–1600, respecting the device's real system insets.
+
+### Clip selection and tool behavior
+
+- The video clip is unselected on initial editor entry: no selection border or trim handles.
+- Tapping a clip selects it and opens its contextual bottom tool row.
+- Move these existing actions out of the always-visible main layout and into that selected-clip tool row: `Önizle`, `Kopyala`, `Klibi kaldır`, `Böl`, `Öne al`, `Sona al`, `Klip geri al`, `Klip yinele`, and the `Başlangıç/Bitiş` controls. Preserve their current handlers and exact behavior.
+- `Ses ekle` opens the existing `Ses` tool; `Metin ekle` opens the existing `Metin` tool.
+- The four existing tools `Düzenle`, `Ses`, `Metin`, `Proje` remain functional in the bottom navigation.
+- `Kapak`, `Efektler`, `Bindirme`, `Yazılar`, the video-lane `+`, and `YZ` are appearance-only placeholders. Do not implement new feature logic. If tapped, show a brief `Yakında` message at most; no navigation into broken or empty flows.
+
+### Layout acceptance checklist — all remain open until verified
+
+- [ ] Recompose the existing editor screen into the specified vertical order without replacing its underlying editor implementation.
+- [ ] Scale preview down and move fullscreen control to the playback row.
+- [ ] Add compact playback row with current time, play, existing undo/redo and fit controls.
+- [ ] Expand timeline workspace to the intended share of available screen height; constrain filmstrip height so separate audio/text lanes remain visible.
+- [ ] Implement sparse ruler labels without changing time-to-pixel accuracy, seek behavior, shared lane alignment or pinch-anchor behavior.
+- [ ] Render video, audio and text lanes with the requested relative heights and left-side controls.
+- [ ] Keep playhead visually continuous/aligned across all timeline lanes.
+- [ ] Make initial clip state unselected; tapping selects it and reveals the contextual clip action row.
+- [ ] Move all listed clip actions and start/end controls into that row without changing their handlers.
+- [ ] Wire `Klip sesini` to the existing clip mute/unmute state.
+- [ ] Wire `Ses ekle` and `Metin ekle` to existing tool destinations.
+- [ ] Add the specified visual-only placeholder affordances with safe `Yakında` feedback.
+- [ ] Add horizontally scrollable bottom navigation in the requested order; preserve the four existing tool destinations.
+- [ ] Verify responsive layout on the 720×1600 reference and at least one smaller/shorter phone viewport; no hard-coded screen-pixel positioning.
+- [ ] Verify keyboard-open layout, system bars/insets, touch targets and that no lane is hidden or overlapped.
+- [ ] Verify existing clip select, preview, copy, remove, split, reorder, trim, undo/redo, mute, play/pause, seek, pinch zoom, horizontal scroll, text/audio tools, project save/resume and export behavior.
+- [ ] Capture before/after emulator screenshots and review actual layout, not only build success.
+- [ ] Perform physical-phone acceptance before release.
+
+**Important:** This is a layout-only target. Existing functional defects already listed elsewhere in this document remain separate work and must not be marked fixed by this redesign. A successful compile or screenshot alone does not prove preserved functionality. Keep versionCode 394 / Build 61 until all release gates pass and the user explicitly authorizes version 395.
+
+
 ## Canonical mainline state — 2026-11-01
 
 - Emulator run #687 itself remains red because its full Android log capture was truncated. The filtered-log correction was validated in #688; see the 2026-11-02 evidence section below for successful frame-match, scrub, playback-sync and autosave checks.
