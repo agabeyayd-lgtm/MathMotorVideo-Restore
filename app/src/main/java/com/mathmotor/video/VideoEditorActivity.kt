@@ -206,6 +206,7 @@ class VideoEditorActivity : Activity() {
     private val previewFrameRequestGeneration = java.util.concurrent.atomic.AtomicLong()
     private var pendingPreviewFrameTask: TimelineThumbnailTask? = null
     private var previewFrameBitmap: Bitmap? = null
+    private var previewFrameCacheKey: String? = null
     private lateinit var previewFocusButton: Button
     private lateinit var playbackLeft: LinearLayout
     private lateinit var centeredPlaybackRow: FrameLayout
@@ -6339,6 +6340,7 @@ class VideoEditorActivity : Activity() {
         pendingPreviewFrameTask?.let { timelineThumbnailExecutor.remove(it) }
         pendingPreviewFrameTask = null
         previewFrameOverlay.visibility = View.GONE
+        previewFrameCacheKey = null
     }
 
     /** Cover the player immediately while a new playhead frame is being decoded. */
@@ -6354,6 +6356,7 @@ class VideoEditorActivity : Activity() {
         previewFrameOverlay.setImageDrawable(null)
         previewFrameBitmap?.let { if (!it.isRecycled) it.recycle() }
         previewFrameBitmap = null
+        previewFrameCacheKey = null
         previewFrameOverlay.setBackgroundColor(Color.BLACK)
         previewFrameOverlay.visibility = View.VISIBLE
         resetPreviewFrameTransform()
@@ -6429,12 +6432,14 @@ class VideoEditorActivity : Activity() {
             if (distanceMs > 500L || entry.value.isRecycled) return@mapNotNull null
             Triple(distanceMs, cachedTimeMs, entry.value)
         }.minByOrNull { it.first }
-        if (nearestCached != null) {
+        val nearestCacheKey = nearestCached?.let { clip.uri.toString() + "#" + it.second }
+        if (nearestCached != null && nearestCacheKey != previewFrameCacheKey) {
             val cachedCopy = runCatching { nearestCached.third.copy(Bitmap.Config.ARGB_8888, false) }
                 .getOrNull()
             if (cachedCopy != null && !cachedCopy.isRecycled) {
                 val previous = previewFrameBitmap
                 previewFrameBitmap = cachedCopy
+                previewFrameCacheKey = nearestCacheKey
                 previewFrameOverlay.setImageBitmap(cachedCopy)
                 previewFrameOverlay.setBackgroundColor(Color.BLACK)
                 previewFrameOverlay.visibility = View.VISIBLE
@@ -6467,6 +6472,7 @@ class VideoEditorActivity : Activity() {
                 if (decoded != null && !decoded.isRecycled) {
                     val previous = previewFrameBitmap
                     previewFrameBitmap = decoded
+                    previewFrameCacheKey = null
                     previewFrameOverlay.setImageBitmap(decoded)
                     if (previous !== decoded && previous != null && !previous.isRecycled) previous.recycle()
                     previewFrameOverlay.setBackgroundColor(Color.BLACK)
