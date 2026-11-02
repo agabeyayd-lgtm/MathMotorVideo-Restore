@@ -763,7 +763,7 @@ class VideoEditorActivity : Activity() {
             }
         )
 
-        undoClipButton = miniButton("↶") { undoClipEdit() }.apply {
+        val undoPlaybackButton = miniButton("↶") { undoClipEdit() }.apply {
             isEnabled = false
             textSize = 18f
             minWidth = dp(30)
@@ -771,7 +771,7 @@ class VideoEditorActivity : Activity() {
             contentDescription = "Klip işlemini geri al"
             setPadding(0, 0, 0, 0)
         }
-        redoClipButton = miniButton("↷") { redoClipEdit() }.apply {
+        val redoPlaybackButton = miniButton("↷") { redoClipEdit() }.apply {
             isEnabled = false
             textSize = 18f
             minWidth = dp(30)
@@ -779,6 +779,8 @@ class VideoEditorActivity : Activity() {
             contentDescription = "Klip işlemini yinele"
             setPadding(0, 0, 0, 0)
         }
+        undoClipButton = undoPlaybackButton
+        redoClipButton = redoPlaybackButton
         val fitTimelineButton = miniButton("Sığdır") { fitTimelineToProject() }.apply {
             textSize = 9f
             minWidth = dp(48)
@@ -789,8 +791,8 @@ class VideoEditorActivity : Activity() {
         val playbackRight = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            addView(undoClipButton, LinearLayout.LayoutParams(dp(30), dp(36)))
-            addView(redoClipButton, LinearLayout.LayoutParams(dp(30), dp(36)).apply { leftMargin = dp(2) })
+            addView(undoPlaybackButton, LinearLayout.LayoutParams(dp(30), dp(36)))
+            addView(redoPlaybackButton, LinearLayout.LayoutParams(dp(30), dp(36)).apply { leftMargin = dp(2) })
             addView(fitTimelineButton, LinearLayout.LayoutParams(dp(48), dp(36)).apply { leftMargin = dp(3) })
         }
         centeredPlaybackRow.addView(
