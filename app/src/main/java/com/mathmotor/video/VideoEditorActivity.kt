@@ -1425,7 +1425,7 @@ class VideoEditorActivity : Activity() {
         timelineCard: LinearLayout,
         panelScroll: ScrollView,
         statusView: TextView,
-        bottomDock: LinearLayout,
+        bottomDock: View,
         topBar: LinearLayout,
         rulerAwareTimelineRefresh: () -> Unit
     ) {
@@ -1647,7 +1647,7 @@ class VideoEditorActivity : Activity() {
             previewFocusOriginalVisibility.clear()
             // The fullscreen toggle now lives in the playback row. Keep that
             // row visible in focus mode so the user can always return to editing.
-            val playbackControls = previewFocusButton.parent?.parent
+            val playbackControls = previewFocusButton.parent?.parent as? View
             for (index in 0 until root.childCount) {
                 val child = root.getChildAt(index)
                 if (child !== previewFrame && child !== playbackControls) {
