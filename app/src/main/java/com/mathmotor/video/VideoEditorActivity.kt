@@ -6123,6 +6123,7 @@ class VideoEditorActivity : Activity() {
         deferTimelineRefresh=false;finishTrimHistoryGesture()
         val clip=selectedClip()
         if(clip!=null){
+            clip.coverTimeMs = clip.coverTimeMs?.coerceIn(clip.startMs, (clip.endMs - 1L).coerceAtLeast(clip.startMs))
             timelinePreviewLoaded=false;previewSingleClip=false;pauseActivePreview();timelinePlayheadMs=clip.timelineStartMs
             ensureTrimHandlesReachable(selectedClipIndex)
             ensureTimelinePreviewLoaded();seekTimelinePreview(timelinePlayheadMs)
@@ -6180,6 +6181,7 @@ class VideoEditorActivity : Activity() {
     private fun loadTrimControls() {
         val clip = selectedClip()
         if (clip == null) {
+            clipCoverButton?.apply { isEnabled = false; text = "Kapak" }
             selectedClipLabel.text = "Önce bir video seç."
             startSeek.max = 1
             endSeek.max = 1
@@ -6192,6 +6194,7 @@ class VideoEditorActivity : Activity() {
         }
         startSeek.isEnabled = true
         endSeek.isEnabled = true
+        clipCoverButton?.isEnabled = true
         val durationProgressMax = TimelineTrimMath.progressMax(clip.durationMs)
         startSeek.max = durationProgressMax
         endSeek.max = durationProgressMax
@@ -6390,6 +6393,7 @@ class VideoEditorActivity : Activity() {
                         return@runOnUiThread
                     }
                     if (decoded != null && !decoded.isRecycled) {
+                        android.util.Log.i("ClipCover", "COVER_PREVIEW_READY sourceMs=${requestedTimeMs} width=${decoded.width} height=${decoded.height}")
                         val previous = previewBitmap
                         previewBitmap = decoded
                         coverPreview.setImageBitmap(decoded)
@@ -6439,6 +6443,7 @@ class VideoEditorActivity : Activity() {
                 }
                 recordClipEdit()
                 clip.coverTimeMs = selectedSourceTimeMs
+                android.util.Log.i("ClipCover", "COVER_SELECTED clipIndex=${clipIndex} sourceMs=${selectedSourceTimeMs}")
                 loadTrimControls()
                 status.text = "Kapak karesi \${formatTimelineMs(selectedSourceTimeMs)} olarak seçildi. Projeyi kaydettiğinde seçim korunur."
                 dialog.dismiss()
@@ -6511,6 +6516,7 @@ class VideoEditorActivity : Activity() {
                     put(MediaStore.MediaColumns.IS_PENDING, 0)
                 }, null, null)
             }
+            android.util.Log.i("ClipCover", "COVER_JPG_SAVED sourceMs=${sourceTimeMs} uri=${outputUri}")
             status.text = "Kapak görseli Galeri > Resimler > MathMotor > Kapaklar içine kaydedildi."
         } catch (error: Exception) {
             outputUri?.let { runCatching { contentResolver.delete(it, null, null) } }
