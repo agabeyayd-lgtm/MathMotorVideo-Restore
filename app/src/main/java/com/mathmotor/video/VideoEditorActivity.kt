@@ -53,6 +53,7 @@ import androidx.media3.common.audio.ChannelMixingMatrix
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.MatrixTransformation
 import androidx.media3.effect.OverlayEffect
+import androidx.media3.effect.MultipleInputVideoGraph
 import androidx.media3.effect.Presentation
 import androidx.media3.common.OverlaySettings
 import androidx.media3.common.VideoCompositorSettings
@@ -3681,7 +3682,13 @@ class VideoEditorActivity : Activity() {
         runCatching{timelineCompositionPlayer?.release()}
         timelineCompositionPlayer=null
         try{
-            val comp=CompositionPlayer.Builder(this).build()
+            val compositionPlayerBuilder = CompositionPlayer.Builder(this)
+            // CompositionPlayer defaults to SingleInputVideoGraph. Use the multi-input
+            // graph only when overlays are present, otherwise preserve the simple path.
+            if (overlayClips.isNotEmpty()) {
+                compositionPlayerBuilder.setVideoGraphFactory(MultipleInputVideoGraph.Factory())
+            }
+            val comp = compositionPlayerBuilder.build()
             if (timelineSyncTestEnabled) android.util.Log.i("TimelineSyncTest", "TIMELINE_PREVIEW_BUILDER_OK")
             comp.addListener(object:androidx.media3.common.Player.Listener{
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -5310,7 +5317,6 @@ class VideoEditorActivity : Activity() {
                 overlayXSeek, overlayYSeek, overlayRotationSeek).forEach { it.isEnabled = true }
             val projectDuration = maxOf(
                 totalOutputDurationMs(),
-                TimelineVideoMath.totalDuration(videoTimelineSegments()),
                 overlay.timelineStartMs + overlay.durationMs,
                 1_000L
             )
