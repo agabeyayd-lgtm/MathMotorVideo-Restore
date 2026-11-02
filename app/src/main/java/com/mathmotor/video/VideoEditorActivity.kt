@@ -5579,7 +5579,7 @@ class VideoEditorActivity : Activity() {
         if (!timelineThumbnailWarmupKeys.add(key)) return
 
         val task = TimelineThumbnailTask(
-            -2L,
+            0L,
             timelineThumbnailTaskSequence.incrementAndGet(),
             priorityPhase = 0
         ) {
@@ -5940,7 +5940,7 @@ class VideoEditorActivity : Activity() {
         val exactTask = TimelineThumbnailTask(
             priorityDistanceMs.coerceAtLeast(0L),
             timelineThumbnailTaskSequence.incrementAndGet(),
-            priorityPhase = 1
+            priorityPhase = if (priorityDistanceMs <= timelineThumbnailVisibleWindowMs()) 1 else 2
         ) {
             val cachedAtExecution = timelineThumbnailCache.get(key)?.takeUnless { it.isRecycled }
             val decodeStartedAt = SystemClock.uptimeMillis()
@@ -5995,6 +5995,16 @@ class VideoEditorActivity : Activity() {
         }
     }
 
+    private fun timelineThumbnailVisibleWindowMs(): Long {
+        // The playhead is centered in the viewport. Decode the portion visible around
+        // it first, then allow queued off-screen samples to fill the rest of the clip.
+        val viewportWidth = timelineScrollViews.firstOrNull()?.width?.takeIf { it > 0 }
+            ?: timelineTracksFrame.width.takeIf { it > 0 }
+            ?: dp(320)
+        val halfViewportMs = (viewportWidth / 2f / timelinePixelsPerSecond().coerceAtLeast(1f) * 1000f).toLong()
+        return halfViewportMs.coerceAtLeast(500L)
+    }
+
     private fun requestTimelineThumbnail(
         uri: Uri,
         timeMs: Long,
@@ -6019,7 +6029,9 @@ class VideoEditorActivity : Activity() {
             return
         }
 
-        if (usePosterPlaceholder) {
+        val primeFirstCell = usePosterPlaceholder &&
+            priorityDistanceMs <= timelineThumbnailVisibleWindowMs()
+        if (primeFirstCell) {
             requestTimelinePoster(uri)
             val poster = timelinePosterCache.get(uri.toString())
             if (poster != null && !poster.isRecycled) {
@@ -6056,7 +6068,7 @@ class VideoEditorActivity : Activity() {
 
         // Warm the first exact cell before the normal cell queue. The OS poster above
         // keeps this cell visually useful while the timestamp decoder is preparing.
-        if (usePosterPlaceholder) scheduleTimelineThumbnailWarmup(uri, timestampMs)
+        if (primeFirstCell) scheduleTimelineThumbnailWarmup(uri, timestampMs)
 
         // Rebuilt lane views can request the same timestamp while its frame is pending.
         // Share one in-flight request and attach the new ImageView instead of decoding twice.
