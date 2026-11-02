@@ -25,15 +25,15 @@
 - Keep versionCode 394 / Build 61. Version 395 remains blocked; no release APK, version bump or update offer is authorized.
 
 
-## Progressive filmstrip thumbnail pipeline — 2026-11-02 (source change; verification pending)
+## Single-pass filmstrip thumbnail pipeline — 2026-11-02 (source change; verification pending)
 
-- Non-playhead cells in the near-playhead viewport now use a two-pass path: first request a fast sync-frame bitmap for immediate visual feedback, then request the exact timestamp and replace the provisional image. The exact frame under/nearest the playhead skips the provisional pass and stays highest priority.
-- Only the near-viewport range receives provisional previews; cells further away go straight to exact timestamp decoding so a long clip does not spend time preparing temporary images for the whole timeline.
-- Each cell's exact task is queued only after its provisional attempt has completed. This preserves the two-worker decoder while preventing a late provisional frame from overwriting an already-rendered exact frame.
-- Debug-only markers record provisional and exact decode/queue timings. This is diagnostic instrumentation, not proof of a latency target.
-- Android API guidance supports scaled frame retrieval and identifies sync-frame seeking as a faster option when exact precision is not required. The sync frame is used only as a temporary visual preview; the existing OPTION_CLOSEST path remains authoritative for final thumbnails and the playhead cell.
-- **Verification pending:** #688 predates this change and does not validate it. Run unit/build and API 35 emulator checks; measure first visible preview and exact completion, confirm the final visible samples remain distinct, verify the centered preview/thumbnail pixel match and scrubbing, then test portrait, landscape, square and longer real videos. Also verify scrolling remains responsive and no stale preview replaces a final frame.
-- No version metadata changed. Keep versionCode 394 / Build 61; version 395 remains blocked until all acceptance checks pass and the user authorizes release.
+- The two-pass sync-preview experiment was removed after its emulator timings showed that it added a second decode for every visible cell and still delivered the first provisional image only after roughly 1.5 seconds.
+- Each timeline sample now queues one authoritative timestamp decode. Requests are sorted by distance from the playhead; duplicate timestamps share one in-flight request and attach any newly created ImageViews.
+- A cached exact frame may be reused only when its timestamp lies within the cell's represented source-time interval. Nearby sync frames are not presented as though they were exact cell samples.
+- Diagnostics separately record queue wait, decode time, and request-to-ImageView-ready time. This fixes the earlier metric that measured only up to the start of decoding.
+- **Verification pending:** unit/build and targeted API 35 runtime checks must confirm exact frame/preview match, distinct visible samples, first-frame latency, total visible-strip fill time, bidirectional scrubbing, and cache reuse. Compare results with the preceding two-pass run before claiming any speed improvement.
+- This one-pass scheduler is a corrective step, not yet an accepted final zero-wait solution. A sequential decoder and/or persistent thumbnail cache may still be needed based on measured results.
+- No version metadata changed. Keep versionCode 394 / Build 61. Version 395 remains blocked until the full release checklist passes and the user authorizes release.
 
 ## Timeline frame/zoom repair — 2026-11-01
 
