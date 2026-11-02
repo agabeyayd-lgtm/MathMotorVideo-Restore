@@ -9,7 +9,7 @@ package com.mathmotor.video
 internal object TimelineThumbnailMath {
     // Keep the video lane tall enough for the current portrait reference, but
     // calculate each thumbnail's width from the actual source aspect ratio.
-    const val THUMBNAIL_STRIP_HEIGHT_DP = 92
+    const val THUMBNAIL_STRIP_HEIGHT_DP = 104
     const val DEFAULT_SOURCE_ASPECT_RATIO = 9f / 16f
 
     /** Width of a full-frame thumbnail at the fixed strip height, without cropping. */
