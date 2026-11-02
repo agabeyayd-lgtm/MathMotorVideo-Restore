@@ -1784,6 +1784,7 @@ class VideoEditorActivity : Activity() {
 
     private fun showEditorPanel(name: String) {
         activeEditorPanel = name
+        if (name == "overlay") loadOverlayControls()
         updateClipTransformTouchAvailability()
         if (::editorPanelScroll.isInitialized) {
             editorPanelScroll.visibility = View.VISIBLE
@@ -2578,6 +2579,23 @@ class VideoEditorActivity : Activity() {
                 "video"
             )
             videoTrack.addView(strip, LinearLayout.LayoutParams(stripWidth, stripHeight))
+        }
+
+        val overlayTrack = makeLane("Bindirme", 30, "overlay")
+        overlayClips.forEach { overlay ->
+            val endMs = overlay.timelineStartMs + overlay.durationMs
+            addSpacer(overlayTrack, 0L, overlay.timelineStartMs)
+            addBlock(
+                track = overlayTrack,
+                title = (if (overlay.isImage) "▧ " else "▣ ") + overlay.title,
+                durationMs = overlay.durationMs,
+                fill = Color.rgb(41, 113, 154),
+                selected = overlay.id == selectedOverlayId,
+                onClick = { selectOverlay(overlay.id) },
+                minimumWidthDp = 48,
+                startMs = overlay.timelineStartMs
+            )
+            addSpacer(overlayTrack, endMs, totalMs)
         }
 
         if (textLayers.isEmpty()) {
@@ -4668,6 +4686,7 @@ class VideoEditorActivity : Activity() {
         syncSelectedTextLayerFromControls()
         val clipArray = JSONArray()
         val textLayerArray = JSONArray()
+        val overlayArray = JSONArray()
         textLayers.forEach { layer ->
             textLayerArray.put(JSONObject().apply {
                 put("id", layer.id)
@@ -4699,10 +4718,29 @@ class VideoEditorActivity : Activity() {
                 put("coverTimeMs", clip.coverTimeMs ?: JSONObject.NULL)
             })
         }
+        overlayClips.forEach { overlay ->
+            overlayArray.put(JSONObject().apply {
+                put("id", overlay.id)
+                put("uri", overlay.uri.toString())
+                put("title", overlay.title)
+                put("isImage", overlay.isImage)
+                put("sourceDurationMs", overlay.sourceDurationMs)
+                put("sourceStartMs", overlay.sourceStartMs)
+                put("timelineStartMs", overlay.timelineStartMs)
+                put("durationMs", overlay.durationMs)
+                put("scale", overlay.scale)
+                put("xFraction", overlay.xFraction)
+                put("yFraction", overlay.yFraction)
+                put("rotationDegrees", overlay.rotationDegrees)
+            })
+        }
         return JSONObject().apply {
             put("format", "MathMotorVideoProject")
             put("version", 1)
             put("clips", clipArray)
+            put("overlays", overlayArray)
+            put("selectedOverlayId", selectedOverlayId ?: JSONObject.NULL)
+            put("nextOverlayId", nextOverlayId)
             put("selectedClipIndex", selectedClipIndex)
             put("timelinePlayheadMs", timelinePlayheadMs.coerceIn(0L, totalOutputDurationMs()))
             put("timelinePxPerSec", timelinePixelsPerSecond())
@@ -4788,11 +4826,51 @@ class VideoEditorActivity : Activity() {
             loadedClips.add(loadedClip)
             legacyTimelineCursorMs=maxOf(legacyTimelineCursorMs,timelineStartMs+(end-start).coerceAtLeast(0L))
         }
+        val loadedOverlays = mutableListOf<OverlayClip>()
+        val overlayArray = json.optJSONArray("overlays") ?: JSONArray()
+        var maxOverlayId = 0L
+        for (i in 0 until overlayArray.length()) {
+            val item = overlayArray.getJSONObject(i)
+            val uri = Uri.parse(item.getString("uri"))
+            try {
+                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (_: Exception) { }
+            val isImage = item.optBoolean("isImage", false)
+            val sourceDurationMs = item.optLong("sourceDurationMs", if (isImage) 60_000L else 0L)
+                .coerceAtLeast(1L)
+            val sourceStartMs = item.optLong("sourceStartMs", 0L)
+                .coerceIn(0L, sourceDurationMs - 1L)
+            val durationMs = item.optLong("durationMs", sourceDurationMs - sourceStartMs)
+                .coerceIn(1L, sourceDurationMs - sourceStartMs)
+            val overlay = OverlayClip(
+                id = item.optLong("id", i + 1L).coerceAtLeast(1L),
+                uri = uri,
+                title = item.optString("title", "Bindirme"),
+                isImage = isImage,
+                sourceDurationMs = sourceDurationMs,
+                sourceStartMs = sourceStartMs,
+                timelineStartMs = item.optLong("timelineStartMs", 0L).coerceAtLeast(0L),
+                durationMs = durationMs,
+                scale = item.optDouble("scale", 0.35).toFloat().coerceIn(0.10f, 1.50f),
+                xFraction = item.optDouble("xFraction", 0.78).toFloat().coerceIn(0f, 1f),
+                yFraction = item.optDouble("yFraction", 0.22).toFloat().coerceIn(0f, 1f),
+                rotationDegrees = item.optDouble("rotationDegrees", 0.0).toFloat().coerceIn(-180f, 180f)
+            )
+            loadedOverlays.add(overlay)
+            maxOverlayId = maxOf(maxOverlayId, overlay.id)
+        }
+
         require(loadedClips.isNotEmpty()) { "Projede video klibi bulunamadı." }
 
         clearClipHistory()
         clips.clear()
         clips.addAll(loadedClips)
+        overlayClips.clear()
+        overlayClips.addAll(loadedOverlays)
+        selectedOverlayId = json.optLong("selectedOverlayId", maxOverlayId).takeIf { id ->
+            overlayClips.any { it.id == id }
+        } ?: overlayClips.lastOrNull()?.id
+        nextOverlayId = maxOf(json.optLong("nextOverlayId", maxOverlayId + 1L), maxOverlayId + 1L)
         selectedClipIndex = json.optInt("selectedClipIndex", 0).coerceIn(0, clips.lastIndex)
         timelinePreviewLoaded = false
         previewSingleClip = true
@@ -4966,8 +5044,9 @@ class VideoEditorActivity : Activity() {
             timelineHorizontalScrollX = restoredScrollX
         }
         updateTimelinePlayheadDisplay()
+        loadOverlayControls()
         refreshTimelineTracks()
-        status.text = "PROJE AÇILDI. Klipler, kesmeler, oynatma noktası, yazı ve ses ayarları geri yüklendi."
+        status.text = "PROJE AÇILDI. Klipler, bindirmeler, kesmeler, oynatma noktası, yazı ve ses ayarları geri yüklendi."
         loadMissingClipFrameRates()
     }
 
@@ -6796,13 +6875,16 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun totalOutputDurationMs(): Long =
-        TimelineProjectDurationMath.totalDuration(
-            videoEndMs = TimelineVideoMath.totalDuration(videoTimelineSegments()),
-            textLayerEnds = textLayers.map { layer ->
-                TimelineLayerEnd(layer.endMs, followsProjectDuration = !layer.timingCustomized)
-            },
-            musicEndMs = if (musicUri != null) musicStartMs + musicDurationMs else 0L,
-            soundEndMs = if (soundUri != null) soundStartMs + soundDurationMs else 0L
+        maxOf(
+            TimelineProjectDurationMath.totalDuration(
+                videoEndMs = TimelineVideoMath.totalDuration(videoTimelineSegments()),
+                textLayerEnds = textLayers.map { layer ->
+                    TimelineLayerEnd(layer.endMs, followsProjectDuration = !layer.timingCustomized)
+                },
+                musicEndMs = if (musicUri != null) musicStartMs + musicDurationMs else 0L,
+                soundEndMs = if (soundUri != null) soundStartMs + soundDurationMs else 0L
+            ),
+            overlayClips.maxOfOrNull { it.timelineStartMs + it.durationMs } ?: 0L
         )
 
     private fun updateSoundControls() {
