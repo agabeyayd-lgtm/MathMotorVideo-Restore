@@ -407,7 +407,9 @@ class VideoEditorActivity : Activity() {
             syncPreviewAudio()
             updateTimelinePlayButtonState()
             if (timelineSyncTestEnabled) logTimelineSyncTestSample()
-            timelineHandler.postDelayed(this, 250L)
+            // Keep the visible playhead close to the decoder clock while playing.
+            // The previous 250ms polling made the ruler visibly trail the preview.
+            timelineHandler.postDelayed(this, 50L)
         }
     }
     private val editorPanels = linkedMapOf<String, LinearLayout>()
@@ -759,15 +761,28 @@ class VideoEditorActivity : Activity() {
                     timelinePreviewError = "Önizleme oynatıcısı hazırlanamadı."
                     status.text = timelinePreviewError
                 } else if (currentPlayer.isPlaying || currentPlayer.playWhenReady) {
+                    // Freeze the decoder first, then copy its actual clock into the
+                    // timeline. The periodic UI sync is intentionally not the source
+                    // of truth for a pause tap (it can be up to one tick behind).
                     currentPlayer.pause()
                     currentPlayer.playWhenReady = false
+                    timelineHandler.removeCallbacks(timelineScrubPreviewSeekTask)
+                    pendingTimelineScrubPreviewTargetMs = null
+                    val pausedAtMs = currentPlayer.currentPosition
+                        .coerceIn(0L, totalOutputDurationMs())
+                    timelinePlayheadMs = pausedAtMs
                     timelinePlaybackState = TimelinePlaybackState.PAUSED
-                    requestPreviewFrameAt(timelinePlayheadMs, keepPreviousFrame = true)
+                    scrollTimelineToPlayhead()
+                    updateTimelinePlayheadLabel()
+                    requestPreviewFrameAt(pausedAtMs, keepPreviousFrame = true)
                     status.text = "Önizleme duraklatıldı."
                 } else {
                     timelinePreviewError = null
+                    timelineHandler.removeCallbacks(timelineScrubPreviewSeekTask)
+                    pendingTimelineScrubPreviewTargetMs = null
                     timelinePlaybackState = TimelinePlaybackState.PLAYING
-                    currentPlayer.seekTo(timelinePlayheadMs)
+                    // Resume from the exact frozen playhead, not the last 50ms UI sample.
+                    currentPlayer.seekTo(timelinePlayheadMs.coerceIn(0L, totalOutputDurationMs()))
                     hidePreviewFrameOverlay()
                     currentPlayer.playWhenReady = true
                     status.text = "Proje önizlemesi oynatılıyor."
@@ -6402,6 +6417,35 @@ class VideoEditorActivity : Activity() {
         )
         val sourceTimeMs = TimelineVideoMath.sourceTimeAtProjectTime(segment, safeProjectTimeMs)
             ?: return
+        // Show a nearby filmstrip frame immediately while the exact preview frame
+        // is decoded. This avoids leaving the large canvas visibly frozen behind the
+        // moving playhead. Copy cached pixels because the preview owns/recycles its bitmap.
+        val sourcePrefix = "${clip.uri}#"
+        val nearestCached = timelineThumbnailCache.snapshot().entries.mapNotNull { entry ->
+            if (!entry.key.startsWith(sourcePrefix)) return@mapNotNull null
+            val cachedTimeMs = entry.key.removePrefix(sourcePrefix).toLongOrNull()
+                ?: return@mapNotNull null
+            val distanceMs = kotlin.math.abs(cachedTimeMs - sourceTimeMs)
+            if (distanceMs > 500L || entry.value.isRecycled) return@mapNotNull null
+            Triple(distanceMs, cachedTimeMs, entry.value)
+        }.minByOrNull { it.first }
+        if (nearestCached != null) {
+            val cachedCopy = runCatching { nearestCached.third.copy(Bitmap.Config.ARGB_8888, false) }
+                .getOrNull()
+            if (cachedCopy != null && !cachedCopy.isRecycled) {
+                val previous = previewFrameBitmap
+                previewFrameBitmap = cachedCopy
+                previewFrameOverlay.setImageBitmap(cachedCopy)
+                previewFrameOverlay.setBackgroundColor(Color.BLACK)
+                previewFrameOverlay.visibility = View.VISIBLE
+                if (previous != null && previous !== cachedCopy && !previous.isRecycled) previous.recycle()
+                applyPreviewFrameTransform(clip)
+                if (timelineSyncTestEnabled) android.util.Log.i(
+                    "TimelineFrameSyncTest",
+                    "TIMELINE_PREVIEW_CACHE_HIT requestedMs=$sourceTimeMs cachedMs=${nearestCached.second} distanceMs=${nearestCached.first}"
+                )
+            }
+        }
         if (timelineSyncTestEnabled) android.util.Log.i(
             "TimelineFrameSyncTest",
             "TIMELINE_PREVIEW_FRAME_REQUEST projectMs=$safeProjectTimeMs sourceMs=$sourceTimeMs"
