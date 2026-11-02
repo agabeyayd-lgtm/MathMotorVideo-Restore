@@ -1804,7 +1804,7 @@ class VideoEditorActivity : Activity() {
                 // Keep the existing drag handle while giving the video/audio/text
                 // lanes their compact CapCut-style left-side affordance.
                 text = when {
-                    tag == "Video" -> if (keepSourceAudio.isChecked) "🔊\nKlip sesi" else "🔇\nKlip sesi"
+                    tag == "Video" -> if (keepSourceAudio.isChecked) "🔊\nKlip\nsesini" else "🔇\nKlip\nsesini"
                     tag == "Müzik" || tag == "Ses" -> "♫"
                     tag.startsWith("Metin") -> "T"
                     reorderable -> "⠿"
@@ -2383,7 +2383,7 @@ class VideoEditorActivity : Activity() {
             )
             val addVideoButton = TextView(this).apply {
                 text = "＋"
-                textSize = 30f
+                textSize = 22f
                 gravity = Gravity.CENTER
                 typeface = Typeface.DEFAULT_BOLD
                 setTextColor(Color.rgb(57, 220, 190))
@@ -2442,7 +2442,7 @@ class VideoEditorActivity : Activity() {
             }
             val addVideoButton = TextView(this).apply {
                 text = "＋"
-                textSize = 30f
+                textSize = 22f
                 gravity = Gravity.CENTER
                 typeface = Typeface.DEFAULT_BOLD
                 setTextColor(Color.rgb(57, 220, 190))
