@@ -4425,13 +4425,12 @@ class VideoEditorActivity : Activity() {
                 player?.prepare()
                 // Keep the imported clip paused so the user can align the initial frame, ruler and fixed playhead.
                 player?.playWhenReady = false
-                refreshTimelineAfterClipChange()
                 loadTrimControls()
-                // Queue the playhead preview before the filmstrip schedules its
-                // first-cell decoder warmup; otherwise that cold warmup can delay
-                // the preview request that was meant to have higher priority.
+                // Queue the preview still before the first track rebuild. The
+                // helper below refreshes the tracks itself; calling it first used
+                // to start the cold filmstrip decoder before the preview was queued.
                 requestPreviewFrameAt(timelinePlayheadMs)
-                refreshTimelineTracks()
+                refreshTimelineAfterClipChange()
                 // A debug-only signal lets CI verify clip import even when the
                 // emulator accessibility tree cannot be captured reliably.
                 if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) android.util.Log.i(
@@ -5610,7 +5609,10 @@ class VideoEditorActivity : Activity() {
         ) {
             val startedAt = SystemClock.uptimeMillis()
             val result = runCatching {
-                decodeTimelineFrame(uri, timestampMs)?.let(::scaleTimelineThumbnailFrame)
+                // The first request can pay Media3's cold decoder startup cost.
+                // Bound only this warmup; if it stalls, the exact-time MMR fallback
+                // supplies the first cell and later samples retain the shared fast extractor.
+                decodeTimelineFrame(uri, timestampMs, media3WaitMs = 2_500L)?.let(::scaleTimelineThumbnailFrame)
             }.onFailure { error ->
                 android.util.Log.w(
                     "TimelineThumbnail",
@@ -5881,7 +5883,8 @@ class VideoEditorActivity : Activity() {
 
     private fun decodeTimelineFrame(
         uri: Uri,
-        timeMs: Long
+        timeMs: Long,
+        media3WaitMs: Long = 5_000L
     ): Bitmap? {
         // Reuse one prepared Media3 extraction session for the sequential filmstrip
         // samples. This was the faster measured path on the API 35 emulator; keep
@@ -5893,7 +5896,7 @@ class VideoEditorActivity : Activity() {
                 val startedAt = SystemClock.uptimeMillis()
                 val future = extractor.getFrame(timeMs.coerceAtLeast(0L))
                 frameFuture = future
-                val frame = future.get(5000L, TimeUnit.MILLISECONDS)
+                val frame = future.get(media3WaitMs.coerceAtLeast(1L), TimeUnit.MILLISECONDS)
                 if (timelineSyncTestEnabled) android.util.Log.i(
                     "TimelineFrameSyncTest",
                     "TIMELINE_THUMBNAIL_DECODED requestedMs=$timeMs actualFrameMs=${frame.presentationTimeMs} decoder=media3-shared worker=${Thread.currentThread().id} decodeMs=${SystemClock.uptimeMillis() - startedAt}"
