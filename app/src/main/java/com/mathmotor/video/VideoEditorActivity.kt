@@ -732,8 +732,8 @@ class VideoEditorActivity : Activity() {
             ViewGroup.LayoutParams.MATCH_PARENT, dp(48)
         ))
 
-        // Compact playback time lives in the ruler's left header cell, on the
-        // same row as the ruler ticks (CapCut-style), not in a separate extra row.
+        // Compact playback time and fullscreen control share the left side of
+        // the playback row; the play action stays on the phone's center axis.
         timelinePlayheadLabel = label("00:00.0 / 00:00.0", 8.5f, Color.rgb(225, 233, 237), true).apply {
             maxLines = 1
             gravity = Gravity.CENTER_VERTICAL or Gravity.START
@@ -758,7 +758,7 @@ class VideoEditorActivity : Activity() {
         })
         centeredPlaybackRow.addView(
             playbackLeft,
-            FrameLayout.LayoutParams(dp(142), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START or Gravity.CENTER_VERTICAL).apply {
+            FrameLayout.LayoutParams(dp(132), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START or Gravity.CENTER_VERTICAL).apply {
                 leftMargin = dp(3)
             }
         )
@@ -766,16 +766,16 @@ class VideoEditorActivity : Activity() {
         undoClipButton = miniButton("↶") { undoClipEdit() }.apply {
             isEnabled = false
             textSize = 18f
-            minWidth = dp(34)
-            minimumWidth = dp(34)
+            minWidth = dp(30)
+            minimumWidth = dp(30)
             contentDescription = "Klip işlemini geri al"
             setPadding(0, 0, 0, 0)
         }
         redoClipButton = miniButton("↷") { redoClipEdit() }.apply {
             isEnabled = false
             textSize = 18f
-            minWidth = dp(34)
-            minimumWidth = dp(34)
+            minWidth = dp(30)
+            minimumWidth = dp(30)
             contentDescription = "Klip işlemini yinele"
             setPadding(0, 0, 0, 0)
         }
@@ -789,8 +789,8 @@ class VideoEditorActivity : Activity() {
         val playbackRight = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            addView(undoClipButton, LinearLayout.LayoutParams(dp(34), dp(36)))
-            addView(redoClipButton, LinearLayout.LayoutParams(dp(34), dp(36)).apply { leftMargin = dp(2) })
+            addView(undoClipButton, LinearLayout.LayoutParams(dp(30), dp(36)))
+            addView(redoClipButton, LinearLayout.LayoutParams(dp(30), dp(36)).apply { leftMargin = dp(2) })
             addView(fitTimelineButton, LinearLayout.LayoutParams(dp(48), dp(36)).apply { leftMargin = dp(3) })
         }
         centeredPlaybackRow.addView(
@@ -1848,7 +1848,7 @@ class VideoEditorActivity : Activity() {
                 grip.setOnClickListener {
                     keepSourceAudio.isChecked = !keepSourceAudio.isChecked
                     player?.volume = if (keepSourceAudio.isChecked) sourceAudioVolume / 100f else 0f
-                    grip.text = if (keepSourceAudio.isChecked) "🔊" else "🔇"
+                    grip.text = if (keepSourceAudio.isChecked) "🔊\nKlip sesi" else "🔇\nKlip sesi"
                     grip.contentDescription = if (keepSourceAudio.isChecked) {
                         "Klip sesini kapat"
                     } else "Klip sesini aç"
@@ -2502,7 +2502,7 @@ class VideoEditorActivity : Activity() {
             addSoundEffectTimelineBlock(effectTrack, totalMs)
             addSpacer(effectTrack, endMs, totalMs)
         }
-        // All lane origins are offset from the 57dp label/grip gutter so time zero
+        // All lane origins are offset from the shared 96dp control gutter so time zero
         // lands on the full timeline/Play center, not the center of the smaller
         // scroll viewport to the right of that gutter. This keeps ruler, filmstrip
         // and the stationary playhead on one vertical axis.
