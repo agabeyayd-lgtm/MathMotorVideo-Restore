@@ -3650,7 +3650,7 @@ class VideoEditorActivity : Activity() {
 
     private fun buildVideoCompositionSequences(): List<EditedMediaItemSequence> {
         val outputDurationMs = totalOutputDurationMs().coerceAtLeast(1L)
-        val orderedOverlays = overlayClips.sortedBy { it.id }
+        val orderedOverlays = overlayClips.sortedByDescending { it.id }
         val overlaySequences = orderedOverlays.map { overlay ->
             buildOverlayVideoSequence(overlay, outputDurationMs)
         }
@@ -3660,7 +3660,7 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun buildOverlayCompositorSettings(): VideoCompositorSettings =
-        OverlayVideoCompositorSettings(overlayClips.sortedBy { it.id }, overlayClips.size)
+        OverlayVideoCompositorSettings(overlayClips.sortedByDescending { it.id }, overlayClips.size)
 
     private fun buildVideoTimelineComposition():Composition {
         val sequences = buildVideoCompositionSequences()
@@ -5341,7 +5341,8 @@ class VideoEditorActivity : Activity() {
                         overlay.xFraction = (downXFraction + (centerX - downCenterX) / width).coerceIn(0f, 1f)
                         overlay.yFraction = (downYFraction + (centerY - downCenterY) / height).coerceIn(0f, 1f)
                         overlay.scale = (downScale * distance(event) / downDistance).coerceIn(0.10f, 1.50f)
-                        val rotationDelta = angle(event) - downAngle
+                        val rawRotationDelta = angle(event) - downAngle
+                        val rotationDelta = ((rawRotationDelta + 540f) % 360f) - 180f
                         overlay.rotationDegrees = (downRotation + rotationDelta).coerceIn(-180f, 180f)
                     } else if (event.pointerCount == 1) {
                         overlay.xFraction = (downXFraction + (event.x - downX) / width).coerceIn(0f, 1f)
