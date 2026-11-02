@@ -1,5 +1,5 @@
 name: Android emulator screenshots
-# Keep this workflow_dispatch entry available for manual PR-head verification.
+# PR synchronize changes run this smoke test on the current head; workflow_dispatch remains available for manual PR-head verification.
 
 on:
   workflow_dispatch:
