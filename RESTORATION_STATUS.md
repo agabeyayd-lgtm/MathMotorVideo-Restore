@@ -13,7 +13,7 @@
 - Klip sesini reuses the existing source-audio mute state. Ses ekle and Metin ekle open their existing panels. Selected-clip actions and trim controls remain in the existing contextual clip panel; undo/redo remain in the playback row.
 - **Verification:** no-APK workflow run [#2 passed](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41450804106). compileDebugKotlin, compileDebugUnitTestKotlin, and testDebugUnitTest passed. The workflow did not run assembleDebug, package an APK, or upload an artifact. The temporary test workflow was removed after the run.
 - **Not yet accepted:** no emulator screenshot/layout review, keyboard/inset test, smaller-screen test, interaction regression run, or physical-phone acceptance has been performed. All layout acceptance checkboxes below remain open.
-- Tested source commit: 4ec9cf5a6eeb2af16dac42bd5f583b25a4cbcbbd. Current branch head after removing the temporary workflow: 7f5be8ff47868039158749602112c2aee3a5a681. Main remains at 4d83ba84551e82b704953209fb7427bc4af0d544.
+- Tested source commit: 4ec9cf5a6eeb2af16dac42bd5f583b25a4cbcbbd. Temporary workflow removal commit: 7f5be8ff47868039158749602112c2aee3a5a681. Main remains at 4d83ba84551e82b704953209fb7427bc4af0d544.
 
 ### Non-negotiable scope
 
