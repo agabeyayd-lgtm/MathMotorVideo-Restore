@@ -1746,7 +1746,9 @@ class VideoEditorActivity : Activity() {
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(3), dp(1), dp(3), dp(1))
+                // The 82dp header already accounts for the full horizontal gutter.
+                // No extra leading inset: it shifted the shared time-zero origin by 3px.
+                setPadding(0, dp(1), dp(3), dp(1))
                 this.tag = if (reorderable) laneKey else "__ruler__"
                 isClickable = true
                 setOnClickListener { clearTimelineClipSelection() }
