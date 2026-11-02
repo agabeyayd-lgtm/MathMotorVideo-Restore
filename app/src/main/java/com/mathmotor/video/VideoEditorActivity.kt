@@ -823,7 +823,9 @@ class VideoEditorActivity : Activity() {
         // The track rows scroll horizontally; the editor shell keeps its own height.
         root.addView(timelineCard, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(178)
+            // Give the central timeline more vertical room for the ruler and
+            // thumbnail strip; the preview remains flexible and yields this space.
+            dp(210)
         ))
         root.addView(gap(8))
 
@@ -3186,7 +3188,7 @@ class VideoEditorActivity : Activity() {
      * ruler/media header plus the row's 3dp leading inset. Keep this in sync
      * with makeLane(), otherwise the fixed playhead maps to the wrong project time.
      */
-    private fun timelineHeaderGutterWidthPx(): Int = dp(99)
+    private fun timelineHeaderGutterWidthPx(): Int = dp(82)
 
     /** Width of the leading blank time-zero spacer inside each horizontally scrolling lane. */
     private fun timelineFrameWidth(viewportWidth: Int): Int {
