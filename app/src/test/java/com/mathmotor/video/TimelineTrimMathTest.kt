@@ -339,6 +339,75 @@ class TimelineVideoMathTest {
         )
     }
 
+
+    @Test
+    fun droppingASplitSegmentBetweenClipsReordersAndReflowsTheVideoTrack() {
+        val segments = listOf(
+            TimelineVideoSegment(0L, 0L, 3_000L, 3_000L),
+            TimelineVideoSegment(3_000L, 0L, 5_000L, 5_000L),
+            TimelineVideoSegment(8_000L, 1_000L, 3_000L, 5_000L)
+        )
+
+        val plan = TimelineVideoMath.reorderForDrop(
+            segments = segments,
+            movingIndex = 2,
+            requestedStartMs = 1_000L
+        )
+
+        assertEquals(listOf(0, 2, 1), plan?.orderedClipIndices)
+        assertEquals(0L, plan?.timelineStartByClipIndex?.get(0))
+        assertEquals(3_000L, plan?.timelineStartByClipIndex?.get(2))
+        assertEquals(5_000L, plan?.timelineStartByClipIndex?.get(1))
+        // Source trim points and durations are never rewritten by the reorder plan.
+        assertEquals(1_000L, segments[2].sourceStartMs)
+        assertEquals(2_000L, segments[2].durationMs)
+    }
+
+    @Test
+    fun droppingTheFirstClipAfterTheLastClipMovesItToTheEnd() {
+        val segments = listOf(
+            TimelineVideoSegment(0L, 0L, 2_000L, 2_000L),
+            TimelineVideoSegment(2_000L, 500L, 4_000L, 5_000L),
+            TimelineVideoSegment(5_500L, 0L, 1_000L, 1_000L)
+        )
+
+        val plan = TimelineVideoMath.reorderForDrop(
+            segments = segments,
+            movingIndex = 0,
+            requestedStartMs = 8_000L
+        )
+
+        assertEquals(listOf(1, 2, 0), plan?.orderedClipIndices)
+        assertEquals(7_000L, plan?.timelineStartByClipIndex?.get(0))
+    }
+
+    @Test
+    fun reorderRejectsOverlappingLayersInsteadOfDestroyingTheirPositions() {
+        val overlapping = listOf(
+            TimelineVideoSegment(0L, 0L, 5_000L, 5_000L),
+            TimelineVideoSegment(2_000L, 0L, 4_000L, 4_000L)
+        )
+
+        assertEquals(null, TimelineVideoMath.reorderForDrop(overlapping, 0, 4_000L))
+    }
+
+    @Test
+    fun droppingInsideTheCurrentSlotDoesNotCollapseExistingTimelineGaps() {
+        val segments = listOf(
+            TimelineVideoSegment(0L, 0L, 2_000L, 2_000L),
+            TimelineVideoSegment(5_000L, 0L, 2_000L, 2_000L)
+        )
+
+        val plan = TimelineVideoMath.reorderForDrop(
+            segments = segments,
+            movingIndex = 1,
+            requestedStartMs = 5_100L
+        )
+
+        assertEquals(listOf(0, 1), plan?.orderedClipIndices)
+        assertEquals(5_000L, plan?.timelineStartByClipIndex?.get(1))
+    }
+
     @Test
     fun leftTrimCannotCrossProjectOrSourceZero() {
         val source = TimelineVideoSegment(500L, 2_000L, 5_000L, 8_000L)

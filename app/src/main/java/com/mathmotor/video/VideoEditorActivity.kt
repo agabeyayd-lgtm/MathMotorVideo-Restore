@@ -5207,6 +5207,57 @@ class VideoEditorActivity : Activity() {
 
     
 
+    /**
+     * Reorders a split/main-track clip by the horizontal location where it was dropped.
+     * The pure timing plan rejects overlapping video layers rather than flattening their
+     * intentional z-order. A successful move reflows the sequential video track while
+     * leaving independently-timed text/audio lanes on their existing project timestamps.
+     */
+    private fun reorderTimelineClipFromDrop(index: Int, requestedStartMs: Long) {
+        val plan = TimelineVideoMath.reorderForDrop(
+            videoTimelineSegments(),
+            movingIndex = index,
+            requestedStartMs = requestedStartMs
+        )
+        if (plan == null) {
+            status.text = "Video klipleri üst üste biniyor. Katman düzenini bozmamak için sıralama yapılmadı."
+            return
+        }
+
+        val previous = clips.toList()
+        val reordered = plan.orderedClipIndices.map { originalIndex ->
+            previous[originalIndex].copy(
+                timelineStartMs = plan.timelineStartByClipIndex[originalIndex]
+                    ?: previous[originalIndex].timelineStartMs
+            )
+        }
+        val changed = reordered.indices.any { position ->
+            reordered[position] != previous.getOrNull(position)
+        }
+        if (!changed) return
+
+        recordClipEdit()
+        clips.clear()
+        clips.addAll(reordered)
+        selectedClipIndex = plan.orderedClipIndices.indexOf(index)
+        clipHandlesVisible = true
+        val selected = clips.getOrNull(selectedClipIndex) ?: return
+        timelinePlayheadMs = selected.timelineStartMs
+        pendingTimelineScrollX = TimelineScaleMath.pixelsForTime(
+            timelinePlayheadMs, timelinePixelsPerSecond()
+        ).coerceAtLeast(0)
+        timelineHorizontalScrollX = pendingTimelineScrollX ?: 0
+        timelinePreviewLoaded = false
+        previewSingleClip = false
+
+        refreshTimelineAfterClipChange()
+        loadTrimControls()
+        ensureTimelinePreviewLoaded()
+        seekTimelinePreview(timelinePlayheadMs)
+        updateTimelinePlayheadLabel()
+        status.text = "Klip sırası değiştirildi; video parçaları art arda hizalandı."
+    }
+
     private fun moveSelectedClip(delta:Int){
         if(selectedClipIndex !in clips.indices){status.text="Önce katman seç.";return}
         val target=selectedClipIndex+delta
@@ -5296,9 +5347,9 @@ class VideoEditorActivity : Activity() {
                                 val minimumPx = -TimelineScaleMath.pixelsForTime(
                                     initialStartMs, timelinePixelsPerSecond()
                                 )
-                                // A clip already at zero cannot create a leading blank gap.
-                                val boundedDelta = if (initialStartMs == 0L) minOf(0f, dx) else dx
-                                view.translationX = maxOf(minimumPx.toFloat(), boundedDelta)
+                                // Let the first clip travel right as well: the drop target
+                                // determines its new sequence position, not a free timeline gap.
+                                view.translationX = maxOf(minimumPx.toFloat(), dx)
                             } else {
                                 // Let HorizontalScrollView take over this gesture and scrub.
                                 view.parent?.requestDisallowInterceptTouchEvent(false)
@@ -5314,26 +5365,16 @@ class VideoEditorActivity : Activity() {
                         view.animate().scaleX(1f).scaleY(1f).setDuration(100L).start()
                         if (filmstripLongPressed && filmstripMoved) {
                             val rawDeltaPx = event.rawX - downRawX
-                            val allowedDeltaPx = if (initialStartMs == 0L) minOf(0f, rawDeltaPx) else rawDeltaPx
-                            val delta = TimelineScaleMath.millisecondsForPixels(
-                                allowedDeltaPx, timelinePixelsPerSecond()
+                            val minimumDeltaPx = -TimelineScaleMath.pixelsForTime(
+                                initialStartMs, timelinePixelsPerSecond()
                             )
-                            val nextStart = if (initialStartMs == 0L) 0L
-                                else (initialStartMs + delta).coerceAtLeast(0L)
-                            if (nextStart != initialStartMs) {
-                                recordClipEdit()
-                                clip.timelineStartMs = nextStart
-                                selectedClipIndex = index
-                                clipHandlesVisible = true
-                                timelinePlayheadMs = nextStart
-                                timelinePreviewLoaded = false
-                                previewSingleClip = false
-                                refreshTimelineAfterClipChange()
-                                loadTrimControls()
-                                ensureTimelinePreviewLoaded()
-                                seekTimelinePreview(nextStart)
-                                updateTimelinePlayheadLabel()
-                                status.text = "Video klibi bağımsız olarak taşındı."
+                            val boundedDeltaPx = maxOf(minimumDeltaPx.toFloat(), rawDeltaPx)
+                            val deltaMs = TimelineScaleMath.millisecondsForPixels(
+                                boundedDeltaPx, timelinePixelsPerSecond()
+                            )
+                            val requestedStartMs = (initialStartMs + deltaMs).coerceAtLeast(0L)
+                            if (requestedStartMs != initialStartMs) {
+                                reorderTimelineClipFromDrop(index, requestedStartMs)
                             }
                         } else if (filmstripLongPressed) {
                             // A stationary long press still opens the clip context menu.

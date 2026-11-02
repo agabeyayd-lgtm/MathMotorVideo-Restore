@@ -277,6 +277,12 @@ internal data class TimelineVideoPlacement(
     val layerOrder: Int
 )
 
+/** A non-mutating result for moving one clip inside a sequential video lane. */
+internal data class TimelineVideoReorderPlan(
+    val orderedClipIndices: List<Int>,
+    val timelineStartByClipIndex: Map<Int, Long>
+)
+
 /** Independent video placement, overlap selection and edge-trim math. */
 internal object TimelineVideoMath {
     fun normalize(segment: TimelineVideoSegment): TimelineVideoSegment {
@@ -331,6 +337,58 @@ internal object TimelineVideoMath {
                 layerOrder = index
             )
         }
+
+    /**
+     * Builds a CapCut-style insertion/reorder plan for a non-overlapping video sequence.
+     * Drop position is interpreted by the moved clip's center against the other clip centers.
+     * When order changes, all clips are packed sequentially from the original first timestamp.
+     * Overlapping ranges return null so a multi-layer composition is never silently flattened.
+     */
+    fun reorderForDrop(
+        segments: List<TimelineVideoSegment>,
+        movingIndex: Int,
+        requestedStartMs: Long
+    ): TimelineVideoReorderPlan? {
+        if (movingIndex !in segments.indices || segments.size < 2) return null
+        val safe = segments.map(::normalize)
+        if (safe.any { it.durationMs <= 0L }) return null
+
+        val timeOrder = segments.indices.sortedWith(
+            compareBy<Int> { safe[it].timelineStartMs }.thenBy { it }
+        )
+        if (timeOrder.zipWithNext().any { (first, second) ->
+                safe[first].timelineEndMs > safe[second].timelineStartMs
+            }
+        ) return null
+
+        val others = timeOrder.filterNot { it == movingIndex }
+        val moving = safe[movingIndex]
+        val requestedCenterMs = requestedStartMs.coerceAtLeast(0L) + moving.durationMs / 2L
+        val insertionIndex = others.indexOfFirst { otherIndex ->
+            val other = safe[otherIndex]
+            requestedCenterMs < other.timelineStartMs + other.durationMs / 2L
+        }.let { if (it < 0) others.size else it }
+        val reorderedIndices = others.toMutableList().apply {
+            add(insertionIndex, movingIndex)
+        }
+
+        // A drag that remains inside the clip's existing slot is not a move. Keep
+        // intentional gaps intact instead of compacting the timeline on a no-op.
+        if (reorderedIndices == timeOrder) {
+            return TimelineVideoReorderPlan(
+                orderedClipIndices = reorderedIndices,
+                timelineStartByClipIndex = timeOrder.associateWith { safe[it].timelineStartMs }
+            )
+        }
+
+        var cursorMs = safe[timeOrder.first()].timelineStartMs
+        val starts = linkedMapOf<Int, Long>()
+        reorderedIndices.forEach { clipIndex ->
+            starts[clipIndex] = cursorMs
+            cursorMs += safe[clipIndex].durationMs
+        }
+        return TimelineVideoReorderPlan(reorderedIndices, starts)
+    }
 
     fun move(segment: TimelineVideoSegment, requestedStartMs: Long): TimelineVideoSegment =
         normalize(segment).copy(timelineStartMs = requestedStartMs.coerceAtLeast(0L))
