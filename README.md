@@ -276,3 +276,12 @@ Validation:
 - Main commit `102bdcd899b397dc439d1c2c3193b651e57fd6d6` now centralizes the actual 99dp gutter for timeline origin/end spacers and fit-to-project width. The strict 35ms preview/frame check remains unchanged. Unit geometry tests were updated in commit `3a6d6b474c6eb6cf24f8f0fb01a34601a1240653` to use the new header geometry.
 - Emulator run #687 is the first retest of the corrected mapping; its result must be green before accepting the fix. Verify build #484 is running the updated geometry tests. Neither result is yet a physical-phone acceptance.
 - Keep versionCode 394 / Build 61 as the user-approved baseline. Version 395 remains blocked; no replacement APK, signed release, or update is authorized by these changes alone.
+
+
+## 2026-11-02 — filmstrip decoder fast path (verification pending)
+
+- Changed normal filmstrip still extraction to try Android's persistent, scaled `MediaMetadataRetriever` first. The previous shared Media3 `FrameExtractor` remains the fallback for containers/codecs the platform retriever cannot decode.
+- This targets the startup cost of preparing a Media3 extraction session before the first exact thumbnail. The retriever is reused on the bounded thumbnail worker for adjacent samples rather than being reopened per cell.
+- Added debug-only decoder timing markers (`TIMELINE_THUMBNAIL_DECODER` / `TIMELINE_THUMBNAIL_DECODED`) so the next API 35 emulator run can distinguish platform decode time from Media3 fallback time.
+- This is a performance hypothesis, not yet an accepted speed improvement. Verify strict preview/thumbnail frame alignment, distinct adjacent timestamps, first-frame latency and complete visible-strip fill time before retaining it. Revert the fast-path change if correctness regresses.
+- VersionCode 394 / Build 61 remains unchanged. Version 395 remains blocked; no release or APK was created.
