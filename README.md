@@ -2,7 +2,7 @@
 ## Active implementation checkpoint — 2026-11-02 (latest user-approved batch)
 
 **Working branch:** `feature/capcut-layout-recompose`  
-**Latest code-change SHA:** `94684935404ae9b3bb4a099266703a9e6d65a378`  
+**Latest code-change SHA:** `8a96bb8d48d4a6a6ad9d7805ed4b550e7da5e8bc`  
 **Review:** existing draft PR #18; main is unchanged. Installed/release baseline remains versionCode 394 / Build 61. Do not create 395, sign, publish, merge, or produce an updater release without explicit approval.
 
 ### Implemented in source; verification pending
