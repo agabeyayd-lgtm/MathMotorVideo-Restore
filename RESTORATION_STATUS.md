@@ -26,7 +26,7 @@
 
 
 ## Sequential filmstrip thumbnail decoder — 2026-11-02 (source change; verification pending)
-- Latest PR #17 source: `d12a3088fb2c61eec0e3b49755e6bd55c1b52c02`. Verify #505 passed unit tests and debug compilation; APK build #504 passed and uploaded a debug artifact. Emulator #703 built the APK and deterministic fixture and is in app-launch/screenshot capture; its final conclusion remains pending. This draft branch has not been merged to main.
+- Latest PR #17 source: `d12a3088fb2c61eec0e3b49755e6bd55c1b52c02`. Verify #505 passed unit tests and debug compilation; APK build #504 passed and uploaded a debug artifact. Emulator #703 booted Android 35 but was cancelled before the app-launch/screenshot script started, so it produced no new app-level result. This is an infrastructure cancellation, not an app failure. The draft branch has not been merged to main.
 - API 35 timings from #699 on the preceding source commit `6972223`: provider poster 1.626s; first exact timestamp frame 3.182s; all 19 distinct samples 5.977s. Compared with the preceding sequential-only result of 9.355s, full-strip fill improved about 36%. #699 was cancelled during the final playback wait after screenshot/log collection and is not a fully green emulator run. Forward/reverse scrub logs show preview updates at 667ms, 1500ms and 625ms. Commit `d12a308` moves the poster request to URI selection so it overlaps metadata reads; this latest change is awaiting timing validation in #703.
 
 - The two-pass sync-preview experiment was withdrawn. API 35 timings showed that it added a second decode per visible cell and still delayed the first provisional image.
