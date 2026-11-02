@@ -57,7 +57,7 @@ class TimelineScaleMathTest {
     @Test
     fun timeZeroAndFirstVideoFrameShareTheFullPlayCenter() {
         val frameWidthPx = 320
-        val rulerHeaderAndLeadingInsetPx = 99
+        val rulerHeaderAndLeadingInsetPx = 87
         val originSpacerPx = TimelineScaleMath.originSpacerWidthForCenteredPlayhead(
             frameWidthPx,
             rulerHeaderAndLeadingInsetPx
@@ -71,7 +71,7 @@ class TimelineScaleMathTest {
         )
         val scrollViewportWidthPx = frameWidthPx - rulerHeaderAndLeadingInsetPx - trailingRowInsetPx
 
-        assertEquals(61, originSpacerPx)
+        assertEquals(73, originSpacerPx)
         assertEquals(157, endSpacerPx)
         assertEquals(scrollViewportWidthPx, originSpacerPx + endSpacerPx)
         assertEquals(frameWidthPx / 2, rulerHeaderAndLeadingInsetPx + originSpacerPx)
@@ -89,7 +89,7 @@ class TimelineScaleMathTest {
     @Test
     fun playbackScrollMovesBothRulerAndVideoUnderTheSameFixedCenter() {
         val frameWidthPx = 320
-        val gutterPx = 99
+        val gutterPx = 87
         val originSpacerPx = TimelineScaleMath.originSpacerWidthForCenteredPlayhead(frameWidthPx, gutterPx)
         val pixelsPerSecond = 22f
         val elapsedMs = 2_000L
