@@ -202,6 +202,26 @@ class TimelineScaleMathTest {
     }
 
     @Test
+    fun scrubDecoderSeekCanRunAtInteractiveThirtyFramesPerSecondCadence() {
+        assertEquals(
+            23L,
+            TimelineScaleMath.scrubSeekDelayMs(
+                nowMs = 1_010L,
+                lastSeekUptimeMs = 1_000L,
+                minimumIntervalMs = 33L
+            )
+        )
+        assertEquals(
+            0L,
+            TimelineScaleMath.scrubSeekDelayMs(
+                nowMs = 1_040L,
+                lastSeekUptimeMs = 1_000L,
+                minimumIntervalMs = 33L
+            )
+        )
+    }
+
+    @Test
     fun fitScaleIsDeterministicForSameProjectAndViewport() {
         val first = TimelineScaleMath.fitPixelsPerSecond(10_000L, 357, 11f, 176f)
         val second = TimelineScaleMath.fitPixelsPerSecond(10_000L, 357, 11f, 176f)
