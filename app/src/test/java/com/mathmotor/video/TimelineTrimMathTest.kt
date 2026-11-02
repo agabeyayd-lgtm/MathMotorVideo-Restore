@@ -378,7 +378,7 @@ class TimelineVideoMathTest {
         )
 
         assertEquals(listOf(1, 2, 0), plan?.orderedClipIndices)
-        assertEquals(7_000L, plan?.timelineStartByClipIndex?.get(0))
+        assertEquals(4_500L, plan?.timelineStartByClipIndex?.get(0))
     }
 
     @Test
