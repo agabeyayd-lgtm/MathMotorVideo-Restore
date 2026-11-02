@@ -2,7 +2,7 @@
 ## Active implementation checkpoint — 2026-11-02 (latest user-approved batch)
 
 **Working branch:** `feature/capcut-layout-recompose`  
-**Latest source head:** `94684935404ae9b3bb4a099266703a9e6d65a378`  
+**Latest code-change SHA:** `94684935404ae9b3bb4a099266703a9e6d65a378`  
 **Review:** existing draft PR #18; main is unchanged. Installed/release baseline remains versionCode 394 / Build 61. Do not create 395, sign, publish, merge, or produce an updater release without explicit approval.
 
 ### Implemented in source; verification pending
@@ -19,7 +19,7 @@
 
 - **No successful build or test result exists for the latest source head.** GitHub Actions has no check run for `9468493`; the most recent green workflow runs are for older SHA `c72542a`, before this batch, so they do not validate these changes. No APK has been built or verified from this source head.
 - No emulator or physical-phone acceptance has been completed for drag reorder, poster latency, cover save, multi-input preview, seek/scrub, or MP4 overlay output.
-- Media3 `VideoCompositorSettings` is a beta API. Multi-input preview, overlay order/transparency, image and video rendering, seek stability, and export output must be validated before treating the feature as complete. <Cite refs={["turn345976search0","turn920181search0","turn958686search1"]} />
+- Media3 `VideoCompositorSettings` is a beta API. Multi-input preview, overlay order/transparency, image and video rendering, seek stability, and export output must be validated before treating the feature as complete. [Media3 VideoCompositorSettings guide](https://developer.android.com/media/media3/transformer/videocompositorsettings), [CompositionPlayer.Builder API](https://developer.android.com/reference/androidx/media3/transformer/CompositionPlayer.Builder), [MultipleInputVideoGraph.Factory API](https://developer.android.com/reference/androidx/media3/effect/MultipleInputVideoGraph.Factory)
 - Overlay source in-point trimming is not yet exposed as a user control; current video overlays start from source time zero. Timeline text/audio layers also remain absolute project-time layers and are not automatically attached to a reordered main-video clip.
 - Thumbnail performance beyond the provisional first-cell poster remains open; collect device timings before changing decoder or thread strategy.
 - PR #18 remains a draft and unmerged. Do not interpret source presence as acceptance or release readiness.
