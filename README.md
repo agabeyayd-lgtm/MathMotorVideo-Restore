@@ -22,22 +22,15 @@ This section supersedes older “pending” statements below where newer run evi
 - Current source audit confirms a real gap: Undo/Redo stores `ClipEditSnapshot` only and the visible actions are “Klip geri al/yinele”. Text and audio changes are not covered by one shared project history.
 - The #688 screenshots show one ruler/time header and no old green zoom slider, +/- zoom row, “Klip 1/2” labels or timeline navigation arrows. This is screenshot-level confirmation on the API 35 emulator, not full interaction/device acceptance.
 
-## Progressive filmstrip thumbnail pipeline — 2026-11-02 (source change; verification pending)
+## Single-pass filmstrip thumbnail pipeline — 2026-11-02 (source change; verification pending)
 
-- Non-playhead cells in the near-playhead viewport now use a two-pass path: first request a fast sync-frame bitmap for immediate visual feedback, then request the exact timestamp and replace the provisional image. The exact frame under/nearest the playhead skips the provisional pass and stays highest priority.
-- Only the near-viewport range receives provisional previews; cells further away go straight to exact timestamp decoding so a long clip does not spend time preparing temporary images for the whole timeline.
-- Each cell's exact task is queued only after its provisional attempt has completed. This preserves the two-worker decoder while preventing a late provisional frame from overwriting an already-rendered exact frame.
-- Debug-only markers record provisional and exact decode/queue timings. This is diagnostic instrumentation, not proof of a latency target.
-- Android API guidance supports scaled frame retrieval and identifies sync-frame seeking as a faster option when exact precision is not required. The sync frame is used only as a temporary visual preview; the existing OPTION_CLOSEST path remains authoritative for final thumbnails and the playhead cell.
-- **Verification pending:** #688 predates this change and does not validate it. Run unit/build and API 35 emulator checks; measure first visible preview and exact completion, confirm the final visible samples remain distinct, verify the centered preview/thumbnail pixel match and scrubbing, then test portrait, landscape, square and longer real videos. Also verify scrolling remains responsive and no stale preview replaces a final frame.
-- No version metadata changed. Keep versionCode 394 / Build 61; version 395 remains blocked until all acceptance checks pass and the user authorizes release.
-
-**Still not accepted:** trim-handle and clip-selection interactions; full timeline endpoint movement after zoom; text/audio lane editing and alignment across layers; text timing/size in the live preview and export; global Undo/Redo; two-or-more-clip edit/export; MP4 content/audio/duration checks; project save-close-reopen; thumbnail fill latency/cache reuse/black-placeholder behavior across portrait, landscape and square sources; keyboard and physical-phone use. Keep versionCode 394 / Build 61 and do not create version 395 until those release checks pass and the user authorizes it.
-
-- The older `Timeline frame/zoom repair` notes below describe an interim implementation that was superseded by the approved editor baseline. They are historical context, not the current source-of-truth description.
-
-
-MathMotor Video is a local-first Android video editor with a CapCut-inspired workflow. Normal editing runs on-device; AI generation, AI scoring and paid cloud APIs are outside the current product scope.
+- The previous two-pass experiment is withdrawn: the emulator logs showed that sync-frame previews still took about 1.5 seconds to appear and then delayed the exact pass. It doubled extraction work and did not meet the perceived-zero-wait goal.
+- The current path queues each requested cell's authoritative timestamp once. The bounded worker queue prioritizes samples nearest the playhead; duplicate requests from a rebuilt lane attach to the same in-flight decode.
+- Exact frames remain authoritative. A frame from a nearby sync timestamp is not displayed as though it represented another cell. Existing exact-frame cache reuse inside the cell's time interval remains enabled.
+- Debug timing now distinguishes queue wait, decode duration, and actual request-to-ImageView-ready time. The previous total timing stopped at decoder start and was not an end-to-end latency measure.
+- **Verification pending:** run targeted unit/build checks and the API 35 filmstrip flow. Compare first exact frame, time to populate all visible cells, distinct sample count, playhead/preview match, bidirectional scrub, and cache-hit behavior against the two-pass run. Do not claim a latency improvement until those measurements are available.
+- This is a measured simplification of the current extraction path, not yet the final sequential-decoder/cache architecture. Further device results determine whether a shared sequential decoder or persistent disk cache is required.
+- No version metadata changed. Keep versionCode 394 / Build 61; version 395 remains blocked until all release checks pass and the user authorizes release.
 
 ## Editing flow
 
