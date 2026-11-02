@@ -23,6 +23,7 @@ This section supersedes older “pending” statements below where newer run evi
 - The #688 screenshots show one ruler/time header and no old green zoom slider, +/- zoom row, “Klip 1/2” labels or timeline navigation arrows. This is screenshot-level confirmation on the API 35 emulator, not full interaction/device acceptance.
 
 ## Sequential filmstrip thumbnail decoder — 2026-11-02 (source change; verification pending)
+- Latest PR #17 source commit `697222321332f7996a2be909a4e30d2b785c930c`: Verify Android build #501 passed `testDebugUnitTest` and `assembleDebug`; APK build #500 passed and uploaded a debug artifact. Emulator #699 has built the APK and fixture and reached the app-launch/screenshot step; its final result and thumbnail timing logs are still pending. These checks cover the feature branch only and do not change the canonical mainline/release state.
 
 - The two-pass sync-preview experiment was withdrawn. API 35 timings showed that it added a second decode per visible cell and still delayed the first provisional image.
 - Filmstrip thumbnails now use one persistent Media3 `FrameExtractor` for the current source URI. Media3's internal implementation manages a shared ExoPlayer and serializes extraction requests; the app now feeds it from a single bounded worker rather than maintaining two competing per-thread platform decoders.
