@@ -5790,7 +5790,6 @@ class VideoEditorActivity : Activity() {
             }.getOrNull()
             val decodeDurationMs = SystemClock.uptimeMillis() - decodeStartedAt
             runOnUiThread {
-                val readyAt = SystemClock.uptimeMillis()
                 val targets = pendingTimelineThumbnails.remove(key).orEmpty()
                 if (result != null && !result.isRecycled && !isFinishing && !isDestroyed) {
                     timelineThumbnailCache.put(key, result)
@@ -5803,14 +5802,15 @@ class VideoEditorActivity : Activity() {
                         // Rebuild once with aspect-aware cell widths; the exact frame stays cached.
                         refreshTimelineTracks()
                     }
-                    if (timelineSyncTestEnabled) android.util.Log.i(
-                        "TimelineFrameSyncTest",
-                        "TIMELINE_THUMBNAIL_READY sourceMs=$timestampMs width=${result.width} height=${result.height} cached=false queueMs=${decodeStartedAt - exactQueuedAt} decodeMs=$decodeDurationMs readyMs=${readyAt - requestStartedAt}"
-                    )
                     targets.forEach { ref ->
                         val image = ref.get()
                         if (image != null && image.tag == key) image.setImageBitmap(result)
                     }
+                    val imageReadyAt = SystemClock.uptimeMillis()
+                    if (timelineSyncTestEnabled) android.util.Log.i(
+                        "TimelineFrameSyncTest",
+                        "TIMELINE_THUMBNAIL_READY sourceMs=$timestampMs width=${result.width} height=${result.height} cached=false queueMs=${decodeStartedAt - exactQueuedAt} decodeMs=$decodeDurationMs readyMs=${imageReadyAt - requestStartedAt}"
+                    )
                 } else {
                     result?.let { if (!it.isRecycled) it.recycle() }
                     // No approximate timestamp is passed off as the requested frame.
