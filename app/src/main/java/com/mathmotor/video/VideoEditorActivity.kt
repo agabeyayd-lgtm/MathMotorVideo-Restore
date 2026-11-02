@@ -294,7 +294,6 @@ class VideoEditorActivity : Activity() {
     private val pendingTimelinePosterTargets = mutableMapOf<String, MutableList<WeakReference<ImageView>>>()
     private val pendingTimelinePosterLoads = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private val timelinePosterExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
-    private val timelineThumbnailWarmupKeys = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private val pendingTimelineThumbnails = mutableMapOf<String, MutableList<WeakReference<ImageView>>>()
     // Learned from the actual decoded frame, so imported and restored clips share
     // the same aspect-ratio-aware filmstrip path without blocking the UI for metadata.
@@ -319,16 +318,17 @@ class VideoEditorActivity : Activity() {
         override fun run() = work()
     }
     private val timelineThumbnailTaskSequence = java.util.concurrent.atomic.AtomicLong()
-    // One bounded worker feeds Media3's shared, sequential FrameExtractor session.
-    // This avoids competing per-thread platform decoders for adjacent filmstrip samples.
+    // Two bounded workers own independent retrievers. Filmstrip timestamps are
+    // independent seek jobs; serial decoding made queue wait dominate the 709 run.
+    // Keep the pool small so we overlap seeks without creating decoder fan-out.
     private val timelineThumbnailWorkerSequence = java.util.concurrent.atomic.AtomicLong()
     private val timelineThumbnailRetrievers =
         java.util.concurrent.ConcurrentHashMap<Long, Pair<Uri, MediaMetadataRetriever>>()
     private val timelineThumbnailExtractors =
         java.util.concurrent.ConcurrentHashMap<Long, Pair<Uri, FrameExtractor>>()
     private val timelineThumbnailExecutor = java.util.concurrent.ThreadPoolExecutor(
-        1,
-        1,
+        2,
+        2,
         0L,
         java.util.concurrent.TimeUnit.MILLISECONDS,
         java.util.concurrent.PriorityBlockingQueue<Runnable>(
@@ -5580,62 +5580,6 @@ class VideoEditorActivity : Activity() {
         }
     }
 
-    private fun scheduleTimelineThumbnailWarmup(uri: Uri, timeMs: Long) {
-        val timestampMs = timeMs.coerceAtLeast(0L)
-        val key = "$uri#$timestampMs"
-        val cached = timelineThumbnailCache.get(key)
-        if (cached != null && !cached.isRecycled) return
-        if (!timelineThumbnailWarmupKeys.add(key)) return
-
-        val task = TimelineThumbnailTask(
-            0L,
-            timelineThumbnailTaskSequence.incrementAndGet(),
-            priorityPhase = 0
-        ) {
-            val startedAt = SystemClock.uptimeMillis()
-            val result = runCatching {
-                decodeTimelineFrame(uri, timestampMs)?.let(::scaleTimelineThumbnailFrame)
-            }.onFailure { error ->
-                android.util.Log.w(
-                    "TimelineThumbnail",
-                    "Initial decoder warmup failed for $uri at ${timestampMs}ms",
-                    error
-                )
-            }.getOrNull()
-            val decodeMs = SystemClock.uptimeMillis() - startedAt
-            if (result != null && !result.isRecycled && !isFinishing && !isDestroyed) {
-                // Cache the same timestamp requested by the first cell. Its normal
-                // queued task checks this cache again, so the warmup is not decoded twice.
-                timelineThumbnailCache.put(key, result)
-                val aspectRatio = result.width.toFloat() / result.height.coerceAtLeast(1).toFloat()
-                val previousAspectRatio = timelineVideoAspectRatios.putIfAbsent(uri.toString(), aspectRatio)
-                if (previousAspectRatio == null &&
-                    kotlin.math.abs(aspectRatio - TimelineThumbnailMath.DEFAULT_SOURCE_ASPECT_RATIO) > 0.02f
-                ) {
-                    runOnUiThread {
-                        if (!isFinishing && !isDestroyed) refreshTimelineTracks()
-                    }
-                }
-                if (timelineSyncTestEnabled) android.util.Log.i(
-                    "TimelineFrameSyncTest",
-                    "TIMELINE_THUMBNAIL_PREWARM_READY sourceMs=$timestampMs decodeMs=$decodeMs width=${result.width} height=${result.height}"
-                )
-            } else {
-                timelineThumbnailWarmupKeys.remove(key)
-                result?.let { if (!it.isRecycled) it.recycle() }
-                if (timelineSyncTestEnabled) android.util.Log.w(
-                    "TimelineFrameSyncTest",
-                    "TIMELINE_THUMBNAIL_PREWARM_FAILED sourceMs=$timestampMs decodeMs=$decodeMs"
-                )
-            }
-        }
-        try {
-            timelineThumbnailExecutor.execute(task)
-        } catch (_: java.util.concurrent.RejectedExecutionException) {
-            timelineThumbnailWarmupKeys.remove(key)
-        }
-    }
-
     private fun timelineThumbnailExtractorFor(uri: Uri): FrameExtractor? {
         val threadId = Thread.currentThread().id
         val current = timelineThumbnailExtractors[threadId]
@@ -5895,7 +5839,7 @@ class VideoEditorActivity : Activity() {
             if (platformFrame != null) {
                 if (timelineSyncTestEnabled) android.util.Log.i(
                     "TimelineFrameSyncTest",
-                    "TIMELINE_THUMBNAIL_DECODER requestedMs=$timeMs decoder=platform-mmr decodeMs=$decodeMs"
+                    "TIMELINE_THUMBNAIL_DECODER requestedMs=$timeMs decoder=platform-mmr worker=${Thread.currentThread().id} decodeMs=$decodeMs"
                 )
                 return platformFrame
             }
@@ -5954,16 +5898,17 @@ class VideoEditorActivity : Activity() {
         timestampMs: Long,
         key: String,
         priorityDistanceMs: Long,
-        requestStartedAt: Long
+        requestStartedAt: Long,
+        priorityPhase: Int
     ) {
         if (!pendingTimelineThumbnails.containsKey(key)) return
         val exactQueuedAt = SystemClock.uptimeMillis()
-        // Preview scrubs are phase 0. Exact filmstrip frames are queued in phase 1
-        // and ordered by distance from the playhead, so one frame per cell is decoded.
+        // The first exact cell is phase 0; other visible cells are phase 1;
+        // off-screen cells are phase 2. Within each phase, decode nearest the playhead.
         val exactTask = TimelineThumbnailTask(
             priorityDistanceMs.coerceAtLeast(0L),
             timelineThumbnailTaskSequence.incrementAndGet(),
-            priorityPhase = if (priorityDistanceMs <= timelineThumbnailVisibleWindowMs()) 1 else 2
+            priorityPhase = priorityPhase
         ) {
             val cachedAtExecution = timelineThumbnailCache.get(key)?.takeUnless { it.isRecycled }
             val decodeStartedAt = SystemClock.uptimeMillis()
@@ -6092,10 +6037,8 @@ class VideoEditorActivity : Activity() {
             }
         }
 
-        // Warm the first exact cell before the normal cell queue. The OS poster above
-        // keeps this cell visually useful while the timestamp decoder is preparing.
-        if (primeFirstCell) scheduleTimelineThumbnailWarmup(uri, timestampMs)
-
+        // The OS poster remains a temporary visual placeholder. Do not enqueue
+        // a separate warmup decode: the exact first-cell task below owns that work.
         // Rebuilt lane views can request the same timestamp while its frame is pending.
         // Share one in-flight request and attach the new ImageView instead of decoding twice.
         val waiting = pendingTimelineThumbnails[key]
@@ -6107,7 +6050,14 @@ class VideoEditorActivity : Activity() {
 
         // One authoritative decode per requested sample. There is no sync-frame pass
         // followed by a second exact pass; that doubled decoder work and delayed the strip.
-        queueExactTimelineThumbnail(uri, timestampMs, key, priorityDistanceMs, requestStartedAt)
+        val priorityPhase = when {
+            primeFirstCell -> 0
+            priorityDistanceMs <= timelineThumbnailVisibleWindowMs() -> 1
+            else -> 2
+        }
+        queueExactTimelineThumbnail(
+            uri, timestampMs, key, priorityDistanceMs, requestStartedAt, priorityPhase
+        )
     }
 
     private fun finishTrimControlGesture(){
@@ -6720,7 +6670,6 @@ class VideoEditorActivity : Activity() {
         timelinePosterCache.evictAll()
         pendingTimelinePosterTargets.clear()
         pendingTimelinePosterLoads.clear()
-        timelineThumbnailWarmupKeys.clear()
         timelinePosterExecutor.shutdownNow()
         playerView.player = null
         player?.release()
