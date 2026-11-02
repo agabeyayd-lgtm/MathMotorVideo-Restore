@@ -2512,7 +2512,7 @@ class VideoEditorActivity : Activity() {
             addSoundEffectTimelineBlock(effectTrack, totalMs)
             addSpacer(effectTrack, endMs, totalMs)
         }
-        // All lane origins are offset from the shared 96dp control gutter so time zero
+        // All lane origins are offset from the shared 84dp control gutter so time zero
         // lands on the full timeline/Play center, not the center of the smaller
         // scroll viewport to the right of that gutter. This keeps ruler, filmstrip
         // and the stationary playhead on one vertical axis.
