@@ -4412,10 +4412,11 @@ class VideoEditorActivity : Activity() {
                 player?.playWhenReady = false
                 refreshTimelineAfterClipChange()
                 loadTrimControls()
-                refreshTimelineTracks()
-                // Show the actual frame beneath the fixed playhead immediately,
-                // even while the single-clip player is still preparing.
+                // Queue the playhead preview before the filmstrip schedules its
+                // first-cell decoder warmup; otherwise that cold warmup can delay
+                // the preview request that was meant to have higher priority.
                 requestPreviewFrameAt(timelinePlayheadMs)
+                refreshTimelineTracks()
                 // A debug-only signal lets CI verify clip import even when the
                 // emulator accessibility tree cannot be captured reliably.
                 if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) android.util.Log.i(
