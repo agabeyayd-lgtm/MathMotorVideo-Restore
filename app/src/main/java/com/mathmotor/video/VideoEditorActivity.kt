@@ -723,13 +723,13 @@ class VideoEditorActivity : Activity() {
         }
         centeredPlaybackRow.addView(
             timelinePlayButton,
-            FrameLayout.LayoutParams(dp(46), dp(42), Gravity.CENTER)
+            FrameLayout.LayoutParams(dp(46), dp(38), Gravity.CENTER)
         )
         centeredPlaybackRow.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
             updateTimelinePlayheadLine()
         }
         root.addView(centeredPlaybackRow, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(48)
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(38)
         ))
 
         // Compact playback time and fullscreen control share the left side of
@@ -1990,6 +1990,7 @@ class VideoEditorActivity : Activity() {
                 val responsiveLaneHeightDp = when {
                     keyboardLayoutActive -> minOf(heightDp, 28)
                     !reorderable -> heightDp
+                    tag == "Müzik" || tag == "Ses" || tag.startsWith("Metin") -> heightDp
                     compactEditorLayout -> maxOf(heightDp, 52)
                     else -> heightDp
                 }
@@ -2387,16 +2388,16 @@ class VideoEditorActivity : Activity() {
                 typeface = Typeface.DEFAULT_BOLD
                 setTextColor(Color.rgb(57, 220, 190))
                 background = android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
-                minWidth = dp(48)
-                minHeight = dp(44)
-                contentDescription = "Galeriden video ekle"
+                minWidth = dp(28)
+                minHeight = dp(28)
+                contentDescription = "Yakında"
                 isClickable = true
                 isFocusable = true
                 setOnClickListener {
                     android.widget.Toast.makeText(this@VideoEditorActivity, "Yakında", android.widget.Toast.LENGTH_SHORT).show()
                 }
             }
-            lane.addView(addVideoButton, LinearLayout.LayoutParams(dp(52), ViewGroup.LayoutParams.MATCH_PARENT))
+            lane.addView(addVideoButton, LinearLayout.LayoutParams(dp(28), ViewGroup.LayoutParams.MATCH_PARENT))
         } else {
             // CapCut-style main video strip: one VIDEO lane, one shared time axis.
             // Clips retain their real project start/end positions; overlaps are
@@ -2411,7 +2412,7 @@ class VideoEditorActivity : Activity() {
             // timestamp, does not create a placeholder clip, and never shifts
             // the shared ruler/playhead coordinate mapping.
             val addButtonLeft = furthestClipEndPx + dp(8)
-            val addButtonRight = addButtonLeft + dp(48)
+            val addButtonRight = addButtonLeft + dp(28)
             val stripWidth = maxOf(widthBetween(0L, totalMs), furthestClipEndPx, addButtonRight)
                 .coerceAtLeast(dp(115))
             val strip = FrameLayout(this).apply {
@@ -2446,9 +2447,9 @@ class VideoEditorActivity : Activity() {
                 typeface = Typeface.DEFAULT_BOLD
                 setTextColor(Color.rgb(57, 220, 190))
                 background = android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
-                minWidth = dp(48)
-                minHeight = dp(44)
-                contentDescription = "Galeriden videonun sonuna klip ekle"
+                minWidth = dp(28)
+                minHeight = dp(28)
+                contentDescription = "Yakında"
                 isClickable = true
                 isFocusable = true
                 elevation = dp(2).toFloat()
@@ -2457,7 +2458,7 @@ class VideoEditorActivity : Activity() {
                 }
             }
             strip.addView(addVideoButton, FrameLayout.LayoutParams(
-                dp(48), ViewGroup.LayoutParams.MATCH_PARENT
+                dp(28), ViewGroup.LayoutParams.MATCH_PARENT
             ).apply {
                 leftMargin = addButtonLeft
                 gravity = Gravity.TOP or Gravity.LEFT
@@ -2471,15 +2472,15 @@ class VideoEditorActivity : Activity() {
         }
 
         if (textLayers.isEmpty()) {
-            makeLane("Metin", 34, "text")
+            makeLane("Metin", 30, "text")
         } else {
             textLayers.forEachIndexed { index, layer ->
-                val textTrack = makeLane("Metin ${index + 1}", 34, "text:${layer.id}")
+                val textTrack = makeLane("Metin ${index + 1}", 30, "text:${layer.id}")
                 addTextLayerBlock(textTrack, layer, index)
             }
         }
 
-        val musicTrack = makeLane("Müzik", 42, "music")
+        val musicTrack = makeLane("Müzik", 28, "music")
         if (musicUri != null && totalMs > 0L) {
             val musicRange = TimelineRangeMath.normalize(
                 TimelineRange(musicStartMs, musicDurationMs),
@@ -2493,7 +2494,7 @@ class VideoEditorActivity : Activity() {
         }
 
         if (soundUri != null && totalMs > 0L) {
-            val effectTrack = makeLane("Ses", 24, "sound")
+            val effectTrack = makeLane("Ses", 28, "sound")
             val segment = TimelineAudioMath.normalize(
                 TimelineAudioSegment(soundStartMs, soundSourceStartMs, soundDurationMs),
                 soundSourceDurationMs,
