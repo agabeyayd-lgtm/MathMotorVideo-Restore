@@ -664,9 +664,6 @@ class VideoEditorActivity : Activity() {
                 cornerRadius = dp(9).toFloat()
             }
         }
-        previewFrame.addView(previewFocusButton, FrameLayout.LayoutParams(
-            dp(42), dp(40), Gravity.TOP or Gravity.END
-        ).apply { topMargin = dp(6); rightMargin = dp(6) })
         // The preview flexes into the space left between contextual settings,
         // the content-sized timeline and the fixed bottom tool dock.
         root.addView(previewFrame, LinearLayout.LayoutParams(
@@ -745,15 +742,61 @@ class VideoEditorActivity : Activity() {
             setPadding(dp(3), 0, dp(2), 0)
             contentDescription = "Oynatma zamanı ve toplam video süresi"
         }
+        val playbackLeft = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        previewFocusButton.apply {
+            textSize = 22f
+            minWidth = dp(38)
+            minimumWidth = dp(38)
+            contentDescription = "Önizlemeyi geniş ekranda aç"
+        }
+        playbackLeft.addView(previewFocusButton, LinearLayout.LayoutParams(dp(38), dp(36)))
+        playbackLeft.addView(timelinePlayheadLabel, LinearLayout.LayoutParams(0, dp(36), 1f).apply {
+            leftMargin = dp(3)
+        })
+        centeredPlaybackRow.addView(
+            playbackLeft,
+            FrameLayout.LayoutParams(dp(142), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START or Gravity.CENTER_VERTICAL).apply {
+                leftMargin = dp(3)
+            }
+        )
+
+        undoClipButton = miniButton("↶") { undoClipEdit() }.apply {
+            isEnabled = false
+            textSize = 18f
+            minWidth = dp(34)
+            minimumWidth = dp(34)
+            contentDescription = "Klip işlemini geri al"
+            setPadding(0, 0, 0, 0)
+        }
+        redoClipButton = miniButton("↷") { redoClipEdit() }.apply {
+            isEnabled = false
+            textSize = 18f
+            minWidth = dp(34)
+            minimumWidth = dp(34)
+            contentDescription = "Klip işlemini yinele"
+            setPadding(0, 0, 0, 0)
+        }
         val fitTimelineButton = miniButton("Sığdır") { fitTimelineToProject() }.apply {
-            textSize = 10f
-            minWidth = dp(58)
+            textSize = 9f
+            minWidth = dp(48)
+            minimumWidth = dp(48)
             contentDescription = "Zaman çizelgesini projeye sığdır"
+            setPadding(dp(2), 0, dp(2), 0)
+        }
+        val playbackRight = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(undoClipButton, LinearLayout.LayoutParams(dp(34), dp(36)))
+            addView(redoClipButton, LinearLayout.LayoutParams(dp(34), dp(36)).apply { leftMargin = dp(2) })
+            addView(fitTimelineButton, LinearLayout.LayoutParams(dp(48), dp(36)).apply { leftMargin = dp(3) })
         }
         centeredPlaybackRow.addView(
-            fitTimelineButton,
-            FrameLayout.LayoutParams(dp(64), dp(36), Gravity.END or Gravity.CENTER_VERTICAL).apply {
-                rightMargin = dp(8)
+            playbackRight,
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END or Gravity.CENTER_VERTICAL).apply {
+                rightMargin = dp(3)
             }
         )
         timelineTracksFrame = FrameLayout(this)
@@ -779,6 +822,29 @@ class VideoEditorActivity : Activity() {
         timelineTracksFrame.addView(
             timelinePlayheadLine,
             FrameLayout.LayoutParams(dp(28), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.TOP or Gravity.START)
+        )
+        val timelineAiBadge = TextView(this).apply {
+            text = "YZ"
+            textSize = 9f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(205, 216, 228))
+            background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.OVAL
+                setColor(Color.rgb(27, 43, 59))
+                setStroke(dp(1), Color.rgb(47, 66, 84))
+            }
+            contentDescription = "YZ araçları — yakında"
+            setOnClickListener {
+                android.widget.Toast.makeText(this@VideoEditorActivity, "Yakında", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+        timelineTracksFrame.addView(
+            timelineAiBadge,
+            FrameLayout.LayoutParams(dp(30), dp(30), Gravity.BOTTOM or Gravity.START).apply {
+                leftMargin = dp(8)
+                bottomMargin = dp(3)
+            }
         )
         timelineTracksFrame.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
             updateTimelinePlayheadLine()
@@ -806,7 +872,7 @@ class VideoEditorActivity : Activity() {
         // The track rows scroll horizontally; the editor shell keeps its own height.
         root.addView(timelineCard, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(178)
+            dp(220)
         ))
         root.addView(gap(8))
 
@@ -833,21 +899,6 @@ class VideoEditorActivity : Activity() {
         clipActions2.addView(miniButton("Sona al →") { moveSelectedClip(1) },
             LinearLayout.LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(4) })
         clipPanel.addView(clipActions2)
-        val clipHistoryRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        undoClipButton = miniButton("↶ Klip geri al") { undoClipEdit() }.apply {
-            isEnabled = false
-        }
-        redoClipButton = miniButton("↷ Klip yinele") { redoClipEdit() }.apply {
-            isEnabled = false
-        }
-        clipHistoryRow.addView(undoClipButton, LinearLayout.LayoutParams(0, dp(40), 1f))
-        clipHistoryRow.addView(redoClipButton, LinearLayout.LayoutParams(0, dp(40), 1f).apply {
-            leftMargin = dp(5)
-        })
-        clipPanel.addView(clipHistoryRow)
         startLabel = label("Başlangıç: 00:00", 12f, Color.rgb(225, 233, 237), true)
         clipPanel.addView(startLabel)
         startSeek = SeekBar(this)
@@ -1291,34 +1342,53 @@ class VideoEditorActivity : Activity() {
         // Keep status as an internal diagnostic/message sink only. The old
         // persistent strip above the dock is intentionally not part of the editor UI.
 
+        val dockScroll = android.widget.HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            clipToPadding = false
+        }
         val dock = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
+            gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(3), dp(4), dp(3), dp(2))
             setBackgroundColor(Color.rgb(8, 12, 18))
             elevation = dp(8).toFloat()
         }
         listOf(
             Triple("clip", "Düzenle", "✂"),
-            Triple("text", "Metin", "T"),
             Triple("audio", "Ses", "♫"),
+            Triple("text", "Metin", "T"),
+            Triple("effects", "Efektler", "✦"),
+            Triple("overlay", "Bindirme", "▧"),
+            Triple("captions", "Yazılar", "Aa"),
             Triple("export", "Proje", "⋯")
         ).forEach { (key, title, symbol) ->
-            val tab = miniButton("$symbol\n$title") { toggleEditorPanel(key) }.apply {
+            val tab = miniButton("$symbol\n$title") {
+                if (key in editorPanels) {
+                    toggleEditorPanel(key)
+                } else {
+                    android.widget.Toast.makeText(this, "Yakında", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }.apply {
                 textSize = 10f
                 gravity = Gravity.CENTER
-                minHeight = dp(52)
+                minHeight = dp(58)
                 setPadding(dp(1), dp(2), dp(1), dp(2))
                 maxLines = 2
                 background = android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
                 setTextColor(Color.rgb(205, 216, 228))
             }
             editorTabButtons[key] = tab
-            dock.addView(tab, LinearLayout.LayoutParams(0, dp(52), 1f).apply {
-                if (key != "clip") leftMargin = dp(3)
+            dock.addView(tab, LinearLayout.LayoutParams(dp(72), dp(58)).apply {
+                if (key != "clip") leftMargin = dp(2)
             })
         }
-        root.addView(dock, matchWrap())
+        dockScroll.addView(dock, android.widget.HorizontalScrollView.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+        root.addView(dockScroll, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(66)
+        ))
 
         // Contextual settings live in a bottom drawer above the pinned tool dock;
         // the preview and shared timeline remain above that drawer.
@@ -1337,7 +1407,7 @@ class VideoEditorActivity : Activity() {
             timelineCard = timelineCard,
             panelScroll = editorPanelScroll,
             statusView = status,
-            bottomDock = dock,
+            bottomDock = dockScroll,
             topBar = topBar,
             rulerAwareTimelineRefresh = { refreshTimelineTracks() }
         )
@@ -1726,12 +1796,20 @@ class VideoEditorActivity : Activity() {
                 setOnClickListener { clearTimelineClipSelection() }
             }
             val grip = TextView(this).apply {
-                // Layer rows are deliberately not named by media type. The user can
-                // arrange any strip above or below another strip with this handle.
-                text = if (reorderable && tag == "Video") {
-                    if (keepSourceAudio.isChecked) "🔊" else "🔇"
-                } else if (reorderable) "⠿" else tag
-                textSize = if (reorderable) 18f else 9f
+                // Keep the existing drag handle while giving the video/audio/text
+                // lanes their compact CapCut-style left-side affordance.
+                text = when {
+                    tag == "Video" -> if (keepSourceAudio.isChecked) "🔊\nKlip sesi" else "🔇\nKlip sesi"
+                    tag == "Müzik" || tag == "Ses" -> "♫"
+                    tag.startsWith("Metin") -> "T"
+                    reorderable -> "⠿"
+                    else -> tag
+                }
+                textSize = when {
+                    tag == "Video" -> 9f
+                    tag == "Müzik" || tag == "Ses" || tag.startsWith("Metin") -> 17f
+                    else -> if (reorderable) 18f else 9f
+                }
                 setTextColor(Color.rgb(166, 184, 201))
                 typeface = Typeface.DEFAULT_BOLD
                 gravity = Gravity.CENTER
@@ -1741,41 +1819,44 @@ class VideoEditorActivity : Activity() {
             }
             if (reorderable) {
                 row.addView(grip, LinearLayout.LayoutParams(dp(54), ViewGroup.LayoutParams.MATCH_PARENT))
-                // Reserve the rest of the shared 96dp header so every media lane
-                // begins at exactly the same x-coordinate as the ruler ticks.
-                row.addView(View(this), LinearLayout.LayoutParams(dp(42), ViewGroup.LayoutParams.MATCH_PARENT))
+                val sideAction = TextView(this).apply {
+                    text = when {
+                        tag == "Video" -> "Kapak"
+                        tag == "Müzik" || tag == "Ses" -> "Ses\nekle"
+                        tag == "Metin" || tag == "Metin 1" -> "Metin\nekle"
+                        else -> ""
+                    }
+                    textSize = 9f
+                    gravity = Gravity.CENTER
+                    setTextColor(Color.rgb(166, 184, 201))
+                    isClickable = text.isNotBlank()
+                    isFocusable = text.isNotBlank()
+                    contentDescription = text.replace("\n", " ")
+                    setOnClickListener {
+                        when (tag) {
+                            "Video" -> android.widget.Toast.makeText(this@VideoEditorActivity, "Yakında", android.widget.Toast.LENGTH_SHORT).show()
+                            "Müzik", "Ses" -> showEditorPanel("audio")
+                            "Metin", "Metin 1" -> showEditorPanel("text")
+                        }
+                    }
+                }
+                row.addView(sideAction, LinearLayout.LayoutParams(dp(42), ViewGroup.LayoutParams.MATCH_PARENT))
             if (reorderable && tag == "Video") {
                 grip.contentDescription = if (keepSourceAudio.isChecked) {
-                    "Video sesini kapat"
-                } else "Video sesini aç"
+                    "Klip sesini kapat"
+                } else "Klip sesini aç"
                 grip.setOnClickListener {
                     keepSourceAudio.isChecked = !keepSourceAudio.isChecked
                     player?.volume = if (keepSourceAudio.isChecked) sourceAudioVolume / 100f else 0f
                     grip.text = if (keepSourceAudio.isChecked) "🔊" else "🔇"
                     grip.contentDescription = if (keepSourceAudio.isChecked) {
-                        "Video sesini kapat"
-                    } else "Video sesini aç"
+                        "Klip sesini kapat"
+                    } else "Klip sesini aç"
                 }
             }
             } else {
-                // The current/total time readout shares this fixed header cell
-                // with the ruler row; media lanes reserve the same 96dp width.
-                row.addView(FrameLayout(this).apply {
-                    contentDescription = "Zaman cetveli başlığı ve oynatma süresi"
-                    // refreshTimelineTracks() can run again after the responsive layout
-                    // listener fires. Removing the old lane detaches the row from
-                    // timelineTracks, but does not detach this nested label from its
-                    // former FrameLayout. Move the shared label explicitly before
-                    // adding it to the newly created ruler header.
-                    (timelinePlayheadLabel.parent as? ViewGroup)?.removeView(timelinePlayheadLabel)
-                    addView(
-                        timelinePlayheadLabel,
-                        FrameLayout.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.MATCH_PARENT
-                        )
-                    )
-                }, LinearLayout.LayoutParams(dp(96), ViewGroup.LayoutParams.MATCH_PARENT))
+                // Reserve the same 96dp control gutter used by every media lane.
+                row.addView(View(this), LinearLayout.LayoutParams(dp(96), ViewGroup.LayoutParams.MATCH_PARENT))
             }
 
             if (reorderable) {
@@ -2219,7 +2300,11 @@ class VideoEditorActivity : Activity() {
             val intervalWidth = (nextPositionPx - startPositionPx).coerceAtLeast(1)
             val tickCell = FrameLayout(this)
             val tick = TextView(this).apply {
-                text = label
+                val minutes = startMs / 60_000L
+                val seconds = (startMs / 1_000L) % 60L
+                text = if (startMs % 5_000L == 0L) {
+                    "${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}"
+                } else ""
                 textSize = 9f
                 setTextColor(Color.rgb(166, 184, 201))
                 gravity = Gravity.TOP or Gravity.START
@@ -2302,7 +2387,9 @@ class VideoEditorActivity : Activity() {
                 contentDescription = "Galeriden video ekle"
                 isClickable = true
                 isFocusable = true
-                setOnClickListener { chooseVideo(true) }
+                setOnClickListener {
+                    android.widget.Toast.makeText(this@VideoEditorActivity, "Yakında", android.widget.Toast.LENGTH_SHORT).show()
+                }
             }
             lane.addView(addVideoButton, LinearLayout.LayoutParams(dp(52), ViewGroup.LayoutParams.MATCH_PARENT))
         } else {
@@ -2360,7 +2447,9 @@ class VideoEditorActivity : Activity() {
                 isClickable = true
                 isFocusable = true
                 elevation = dp(2).toFloat()
-                setOnClickListener { chooseVideo(true) }
+                setOnClickListener {
+                    android.widget.Toast.makeText(this@VideoEditorActivity, "Yakında", android.widget.Toast.LENGTH_SHORT).show()
+                }
             }
             strip.addView(addVideoButton, FrameLayout.LayoutParams(
                 dp(48), ViewGroup.LayoutParams.MATCH_PARENT
@@ -2376,13 +2465,17 @@ class VideoEditorActivity : Activity() {
             videoTrack.addView(strip, LinearLayout.LayoutParams(stripWidth, stripHeight))
         }
 
-        textLayers.forEachIndexed { index, layer ->
-            val textTrack = makeLane("Metin ${index + 1}", 24, "text:${layer.id}")
-            addTextLayerBlock(textTrack, layer, index)
+        if (textLayers.isEmpty()) {
+            makeLane("Metin", 34, "text")
+        } else {
+            textLayers.forEachIndexed { index, layer ->
+                val textTrack = makeLane("Metin ${index + 1}", 34, "text:${layer.id}")
+                addTextLayerBlock(textTrack, layer, index)
+            }
         }
 
+        val musicTrack = makeLane("Müzik", 42, "music")
         if (musicUri != null && totalMs > 0L) {
-            val musicTrack = makeLane("Müzik", 24, "music")
             val musicRange = TimelineRangeMath.normalize(
                 TimelineRange(musicStartMs, musicDurationMs),
                 totalMs
@@ -2463,7 +2556,7 @@ class VideoEditorActivity : Activity() {
         // off-screen. Size the frame from the actual timeline lanes instead.
         val laneContentHeight = (0 until timelineTracks.childCount).sumOf { index ->
             val row = timelineTracks.getChildAt(index) as? LinearLayout ?: return@sumOf 0
-            val lane = row.getChildAt(1)
+            val lane = row.getChildAt(if (row.tag == "__ruler__") 1 else 2)
             val laneHeight = lane?.layoutParams?.height?.takeIf { it > 0 } ?: dp(24)
             laneHeight + row.paddingTop + row.paddingBottom
         }.coerceAtLeast(dp(24))
@@ -2480,7 +2573,7 @@ class VideoEditorActivity : Activity() {
                 laneContentHeightPx = laneContentHeight,
                 timeRowHeightPx = dp(26),
                 verticalPaddingPx = dp(6),
-                minimumHeightPx = if (keyboardLayoutActive) dp(88) else dp(96),
+                minimumHeightPx = if (keyboardLayoutActive) dp(88) else dp(220),
                 maximumHeightPx = if (keyboardLayoutActive) dp(154) else dp(280)
             )
             val cardParams = card.layoutParams as? LinearLayout.LayoutParams
