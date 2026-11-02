@@ -4362,6 +4362,9 @@ class VideoEditorActivity : Activity() {
         try {
             contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
         } catch (_: Exception) { }
+        // Start the cheap temporary cover as soon as the selected URI is known,
+        // overlapping provider work with duration/name metadata reads.
+        requestTimelinePoster(uri)
         status.text = "Video bilgileri okunuyor…"
         Thread {
             var sourceFrameRate: Double? = null
@@ -4915,6 +4918,9 @@ class VideoEditorActivity : Activity() {
 
     private fun addClipsInOrder(uris: List<Uri>, replaceExisting: Boolean) {
         if (uris.isEmpty()) return
+        // The first imported clip is the initially visible lane; request its
+        // temporary poster while metadata for the selected clips is being read.
+        requestTimelinePoster(uris.first())
         status.text = "Seçilen ${uris.size} video sırayla hazırlanıyor…"
         Thread {
             val ready = uris.mapNotNull { uri ->
@@ -5494,11 +5500,13 @@ class VideoEditorActivity : Activity() {
         if (cached != null && !cached.isRecycled) return
         if (!pendingTimelinePosterLoads.add(cacheKey)) return
 
+        val queuedAt = SystemClock.uptimeMillis()
         try {
             timelinePosterExecutor.execute {
                 val startedAt = SystemClock.uptimeMillis()
                 val poster = runCatching { decodeTimelinePoster(uri) }.getOrNull()
                 val decodeMs = SystemClock.uptimeMillis() - startedAt
+                val readyMs = SystemClock.uptimeMillis() - queuedAt
                 runOnUiThread {
                     pendingTimelinePosterLoads.remove(cacheKey)
                     if (isFinishing || isDestroyed) {
@@ -5510,7 +5518,7 @@ class VideoEditorActivity : Activity() {
                         pendingTimelinePosterTargets.remove(cacheKey)
                         if (timelineSyncTestEnabled) android.util.Log.w(
                             "TimelineFrameSyncTest",
-                            "TIMELINE_POSTER_UNAVAILABLE uri=$cacheKey decodeMs=$decodeMs"
+                            "TIMELINE_POSTER_UNAVAILABLE uri=$cacheKey queueMs=${startedAt - queuedAt} decodeMs=$decodeMs readyMs=$readyMs"
                         )
                         return@runOnUiThread
                     }
@@ -5526,7 +5534,7 @@ class VideoEditorActivity : Activity() {
                     }
                     if (timelineSyncTestEnabled) android.util.Log.i(
                         "TimelineFrameSyncTest",
-                        "TIMELINE_POSTER_READY decodeMs=$decodeMs width=${poster.width} height=${poster.height}"
+                        "TIMELINE_POSTER_READY queueMs=${startedAt - queuedAt} decodeMs=$decodeMs readyMs=$readyMs width=${poster.width} height=${poster.height}"
                     )
                 }
             }
