@@ -394,6 +394,125 @@ fi
 # clip is inserted into the timeline, so inaccessible UI hierarchy is diagnostic
 # only and does not turn a successful import into a false failure.
 
+echo "Step 7.5/11: smoke-test the clip cover picker"
+# Open the Edit drawer from the dock, then invoke the selected clip's Cover action.
+dock_edit_bounds="$(python3 - emulator-screenshots/editor-window.xml <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+try:
+    root = ET.parse(sys.argv[1]).getroot()
+except Exception:
+    raise SystemExit(1)
+matches = []
+for node in root.iter("node"):
+    if node.attrib.get("clickable") != "true" or "Düzenle" not in node.attrib.get("text", ""):
+        continue
+    found = re.search(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if found:
+        x1, y1, x2, y2 = map(int, found.groups())
+        matches.append((y1, (x1+x2)//2, (y1+y2)//2))
+if not matches:
+    raise SystemExit(1)
+_, x, y = max(matches)
+print(x, y)
+PY
+)" || { echo "Edit dock action was not accessible."; collect_capture_diagnostics cover-dock-missing; exit 27; }
+read -r dock_x dock_y <<< "$dock_edit_bounds"
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$dock_x" "$dock_y"
+sleep 1
+dump_hierarchy cover-panel.xml emulator-screenshots/cover-panel.xml || true
+cover_button_bounds="$(python3 - emulator-screenshots/cover-panel.xml <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+try:
+    root = ET.parse(sys.argv[1]).getroot()
+except Exception:
+    raise SystemExit(1)
+for node in root.iter("node"):
+    if node.attrib.get("content-desc") == "Seçili klibin kapak karesini seç":
+        found = re.search(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+        if found:
+            x1, y1, x2, y2 = map(int, found.groups())
+            print((x1+x2)//2, (y1+y2)//2)
+            raise SystemExit(0)
+raise SystemExit(1)
+PY
+)" || { echo "Kapak action was not visible in the Edit drawer."; collect_capture_diagnostics cover-action-missing; exit 28; }
+read -r cover_x cover_y <<< "$cover_button_bounds"
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$cover_x" "$cover_y"
+sleep 1
+dump_hierarchy cover-picker.xml emulator-screenshots/cover-picker.xml || true
+if ! grep -q "Kapak karesi zaman seçici" emulator-screenshots/cover-picker.xml; then
+  echo "Cover picker did not expose its frame selector."
+  collect_capture_diagnostics cover-picker-not-open
+  exit 29
+fi
+if ! take_screen emulator-screenshots/cover-picker.png; then
+  collect_capture_diagnostics cover-picker-capture-failure
+  exit 6
+fi
+cover_preview_ready=false
+for attempt in $(seq 1 10); do
+  if grep -q "COVER_PREVIEW_READY" "$thumbnail_alignment_logcat"; then
+    cover_preview_ready=true
+    break
+  fi
+  sleep 1
+done
+if [ "$cover_preview_ready" != true ]; then
+  echo "Cover dialog opened, but its selected frame preview did not become ready."
+  collect_capture_diagnostics cover-preview-timeout
+  exit 30
+fi
+cover_confirm_bounds="$(python3 - emulator-screenshots/cover-picker.xml <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+try:
+    root = ET.parse(sys.argv[1]).getroot()
+except Exception:
+    raise SystemExit(1)
+for node in root.iter("node"):
+    if node.attrib.get("text") == "Kapak yap":
+        found = re.search(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+        if found:
+            x1, y1, x2, y2 = map(int, found.groups())
+            print((x1+x2)//2, (y1+y2)//2)
+            raise SystemExit(0)
+raise SystemExit(1)
+PY
+)" || { echo "Cover confirmation action was not accessible."; collect_capture_diagnostics cover-confirm-missing; exit 31; }
+read -r confirm_x confirm_y <<< "$cover_confirm_bounds"
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$confirm_x" "$confirm_y"
+sleep 1
+dump_hierarchy cover-selected.xml emulator-screenshots/cover-selected.xml || true
+if ! grep -q "Kapak ✓" emulator-screenshots/cover-selected.xml; then
+  echo "Selected cover frame was not reflected in the editor controls."
+  collect_capture_diagnostics cover-selection-not-retained
+  exit 32
+fi
+# Close the Edit drawer so the timeline alignment check runs in its normal layout.
+dock_edit_bounds="$(python3 - emulator-screenshots/cover-selected.xml <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+try:
+    root = ET.parse(sys.argv[1]).getroot()
+except Exception:
+    raise SystemExit(1)
+matches = []
+for node in root.iter("node"):
+    if node.attrib.get("clickable") != "true" or "Düzenle" not in node.attrib.get("text", ""):
+        continue
+    found = re.search(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if found:
+        x1, y1, x2, y2 = map(int, found.groups())
+        matches.append((y1, (x1+x2)//2, (y1+y2)//2))
+if not matches:
+    raise SystemExit(1)
+_, x, y = max(matches)
+print(x, y)
+PY
+)" || { echo "Could not close the Edit drawer after cover selection."; collect_capture_diagnostics cover-drawer-close-missing; exit 33; }
+read -r dock_x dock_y <<< "$dock_edit_bounds"
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$dock_x" "$dock_y"
+sleep 1
+dump_hierarchy editor-window.xml emulator-screenshots/editor-window.xml || true
+
 echo "Step 8/11: align a thumbnail cell with the playhead and compare the rendered pixels"
 # HorizontalScrollView consumes touch slop before scrolling. Re-measure after
 # every drag and add the measured 12px touch-slop allowance so the cell center
