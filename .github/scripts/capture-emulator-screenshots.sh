@@ -462,6 +462,37 @@ if [ "$cover_preview_ready" != true ]; then
   collect_capture_diagnostics cover-preview-timeout
   exit 30
 fi
+cover_jpg_bounds="$(python3 - emulator-screenshots/cover-picker.xml <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+try:
+    root = ET.parse(sys.argv[1]).getroot()
+except Exception:
+    raise SystemExit(1)
+for node in root.iter("node"):
+    if node.attrib.get("text", "").strip().casefold() == "jpg kaydet":
+        found = re.search(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+        if found:
+            x1, y1, x2, y2 = map(int, found.groups())
+            print((x1+x2)//2, (y1+y2)//2)
+            raise SystemExit(0)
+raise SystemExit(1)
+PY
+)" || { echo "JPG kaydet action was not accessible."; collect_capture_diagnostics cover-jpg-action-missing; exit 34; }
+read -r jpg_x jpg_y <<< "$cover_jpg_bounds"
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$jpg_x" "$jpg_y"
+cover_jpg_saved=false
+for attempt in $(seq 1 10); do
+  if grep -q "COVER_JPG_SAVED" "$thumbnail_alignment_logcat"; then
+    cover_jpg_saved=true
+    break
+  fi
+  sleep 1
+done
+if [ "$cover_jpg_saved" != true ]; then
+  echo "Cover picker did not confirm the JPEG sidecar in MediaStore."
+  collect_capture_diagnostics cover-jpg-save-failed
+  exit 35
+fi
 cover_confirm_bounds="$(python3 - emulator-screenshots/cover-picker.xml <<'PY'
 import re, sys, xml.etree.ElementTree as ET
 try:
