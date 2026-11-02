@@ -413,3 +413,34 @@ On the existing `feature/capcut-layout-recompose` branch (PR #18), the editor no
 - During manual scrubbing, looks for a same-source filmstrip bitmap within 500ms of the requested source timestamp and immediately displays a private copy as a temporary preview; the exact timestamp is still decoded asynchronously and replaces it when ready. The cache bitmap itself is never recycled by the preview.
 
 **Verification:** source change committed; build, unit tests, emulator interaction, decoder latency measurements, and physical-phone acceptance are pending. The nearby cached frame is intentionally provisional and can be up to 500ms away until the exact frame arrives; this is a responsiveness improvement, not a claim of frame-perfect instant decoding. Keep PR #18 draft, do not merge or modify `main`, and keep versionCode 394 / Build 61 unchanged.
+
+
+## 2026-11-03 — background/foreground thumbnail cache diagnostics
+
+The existing editor branch now has debug-build-only local diagnostics for the report that filmstrip thumbnails appear to be generated again after switching to another app and returning.
+
+Instrumentation added without changing editor behavior:
+
+- Activity lifecycle events: `onCreate`, `onCreateComplete`, `onRestart`, `onStart`, `onResume`, `onPause`, `onStop`, `onSaveInstanceState`, `onTrimMemory`, and `onDestroy`.
+- Every lifecycle record includes process ID and Activity instance identity, so the log can distinguish a normal stop/resume from Activity recreation or process restart.
+- Cache state includes filmstrip/poster cache bytes, LRU hit/miss/eviction counts, in-flight thumbnail keys/targets, queued tasks and active decoder workers.
+- Timeline rebuild records include the caller and the number of lane rows before rebuilding.
+- Each newly decoded thumbnail records queue wait, frame decode, bitmap scaling, UI-dispatch wait and UI-apply duration separately. Cache hits and request deduplication are also recorded.
+- Diagnostics run only in debuggable builds and write to local Android logcat; no telemetry or network reporting is added.
+
+### Device reproduction
+
+1. Install the debug APK and open a video in the editor. Let the filmstrip thumbnails finish loading.
+2. Start log capture: `adb logcat -c`, then `adb logcat -v time -s TimelineLifecycle:I TimelineThumbnail:I`.
+3. Press Home, open another app for around 30 seconds, then return to the editor without closing it.
+4. Compare the lifecycle records and thumbnail events around the return.
+
+Interpretation:
+
+- Same PID and same Activity instance across `onStop` → `onStart/onResume`, with cache bytes retained and cache-hit records: the Activity/cache survived; inspect refresh/rebinding and UI timing.
+- Same PID but a different Activity instance: the Activity was recreated and its in-memory cache was lost.
+- Different PID: the app process restarted; the Activity-local LRU cache cannot survive that process death.
+- A rise in LRU evictions or an `onTrimMemory` event before the return points to memory pressure.
+- High `queueWaitMs` indicates queue contention; high `frameDecodeMs` points to frame extraction; high `bitmapScaleMs` points to resizing; high `uiDispatchWaitMs/uiApplyMs` points to main-thread delay.
+
+**Verification status:** source instrumentation committed as `af9abbaeae54d451d312dbaa9598349422b73e16`. Debug compilation, unit tests, emulator reproduction and physical-device log review are pending. This is diagnostic instrumentation only: worker count, decoder strategy, cache budgets and playback/timeline behavior were not changed. Keep PR #18 as a draft; do not merge, change `main`, create version 395, or publish a release.
