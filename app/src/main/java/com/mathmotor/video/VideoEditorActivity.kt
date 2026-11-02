@@ -59,7 +59,6 @@ import androidx.media3.effect.StaticOverlaySettings
 import androidx.media3.effect.TextOverlay
 import androidx.media3.inspector.frame.FrameExtractor
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.ui.PlayerView
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.CompositionPlayer
@@ -295,6 +294,7 @@ class VideoEditorActivity : Activity() {
     private val pendingTimelinePosterTargets = mutableMapOf<String, MutableList<WeakReference<ImageView>>>()
     private val pendingTimelinePosterLoads = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private val timelinePosterExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
+    private val timelineThumbnailWarmupKeys = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private val pendingTimelineThumbnails = mutableMapOf<String, MutableList<WeakReference<ImageView>>>()
     // Learned from the actual decoded frame, so imported and restored clips share
     // the same aspect-ratio-aware filmstrip path without blocking the UI for metadata.
@@ -328,8 +328,6 @@ class VideoEditorActivity : Activity() {
         java.util.concurrent.ConcurrentHashMap<Long, Pair<Uri, FrameExtractor>>()
     // A hardware-selector failure switches only this source to the conservative
     // software selector for the rest of the editor session.
-    private val timelineThumbnailSoftwareFallbackUris =
-        java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private val timelineThumbnailExecutor = java.util.concurrent.ThreadPoolExecutor(
         1,
         1,
@@ -5584,6 +5582,62 @@ class VideoEditorActivity : Activity() {
         }
     }
 
+    private fun scheduleTimelineThumbnailWarmup(uri: Uri, timeMs: Long) {
+        val timestampMs = timeMs.coerceAtLeast(0L)
+        val key = "$uri#$timestampMs"
+        val cached = timelineThumbnailCache.get(key)
+        if (cached != null && !cached.isRecycled) return
+        if (!timelineThumbnailWarmupKeys.add(key)) return
+
+        val task = TimelineThumbnailTask(
+            0L,
+            timelineThumbnailTaskSequence.incrementAndGet(),
+            priorityPhase = 0
+        ) {
+            val startedAt = SystemClock.uptimeMillis()
+            val result = runCatching {
+                decodeTimelineFrame(uri, timestampMs)?.let(::scaleTimelineThumbnailFrame)
+            }.onFailure { error ->
+                android.util.Log.w(
+                    "TimelineThumbnail",
+                    "Initial decoder warmup failed for $uri at ${timestampMs}ms",
+                    error
+                )
+            }.getOrNull()
+            val decodeMs = SystemClock.uptimeMillis() - startedAt
+            if (result != null && !result.isRecycled && !isFinishing && !isDestroyed) {
+                // Cache the same timestamp requested by the first cell. Its normal
+                // queued task checks this cache again, so the warmup is not decoded twice.
+                timelineThumbnailCache.put(key, result)
+                val aspectRatio = result.width.toFloat() / result.height.coerceAtLeast(1).toFloat()
+                val previousAspectRatio = timelineVideoAspectRatios.putIfAbsent(uri.toString(), aspectRatio)
+                if (previousAspectRatio == null &&
+                    kotlin.math.abs(aspectRatio - TimelineThumbnailMath.DEFAULT_SOURCE_ASPECT_RATIO) > 0.02f
+                ) {
+                    runOnUiThread {
+                        if (!isFinishing && !isDestroyed) refreshTimelineTracks()
+                    }
+                }
+                if (timelineSyncTestEnabled) android.util.Log.i(
+                    "TimelineFrameSyncTest",
+                    "TIMELINE_THUMBNAIL_PREWARM_READY sourceMs=$timestampMs decodeMs=$decodeMs width=${result.width} height=${result.height}"
+                )
+            } else {
+                timelineThumbnailWarmupKeys.remove(key)
+                result?.let { if (!it.isRecycled) it.recycle() }
+                if (timelineSyncTestEnabled) android.util.Log.w(
+                    "TimelineFrameSyncTest",
+                    "TIMELINE_THUMBNAIL_PREWARM_FAILED sourceMs=$timestampMs decodeMs=$decodeMs"
+                )
+            }
+        }
+        try {
+            timelineThumbnailExecutor.execute(task)
+        } catch (_: java.util.concurrent.RejectedExecutionException) {
+            timelineThumbnailWarmupKeys.remove(key)
+        }
+    }
+
     private fun timelineThumbnailExtractorFor(uri: Uri): FrameExtractor? {
         val threadId = Thread.currentThread().id
         val current = timelineThumbnailExtractors[threadId]
@@ -5592,32 +5646,13 @@ class VideoEditorActivity : Activity() {
             runCatching { current.second.close() }
             timelineThumbnailExtractors.remove(threadId, current)
         }
-        val usePlatformPreferredDecoder =
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                !timelineThumbnailSoftwareFallbackUris.contains(uri.toString())
-        val codecSelector = if (usePlatformPreferredDecoder) {
-            MediaCodecSelector.DEFAULT
-        } else {
-            MediaCodecSelector.PREFER_SOFTWARE
-        }
         return try {
             FrameExtractor.Builder(this, MediaItem.fromUri(uri))
                 .setSeekParameters(androidx.media3.exoplayer.SeekParameters.EXACT)
-                // FrameExtractor defaults to PREFER_SOFTWARE. Run #713 spent 4.06s
-                // preparing its first exact frame. API 33+ gets the platform-preferred
-                // decoder order; older Android versions keep the conservative selector.
-                .setMediaCodecSelector(codecSelector)
                 .setEffects(listOf(Presentation.createForHeight(288)))
                 .build()
-                .also {
-                    timelineThumbnailExtractors[threadId] = uri to it
-                    if (timelineSyncTestEnabled) android.util.Log.i(
-                        "TimelineFrameSyncTest",
-                        "TIMELINE_THUMBNAIL_CODEC_SELECTOR api=${Build.VERSION.SDK_INT} selector=${if (usePlatformPreferredDecoder) "platform-default" else "software-safe"}"
-                    )
-                }
+                .also { timelineThumbnailExtractors[threadId] = uri to it }
         } catch (error: Exception) {
-            if (usePlatformPreferredDecoder) timelineThumbnailSoftwareFallbackUris.add(uri.toString())
             android.util.Log.w("TimelineThumbnail", "Could not open Media3 thumbnail extractor for $uri", error)
             null
         }
@@ -5852,26 +5887,11 @@ class VideoEditorActivity : Activity() {
                 return frame.bitmap
             } catch (error: Exception) {
                 frameFuture?.cancel(true)
-                if (
-                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                    timelineThumbnailSoftwareFallbackUris.add(uri.toString())
-                ) {
-                    val threadId = Thread.currentThread().id
-                    timelineThumbnailExtractors.remove(threadId)?.second?.let { failedExtractor ->
-                        runCatching { failedExtractor.close() }
-                    }
-                    android.util.Log.w(
-                        "TimelineThumbnail",
-                        "Platform-preferred decoder failed for $uri; future samples will use the software-safe selector",
-                        error
-                    )
-                } else {
-                    android.util.Log.w(
-                        "TimelineThumbnail",
-                        "Shared Media3 frame extraction failed for $uri at ${timeMs}ms; trying platform fallback",
-                        error
-                    )
-                }
+                android.util.Log.w(
+                    "TimelineThumbnail",
+                    "Shared Media3 frame extraction failed for $uri at ${timeMs}ms; trying platform fallback",
+                    error
+                )
             }
         }
 
@@ -6062,8 +6082,9 @@ class VideoEditorActivity : Activity() {
             }
         }
 
-        // The OS poster remains a temporary visual placeholder. Do not enqueue
-        // a separate warmup decode: the exact first-cell task below owns that work.
+        // Warm the first exact cell before its normal request. The separate task
+        // fills the shared timestamp cache; the normal queued task reuses that bitmap.
+        if (primeFirstCell) scheduleTimelineThumbnailWarmup(uri, timestampMs)
         // Rebuilt lane views can request the same timestamp while its frame is pending.
         // Share one in-flight request and attach the new ImageView instead of decoding twice.
         val waiting = pendingTimelineThumbnails[key]
@@ -6693,7 +6714,7 @@ class VideoEditorActivity : Activity() {
         pendingTimelineThumbnails.clear()
         timelineThumbnailCache.evictAll()
         timelinePosterCache.evictAll()
-        timelineThumbnailSoftwareFallbackUris.clear()
+        timelineThumbnailWarmupKeys.clear()
         pendingTimelinePosterTargets.clear()
         pendingTimelinePosterLoads.clear()
         timelinePosterExecutor.shutdownNow()
