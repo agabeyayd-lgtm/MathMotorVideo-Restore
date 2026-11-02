@@ -239,3 +239,10 @@ Verification pending:
 - Retain one bounded worker and Media3's default `PREFER_SOFTWARE` selector. Reject concurrent MMR workers and `MediaCodecSelector.DEFAULT` on this path due to measured regressions. Preserve exact seek semantics.
 - Verify #524 and debug APK build #523 passed on the same branch head; emulator #722 is green. This does not replace physical-phone acceptance.
 - Keep versionCode 394 / Build 61. PR #17 remains draft/open. No Build 395, signed release, or replacement release APK.
+
+
+## Timeline workspace sizing — 2026-11-02 (implementation added; verification pending)
+- Increased the central timeline card from 178dp to 210dp so the ruler and filmstrip have more vertical room. The preview remains flexible and yields the additional height.
+- Reduced the fixed left timeline header gutter from 99dp to 82dp to reclaim horizontal room for the clip strip while retaining the time label/control column.
+- These are layout changes only; no thumbnail decoding, timestamp mapping, or playback behavior was changed. Verify on the API 35 emulator and a physical phone that the timeline is visibly taller, the first/last clip cells remain reachable, and the preview/bottom dock are not clipped on short screens and with the keyboard open.
+- Keep versionCode 394 / Build 61. Do not create version 395 before the full release checklist and user authorization.
