@@ -2,7 +2,7 @@
 ## Active implementation checkpoint — 2026-11-02 (latest user-approved batch)
 
 **Working branch:** `feature/capcut-layout-recompose`  
-**Latest code-change SHA:** `8a96bb8d48d4a6a6ad9d7805ed4b550e7da5e8bc`  
+**Latest code-change SHA:** `9976fcf3a88f1f8e1bfaa36be810af02ee9f7cf8`  
 **Review:** existing draft PR #18; main is unchanged. Installed/release baseline remains versionCode 394 / Build 61. Do not create 395, sign, publish, merge, or produce an updater release without explicit approval.
 
 ### Implemented in source; verification pending
@@ -17,7 +17,8 @@
 
 ### Explicit limitations and verification boundary
 
-- **No successful build or test result exists for the latest application source change `8a96bb8d48d4a6a6ad9d7805ed4b550e7da5e8bc` (later PR commits only update handoff/CI documentation).** The latest green workflow runs still point to older SHA `c72542a`, so they do not validate this batch. No GitHub Actions workflow or check run started for this source batch; the connected GitHub tools do not expose `workflow_dispatch`. No APK has been built or verified from this source batch.
+- **Build failure diagnosed and source fix committed:** Verify Android build #553 and emulator screenshots #747 both failed at commit `0b90d9e91d6670d238a3712171bc555ca0fe6052`. The compiler showed `OverlayVideoCompositorSettings.getOutputSize` used `android.util.Size`, but Media3 1.10.1 requires `androidx.media3.common.util.Size`. Corrected the parameter, return type and fallback constructor in application commit `9976fcf3a88f1f8e1bfaa36be810af02ee9f7cf8`. This fix is not yet build-verified. APK build #548 was still running when last checked and targets the old failing SHA, so it does not validate the fix.
+- The previous green workflow runs point to older SHA `c72542a`, so they do not validate this batch. No APK has yet been verified from the fixed source.
 - No emulator or physical-phone acceptance has been completed for drag reorder, poster latency, cover save, multi-input preview, seek/scrub, or MP4 overlay output.
 - Media3 `VideoCompositorSettings` is a beta API. Multi-input preview, overlay order/transparency, image and video rendering, seek stability, and export output must be validated before treating the feature as complete. [Media3 VideoCompositorSettings guide](https://developer.android.com/media/media3/transformer/videocompositorsettings), [CompositionPlayer.Builder API](https://developer.android.com/reference/androidx/media3/transformer/CompositionPlayer.Builder), [MultipleInputVideoGraph.Factory API](https://developer.android.com/reference/androidx/media3/effect/MultipleInputVideoGraph.Factory)
 - Overlay source in-point trimming is not yet exposed as a user control; current video overlays start from source time zero. Timeline text/audio layers also remain absolute project-time layers and are not automatically attached to a reordered main-video clip.
