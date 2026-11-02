@@ -216,6 +216,7 @@ class VideoEditorActivity : Activity() {
     private val previewFocusOriginalVisibility = linkedMapOf<View, Int>()
     private lateinit var previewTextOverlay: TextView
     private lateinit var clipTransformTouchOverlay: View
+    private lateinit var overlayTransformTouchOverlay: View
     private lateinit var previewEmptyState: LinearLayout
     private lateinit var timelineTracks: LinearLayout
     private lateinit var timelineTracksFrame: FrameLayout
@@ -661,6 +662,20 @@ class VideoEditorActivity : Activity() {
         )
         previewTextOverlays.add(previewTextOverlay)
         installPreviewTextTouch(previewTextOverlay)
+        overlayTransformTouchOverlay = View(this).apply {
+            setBackgroundColor(Color.TRANSPARENT)
+            visibility = View.GONE
+            isClickable = true
+            contentDescription = "Bindirmeyi önizlemede tek parmakla taşı, iki parmakla büyüt ve döndür"
+        }
+        previewFrame.addView(
+            overlayTransformTouchOverlay,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        )
+        installOverlayTransformTouch()
         previewEmptyState = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
@@ -1294,7 +1309,7 @@ class VideoEditorActivity : Activity() {
 
         val overlayPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         overlayPanel.addView(label("GÖRSEL / VİDEO BİNDİRME", 13f, Color.rgb(121, 202, 218), true))
-        overlayPanel.addView(label("Ana videonun üzerinde bağımsız bir katman oluştur.", 11f, Color.rgb(154, 171, 190), false))
+        overlayPanel.addView(label("Önizlemede tek parmakla taşı; iki parmakla büyüt ve döndür.", 11f, Color.rgb(154, 171, 190), false))
         val overlayActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         overlayActions.addView(miniButton("＋ Fotoğraf") { chooseOverlayAsset(imagesOnly = true) },
             LinearLayout.LayoutParams(0, dp(42), 1f))
@@ -1787,6 +1802,7 @@ class VideoEditorActivity : Activity() {
         activeEditorPanel = name
         if (name == "overlay") loadOverlayControls()
         updateClipTransformTouchAvailability()
+        updateOverlayTransformTouchAvailability()
         if (::editorPanelScroll.isInitialized) {
             editorPanelScroll.visibility = View.VISIBLE
             val params = editorPanelScroll.layoutParams as? LinearLayout.LayoutParams
@@ -1843,6 +1859,7 @@ class VideoEditorActivity : Activity() {
         }
         activeEditorPanel = null
         updateClipTransformTouchAvailability()
+        updateOverlayTransformTouchAvailability()
         textOverlayEditingEnabled = false
         if (::editorPanelScroll.isInitialized) editorPanelScroll.visibility = View.GONE
         editorPanels.values.forEach { it.visibility = View.GONE }
@@ -5242,6 +5259,124 @@ class VideoEditorActivity : Activity() {
         refreshTimelineTracks()
         updateTimelinePlayheadDisplay()
         if (timelinePreviewLoaded) seekTimelinePreview(timelinePlayheadMs)
+    }
+
+    private fun updateOverlayTransformTouchAvailability() {
+        if (!::overlayTransformTouchOverlay.isInitialized) return
+        overlayTransformTouchOverlay.visibility =
+            if (activeEditorPanel == "overlay" && selectedOverlay() != null) View.VISIBLE else View.GONE
+    }
+
+    private fun installOverlayTransformTouch() {
+        var gestureOverlay: OverlayClip? = null
+        var downX = 0f
+        var downY = 0f
+        var downCenterX = 0f
+        var downCenterY = 0f
+        var downXFraction = 0f
+        var downYFraction = 0f
+        var downScale = 1f
+        var downRotation = 0f
+        var downDistance = 0f
+        var downAngle = 0f
+
+        fun distance(event: android.view.MotionEvent): Float {
+            val dx = event.getX(1) - event.getX(0)
+            val dy = event.getY(1) - event.getY(0)
+            return kotlin.math.sqrt(dx * dx + dy * dy).coerceAtLeast(1f)
+        }
+        fun angle(event: android.view.MotionEvent): Float = Math.toDegrees(
+            kotlin.math.atan2(
+                (event.getY(1) - event.getY(0)).toDouble(),
+                (event.getX(1) - event.getX(0)).toDouble()
+            )
+        ).toFloat()
+        fun centroidX(event: android.view.MotionEvent): Float =
+            if (event.pointerCount >= 2) (event.getX(0) + event.getX(1)) / 2f else event.x
+        fun centroidY(event: android.view.MotionEvent): Float =
+            if (event.pointerCount >= 2) (event.getY(0) + event.getY(1)) / 2f else event.y
+
+        overlayTransformTouchOverlay.setOnTouchListener { view, event ->
+            when (event.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    val overlay = selectedOverlay() ?: return@setOnTouchListener false
+                    gestureOverlay = overlay
+                    pauseActivePreview()
+                    downX = event.x
+                    downY = event.y
+                    downCenterX = event.x
+                    downCenterY = event.y
+                    downXFraction = overlay.xFraction
+                    downYFraction = overlay.yFraction
+                    downScale = overlay.scale
+                    downRotation = overlay.rotationDegrees
+                    downDistance = 0f
+                    downAngle = 0f
+                    view.parent?.requestDisallowInterceptTouchEvent(true)
+                    true
+                }
+                android.view.MotionEvent.ACTION_POINTER_DOWN -> {
+                    val overlay = gestureOverlay
+                    if (overlay != null && event.pointerCount >= 2) {
+                        downCenterX = centroidX(event)
+                        downCenterY = centroidY(event)
+                        downDistance = distance(event)
+                        downAngle = angle(event)
+                        downXFraction = overlay.xFraction
+                        downYFraction = overlay.yFraction
+                        downScale = overlay.scale
+                        downRotation = overlay.rotationDegrees
+                    }
+                    true
+                }
+                android.view.MotionEvent.ACTION_MOVE -> {
+                    val overlay = gestureOverlay ?: return@setOnTouchListener false
+                    val width = view.width.toFloat().coerceAtLeast(1f)
+                    val height = view.height.toFloat().coerceAtLeast(1f)
+                    if (event.pointerCount >= 2 && downDistance > 0f) {
+                        val centerX = centroidX(event)
+                        val centerY = centroidY(event)
+                        overlay.xFraction = (downXFraction + (centerX - downCenterX) / width).coerceIn(0f, 1f)
+                        overlay.yFraction = (downYFraction + (centerY - downCenterY) / height).coerceIn(0f, 1f)
+                        overlay.scale = (downScale * distance(event) / downDistance).coerceIn(0.10f, 1.50f)
+                        val rotationDelta = angle(event) - downAngle
+                        overlay.rotationDegrees = (downRotation + rotationDelta).coerceIn(-180f, 180f)
+                    } else if (event.pointerCount == 1) {
+                        overlay.xFraction = (downXFraction + (event.x - downX) / width).coerceIn(0f, 1f)
+                        overlay.yFraction = (downYFraction + (event.y - downY) / height).coerceIn(0f, 1f)
+                    }
+                    updateOverlayControlLabels(overlay)
+                    true
+                }
+                android.view.MotionEvent.ACTION_POINTER_UP -> {
+                    val overlay = gestureOverlay
+                    if (overlay != null && event.pointerCount > 1) {
+                        val remaining = if (event.actionIndex == 0) 1 else 0
+                        downX = event.getX(remaining)
+                        downY = event.getY(remaining)
+                        downXFraction = overlay.xFraction
+                        downYFraction = overlay.yFraction
+                        downScale = overlay.scale
+                        downRotation = overlay.rotationDegrees
+                        downDistance = 0f
+                    }
+                    true
+                }
+                android.view.MotionEvent.ACTION_UP,
+                android.view.MotionEvent.ACTION_CANCEL -> {
+                    val overlay = gestureOverlay
+                    gestureOverlay = null
+                    view.parent?.requestDisallowInterceptTouchEvent(false)
+                    if (overlay != null) {
+                        loadOverlayControls()
+                        refreshTimelineTracks()
+                        rebuildTimelinePreviewForOverlayEdit()
+                    }
+                    true
+                }
+                else -> gestureOverlay != null
+            }
+        }
     }
 
     private fun removeSelectedOverlay() {
