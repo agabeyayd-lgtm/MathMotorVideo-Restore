@@ -41,7 +41,7 @@ jobs:
           set -euo pipefail
           release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest")"
           tag="$(printf '%s' "$release_json" | jq -r '.tag_name')"
-          code="$(RELEASE_JSON="$release_json" python3 -c 'import json,os,re; body=json.loads(os.environ["RELEASE_JSON"]).get("body") or ""; m=re.search(r"versionCode\\s*=\\s*(\\d+)", body, re.I); print(m.group(1) if m else "")')"
+          code="$(RELEASE_JSON="$release_json" python3 -c 'import json,os,re; body=json.loads(os.environ["RELEASE_JSON"]).get("body") or ""; m=re.search(r"versionCode\s*=\s*(\d+)", body, re.I); print(m.group(1) if m else "")')"
           echo "Latest signed release tag: $tag"
           echo "Latest signed release versionCode: $code"
           if [ "$code" != "394" ]; then
