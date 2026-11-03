@@ -1488,7 +1488,7 @@ class VideoEditorActivity : Activity() {
             overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
             clipToOutline = true
             background = android.graphics.drawable.GradientDrawable().apply {
-                setColor(Color.rgb(12, 19, 28))
+                setColor(Color.argb(238, 12, 19, 28))
                 cornerRadii = floatArrayOf(
                     dp(14).toFloat(), dp(14).toFloat(),
                     dp(14).toFloat(), dp(14).toFloat(),
@@ -1516,9 +1516,6 @@ class VideoEditorActivity : Activity() {
             }
         }
         editorPanelScroll.visibility = View.GONE
-        root.addView(editorPanelScroll, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(168)
-        ))
 
         status = TextView(this).apply {
             text = "Hazır. Zaman çizelgesine video ekleyebilirsin."
@@ -1578,19 +1575,41 @@ class VideoEditorActivity : Activity() {
         dockScroll.addView(dock, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT
         ))
-        root.addView(dockScroll, LinearLayout.LayoutParams(
+        // The dock and contextual tools share one bottom-anchored overlay. The
+        // base editor reserves only the dock height; opening the detail panel
+        // therefore overlays the lower timeline instead of shrinking the preview.
+        val bottomSheet = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            clipChildren = false
+            clipToPadding = false
+            elevation = dp(14).toFloat()
+        }
+        bottomSheet.addView(editorPanelScroll, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(196)
+        ))
+        bottomSheet.addView(dockScroll, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(66)
+        ))
+        root.addView(View(this), LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(66)
         ))
 
-        // Contextual settings live in a bottom drawer above the pinned tool dock;
-        // the preview and shared timeline remain above that drawer.
-        root.removeView(editorPanelScroll)
-        root.addView(editorPanelScroll, (root.childCount - 1).coerceAtLeast(0), LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(196)
-        ))
-        editorPanelScroll.visibility = View.GONE
+        val editorWorkspace = FrameLayout(this).apply {
+            clipChildren = false
+            clipToPadding = false
+            setBackgroundColor(Color.rgb(12, 18, 28))
+            addView(root, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            ))
+            addView(bottomSheet, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM
+            ))
+        }
 
-        setContentView(root)
+        setContentView(editorWorkspace)
         refreshTextLayerList()
         refreshTimelineTracks()
         installResponsiveEditorLayout(
@@ -1600,6 +1619,7 @@ class VideoEditorActivity : Activity() {
             panelScroll = editorPanelScroll,
             statusView = status,
             bottomDock = dockScroll,
+            bottomSheet = bottomSheet,
             topBar = topBar,
             rulerAwareTimelineRefresh = { refreshTimelineTracks() }
         )
@@ -1612,6 +1632,7 @@ class VideoEditorActivity : Activity() {
         panelScroll: ScrollView,
         statusView: TextView,
         bottomDock: View,
+        bottomSheet: View,
         topBar: LinearLayout,
         rulerAwareTimelineRefresh: () -> Unit
     ) {
@@ -1633,6 +1654,21 @@ class VideoEditorActivity : Activity() {
                 dp(if (imeVisible) 4 else 8) + insetRight,
                 dp(if (imeVisible) 2 else 4) + maxOf(insetBottom, keyboardBottom)
             )
+            // The overlay is outside the padded root, so mirror the safe bottom
+            // inset explicitly. When adjustResize already moved the viewport
+            // above the IME, no second keyboard offset is applied.
+            val sheetParams = bottomSheet.layoutParams as? FrameLayout.LayoutParams
+            if (sheetParams != null) {
+                val safeBottom = when {
+                    imeVisible && !resizedForIme -> imeInsetBottom
+                    imeVisible -> 0
+                    else -> insetBottom
+                }
+                if (sheetParams.bottomMargin != safeBottom) {
+                    sheetParams.bottomMargin = safeBottom
+                    bottomSheet.layoutParams = sheetParams
+                }
+            }
         }
 
         fun applyKeyboardMode(imeVisible: Boolean, viewportHeight: Int) {
@@ -1654,7 +1690,7 @@ class VideoEditorActivity : Activity() {
                 if (::editorPanelScroll.isInitialized && editorPanelScroll.visibility == View.VISIBLE) {
                     val panelParams = editorPanelScroll.layoutParams as? LinearLayout.LayoutParams
                     if (panelParams != null) {
-                        panelParams.height = dp(if (imeVisible) 124 else 168)
+                        panelParams.height = dp(if (imeVisible) 124 else 196)
                         editorPanelScroll.layoutParams = panelParams
                     }
                 }
@@ -1914,11 +1950,36 @@ class VideoEditorActivity : Activity() {
         updateClipTransformTouchAvailability()
         updateOverlayTransformTouchAvailability()
         if (::editorPanelScroll.isInitialized) {
-            editorPanelScroll.visibility = View.VISIBLE
+            val wasVisible = editorPanelScroll.visibility == View.VISIBLE
             val params = editorPanelScroll.layoutParams as? LinearLayout.LayoutParams
             if (params != null) {
-                params.height = dp(if (keyboardLayoutActive) 112 else 196)
+                params.height = dp(if (keyboardLayoutActive) 124 else 196)
                 editorPanelScroll.layoutParams = params
+            }
+            editorPanelScroll.visibility = View.VISIBLE
+            editorPanelScroll.animate().cancel()
+            if (wasVisible) {
+                // Switching tools reuses the same sheet without replaying its entrance.
+                editorPanelScroll.translationY = 0f
+                editorPanelScroll.alpha = 1f
+            } else {
+                // The details panel rises from the bottom dock like a native
+                // editing drawer. It is an overlay, so the preview/timeline are
+                // not remeasured when it appears.
+                editorPanelScroll.alpha = 0f
+                editorPanelScroll.translationY = editorPanelScroll.layoutParams.height.toFloat()
+                editorPanelScroll.post {
+                    if (activeEditorPanel != null &&
+                        editorPanelScroll.visibility == View.VISIBLE
+                    ) {
+                        editorPanelScroll.animate()
+                            .translationY(0f)
+                            .alpha(1f)
+                            .setDuration(220L)
+                            .setInterpolator(android.view.animation.DecelerateInterpolator())
+                            .start()
+                    }
+                }
             }
         }
         textOverlayEditingEnabled = name == "text"
@@ -1971,7 +2032,24 @@ class VideoEditorActivity : Activity() {
         updateClipTransformTouchAvailability()
         updateOverlayTransformTouchAvailability()
         textOverlayEditingEnabled = false
-        if (::editorPanelScroll.isInitialized) editorPanelScroll.visibility = View.GONE
+        if (::editorPanelScroll.isInitialized && editorPanelScroll.visibility == View.VISIBLE) {
+            editorPanelScroll.animate().cancel()
+            val exitDistance = editorPanelScroll.height
+                .takeIf { it > 0 } ?: dp(if (keyboardLayoutActive) 124 else 196)
+            editorPanelScroll.animate()
+                .translationY(exitDistance.toFloat())
+                .alpha(0f)
+                .setDuration(180L)
+                .setInterpolator(android.view.animation.DecelerateInterpolator())
+                .withEndAction {
+                    if (activeEditorPanel == null) {
+                        editorPanelScroll.visibility = View.GONE
+                        editorPanelScroll.translationY = 0f
+                        editorPanelScroll.alpha = 1f
+                    }
+                }
+                .start()
+        }
         editorPanels.values.forEach { it.visibility = View.GONE }
         updateTextOverlayEditToggle()
         editorTabButtons.values.forEach { button ->
