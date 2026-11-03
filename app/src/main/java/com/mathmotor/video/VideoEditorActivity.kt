@@ -2152,6 +2152,10 @@ class VideoEditorActivity : Activity() {
         clipToolsMode = false
         activeClipTool = null
         activeEditorPanel = null
+        updateClipTransformTouchAvailability()
+        updateOverlayTransformTouchAvailability()
+        textOverlayEditingEnabled = false
+        updateTextOverlayEditToggle()
         editorPanels.values.forEach { it.visibility = View.GONE }
         editorPanelScroll.animate().cancel()
         editorPanelScroll.visibility = View.GONE
