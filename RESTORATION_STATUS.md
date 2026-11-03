@@ -458,3 +458,11 @@ The existing editor panel has been moved out of the root vertical layout and int
 - **Verification boundary:** source and test changes are committed on `feature/capcut-layout-recompose`; compilation, unit tests, emulator screenshots/interactions and physical-phone acceptance are pending on the latest branch head.
 - This menu includes only currently implemented actions. Animation/effect features are not represented by nonfunctional placeholder controls; they can be added when their actual clip-processing behavior is implemented.
 - Keep PR #18 draft/unmerged. `main` and versionCode 394 / Build 61 remain unchanged; no version 395 or release/update activation.
+
+
+## 2026-11-03 — emulator tool-selector diagnosis
+
+- The latest emulator failure after closing the trim detail panel was a false UI-test failure, not evidence that the app lost the `Ses düzeyi` action. The selector searched both visible text and content descriptions by substring; `Araçlara dön` also matched the `Geri` action description `Ana araçlara dön`. Because it selected the lowest matching node, the script tapped `Geri`, exited clip-tools mode, then correctly could not find `Ses düzeyi` in the restored main dock.
+- Updated `.github/scripts/capture-emulator-screenshots.sh` to prioritize visible button text and permit only exact content-description fallback matches. App behavior and the editor menu implementation were not changed for this diagnosis.
+- Fix commit: `96bf3ffee9df13098b5fbf4440de1c907e7d7791`; README records the same diagnosis. **Fresh unit/build/emulator verification is still pending.** Do not issue a test ZIP or mark the gate passed until the new run completes and its screenshots/logs are inspected.
+- PR #18 remains draft/unmerged; `main` and versionCode 394 / Build 61 remain unchanged. No version 395, release signing, publication, or updater activation.
