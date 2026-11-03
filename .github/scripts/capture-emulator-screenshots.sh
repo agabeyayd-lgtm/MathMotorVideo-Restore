@@ -397,15 +397,20 @@ except (OSError, ET.ParseError):
 target = sys.argv[2].casefold()
 matches = []
 for node in root.iter("node"):
-    label = (node.attrib.get("text", "") + " " + node.attrib.get("content-desc", "")).casefold()
+    # Match the visible button text first. Only accept an exact content-desc
+    # fallback: substring matching would confuse "Araçlara dön" with the
+    # Geri button's description, "Ana araçlara dön".
+    visible_text = node.attrib.get("text", "").casefold()
+    content_desc = node.attrib.get("content-desc", "").casefold()
+    match_kind = 2 if target in visible_text else (1 if target == content_desc else 0)
     bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
-    if target in label and bounds:
+    if match_kind and bounds:
         x1, y1, x2, y2 = map(int, bounds.groups())
         if x2 > x1 and y2 > y1:
-            matches.append((y1, (x1 + x2) // 2, (y1 + y2) // 2))
+            matches.append((match_kind, y1, (x1 + x2) // 2, (y1 + y2) // 2))
 if not matches:
     raise SystemExit(1)
-_, x, y = max(matches)
+_, _, x, y = max(matches)
 print(x, y)
 PY
 }
