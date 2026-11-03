@@ -143,8 +143,16 @@ internal object TimelineScaleMath {
     fun formatRulerTickLabel(timeMs: Long, frameIndex: Long, framesPerSecond: Double?): String {
         val safeMs = timeMs.coerceAtLeast(0L)
         val fps = framesPerSecond?.takeIf { it.isFinite() && it > 0.0 }
-        if (fps != null && safeMs % 1_000L != 0L) {
-            return "${frameIndex.coerceAtLeast(0L)}f"
+        val safeFrameIndex = frameIndex.coerceAtLeast(0L)
+        if (fps != null) {
+            val framesPerSecondRounded = fps.roundToLong().coerceAtLeast(1L)
+            if (safeFrameIndex % framesPerSecondRounded != 0L) {
+                return "${safeFrameIndex}f"
+            }
+            val totalSeconds = (safeFrameIndex.toDouble() / fps).roundToLong()
+            val minutes = totalSeconds / 60L
+            val seconds = totalSeconds % 60L
+            return "%02d:%02d".format(java.util.Locale.US, minutes, seconds)
         }
         val totalSeconds = safeMs / 1_000L
         val minutes = totalSeconds / 60L
