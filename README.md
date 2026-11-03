@@ -461,3 +461,10 @@ Physical-device feedback from debug build #555:
 - Do not delay video to mask the audio lag, alter worker counts/decoder strategy, or change cache budgets without evidence.
 
 **Verification boundary:** #555 confirms the diagnostic debug APK builds and uploads successfully, but the physical-device observations above remain unresolved. Keep work on `feature/capcut-layout-recompose` / draft PR #18. Do not merge, modify `main`, create version 395, or publish a release.
+
+
+## Playback time moved into ruler row — 2026-11-03
+
+- Corrected the layout ownership: the current/total playback-time label is no longer a child of the play/fullscreen control row. It now occupies the existing 84dp left header gutter of the time-ruler row, matching the media-lane control gutter so the ruler and clip zero edges do not shift.
+- Fullscreen mode temporarily moves the same label into its playback overlay; exiting fullscreen returns it to the ruler header. Timeline refresh detaches the label before rebuilding rows to avoid the previously observed reused-View-parent crash.
+- This is a source-layout correction only. Build, emulator screenshot, compact-phone and physical-device verification are still pending; do not mark the layout accepted until the label is visibly on the ruler row.
