@@ -1711,7 +1711,10 @@ class VideoEditorActivity : Activity() {
                 previewParams.weight = 1f
                 previewFrame.layoutParams = previewParams
 
-                if (::editorPanelScroll.isInitialized && editorPanelScroll.visibility == View.VISIBLE) {
+                if (::editorPanelScroll.isInitialized &&
+                    editorPanelScroll.visibility == View.VISIBLE &&
+                    activeEditorPanel != null
+                ) {
                     val panelParams = editorPanelScroll.layoutParams as? LinearLayout.LayoutParams
                     if (panelParams != null) {
                         panelParams.height = dp(if (imeVisible) 124 else 196)
