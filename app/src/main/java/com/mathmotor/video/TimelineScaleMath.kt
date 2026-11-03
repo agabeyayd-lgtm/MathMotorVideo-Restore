@@ -146,8 +146,9 @@ internal object TimelineScaleMath {
         val safeFrameIndex = frameIndex.coerceAtLeast(0L)
         if (fps != null) {
             val framesPerSecondRounded = fps.roundToLong().coerceAtLeast(1L)
-            if (safeFrameIndex % framesPerSecondRounded != 0L) {
-                return "${safeFrameIndex}f"
+            val frameOffsetInSecond = safeFrameIndex % framesPerSecondRounded
+            if (frameOffsetInSecond != 0L) {
+                return "${frameOffsetInSecond}f"
             }
             val totalSeconds = (safeFrameIndex.toDouble() / fps).roundToLong()
             val minutes = totalSeconds / 60L
