@@ -1981,6 +1981,7 @@ class VideoEditorActivity : Activity() {
         updateOverlayTransformTouchAvailability()
         if (::editorPanelScroll.isInitialized) {
             val wasVisible = editorPanelScroll.visibility == View.VISIBLE
+            if (!wasVisible) logEditorPanelGeometry("before-open:" + name)
             val params = editorPanelScroll.layoutParams as? LinearLayout.LayoutParams
             if (params != null) {
                 params.height = dp(if (keyboardLayoutActive) 124 else 196)
