@@ -407,3 +407,11 @@ Physical-device feedback from debug build #555:
 - Do not delay video to mask the audio lag, alter worker counts/decoder strategy, or change cache budgets without evidence.
 
 **Verification boundary:** #555 confirms the diagnostic debug APK builds and uploads successfully, but the physical-device observations above remain unresolved. Keep work on `feature/capcut-layout-recompose` / draft PR #18. Do not merge, modify `main`, create version 395, or publish a release.
+
+
+## Ruler-row playback time placement correction — 2026-11-03
+
+- Root cause of the repeated mismatch: `timelinePlayheadLabel` was still attached to `playbackLeft`, so it remained in the playback-control row even though the ruler was a separate `makeLane()` row.
+- Moved the existing current/total time label into the ruler row's existing 84dp left header gutter. The gutter width is unchanged, preserving the shared zero edge and all video/audio/text lane alignment.
+- Fullscreen temporarily reparents the same label into the fullscreen playback overlay and restores it to the ruler header on exit. Timeline refresh explicitly detaches it before rebuilding to avoid a stale-parent crash.
+- **Verification pending:** no build or emulator screenshot has yet verified the new placement. Keep PR #18 draft/unmerged; do not touch `main`, create version 395, or publish an APK.
