@@ -480,3 +480,11 @@ Physical-device feedback from debug build #555:
 - The overlay follows the existing system-bar / keyboard safe-area handling. Keyboard-driven viewport changes remain a separate responsive mode.
 - No timeline time/pixel math, playhead synchronization, thumbnail decoder, cache budget, worker count, media, audio, or export behavior was changed.
 - **Verification pending:** run unit tests, debug compilation, and the emulator screenshot/interaction workflow. Confirm preview and timeline bounds stay unchanged on panel open/close, the selected tool content is retained during the close animation, and keyboard/fullscreen behavior remains usable. Physical-phone acceptance remains required. This source change is not release acceptance; keep PR #18 draft and versionCode 394 / Build 61 unchanged.
+
+
+### Adaptive CapCut-style timeline ruler — 2026-11-03
+
+- The ruler now renders the label chosen for each adaptive tick instead of applying a hard-coded five-second label filter. This restores intermediate second/subsecond labels and frame labels when zoomed in.
+- Whole-second frame boundaries use clock labels (for example, `00:02`); intermediate source-frame ticks use frame labels (for example, `15f`). Frame boundaries are calculated using the source frame rate, including fractional rates such as 29.97 fps.
+- Ruler tick positions continue to use the shared absolute-time `pixelsForTime` mapping, so this is a label/rendering correction rather than a second timeline scale.
+- Unit coverage added for whole-second and half-second frame labels. Emulator/build verification is pending on the latest branch head.
