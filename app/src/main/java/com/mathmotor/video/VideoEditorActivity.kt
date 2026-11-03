@@ -2686,11 +2686,10 @@ class VideoEditorActivity : Activity() {
             val intervalWidth = (nextPositionPx - startPositionPx).coerceAtLeast(1)
             val tickCell = FrameLayout(this)
             val tick = TextView(this).apply {
-                val minutes = startMs / 60_000L
-                val seconds = (startMs / 1_000L) % 60L
-                text = if (startMs % 5_000L == 0L) {
-                    "${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}"
-                } else ""
+                // Use the label selected for this exact absolute timestamp.
+                // The former hard-coded 5-second condition hid every other
+                // adaptive ruler label, including the frame labels at close zoom.
+                text = label
                 textSize = 9f
                 setTextColor(Color.rgb(166, 184, 201))
                 gravity = Gravity.TOP or Gravity.START
@@ -2732,7 +2731,7 @@ class VideoEditorActivity : Activity() {
                 addRulerInterval(
                     startMs,
                     endMs,
-                    "${frameIndex}f",
+                    TimelineScaleMath.formatRulerTickLabel(startMs, frameIndex, fps),
                     if (frameStep <= 1L) 0 else minOf(frameStep, 5L).toInt()
                 )
                 frameIndex = nextFrameIndex
@@ -2746,7 +2745,7 @@ class VideoEditorActivity : Activity() {
                 addRulerInterval(
                     rulerTimeMs,
                     nextTimeMs,
-                    TimelineScaleMath.formatRulerTime(rulerTimeMs),
+                    TimelineScaleMath.formatRulerTickLabel(rulerTimeMs, 0L, null),
                     5
                 )
                 rulerTimeMs = nextTimeMs
