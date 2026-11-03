@@ -1,8 +1,58 @@
+## Canonical project checkpoint — 2026-11-03
+
+**User acceptance:** the user installed and tested the debug ZIP produced by GitHub Actions run [#754](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41710927696) on a physical Android phone. The user confirmed that the editor structure works and approved this implementation as the foundation for subsequent incremental work.
+
+**Verified CI scope:** run #754 completed successfully on commit `7be6fade1def349e72649407c5c77790421214f0`. It ran `testDebugUnitTest`, `assembleDebug`, packaged the debug APK ZIP, and completed the API 35 emulator flow. The emulator flow exercised the compact `Düzenle` tool strip, `Kırp` detail, `Ses düzeyi` detail, return-to-strip and return-to-main-dock transitions, plus preview/timeline geometry assertions. This is evidence for the tested editor shell and navigation, not blanket acceptance of every feature listed in older checkpoints.
+
+**Mainline status:** PR #18 is ready for review and approved by the user as the implementation base. Integration with the two later documentation-only commits on `main` is being prepared; do not describe the PR as merged until GitHub confirms it.
+
+**Release boundary:** keep versionCode 394 / Build 61 unchanged. Run #754 produced a debug test ZIP, not a signed production release. Do not create version 395, publish a release, or activate the in-app updater until mainline integration, signing/package compatibility, and a controlled update/install test are separately verified.
+
+**Still not covered by the #754 acceptance:** full physical-device verification of clip reorder, cover-image saving/generation, thumbnail fill performance, image/video overlays, compositing/export, and all media edge cases. Preserve these as distinct open checks; do not treat acceptance of the editor structure as acceptance of those features.
+
+---
+
 # MathMotor Video
+
+## Active implementation checkpoint — 2026-11-02 (latest user-approved batch)
+
+**Working branch:** `feature/capcut-layout-recompose`  
+**Latest code-change SHA:** `8a96bb8d48d4a6a6ad9d7805ed4b550e7da5e8bc`  
+**Review:** PR #18 is ready for review; user approved this implementation as the mainline foundation after physical-device testing of run #754. Mainline merge is pending; versionCode 394 / Build 61 remains unchanged. Do not publish a signed release or activate the updater as part of this merge.
+
+### Implemented in source; verification pending
+
+- **CapCut-style clip reorder:** long-press a main video segment and drag it to an insertion position. The sequence planner reorders independent split pieces and reflows the non-overlapping main video lane. It refuses to reorder when existing main-video segments overlap, rather than silently changing layer timing.
+- **Reorder unit coverage added:** four tests cover insertion between clips, moving the first clip to the end, overlap rejection, and preserving gaps on a no-op drop. The expected end position was corrected to 4,500 ms before verification.
+- **Fullscreen reachability:** the fullscreen exit control is placed in the preview's upper safe corner; outside fullscreen it returns to the playback row.
+- **Filmstrip first-cell poster:** the first cell can display a temporary provider thumbnail while its exact timestamp sample is being decoded. This is a placeholder, not a replacement for timestamp-accurate frames. Overall thumbnail speed has not been measured on the user's phone.
+- **Clip cover selection:** a per-clip frame picker previews frames from the selected trimmed range, stores the selected source timestamp in project JSON, and exposes a JPG save action. Android 10+ saves to Pictures/MathMotor/Kapaklar; older Android versions use the system document picker.
+- **Image/video overlay lane:** the overlay panel can add a still image or a video as a distinct timeline layer. Start time, duration, scale, horizontal/vertical position and rotation can be adjusted with controls; preview touch gestures support one-finger movement and two-finger scale/rotation. The layer metadata and persistent URI are stored/restored with the editable project.
+- **Preview/export composition path:** overlay sequences are composed separately from the main video. Preview uses Media3 `MultipleInputVideoGraph.Factory` when overlays exist; export uses the same video sequence order and compositor settings. Overlay-video source audio is intentionally removed so it does not unexpectedly mix with the main soundtrack.
+
+### Explicit limitations and verification boundary
+
+- **Superseded by run #754:** GitHub Actions run [#754](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41710927696) succeeded on `7be6fade1def349e72649407c5c77790421214f0`, including unit tests, debug APK build/ZIP packaging and the API 35 emulator interaction workflow. The user also installed and tested that ZIP on a physical phone and accepted the editor structure. Earlier failed runs and older SHA results remain historical, not the status of this tested head.
+- No emulator or physical-phone acceptance has been completed for drag reorder, poster latency, cover save, multi-input preview, seek/scrub, or MP4 overlay output.
+- Media3 `VideoCompositorSettings` is a beta API. Multi-input preview, overlay order/transparency, image and video rendering, seek stability, and export output must be validated before treating the feature as complete. [Media3 VideoCompositorSettings guide](https://developer.android.com/media/media3/transformer/videocompositorsettings), [CompositionPlayer.Builder API](https://developer.android.com/reference/androidx/media3/transformer/CompositionPlayer.Builder), [MultipleInputVideoGraph.Factory API](https://developer.android.com/reference/androidx/media3/effect/MultipleInputVideoGraph.Factory)
+- Overlay source in-point trimming is not yet exposed as a user control; current video overlays start from source time zero. Timeline text/audio layers also remain absolute project-time layers and are not automatically attached to a reordered main-video clip.
+- Thumbnail performance beyond the provisional first-cell poster remains open; collect device timings before changing decoder or thread strategy.
+- PR #18 is ready for review and remains unmerged until the merge commit and GitHub result are confirmed. The editor shell has user acceptance; this does not imply release readiness.
 
 ## New editor layout target — CapCut-inspired mobile arrangement (2026-11-02)
 
-**Status: DESIGN TARGET RECORDED — implementation and verification not yet started.** This is a layout-only redesign of the existing editor, based on the user's complete 720×1600 portrait reference specification. The installed 394 / Build 61 experience remains the baseline; do not create version 395 or publish an APK for this documentation update.
+**Status: SOURCE LAYOUT DRAFT IMPLEMENTED — API/unit verification passed; emulator and device acceptance pending.** The draft is isolated on feature/capcut-layout-recompose; main remains unchanged. The installed 394 / Build 61 experience remains the baseline. No APK was packaged, and version 395 was not created.
+
+### Implementation progress — 2026-11-02
+
+- Recomposed the existing editor layout without replacing the editor activity: preview remains responsive; fullscreen/time moved to the playback row; play is unboxed; existing clip undo/redo and fit controls sit on the right.
+- Expanded the timeline workspace to a 220dp target, reduced the video filmstrip to 48dp, and added persistent audio/text lanes with Ses ekle / Metin ekle controls. The YZ badge, Kapak, and lane plus are visual-only placeholders.
+- Ruler labels now appear at five-second marks (00:00, 00:05); tick geometry, shared time mapping, frame-rate-aware math, scrub/zoom behavior and centered playhead logic were not rewritten.
+- Added the horizontally scrollable seven-tool dock in the requested order. Existing Düzenle, Ses, Metin, and Proje destinations remain connected; Efektler, Bindirme, and Yazılar show Yakında.
+- Klip sesini reuses the existing source-audio mute state. Ses ekle and Metin ekle open their existing panels. Selected-clip actions and trim controls remain in the existing contextual clip panel; undo/redo remain in the playback row.
+- **Verification:** no-APK workflow run [#2 passed](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41450804106). compileDebugKotlin, compileDebugUnitTestKotlin, and testDebugUnitTest passed. The workflow did not run assembleDebug, package an APK, or upload an artifact. The temporary test workflow was removed after the run.
+- **Historical checkpoint:** the initial layout implementation had not yet been accepted. That status was superseded for the tested editor shell by the successful #754 emulator workflow and the user's 2026-11-03 physical-phone acceptance. Keyboard/inset and compact-screen regression checks remain separate open checks.
+- Tested source commit: 4ec9cf5a6eeb2af16dac42bd5f583b25a4cbcbbd. Temporary workflow removal commit: 7f5be8ff47868039158749602112c2aee3a5a681. Main remains at 4d83ba84551e82b704953209fb7427bc4af0d544.
 
 ### Non-negotiable scope
 
@@ -35,7 +85,7 @@
 
 - The video clip is unselected on initial editor entry: no selection border or trim handles.
 - Tapping a clip selects it and opens its contextual bottom tool row.
-- Move these existing actions out of the always-visible main layout and into that selected-clip tool row: `Önizle`, `Kopyala`, `Klibi kaldır`, `Böl`, `Öne al`, `Sona al`, `Klip geri al`, `Klip yinele`, and the `Başlangıç/Bitiş` controls. Preserve their current handlers and exact behavior.
+- Move these existing actions out of the always-visible main layout and into that selected-clip tool row: `Önizle`, `Kopyala`, `Klibi kaldır`, `Böl`, `Öne al`, `Sona al`, and the `Başlangıç/Bitiş` controls. Keep the existing `Klip geri al/yinele` buttons on the playback row as specified above. Preserve their current handlers and exact behavior.
 - `Ses ekle` opens the existing `Ses` tool; `Metin ekle` opens the existing `Metin` tool.
 - The four existing tools `Düzenle`, `Ses`, `Metin`, `Proje` remain functional in the bottom navigation.
 - `Kapak`, `Efektler`, `Bindirme`, `Yazılar`, the video-lane `+`, and `YZ` are appearance-only placeholders. Do not implement new feature logic. If tapped, show a brief `Yakında` message at most; no navigation into broken or empty flows.
@@ -72,7 +122,7 @@
 - PR-head verification passed: Verify Android build #452, APK build #488, and API 35 emulator screenshot/editor verification #669 (source commit `934d9011c8afd65e4764a39b2411a50cd216047d`; same app source tree as the merge).
 - Emulator checks confirmed APK installation, home/editor opening, deterministic video load, thumbnail/preview frame agreement at 211 ms, forward/reverse filmstrip scrubbing, live playback synchronization (16 samples; two synchronized lanes; fixed playhead at screen center), and draft autosave/resume navigation.
 - The initial emulator attempt was blocked by a Nexus Launcher system ANR, not a MathMotor app ANR. The harness was corrected to close the stalled launcher only; the successful #669 run then completed.
-- The automated emulator run is not a physical-phone acceptance test. Confirm installation and touch behavior on the user's phone separately.
+- The automated emulator run is not a physical-phone acceptance test. Separately, the user confirmed installation and editor-structure touch behavior on the phone using the #754 debug ZIP on 2026-11-03.
 - Keep the installed baseline at **versionCode 394 / Build 61**. Version 395 remains blocked; do not change version metadata or publish a release without the user's explicit authorization and completion of the release checklist.
 
 ## Mainline verification update — 2026-11-02 (runs #441, #688 and #489)
@@ -331,16 +381,154 @@ Validation:
 - Keep versionCode 394 / Build 61 as the user-approved baseline. Version 395 remains blocked; no replacement APK, signed release, or update is authorized by these changes alone.
 
 
-## Chat handoff — 2026-11-02 (latest user checkpoint)
+## Compact timeline gutter refinement — 2026-11-02
 
-**Purpose:** This section is the restart point when continuing from a different ChatGPT account/session. Read this section first, then reconcile it with the latest GitHub branch, commits and Actions before changing code.
+- User reviewed the emulator screenshots and approved preserving the current layout while making the timeline more usable.
+- Narrowed the per-lane left controls from 54dp + 42dp to 44dp + 40dp. The media/ruler gutter therefore changes from 96dp to 84dp (87dp including the row's 3dp leading inset).
+- Updated the shared centered-playhead gutter input from 99dp to 87dp and adjusted the focused `TimelineScaleMathTest` geometry expectations: at a 320px frame, the leading spacer is now 73px (previously 61px); the playhead remains at the same full-frame center and the playback time mapping test uses the new gutter.
+- Updated the source comment to describe the 84dp gutter. No ruler math implementation, frame-rate mapping, timestamp data, zoom behavior, trim logic, clip state, or media/export behavior was changed.
+- **Verification status:** the prior no-APK run #2 does not include this refinement. The GitHub workflow/status lookup has not yet returned a run or check result for the refinement commits; treat the updated unit test and compilation as **pending**, not passed. No APK was assembled or uploaded.
+- Review gate: after the checks run, capture the same populated/empty editor states and verify the narrower controls remain readable/tappable while ruler, filmstrip, audio/text lanes, and fixed-center playhead remain aligned. Keep versionCode 394 / Build 61; do not create version 395.
+
+
+## 2026-11-02 — physical-phone feedback after debug APK review
+
+The user tested the debug APK from the `feature/capcut-layout-recompose` branch and reported four remaining acceptance issues:
+
+1. The fullscreen minimize/restore control is now reachable and works, but fullscreen mode hides the playback row entirely. Keep a CapCut-style Play/Pause control and current/total duration visible in fullscreen as well.
+2. The selected clip cover image is not appearing/being created as expected. Trace the complete cover-picker flow, distinguish saving the selected timestamp in the project from creating a visible JPG cover image, and make the expected result explicit and reliable.
+3. Filmstrip thumbnails are only slightly faster and remain too slow. Zooming the filmstrip causes the user to wait for thumbnails to be generated again. Reuse already-decoded frames immediately across zoom levels and fill missing samples asynchronously; avoid unnecessary re-decodes.
+4. During manual filmstrip drag, the preview does not update as soon as the fixed playhead passes a new frame. Reduce scrub latency and keep preview requests aligned with the latest playhead position without allowing stale decode results to overwrite newer frames.
+
+Initial source inspection on this branch found: `togglePreviewFocusMode()` hides every root child except `previewFrame`, including the playback row; `scheduleTimelineScrubPreviewSeek()` enforces a 120ms minimum interval; thumbnail cache reuse currently requires a cached timestamp to fall inside the newly generated cell interval, which often fails after zoom-in; and the cover picker stores `coverTimeMs` when “Kapak yap” is pressed while JPG creation is a separate “JPG kaydet” action. These are investigation findings, not yet fixes.
+
+**Status:** feedback documented; source changes and verification are pending. Keep work on this feature branch and draft PR only. Do not merge, modify `main`, create version 395, or publish a release. The just-tested debug APK is not to be treated as acceptance of these four behaviors.
+
+
+## 2026-11-02 — fullscreen playback, cover output and live timeline feedback
+
+Source changes on `feature/capcut-layout-recompose` now:
+
+- Keep the existing play/pause button and current/total time visible in fullscreen by moving those same controls into a bottom overlay on the preview; the top-right fullscreen exit control remains reachable.
+- Change the scrub decoder cadence from a 120ms minimum interval to 33ms (about 30 requests/second), while retaining latest-request generation checks so stale frames cannot replace newer ones.
+- Increase the filmstrip bitmap LRU cache from 16MiB to 32MiB. On zoom, show the nearest cached frame immediately even if its timestamp is outside the newly resized cell, then continue decoding the exact cell timestamp asynchronously so the placeholder is replaced.
+- Make “Kapak yap” persist the selected source timestamp and create the corresponding JPG cover image. If the selected preview bitmap is not ready, the picker remains open and asks the user to wait rather than silently selecting without producing the image.
+- Add a unit test for the 33ms interactive scrub cadence.
+
+**Verification:** source and unit-test changes are committed, but compilation, unit tests, emulator interaction, and physical-phone behavior are still pending. The 33ms cadence is a request throttle, not a guarantee of 30fps decoding on every device. Zoom reuse is provisional until the emulator and phone confirm immediate display and background exact-frame replacement. Do not offer a new APK until the checks pass. Keep `main` and version 394 / Build 61 unchanged; no merge or release is authorized.
+
+
+## 2026-11-02 — scrub preview cache and pause-clock synchronization
+
+On the existing `feature/capcut-layout-recompose` branch (PR #18), the editor now:
+
+- Refreshes the playback/timeline synchronization loop every 50ms instead of 250ms so the visible ruler/playhead follows playback more closely.
+- On pause, freezes the composition player first and copies its actual `currentPosition` into `timelinePlayheadMs`, then updates the time readout and scroll position. Pending scrub work is cleared so an old request cannot pull the paused frame backward.
+- On resume, clears pending scrub work and seeks from that frozen playhead before enabling playback.
+- During manual scrubbing, looks for a same-source filmstrip bitmap within 500ms of the requested source timestamp and immediately displays a private copy as a temporary preview; the exact timestamp is still decoded asynchronously and replaces it when ready. The cache bitmap itself is never recycled by the preview.
+
+**Verification:** source change committed; build, unit tests, emulator interaction, decoder latency measurements, and physical-phone acceptance are pending. The nearby cached frame is intentionally provisional and can be up to 500ms away until the exact frame arrives; this is a responsiveness improvement, not a claim of frame-perfect instant decoding. Keep PR #18 draft, do not merge or modify `main`, and keep versionCode 394 / Build 61 unchanged.
+
+
+## 2026-11-03 — background/foreground thumbnail cache diagnostics
+
+The existing editor branch now has debug-build-only local diagnostics for the report that filmstrip thumbnails appear to be generated again after switching to another app and returning.
+
+Instrumentation added without changing editor behavior:
+
+- Activity lifecycle events: `onCreate`, `onCreateComplete`, `onRestart`, `onStart`, `onResume`, `onPause`, `onStop`, `onSaveInstanceState`, `onTrimMemory`, and `onDestroy`.
+- Every lifecycle record includes process ID and Activity instance identity, so the log can distinguish a normal stop/resume from Activity recreation or process restart.
+- Cache state includes filmstrip/poster cache bytes, LRU hit/miss/eviction counts, in-flight thumbnail keys/targets, queued tasks and active decoder workers.
+- Timeline rebuild records include the caller and the number of lane rows before rebuilding.
+- Each newly decoded thumbnail records queue wait, frame decode, bitmap scaling, UI-dispatch wait and UI-apply duration separately. Cache hits and request deduplication are also recorded.
+- Diagnostics run only in debuggable builds and write to local Android logcat; no telemetry or network reporting is added.
+
+### Device reproduction
+
+1. Install the debug APK and open a video in the editor. Let the filmstrip thumbnails finish loading.
+2. Start log capture: `adb logcat -c`, then `adb logcat -v time -s TimelineLifecycle:I TimelineThumbnail:I`.
+3. Press Home, open another app for around 30 seconds, then return to the editor without closing it.
+4. Compare the lifecycle records and thumbnail events around the return.
+
+Interpretation:
+
+- Same PID and same Activity instance across `onStop` → `onStart/onResume`, with cache bytes retained and cache-hit records: the Activity/cache survived; inspect refresh/rebinding and UI timing.
+- Same PID but a different Activity instance: the Activity was recreated and its in-memory cache was lost.
+- Different PID: the app process restarted; the Activity-local LRU cache cannot survive that process death.
+- A rise in LRU evictions or an `onTrimMemory` event before the return points to memory pressure.
+- High `queueWaitMs` indicates queue contention; high `frameDecodeMs` points to frame extraction; high `bitmapScaleMs` points to resizing; high `uiDispatchWaitMs/uiApplyMs` points to main-thread delay.
+
+**Verification status:** source instrumentation committed as `af9abbaeae54d451d312dbaa9598349422b73e16`. Debug compilation, unit tests, emulator reproduction and physical-device log review are pending. This is diagnostic instrumentation only: worker count, decoder strategy, cache budgets and playback/timeline behavior were not changed. Keep PR #18 as a draft; do not merge, change `main`, create version 395, or publish a release.
+
+
+## 2026-11-03 — physical-device playback and thumbnail follow-up
+
+Physical-device feedback from debug build #555:
+
+- After switching away from the editor and returning, the filmstrip thumbnails are generated again rather than remaining visible from the previous session.
+- On the initial editor opening, the video thumbnails appear only after the audio portion has loaded; investigate the apparent loading order rather than assuming it is a decoder-only issue.
+- A separate playback issue was observed: after tapping Play, audible sound begins approximately one second later than expected while playback has already been initiated. This is a user-observed approximate delay, not yet a measured Media3 audio-renderer timestamp.
+
+### Next diagnostic steps
+
+- Collect the existing `TimelineLifecycle` and `TimelineThumbnail` logcat records around the background/foreground reproduction to determine whether the Activity/process was recreated, the cache was evicted, or tracks were rebound.
+- Investigate playback startup independently. The current Play path seeks to `timelinePlayheadMs` and then sets `playWhenReady = true`; source inspection alone does not identify when audio output actually begins. Add or collect targeted debug timing for the Play tap, player readiness/playback state, video-frame presentation, and audio-start/position-advancing events before changing playback behavior.
+- Do not delay video to mask the audio lag, alter worker counts/decoder strategy, or change cache budgets without evidence.
+
+**Verification boundary:** #555 confirms the diagnostic debug APK builds and uploads successfully, but the physical-device observations above remain unresolved. Keep work on `feature/capcut-layout-recompose` / draft PR #18. Do not merge, modify `main`, create version 395, or publish a release.
+
+
+## Playback time moved into ruler row — 2026-11-03
+
+- Corrected the layout ownership: the current/total playback-time label is no longer a child of the play/fullscreen control row. It now occupies the existing 84dp left header gutter of the time-ruler row, matching the media-lane control gutter so the ruler and clip zero edges do not shift.
+- Fullscreen mode temporarily moves the same label into its playback overlay; exiting fullscreen returns it to the ruler header. Timeline refresh detaches the label before rebuilding rows to avoid the previously observed reused-View-parent crash.
+- This is a source-layout correction only. Build, emulator screenshot, compact-phone and physical-device verification are still pending; do not mark the layout accepted until the label is visibly on the ruler row.
+
+
+## 2026-11-03 — CapCut-style bottom editing sheet
+
+- Moved the existing contextual editor panel and tool dock into one bottom-anchored overlay on the existing editor. No second Activity, alternate timeline, or duplicate editor was added.
+- The base editor reserves only the dock height. Opening a tool now raises its detail panel above the dock as an overlay over the lower timeline area, rather than inserting another row into the root vertical layout and reducing the flexible preview height.
+- Switching tools reuses the visible panel; closing it animates downward. The timeline remains mounted beneath the translucent panel and is not rebuilt just because a panel opens or closes.
+- The bottom sheet is explicitly included in the preview's fullscreen hide/restore cycle, so it cannot remain floating over fullscreen playback.
+- The emulator capture script now opens `Düzenle`, switches to `Ses`, closes the sheet, and compares logged preview/timeline screen bounds across all four states. This check is added but has not yet run on the new source head.
+- The overlay follows the existing system-bar / keyboard safe-area handling. Keyboard-driven viewport changes remain a separate responsive mode.
+- No timeline time/pixel math, playhead synchronization, thumbnail decoder, cache budget, worker count, media, audio, or export behavior was changed.
+- **Verification pending:** run unit tests, debug compilation, and the emulator screenshot/interaction workflow. Confirm preview and timeline bounds stay unchanged on panel open/close, the selected tool content is retained during the close animation, and keyboard/fullscreen behavior remains usable. Physical-phone acceptance remains required. This source change is not release acceptance; keep PR #18 draft and versionCode 394 / Build 61 unchanged.
+
+
+### Adaptive CapCut-style timeline ruler — 2026-11-03
+
+- The ruler now renders the label chosen for each adaptive tick instead of applying a hard-coded five-second label filter. This restores intermediate second/subsecond labels and frame labels when zoomed in.
+- Whole-second frame boundaries use clock labels (for example, `00:02`); intermediate source-frame ticks use frame labels (for example, `15f`). Frame boundaries are calculated using the source frame rate, including fractional rates such as 29.97 fps.
+- Ruler labels use a 48dp minimum spacing threshold and tick positions continue to use the shared absolute-time `pixelsForTime` mapping, so this remains a ruler-rendering adjustment rather than a second timeline scale.
+- Unit coverage added for whole-second and half-second frame labels. Emulator/build verification is pending on the latest branch head.
+
+
+### Two-level CapCut-style clip tools — 2026-11-03
+
+- Tapping the main `Düzenle` dock item now swaps the global dock for one compact horizontal clip-tool strip at the bottom. The main editor dock is restored with the strip's Back control.
+- The strip contains implemented clip actions: Kırp, Ses düzeyi, Böl, Kapak and Sil. Kırp and Ses düzeyi open a second-level detail panel above the strip; the detail panel has an explicit return-to-tools control. Direct actions remain on the strip.
+- The two-level transition is designed as a bottom-anchored overlay. The preview and timeline remain mounted underneath; the existing ruler, filmstrip, shared playhead and time scale are not intentionally changed by the dock transition.
+- The emulator UI test exercises main dock → clip strip → trim detail → clip strip → volume detail → clip strip → main dock and compares preview/timeline geometry at each step. This passed in run #754 on `7be6fade1def349e72649407c5c77790421214f0`; the user separately confirmed the editor structure works on a physical phone.
+
+### Emulator selector correction — 2026-11-03
+
+- Diagnosed the prior UI smoke-test failure after `Araçlara dön`: the helper used substring matching across both visible text and content descriptions. That made the detail-panel return control collide with the strip's `Geri` description (`Ana araçlara dön`), so the script tapped `Geri` and restored the global dock before searching for `Ses düzeyi`.
+- Corrected the selector to prioritize visible button text and accept only exact content-description fallback matches. This is a test-selector correction; the app's two-level menu actions were not changed for this failure.
+- Fix commit: `96bf3ffee9df13098b5fbf4440de1c907e7d7791`. A fresh emulator run is still required; do not treat the correction as verified until it passes.
+
+
+## Preserved cross-session handoff notes — 2026-11-02 (reconciled 2026-11-03)
+
+**Purpose:** Preserve the previous session's observations and open work. The 2026-11-03 canonical project checkpoint at the top of this file supersedes any older status statements below. Reconcile with GitHub main, PR #18 and Actions before changing code.
 
 ### Where we stopped
 
 - Project: `agabeyayd-lgtm/MathMotorVideo-Restore`.
-- The approved working baseline remains **main / versionCode 394 / Build 61**. Do not create version 395, change version metadata, sign/publish a release, or offer an update until the release gates are complete and the user explicitly authorizes it.
-- The user has a TEST ZIP described in the conversation as containing `app-debug.apk`; the archive was reported to open successfully. **That only confirms the ZIP archive was readable; installation and real-phone runtime behavior have not yet been confirmed.** The exact ZIP filename, source branch/commit and Actions run that produced this latest ZIP were not established in the handoff conversation. Do not claim it is a main build or a release APK until its provenance is checked.
-- Do not assume the latest ZIP is the same as the previously documented PR #11 artifact. Identify its source commit/workflow before using it as evidence.
+- The last confirmed installed/release baseline remains **versionCode 394 / Build 61**. The user has since approved the #754-tested editor implementation as the mainline foundation; PR #18 integration is being completed. Do not create version 395, sign/publish a release, or activate the updater as part of the merge.
+- The tested TEST ZIP is identified: GitHub Actions run [#754](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41710927696), source commit `7be6fade1def349e72649407c5c77790421214f0`, artifact `mathmotor-debug-apk-zip`. The user installed it on a physical phone and confirmed the editor structure works. It is a debug test build, not a signed release APK.
+- The #754 artifact provenance is established; do not conflate it with older PR #11 artifacts or with a production release.
 - No new release/version should be created as part of this handoff.
 
 ### Latest user-reported issues to verify on the phone
@@ -349,17 +537,17 @@ Validation:
 2. **Filmstrip thumbnail speed:** thumbnail generation/loading appears slow again. Measure time to first visible thumbnail and full visible-strip fill; inspect decode scheduling, caching and progressive visible-first loading before changing implementation. Do not sacrifice frame accuracy or preview/thumbnail synchronization.
 3. **Cover image:** the cover/thumbnail image is not being generated/shown. Reproduce and trace the cover-generation/display path; distinguish a missing image from a delayed/failed decode. Do not mark fixed until tested.
 
-These are fresh phone observations and are separate from the existing #688 emulator evidence. #688 passed deterministic-fixture frame agreement (211ms preview/thumbnail RGB delta 0), 4/4 distinct visible samples, forward/reverse scrubbing and 18 playback synchronization samples. It did **not** prove fast thumbnail loading, cover generation, or physical-phone behavior.
+These were phone observations recorded before the #754 editor-shell acceptance and remain separate follow-up items unless a later device check confirms them fixed. #688 passed deterministic-fixture frame agreement (211ms preview/thumbnail RGB delta 0), 4/4 distinct visible samples, forward/reverse scrubbing and 18 playback synchronization samples. Run #754 passed the editor-shell tool transitions and geometry checks; it did **not** measure thumbnail fill speed or validate cover-image generation, image/video overlays, or export.
 
 ### Exact next steps
 
-1. Inspect GitHub `main`, open PRs/branches and the latest APK ZIP/workflow metadata. Establish the exact source commit and branch for the ZIP before treating it as the test candidate.
+1. Complete PR #18 integration by preserving the two Nov 2 documentation commits on `main`, rerunning the PR checks and confirming GitHub reports the merge. Keep `main` as the sole canonical source.
 2. Keep the user's installed baseline at 394 / Build 61; do not bump version or create 395.
-3. Reproduce the three reported issues on the supplied test APK/phone and capture device dimensions, Android version, logs and screenshots/video where possible.
-4. Trace and fix the fullscreen exit-control position/insets first, then thumbnail loading latency/cache/progressive scheduling, then cover-image generation/display. Preserve the approved editor implementation, timeline math, frame alignment and all working controls.
+3. Continue the previously reported fullscreen reachability, thumbnail latency and cover-image checks on the approved base; record device dimensions, Android version, logs and timings where available.
+4. Preserve the approved editor implementation, then address confirmed remaining device issues with focused fixes and regression tests. Do not alter timeline math or frame alignment without evidence.
 5. Add focused regression tests for each fix. Run unit tests, debug build and targeted API 35 emulator tests; inspect logs and screenshots rather than relying on a green compile alone.
-6. Rebuild a TEST APK ZIP only after the targeted fixes and checks; state the exact branch, commit, workflow run and artifact filename. Ask the user to install and verify on the phone.
-7. Update this README and RESTORATION_STATUS.md with actual evidence and remaining failures. Only consider release 395 after all release gates pass and the user explicitly authorizes it.
+6. After mainline integration, inspect the existing in-app updater, signing configuration and release workflow. Connect updates only to a controlled, signed release source and run a safe install/upgrade test before enabling user-facing updates.
+7. Keep this README and RESTORATION_STATUS.md synchronized with evidence. Keep versionCode 394 / Build 61 until the release gates and update path are verified; do not publish a release by implication.
 
 ### Continuation rules
 

@@ -380,7 +380,164 @@ fi
 # clip is inserted into the timeline, so inaccessible UI hierarchy is diagnostic
 # only and does not turn a successful import into a false failure.
 
-echo "Step 8/11: align a thumbnail cell with the playhead and compare the rendered pixels"
+echo "Step 8/12: verify the one-row clip tool strip and its upward detail panel"
+find_bottom_tool() {
+  local hierarchy="$1"
+  local tool="$2"
+  python3 - "$hierarchy" "$tool" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+try:
+    root = ET.parse(sys.argv[1]).getroot()
+except (OSError, ET.ParseError):
+    raise SystemExit(1)
+
+target = sys.argv[2].casefold()
+matches = []
+for node in root.iter("node"):
+    # Match the visible button text first. Only accept an exact content-desc
+    # fallback: substring matching would confuse "Araçlara dön" with the
+    # Geri button's description, "Ana araçlara dön".
+    visible_text = node.attrib.get("text", "").casefold()
+    content_desc = node.attrib.get("content-desc", "").casefold()
+    match_kind = 2 if target in visible_text else (1 if target == content_desc else 0)
+    bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match_kind and bounds:
+        x1, y1, x2, y2 = map(int, bounds.groups())
+        if x2 > x1 and y2 > y1:
+            matches.append((match_kind, y1, (x1 + x2) // 2, (y1 + y2) // 2))
+if not matches:
+    raise SystemExit(1)
+_, _, x, y = max(matches)
+print(x, y)
+PY
+}
+
+clip_tool_coords="$(find_bottom_tool emulator-screenshots/editor-window.xml "Düzenle" || true)"
+if [ -z "$clip_tool_coords" ]; then
+  echo "Could not locate the bottom Düzenle tool; refusing to guess its tap coordinates."
+  collect_capture_diagnostics editor-panel-edit-tool-missing
+  exit 25
+fi
+echo "Opening the one-row clip tool strip at $clip_tool_coords"
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $clip_tool_coords
+sleep 1
+if ! take_screen emulator-screenshots/editor-panel-clip-open.png; then
+  collect_capture_diagnostics editor-panel-open-capture-failure
+  exit 6
+fi
+dump_hierarchy editor-panel-clip-open.xml emulator-screenshots/editor-panel-clip-open.xml || true
+
+trim_tool_coords="$(find_bottom_tool emulator-screenshots/editor-panel-clip-open.xml "Kırp" || true)"
+if [ -z "$trim_tool_coords" ]; then
+  echo "The clip tool strip did not expose the Kırp option."
+  collect_capture_diagnostics editor-panel-trim-tool-missing
+  exit 26
+fi
+echo "Opening the upward-growing trim detail panel at $trim_tool_coords"
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $trim_tool_coords
+sleep 1
+if ! take_screen emulator-screenshots/editor-panel-trim.png; then
+  collect_capture_diagnostics editor-panel-trim-capture-failure
+  exit 6
+fi
+dump_hierarchy editor-panel-trim.xml emulator-screenshots/editor-panel-trim.xml || true
+
+trim_back_coords="$(find_bottom_tool emulator-screenshots/editor-panel-trim.xml "Araçlara dön" || true)"
+if [ -z "$trim_back_coords" ]; then
+  echo "The expanded trim panel did not expose its return-to-tools control."
+  collect_capture_diagnostics editor-panel-trim-back-missing
+  exit 27
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $trim_back_coords
+sleep 1
+dump_hierarchy editor-panel-tool-strip-after-trim.xml emulator-screenshots/editor-panel-tool-strip-after-trim.xml || true
+
+volume_tool_coords="$(find_bottom_tool emulator-screenshots/editor-panel-tool-strip-after-trim.xml "Ses düzeyi" || true)"
+if [ -z "$volume_tool_coords" ]; then
+  echo "The clip tool strip did not expose the Ses düzeyi option after trim details closed."
+  collect_capture_diagnostics editor-panel-volume-tool-missing
+  exit 26
+fi
+echo "Opening the upward-growing volume detail panel at $volume_tool_coords"
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $volume_tool_coords
+sleep 1
+if ! take_screen emulator-screenshots/editor-panel-audio.png; then
+  collect_capture_diagnostics editor-panel-detail-capture-failure
+  exit 6
+fi
+dump_hierarchy editor-panel-audio.xml emulator-screenshots/editor-panel-audio.xml || true
+
+detail_back_coords="$(find_bottom_tool emulator-screenshots/editor-panel-audio.xml "Araçlara dön" || true)"
+if [ -z "$detail_back_coords" ]; then
+  echo "The expanded volume panel did not expose its return-to-tools control."
+  collect_capture_diagnostics editor-panel-detail-back-missing
+  exit 27
+fi
+echo "Returning from expanded detail to the single tool strip at $detail_back_coords"
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $detail_back_coords
+sleep 1
+if ! take_screen emulator-screenshots/editor-panel-tool-strip.png; then
+  collect_capture_diagnostics editor-panel-strip-return-capture-failure
+  exit 6
+fi
+dump_hierarchy editor-panel-tool-strip.xml emulator-screenshots/editor-panel-tool-strip.xml || true
+
+main_back_coords="$(find_bottom_tool emulator-screenshots/editor-panel-tool-strip.xml "Ana araçlara dön" || true)"
+if [ -z "$main_back_coords" ]; then
+  echo "The contextual strip did not expose its return-to-main-dock control."
+  collect_capture_diagnostics editor-panel-main-back-missing
+  exit 28
+fi
+echo "Restoring the main editor dock at $main_back_coords"
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $main_back_coords
+sleep 1
+if ! take_screen emulator-screenshots/editor-panel-closed.png; then
+  collect_capture_diagnostics editor-panel-close-capture-failure
+  exit 6
+fi
+timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime -s EditorPanelLayoutTest:I > emulator-screenshots/editor-panel-layout-logcat.txt 2>&1 || true
+
+python3 - emulator-screenshots/editor-panel-layout-logcat.txt <<'PY'
+import re
+import sys
+
+states = {}
+pattern = re.compile(
+    r"EDITOR_PANEL_GEOMETRY state=([^ ]+) "
+    r"preview=(\d+x\d+@\d+,\d+) "
+    r"timeline=(\d+x\d+@\d+,\d+)"
+)
+for line in open(sys.argv[1], errors="replace"):
+    match = pattern.search(line)
+    if match:
+        states[match.group(1)] = (match.group(2), match.group(3))
+
+required = [
+    "before-open:clip-tools",
+    "clip-tools",
+    "before-open:clip",
+    "open:clip",
+    "before-open:clipVolume",
+    "open:clipVolume",
+    "clip-tool-strip",
+    "closed",
+]
+missing = [state for state in required if state not in states]
+if missing:
+    raise SystemExit("Missing two-stage editor geometry markers: " + ", ".join(missing))
+baseline = states["before-open:clip-tools"]
+for state in required[1:]:
+    if states[state] != baseline:
+        raise SystemExit(
+            f"Editor layout moved during {state}: baseline={baseline}, observed={states[state]}"
+        )
+print("PASS: preview and timeline stayed fixed while the one-row tool strip opened, detail rose above it, the strip returned, and the main dock was restored.")
+PY
+
+echo "Step 9/12: align a thumbnail cell with the playhead and compare the rendered pixels"
 # HorizontalScrollView consumes touch slop before scrolling. Re-measure after
 # every drag and add the measured 12px touch-slop allowance so the cell center
 # actually reaches the fixed playhead instead of stopping short.
@@ -419,7 +576,7 @@ python3 .github/scripts/assert-thumbnail-alignment.py verify \
   emulator-screenshots/editor-frame-aligned.png \
   emulator-screenshots/thumbnail-alignment-logcat.txt
 
-echo "Step 9/11: exercise filmstrip scrubbing in both directions"
+echo "Step 10/12: exercise filmstrip scrubbing in both directions"
 clip_bounds="$(python3 - emulator-screenshots/editor-window.xml <<'PY'
 import re
 import sys
@@ -559,7 +716,7 @@ if [ -z "$reverse_ms" ] || [ "$reverse_ms" -ge "$forward_ms" ]; then
 fi
 echo "PASS: filmstrip left advanced to \${forward_ms}ms; right returned to \${reverse_ms}ms"
 
-echo "Step 9/11: exercise live playback and validate ruler/filmstrip synchronization"
+echo "Step 11/12: exercise live playback and validate ruler/filmstrip synchronization"
 dump_hierarchy timeline-play-button.xml emulator-screenshots/timeline-play-button.xml || true
 play_coords="$(python3 - emulator-screenshots/timeline-play-button.xml <<'PY'
 import re
@@ -610,7 +767,7 @@ if ! python3 .github/scripts/assert-timeline-sync.py emulator-screenshots/timeli
   exit 16
 fi
 
-echo "Step 11/11: validate automatic draft save and resume list"
+echo "Step 12/12: validate automatic draft save and resume list"
 timeout -k 2s 8s adb -s emulator-5554 shell input keyevent 4 || true
 sleep 3
 timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime > emulator-screenshots/draft-autosave-logcat.txt 2>&1 || true
@@ -638,12 +795,19 @@ if ! take_screen emulator-screenshots/home-with-drafts.png; then
   exit 6
 fi
 
-echo "Step 9/9: save diagnostics"
+echo "Step 12/12: save diagnostics"
 timeout -k 2s 8s adb -s emulator-5554 logcat -d > emulator-screenshots/logcat.txt || true
 test -s emulator-screenshots/home.png
 test -s emulator-screenshots/editor-empty.png
 test -s emulator-screenshots/editor.png
 test -s emulator-screenshots/editor-playing.png
+test -s emulator-screenshots/editor-panel-clip-open.png
+test -s emulator-screenshots/editor-panel-trim.png
+test -s emulator-screenshots/editor-panel-audio.png
+test -s emulator-screenshots/editor-panel-tool-strip-after-trim.xml
+test -s emulator-screenshots/editor-panel-tool-strip.png
+test -s emulator-screenshots/editor-panel-closed.png
+test -s emulator-screenshots/editor-panel-layout-logcat.txt
 test -s emulator-screenshots/timeline-sync-validation.txt
 test -s emulator-screenshots/home-with-drafts.png
-echo "Home, empty editor, initial and playing editor, live timeline sync, and autosaved-draft home screenshots captured."
+echo "Home, empty editor, initial/playing editor, two-stage clip tool strip/detail/return geometry, live timeline sync, and autosaved-draft screenshots captured."

@@ -57,7 +57,7 @@ class TimelineScaleMathTest {
     @Test
     fun timeZeroAndFirstVideoFrameShareTheFullPlayCenter() {
         val frameWidthPx = 320
-        val rulerHeaderAndLeadingInsetPx = 99
+        val rulerHeaderAndLeadingInsetPx = 87
         val originSpacerPx = TimelineScaleMath.originSpacerWidthForCenteredPlayhead(
             frameWidthPx,
             rulerHeaderAndLeadingInsetPx
@@ -71,7 +71,7 @@ class TimelineScaleMathTest {
         )
         val scrollViewportWidthPx = frameWidthPx - rulerHeaderAndLeadingInsetPx - trailingRowInsetPx
 
-        assertEquals(61, originSpacerPx)
+        assertEquals(73, originSpacerPx)
         assertEquals(157, endSpacerPx)
         assertEquals(scrollViewportWidthPx, originSpacerPx + endSpacerPx)
         assertEquals(frameWidthPx / 2, rulerHeaderAndLeadingInsetPx + originSpacerPx)
@@ -89,7 +89,7 @@ class TimelineScaleMathTest {
     @Test
     fun playbackScrollMovesBothRulerAndVideoUnderTheSameFixedCenter() {
         val frameWidthPx = 320
-        val gutterPx = 99
+        val gutterPx = 87
         val originSpacerPx = TimelineScaleMath.originSpacerWidthForCenteredPlayhead(frameWidthPx, gutterPx)
         val pixelsPerSecond = 22f
         val elapsedMs = 2_000L
@@ -202,6 +202,26 @@ class TimelineScaleMathTest {
     }
 
     @Test
+    fun scrubDecoderSeekCanRunAtInteractiveThirtyFramesPerSecondCadence() {
+        assertEquals(
+            23L,
+            TimelineScaleMath.scrubSeekDelayMs(
+                nowMs = 1_010L,
+                lastSeekUptimeMs = 1_000L,
+                minimumIntervalMs = 33L
+            )
+        )
+        assertEquals(
+            0L,
+            TimelineScaleMath.scrubSeekDelayMs(
+                nowMs = 1_040L,
+                lastSeekUptimeMs = 1_000L,
+                minimumIntervalMs = 33L
+            )
+        )
+    }
+
+    @Test
     fun fitScaleIsDeterministicForSameProjectAndViewport() {
         val first = TimelineScaleMath.fitPixelsPerSecond(10_000L, 357, 11f, 176f)
         val second = TimelineScaleMath.fitPixelsPerSecond(10_000L, 357, 11f, 176f)
@@ -258,6 +278,14 @@ class TimelineScaleMathTest {
         assertEquals(30L, TimelineScaleMath.frameIndexAtTimeMs(1_001L, 29.97))
         assertEquals(1_001L, TimelineScaleMath.snapTimeToFrameMs(1_000L, 29.97))
         assertEquals(1_000L, TimelineScaleMath.frameTimeMs(30L, 30.0))
+    }
+
+    @Test
+    fun adaptiveRulerUsesClockLabelsOnWholeSecondsAndFrameLabelsBetween() {
+        assertEquals("00:02", TimelineScaleMath.formatRulerTickLabel(2_002L, 60L, 29.97))
+        assertEquals("15f", TimelineScaleMath.formatRulerTickLabel(2_502L, 75L, 29.97))
+        assertEquals("00:03", TimelineScaleMath.formatRulerTickLabel(3_003L, 90L, 29.97))
+        assertEquals("00:02", TimelineScaleMath.formatRulerTickLabel(2_000L, 0L, null))
     }
 
     @Test
