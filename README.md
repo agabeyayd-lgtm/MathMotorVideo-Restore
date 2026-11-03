@@ -486,7 +486,7 @@ Physical-device feedback from debug build #555:
 
 - The ruler now renders the label chosen for each adaptive tick instead of applying a hard-coded five-second label filter. This restores intermediate second/subsecond labels and frame labels when zoomed in.
 - Whole-second frame boundaries use clock labels (for example, `00:02`); intermediate source-frame ticks use frame labels (for example, `15f`). Frame boundaries are calculated using the source frame rate, including fractional rates such as 29.97 fps.
-- Ruler tick positions continue to use the shared absolute-time `pixelsForTime` mapping, so this is a label/rendering correction rather than a second timeline scale.
+- Ruler labels use a 48dp minimum spacing threshold and tick positions continue to use the shared absolute-time `pixelsForTime` mapping, so this remains a ruler-rendering adjustment rather than a second timeline scale.
 - Unit coverage added for whole-second and half-second frame labels. Emulator/build verification is pending on the latest branch head.
 
 
