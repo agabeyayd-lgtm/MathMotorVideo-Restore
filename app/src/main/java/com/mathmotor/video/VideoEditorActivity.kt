@@ -2043,14 +2043,16 @@ class VideoEditorActivity : Activity() {
                 .setInterpolator(android.view.animation.DecelerateInterpolator())
                 .withEndAction {
                     if (activeEditorPanel == null) {
+                        editorPanels.values.forEach { it.visibility = View.GONE }
                         editorPanelScroll.visibility = View.GONE
                         editorPanelScroll.translationY = 0f
                         editorPanelScroll.alpha = 1f
                     }
                 }
                 .start()
+        } else {
+            editorPanels.values.forEach { it.visibility = View.GONE }
         }
-        editorPanels.values.forEach { it.visibility = View.GONE }
         updateTextOverlayEditToggle()
         editorTabButtons.values.forEach { button ->
             button.background = android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
