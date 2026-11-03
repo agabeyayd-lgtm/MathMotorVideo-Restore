@@ -1,15 +1,16 @@
-## Canonical project checkpoint — 2026-11-03
+## Canonical project checkpoint — 2026-11-04
 
-**User acceptance:** the user installed and tested the debug ZIP produced by GitHub Actions run [#754](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41710927696) on a physical Android phone. The user confirmed that the editor structure works and approved this implementation as the foundation for subsequent incremental work.
+**Current main:** PR #18 established the accepted CapCut-inspired editor base. PR #19 fixed the stale accessibility label after the exact first thumbnail replaces its temporary poster and was merged on 2026-11-03. Current main merge commit: `0785f95e83863aea99b9650437fcc8622aba9e76`.
 
-**Verified CI scope:** run #754 completed successfully on commit `7be6fade1def349e72649407c5c77790421214f0`. It ran `testDebugUnitTest`, `assembleDebug`, packaged the debug APK ZIP, and completed the API 35 emulator flow. The emulator flow exercised the compact `Düzenle` tool strip, `Kırp` detail, `Ses düzeyi` detail, return-to-strip and return-to-main-dock transitions, plus preview/timeline geometry assertions. This is evidence for the tested editor shell and navigation, not blanket acceptance of every feature listed in older checkpoints.
+**PR #19 verification:** all three checks on PR head `3ee49d8d531ca88ab3e1745d1049418af3469ad0` passed: unit/build verification, APK build and API 35 emulator UI workflow. The post-merge main run `41720626831` passed unit/build. Main emulator run [`41720627030`](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41720627030) completed its emulator launch and editor smoke script; the workflow was still in its final diagnostics-artifact upload step at the last check, so do not report the overall run as completed yet.
 
-**Mainline status:** PR #18 merged into `main` on 2026-11-03. Merge commit: `4bb6c540329f24dcdd97b0b34ee537f267591a32`. The single `VideoEditorActivity` is now the canonical editor base for incremental changes.
+**Phone installation and data safety:** the user confirmed the phone currently has debug ZIP #754 installed. Local editor drafts are private app files under `filesDir/video-project-drafts`; uninstalling the debug app can delete them. Existing per-project JSON export is available inside the editor. A separate branch `feature/draft-backup-migration` is adding one-file backup/restore for all local drafts from the home screen. This backup preserves project/timeline JSON and URI references, but does **not** copy the original video/audio media files; keep those media files on the phone and be prepared to reselect them if Android revokes their old URI grants after reinstall.
 
-**Release boundary:** keep versionCode 394 / Build 61 unchanged. Run #754 produced a debug test ZIP, not a signed production release. The existing in-app `Kontrol et` updater is already connected to GitHub `releases/latest`; the current signed release is also 394, so there is no newer update yet. Do not publish version 395 until signing continuity and a controlled update test pass.
+**Release boundary:** keep `versionCode=394` / Build 61 unchanged. The latest signed GitHub release remains `app-v8.3-61` with `versionCode=394`. #754 is a debug-signed build and cannot be assumed to accept an in-place install of the separately signed production APK. Production signing-key continuity has not yet been independently verified against the published 394 APK. Do not uninstall the debug app, create version 395, or publish a new release until the draft backup is available, the signing certificate comparison is green, and a controlled signed-channel migration is ready.
 
-**Still not covered by the #754 acceptance:** full physical-device verification of clip reorder, cover-image saving/generation, thumbnail fill performance, image/video overlays, compositing/export, and all media edge cases. Preserve these as distinct open checks; do not treat acceptance of the editor structure as acceptance of those features.
+**Still open:** complete review and CI for the bulk draft-backup branch; finish the post-merge main emulator workflow; verify production signing fingerprint against the published 394 APK; perform backup/restore and controlled signed installation. Keep clip reorder, cover save, thumbnail performance on the physical phone, image/video overlays, compositing/export and media edge cases as separate feature-verification tasks.
 
+---
 ---
 
 # MathMotor Video — current project status
