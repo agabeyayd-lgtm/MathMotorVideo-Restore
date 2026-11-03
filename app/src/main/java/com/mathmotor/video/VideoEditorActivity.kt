@@ -1639,7 +1639,7 @@ class VideoEditorActivity : Activity() {
         val timelineLocation = IntArray(2)
         previewFrame.getLocationOnScreen(previewLocation)
         editorTimelineCard.getLocationOnScreen(timelineLocation)
-        Log.i(
+        android.util.Log.i(
             "EditorPanelLayoutTest",
             "EDITOR_PANEL_GEOMETRY state=" + state +
                 " preview=" + previewFrame.width + "x" + previewFrame.height + "@" +
