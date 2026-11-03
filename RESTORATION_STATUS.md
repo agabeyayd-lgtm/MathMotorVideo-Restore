@@ -447,3 +447,14 @@ The existing editor panel has been moved out of the root vertical layout and int
 - Non-frame subsecond labels retain decimal precision. Tick geometry remains based on the existing shared absolute-time-to-pixel mapping; no playhead, clip, thumbnail, or zoom mapping was changed.
 - Added unit coverage for clock/frame label transitions. Latest source commits: `8e6d019` (math helper), `64525d5` (renderer), `b4b7e48` (tests). **Build, unit tests, emulator screenshot/interaction review, and physical-phone acceptance are pending.**
 - Keep PR #18 draft and unmerged. `main` and the installed 394 / Build 61 baseline remain unchanged. No version 395 or release/update activation.
+
+
+## 2026-11-03 — two-level CapCut-style clip tools
+
+- Main dock action `Düzenle` now opens a single horizontal contextual clip-tool strip at the bottom in place of the global dock.
+- The strip exposes the implemented actions `Kırp`, `Ses düzeyi`, `Böl`, `Kapak` and `Sil`. Selecting `Kırp` or `Ses düzeyi` raises its detail panel above the strip. The detail panel's `Araçlara dön` control collapses it back to the one-row strip; the strip's `Geri` control restores the main editor dock.
+- The detail sheet remains a bottom-anchored overlay in the existing workspace. The editor preview and timeline are not reparented or resized by these transitions. No new timeline implementation was introduced.
+- The emulator script now verifies the two-level path and asserts stable preview/timeline bounds at entry, detail-open, return-to-strip and main-dock-restored states.
+- **Verification boundary:** source and test changes are committed on `feature/capcut-layout-recompose`; compilation, unit tests, emulator screenshots/interactions and physical-phone acceptance are pending on the latest branch head.
+- This menu includes only currently implemented actions. Animation/effect features are not represented by nonfunctional placeholder controls; they can be added when their actual clip-processing behavior is implemented.
+- Keep PR #18 draft/unmerged. `main` and versionCode 394 / Build 61 remain unchanged; no version 395 or release/update activation.
