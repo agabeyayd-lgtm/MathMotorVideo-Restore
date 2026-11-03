@@ -488,3 +488,11 @@ Physical-device feedback from debug build #555:
 - Whole-second frame boundaries use clock labels (for example, `00:02`); intermediate source-frame ticks use frame labels (for example, `15f`). Frame boundaries are calculated using the source frame rate, including fractional rates such as 29.97 fps.
 - Ruler tick positions continue to use the shared absolute-time `pixelsForTime` mapping, so this is a label/rendering correction rather than a second timeline scale.
 - Unit coverage added for whole-second and half-second frame labels. Emulator/build verification is pending on the latest branch head.
+
+
+### Two-level CapCut-style clip tools — 2026-11-03
+
+- Tapping the main `Düzenle` dock item now swaps the global dock for one compact horizontal clip-tool strip at the bottom. The main editor dock is restored with the strip's Back control.
+- The strip contains implemented clip actions: Kırp, Ses düzeyi, Böl, Kapak and Sil. Kırp and Ses düzeyi open a second-level detail panel above the strip; the detail panel has an explicit return-to-tools control. Direct actions remain on the strip.
+- The two-level transition is designed as a bottom-anchored overlay. The preview and timeline remain mounted underneath; the existing ruler, filmstrip, shared playhead and time scale are not intentionally changed by the dock transition.
+- The emulator UI test now exercises main dock → clip strip → volume detail → clip strip → main dock and compares preview/timeline geometry at each step. Build/unit/emulator verification on the latest head is pending.
