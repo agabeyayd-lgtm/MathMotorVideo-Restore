@@ -2187,7 +2187,8 @@ class VideoEditorActivity : Activity() {
             val params = editorPanelScroll.layoutParams as? LinearLayout.LayoutParams
             if (params != null) {
                 val panelHeight = when (name) {
-                    "clip", "clipVolume" -> if (keyboardLayoutActive) 112 else 150
+                    "clip" -> if (keyboardLayoutActive) 124 else 196
+                    "clipVolume" -> if (keyboardLayoutActive) 112 else 150
                     else -> if (keyboardLayoutActive) 124 else 196
                 }
                 params.height = dp(panelHeight)
