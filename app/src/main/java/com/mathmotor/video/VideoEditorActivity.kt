@@ -7244,6 +7244,12 @@ class VideoEditorActivity : Activity() {
                         val image = ref.get()
                         if (image != null && image.tag == key) {
                             image.setImageBitmap(result)
+                            // The first cell may temporarily show the project poster while its
+                            // exact timestamped frame is decoding. Restore the authoritative
+                            // sample label when that exact frame replaces the placeholder so
+                            // accessibility and frame-alignment diagnostics identify the real
+                            // image rather than continuing to report a temporary cover.
+                            image.contentDescription = "Klip karesi @${timestampMs}ms"
                             appliedTargets++
                         }
                     }
