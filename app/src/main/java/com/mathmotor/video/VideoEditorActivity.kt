@@ -2053,6 +2053,10 @@ class VideoEditorActivity : Activity() {
         clipToolsMode = true
         activeClipTool = null
         activeEditorPanel = null
+        updateClipTransformTouchAvailability()
+        updateOverlayTransformTouchAvailability()
+        textOverlayEditingEnabled = false
+        updateTextOverlayEditToggle()
         editorPanels.values.forEach { it.visibility = View.GONE }
         editorPanelScroll.animate().cancel()
         editorPanelScroll.visibility = View.GONE
@@ -2873,7 +2877,7 @@ class VideoEditorActivity : Activity() {
         // at close zoom, exact frame units from the source clip's real frame rate.
         val rulerFrameRate = clips.firstOrNull { it.frameRate != null }?.frameRate
         val rulerGrid = TimelineScaleMath.rulerGrid(
-            pxPerSecond, dp(22).toFloat(), rulerFrameRate
+            pxPerSecond, dp(48).toFloat(), rulerFrameRate
         )
         fun addRulerInterval(startMs: Long, endMs: Long, label: String, minorDivisions: Int) {
             val startPositionPx = TimelineScaleMath.pixelsForTime(startMs, pxPerSecond)
