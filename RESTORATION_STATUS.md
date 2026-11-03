@@ -443,7 +443,7 @@ The existing editor panel has been moved out of the root vertical layout and int
 ## 2026-11-03 — adaptive CapCut-style ruler labels
 
 - Fixed the ruler tick renderer to display the label supplied by the adaptive grid. The previous renderer ignored that label and only printed every fifth second, hiding most of the adaptive seconds/subseconds and all intermediate frame labels.
-- Whole-second frame boundaries display a clock label such as `00:02`; intermediate frame ticks display their absolute source-frame index such as `15f`. Fractional source rates (for example 29.97 fps) use frame-index boundaries to avoid cumulative timestamp rounding drift.
+- Whole-second frame boundaries display a clock label such as `00:02`; intermediate frame ticks display their frame offset within the current second such as `15f`. Fractional source rates (for example 29.97 fps) use frame-index boundaries to avoid cumulative timestamp rounding drift.
 - Non-frame subsecond labels retain decimal precision. Tick geometry remains based on the existing shared absolute-time-to-pixel mapping; no playhead, clip, thumbnail, or zoom mapping was changed.
 - Added unit coverage for clock/frame label transitions. Latest source commits: `8e6d019` (math helper), `64525d5` (renderer), `b4b7e48` (tests). **Build, unit tests, emulator screenshot/interaction review, and physical-phone acceptance are pending.**
 - Keep PR #18 draft and unmerged. `main` and the installed 394 / Build 61 baseline remain unchanged. No version 395 or release/update activation.
