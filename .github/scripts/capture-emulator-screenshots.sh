@@ -790,6 +790,15 @@ if [ -s emulator-screenshots/drafts-home-window.xml ] && ! grep -q "TASLAKLAR" e
   collect_capture_diagnostics draft-home-section-missing
   exit 13
 fi
+if [ -s emulator-screenshots/drafts-home-window.xml ]; then
+  for backup_action in "Taslakları yedekle" "Yedekten geri yükle"; do
+    if ! grep -q "$backup_action" emulator-screenshots/drafts-home-window.xml; then
+      echo "The home screen did not expose the '$backup_action' action."
+      collect_capture_diagnostics "draft-backup-action-missing"
+      exit 29
+    fi
+  done
+fi
 if ! take_screen emulator-screenshots/home-with-drafts.png; then
   collect_capture_diagnostics draft-home-capture-failure
   exit 6

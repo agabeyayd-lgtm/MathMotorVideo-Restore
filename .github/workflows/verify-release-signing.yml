@@ -1,0 +1,146 @@
+name: Verify release signing continuity
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/signing-check-trigger.txt"
+      - ".github/workflows/verify-release-signing.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-release-signing-main
+  cancel-in-progress: false
+
+jobs:
+  compare-signing-certificates:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+
+      - name: Restore persistent release signing key
+        env:
+          MMV_SIGNING_BUNDLE_B64: ${{ secrets.MMV_SIGNING_BUNDLE_B64 }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/mmv-signing"
+          if [ -n "$MMV_SIGNING_BUNDLE_B64" ]; then
+            printf '%s' "$MMV_SIGNING_BUNDLE_B64" | base64 --decode > "$RUNNER_TEMP/mmv-signing/bundle.zip"
+            unzip -oq "$RUNNER_TEMP/mmv-signing/bundle.zip" -d "$RUNNER_TEMP/mmv-signing"
+          elif [ -n "$ANDROID_KEYSTORE_BASE64" ] && [ -n "$ANDROID_KEYSTORE_PASSWORD" ] && [ -n "$ANDROID_KEY_ALIAS" ] && [ -n "$ANDROID_KEY_PASSWORD" ]; then
+            printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/mmv-signing/release.p12"
+            {
+              printf 'storeFile=release.p12\n'
+              printf 'storeType=PKCS12\n'
+              printf 'storePassword=%s\n' "$ANDROID_KEYSTORE_PASSWORD"
+              printf 'keyAlias=%s\n' "$ANDROID_KEY_ALIAS"
+              printf 'keyPassword=%s\n' "$ANDROID_KEY_PASSWORD"
+            } > "$RUNNER_TEMP/mmv-signing/keystore.properties"
+          else
+            echo "::error::Release signing secrets are not configured. No migration is safe."
+            exit 1
+          fi
+          test -s "$RUNNER_TEMP/mmv-signing/release.p12"
+          test -s "$RUNNER_TEMP/mmv-signing/keystore.properties"
+
+          python3 - "$RUNNER_TEMP/mmv-signing/keystore.properties" <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          lines = path.read_text(encoding="ISO-8859-1").splitlines(keepends=True)
+
+          def raw_value(prefix):
+              for line in lines:
+                  if line.startswith(prefix):
+                      return line[len(prefix):].rstrip("\\r\\n")
+              return None
+
+          store_type = raw_value("storeType=") or "PKCS12"
+          if store_type.strip().upper() == "PKCS12":
+              store_password = raw_value("storePassword=")
+              if store_password is None:
+                  raise SystemExit("Signing configuration is missing storePassword.")
+              output = []
+              replaced = False
+              for line in lines:
+                  if line.startswith("keyPassword="):
+                      ending = "\\r\\n" if line.endswith("\\r\\n") else ("\\n" if line.endswith("\\n") else "")
+                      output.append("keyPassword=" + store_password + ending)
+                      replaced = True
+                  else:
+                      output.append(line)
+              if not replaced:
+                  output.append("keyPassword=" + store_password + "\\n")
+              path.write_text("".join(output), encoding="ISO-8859-1")
+              print("PKCS12 signing password configuration normalized.")
+          else:
+              print("Non-PKCS12 signing configuration preserved.")
+          PY
+          echo "MMV_SIGNING_PROPERTIES=$RUNNER_TEMP/mmv-signing/keystore.properties" >> "$GITHUB_ENV"
+
+      - name: Download current signed 394 release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest")"
+          tag="$(printf '%s' "$release_json" | jq -r '.tag_name')"
+          body="$(printf '%s' "$release_json" | jq -r '.body // ""')"
+          code="$(printf '%s' "$body" | grep -ioE 'versionCode[[:space:]]*=[[:space:]]*[0-9]+' | grep -oE '[0-9]+' | head -1 || true)"
+          if [ "$code" != "394" ]; then
+            echo "::error::Expected latest signed release versionCode 394, found '$code'. Stop and review release state."
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/published-release"
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern "MathMotorVideo.apk" --dir "$RUNNER_TEMP/published-release"
+          test -s "$RUNNER_TEMP/published-release/MathMotorVideo.apk"
+          echo "PUBLISHED_APK=$RUNNER_TEMP/published-release/MathMotorVideo.apk" >> "$GITHUB_ENV"
+          echo "PUBLISHED_TAG=$tag" >> "$GITHUB_ENV"
+
+      - name: Build a signed comparison APK without publishing
+        run: gradle --no-daemon assembleRelease
+
+      - name: Compare signing certificate fingerprints
+        run: |
+          set -euo pipefail
+          candidate="app/build/outputs/apk/release/app-release.apk"
+          test -s "$candidate"
+          apksigner_path="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -x "$apksigner_path"
+          published_fingerprint="$("$apksigner_path" verify --print-certs "$PUBLISHED_APK" | awk -F': ' '/Signer #1 certificate SHA-256 digest/ {print $2; exit}')"
+          candidate_fingerprint="$("$apksigner_path" verify --print-certs "$candidate" | awk -F': ' '/Signer #1 certificate SHA-256 digest/ {print $2; exit}')"
+          test -n "$published_fingerprint"
+          test -n "$candidate_fingerprint"
+          {
+            echo "## Release signing continuity"
+            echo "- Published tag: $PUBLISHED_TAG (versionCode 394)"
+            echo "- Published certificate SHA-256: `$published_fingerprint`"
+            echo "- Current signing-secret certificate SHA-256: `$candidate_fingerprint`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$published_fingerprint" != "$candidate_fingerprint" ]; then
+            echo "::error::Signing certificate mismatch. Do not uninstall the debug app or publish an update."
+            exit 1
+          fi
+          echo "Certificate match confirmed. This workflow built only a local CI APK and did not publish a release."
+          echo "- Result: MATCH" >> "$GITHUB_STEP_SUMMARY"

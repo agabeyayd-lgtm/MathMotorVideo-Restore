@@ -41,11 +41,15 @@ class MainActivity : Activity() {
     private lateinit var draftSection: LinearLayout
     private lateinit var draftList: LinearLayout
     private lateinit var draftSectionGap: View
+    private lateinit var draftBackupButton: Button
     private lateinit var updateStatus: TextView
+    private var pendingDraftBackup: JSONObject? = null
     private var updateDownloadId = -1L
     private var updateReceiverRegistered = false
     private val mainHandler = Handler(Looper.getMainLooper())
     private val pickVideoRequest = 2002
+    private val saveDraftBackupRequest = 5107
+    private val openDraftBackupRequest = 5108
     private val latestApkUrl = "https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/releases/latest/download/MathMotorVideo.apk"
     private val latestReleaseApi = "https://api.github.com/repos/agabeyayd-lgtm/MathMotorVideo-Restore/releases/latest"
 
@@ -304,6 +308,29 @@ class MainActivity : Activity() {
             addView(label("Kaldığın yerden devam et", 10f, muted, false))
         }
         draftSection.addView(draftsHeader)
+        val backupActions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        draftBackupButton = secondaryButton("Taslakları yedekle") { requestDraftBackup() }.apply {
+            minHeight = dp(40)
+            textSize = 10f
+            setPadding(dp(8), dp(5), dp(8), dp(5))
+        }
+        backupActions.addView(draftBackupButton, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        backupActions.addView(View(this), LinearLayout.LayoutParams(dp(6), 1))
+        backupActions.addView(secondaryButton("Yedekten geri yükle") { requestDraftRestore() }.apply {
+            minHeight = dp(40)
+            textSize = 10f
+            setPadding(dp(8), dp(5), dp(8), dp(5))
+        })
+        draftSection.addView(gap(8))
+        draftSection.addView(backupActions, matchWrap())
+        draftSection.addView(gap(4))
+        draftSection.addView(label(
+            "Yedek proje ayarlarını ve zaman çizelgesini saklar; kaynak video ve ses dosyalarını içermez.",
+            9f, muted, false
+        ))
         draftList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         draftSection.addView(gap(6))
         draftSection.addView(draftList, matchWrap())
@@ -408,10 +435,19 @@ class MainActivity : Activity() {
 
     private fun refreshDraftProjects() {
         if (!::draftSection.isInitialized || !::draftList.isInitialized) return
-        val drafts = VideoProjectDraftStore.list(this).take(5)
+        val allDrafts = VideoProjectDraftStore.list(this)
+        val drafts = allDrafts.take(5)
         draftList.removeAllViews()
-        draftSection.visibility = if (drafts.isEmpty()) View.GONE else View.VISIBLE
-        draftSectionGap.visibility = if (drafts.isEmpty()) View.GONE else View.VISIBLE
+        draftSection.visibility = View.VISIBLE
+        draftSectionGap.visibility = if (allDrafts.isEmpty()) View.GONE else View.VISIBLE
+        draftBackupButton.isEnabled = allDrafts.isNotEmpty()
+        draftBackupButton.alpha = if (allDrafts.isNotEmpty()) 1f else 0.45f
+        if (drafts.isEmpty()) {
+            draftList.addView(label("Henüz kaydedilmiş taslak yok.", 10f, muted, false).apply {
+                setPadding(0, dp(7), 0, dp(2))
+            })
+            return
+        }
         drafts.forEachIndexed { index, draft ->
             val item = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -530,9 +566,90 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun requestDraftBackup() {
+        val backup = runCatching { VideoProjectDraftStore.createBackup(this) }.getOrElse {
+            Toast.makeText(this, it.message ?: "Taslak yedeği hazırlanamadı.", Toast.LENGTH_LONG).show()
+            return
+        }
+        pendingDraftBackup = backup
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "application/json"
+            putExtra(Intent.EXTRA_TITLE, "MathMotor_Taslak_Yedegi.json")
+        }
+        try {
+            startActivityForResult(intent, saveDraftBackupRequest)
+        } catch (error: Exception) {
+            pendingDraftBackup = null
+            Toast.makeText(this, "Yedek kaydetme ekranı açılamadı: ${error.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun requestDraftRestore() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "application/json"
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+        try {
+            startActivityForResult(intent, openDraftBackupRequest)
+        } catch (error: Exception) {
+            Toast.makeText(this, "Yedek seçme ekranı açılamadı: ${error.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
     @Deprecated("Use Activity Result API")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == saveDraftBackupRequest) {
+            val uri = if (resultCode == RESULT_OK) data?.data else null
+            val backup = pendingDraftBackup
+            pendingDraftBackup = null
+            if (uri == null || backup == null) return
+            runCatching {
+                contentResolver.openOutputStream(uri)?.bufferedWriter(Charsets.UTF_8)?.use {
+                    it.write(backup.toString(2))
+                } ?: error("Yedek dosyası açılamadı.")
+            }.onSuccess {
+                Toast.makeText(this, "Taslak yedeği kaydedildi.", Toast.LENGTH_LONG).show()
+            }.onFailure {
+                Toast.makeText(this, "Yedek kaydedilemedi: ${it.message}", Toast.LENGTH_LONG).show()
+            }
+            return
+        }
+        if (requestCode == openDraftBackupRequest) {
+            if (resultCode != RESULT_OK) return
+            val uri = data?.data ?: return
+            try {
+                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (_: Exception) { }
+            runCatching {
+                val json = contentResolver.openInputStream(uri)?.use { input ->
+                    val output = java.io.ByteArrayOutputStream()
+                    val buffer = ByteArray(8 * 1024)
+                    var total = 0
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        total += count
+                        require(total <= 50 * 1024 * 1024) { "Yedek dosyası 50 MB sınırını aşıyor." }
+                        output.write(buffer, 0, count)
+                    }
+                    String(output.toByteArray(), Charsets.UTF_8)
+                } ?: error("Yedek dosyası okunamadı.")
+                VideoProjectDraftStore.restoreBackup(this, JSONObject(json))
+            }.onSuccess { result ->
+                refreshDraftProjects()
+                Toast.makeText(
+                    this,
+                    "${result.restoredCount} taslak geri yüklendi; ${result.skippedCount} kayıt atlandı. Kaynak medya dosyalarını gerekirse yeniden seç.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }.onFailure {
+                Toast.makeText(this, "Yedek geri yüklenemedi: ${it.message}", Toast.LENGTH_LONG).show()
+            }
+            return
+        }
         if (requestCode != pickVideoRequest || resultCode != RESULT_OK) return
         val uri = data?.data ?: run {
             Toast.makeText(this, "Video seçilmedi.", Toast.LENGTH_SHORT).show()
