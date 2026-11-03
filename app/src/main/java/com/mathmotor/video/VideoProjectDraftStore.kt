@@ -1,6 +1,7 @@
 package com.mathmotor.video
 
 import android.content.Context
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.UUID
@@ -18,8 +19,16 @@ object VideoProjectDraftStore {
         val clipCount: Int
     )
 
+    data class RestoreResult(
+        val restoredCount: Int,
+        val skippedCount: Int
+    )
+
     private const val DIRECTORY = "video-project-drafts"
     private const val FORMAT = "MathMotorVideoProject"
+    private const val BACKUP_FORMAT = "MathMotorVideoDraftBackup"
+    private const val BACKUP_VERSION = 1
+    private const val MAX_BACKUP_DRAFTS = 250
     private const val ID_KEY = "_draftId"
     private const val TITLE_KEY = "_draftTitle"
     private const val SAVED_AT_KEY = "_draftSavedAt"
@@ -97,6 +106,67 @@ object VideoProjectDraftStore {
                 )
             }.getOrNull()
         }.sortedByDescending { it.savedAt }
+    }
+
+    /**
+     * Creates one portable JSON backup containing every valid local draft.
+     * Source media files themselves are not copied; their URI references remain in each project.
+     */
+    fun createBackup(context: Context): JSONObject {
+        val entries = JSONArray()
+        list(context).forEach { draft ->
+            val project = load(context, draft.id) ?: return@forEach
+            entries.put(JSONObject().apply {
+                put("id", draft.id)
+                put("title", draft.title)
+                put("savedAt", draft.savedAt)
+                put("project", project)
+            })
+        }
+        require(entries.length() > 0) { "Yedeklenecek taslak bulunamadı." }
+        require(entries.length() <= MAX_BACKUP_DRAFTS) { "Tek yedekte en fazla $MAX_BACKUP_DRAFTS taslak olabilir." }
+        return JSONObject().apply {
+            put("format", BACKUP_FORMAT)
+            put("version", BACKUP_VERSION)
+            put("createdAt", System.currentTimeMillis())
+            put("drafts", entries)
+        }
+    }
+
+    /**
+     * Restores valid entries from a backup. Existing IDs are never overwritten:
+     * collisions receive a new ID so an import cannot silently replace a local draft.
+     */
+    fun restoreBackup(context: Context, backup: JSONObject): RestoreResult {
+        require(backup.optString("format") == BACKUP_FORMAT) { "Bu dosya MathMotor taslak yedeği değil." }
+        require(backup.optInt("version", -1) == BACKUP_VERSION) { "Taslak yedeği sürümü desteklenmiyor." }
+        val entries = backup.optJSONArray("drafts") ?: error("Yedekte taslak listesi bulunamadı.")
+        require(entries.length() in 1..MAX_BACKUP_DRAFTS) { "Yedek boş veya izin verilen taslak sayısını aşıyor." }
+
+        val usedIds = list(context).mapTo(mutableSetOf()) { it.id }
+        var restored = 0
+        var skipped = 0
+        for (index in 0 until entries.length()) {
+            val entry = entries.optJSONObject(index)
+            val sourceId = entry?.optString("id").orEmpty()
+            val title = entry?.optString("title").orEmpty().ifBlank { "Video taslağı" }
+            val project = entry?.optJSONObject("project")
+            val clips = project?.optJSONArray("clips")
+            if (!isValidId(sourceId) || project == null ||
+                project.optString("format") != FORMAT || clips == null || clips.length() == 0
+            ) {
+                skipped++
+                continue
+            }
+
+            val destinationId = if (usedIds.add(sourceId)) {
+                sourceId
+            } else {
+                newId().also { usedIds.add(it) }
+            }
+            if (save(context, destinationId, title, project)) restored++ else skipped++
+        }
+        return RestoreResult(restored, skipped)
     }
 
     private fun draftsDirectory(context: Context): File =
