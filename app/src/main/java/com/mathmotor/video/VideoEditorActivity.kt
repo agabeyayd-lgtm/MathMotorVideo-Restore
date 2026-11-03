@@ -209,6 +209,7 @@ class VideoEditorActivity : Activity() {
     private var previewFrameCacheKey: String? = null
     private lateinit var previewFocusButton: Button
     private lateinit var playbackLeft: LinearLayout
+    private lateinit var timelineRulerHeader: LinearLayout
     private lateinit var centeredPlaybackRow: FrameLayout
     private lateinit var fullscreenPlaybackOverlay: FrameLayout
     private var previewStageHeightDp = 340
@@ -898,9 +899,6 @@ class VideoEditorActivity : Activity() {
             contentDescription = "Önizlemeyi geniş ekranda aç"
         }
         playbackLeft.addView(previewFocusButton, LinearLayout.LayoutParams(dp(38), dp(36)))
-        playbackLeft.addView(timelinePlayheadLabel, LinearLayout.LayoutParams(0, dp(36), 1f).apply {
-            leftMargin = dp(3)
-        })
         centeredPlaybackRow.addView(
             playbackLeft,
             FrameLayout.LayoutParams(dp(132), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START or Gravity.CENTER_VERTICAL).apply {
@@ -1885,11 +1883,13 @@ class VideoEditorActivity : Activity() {
                 0,
                 LinearLayout.LayoutParams(dp(38), dp(36))
             )
-            playbackLeft.addView(
-                timelinePlayheadLabel,
-                1,
-                LinearLayout.LayoutParams(0, dp(36), 1f).apply { leftMargin = dp(3) }
-            )
+            if (::timelineRulerHeader.isInitialized) {
+                (timelinePlayheadLabel.parent as? ViewGroup)?.removeView(timelinePlayheadLabel)
+                timelineRulerHeader.addView(
+                    timelinePlayheadLabel,
+                    LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                )
+            }
             centeredPlaybackRow.addView(
                 timelinePlayButton,
                 FrameLayout.LayoutParams(dp(46), dp(38), Gravity.CENTER)
@@ -2002,6 +2002,9 @@ class VideoEditorActivity : Activity() {
         val preservedScrollX = pendingTimelineScrollX ?: timelineHorizontalScrollX
         pendingTimelineScrollX = null
         timelineHorizontalScrollX = preservedScrollX
+        if (::timelinePlayheadLabel.isInitialized && !previewFocusMode) {
+            (timelinePlayheadLabel.parent as? ViewGroup)?.removeView(timelinePlayheadLabel)
+        }
         timelineTracks.removeAllViews()
         timelineScrollViews.clear()
         if (::timelinePlayheadLabel.isInitialized) updateTimelinePlayheadDisplay()
@@ -2107,8 +2110,21 @@ class VideoEditorActivity : Activity() {
                 }
             }
             } else {
-                // Reserve the same 84dp control gutter used by every media lane.
-                row.addView(View(this), LinearLayout.LayoutParams(dp(84), ViewGroup.LayoutParams.MATCH_PARENT))
+                // The ruler's left header is the CapCut-style home for the
+                // current/total playback time. Keep its width identical to the
+                // media-lane control gutter so every timeline zero edge stays aligned.
+                timelineRulerHeader = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(2), 0, dp(2), 0)
+                }
+                if (::timelinePlayheadLabel.isInitialized && !previewFocusMode) {
+                    timelineRulerHeader.addView(
+                        timelinePlayheadLabel,
+                        LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                    )
+                }
+                row.addView(timelineRulerHeader, LinearLayout.LayoutParams(dp(84), ViewGroup.LayoutParams.MATCH_PARENT))
             }
 
             if (reorderable) {
