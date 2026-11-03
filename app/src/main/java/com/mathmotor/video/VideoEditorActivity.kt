@@ -1491,7 +1491,7 @@ class VideoEditorActivity : Activity() {
             overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
             clipToOutline = true
             background = android.graphics.drawable.GradientDrawable().apply {
-                setColor(Color.argb(238, 12, 19, 28))
+                setColor(Color.argb(220, 12, 19, 28))
                 cornerRadii = floatArrayOf(
                     dp(14).toFloat(), dp(14).toFloat(),
                     dp(14).toFloat(), dp(14).toFloat(),
