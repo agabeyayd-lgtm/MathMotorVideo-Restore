@@ -425,9 +425,34 @@ if ! take_screen emulator-screenshots/editor-panel-clip-open.png; then
 fi
 dump_hierarchy editor-panel-clip-open.xml emulator-screenshots/editor-panel-clip-open.xml || true
 
-volume_tool_coords="$(find_bottom_tool emulator-screenshots/editor-panel-clip-open.xml "Ses düzeyi" || true)"
+trim_tool_coords="$(find_bottom_tool emulator-screenshots/editor-panel-clip-open.xml "Kırp" || true)"
+if [ -z "$trim_tool_coords" ]; then
+  echo "The clip tool strip did not expose the Kırp option."
+  collect_capture_diagnostics editor-panel-trim-tool-missing
+  exit 26
+fi
+echo "Opening the upward-growing trim detail panel at $trim_tool_coords"
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $trim_tool_coords
+sleep 1
+if ! take_screen emulator-screenshots/editor-panel-trim.png; then
+  collect_capture_diagnostics editor-panel-trim-capture-failure
+  exit 6
+fi
+dump_hierarchy editor-panel-trim.xml emulator-screenshots/editor-panel-trim.xml || true
+
+trim_back_coords="$(find_bottom_tool emulator-screenshots/editor-panel-trim.xml "Araçlara dön" || true)"
+if [ -z "$trim_back_coords" ]; then
+  echo "The expanded trim panel did not expose its return-to-tools control."
+  collect_capture_diagnostics editor-panel-trim-back-missing
+  exit 27
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $trim_back_coords
+sleep 1
+dump_hierarchy editor-panel-tool-strip-after-trim.xml emulator-screenshots/editor-panel-tool-strip-after-trim.xml || true
+
+volume_tool_coords="$(find_bottom_tool emulator-screenshots/editor-panel-tool-strip-after-trim.xml "Ses düzeyi" || true)"
 if [ -z "$volume_tool_coords" ]; then
-  echo "The clip tool strip did not expose the Ses düzeyi option."
+  echo "The clip tool strip did not expose the Ses düzeyi option after trim details closed."
   collect_capture_diagnostics editor-panel-volume-tool-missing
   exit 26
 fi
@@ -488,6 +513,8 @@ for line in open(sys.argv[1], errors="replace"):
 required = [
     "before-open:clip-tools",
     "clip-tools",
+    "before-open:clip",
+    "open:clip",
     "before-open:clipVolume",
     "open:clipVolume",
     "clip-tool-strip",
@@ -770,7 +797,9 @@ test -s emulator-screenshots/editor-empty.png
 test -s emulator-screenshots/editor.png
 test -s emulator-screenshots/editor-playing.png
 test -s emulator-screenshots/editor-panel-clip-open.png
+test -s emulator-screenshots/editor-panel-trim.png
 test -s emulator-screenshots/editor-panel-audio.png
+test -s emulator-screenshots/editor-panel-tool-strip-after-trim.xml
 test -s emulator-screenshots/editor-panel-tool-strip.png
 test -s emulator-screenshots/editor-panel-closed.png
 test -s emulator-screenshots/editor-panel-layout-logcat.txt
