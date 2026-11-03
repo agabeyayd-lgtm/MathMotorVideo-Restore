@@ -318,7 +318,7 @@ class MainActivity : Activity() {
             setPadding(dp(8), dp(5), dp(8), dp(5))
         }
         backupActions.addView(draftBackupButton, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        backupActions.addView(gap(6))
+        backupActions.addView(View(this), LinearLayout.LayoutParams(dp(6), 1))
         backupActions.addView(secondaryButton("Yedekten geri yükle") { requestDraftRestore() }.apply {
             minHeight = dp(40)
             textSize = 10f
@@ -624,9 +624,19 @@ class MainActivity : Activity() {
                 contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             } catch (_: Exception) { }
             runCatching {
-                val json = contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
-                    ?: error("Yedek dosyası okunamadı.")
-                require(json.length <= 50 * 1024 * 1024) { "Yedek dosyası 50 MB sınırını aşıyor." }
+                val json = contentResolver.openInputStream(uri)?.use { input ->
+                    val output = java.io.ByteArrayOutputStream()
+                    val buffer = ByteArray(8 * 1024)
+                    var total = 0
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        total += count
+                        require(total <= 50 * 1024 * 1024) { "Yedek dosyası 50 MB sınırını aşıyor." }
+                        output.write(buffer, 0, count)
+                    }
+                    String(output.toByteArray(), Charsets.UTF_8)
+                } ?: error("Yedek dosyası okunamadı.")
                 VideoProjectDraftStore.restoreBackup(this, JSONObject(json))
             }.onSuccess { result ->
                 refreshDraftProjects()
