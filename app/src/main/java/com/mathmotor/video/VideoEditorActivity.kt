@@ -1684,9 +1684,9 @@ class VideoEditorActivity : Activity() {
             val sheetParams = bottomSheet.layoutParams as? FrameLayout.LayoutParams
             if (sheetParams != null) {
                 val safeBottom = when {
-                    imeVisible && !resizedForIme -> imeInsetBottom
-                    imeVisible -> 0
-                    else -> insetBottom
+                    imeVisible && !resizedForIme -> dp(2) + maxOf(insetBottom, imeInsetBottom)
+                    imeVisible -> dp(2) + insetBottom
+                    else -> dp(4) + insetBottom
                 }
                 if (sheetParams.bottomMargin != safeBottom) {
                     sheetParams.bottomMargin = safeBottom
