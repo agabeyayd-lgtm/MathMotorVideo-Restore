@@ -2020,6 +2020,149 @@ class VideoEditorActivity : Activity() {
         updatePreviewCanvasSize()
     }
 
+    private fun makeClipDockTool(
+        symbol: String,
+        title: String,
+        description: String = title,
+        onClick: () -> Unit
+    ): Button = Button(this).apply {
+        text = "$symbol\\n$title"
+        contentDescription = description
+        isAllCaps = false
+        textSize = 10f
+        gravity = Gravity.CENTER
+        setTextColor(Color.rgb(205, 216, 228))
+        minWidth = dp(58)
+        minimumWidth = dp(58)
+        minHeight = dp(58)
+        setPadding(dp(2), dp(2), dp(2), dp(2))
+        maxLines = 2
+        background = android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
+        isHapticFeedbackEnabled = true
+        setOnClickListener {
+            performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+            onClick()
+        }
+    }
+
+    /** Stage one: replace the global dock with one compact horizontal clip-tool strip. */
+    private fun enterClipTools() {
+        if (!::editorDock.isInitialized || !::editorPanelScroll.isInitialized) return
+        clipToolsMode = true
+        activeClipTool = null
+        activeEditorPanel = null
+        editorPanels.values.forEach { it.visibility = View.GONE }
+        editorPanelScroll.animate().cancel()
+        editorPanelScroll.visibility = View.GONE
+        editorPanelScroll.translationY = 0f
+        editorPanelScroll.alpha = 1f
+
+        editorDock.removeAllViews()
+        val tools = listOf(
+            Triple("‹", "Geri", "Ana araçlara dön"),
+            Triple("⌁", "Kırp", "Kırpma ayarlarını aç"),
+            Triple("♫", "Ses düzeyi", "Seçili klibin ses düzeyini ayarla"),
+            Triple("✂", "Böl", "Seçili klibi oynatma çizgisinde böl"),
+            Triple("▧", "Kapak", "Seçili klibin kapak karesini seç"),
+            Triple("▤", "Sil", "Seçili klibi sil")
+        )
+        tools.forEach { (symbol, title, description) ->
+            val action: () -> Unit = when (title) {
+                "Geri" -> ({ exitClipTools() })
+                "Kırp" -> ({
+                    activeClipTool = "trim"
+                    selectedClipLabel.text = if (selectedClipIndex in clips.indices) {
+                        clips[selectedClipIndex].title
+                    } else "Önce zaman çizelgesinden bir video seç."
+                    showEditorPanel("clip")
+                })
+                "Ses düzeyi" -> ({
+                    activeClipTool = "volume"
+                    clipVolumeSeek.progress = sourceAudioVolume
+                    clipVolumeLabel.text = "Orijinal video sesi: $sourceAudioVolume%"
+                    showEditorPanel("clipVolume")
+                })
+                "Böl" -> ({ splitSelectedClipAtPlayhead() })
+                "Kapak" -> ({ showClipCoverPicker() })
+                "Sil" -> ({ removeSelectedClip() })
+                else -> ({})
+            }
+            editorDock.addView(
+                makeClipDockTool(symbol, title, description, action),
+                LinearLayout.LayoutParams(dp(68), dp(58))
+            )
+        }
+        editorDockScroll.scrollTo(0, 0)
+        editorDockScroll.translationY = dp(24).toFloat()
+        editorDockScroll.animate()
+            .translationY(0f)
+            .setDuration(180L)
+            .setInterpolator(android.view.animation.DecelerateInterpolator())
+            .start()
+        logEditorPanelGeometry("clip-tools")
+    }
+
+    /** Stage two: return from the expanded tool content to the single tool strip. */
+    private fun returnToClipToolStrip() {
+        if (!clipToolsMode) return
+        activeEditorPanel = null
+        activeClipTool = null
+        updateClipTransformTouchAvailability()
+        updateOverlayTransformTouchAvailability()
+        textOverlayEditingEnabled = false
+        editorPanels.values.forEach { it.visibility = View.GONE }
+        if (editorPanelScroll.visibility == View.VISIBLE) {
+            editorPanelScroll.animate().cancel()
+            val distance = editorPanelScroll.height.takeIf { it > 0 } ?: dp(160)
+            editorPanelScroll.animate()
+                .translationY(distance.toFloat())
+                .alpha(0f)
+                .setDuration(160L)
+                .setInterpolator(android.view.animation.DecelerateInterpolator())
+                .withEndAction {
+                    if (clipToolsMode && activeEditorPanel == null) {
+                        editorPanelScroll.visibility = View.GONE
+                        editorPanelScroll.translationY = 0f
+                        editorPanelScroll.alpha = 1f
+                        logEditorPanelGeometry("clip-tool-strip")
+                    }
+                }
+                .start()
+        } else {
+            editorPanelScroll.visibility = View.GONE
+            logEditorPanelGeometry("clip-tool-strip")
+        }
+        val focused = currentFocus
+        val keyboard = getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
+            as? android.view.inputmethod.InputMethodManager
+        focused?.windowToken?.let { keyboard?.hideSoftInputFromWindow(it, 0) }
+        focused?.clearFocus()
+        editorPanelScroll.scrollTo(0, 0)
+    }
+
+    /** Leave the contextual clip tools and restore the global editor dock. */
+    private fun exitClipTools() {
+        if (!clipToolsMode) return
+        clipToolsMode = false
+        activeClipTool = null
+        activeEditorPanel = null
+        editorPanels.values.forEach { it.visibility = View.GONE }
+        editorPanelScroll.animate().cancel()
+        editorPanelScroll.visibility = View.GONE
+        editorPanelScroll.translationY = 0f
+        editorPanelScroll.alpha = 1f
+        editorDock.removeAllViews()
+        editorTabButtons.forEach { (key, button) ->
+            editorDock.addView(button, LinearLayout.LayoutParams(dp(52), dp(58)).apply {
+                if (key != "clip") leftMargin = dp(2)
+            })
+            button.background = android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
+            button.setTextColor(Color.rgb(205, 216, 228))
+        }
+        editorDockScroll.scrollTo(0, 0)
+        logEditorPanelGeometry("closed")
+    }
+
     private fun showEditorPanel(name: String) {
         activeEditorPanel = name
         if (name == "overlay") loadOverlayControls()
