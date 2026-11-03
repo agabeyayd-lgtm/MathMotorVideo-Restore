@@ -419,6 +419,7 @@ class VideoEditorActivity : Activity() {
     }
     private val editorPanels = linkedMapOf<String, LinearLayout>()
     private lateinit var editorPanelScroll: ScrollView
+    private lateinit var editorBottomSheet: View
     private val editorTabButtons = linkedMapOf<String, Button>()
     private var activeEditorPanel: String? = null
     private var textOverlayEditingEnabled: Boolean = false
@@ -1584,6 +1585,7 @@ class VideoEditorActivity : Activity() {
             clipToPadding = false
             elevation = dp(14).toFloat()
         }
+        editorBottomSheet = bottomSheet
         bottomSheet.addView(editorPanelScroll, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(196)
         ))
@@ -1902,6 +1904,12 @@ class VideoEditorActivity : Activity() {
                     previewFocusOriginalVisibility[child] = child.visibility
                     child.visibility = View.GONE
                 }
+            }
+            // The dock/sheet is now a sibling overlay of the base root, so
+            // explicitly include it in the same fullscreen hide/restore cycle.
+            if (::editorBottomSheet.isInitialized) {
+                previewFocusOriginalVisibility[editorBottomSheet] = editorBottomSheet.visibility
+                editorBottomSheet.visibility = View.GONE
             }
             root.setPadding(dp(4), dp(4), dp(4), dp(4))
             val params = previewFrame.layoutParams as LinearLayout.LayoutParams
