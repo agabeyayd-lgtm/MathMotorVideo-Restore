@@ -481,3 +481,42 @@ The existing editor panel has been moved out of the root vertical layout and int
 - Updated `.github/scripts/capture-emulator-screenshots.sh` to prioritize visible button text and permit only exact content-description fallback matches. App behavior and the editor menu implementation were not changed for this diagnosis.
 - Fix commit: `96bf3ffee9df13098b5fbf4440de1c907e7d7791`; README records the same diagnosis. **Fresh unit/build/emulator verification is still pending.** Do not issue a test ZIP or mark the gate passed until the new run completes and its screenshots/logs are inspected.
 - PR #18 remains draft/unmerged; `main` and versionCode 394 / Build 61 remain unchanged. No version 395, release signing, publication, or updater activation.
+
+
+## Preserved cross-session handoff notes — 2026-11-02 (reconciled 2026-11-03)
+
+**Purpose:** Preserve the previous session's observations and open work. The 2026-11-03 canonical project checkpoint at the top of this file supersedes any older status statements below. Reconcile with GitHub main, PR #18 and Actions before changing code.
+
+### Where we stopped
+
+- Project: `agabeyayd-lgtm/MathMotorVideo-Restore`.
+- The last confirmed installed/release baseline remains **versionCode 394 / Build 61**. The user has since approved the #754-tested editor implementation as the mainline foundation; PR #18 integration is being completed. Do not create version 395, sign/publish a release, or activate the updater as part of the merge.
+- The tested TEST ZIP is identified: GitHub Actions run [#754](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41710927696), source commit `7be6fade1def349e72649407c5c77790421214f0`, artifact `mathmotor-debug-apk-zip`. The user installed it on a physical phone and confirmed the editor structure works. It is a debug test build, not a signed release APK.
+- The #754 artifact provenance is established; do not conflate it with older PR #11 artifacts or with a production release.
+- No new release/version should be created as part of this handoff.
+
+### Latest user-reported issues to verify on the phone
+
+1. **Fullscreen exit control:** after entering fullscreen, the control that returns to the normal/smaller preview is positioned too close to the bottom edge and is difficult/impossible to reach. Move it into a safe, reachable control area and respect system/navigation insets; verify on the actual phone.
+2. **Filmstrip thumbnail speed:** thumbnail generation/loading appears slow again. Measure time to first visible thumbnail and full visible-strip fill; inspect decode scheduling, caching and progressive visible-first loading before changing implementation. Do not sacrifice frame accuracy or preview/thumbnail synchronization.
+3. **Cover image:** the cover/thumbnail image is not being generated/shown. Reproduce and trace the cover-generation/display path; distinguish a missing image from a delayed/failed decode. Do not mark fixed until tested.
+
+These were phone observations recorded before the #754 editor-shell acceptance and remain separate follow-up items unless a later device check confirms them fixed. #688 passed deterministic-fixture frame agreement (211ms preview/thumbnail RGB delta 0), 4/4 distinct visible samples, forward/reverse scrubbing and 18 playback synchronization samples. Run #754 passed the editor-shell tool transitions and geometry checks; it did **not** measure thumbnail fill speed or validate cover-image generation, image/video overlays, or export.
+
+### Exact next steps
+
+1. Complete PR #18 integration by preserving the two Nov 2 documentation commits on `main`, rerunning the PR checks and confirming GitHub reports the merge. Keep `main` as the sole canonical source.
+2. Keep the user's installed baseline at 394 / Build 61; do not bump version or create 395.
+3. Continue the previously reported fullscreen reachability, thumbnail latency and cover-image checks on the approved base; record device dimensions, Android version, logs and timings where available.
+4. Preserve the approved editor implementation, then address confirmed remaining device issues with focused fixes and regression tests. Do not alter timeline math or frame alignment without evidence.
+5. Add focused regression tests for each fix. Run unit tests, debug build and targeted API 35 emulator tests; inspect logs and screenshots rather than relying on a green compile alone.
+6. After mainline integration, inspect the existing in-app updater, signing configuration and release workflow. Connect updates only to a controlled, signed release source and run a safe install/upgrade test before enabling user-facing updates.
+7. Keep this README and RESTORATION_STATUS.md synchronized with evidence. Keep versionCode 394 / Build 61 until the release gates and update path are verified; do not publish a release by implication.
+
+### Continuation rules
+
+- Start with **“HATIRLA BAĞLAN DÜZELT”** and this handoff section.
+- Do not repeat already-passed tests without a specific reason; do not report a test as green unless its exact run and scope are confirmed.
+- Preserve working functionality. Make the smallest targeted correction supported by evidence.
+- Keep README.md and RESTORATION_STATUS.md synchronized as work progresses; do not create a new version just to test.
+- The user's immediate request was to preserve the restart point in the repository so work can continue from another ChatGPT account/session.
