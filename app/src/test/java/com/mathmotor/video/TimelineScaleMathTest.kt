@@ -283,7 +283,7 @@ class TimelineScaleMathTest {
     @Test
     fun adaptiveRulerUsesClockLabelsOnWholeSecondsAndFrameLabelsBetween() {
         assertEquals("00:02", TimelineScaleMath.formatRulerTickLabel(2_002L, 60L, 29.97))
-        assertEquals("15f", TimelineScaleMath.formatRulerTickLabel(500L, 15L, 29.97))
+        assertEquals("15f", TimelineScaleMath.formatRulerTickLabel(2_502L, 75L, 29.97))
         assertEquals("00:03", TimelineScaleMath.formatRulerTickLabel(3_003L, 90L, 29.97))
         assertEquals("00:02", TimelineScaleMath.formatRulerTickLabel(2_000L, 0L, null))
     }
