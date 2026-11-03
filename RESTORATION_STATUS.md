@@ -428,6 +428,7 @@ The existing editor panel has been moved out of the root vertical layout and int
 - Opening a tool animates its detail panel upward from the dock. The sheet overlays the lower timeline region; the underlying timeline views remain mounted. A lightly translucent panel surface retains visual context behind it.
 - Changing tools reuses the same open panel instead of tearing down and recreating the sheet. Closing animates the detail panel downward and only then hides its content.
 - The bottom sheet is explicitly included in the preview fullscreen hide/restore cycle, so the dock or tool panel cannot remain floating above fullscreen playback.
+- The emulator capture script now opens `Düzenle`, switches to `Ses`, closes the sheet, and compares logged preview/timeline screen bounds across the before/open/switch/closed states. The assertion is added but remains unrun on this source head.
 - The overlay receives its own bottom safe-area margin. When the keyboard appears, the existing keyboard-responsive mode hides the dock and reduces the detail panel; keyboard-induced viewport changes are not treated as normal panel-open behavior.
 - The timeline ruler, time-to-pixel mapping, playhead sync loop, clip/lane data, thumbnail queue, decoder strategy, cache budgets, audio playback and export paths were not intentionally changed.
 
