@@ -2026,7 +2026,7 @@ class VideoEditorActivity : Activity() {
         description: String = title,
         onClick: () -> Unit
     ): Button = Button(this).apply {
-        text = "$symbol\\n$title"
+        text = "$symbol\n$title"
         contentDescription = description
         isAllCaps = false
         textSize = 10f
@@ -2090,7 +2090,7 @@ class VideoEditorActivity : Activity() {
             }
             editorDock.addView(
                 makeClipDockTool(symbol, title, description, action),
-                LinearLayout.LayoutParams(dp(68), dp(58))
+                LinearLayout.LayoutParams(dp(60), dp(58))
             )
         }
         editorDockScroll.scrollTo(0, 0)
