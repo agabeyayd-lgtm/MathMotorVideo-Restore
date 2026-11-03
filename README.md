@@ -475,6 +475,7 @@ Physical-device feedback from debug build #555:
 - Moved the existing contextual editor panel and tool dock into one bottom-anchored overlay on the existing editor. No second Activity, alternate timeline, or duplicate editor was added.
 - The base editor reserves only the dock height. Opening a tool now raises its detail panel above the dock as an overlay over the lower timeline area, rather than inserting another row into the root vertical layout and reducing the flexible preview height.
 - Switching tools reuses the visible panel; closing it animates downward. The timeline remains mounted beneath the translucent panel and is not rebuilt just because a panel opens or closes.
+- The bottom sheet is explicitly included in the preview's fullscreen hide/restore cycle, so it cannot remain floating over fullscreen playback.
 - The overlay follows the existing system-bar / keyboard safe-area handling. Keyboard-driven viewport changes remain a separate responsive mode.
 - No timeline time/pixel math, playhead synchronization, thumbnail decoder, cache budget, worker count, media, audio, or export behavior was changed.
 - **Verification pending:** run unit tests, debug compilation, and the emulator screenshot/interaction workflow. Confirm preview and timeline bounds stay unchanged on panel open/close, the selected tool content is retained during the close animation, and keyboard/fullscreen behavior remains usable. Physical-phone acceptance remains required. This source change is not release acceptance; keep PR #18 draft and versionCode 394 / Build 61 unchanged.
