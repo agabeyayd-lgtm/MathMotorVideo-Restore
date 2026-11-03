@@ -2048,6 +2048,7 @@ class VideoEditorActivity : Activity() {
     /** Stage one: replace the global dock with one compact horizontal clip-tool strip. */
     private fun enterClipTools() {
         if (!::editorDock.isInitialized || !::editorPanelScroll.isInitialized) return
+        logEditorPanelGeometry("before-open:clip-tools")
         clipToolsMode = true
         activeClipTool = null
         activeEditorPanel = null
@@ -2164,6 +2165,9 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun showEditorPanel(name: String) {
+        if (clipToolsMode && name != "clip" && name != "clipVolume") {
+            exitClipTools()
+        }
         activeEditorPanel = name
         if (name == "overlay") loadOverlayControls()
         updateClipTransformTouchAvailability()
@@ -2173,7 +2177,11 @@ class VideoEditorActivity : Activity() {
             if (!wasVisible) logEditorPanelGeometry("before-open:" + name)
             val params = editorPanelScroll.layoutParams as? LinearLayout.LayoutParams
             if (params != null) {
-                params.height = dp(if (keyboardLayoutActive) 124 else 196)
+                val panelHeight = when (name) {
+                    "clip", "clipVolume" -> if (keyboardLayoutActive) 112 else 150
+                    else -> if (keyboardLayoutActive) 124 else 196
+                }
+                params.height = dp(panelHeight)
                 editorPanelScroll.layoutParams = params
             }
             editorPanelScroll.visibility = View.VISIBLE
