@@ -1031,7 +1031,12 @@ class VideoEditorActivity : Activity() {
         root.addView(gap(8))
 
         val clipPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        // The first-level tools live in the bottom dock. This panel is only the
+        // second-level content that grows upward after the user chooses Kırp.
+        clipPanel.addView(miniButton("‹ Araçlara dön") { returnToClipToolStrip() },
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(38)))
         selectedClipLabel = label("Önce bir video seç.", 12f, Color.WHITE, true)
+        clipPanel.addView(selectedClipLabel)
         val clipActions1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val coverButton = miniButton("Kapak") { showClipCoverPicker() }.apply {
             contentDescription = "Seçili klibin kapak karesini seç"
@@ -1067,6 +1072,32 @@ class VideoEditorActivity : Activity() {
         endSeek = SeekBar(this)
         clipPanel.addView(endSeek, matchWrap())
         installTrimListeners()
+
+        val clipVolumePanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        clipVolumePanel.addView(miniButton("‹ Araçlara dön") { returnToClipToolStrip() },
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(38)))
+        clipVolumeLabel = label("Orijinal video sesi: 100%", 13f, Color.WHITE, true)
+        clipVolumePanel.addView(clipVolumeLabel)
+        clipVolumeSeek = SeekBar(this).apply {
+            max = 100
+            progress = sourceAudioVolume
+            setOnSeekBarChangeListener(volumeListener { value ->
+                sourceAudioVolume = value
+                clipVolumeLabel.text = "Orijinal video sesi: " + value + "%"
+                if (::sourceVolumeLabel.isInitialized) {
+                    sourceVolumeLabel.text = "Orijinal video sesi: " + value + "%"
+                }
+                player?.volume = if (::keepSourceAudio.isInitialized && keepSourceAudio.isChecked) {
+                    value / 100f
+                } else 0f
+                if (::keepSourceAudio.isInitialized) refreshTimelineSourceAudio()
+            })
+        }
+        clipVolumePanel.addView(clipVolumeSeek, matchWrap())
+        clipVolumePanel.addView(label(
+            "Ses ayarı seçili video klibine uygulanır.",
+            11f, Color.rgb(154, 171, 190), false
+        ))
 
         val textPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         textPanel.addView(label("METİN KATMANLARI", 13f, Color.rgb(121, 202, 218), true))
@@ -1487,6 +1518,7 @@ class VideoEditorActivity : Activity() {
         exportPanel.addView(exportButton)
 
         editorPanels["clip"] = clipPanel
+        editorPanels["clipVolume"] = clipVolumePanel
         editorPanels["overlay"] = overlayPanel
         editorPanels["text"] = textPanel
         editorPanels["audio"] = audioPanel
