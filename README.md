@@ -496,3 +496,9 @@ Physical-device feedback from debug build #555:
 - The strip contains implemented clip actions: Kırp, Ses düzeyi, Böl, Kapak and Sil. Kırp and Ses düzeyi open a second-level detail panel above the strip; the detail panel has an explicit return-to-tools control. Direct actions remain on the strip.
 - The two-level transition is designed as a bottom-anchored overlay. The preview and timeline remain mounted underneath; the existing ruler, filmstrip, shared playhead and time scale are not intentionally changed by the dock transition.
 - The emulator UI test now exercises main dock → clip strip → volume detail → clip strip → main dock and compares preview/timeline geometry at each step. Build/unit/emulator verification on the latest head is pending.
+
+### Emulator selector correction — 2026-11-03
+
+- Diagnosed the prior UI smoke-test failure after `Araçlara dön`: the helper used substring matching across both visible text and content descriptions. That made the detail-panel return control collide with the strip's `Geri` description (`Ana araçlara dön`), so the script tapped `Geri` and restored the global dock before searching for `Ses düzeyi`.
+- Corrected the selector to prioritize visible button text and accept only exact content-description fallback matches. This is a test-selector correction; the app's two-level menu actions were not changed for this failure.
+- Fix commit: `96bf3ffee9df13098b5fbf4440de1c907e7d7791`. A fresh emulator run is still required; do not treat the correction as verified until it passes.
