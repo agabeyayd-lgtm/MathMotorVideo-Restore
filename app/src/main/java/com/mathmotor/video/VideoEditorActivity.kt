@@ -420,6 +420,7 @@ class VideoEditorActivity : Activity() {
     private val editorPanels = linkedMapOf<String, LinearLayout>()
     private lateinit var editorPanelScroll: ScrollView
     private lateinit var editorBottomSheet: View
+    private lateinit var editorTimelineCard: View
     private val editorTabButtons = linkedMapOf<String, Button>()
     private var activeEditorPanel: String? = null
     private var textOverlayEditingEnabled: Boolean = false
@@ -810,6 +811,7 @@ class VideoEditorActivity : Activity() {
             setPadding(0, dp(3), 0, dp(3))
             setBackgroundColor(Color.rgb(8, 12, 18))
         }
+        editorTimelineCard = timelineCard
         // One playback control, fixed to the phone's horizontal center axis.
         centeredPlaybackRow = FrameLayout(this)
         timelinePlayButton = miniButton("▶") {
@@ -1625,6 +1627,26 @@ class VideoEditorActivity : Activity() {
             topBar = topBar,
             rulerAwareTimelineRefresh = { refreshTimelineTracks() }
         )
+        previewFrame.post { logEditorPanelGeometry("closed-initial") }
+    }
+
+    private fun logEditorPanelGeometry(state: String) {
+        if (!timelineSyncTestEnabled ||
+            !::previewFrame.isInitialized ||
+            !::editorTimelineCard.isInitialized
+        ) return
+        val previewLocation = IntArray(2)
+        val timelineLocation = IntArray(2)
+        previewFrame.getLocationOnScreen(previewLocation)
+        editorTimelineCard.getLocationOnScreen(timelineLocation)
+        Log.i(
+            "EditorPanelLayoutTest",
+            "EDITOR_PANEL_GEOMETRY state=" + state +
+                " preview=" + previewFrame.width + "x" + previewFrame.height + "@" +
+                previewLocation[0] + "," + previewLocation[1] +
+                " timeline=" + editorTimelineCard.width + "x" + editorTimelineCard.height + "@" +
+                timelineLocation[0] + "," + timelineLocation[1]
+        )
     }
 
     private fun installResponsiveEditorLayout(
@@ -1970,6 +1992,7 @@ class VideoEditorActivity : Activity() {
                 // Switching tools reuses the same sheet without replaying its entrance.
                 editorPanelScroll.translationY = 0f
                 editorPanelScroll.alpha = 1f
+                editorPanelScroll.post { logEditorPanelGeometry("switch:" + name) }
             } else {
                 // The details panel rises from the bottom dock like a native
                 // editing drawer. It is an overlay, so the preview/timeline are
@@ -1985,6 +2008,7 @@ class VideoEditorActivity : Activity() {
                             .alpha(1f)
                             .setDuration(220L)
                             .setInterpolator(android.view.animation.DecelerateInterpolator())
+                            .withEndAction { logEditorPanelGeometry("open:" + name) }
                             .start()
                     }
                 }
@@ -2055,6 +2079,7 @@ class VideoEditorActivity : Activity() {
                         editorPanelScroll.visibility = View.GONE
                         editorPanelScroll.translationY = 0f
                         editorPanelScroll.alpha = 1f
+                        editorPanelScroll.post { logEditorPanelGeometry("closed") }
                     }
                 }
                 .start()
