@@ -81,15 +81,24 @@ jobs:
             echo "::error::Android SDK build-tools directory is unavailable (ANDROID_HOME=${ANDROID_HOME- unset})."
             exit 1
           fi
-          apksigner_path="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
-          if [ -z "$apksigner_path" ] || [ ! -x "$apksigner_path" ]; then
-            echo "::error::apksigner was not found under $ANDROID_HOME/build-tools."
-            find "$ANDROID_HOME/build-tools" -maxdepth 2 -type f -print || true
+          apksigner_path="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          if [ ! -x "$apksigner_path" ]; then
+            echo "::error::apksigner 36.0.0 was not found at $apksigner_path."
+            find "$ANDROID_HOME/build-tools" -maxdepth 2 -type f -name apksigner -print || true
             exit 1
           fi
           echo "Using apksigner: $apksigner_path"
-          published_fingerprint="$("$apksigner_path" verify --print-certs "$PUBLISHED_APK" | awk -F': ' '/Signer #1 certificate SHA-256 digest/ {print $2; exit}')"
-          test -n "$published_fingerprint"
+          if ! published_verify_output="$("$apksigner_path" verify --print-certs "$PUBLISHED_APK" 2>&1)"; then
+            printf '%s\\n' "$published_verify_output"
+            echo "::error::apksigner could not verify the published APK."
+            exit 1
+          fi
+          published_fingerprint="$(printf '%s\\n' "$published_verify_output" | awk -F': *' 'tolower($1) ~ /signer #1 certificate sha-256 digest/ {print $2; exit}')"
+          if [ -z "$published_fingerprint" ]; then
+            printf '%s\\n' "$published_verify_output"
+            echo "::error::apksigner output did not contain the expected SHA-256 certificate field."
+            exit 1
+          fi
 
           echo "Published release tag: $PUBLISHED_TAG"
           echo "Published signer SHA-256: $published_fingerprint"
