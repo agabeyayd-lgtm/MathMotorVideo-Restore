@@ -39,9 +39,7 @@ jobs:
         with:
           cmdline-tools-version: "12266719"
           accept-android-sdk-licenses: true
-          packages: |
-            platform-tools
-            build-tools;36.0.0
+          packages: "platform-tools build-tools;36.0.0"
 
       - name: Verify Android build tools
         run: |
