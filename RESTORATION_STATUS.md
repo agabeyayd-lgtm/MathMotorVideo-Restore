@@ -415,3 +415,24 @@ Physical-device feedback from debug build #555:
 - Moved the existing current/total time label into the ruler row's existing 84dp left header gutter. The gutter width is unchanged, preserving the shared zero edge and all video/audio/text lane alignment.
 - Fullscreen temporarily reparents the same label into the fullscreen playback overlay and restores it to the ruler header on exit. Timeline refresh explicitly detaches it before rebuilding to avoid a stale-parent crash.
 - **Verification pending:** no build or emulator screenshot has yet verified the new placement. Keep PR #18 draft/unmerged; do not touch `main`, create version 395, or publish an APK.
+
+
+## CapCut-style bottom editing sheet — 2026-11-03
+
+The existing editor panel has been moved out of the root vertical layout and into a bottom-anchored overlay within the same editor workspace.
+
+### Layout behavior
+
+- The existing editor remains the only editor. The preview, playback row, timeline card, shared lanes, and playhead stay in the base workspace.
+- The base workspace reserves the existing 66dp tool-dock height. The dock and contextual detail panel are children of one bottom-anchored sheet.
+- Opening a tool animates its detail panel upward from the dock. The sheet overlays the lower timeline region; the underlying timeline views remain mounted. A lightly translucent panel surface retains visual context behind it.
+- Changing tools reuses the same open panel instead of tearing down and recreating the sheet. Closing animates the detail panel downward and only then hides its content.
+- The overlay receives its own bottom safe-area margin. When the keyboard appears, the existing keyboard-responsive mode hides the dock and reduces the detail panel; keyboard-induced viewport changes are not treated as normal panel-open behavior.
+- The timeline ruler, time-to-pixel mapping, playhead sync loop, clip/lane data, thumbnail queue, decoder strategy, cache budgets, audio playback and export paths were not intentionally changed.
+
+### Verification gates
+
+- Source update and documentation are committed to `feature/capcut-layout-recompose` / draft PR #18.
+- Unit tests, debug compilation, emulator screenshots, bottom-sheet open/switch/close interaction, keyboard interaction, fullscreen interaction, and physical-phone review are pending.
+- Specifically compare preview and timeline measured bounds before and after opening/closing a tool. Confirm panel transitions do not trigger timeline refreshes or new thumbnail requests.
+- Do not merge PR #18, modify `main`, change versionCode 394 / Build 61, create version 395, sign/publish a release, or activate the updater.
