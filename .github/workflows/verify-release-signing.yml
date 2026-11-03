@@ -34,74 +34,9 @@ jobs:
         with:
           gradle-version: "8.11.1"
 
-      - name: Restore persistent release signing key
-        env:
-          MMV_SIGNING_BUNDLE_B64: ${{ secrets.MMV_SIGNING_BUNDLE_B64 }}
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/mmv-signing"
-          if [ -n "$MMV_SIGNING_BUNDLE_B64" ]; then
-            printf '%s' "$MMV_SIGNING_BUNDLE_B64" | base64 --decode > "$RUNNER_TEMP/mmv-signing/bundle.zip"
-            unzip -oq "$RUNNER_TEMP/mmv-signing/bundle.zip" -d "$RUNNER_TEMP/mmv-signing"
-          elif [ -n "$ANDROID_KEYSTORE_BASE64" ] && [ -n "$ANDROID_KEYSTORE_PASSWORD" ] && [ -n "$ANDROID_KEY_ALIAS" ] && [ -n "$ANDROID_KEY_PASSWORD" ]; then
-            printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/mmv-signing/release.p12"
-            {
-              printf 'storeFile=release.p12\n'
-              printf 'storeType=PKCS12\n'
-              printf 'storePassword=%s\n' "$ANDROID_KEYSTORE_PASSWORD"
-              printf 'keyAlias=%s\n' "$ANDROID_KEY_ALIAS"
-              printf 'keyPassword=%s\n' "$ANDROID_KEY_PASSWORD"
-            } > "$RUNNER_TEMP/mmv-signing/keystore.properties"
-          else
-            echo "::error::Release signing secrets are not configured. No migration is safe."
-            exit 1
-          fi
-          test -s "$RUNNER_TEMP/mmv-signing/release.p12"
-          test -s "$RUNNER_TEMP/mmv-signing/keystore.properties"
-
-          python3 - "$RUNNER_TEMP/mmv-signing/keystore.properties" <<'PY'
-          from pathlib import Path
-          import sys
-
-          path = Path(sys.argv[1])
-          lines = path.read_text(encoding="ISO-8859-1").splitlines(keepends=True)
-
-          def raw_value(prefix):
-              for line in lines:
-                  if line.startswith(prefix):
-                      return line[len(prefix):].rstrip("\\r\\n")
-              return None
-
-          store_type = raw_value("storeType=") or "PKCS12"
-          if store_type.strip().upper() == "PKCS12":
-              store_password = raw_value("storePassword=")
-              if store_password is None:
-                  raise SystemExit("Signing configuration is missing storePassword.")
-              output = []
-              replaced = False
-              for line in lines:
-                  if line.startswith("keyPassword="):
-                      ending = "\\r\\n" if line.endswith("\\r\\n") else ("\\n" if line.endswith("\\n") else "")
-                      output.append("keyPassword=" + store_password + ending)
-                      replaced = True
-                  else:
-                      output.append(line)
-              if not replaced:
-                  output.append("keyPassword=" + store_password + "\\n")
-              path.write_text("".join(output), encoding="ISO-8859-1")
-              print("PKCS12 signing password configuration normalized.")
-          else:
-              print("Non-PKCS12 signing configuration preserved.")
-          PY
-          echo "MMV_SIGNING_PROPERTIES=$RUNNER_TEMP/mmv-signing/keystore.properties" >> "$GITHUB_ENV"
-
       - name: Download current signed 394 release
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: \${{ github.token }}
         run: |
           set -euo pipefail
           release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest")"
@@ -118,29 +53,161 @@ jobs:
           echo "PUBLISHED_APK=$RUNNER_TEMP/published-release/MathMotorVideo.apk" >> "$GITHUB_ENV"
           echo "PUBLISHED_TAG=$tag" >> "$GITHUB_ENV"
 
-      - name: Build a signed comparison APK without publishing
-        run: gradle --no-daemon assembleRelease
-
-      - name: Compare signing certificate fingerprints
+      - name: Test every configured signing source without publishing
+        env:
+          MMV_SIGNING_BUNDLE_B64: \${{ secrets.MMV_SIGNING_BUNDLE_B64 }}
+          ANDROID_KEYSTORE_BASE64: \${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: \${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: \${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: \${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          candidate="app/build/outputs/apk/release/app-release.apk"
-          test -s "$candidate"
+
           apksigner_path="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
           test -x "$apksigner_path"
           published_fingerprint="$("$apksigner_path" verify --print-certs "$PUBLISHED_APK" | awk -F': ' '/Signer #1 certificate SHA-256 digest/ {print $2; exit}')"
-          candidate_fingerprint="$("$apksigner_path" verify --print-certs "$candidate" | awk -F': ' '/Signer #1 certificate SHA-256 digest/ {print $2; exit}')"
           test -n "$published_fingerprint"
-          test -n "$candidate_fingerprint"
-          {
-            echo "## Release signing continuity"
-            echo "- Published tag: $PUBLISHED_TAG (versionCode 394)"
-            echo "- Published certificate SHA-256: `$published_fingerprint`"
-            echo "- Current signing-secret certificate SHA-256: `$candidate_fingerprint`"
-          } >> "$GITHUB_STEP_SUMMARY"
-          if [ "$published_fingerprint" != "$candidate_fingerprint" ]; then
-            echo "::error::Signing certificate mismatch. Do not uninstall the debug app or publish an update."
+
+          echo "Published release tag: $PUBLISHED_TAG"
+          echo "Published signer SHA-256: $published_fingerprint"
+          echo "## Release signing continuity — $PUBLISHED_TAG" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Published signer SHA-256: \`$published_fingerprint\`" >> "$GITHUB_STEP_SUMMARY"
+
+          normalize_properties() {
+            python3 - "$1" <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          lines = path.read_text(encoding="ISO-8859-1").splitlines()
+          properties = {}
+          for line in lines:
+              if line and not line.lstrip().startswith(("#", "!")) and "=" in line:
+                  key, value = line.split("=", 1)
+                  properties[key.strip()] = value.strip()
+
+          store_type = properties.get("storeType", "PKCS12").strip().upper()
+          if store_type == "PKCS12":
+              store_password = properties.get("storePassword")
+              if store_password is None:
+                  raise SystemExit("Signing configuration is missing storePassword.")
+              output = []
+              replaced = False
+              for line in lines:
+                  if line.startswith("keyPassword="):
+                      output.append("keyPassword=" + store_password)
+                      replaced = True
+                  else:
+                      output.append(line)
+              if not replaced:
+                  output.append("keyPassword=" + store_password)
+              path.write_text("\n".join(output) + "\n", encoding="ISO-8859-1")
+              print("PKCS12 key password normalized.")
+          else:
+              print("Non-PKCS12 signing configuration preserved.")
+          PY
+          }
+
+          try_candidate() {
+            source_name="$1"
+            properties_file="$2"
+            echo "::group::Compare $source_name"
+            if ! MMV_SIGNING_PROPERTIES="$properties_file" gradle --no-daemon clean assembleRelease; then
+              echo "::warning::$source_name could not build a comparison APK."
+              echo "- $source_name: BUILD FAILED" >> "$GITHUB_STEP_SUMMARY"
+              echo "::endgroup::"
+              return 1
+            fi
+
+            candidate="app/build/outputs/apk/release/app-release.apk"
+            if [ ! -s "$candidate" ]; then
+              echo "::warning::$source_name produced no comparison APK."
+              echo "- $source_name: APK MISSING" >> "$GITHUB_STEP_SUMMARY"
+              echo "::endgroup::"
+              return 1
+            fi
+
+            candidate_fingerprint="$("$apksigner_path" verify --print-certs "$candidate" | awk -F': ' '/Signer #1 certificate SHA-256 digest/ {print $2; exit}')"
+            if [ -z "$candidate_fingerprint" ]; then
+              echo "::warning::$source_name produced an APK without a readable signer certificate."
+              echo "- $source_name: SIGNER UNREADABLE" >> "$GITHUB_STEP_SUMMARY"
+              echo "::endgroup::"
+              return 1
+            fi
+
+            echo "$source_name signer SHA-256: $candidate_fingerprint"
+            echo "- $source_name signer SHA-256: \`$candidate_fingerprint\`" >> "$GITHUB_STEP_SUMMARY"
+            if [ "$candidate_fingerprint" = "$published_fingerprint" ]; then
+              echo "::notice::$source_name MATCHES the published 394 signer."
+              echo "- $source_name result: MATCH" >> "$GITHUB_STEP_SUMMARY"
+              echo "::endgroup::"
+              return 0
+            fi
+
+            echo "::warning::$source_name does not match the published 394 signer."
+            echo "- $source_name result: MISMATCH" >> "$GITHUB_STEP_SUMMARY"
+            echo "::endgroup::"
+            return 1
+          }
+
+          matched=0
+          configured=0
+
+          if [ -n "$MMV_SIGNING_BUNDLE_B64" ]; then
+            configured=$((configured + 1))
+            bundle_dir="$RUNNER_TEMP/mmv-signing-bundle"
+            mkdir -p "$bundle_dir"
+            if printf '%s' "$MMV_SIGNING_BUNDLE_B64" | base64 --decode > "$bundle_dir/bundle.zip" \
+              && unzip -oq "$bundle_dir/bundle.zip" -d "$bundle_dir" \
+              && test -s "$bundle_dir/release.p12" \
+              && test -s "$bundle_dir/keystore.properties"; then
+              normalize_properties "$bundle_dir/keystore.properties"
+              if try_candidate "MMV_SIGNING_BUNDLE_B64" "$bundle_dir/keystore.properties"; then
+                matched=1
+              fi
+            else
+              echo "::warning::MMV_SIGNING_BUNDLE_B64 is configured but its expected files could not be restored."
+              echo "- MMV_SIGNING_BUNDLE_B64: RESTORE FAILED" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          else
+            echo "MMV_SIGNING_BUNDLE_B64: not configured"
+            echo "- MMV_SIGNING_BUNDLE_B64: not configured" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ] && [ -n "$ANDROID_KEYSTORE_PASSWORD" ] \
+            && [ -n "$ANDROID_KEY_ALIAS" ] && [ -n "$ANDROID_KEY_PASSWORD" ]; then
+            configured=$((configured + 1))
+            legacy_dir="$RUNNER_TEMP/mmv-signing-legacy"
+            mkdir -p "$legacy_dir"
+            if printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$legacy_dir/release.p12"; then
+              {
+                printf 'storeFile=release.p12\n'
+                printf 'storeType=PKCS12\n'
+                printf 'storePassword=%s\n' "$ANDROID_KEYSTORE_PASSWORD"
+                printf 'keyAlias=%s\n' "$ANDROID_KEY_ALIAS"
+                printf 'keyPassword=%s\n' "$ANDROID_KEY_PASSWORD"
+              } > "$legacy_dir/keystore.properties"
+              normalize_properties "$legacy_dir/keystore.properties"
+              if try_candidate "ANDROID_KEYSTORE_*" "$legacy_dir/keystore.properties"; then
+                matched=1
+              fi
+            else
+              echo "::warning::ANDROID_KEYSTORE_* is configured but its keystore could not be decoded."
+              echo "- ANDROID_KEYSTORE_*: RESTORE FAILED" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          else
+            echo "ANDROID_KEYSTORE_*: not fully configured"
+            echo "- ANDROID_KEYSTORE_*: not fully configured" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [ "$configured" -eq 0 ]; then
+            echo "::error::No release signing secret source is configured."
             exit 1
           fi
-          echo "Certificate match confirmed. This workflow built only a local CI APK and did not publish a release."
-          echo "- Result: MATCH" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$matched" -ne 1 ]; then
+            echo "::error::No configured signing source matches the published 394 certificate. Do not uninstall the debug app or publish an update."
+            exit 1
+          fi
+
+          echo "At least one configured signing source matches the published 394 certificate. No release was published."
+          echo "- Overall result: MATCH" >> "$GITHUB_STEP_SUMMARY"
