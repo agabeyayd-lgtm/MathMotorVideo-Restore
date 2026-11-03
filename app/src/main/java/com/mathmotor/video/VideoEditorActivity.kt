@@ -421,8 +421,14 @@ class VideoEditorActivity : Activity() {
     private lateinit var editorPanelScroll: ScrollView
     private lateinit var editorBottomSheet: View
     private lateinit var editorTimelineCard: View
+    private lateinit var editorDock: LinearLayout
+    private lateinit var editorDockScroll: android.widget.HorizontalScrollView
+    private lateinit var clipVolumeLabel: TextView
+    private lateinit var clipVolumeSeek: SeekBar
     private val editorTabButtons = linkedMapOf<String, Button>()
     private var activeEditorPanel: String? = null
+    private var clipToolsMode = false
+    private var activeClipTool: String? = null
     private var textOverlayEditingEnabled: Boolean = false
     private lateinit var selectedClipLabel: TextView
     private lateinit var overlayTitleLabel: TextView
