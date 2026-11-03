@@ -380,7 +380,7 @@ fi
 # clip is inserted into the timeline, so inaccessible UI hierarchy is diagnostic
 # only and does not turn a successful import into a false failure.
 
-echo "Step 8/12: verify CapCut-style bottom-sheet open, tool switch and close"
+echo "Step 8/12: verify the one-row clip tool strip and its upward detail panel"
 find_bottom_tool() {
   local hierarchy="$1"
   local tool="$2"
@@ -416,7 +416,7 @@ if [ -z "$clip_tool_coords" ]; then
   collect_capture_diagnostics editor-panel-edit-tool-missing
   exit 25
 fi
-echo "Opening the bottom Düzenle sheet at $clip_tool_coords"
+echo "Opening the one-row clip tool strip at $clip_tool_coords"
 timeout -k 2s 8s adb -s emulator-5554 shell input tap $clip_tool_coords
 sleep 1
 if ! take_screen emulator-screenshots/editor-panel-clip-open.png; then
@@ -425,29 +425,44 @@ if ! take_screen emulator-screenshots/editor-panel-clip-open.png; then
 fi
 dump_hierarchy editor-panel-clip-open.xml emulator-screenshots/editor-panel-clip-open.xml || true
 
-audio_tool_coords="$(find_bottom_tool emulator-screenshots/editor-panel-clip-open.xml "Ses" || true)"
-if [ -z "$audio_tool_coords" ]; then
-  echo "Could not locate the bottom Ses tool while the panel is open."
-  collect_capture_diagnostics editor-panel-audio-tool-missing
+volume_tool_coords="$(find_bottom_tool emulator-screenshots/editor-panel-clip-open.xml "Ses düzeyi" || true)"
+if [ -z "$volume_tool_coords" ]; then
+  echo "The clip tool strip did not expose the Ses düzeyi option."
+  collect_capture_diagnostics editor-panel-volume-tool-missing
   exit 26
 fi
-echo "Switching the open sheet to Ses at $audio_tool_coords"
-timeout -k 2s 8s adb -s emulator-5554 shell input tap $audio_tool_coords
+echo "Opening the upward-growing volume detail panel at $volume_tool_coords"
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $volume_tool_coords
 sleep 1
 if ! take_screen emulator-screenshots/editor-panel-audio.png; then
-  collect_capture_diagnostics editor-panel-switch-capture-failure
+  collect_capture_diagnostics editor-panel-detail-capture-failure
   exit 6
 fi
 dump_hierarchy editor-panel-audio.xml emulator-screenshots/editor-panel-audio.xml || true
 
-audio_tool_coords="$(find_bottom_tool emulator-screenshots/editor-panel-audio.xml "Ses" || true)"
-if [ -z "$audio_tool_coords" ]; then
-  echo "Could not relocate the bottom Ses tool to close the sheet."
-  collect_capture_diagnostics editor-panel-close-tool-missing
+detail_back_coords="$(find_bottom_tool emulator-screenshots/editor-panel-audio.xml "Araçlara dön" || true)"
+if [ -z "$detail_back_coords" ]; then
+  echo "The expanded volume panel did not expose its return-to-tools control."
+  collect_capture_diagnostics editor-panel-detail-back-missing
   exit 27
 fi
-echo "Closing the open sheet at $audio_tool_coords"
-timeout -k 2s 8s adb -s emulator-5554 shell input tap $audio_tool_coords
+echo "Returning from expanded detail to the single tool strip at $detail_back_coords"
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $detail_back_coords
+sleep 1
+if ! take_screen emulator-screenshots/editor-panel-tool-strip.png; then
+  collect_capture_diagnostics editor-panel-strip-return-capture-failure
+  exit 6
+fi
+dump_hierarchy editor-panel-tool-strip.xml emulator-screenshots/editor-panel-tool-strip.xml || true
+
+main_back_coords="$(find_bottom_tool emulator-screenshots/editor-panel-tool-strip.xml "Ana araçlara dön" || true)"
+if [ -z "$main_back_coords" ]; then
+  echo "The contextual strip did not expose its return-to-main-dock control."
+  collect_capture_diagnostics editor-panel-main-back-missing
+  exit 28
+fi
+echo "Restoring the main editor dock at $main_back_coords"
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $main_back_coords
 sleep 1
 if ! take_screen emulator-screenshots/editor-panel-closed.png; then
   collect_capture_diagnostics editor-panel-close-capture-failure
@@ -470,17 +485,24 @@ for line in open(sys.argv[1], errors="replace"):
     if match:
         states[match.group(1)] = (match.group(2), match.group(3))
 
-required = ["before-open:clip", "open:clip", "switch:audio", "closed"]
+required = [
+    "before-open:clip-tools",
+    "clip-tools",
+    "before-open:clipVolume",
+    "open:clipVolume",
+    "clip-tool-strip",
+    "closed",
+]
 missing = [state for state in required if state not in states]
 if missing:
-    raise SystemExit("Missing bottom-sheet geometry markers: " + ", ".join(missing))
-baseline = states["before-open:clip"]
+    raise SystemExit("Missing two-stage editor geometry markers: " + ", ".join(missing))
+baseline = states["before-open:clip-tools"]
 for state in required[1:]:
     if states[state] != baseline:
         raise SystemExit(
             f"Editor layout moved during {state}: baseline={baseline}, observed={states[state]}"
         )
-print("PASS: preview and timeline bounds/positions stayed identical while the bottom sheet opened, switched tools and closed.")
+print("PASS: preview and timeline stayed fixed while the one-row tool strip opened, detail rose above it, the strip returned, and the main dock was restored.")
 PY
 
 echo "Step 9/12: align a thumbnail cell with the playhead and compare the rendered pixels"
