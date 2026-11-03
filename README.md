@@ -4,9 +4,9 @@
 
 **Verified CI scope:** run #754 completed successfully on commit `7be6fade1def349e72649407c5c77790421214f0`. It ran `testDebugUnitTest`, `assembleDebug`, packaged the debug APK ZIP, and completed the API 35 emulator flow. The emulator flow exercised the compact `Düzenle` tool strip, `Kırp` detail, `Ses düzeyi` detail, return-to-strip and return-to-main-dock transitions, plus preview/timeline geometry assertions. This is evidence for the tested editor shell and navigation, not blanket acceptance of every feature listed in older checkpoints.
 
-**Mainline status:** PR #18 is ready for review and approved by the user as the implementation base. Integration with the two later documentation-only commits on `main` is being prepared; do not describe the PR as merged until GitHub confirms it.
+**Mainline status:** PR #18 was merged into `main` on 2026-11-03. Merge commit: `4bb6c540329f24dcdd97b0b34ee537f267591a32`. The single `VideoEditorActivity` implementation is now the canonical base for incremental work.
 
-**Release boundary:** keep versionCode 394 / Build 61 unchanged. Run #754 produced a debug test ZIP, not a signed production release. Do not create version 395, publish a release, or activate the in-app updater until mainline integration, signing/package compatibility, and a controlled update/install test are separately verified.
+**Release boundary:** keep versionCode 394 / Build 61 unchanged. Run #754 produced a debug test ZIP, not a signed production release. The existing in-app `Kontrol et` updater is already wired to GitHub `releases/latest`; the current signed release is also 394, so no update is available yet. Do not create version 395 or publish a release until signing continuity and a controlled install/update test are verified.
 
 **Still not covered by the #754 acceptance:** full physical-device verification of clip reorder, cover-image saving/generation, thumbnail fill performance, image/video overlays, compositing/export, and all media edge cases. Preserve these as distinct open checks; do not treat acceptance of the editor structure as acceptance of those features.
 
@@ -556,3 +556,11 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Preserve working functionality. Make the smallest targeted correction supported by evidence.
 - Keep README.md and RESTORATION_STATUS.md synchronized as work progresses; do not create a new version just to test.
 - The user's immediate request was to preserve the restart point in the repository so work can continue from another ChatGPT account/session.
+
+## In-app updater status — 2026-11-03
+
+- The home screen already contains a manual `Kontrol et` action. It checks GitHub `releases/latest`, reads `versionCode` from the release description, compares it with the installed app, downloads `MathMotorVideo.apk` when the published version is higher, and opens Android's package installer.
+- The current signed release is `app-v8.3-61`, asset `MathMotorVideo.apk`, with `versionCode=394`. The app Gradle configuration is also 394. Therefore the current install should report that it is up to date; no new APK was published by merging PR #18.
+- Signed publishing is separate from PR builds. It runs only manually or when `.github/release-trigger.txt` changes on `main`, and it uses the persistent release-signing key. PR #18 did not change the release marker.
+- The #754 test ZIP is a debug-signed build, while public releases use the persistent release key. If the phone currently has the debug-signed ZIP installed, Android will not allow a different release certificate to update it in place. A one-time switch to the signed release installation is needed first. Uninstalling also erases private editor drafts stored in the app, so export/back up important projects before any such migration.
+- Before a future higher signed release, verify that its certificate matches the current signed 394 release and test a controlled 394-to-higher-version install. Do not change versionCode 394 until that release test is ready.
