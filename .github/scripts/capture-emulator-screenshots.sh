@@ -771,8 +771,9 @@ test -s emulator-screenshots/editor.png
 test -s emulator-screenshots/editor-playing.png
 test -s emulator-screenshots/editor-panel-clip-open.png
 test -s emulator-screenshots/editor-panel-audio.png
+test -s emulator-screenshots/editor-panel-tool-strip.png
 test -s emulator-screenshots/editor-panel-closed.png
 test -s emulator-screenshots/editor-panel-layout-logcat.txt
 test -s emulator-screenshots/timeline-sync-validation.txt
 test -s emulator-screenshots/home-with-drafts.png
-echo "Home, empty editor, initial/playing editor, bottom-sheet open/switch/close geometry, live timeline sync, and autosaved-draft screenshots captured."
+echo "Home, empty editor, initial/playing editor, two-stage clip tool strip/detail/return geometry, live timeline sync, and autosaved-draft screenshots captured."
