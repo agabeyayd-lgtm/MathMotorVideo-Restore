@@ -1582,6 +1582,8 @@ class VideoEditorActivity : Activity() {
             setBackgroundColor(Color.rgb(8, 12, 18))
             elevation = dp(8).toFloat()
         }
+        editorDock = dock
+        editorDockScroll = dockScroll
         listOf(
             Triple("clip", "Düzenle", "✂"),
             Triple("audio", "Ses", "♫"),
@@ -1592,7 +1594,10 @@ class VideoEditorActivity : Activity() {
             Triple("export", "Proje", "⋯")
         ).forEach { (key, title, symbol) ->
             val tab = miniButton("$symbol\n$title") {
-                if (key in editorPanels) {
+                if (key == "clip") {
+                    if (clipToolsMode) exitClipTools() else enterClipTools()
+                } else if (key in editorPanels) {
+                    if (clipToolsMode) exitClipTools()
                     toggleEditorPanel(key)
                 } else {
                     android.widget.Toast.makeText(this, "Yakında", android.widget.Toast.LENGTH_SHORT).show()
