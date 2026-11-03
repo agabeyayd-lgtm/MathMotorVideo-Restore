@@ -1087,6 +1087,7 @@ class VideoEditorActivity : Activity() {
                 if (::sourceVolumeLabel.isInitialized) {
                     sourceVolumeLabel.text = "Orijinal video sesi: " + value + "%"
                 }
+                if (::sourceVolumeSeek.isInitialized) sourceVolumeSeek.progress = value
                 player?.volume = if (::keepSourceAudio.isInitialized && keepSourceAudio.isChecked) {
                     value / 100f
                 } else 0f
