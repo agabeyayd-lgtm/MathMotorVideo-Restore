@@ -34,6 +34,12 @@ jobs:
         with:
           gradle-version: "8.11.1"
 
+      - name: Set up Android SDK tools
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android build tools
+        run: sdkmanager "build-tools;36.0.0"
+
       - name: Download current signed 394 release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -64,8 +70,17 @@ jobs:
         run: |
           set -euo pipefail
 
+          if [ -z "${ANDROID_HOME-}" ] || [ ! -d "$ANDROID_HOME/build-tools" ]; then
+            echo "::error::Android SDK build-tools directory is unavailable (ANDROID_HOME=${ANDROID_HOME- unset})."
+            exit 1
+          fi
           apksigner_path="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
-          test -x "$apksigner_path"
+          if [ -z "$apksigner_path" ] || [ ! -x "$apksigner_path" ]; then
+            echo "::error::apksigner was not found under $ANDROID_HOME/build-tools."
+            find "$ANDROID_HOME/build-tools" -maxdepth 2 -type f -print || true
+            exit 1
+          fi
+          echo "Using apksigner: $apksigner_path"
           published_fingerprint="$("$apksigner_path" verify --print-certs "$PUBLISHED_APK" | awk -F': ' '/Signer #1 certificate SHA-256 digest/ {print $2; exit}')"
           test -n "$published_fingerprint"
 
