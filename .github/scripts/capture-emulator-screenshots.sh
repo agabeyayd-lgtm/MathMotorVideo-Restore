@@ -380,7 +380,110 @@ fi
 # clip is inserted into the timeline, so inaccessible UI hierarchy is diagnostic
 # only and does not turn a successful import into a false failure.
 
-echo "Step 8/11: align a thumbnail cell with the playhead and compare the rendered pixels"
+echo "Step 8/12: verify CapCut-style bottom-sheet open, tool switch and close"
+find_bottom_tool() {
+  local hierarchy="$1"
+  local tool="$2"
+  python3 - "$hierarchy" "$tool" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+try:
+    root = ET.parse(sys.argv[1]).getroot()
+except (OSError, ET.ParseError):
+    raise SystemExit(1)
+
+target = sys.argv[2].casefold()
+matches = []
+for node in root.iter("node"):
+    label = (node.attrib.get("text", "") + " " + node.attrib.get("content-desc", "")).casefold()
+    bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if target in label and bounds:
+        x1, y1, x2, y2 = map(int, bounds.groups())
+        if x2 > x1 and y2 > y1:
+            matches.append((y1, (x1 + x2) // 2, (y1 + y2) // 2))
+if not matches:
+    raise SystemExit(1)
+_, x, y = max(matches)
+print(x, y)
+PY
+}
+
+clip_tool_coords="$(find_bottom_tool emulator-screenshots/editor-window.xml "Düzenle" || true)"
+if [ -z "$clip_tool_coords" ]; then
+  echo "Could not locate the bottom Düzenle tool; refusing to guess its tap coordinates."
+  collect_capture_diagnostics editor-panel-edit-tool-missing
+  exit 25
+fi
+echo "Opening the bottom Düzenle sheet at $clip_tool_coords"
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $clip_tool_coords
+sleep 1
+if ! take_screen emulator-screenshots/editor-panel-clip-open.png; then
+  collect_capture_diagnostics editor-panel-open-capture-failure
+  exit 6
+fi
+dump_hierarchy editor-panel-clip-open.xml emulator-screenshots/editor-panel-clip-open.xml || true
+
+audio_tool_coords="$(find_bottom_tool emulator-screenshots/editor-panel-clip-open.xml "Ses" || true)"
+if [ -z "$audio_tool_coords" ]; then
+  echo "Could not locate the bottom Ses tool while the panel is open."
+  collect_capture_diagnostics editor-panel-audio-tool-missing
+  exit 26
+fi
+echo "Switching the open sheet to Ses at $audio_tool_coords"
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $audio_tool_coords
+sleep 1
+if ! take_screen emulator-screenshots/editor-panel-audio.png; then
+  collect_capture_diagnostics editor-panel-switch-capture-failure
+  exit 6
+fi
+dump_hierarchy editor-panel-audio.xml emulator-screenshots/editor-panel-audio.xml || true
+
+audio_tool_coords="$(find_bottom_tool emulator-screenshots/editor-panel-audio.xml "Ses" || true)"
+if [ -z "$audio_tool_coords" ]; then
+  echo "Could not relocate the bottom Ses tool to close the sheet."
+  collect_capture_diagnostics editor-panel-close-tool-missing
+  exit 27
+fi
+echo "Closing the open sheet at $audio_tool_coords"
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $audio_tool_coords
+sleep 1
+if ! take_screen emulator-screenshots/editor-panel-closed.png; then
+  collect_capture_diagnostics editor-panel-close-capture-failure
+  exit 6
+fi
+timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime -s EditorPanelLayoutTest:I > emulator-screenshots/editor-panel-layout-logcat.txt 2>&1 || true
+
+python3 - emulator-screenshots/editor-panel-layout-logcat.txt <<'PY'
+import re
+import sys
+
+states = {}
+pattern = re.compile(
+    r"EDITOR_PANEL_GEOMETRY state=([^ ]+) "
+    r"preview=(\d+x\d+@\d+,\d+) "
+    r"timeline=(\d+x\d+@\d+,\d+)"
+)
+for line in open(sys.argv[1], errors="replace"):
+    match = pattern.search(line)
+    if match:
+        states[match.group(1)] = (match.group(2), match.group(3))
+
+required = ["before-open:clip", "open:clip", "switch:audio", "closed"]
+missing = [state for state in required if state not in states]
+if missing:
+    raise SystemExit("Missing bottom-sheet geometry markers: " + ", ".join(missing))
+baseline = states["before-open:clip"]
+for state in required[1:]:
+    if states[state] != baseline:
+        raise SystemExit(
+            f"Editor layout moved during {state}: baseline={baseline}, observed={states[state]}"
+        )
+print("PASS: preview and timeline bounds/positions stayed identical while the bottom sheet opened, switched tools and closed.")
+PY
+
+echo "Step 9/12: align a thumbnail cell with the playhead and compare the rendered pixels"
 # HorizontalScrollView consumes touch slop before scrolling. Re-measure after
 # every drag and add the measured 12px touch-slop allowance so the cell center
 # actually reaches the fixed playhead instead of stopping short.
