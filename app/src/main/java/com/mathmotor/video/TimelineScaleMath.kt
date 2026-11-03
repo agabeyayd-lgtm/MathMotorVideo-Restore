@@ -154,6 +154,7 @@ internal object TimelineScaleMath {
             val seconds = totalSeconds % 60L
             return "%02d:%02d".format(java.util.Locale.US, minutes, seconds)
         }
+        if (safeMs % 1_000L != 0L) return formatRulerTime(safeMs)
         val totalSeconds = safeMs / 1_000L
         val minutes = totalSeconds / 60L
         val seconds = totalSeconds % 60L
