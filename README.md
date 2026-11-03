@@ -1,9 +1,24 @@
+## Canonical project checkpoint — 2026-11-03
+
+**User acceptance:** the user installed and tested the debug ZIP produced by GitHub Actions run [#754](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41710927696) on a physical Android phone. The user confirmed that the editor structure works and approved this implementation as the foundation for subsequent incremental work.
+
+**Verified CI scope:** run #754 completed successfully on commit `7be6fade1def349e72649407c5c77790421214f0`. It ran `testDebugUnitTest`, `assembleDebug`, packaged the debug APK ZIP, and completed the API 35 emulator flow. The emulator flow exercised the compact `Düzenle` tool strip, `Kırp` detail, `Ses düzeyi` detail, return-to-strip and return-to-main-dock transitions, plus preview/timeline geometry assertions. This is evidence for the tested editor shell and navigation, not blanket acceptance of every feature listed in older checkpoints.
+
+**Mainline status:** PR #18 is ready for review and approved by the user as the implementation base. Integration with the two later documentation-only commits on `main` is being prepared; do not describe the PR as merged until GitHub confirms it.
+
+**Release boundary:** keep versionCode 394 / Build 61 unchanged. Run #754 produced a debug test ZIP, not a signed production release. Do not create version 395, publish a release, or activate the in-app updater until mainline integration, signing/package compatibility, and a controlled update/install test are separately verified.
+
+**Still not covered by the #754 acceptance:** full physical-device verification of clip reorder, cover-image saving/generation, thumbnail fill performance, image/video overlays, compositing/export, and all media edge cases. Preserve these as distinct open checks; do not treat acceptance of the editor structure as acceptance of those features.
+
+---
+
 # MathMotor Video
+
 ## Active implementation checkpoint — 2026-11-02 (latest user-approved batch)
 
 **Working branch:** `feature/capcut-layout-recompose`  
 **Latest code-change SHA:** `8a96bb8d48d4a6a6ad9d7805ed4b550e7da5e8bc`  
-**Review:** existing draft PR #18; main is unchanged. Installed/release baseline remains versionCode 394 / Build 61. Do not create 395, sign, publish, merge, or produce an updater release without explicit approval.
+**Review:** PR #18 is ready for review; user approved this implementation as the mainline foundation after physical-device testing of run #754. Mainline merge is pending; versionCode 394 / Build 61 remains unchanged. Do not publish a signed release or activate the updater as part of this merge.
 
 ### Implemented in source; verification pending
 
@@ -17,12 +32,12 @@
 
 ### Explicit limitations and verification boundary
 
-- **No successful build or test result exists for the latest source head.** GitHub Actions has no check run for `9468493`; the most recent green workflow runs are for older SHA `c72542a`, before this batch, so they do not validate these changes. No APK has been built or verified from this source head.
+- **Superseded by run #754:** GitHub Actions run [#754](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41710927696) succeeded on `7be6fade1def349e72649407c5c77790421214f0`, including unit tests, debug APK build/ZIP packaging and the API 35 emulator interaction workflow. The user also installed and tested that ZIP on a physical phone and accepted the editor structure. Earlier failed runs and older SHA results remain historical, not the status of this tested head.
 - No emulator or physical-phone acceptance has been completed for drag reorder, poster latency, cover save, multi-input preview, seek/scrub, or MP4 overlay output.
 - Media3 `VideoCompositorSettings` is a beta API. Multi-input preview, overlay order/transparency, image and video rendering, seek stability, and export output must be validated before treating the feature as complete. [Media3 VideoCompositorSettings guide](https://developer.android.com/media/media3/transformer/videocompositorsettings), [CompositionPlayer.Builder API](https://developer.android.com/reference/androidx/media3/transformer/CompositionPlayer.Builder), [MultipleInputVideoGraph.Factory API](https://developer.android.com/reference/androidx/media3/effect/MultipleInputVideoGraph.Factory)
 - Overlay source in-point trimming is not yet exposed as a user control; current video overlays start from source time zero. Timeline text/audio layers also remain absolute project-time layers and are not automatically attached to a reordered main-video clip.
 - Thumbnail performance beyond the provisional first-cell poster remains open; collect device timings before changing decoder or thread strategy.
-- PR #18 remains a draft and unmerged. Do not interpret source presence as acceptance or release readiness.
+- PR #18 is ready for review and remains unmerged until the merge commit and GitHub result are confirmed. The editor shell has user acceptance; this does not imply release readiness.
 
 ## New editor layout target — CapCut-inspired mobile arrangement (2026-11-02)
 
@@ -36,7 +51,7 @@
 - Added the horizontally scrollable seven-tool dock in the requested order. Existing Düzenle, Ses, Metin, and Proje destinations remain connected; Efektler, Bindirme, and Yazılar show Yakında.
 - Klip sesini reuses the existing source-audio mute state. Ses ekle and Metin ekle open their existing panels. Selected-clip actions and trim controls remain in the existing contextual clip panel; undo/redo remain in the playback row.
 - **Verification:** no-APK workflow run [#2 passed](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41450804106). compileDebugKotlin, compileDebugUnitTestKotlin, and testDebugUnitTest passed. The workflow did not run assembleDebug, package an APK, or upload an artifact. The temporary test workflow was removed after the run.
-- **Not yet accepted:** no emulator screenshot/layout review, keyboard/inset test, smaller-screen test, interaction regression run, or physical-phone acceptance has been performed. All layout acceptance checkboxes below remain open.
+- **Historical checkpoint:** the initial layout implementation had not yet been accepted. That status was superseded for the tested editor shell by the successful #754 emulator workflow and the user's 2026-11-03 physical-phone acceptance. Keyboard/inset and compact-screen regression checks remain separate open checks.
 - Tested source commit: 4ec9cf5a6eeb2af16dac42bd5f583b25a4cbcbbd. Temporary workflow removal commit: 7f5be8ff47868039158749602112c2aee3a5a681. Main remains at 4d83ba84551e82b704953209fb7427bc4af0d544.
 
 ### Non-negotiable scope
@@ -107,7 +122,7 @@
 - PR-head verification passed: Verify Android build #452, APK build #488, and API 35 emulator screenshot/editor verification #669 (source commit `934d9011c8afd65e4764a39b2411a50cd216047d`; same app source tree as the merge).
 - Emulator checks confirmed APK installation, home/editor opening, deterministic video load, thumbnail/preview frame agreement at 211 ms, forward/reverse filmstrip scrubbing, live playback synchronization (16 samples; two synchronized lanes; fixed playhead at screen center), and draft autosave/resume navigation.
 - The initial emulator attempt was blocked by a Nexus Launcher system ANR, not a MathMotor app ANR. The harness was corrected to close the stalled launcher only; the successful #669 run then completed.
-- The automated emulator run is not a physical-phone acceptance test. Confirm installation and touch behavior on the user's phone separately.
+- The automated emulator run is not a physical-phone acceptance test. Separately, the user confirmed installation and editor-structure touch behavior on the phone using the #754 debug ZIP on 2026-11-03.
 - Keep the installed baseline at **versionCode 394 / Build 61**. Version 395 remains blocked; do not change version metadata or publish a release without the user's explicit authorization and completion of the release checklist.
 
 ## Mainline verification update — 2026-11-02 (runs #441, #688 and #489)
@@ -495,7 +510,7 @@ Physical-device feedback from debug build #555:
 - Tapping the main `Düzenle` dock item now swaps the global dock for one compact horizontal clip-tool strip at the bottom. The main editor dock is restored with the strip's Back control.
 - The strip contains implemented clip actions: Kırp, Ses düzeyi, Böl, Kapak and Sil. Kırp and Ses düzeyi open a second-level detail panel above the strip; the detail panel has an explicit return-to-tools control. Direct actions remain on the strip.
 - The two-level transition is designed as a bottom-anchored overlay. The preview and timeline remain mounted underneath; the existing ruler, filmstrip, shared playhead and time scale are not intentionally changed by the dock transition.
-- The emulator UI test now exercises main dock → clip strip → volume detail → clip strip → main dock and compares preview/timeline geometry at each step. Build/unit/emulator verification on the latest head is pending.
+- The emulator UI test exercises main dock → clip strip → trim detail → clip strip → volume detail → clip strip → main dock and compares preview/timeline geometry at each step. This passed in run #754 on `7be6fade1def349e72649407c5c77790421214f0`; the user separately confirmed the editor structure works on a physical phone.
 
 ### Emulator selector correction — 2026-11-03
 
