@@ -2067,7 +2067,7 @@ class VideoEditorActivity : Activity() {
         val tools = listOf(
             Triple("‹", "Geri", "Ana araçlara dön"),
             Triple("⌁", "Kırp", "Kırpma ayarlarını aç"),
-            Triple("♫", "Ses düzeyi", "Seçili klibin ses düzeyini ayarla"),
+            Triple("♫", "Ses düzeyi", "Orijinal video sesini ayarla"),
             Triple("✂", "Böl", "Seçili klibi oynatma çizgisinde böl"),
             Triple("▧", "Kapak", "Seçili klibin kapak karesini seç"),
             Triple("▤", "Sil", "Seçili klibi sil")
