@@ -1,3 +1,11 @@
+## Restored keyframe timestamp normalization — 2026-11-04
+
+- Added a defensive normalization pass for overlay keyframes: when a restored or manually edited project contains multiple entries at the same local timestamp, the last saved entry is authoritative. New keyframe writes also clean up duplicate timestamps before inserting.
+- Added a focused regression test for duplicate timestamps. This avoids an immediate interpolation discontinuity at malformed duplicate keyframe positions.
+- Source commits: 40d87b8 (normalization) and 3f62856 (test). Verification remains static only; the new and existing unit tests have not been executed, and no build/emulator result or APK is available for this branch head.
+
+---
+
 ## Overlay trim source-boundary correction — 2026-11-04
 
 - Static review found that the Bindirme duration control used the full video source duration even after the left edge had been trimmed. For example, a 10-second source trimmed to start at 2 seconds could still be assigned a 10-second overlay duration, making the export clip request run past the source end.
