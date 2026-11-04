@@ -3460,9 +3460,17 @@ class VideoEditorActivity : Activity() {
                     val minimum = minOf(500L, oldDuration)
                     val lower = -minOf(oldStart, if (overlay.isImage) oldStart else overlay.sourceStartMs)
                     val shift = deltaMs.coerceIn(lower, (oldDuration - minimum).coerceAtLeast(0L))
+                    val newStartState = overlayStateAtTime(overlay, oldStart + shift)
                     overlay.timelineStartMs = oldStart + shift
                     overlay.durationMs = oldDuration - shift
                     if (!overlay.isImage) overlay.sourceStartMs = (overlay.sourceStartMs + shift).coerceAtLeast(0L)
+                    if (overlay.keyframes.isNotEmpty()) {
+                        val rebased = OverlayKeyframeMath.rebaseAfterStartTrim(
+                            overlay.keyframes, shift, overlay.durationMs, newStartState
+                        )
+                        overlay.keyframes.clear()
+                        overlay.keyframes.addAll(rebased)
+                    }
                     selectedOverlayId = overlay.id
                     timelinePlayheadMs = overlay.timelineStartMs
                     enterOverlayTools()
