@@ -407,12 +407,17 @@ internal object TimelineVideoMath {
         val safe = normalize(segment)
         if (safe.durationMs <= 0L) return safe
         val minimum = minimumDurationMs.coerceAtLeast(1L).coerceAtMost(safe.durationMs)
-        val delta = deltaMs.coerceIn(
-            -minOf(safe.timelineStartMs, safe.sourceStartMs),
-            (safe.durationMs - minimum).coerceAtLeast(0L)
+        val lowerSourceDelta = -minOf(
+            safe.sourceStartMs,
+            ClipSpeedMath.sourceOffsetMs(safe.timelineStartMs, safe.speed)
         )
+        val maximumSourceDelta = ClipSpeedMath.sourceOffsetMs(
+            (safe.durationMs - ClipSpeedMath.timelineDurationMs(minimum, safe.speed)).coerceAtLeast(0L),
+            safe.speed
+        )
+        val delta = deltaMs.coerceIn(lowerSourceDelta, maximumSourceDelta)
         return safe.copy(
-            timelineStartMs = safe.timelineStartMs + delta,
+            timelineStartMs = safe.timelineStartMs + ClipSpeedMath.timelineOffsetMs(delta, safe.speed),
             sourceStartMs = safe.sourceStartMs + delta
         )
     }
