@@ -1434,9 +1434,9 @@ class VideoEditorActivity : Activity() {
 
         val overlayPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         overlayPanel.addView(label("GÖRSEL / VİDEO BİNDİRME", 13f, Color.rgb(121, 202, 218), true))
-        overlayPanel.addView(label("Önizlemede tek parmakla taşı; iki parmakla büyüt ve döndür.", 11f, Color.rgb(154, 171, 190), false))
+        overlayPanel.addView(label("Logo seçtiğinde tüm video boyunca sağ üstte başlar. Önizlemede sürükleyebilir, iki parmakla boyutunu değiştirebilirsin.", 11f, Color.rgb(154, 171, 190), false))
         val overlayActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        overlayActions.addView(miniButton("＋ Fotoğraf") { chooseOverlayAsset(imagesOnly = true) },
+        overlayActions.addView(miniButton("＋ Logo / Fotoğraf") { chooseOverlayAsset(imagesOnly = true) },
             LinearLayout.LayoutParams(0, dp(42), 1f))
         overlayActions.addView(miniButton("＋ Video") { chooseOverlayAsset(imagesOnly = false) },
             LinearLayout.LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(4) })
@@ -5683,15 +5683,14 @@ class VideoEditorActivity : Activity() {
                     return@runOnUiThread
                 }
                 val projectDuration = TimelineVideoMath.totalDuration(videoTimelineSegments()).coerceAtLeast(1_000L)
-                val startMs = timelinePlayheadMs.coerceIn(0L, projectDuration - 1L)
-                // Still images used as logos should cover the remaining project by default.
-                // Give them a virtual source duration long enough for the whole timeline.
-                val effectiveSourceDuration = if (isImage) maxOf(sourceDuration, projectDuration) else sourceDuration
-                val defaultDuration = if (isImage) {
-                    (projectDuration - startMs).coerceAtLeast(1L)
-                } else {
-                    minOf(sourceDuration, (projectDuration - startMs).coerceAtLeast(1_000L))
-                }
+                val logoDefaults = if (isImage) OverlayAssetDefaultsMath.imageLogo(projectDuration) else null
+                // A logo begins at project time zero and spans the entire main video,
+                // regardless of the current playhead. Video overlays still start at the playhead.
+                val startMs = if (logoDefaults != null) 0L
+                    else timelinePlayheadMs.coerceIn(0L, projectDuration - 1L)
+                val effectiveSourceDuration = logoDefaults?.sourceDurationMs ?: sourceDuration
+                val defaultDuration = logoDefaults?.durationMs
+                    ?: minOf(sourceDuration, (projectDuration - startMs).coerceAtLeast(1_000L))
                 val overlay = OverlayClip(
                     id = nextOverlayId++,
                     uri = uri,
@@ -5701,10 +5700,10 @@ class VideoEditorActivity : Activity() {
                     sourceStartMs = 0L,
                     timelineStartMs = startMs,
                     durationMs = defaultDuration.coerceIn(1L, effectiveSourceDuration),
-                    scale = if (isImage) 0.18f else 0.35f,
-                    xFraction = if (isImage) 0.88f else 0.78f,
-                    yFraction = if (isImage) 0.12f else 0.22f,
-                    opacity = if (isImage) 0.88f else 1f
+                    scale = logoDefaults?.scale ?: 0.35f,
+                    xFraction = logoDefaults?.xFraction ?: 0.78f,
+                    yFraction = logoDefaults?.yFraction ?: 0.22f,
+                    opacity = logoDefaults?.opacity ?: 1f
                 )
                 overlayClips.add(overlay)
                 selectedOverlayId = overlay.id
