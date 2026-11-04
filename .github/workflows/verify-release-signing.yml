@@ -182,64 +182,49 @@ jobs:
             return 1
           }
 
-          matched=0
-          configured=0
-
+          # Match the exact precedence used by publish-apk.yml. The publisher
+          # never falls back to legacy secrets when the bundle secret is present.
           if [ -n "$MMV_SIGNING_BUNDLE_B64" ]; then
-            configured=$((configured + 1))
+            echo "Publisher-selected signing source: MMV_SIGNING_BUNDLE_B64"
             bundle_dir="$RUNNER_TEMP/mmv-signing-bundle"
             mkdir -p "$bundle_dir"
-            if printf '%s' "$MMV_SIGNING_BUNDLE_B64" | base64 --decode > "$bundle_dir/bundle.zip" \
-              && unzip -oq "$bundle_dir/bundle.zip" -d "$bundle_dir" \
-              && test -s "$bundle_dir/release.p12" \
-              && test -s "$bundle_dir/keystore.properties"; then
-              normalize_properties "$bundle_dir/keystore.properties"
-              if try_candidate "MMV_SIGNING_BUNDLE_B64" "$bundle_dir/keystore.properties"; then
-                matched=1
-              fi
-            else
-              echo "::warning::MMV_SIGNING_BUNDLE_B64 is configured but its expected files could not be restored."
-              echo "- MMV_SIGNING_BUNDLE_B64: RESTORE FAILED" >> "$GITHUB_STEP_SUMMARY"
+            if ! printf '%s' "$MMV_SIGNING_BUNDLE_B64" | base64 --decode > "$bundle_dir/bundle.zip" \
+              || ! unzip -oq "$bundle_dir/bundle.zip" -d "$bundle_dir" \
+              || [ ! -s "$bundle_dir/release.p12" ] \
+              || [ ! -s "$bundle_dir/keystore.properties" ]; then
+              echo "::error::The publisher-selected MMV_SIGNING_BUNDLE_B64 could not be restored."
+              exit 1
             fi
-          else
-            echo "MMV_SIGNING_BUNDLE_B64: not configured"
-            echo "- MMV_SIGNING_BUNDLE_B64: not configured" >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-          if [ -n "$ANDROID_KEYSTORE_BASE64" ] && [ -n "$ANDROID_KEYSTORE_PASSWORD" ] \
+            normalize_properties "$bundle_dir/keystore.properties"
+            if ! try_candidate "MMV_SIGNING_BUNDLE_B64 (publisher-selected)" "$bundle_dir/keystore.properties"; then
+              echo "::error::The signing bundle selected by the publisher does not match the published 395 certificate."
+              exit 1
+            fi
+          elif [ -n "$ANDROID_KEYSTORE_BASE64" ] && [ -n "$ANDROID_KEYSTORE_PASSWORD" ] \
             && [ -n "$ANDROID_KEY_ALIAS" ] && [ -n "$ANDROID_KEY_PASSWORD" ]; then
-            configured=$((configured + 1))
+            echo "Publisher-selected signing source: ANDROID_KEYSTORE_*"
             legacy_dir="$RUNNER_TEMP/mmv-signing-legacy"
             mkdir -p "$legacy_dir"
-            if printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$legacy_dir/release.p12"; then
-              {
-                printf 'storeFile=release.p12\n'
-                printf 'storeType=PKCS12\n'
-                printf 'storePassword=%s\n' "$ANDROID_KEYSTORE_PASSWORD"
-                printf 'keyAlias=%s\n' "$ANDROID_KEY_ALIAS"
-                printf 'keyPassword=%s\n' "$ANDROID_KEY_PASSWORD"
-              } > "$legacy_dir/keystore.properties"
-              normalize_properties "$legacy_dir/keystore.properties"
-              if try_candidate "ANDROID_KEYSTORE_*" "$legacy_dir/keystore.properties"; then
-                matched=1
-              fi
-            else
-              echo "::warning::ANDROID_KEYSTORE_* is configured but its keystore could not be decoded."
-              echo "- ANDROID_KEYSTORE_*: RESTORE FAILED" >> "$GITHUB_STEP_SUMMARY"
+            if ! printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$legacy_dir/release.p12"; then
+              echo "::error::The publisher-selected legacy keystore could not be decoded."
+              exit 1
+            fi
+            {
+              printf 'storeFile=release.p12\\n'
+              printf 'storeType=PKCS12\\n'
+              printf 'storePassword=%s\\n' "$ANDROID_KEYSTORE_PASSWORD"
+              printf 'keyAlias=%s\\n' "$ANDROID_KEY_ALIAS"
+              printf 'keyPassword=%s\\n' "$ANDROID_KEY_PASSWORD"
+            } > "$legacy_dir/keystore.properties"
+            normalize_properties "$legacy_dir/keystore.properties"
+            if ! try_candidate "ANDROID_KEYSTORE_* (publisher-selected)" "$legacy_dir/keystore.properties"; then
+              echo "::error::The legacy signing source selected by the publisher does not match the published 395 certificate."
+              exit 1
             fi
           else
-            echo "ANDROID_KEYSTORE_*: not fully configured"
-            echo "- ANDROID_KEYSTORE_*: not fully configured" >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-          if [ "$configured" -eq 0 ]; then
-            echo "::error::No release signing secret source is configured."
-            exit 1
-          fi
-          if [ "$matched" -ne 1 ]; then
-            echo "::error::No configured signing source matches the published 395 certificate. Do not uninstall the debug app or publish an update."
+            echo "::error::No complete publisher-supported release signing source is configured."
             exit 1
           fi
 
-          echo "At least one configured signing source matches the published 395 certificate. No release was published."
-          echo "- Overall result: MATCH" >> "$GITHUB_STEP_SUMMARY"
+          echo "The exact signing source selected by the publisher matches the published 395 certificate. No release was published."
+          echo "- Overall result: MATCH (publisher-selected source)" >> "$GITHUB_STEP_SUMMARY"
