@@ -1093,21 +1093,28 @@ class VideoEditorActivity : Activity() {
         clipSpeedLabel = label("Hız: 1.00×", 12f, Color.WHITE, true)
         clipPanel.addView(clipSpeedLabel)
         val clipSpeedPresets = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        listOf(0.5f, 1f, 2f, 4f).forEach { preset ->
+        listOf(0.1f, 0.25f, 0.5f, 1f, 2f, 4f, 10f, 100f).forEach { preset ->
             clipSpeedPresets.addView(miniButton("${preset}×") { setSelectedClipSpeed(preset) },
-                LinearLayout.LayoutParams(0, dp(40), 1f).apply {
-                    if (preset != 0.5f) leftMargin = dp(4)
+                LinearLayout.LayoutParams(dp(58), dp(40)).apply {
+                    if (preset != 0.1f) leftMargin = dp(4)
                 })
         }
-        clipPanel.addView(clipSpeedPresets)
+        val clipSpeedPresetScroll = android.widget.HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            addView(clipSpeedPresets)
+        }
+        clipPanel.addView(clipSpeedPresetScroll, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(42)
+        ))
         clipSpeedSeek = SeekBar(this).apply {
             max = 100
-            progress = 50
+            progress = 33
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                     if (!fromUser || updatingClipSpeedControl) return
                     selectedClip()?.let { clip ->
-                        clip.speed = Math.pow(10.0, progress / 50.0 - 1.0).toFloat()
+                        clip.speed = Math.pow(10.0, progress / 100.0 * 3.0 - 1.0).toFloat()
                         clipSpeedLabel.text = "Hız: ${"%.2f".format(Locale.US, clip.speed)}×"
                     }
                 }
@@ -8296,7 +8303,7 @@ class VideoEditorActivity : Activity() {
             } else {
                 clipSpeedSeek.isEnabled = true
                 val speed = ClipSpeedMath.normalize(clip.speed)
-                clipSpeedSeek.progress = ((Math.log10(speed.toDouble()) + 1.0) * 50.0)
+                clipSpeedSeek.progress = (((Math.log10(speed.toDouble()) + 1.0) / 3.0) * 100.0)
                     .toInt().coerceIn(0, 100)
                 clipSpeedLabel.text = "Hız: ${"%.2f".format(Locale.US, speed)}×"
             }
