@@ -6867,10 +6867,35 @@ class VideoEditorActivity : Activity() {
         fun centroidY(event: android.view.MotionEvent): Float =
             if (event.pointerCount >= 2) (event.getY(0) + event.getY(1)) / 2f else event.y
 
+        fun isInsideSelectedOverlay(view: View, x: Float, y: Float): Boolean {
+            val overlay = selectedOverlay() ?: return false
+            val (canvasWidth, _) = overlayCanvasSize()
+            val state = overlayStateAtTime(overlay, timelinePlayheadMs)
+            val centerX = (view.width - canvasWidth) / 2f + state.xFraction * canvasWidth
+            val centerY = (view.height - overlayCanvasSize().second) / 2f +
+                state.yFraction * overlayCanvasSize().second
+            val dx = x - centerX
+            val dy = y - centerY
+            val radians = Math.toRadians(state.rotationDegrees.toDouble())
+            val localX = dx * kotlin.math.cos(radians).toFloat() +
+                dy * kotlin.math.sin(radians).toFloat()
+            val localY = -dx * kotlin.math.sin(radians).toFloat() +
+                dy * kotlin.math.cos(radians).toFloat()
+            val aspect = overlay.aspectRatio.coerceIn(0.10f, 10f)
+            val halfWidth = canvasWidth * state.scale / 2f
+            val halfHeight = canvasWidth / aspect * state.scale / 2f
+            val tolerance = dp(16).toFloat()
+            return kotlin.math.abs(localX) <= halfWidth + tolerance &&
+                kotlin.math.abs(localY) <= halfHeight + tolerance
+        }
+
         overlayTransformTouchOverlay.setOnTouchListener { view, event ->
             when (event.actionMasked) {
                 android.view.MotionEvent.ACTION_DOWN -> {
                     val overlay = selectedOverlay() ?: return@setOnTouchListener false
+                    if (!isInsideSelectedOverlay(view, event.x, event.y)) {
+                        return@setOnTouchListener false
+                    }
                     gestureOverlay = overlay
                     pauseActivePreview()
                     downX = event.x
