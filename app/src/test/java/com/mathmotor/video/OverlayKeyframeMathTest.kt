@@ -30,6 +30,18 @@ class OverlayKeyframeMathTest {
     }
 
     @Test
+    fun duplicateStoredTimestampsUseTheLastSavedKeyframe() {
+        val alternate = OverlayTransformState(0.9f, 0.9f, 0.1f, 45f, 0.7f)
+        val frames = listOf(
+            OverlayTransformKeyframe(0L, start),
+            OverlayTransformKeyframe(1_000L, end),
+            OverlayTransformKeyframe(1_000L, alternate)
+        )
+
+        assertEquals(alternate, OverlayKeyframeMath.stateAt(start, frames, 1_000L))
+    }
+
+    @Test
     fun upsertReplacesAnExistingTimestampWithoutDuplicating() {
         val frames = listOf(OverlayTransformKeyframe(1_000L, start))
         val updated = OverlayKeyframeMath.upsert(frames, OverlayTransformKeyframe(1_000L, end))
