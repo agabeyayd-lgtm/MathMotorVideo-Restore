@@ -113,7 +113,8 @@ class VideoEditorActivity : Activity() {
         var xFraction: Float = 0.78f,
         var yFraction: Float = 0.22f,
         var rotationDegrees: Float = 0f,
-        var opacity: Float = 1f
+        var opacity: Float = 1f,
+        val keyframes: MutableList<OverlayTransformKeyframe> = mutableListOf()
     )
 
     private data class ClipEditSnapshot(
@@ -462,6 +463,7 @@ class VideoEditorActivity : Activity() {
     private lateinit var overlayPositionLabel: TextView
     private lateinit var overlayRotationLabel: TextView
     private lateinit var overlayOpacityLabel: TextView
+    private lateinit var overlayKeyframeLabel: TextView
     private lateinit var overlayStartSeek: SeekBar
     private lateinit var overlayDurationSeek: SeekBar
     private lateinit var overlayScaleSeek: SeekBar
@@ -1570,6 +1572,14 @@ class VideoEditorActivity : Activity() {
         overlayPanel.addView(overlayOpacityLabel)
         overlayOpacitySeek = SeekBar(this).apply { max = 1000; progress = 1000 }
         overlayPanel.addView(overlayOpacitySeek, matchWrap())
+        overlayKeyframeLabel = label("Anahtar kare: 0", 11f, Color.rgb(205, 218, 231), false)
+        overlayPanel.addView(overlayKeyframeLabel)
+        val overlayKeyframeActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        overlayKeyframeActions.addView(miniButton("◆ Kare ekle") { addOverlayKeyframeAtPlayhead() },
+            LinearLayout.LayoutParams(0, dp(42), 1f))
+        overlayKeyframeActions.addView(miniButton("Kareyi sil") { removeOverlayKeyframeAtPlayhead() },
+            LinearLayout.LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(4) })
+        overlayPanel.addView(overlayKeyframeActions)
         installOverlayControlListeners()
         installVideoFilterListeners()
         loadVideoFilterControls()
