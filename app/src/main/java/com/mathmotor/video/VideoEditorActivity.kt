@@ -5900,8 +5900,12 @@ class VideoEditorActivity : Activity() {
             }
         }
 
-        val videoIsPlaying = player?.isPlaying == true &&
-            (timelinePreviewLoaded || previewSingleClip) && !exporting
+        // Multi-clip playback is driven by CompositionPlayer, not the legacy single-clip ExoPlayer.
+        // Keep music/effects clocked to whichever preview player is actually active.
+        val videoIsPlaying = !exporting && (
+            (timelinePreviewLoaded && timelineCompositionPlayer?.isPlaying == true) ||
+                (previewSingleClip && player?.isPlaying == true)
+            )
         val outputTimeMs = timelinePlayheadMs.coerceAtLeast(0L)
 
         musicPreviewPlayer?.let { music ->
