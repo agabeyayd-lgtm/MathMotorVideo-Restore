@@ -6781,6 +6781,19 @@ class VideoEditorActivity : Activity() {
         updateOverlaySelectionChrome()
     }
 
+    private fun overlayCanvasSize(): Pair<Float, Float> {
+        val activeIndex = activeClipIndexAt(timelinePlayheadMs)
+        val mainClip = clips.getOrNull(activeIndex ?: selectedClipIndex) ?: clips.firstOrNull()
+        val aspect = mainClip?.let { timelineVideoAspectRatio(it.uri) }
+            ?.takeIf { it.isFinite() && it > 0f }
+            ?: TimelineThumbnailMath.DEFAULT_SOURCE_ASPECT_RATIO
+        val stageWidth = previewFrame.width.toFloat().coerceAtLeast(1f)
+        val stageHeight = previewFrame.height.toFloat().coerceAtLeast(1f)
+        val width = minOf(stageWidth, stageHeight * aspect).coerceAtLeast(1f)
+        val height = minOf(stageHeight, stageWidth / aspect).coerceAtLeast(1f)
+        return width to height
+    }
+
     private fun updateOverlaySelectionChrome() {
         if (!::overlaySelectionFrame.isInitialized || !::previewFrame.isInitialized) return
         val overlay = selectedOverlay()
@@ -6796,14 +6809,7 @@ class VideoEditorActivity : Activity() {
             overlaySelectionFrame.visibility = View.GONE
             return
         }
-        val activeIndex = activeClipIndexAt(timelinePlayheadMs)
-        val mainClip = clips.getOrNull(activeIndex ?: selectedClipIndex)
-        val mainAspect = mainClip?.let { timelineVideoAspectRatio(it.uri) }
-            ?: TimelineThumbnailMath.DEFAULT_SOURCE_ASPECT_RATIO
-        val stageWidth = previewFrame.width.toFloat()
-        val stageHeight = previewFrame.height.toFloat()
-        val canvasWidth = minOf(stageWidth, stageHeight * mainAspect).coerceAtLeast(1f)
-        val canvasHeight = minOf(stageHeight, stageWidth / mainAspect).coerceAtLeast(1f)
+        val (canvasWidth, canvasHeight) = overlayCanvasSize()
         val overlayAspect = overlay.aspectRatio.takeIf { it.isFinite() && it > 0f }
             ?.coerceIn(0.10f, 10f) ?: 1f
         val frameWidth = canvasWidth.toInt().coerceAtLeast(dp(12))
