@@ -1,6 +1,6 @@
 ## PR #22 continuation state — 2026-11-04
 
-- Latest GitHub comparison: `feature/logo-watermark-overlay-verify` is **98 commits ahead and 4 behind `main`**, with 22 changed files. It remains divergent and is not ready to merge. `main` was not modified.
+- Latest GitHub comparison: `feature/logo-watermark-overlay-verify` is **100 commits ahead and 4 behind `main`**, with 22 changed files. It remains divergent and is not ready to merge. `main` was not modified.
 - No workflow runs or combined commit statuses are currently returned for the newly updated source commits. Unit tests, Gradle compilation, emulator checks and physical-device validation therefore remain **unverified**. No APK was created.
 - The current source-head fixes are limited to keyframed overlay gesture anchoring, source-range-safe overlay duration, and last-saved-wins normalization for duplicate overlay keyframe timestamps. Their regression tests are committed but not yet executed.
 - The Android emulator workflow is configured for PR synchronization on source changes, but the GitHub connection available to this session has no workflow-dispatch/start action. Do not report a run as started; use the repository's Actions page to manually dispatch `Android emulator screenshots` if no PR synchronization run appears.
