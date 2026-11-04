@@ -6869,11 +6869,11 @@ class VideoEditorActivity : Activity() {
 
         fun isInsideSelectedOverlay(view: View, x: Float, y: Float): Boolean {
             val overlay = selectedOverlay() ?: return false
-            val (canvasWidth, _) = overlayCanvasSize()
+            val (canvasWidth, canvasHeight) = overlayCanvasSize()
             val state = overlayStateAtTime(overlay, timelinePlayheadMs)
             val centerX = (view.width - canvasWidth) / 2f + state.xFraction * canvasWidth
-            val centerY = (view.height - overlayCanvasSize().second) / 2f +
-                state.yFraction * overlayCanvasSize().second
+            val centerY = (view.height - canvasHeight) / 2f +
+                state.yFraction * canvasHeight
             val dx = x - centerX
             val dy = y - centerY
             val radians = Math.toRadians(state.rotationDegrees.toDouble())
