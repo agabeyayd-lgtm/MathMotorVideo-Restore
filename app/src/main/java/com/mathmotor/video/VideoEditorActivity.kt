@@ -4355,9 +4355,13 @@ class VideoEditorActivity : Activity() {
             if(active==null)builder.addGap(span*1000L)
             else{
                 val clip=clips[active]
-                val localStart=(from-clip.timelineStartMs).coerceAtLeast(0L)
-                val localEnd=(to-clip.timelineStartMs).coerceAtMost((clip.endMs-clip.startMs).coerceAtLeast(0L))
-                builder.addItem(buildClipSegment(clip,localStart,localEnd))
+                val localStart = ClipSpeedMath.sourceOffsetMs(
+                    (from - clip.timelineStartMs).coerceAtLeast(0L), clip.speed
+                )
+                val localEnd = ClipSpeedMath.sourceOffsetMs(
+                    (to - clip.timelineStartMs).coerceAtLeast(0L), clip.speed
+                ).coerceAtMost((clip.endMs - clip.startMs).coerceAtLeast(0L))
+                if (localEnd > localStart) builder.addItem(buildClipSegment(clip, localStart, localEnd))
             }
         }
         return builder.build()
@@ -7285,11 +7289,13 @@ class VideoEditorActivity : Activity() {
                             view.translationX = 0f
                             view.parent?.requestDisallowInterceptTouchEvent(false)
                             if (moved) {
-                                val initial=TimelineVideoSegment(clip.timelineStartMs,initialStartMs,initialEndMs,clip.durationMs)
+                                val initial=TimelineVideoSegment(clip.timelineStartMs,initialStartMs,initialEndMs,clip.durationMs,clip.speed)
+                                val sourceDeltaMs = ClipSpeedMath.sourceOffsetMs(kotlin.math.abs(deltaMs), clip.speed) *
+                                    if (deltaMs < 0L) -1L else 1L
                                 val updated=if(isStart && initial.timelineStartMs==0L)
-                                    TimelineVideoMath.trimStartKeepingTimelinePosition(initial,deltaMs)
-                                else if(isStart) TimelineVideoMath.trimStart(initial,deltaMs)
-                                else TimelineVideoMath.trimEnd(initial,deltaMs)
+                                    TimelineVideoMath.trimStartKeepingTimelinePosition(initial,sourceDeltaMs)
+                                else if(isStart) TimelineVideoMath.trimStart(initial,sourceDeltaMs)
+                                else TimelineVideoMath.trimEnd(initial,sourceDeltaMs)
                                 if(updated!=initial){
                                     clip.startMs=updated.sourceStartMs;clip.endMs=updated.sourceEndMs
                                     // Trimming source footage must not move a clip already anchored at project time zero.
@@ -7480,7 +7486,8 @@ class VideoEditorActivity : Activity() {
             clip.timelineStartMs,
             clip.startMs,
             clip.endMs,
-            clip.durationMs
+            clip.durationMs,
+            clip.speed
         )
         val sourceTimeMs = TimelineVideoMath.sourceTimeAtProjectTime(segment, safeProjectTimeMs)
             ?: return
@@ -8353,7 +8360,7 @@ class VideoEditorActivity : Activity() {
 
 
     private fun videoTimelineSegments(): List<TimelineVideoSegment> =
-        clips.map { TimelineVideoSegment(it.timelineStartMs,it.startMs,it.endMs,it.durationMs) }
+        clips.map { TimelineVideoSegment(it.timelineStartMs,it.startMs,it.endMs,it.durationMs,it.speed) }
 
     private fun activeClipIndexAt(projectTimeMs:Long):Int? =
         TimelineVideoMath.activeSegmentIndexAt(videoTimelineSegments(),projectTimeMs)
@@ -8363,11 +8370,13 @@ class VideoEditorActivity : Activity() {
         val index = activeClipIndexAt(projectTimeMs) ?: return projectTimeMs
         val clip = clips.getOrNull(index) ?: return projectTimeMs
         val fps = clip.frameRate?.takeIf { it.isFinite() && it in 1.0..240.0 } ?: return projectTimeMs
-        val sourceTimeMs = clip.startMs + (projectTimeMs - clip.timelineStartMs).coerceAtLeast(0L)
+        val sourceTimeMs = clip.startMs + ClipSpeedMath.sourceOffsetMs(
+            (projectTimeMs - clip.timelineStartMs).coerceAtLeast(0L), clip.speed
+        )
         val snappedSourceMs = TimelineScaleMath.snapTimeToFrameMs(sourceTimeMs, fps)
             .coerceIn(clip.startMs, (clip.endMs - 1L).coerceAtLeast(clip.startMs))
-        return (clip.timelineStartMs + (snappedSourceMs - clip.startMs))
-            .coerceIn(clip.timelineStartMs, clip.timelineStartMs + (clip.endMs - clip.startMs))
+        return (clip.timelineStartMs + ClipSpeedMath.timelineOffsetMs(snappedSourceMs - clip.startMs, clip.speed))
+            .coerceIn(clip.timelineStartMs, clip.timelineStartMs + ClipSpeedMath.timelineDurationMs(clip.endMs - clip.startMs, clip.speed))
     }
 
     /** Older drafts did not persist FPS; read it off the original media without blocking the UI. */
@@ -8523,8 +8532,14 @@ class VideoEditorActivity : Activity() {
                 }
             )
         } else emptyList()
+        val speed = ClipSpeedMath.normalize(clip.speed)
+        val speedProvider = object : androidx.media3.common.audio.SpeedProvider {
+            override fun getSpeed(timeUs: Long): Float = speed
+            override fun getNextSpeedChangeTimeUs(timeUs: Long): Long = androidx.media3.common.C.TIME_UNSET
+        }
         return EditedMediaItem.Builder(mediaItem)
             .setDurationUs(clip.durationMs * 1000L)
+            .setSpeed(speedProvider)
             .setEffects(Effects(audio, videoEffects))
             .apply { if (!keepSourceAudio.isChecked) setRemoveAudio(true) }
             .build()
