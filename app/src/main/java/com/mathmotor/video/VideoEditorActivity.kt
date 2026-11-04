@@ -6731,10 +6731,15 @@ class VideoEditorActivity : Activity() {
                         val remaining = if (event.actionIndex == 0) 1 else 0
                         downX = event.getX(remaining)
                         downY = event.getY(remaining)
-                        downXFraction = overlay.xFraction
-                        downYFraction = overlay.yFraction
-                        downScale = overlay.scale
-                        downRotation = overlay.rotationDegrees
+                        // Keyframed overlays intentionally keep their base transform
+                        // unchanged. Re-anchor the remaining finger from the interpolated
+                        // state at the playhead, or the next one-finger move jumps back
+                        // toward the pre-animation position.
+                        val currentState = overlayStateAtTime(overlay, timelinePlayheadMs)
+                        downXFraction = currentState.xFraction
+                        downYFraction = currentState.yFraction
+                        downScale = currentState.scale
+                        downRotation = currentState.rotationDegrees
                         downDistance = 0f
                     }
                     true
