@@ -4967,7 +4967,7 @@ class VideoEditorActivity : Activity() {
             selectedClipIndex=active;refreshTimelineAfterClipChange();loadTrimControls()
         }
         updateTimelinePlayheadLabel()
-        updateOverlaySelectionChrome()
+        updateOverlayTransformTouchAvailability()
     }
     private fun syncTimelinePlayheadFromPlayer(){
         val comp=timelineCompositionPlayer?:return
@@ -4983,6 +4983,7 @@ class VideoEditorActivity : Activity() {
         }
         scrollTimelineToPlayhead()
         updateTimelinePlayheadLabel()
+        updateOverlayTransformTouchAvailability()
     }
     private fun syncSingleClipPlayheadFromPlayer(){
         val current=player?:return
@@ -6925,6 +6926,7 @@ class VideoEditorActivity : Activity() {
                         )
                     }
                     updateOverlayControlLabels(overlay)
+                    updateOverlaySelectionChrome()
                     true
                 }
                 android.view.MotionEvent.ACTION_POINTER_UP -> {
@@ -6977,10 +6979,14 @@ class VideoEditorActivity : Activity() {
         val originalDuration = overlay.durationMs
         val rightDuration = originalDuration - offsetMs
         val cutState = overlayStateAtTime(overlay, timelinePlayheadMs)
+        val startState = overlayStateAtTime(overlay, overlay.timelineStartMs)
         val originalFrames = overlay.keyframes.toList()
         val leftFrames = if (originalFrames.isEmpty()) emptyList() else {
             OverlayKeyframeMath.upsert(
-                originalFrames.filter { it.timeMs < offsetMs },
+                OverlayKeyframeMath.upsert(
+                    originalFrames.filter { it.timeMs < offsetMs },
+                    OverlayTransformKeyframe(0L, startState)
+                ),
                 OverlayTransformKeyframe(offsetMs, cutState)
             )
         }
