@@ -1002,29 +1002,6 @@ class VideoEditorActivity : Activity() {
             timelinePlayheadLine,
             FrameLayout.LayoutParams(dp(28), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.TOP or Gravity.START)
         )
-        val timelineAiBadge = TextView(this).apply {
-            text = "YZ"
-            textSize = 9f
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-            setTextColor(Color.rgb(205, 216, 228))
-            background = android.graphics.drawable.GradientDrawable().apply {
-                shape = android.graphics.drawable.GradientDrawable.OVAL
-                setColor(Color.rgb(27, 43, 59))
-                setStroke(dp(1), Color.rgb(47, 66, 84))
-            }
-            contentDescription = "YZ araçları — yakında"
-            setOnClickListener {
-                android.widget.Toast.makeText(this@VideoEditorActivity, "Yakında", android.widget.Toast.LENGTH_SHORT).show()
-            }
-        }
-        timelineTracksFrame.addView(
-            timelineAiBadge,
-            FrameLayout.LayoutParams(dp(30), dp(30), Gravity.BOTTOM or Gravity.START).apply {
-                leftMargin = dp(8)
-                bottomMargin = dp(3)
-            }
-        )
         timelineTracksFrame.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
             updateTimelinePlayheadLine()
         }
@@ -2520,7 +2497,7 @@ class VideoEditorActivity : Activity() {
                     contentDescription = text.toString().replace("\n", " ")
                     setOnClickListener {
                         when (tag) {
-                            "Video" -> android.widget.Toast.makeText(this@VideoEditorActivity, "Yakında", android.widget.Toast.LENGTH_SHORT).show()
+                            "Video" -> if (selectedClip() != null) showClipCoverPicker() else chooseVideo(true)
                             "Müzik", "Ses" -> showEditorPanel("audio")
                             "Metin", "Metin 1" -> showEditorPanel("text")
                         }
@@ -3085,12 +3062,10 @@ class VideoEditorActivity : Activity() {
                 background = android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
                 minWidth = dp(28)
                 minHeight = dp(28)
-                contentDescription = "Yakında"
+                contentDescription = "Videoya klip ekle"
                 isClickable = true
                 isFocusable = true
-                setOnClickListener {
-                    android.widget.Toast.makeText(this@VideoEditorActivity, "Yakında", android.widget.Toast.LENGTH_SHORT).show()
-                }
+                setOnClickListener { chooseVideo(true) }
             }
             lane.addView(addVideoButton, LinearLayout.LayoutParams(dp(28), ViewGroup.LayoutParams.MATCH_PARENT))
         } else {
@@ -3144,13 +3119,11 @@ class VideoEditorActivity : Activity() {
                 background = android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
                 minWidth = dp(28)
                 minHeight = dp(28)
-                contentDescription = "Yakında"
+                contentDescription = "Zaman çizelgesine video klibi ekle"
                 isClickable = true
                 isFocusable = true
                 elevation = dp(2).toFloat()
-                setOnClickListener {
-                    android.widget.Toast.makeText(this@VideoEditorActivity, "Yakında", android.widget.Toast.LENGTH_SHORT).show()
-                }
+                setOnClickListener { chooseVideo(true) }
             }
             strip.addView(addVideoButton, FrameLayout.LayoutParams(
                 dp(28), ViewGroup.LayoutParams.MATCH_PARENT
