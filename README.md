@@ -609,3 +609,14 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Signed publishing is separate from PR builds. It runs only manually or when `.github/release-trigger.txt` changes on `main`, and it uses the persistent release-signing key. PR #18 did not change the release marker.
 - The #754 test ZIP is a debug-signed build, while public releases use the persistent release key. If the phone currently has the debug-signed ZIP installed, Android will not allow a different release certificate to update it in place. A one-time switch to the signed release installation is needed first. Uninstalling also erases private editor drafts stored in the app, so export/back up important projects before any such migration.
 - Before a future higher signed release, verify that its certificate matches the current signed 394 release and test a controlled 394-to-higher-version install. Do not change versionCode 394 until that release test is ready.
+
+
+## Current continuation audit — 2026-11-04
+
+- Correction to the older updater notes above: PR #18 **was merged** on 2026-11-03. The current `main` Gradle configuration is `versionCode=395`, `versionName=8.29-capcut-editor`.
+- The latest signed GitHub release is `app-v8.3-62` (Build 62), published 2026-11-04, with `versionCode=395`. This supersedes the older 394 / Build 61 release note above. Do not assume which build is installed on the phone without checking the device.
+- PR #22 remains open. Its head is 73 commits ahead and 4 commits behind `main`; it changes 22 files, including a large `VideoEditorActivity.kt` diff. Do not merge it as a routine small fix; reconcile it with current `main` and review the full diff first.
+- The PR branch contains clip-speed timing/export work, overlay transform keyframes, persistence, and focused unit tests. Direct touch gestures were adjusted to write the interpolated transform at the current playhead, not only mutate the base transform.
+- The PR debug workflow artifact was renamed to generic `MathMotor-debug.apk/.zip` so a debug artifact cannot be mistaken for a specific signed release/build.
+- **Verification is still pending:** GitHub reports no Actions runs or check-runs for the current PR head. No build/test result or new APK is claimed. The local environment could not clone the repository, so an independent local Gradle build was not available.
+- Keep `main` as the canonical source. Do not merge PR #22, publish a release, or change the signed release marker until the branch is rebased/reconciled, CI is green, and the editor/export behavior is tested on the emulator and phone.
