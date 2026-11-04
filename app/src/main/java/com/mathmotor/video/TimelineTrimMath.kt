@@ -263,9 +263,11 @@ internal data class TimelineVideoSegment(
     val timelineStartMs: Long,
     val sourceStartMs: Long,
     val sourceEndMs: Long,
-    val sourceDurationMs: Long
+    val sourceDurationMs: Long,
+    val speed: Float = 1f
 ) {
-    val durationMs: Long get() = (sourceEndMs - sourceStartMs).coerceAtLeast(0L)
+    val sourceSpanMs: Long get() = (sourceEndMs - sourceStartMs).coerceAtLeast(0L)
+    val durationMs: Long get() = ClipSpeedMath.timelineDurationMs(sourceSpanMs, speed)
     val timelineEndMs: Long get() = timelineStartMs.coerceAtLeast(0L) + durationMs
 }
 
@@ -293,7 +295,8 @@ internal object TimelineVideoMath {
             timelineStartMs = segment.timelineStartMs.coerceAtLeast(0L),
             sourceStartMs = sourceStart,
             sourceEndMs = sourceEnd,
-            sourceDurationMs = sourceDuration
+            sourceDurationMs = sourceDuration,
+            speed = ClipSpeedMath.normalize(segment.speed)
         )
     }
 
@@ -317,7 +320,9 @@ internal object TimelineVideoMath {
             projectTimeMs < safe.timelineStartMs ||
             projectTimeMs >= safe.timelineEndMs
         ) return null
-        return safe.sourceStartMs + (projectTimeMs - safe.timelineStartMs)
+        return safe.sourceStartMs + ClipSpeedMath.sourceOffsetMs(
+            projectTimeMs - safe.timelineStartMs, safe.speed
+        )
     }
 
     /**
