@@ -6595,6 +6595,38 @@ class VideoEditorActivity : Activity() {
         }
     }
 
+    private fun readOverlayAssetAspectRatio(uri: Uri, isImage: Boolean): Float {
+        val ratio = runCatching {
+            if (isImage) {
+                val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                contentResolver.openInputStream(uri)?.use {
+                    android.graphics.BitmapFactory.decodeStream(it, null, options)
+                }
+                if (options.outWidth > 0 && options.outHeight > 0) {
+                    options.outWidth.toFloat() / options.outHeight.toFloat()
+                } else 1f
+            } else {
+                val retriever = MediaMetadataRetriever()
+                try {
+                    retriever.setDataSource(this, uri)
+                    val width = retriever.extractMetadata(
+                        MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH
+                    )?.toFloatOrNull() ?: 1f
+                    val height = retriever.extractMetadata(
+                        MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT
+                    )?.toFloatOrNull() ?: 1f
+                    val rotation = retriever.extractMetadata(
+                        MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION
+                    )?.toIntOrNull() ?: 0
+                    if (rotation % 180 != 0) height / width else width / height
+                } finally {
+                    retriever.release()
+                }
+            }
+        }.getOrDefault(1f)
+        return ratio.takeIf { it.isFinite() && it > 0f }?.coerceIn(0.10f, 10f) ?: 1f
+    }
+
     private fun addOverlayAsset(uri: Uri) {
         val mimeType = contentResolver.getType(uri).orEmpty().lowercase(Locale.US)
         val extension = (uri.lastPathSegment ?: "").substringAfterLast('.', "").lowercase(Locale.US)
