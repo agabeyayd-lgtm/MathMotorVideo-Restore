@@ -6641,6 +6641,7 @@ class VideoEditorActivity : Activity() {
         val title = queryDisplayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Bindirme"
         status.text = "Bindirme dosyası hazırlanıyor…"
         Thread {
+            val aspectRatio = readOverlayAssetAspectRatio(uri, isImage)
             val sourceDuration = if (isImage) 60_000L else runCatching {
                 val retriever = MediaMetadataRetriever()
                 try {
@@ -6676,14 +6677,20 @@ class VideoEditorActivity : Activity() {
                     scale = logoDefaults?.scale ?: 0.35f,
                     xFraction = logoDefaults?.xFraction ?: 0.78f,
                     yFraction = logoDefaults?.yFraction ?: 0.22f,
-                    opacity = logoDefaults?.opacity ?: 1f
+                    opacity = logoDefaults?.opacity ?: 1f,
+                    aspectRatio = aspectRatio
                 )
                 overlayClips.add(overlay)
                 selectedOverlayId = overlay.id
-                showEditorPanel("overlay")
+                selectedClipIndex = -1
+                clipHandlesVisible = false
+                timelinePlayheadMs = startMs
                 loadOverlayControls()
                 refreshTimelineTracks()
+                updateTimelinePlayheadDisplay()
+                enterOverlayTools()
                 rebuildTimelinePreviewForOverlayEdit()
+                updateOverlayTransformTouchAvailability()
                 status.text = if (isImage) {
                     "Fotoğraf bindirme olarak eklendi. Süre, boyut ve konumu aşağıdan düzenle."
                 } else {
