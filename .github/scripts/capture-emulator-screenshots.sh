@@ -538,9 +538,17 @@ print("PASS: preview and timeline stayed fixed while the one-row tool strip open
 PY
 
 echo "Step 9/12: align a thumbnail cell with the playhead and compare the rendered pixels"
-# HorizontalScrollView consumes touch slop before scrolling. Re-measure after
-# every drag and add the measured 12px touch-slop allowance so the cell center
-# actually reaches the fixed playhead instead of stopping short.
+# HorizontalScrollView consumes ViewConfiguration.scaledTouchSlop before it
+# scrolls. That value is density-scaled (pixels), so a fixed 12px allowance
+# undershoots on the Pixel 2 emulator and creates a false alignment failure.
+touch_slop_px="$(timeout -k 2s 8s adb -s emulator-5554 logcat -d -v brief -s TimelineSyncTest:I \
+  | sed -n 's/.*TIMELINE_TOUCH_SLOP_PX=\\([0-9][0-9]*\\).*/\\1/p' | tail -n 1)"
+if ! [[ "$touch_slop_px" =~ ^[0-9]+$ ]] || [ "$touch_slop_px" -le 0 ]; then
+  echo "Could not read the emulator's actual Android touch-slop value."
+  collect_capture_diagnostics timeline-touch-slop-missing
+  exit 29
+fi
+echo "Using Android ViewConfiguration touch slop: ${touch_slop_px}px"
 thumbnail_aligned=false
 for attempt in 1 2 3 4 5; do
   hierarchy="emulator-screenshots/editor-frame-align-${attempt}.xml"
@@ -554,7 +562,7 @@ for attempt in 1 2 3 4 5; do
     thumbnail_aligned=true
     break
   fi
-  gesture_delta="$((delta_x + (delta_x < 0 ? -12 : 12)))"
+  gesture_delta="$((delta_x + (delta_x < 0 ? -touch_slop_px : touch_slop_px)))"
   gesture_end_x="$((thumb_center_x + gesture_delta))"
   timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$thumb_center_x" "$thumb_center_y" "$gesture_end_x" "$thumb_center_y" 400
   sleep 1
