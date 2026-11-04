@@ -7023,7 +7023,8 @@ class VideoEditorActivity : Activity() {
         height: Int,
         selected: Boolean
     ): FrameLayout {
-        val durationMs = (clip.endMs - clip.startMs).coerceAtLeast(0L)
+        val sourceDurationMs = (clip.endMs - clip.startMs).coerceAtLeast(0L)
+        val durationMs = ClipSpeedMath.timelineDurationMs(sourceDurationMs, clip.speed)
         val container = FrameLayout(this).apply {
             background = android.graphics.drawable.GradientDrawable().apply {
                 setColor(Color.rgb(27, 39, 54))
@@ -7236,10 +7237,27 @@ class VideoEditorActivity : Activity() {
             // Otherwise short trimmed clips cannot be expanded back toward the source boundaries.
             val handleWidth = minOf(dp(40), (width / 2).coerceAtLeast(1))
             fun allowedDeltaPx(startMs:Long,endMs:Long):Pair<Float,Float>{
-                val minDelta=if(isStart) -(if(clip.timelineStartMs==0L) startMs else minOf(startMs,clip.timelineStartMs)) else TimelineTrimMath.minEndMs(startMs,clip.durationMs)-endMs
-                val maxDelta=if(isStart)TimelineTrimMath.maxStartMs(endMs,clip.durationMs)-startMs else clip.durationMs-endMs
+                // Handle travel is measured on the project timeline, while clip in/out
+                // values remain source timestamps. Convert source bounds through speed
+                // before translating them into pixels.
+                val minSourceDelta=if(isStart) {
+                    -(if(clip.timelineStartMs==0L) startMs else minOf(startMs,clip.timelineStartMs))
+                } else {
+                    TimelineTrimMath.minEndMs(startMs,clip.durationMs)-endMs
+                }
+                val maxSourceDelta=if(isStart) {
+                    TimelineTrimMath.maxStartMs(endMs,clip.durationMs)-startMs
+                } else {
+                    clip.durationMs-endMs
+                }
+                val minTimelineDelta = -ClipSpeedMath.timelineOffsetMs(
+                    kotlin.math.abs(minSourceDelta), clip.speed
+                )
+                val maxTimelineDelta = ClipSpeedMath.timelineOffsetMs(
+                    maxSourceDelta.coerceAtLeast(0L), clip.speed
+                )
                 val scale=timelinePixelsPerSecond()/1000f
-                return minDelta*scale to maxDelta*scale
+                return minTimelineDelta*scale to maxTimelineDelta*scale
             }
             val handle = FrameLayout(this).apply {
                 // CapCut-style clean white trim edge: keep the wide transparent
