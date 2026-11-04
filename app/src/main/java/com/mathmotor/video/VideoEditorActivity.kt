@@ -165,6 +165,7 @@ class VideoEditorActivity : Activity() {
     private lateinit var textBoldCheck: CheckBox
     private lateinit var textOverlayEditToggle: Button
     private enum class TextPosition { TOP, CENTER, BOTTOM }
+    private enum class TextLayerKind { TEXT, STICKER }
     private fun defaultTextYFraction(position: TextPosition): Float = when (position) {
         TextPosition.TOP -> 0.16f
         TextPosition.CENTER -> 0.50f
@@ -189,7 +190,8 @@ class VideoEditorActivity : Activity() {
         var colorPreset: TextColorPreset,
         var isBold: Boolean,
         var xFraction: Float = 0.5f,
-        var yFraction: Float = 0.84f
+        var yFraction: Float = 0.84f,
+        var kind: TextLayerKind = TextLayerKind.TEXT
     )
 
     private val textLayers = mutableListOf<TextLayer>()
