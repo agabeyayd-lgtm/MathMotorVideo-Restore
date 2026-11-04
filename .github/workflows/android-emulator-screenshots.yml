@@ -54,15 +54,15 @@ jobs:
       - name: Package the tested debug APK as a ZIP
         run: |
           mkdir -p debug-apk-delivery
-          cp app/build/outputs/apk/debug/app-debug.apk debug-apk-delivery/MathMotor-debug-394-build61.apk
-          (cd debug-apk-delivery && zip -q MathMotor-debug-394-build61.zip MathMotor-debug-394-build61.apk)
-          test -s debug-apk-delivery/MathMotor-debug-394-build61.zip
+          cp app/build/outputs/apk/debug/app-debug.apk debug-apk-delivery/MathMotor-debug.apk
+          (cd debug-apk-delivery && zip -q MathMotor-debug.zip MathMotor-debug.apk)
+          test -s debug-apk-delivery/MathMotor-debug.zip
 
       - name: Upload installable debug APK ZIP
         uses: actions/upload-artifact@v4
         with:
           name: mathmotor-debug-apk-zip
-          path: debug-apk-delivery/MathMotor-debug-394-build61.zip
+          path: debug-apk-delivery/MathMotor-debug.zip
           if-no-files-found: error
           retention-days: 14
 
