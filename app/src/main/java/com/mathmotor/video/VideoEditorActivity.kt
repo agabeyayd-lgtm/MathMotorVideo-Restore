@@ -51,8 +51,12 @@ import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.audio.ChannelMixingAudioProcessor
 import androidx.media3.common.audio.ChannelMixingMatrix
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.effect.Brightness
+import androidx.media3.effect.Contrast
+import androidx.media3.effect.HslAdjustment
 import androidx.media3.effect.MatrixTransformation
 import androidx.media3.effect.OverlayEffect
+import androidx.media3.effect.RgbFilter
 import androidx.media3.effect.MultipleInputVideoGraph
 import androidx.media3.effect.Presentation
 import androidx.media3.common.OverlaySettings
@@ -431,6 +435,22 @@ class VideoEditorActivity : Activity() {
     private var clipToolsMode = false
     private var activeClipTool: String? = null
     private var textOverlayEditingEnabled: Boolean = false
+    private var selectedVideoFilter = VideoFilterPreset.ORIGINAL
+    private var filterBrightness = 0
+    private var filterContrast = 0
+    private var filterSaturation = 0
+    private var filterHue = 0
+    private var updatingVideoFilterControls = false
+    private val videoFilterButtons = linkedMapOf<VideoFilterPreset, Button>()
+    private lateinit var videoFilterSummary: TextView
+    private lateinit var filterBrightnessLabel: TextView
+    private lateinit var filterContrastLabel: TextView
+    private lateinit var filterSaturationLabel: TextView
+    private lateinit var filterHueLabel: TextView
+    private lateinit var filterBrightnessSeek: SeekBar
+    private lateinit var filterContrastSeek: SeekBar
+    private lateinit var filterSaturationSeek: SeekBar
+    private lateinit var filterHueSeek: SeekBar
     private lateinit var selectedClipLabel: TextView
     private lateinit var overlayTitleLabel: TextView
     private lateinit var overlayStartLabel: TextView
@@ -1432,6 +1452,50 @@ class VideoEditorActivity : Activity() {
         })
         audioPanel.addView(sourceVolumeSeek, matchWrap())
 
+        val effectsPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        effectsPanel.addView(label("FİLTRELER VE RENK AYARI", 13f, Color.rgb(121, 202, 218), true))
+        effectsPanel.addView(label("Seçtiğin görünüm önizlemeye ve MP4 çıktısına birlikte uygulanır.", 11f, Color.rgb(154, 171, 190), false))
+        videoFilterSummary = label("Görünüm: Orijinal", 12f, Color.WHITE, true)
+        effectsPanel.addView(videoFilterSummary)
+
+        val filterPresets = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        VideoFilterPreset.values().toList().chunked(3).forEach { group ->
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            group.forEach { preset ->
+                val button = miniButton(preset.title) { applyVideoFilterPreset(preset) }
+                videoFilterButtons[preset] = button
+                row.addView(button, LinearLayout.LayoutParams(0, dp(42), 1f).apply {
+                    if (group.first() != preset) leftMargin = dp(4)
+                })
+            }
+            filterPresets.addView(row, matchWrap())
+            filterPresets.addView(gap(4))
+        }
+        effectsPanel.addView(filterPresets)
+
+        filterBrightnessLabel = label("Parlaklık: 0", 11f, Color.rgb(205, 218, 231), false)
+        filterBrightnessSeek = SeekBar(this).apply { max = 200; progress = 100 }
+        effectsPanel.addView(filterBrightnessLabel)
+        effectsPanel.addView(filterBrightnessSeek, matchWrap())
+
+        filterContrastLabel = label("Kontrast: 0", 11f, Color.rgb(205, 218, 231), false)
+        filterContrastSeek = SeekBar(this).apply { max = 200; progress = 100 }
+        effectsPanel.addView(filterContrastLabel)
+        effectsPanel.addView(filterContrastSeek, matchWrap())
+
+        filterSaturationLabel = label("Doygunluk: 0", 11f, Color.rgb(205, 218, 231), false)
+        filterSaturationSeek = SeekBar(this).apply { max = 200; progress = 100 }
+        effectsPanel.addView(filterSaturationLabel)
+        effectsPanel.addView(filterSaturationSeek, matchWrap())
+
+        filterHueLabel = label("Renk tonu: 0°", 11f, Color.rgb(205, 218, 231), false)
+        filterHueSeek = SeekBar(this).apply { max = 360; progress = 180 }
+        effectsPanel.addView(filterHueLabel)
+        effectsPanel.addView(filterHueSeek, matchWrap())
+        effectsPanel.addView(actionButton("Renk ayarlarını sıfırla") {
+            applyVideoFilterPreset(VideoFilterPreset.ORIGINAL)
+        })
+
         val overlayPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         overlayPanel.addView(label("GÖRSEL / VİDEO BİNDİRME", 13f, Color.rgb(121, 202, 218), true))
         overlayPanel.addView(label("Logo seçtiğinde tüm video boyunca sağ üstte başlar. Önizlemede sürükleyebilir, iki parmakla boyutunu değiştirebilirsin.", 11f, Color.rgb(154, 171, 190), false))
@@ -1474,6 +1538,8 @@ class VideoEditorActivity : Activity() {
         overlayOpacitySeek = SeekBar(this).apply { max = 1000; progress = 1000 }
         overlayPanel.addView(overlayOpacitySeek, matchWrap())
         installOverlayControlListeners()
+        installVideoFilterListeners()
+        loadVideoFilterControls()
 
         val exportPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         exportPanel.addView(label("PROJE / DIŞA AKTARMA", 13f, Color.rgb(121, 202, 218), true))
@@ -1528,6 +1594,7 @@ class VideoEditorActivity : Activity() {
         editorPanels["clip"] = clipPanel
         editorPanels["clipVolume"] = clipVolumePanel
         editorPanels["overlay"] = overlayPanel
+        editorPanels["effects"] = effectsPanel
         editorPanels["text"] = textPanel
         editorPanels["audio"] = audioPanel
         editorPanels["export"] = exportPanel
@@ -1604,11 +1671,14 @@ class VideoEditorActivity : Activity() {
             val tab = miniButton("$symbol\n$title") {
                 if (key == "clip") {
                     if (clipToolsMode) exitClipTools() else enterClipTools()
+                } else if (key == "captions") {
+                    if (clipToolsMode) exitClipTools()
+                    toggleEditorPanel("text")
                 } else if (key in editorPanels) {
                     if (clipToolsMode) exitClipTools()
                     toggleEditorPanel(key)
                 } else {
-                    android.widget.Toast.makeText(this, "Yakında", android.widget.Toast.LENGTH_SHORT).show()
+                    android.widget.Toast.makeText(this, "Bu araç bu sürümde etkin değil.", android.widget.Toast.LENGTH_SHORT).show()
                 }
             }.apply {
                 textSize = 10f
@@ -4143,11 +4213,142 @@ class VideoEditorActivity : Activity() {
     private fun buildOverlayCompositorSettings(): VideoCompositorSettings =
         OverlayVideoCompositorSettings(overlayClips.sortedByDescending { it.id }, overlayClips.size)
 
+    private fun installVideoFilterListeners() {
+        fun attach(seekBar: SeekBar, onValue: (Int) -> Unit) {
+            seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                    if (!fromUser || updatingVideoFilterControls) return
+                    onValue(progress)
+                    updateVideoFilterLabels()
+                }
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                    pauseActivePreview()
+                }
+                override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                    refreshColorGradePreview()
+                }
+            })
+        }
+        attach(filterBrightnessSeek) { filterBrightness = it - 100 }
+        attach(filterContrastSeek) { filterContrast = it - 100 }
+        attach(filterSaturationSeek) { filterSaturation = it - 100 }
+        attach(filterHueSeek) { filterHue = it - 180 }
+    }
+
+    private fun updateVideoFilterLabels() {
+        if (!::videoFilterSummary.isInitialized) return
+        videoFilterSummary.text = "Görünüm: ${selectedVideoFilter.title}"
+        filterBrightnessLabel.text = "Parlaklık: $filterBrightness"
+        filterContrastLabel.text = "Kontrast: $filterContrast"
+        filterSaturationLabel.text = "Doygunluk: $filterSaturation"
+        filterHueLabel.text = "Renk tonu: ${if (filterHue > 0) "+" else ""}$filterHue°"
+    }
+
+    private fun loadVideoFilterControls() {
+        if (!::filterBrightnessSeek.isInitialized) return
+        updatingVideoFilterControls = true
+        try {
+            filterBrightnessSeek.progress = (filterBrightness + 100).coerceIn(0, 200)
+            filterContrastSeek.progress = (filterContrast + 100).coerceIn(0, 200)
+            filterSaturationSeek.progress = (filterSaturation + 100).coerceIn(0, 200)
+            filterHueSeek.progress = (filterHue + 180).coerceIn(0, 360)
+            updateVideoFilterLabels()
+            videoFilterButtons.forEach { (preset, button) ->
+                val selected = preset == selectedVideoFilter
+                button.background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(if (selected) Color.rgb(39, 107, 103) else Color.rgb(27, 43, 59))
+                    cornerRadius = dp(9).toFloat()
+                    setStroke(dp(if (selected) 2 else 1),
+                        if (selected) Color.rgb(57, 220, 190) else Color.rgb(47, 66, 84))
+                }
+                button.setTextColor(if (selected) Color.WHITE else Color.rgb(205, 216, 228))
+            }
+        } finally {
+            updatingVideoFilterControls = false
+        }
+    }
+
+    private fun applyVideoFilterPreset(preset: VideoFilterPreset) {
+        selectedVideoFilter = preset
+        when (preset) {
+            VideoFilterPreset.ORIGINAL, VideoFilterPreset.MONOCHROME, VideoFilterPreset.NEGATIVE -> {
+                filterBrightness = 0
+                filterContrast = 0
+                filterSaturation = 0
+                filterHue = 0
+            }
+            VideoFilterPreset.VIVID -> {
+                filterBrightness = 2
+                filterContrast = 12
+                filterSaturation = 28
+                filterHue = 0
+            }
+            VideoFilterPreset.CINEMATIC -> {
+                filterBrightness = -3
+                filterContrast = 18
+                filterSaturation = -18
+                filterHue = 0
+            }
+            VideoFilterPreset.WARM -> {
+                filterBrightness = 2
+                filterContrast = 4
+                filterSaturation = 10
+                filterHue = -8
+            }
+            VideoFilterPreset.COOL -> {
+                filterBrightness = 0
+                filterContrast = 4
+                filterSaturation = 6
+                filterHue = 12
+            }
+        }
+        loadVideoFilterControls()
+        refreshColorGradePreview()
+        status.text = "Görünüm güncellendi: ${preset.title}."
+    }
+
+    private fun buildEditorVideoEffects(): List<androidx.media3.common.Effect> {
+        val effects = mutableListOf<androidx.media3.common.Effect>()
+        when (selectedVideoFilter) {
+            VideoFilterPreset.MONOCHROME -> effects.add(RgbFilter.createGrayscaleFilter())
+            VideoFilterPreset.NEGATIVE -> effects.add(RgbFilter.createInvertedFilter())
+            else -> Unit
+        }
+        if (filterBrightness != 0) effects.add(Brightness(filterBrightness / 100f))
+        if (filterContrast != 0) effects.add(Contrast(filterContrast / 100f))
+        if (filterSaturation != 0 || filterHue != 0) {
+            effects.add(
+                HslAdjustment.Builder()
+                    .adjustHue(filterHue.toFloat())
+                    .adjustSaturation(filterSaturation.toFloat())
+                    .build()
+            )
+        }
+        return effects
+    }
+
+    private fun refreshColorGradePreview() {
+        if (clips.isEmpty()) return
+        val wasPlaying = timelineCompositionPlayer?.playWhenReady == true
+        val position = timelinePlayheadMs.coerceIn(0L, totalOutputDurationMs())
+        timelineCompositionPlayer?.release()
+        timelineCompositionPlayer = null
+        timelinePreviewLoaded = false
+        ensureTimelinePreviewLoaded()
+        timelineCompositionPlayer?.seekTo(position)
+        timelineCompositionPlayer?.playWhenReady = wasPlaying
+        updateTimelinePlayButtonState()
+    }
+
     private fun buildVideoTimelineComposition():Composition {
         val sequences = buildVideoCompositionSequences()
         val builder = Composition.Builder(sequences)
         if (overlayClips.isNotEmpty()) {
             builder.setVideoCompositorSettings(buildOverlayCompositorSettings())
+        }
+        val colorEffects = buildEditorVideoEffects()
+        if (colorEffects.isNotEmpty()) {
+            builder.setEffects(Effects(emptyList(), colorEffects))
         }
         return builder.build()
     }
@@ -5448,6 +5649,11 @@ class VideoEditorActivity : Activity() {
             put("textTimingCustomized", textTimingCustomized)
             put("textPosition", textPosition.name)
             put("textSizeSp", textSizeSp)
+            put("videoFilterPreset", selectedVideoFilter.key)
+            put("filterBrightness", filterBrightness)
+            put("filterContrast", filterContrast)
+            put("filterSaturation", filterSaturation)
+            put("filterHue", filterHue)
             put("sourceAudioVolume", sourceAudioVolume)
             put("musicVolume", musicVolume)
             put("soundVolume", soundVolume)
@@ -5669,6 +5875,12 @@ class VideoEditorActivity : Activity() {
         nextTextLayerId = (textLayers.maxOfOrNull { it.id } ?: 0L) + 1L
         val savedSelectedTextId = json.optLong("selectedTextLayerId", textLayers.firstOrNull()?.id ?: -1L)
         selectedTextLayerId = savedSelectedTextId.takeIf { id -> textLayers.any { it.id == id } }
+        selectedVideoFilter = VideoFilterPreset.fromKey(json.optString("videoFilterPreset", "original"))
+        filterBrightness = json.optInt("filterBrightness", 0).coerceIn(-100, 100)
+        filterContrast = json.optInt("filterContrast", 0).coerceIn(-100, 100)
+        filterSaturation = json.optInt("filterSaturation", 0).coerceIn(-100, 100)
+        filterHue = json.optInt("filterHue", 0).coerceIn(-180, 180)
+        loadVideoFilterControls()
         sourceAudioVolume = json.optInt("sourceAudioVolume", 100).coerceIn(0, 100)
         musicVolume = json.optInt("musicVolume", 45).coerceIn(0, 100)
         soundVolume = json.optInt("soundVolume", 100).coerceIn(0, 100)
@@ -8093,6 +8305,7 @@ class VideoEditorActivity : Activity() {
             compositionBuilder.setVideoCompositorSettings(buildOverlayCompositorSettings())
         }
         val outputVideoEffects = mutableListOf<androidx.media3.common.Effect>()
+        outputVideoEffects.addAll(buildEditorVideoEffects())
         when (exportResolutionShortSide) {
             720 -> outputVideoEffects.add(Presentation.createForShortSide(720))
             1080 -> outputVideoEffects.add(Presentation.createForShortSide(1080))
