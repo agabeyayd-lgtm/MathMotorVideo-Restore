@@ -6679,19 +6679,82 @@ class VideoEditorActivity : Activity() {
     private fun selectOverlay(id: Long) {
         val overlay = overlayClips.firstOrNull { it.id == id } ?: return
         selectedOverlayId = id
+        selectedClipIndex = -1
+        clipHandlesVisible = false
         timelinePlayheadMs = overlay.timelineStartMs
         loadOverlayControls()
         refreshTimelineTracks()
         updateTimelinePlayheadDisplay()
-        if (timelinePreviewLoaded) seekTimelinePreview(timelinePlayheadMs)
-        // Keep the timeline visible and draggable; settings rise only after "Düzenle".
         enterOverlayTools()
+        // Selecting a layer establishes its paused composed frame immediately.
+        rebuildTimelinePreviewForOverlayEdit()
+        updateOverlayTransformTouchAvailability()
     }
 
     private fun updateOverlayTransformTouchAvailability() {
         if (!::overlayTransformTouchOverlay.isInitialized) return
+        val overlay = selectedOverlay()
+        val selectedTrackActive = overlay != null &&
+            (activeEditorPanel == "overlay" || (clipToolsMode && activeEditorPanel == null))
+        val playheadInsideLayer = overlay != null &&
+            timelinePlayheadMs >= overlay.timelineStartMs &&
+            timelinePlayheadMs < overlay.timelineStartMs + overlay.durationMs
         overlayTransformTouchOverlay.visibility =
-            if (activeEditorPanel == "overlay" && selectedOverlay() != null) View.VISIBLE else View.GONE
+            if (selectedTrackActive && playheadInsideLayer &&
+                timelineCompositionPlayer?.isPlaying != true
+            ) View.VISIBLE else View.GONE
+        updateOverlaySelectionChrome()
+    }
+
+    private fun updateOverlaySelectionChrome() {
+        if (!::overlaySelectionFrame.isInitialized || !::previewFrame.isInitialized) return
+        val overlay = selectedOverlay()
+        val selectedTrackActive = overlay != null &&
+            (activeEditorPanel == "overlay" || (clipToolsMode && activeEditorPanel == null))
+        val playheadInsideLayer = overlay != null &&
+            timelinePlayheadMs >= overlay.timelineStartMs &&
+            timelinePlayheadMs < overlay.timelineStartMs + overlay.durationMs
+        if (!selectedTrackActive || !playheadInsideLayer ||
+            timelineCompositionPlayer?.isPlaying == true ||
+            previewFrame.width <= 0 || previewFrame.height <= 0
+        ) {
+            overlaySelectionFrame.visibility = View.GONE
+            return
+        }
+        val activeIndex = activeClipIndexAt(timelinePlayheadMs)
+        val mainClip = clips.getOrNull(activeIndex ?: selectedClipIndex)
+        val mainAspect = mainClip?.let { timelineVideoAspectRatio(it.uri) }
+            ?: TimelineThumbnailMath.DEFAULT_SOURCE_ASPECT_RATIO
+        val stageWidth = previewFrame.width.toFloat()
+        val stageHeight = previewFrame.height.toFloat()
+        val canvasWidth = minOf(stageWidth, stageHeight * mainAspect).coerceAtLeast(1f)
+        val canvasHeight = minOf(stageHeight, stageWidth / mainAspect).coerceAtLeast(1f)
+        val overlayAspect = overlay.aspectRatio.takeIf { it.isFinite() && it > 0f }
+            ?.coerceIn(0.10f, 10f) ?: 1f
+        val frameWidth = canvasWidth.toInt().coerceAtLeast(dp(12))
+        val frameHeight = (canvasWidth / overlayAspect).toInt().coerceAtLeast(dp(12))
+        val params = overlaySelectionFrame.layoutParams as? FrameLayout.LayoutParams
+            ?: FrameLayout.LayoutParams(frameWidth, frameHeight, Gravity.CENTER)
+        if (params.width != frameWidth || params.height != frameHeight) {
+            params.width = frameWidth
+            params.height = frameHeight
+            params.gravity = Gravity.CENTER
+            overlaySelectionFrame.layoutParams = params
+        }
+        val state = overlayStateAtTime(overlay, timelinePlayheadMs)
+        overlaySelectionFrame.pivotX = frameWidth / 2f
+        overlaySelectionFrame.pivotY = frameHeight / 2f
+        overlaySelectionFrame.scaleX = state.scale
+        overlaySelectionFrame.scaleY = state.scale
+        overlaySelectionFrame.rotation = state.rotationDegrees
+        overlaySelectionFrame.translationX = (state.xFraction - 0.5f) * canvasWidth
+        overlaySelectionFrame.translationY = (state.yFraction - 0.5f) * canvasHeight
+        val inverseScale = (1f / state.scale.coerceAtLeast(0.10f)).coerceAtMost(10f)
+        overlaySelectionHandles.forEach { handle ->
+            handle.scaleX = inverseScale
+            handle.scaleY = inverseScale
+        }
+        overlaySelectionFrame.visibility = View.VISIBLE
     }
 
     private fun installOverlayTransformTouch() {
