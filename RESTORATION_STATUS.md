@@ -1,3 +1,9 @@
+## Contextual track selection — 2026-11-04
+
+**UX correction added to PR #21; CI pending.** Selecting a main-video clip or Bindirme layer now changes the bottom dock to that layer's contextual tool strip without opening the expanded settings sheet. The timeline remains visible and available for a long-press drag. The user must explicitly tap the contextual `Düzenle` / `Kırp` action before the settings sheet rises from the bottom. Bindirme selection offers `Geri`, `Düzenle`, and `Sil`; video selection offers its clip actions in the same dock location. This separates selection from editing and prevents the sheet from covering the selected strip during the initial touch.
+
+---
+
 ## Corner logo / watermark overlay — 2026-11-04 (PR #21)
 
 **Implementation in review; final CI and on-device validation pending.** The existing editor's `Bindirme` tool is used to add a still image as a project logo; no separate editor or image upload service is introduced.
