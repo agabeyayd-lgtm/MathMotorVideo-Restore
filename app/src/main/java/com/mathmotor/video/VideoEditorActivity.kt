@@ -3383,7 +3383,7 @@ class VideoEditorActivity : Activity() {
                         status.text = "Müzik zaman çizelgesinde taşındı."
                         refreshTimelineTracks()
                     } else if (!bodyMoved) {
-                        showEditorPanel("audio")
+                        enterAudioTools()
                         view.performClick()
                     }
                     true
@@ -3462,7 +3462,7 @@ class VideoEditorActivity : Activity() {
                             status.text = if (isStart) "Müzik başlangıcı ayarlandı." else "Müzik bitişi ayarlandı."
                             refreshTimelineTracks()
                         } else {
-                            showEditorPanel("audio")
+                            enterAudioTools()
                         }
                         true
                     }
@@ -3596,7 +3596,7 @@ class VideoEditorActivity : Activity() {
                         status.text = "Ses efekti zaman çizelgesinde taşındı."
                         refreshTimelineTracks()
                     } else if (!bodyMoved) {
-                        showEditorPanel("audio")
+                        enterAudioTools()
                         view.performClick()
                     }
                     true
@@ -4758,6 +4758,74 @@ class VideoEditorActivity : Activity() {
         status.text = "Metin katmanı kaldırıldı."
     }
 
+    /** Text-track selection mirrors video and overlay: selection changes only the dock. */
+    private fun enterTextTools() {
+        if (!::editorDock.isInitialized || !::editorPanelScroll.isInitialized) return
+        clipToolsMode = true
+        activeClipTool = null
+        activeEditorPanel = null
+        updateClipTransformTouchAvailability()
+        updateOverlayTransformTouchAvailability()
+        textOverlayEditingEnabled = false
+        updateTextOverlayEditToggle()
+        editorPanels.values.forEach { it.visibility = View.GONE }
+        editorPanelScroll.animate().cancel()
+        editorPanelScroll.visibility = View.GONE
+        editorPanelScroll.translationY = 0f
+        editorPanelScroll.alpha = 1f
+        editorDock.removeAllViews()
+        val tools = listOf(
+            Triple("‹", "Geri", "Ana araçlara dön"),
+            Triple("T", "Düzenle", "Seçili metin katmanını düzenle"),
+            Triple("×", "Sil", "Seçili metin katmanını kaldır")
+        )
+        tools.forEach { (symbol, title, description) ->
+            val action: () -> Unit = when (title) {
+                "Geri" -> ({ exitClipTools() })
+                "Düzenle" -> ({ showEditorPanel("text") })
+                "Sil" -> ({ selectedTextLayerId?.let { removeTextLayer(it) } })
+                else -> ({})
+            }
+            editorDock.addView(makeClipDockTool(symbol, title, description, action),
+                LinearLayout.LayoutParams(dp(60), dp(58)))
+        }
+        editorDockScroll.scrollTo(0, 0)
+        logEditorPanelGeometry("text-tools")
+    }
+
+    /** Audio-track selection mirrors every other timeline track. */
+    private fun enterAudioTools() {
+        if (!::editorDock.isInitialized || !::editorPanelScroll.isInitialized) return
+        clipToolsMode = true
+        activeClipTool = null
+        activeEditorPanel = null
+        updateClipTransformTouchAvailability()
+        updateOverlayTransformTouchAvailability()
+        textOverlayEditingEnabled = false
+        updateTextOverlayEditToggle()
+        editorPanels.values.forEach { it.visibility = View.GONE }
+        editorPanelScroll.animate().cancel()
+        editorPanelScroll.visibility = View.GONE
+        editorPanelScroll.translationY = 0f
+        editorPanelScroll.alpha = 1f
+        editorDock.removeAllViews()
+        val tools = listOf(
+            Triple("‹", "Geri", "Ana araçlara dön"),
+            Triple("♫", "Düzenle", "Seçili ses katmanını düzenle")
+        )
+        tools.forEach { (symbol, title, description) ->
+            val action: () -> Unit = when (title) {
+                "Geri" -> ({ exitClipTools() })
+                "Düzenle" -> ({ showEditorPanel("audio") })
+                else -> ({})
+            }
+            editorDock.addView(makeClipDockTool(symbol, title, description, action),
+                LinearLayout.LayoutParams(dp(60), dp(58)))
+        }
+        editorDockScroll.scrollTo(0, 0)
+        logEditorPanelGeometry("audio-tools")
+    }
+
     private fun selectTextLayer(id: Long) {
         if (textLayers.none { it.id == id }) return
         syncSelectedTextLayerFromControls()
@@ -4774,6 +4842,7 @@ class VideoEditorActivity : Activity() {
         refreshTextLayerList()
         updatePreviewTextOverlay()
         refreshTimelineTracks()
+        enterTextTools()
         status.text = "Yazı katmanı seçildi."
     }
 
