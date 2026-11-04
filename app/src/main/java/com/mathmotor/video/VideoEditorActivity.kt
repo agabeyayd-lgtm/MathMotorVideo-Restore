@@ -114,6 +114,7 @@ class VideoEditorActivity : Activity() {
         var yFraction: Float = 0.22f,
         var rotationDegrees: Float = 0f,
         var opacity: Float = 1f,
+        var aspectRatio: Float = 1f,
         val keyframes: MutableList<OverlayTransformKeyframe> = mutableListOf()
     )
 
@@ -237,6 +238,8 @@ class VideoEditorActivity : Activity() {
     private lateinit var previewTextOverlay: TextView
     private lateinit var clipTransformTouchOverlay: View
     private lateinit var overlayTransformTouchOverlay: View
+    private lateinit var overlaySelectionFrame: FrameLayout
+    private val overlaySelectionHandles = mutableListOf<View>()
     private lateinit var previewEmptyState: LinearLayout
     private lateinit var timelineTracks: LinearLayout
     private lateinit var timelineTracksFrame: FrameLayout
@@ -788,6 +791,43 @@ class VideoEditorActivity : Activity() {
         )
         previewTextOverlays.add(previewTextOverlay)
         installPreviewTextTouch(previewTextOverlay)
+        // CapCut-style selection chrome stays visible on the paused preview.
+        overlaySelectionFrame = FrameLayout(this).apply {
+            visibility = View.GONE
+            isClickable = false
+            isFocusable = false
+            elevation = dp(10).toFloat()
+        }
+        overlaySelectionFrame.addView(View(this).apply {
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.TRANSPARENT)
+                cornerRadius = dp(1).toFloat()
+                setStroke(dp(1), Color.WHITE)
+            }
+            isClickable = false
+        }, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+        fun addOverlaySelectionHandle(gravity: Int) {
+            val handle = View(this).apply {
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.OVAL
+                    setColor(Color.rgb(14, 22, 32))
+                    setStroke(dp(1), Color.WHITE)
+                }
+                isClickable = false
+            }
+            overlaySelectionHandles.add(handle)
+            overlaySelectionFrame.addView(handle, FrameLayout.LayoutParams(dp(10), dp(10), gravity))
+        }
+        addOverlaySelectionHandle(Gravity.TOP or Gravity.LEFT)
+        addOverlaySelectionHandle(Gravity.TOP or Gravity.RIGHT)
+        addOverlaySelectionHandle(Gravity.BOTTOM or Gravity.LEFT)
+        addOverlaySelectionHandle(Gravity.BOTTOM or Gravity.RIGHT)
+        previewFrame.addView(
+            overlaySelectionFrame,
+            FrameLayout.LayoutParams(dp(120), dp(120), Gravity.CENTER)
+        )
         overlayTransformTouchOverlay = View(this).apply {
             setBackgroundColor(Color.TRANSPARENT)
             visibility = View.GONE
@@ -857,6 +897,7 @@ class VideoEditorActivity : Activity() {
         ).apply { bottomMargin = dp(8) })
         previewFrame.addOnLayoutChangeListener { view, _, _, _, _, _, _, _, _ ->
             updatePreviewCanvasSize()
+            updateOverlaySelectionChrome()
         }
 
         val timelineCard = LinearLayout(this).apply {
