@@ -15,6 +15,7 @@ class EditorTestEntryActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val videoUri = intent.getStringExtra("video_uri")
+        val overlayUri = intent.getStringExtra("overlay_uri")
         val draftId = intent.getStringExtra("draft_id")
         val timelineSyncTest = intent.getBooleanExtra("timeline_sync_test", false)
         val timelineTestScaleDp = intent.getFloatExtra("timeline_test_px_per_sec_dp", 0f)
@@ -27,6 +28,7 @@ class EditorTestEntryActivity : Activity() {
         android.util.Log.i("EditorSmokeTest", "EDITOR_SMOKE_STARTING_EDITOR")
         startActivity(Intent(this, VideoEditorActivity::class.java).apply {
             putExtra("video_uri", videoUri)
+            if (!overlayUri.isNullOrBlank()) putExtra("overlay_uri", overlayUri)
             if (!draftId.isNullOrBlank()) putExtra("draft_id", draftId)
             if (timelineSyncTest) putExtra("timeline_sync_test", true)
             if (timelineTestScaleDp > 0f) putExtra("timeline_test_px_per_sec_dp", timelineTestScaleDp)
