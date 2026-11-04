@@ -6679,10 +6679,11 @@ class VideoEditorActivity : Activity() {
                         downCenterY = centroidY(event)
                         downDistance = distance(event)
                         downAngle = angle(event)
-                        downXFraction = overlay.xFraction
-                        downYFraction = overlay.yFraction
-                        downScale = overlay.scale
-                        downRotation = overlay.rotationDegrees
+                        val state = overlayStateAtTime(overlay, timelinePlayheadMs)
+                        downXFraction = state.xFraction
+                        downYFraction = state.yFraction
+                        downScale = state.scale
+                        downRotation = state.rotationDegrees
                     }
                     true
                 }
@@ -6693,15 +6694,25 @@ class VideoEditorActivity : Activity() {
                     if (event.pointerCount >= 2 && downDistance > 0f) {
                         val centerX = centroidX(event)
                         val centerY = centroidY(event)
-                        overlay.xFraction = (downXFraction + (centerX - downCenterX) / width).coerceIn(0f, 1f)
-                        overlay.yFraction = (downYFraction + (centerY - downCenterY) / height).coerceIn(0f, 1f)
-                        overlay.scale = (downScale * distance(event) / downDistance).coerceIn(0.10f, 1.50f)
                         val rawRotationDelta = angle(event) - downAngle
                         val rotationDelta = ((rawRotationDelta + 540f) % 360f) - 180f
-                        overlay.rotationDegrees = (downRotation + rotationDelta).coerceIn(-180f, 180f)
+                        val updated = OverlayTransformState(
+                            scale = (downScale * distance(event) / downDistance).coerceIn(0.10f, 1.50f),
+                            xFraction = (downXFraction + (centerX - downCenterX) / width).coerceIn(0f, 1f),
+                            yFraction = (downYFraction + (centerY - downCenterY) / height).coerceIn(0f, 1f),
+                            rotationDegrees = (downRotation + rotationDelta).coerceIn(-180f, 180f),
+                            opacity = overlayStateAtTime(overlay, timelinePlayheadMs).opacity
+                        )
+                        updateOverlayTransformAtPlayhead(overlay, updated)
                     } else if (event.pointerCount == 1) {
-                        overlay.xFraction = (downXFraction + (event.x - downX) / width).coerceIn(0f, 1f)
-                        overlay.yFraction = (downYFraction + (event.y - downY) / height).coerceIn(0f, 1f)
+                        val state = overlayStateAtTime(overlay, timelinePlayheadMs)
+                        updateOverlayTransformAtPlayhead(
+                            overlay,
+                            state.copy(
+                                xFraction = (downXFraction + (event.x - downX) / width).coerceIn(0f, 1f),
+                                yFraction = (downYFraction + (event.y - downY) / height).coerceIn(0f, 1f)
+                            )
+                        )
                     }
                     updateOverlayControlLabels(overlay)
                     true
