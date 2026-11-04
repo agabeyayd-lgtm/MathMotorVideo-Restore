@@ -1,11 +1,13 @@
 package com.mathmotor.video
 
 import androidx.media3.common.audio.ChannelMixingMatrix
+import androidx.media3.common.util.UnstableApi
 
 /**
  * Normalizes every editor audio source to stereo so parallel Composition sequences
  * satisfy Media3's requirement that mixed audio items use the same channel count.
  */
+@OptIn(UnstableApi::class)
 internal object AudioChannelMixingMath {
     const val OUTPUT_CHANNEL_COUNT = 2
     private const val EXTRA_SURROUND_GAIN = 0.5f
