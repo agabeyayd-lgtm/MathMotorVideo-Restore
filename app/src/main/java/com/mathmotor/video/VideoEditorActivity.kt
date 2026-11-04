@@ -6963,6 +6963,102 @@ class VideoEditorActivity : Activity() {
         }
     }
 
+    private fun splitSelectedOverlayAtPlayhead() {
+        val overlay = selectedOverlay() ?: run {
+            status.text = "Bölmek için zaman çizelgesinden bir bindirme seç."
+            return
+        }
+        val offsetMs = timelinePlayheadMs - overlay.timelineStartMs
+        if (offsetMs < 250L || offsetMs > overlay.durationMs - 250L) {
+            status.text = "Bölme çizgisini bindirmenin iç kısmına getir."
+            return
+        }
+
+        val originalDuration = overlay.durationMs
+        val rightDuration = originalDuration - offsetMs
+        val cutState = overlayStateAtTime(overlay, timelinePlayheadMs)
+        val originalFrames = overlay.keyframes.toList()
+        val leftFrames = if (originalFrames.isEmpty()) emptyList() else {
+            OverlayKeyframeMath.upsert(
+                originalFrames.filter { it.timeMs < offsetMs },
+                OverlayTransformKeyframe(offsetMs, cutState)
+            )
+        }
+        val rightFrames = if (originalFrames.isEmpty()) emptyList() else {
+            OverlayKeyframeMath.rebaseAfterStartTrim(
+                originalFrames,
+                offsetMs,
+                rightDuration,
+                cutState
+            )
+        }
+
+        overlay.durationMs = offsetMs
+        overlay.keyframes.clear()
+        overlay.keyframes.addAll(leftFrames)
+        val right = overlay.copy(
+            id = nextOverlayId++,
+            sourceStartMs = if (overlay.isImage) overlay.sourceStartMs
+                else (overlay.sourceStartMs + offsetMs).coerceAtMost(overlay.sourceDurationMs - 1L),
+            timelineStartMs = timelinePlayheadMs,
+            durationMs = rightDuration,
+            keyframes = rightFrames.toMutableList()
+        )
+        overlayClips.add(right)
+        selectedOverlayId = right.id
+        refreshTimelineTracks()
+        loadOverlayControls()
+        rebuildTimelinePreviewForOverlayEdit()
+        updateOverlayTransformTouchAvailability()
+        status.text = "Bindirme iki ayrı katmana bölündü."
+    }
+
+    private fun mergeSelectedOverlayWithAdjacent() {
+        val selected = selectedOverlay() ?: run {
+            status.text = "Birleştirmek için önce bir bindirme seç."
+            return
+        }
+        val ordered = overlayClips.sortedBy { it.timelineStartMs }
+        val index = ordered.indexOfFirst { it.id == selected.id }
+        val candidates = listOfNotNull(
+            ordered.getOrNull(index - 1),
+            ordered.getOrNull(index + 1)
+        )
+        val adjacent = candidates.firstOrNull { other ->
+            val left = if (other.timelineStartMs < selected.timelineStartMs) other else selected
+            val right = if (left.id == selected.id) other else selected
+            val continuousSource = left.isImage ||
+                left.sourceStartMs + left.durationMs == right.sourceStartMs
+            val sameTransform = kotlin.math.abs(left.scale - right.scale) < 0.0001f &&
+                kotlin.math.abs(left.xFraction - right.xFraction) < 0.0001f &&
+                kotlin.math.abs(left.yFraction - right.yFraction) < 0.0001f &&
+                kotlin.math.abs(left.rotationDegrees - right.rotationDegrees) < 0.0001f &&
+                kotlin.math.abs(left.opacity - right.opacity) < 0.0001f
+            left.uri == right.uri &&
+                left.isImage == right.isImage &&
+                left.timelineStartMs + left.durationMs == right.timelineStartMs &&
+                continuousSource &&
+                sameTransform &&
+                left.keyframes.isEmpty() &&
+                right.keyframes.isEmpty()
+        }
+        if (adjacent == null) {
+            status.text = "Birleştirme için aynı kaynaklı, bitişik ve animasyonsuz iki bindirme gerekir."
+            return
+        }
+        val left = if (adjacent.timelineStartMs < selected.timelineStartMs) adjacent else selected
+        val right = if (left.id == selected.id) adjacent else selected
+        left.durationMs += right.durationMs
+        overlayClips.removeAll { it.id == right.id }
+        selectedOverlayId = left.id
+        timelinePlayheadMs = left.timelineStartMs
+        refreshTimelineTracks()
+        loadOverlayControls()
+        rebuildTimelinePreviewForOverlayEdit()
+        updateOverlayTransformTouchAvailability()
+        status.text = "Bitişik bindirme katmanları birleştirildi."
+    }
+
     private fun removeSelectedOverlay() {
         val selected = selectedOverlay() ?: run {
             status.text = "Kaldırmak için önce zaman çizelgesinden bir bindirme seç."
