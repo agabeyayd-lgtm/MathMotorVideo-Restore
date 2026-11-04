@@ -42,7 +42,7 @@ internal object TextAnimationMath {
             )
             TextAnimationPreset.SLIDE_LEFT -> TextAnimationState(
                 alpha = alpha,
-                offsetXFraction = (1f - enter) * 0.14f - (1f - exit) * 0.14f
+                offsetXFraction = -(1f - enter) * 0.14f + (1f - exit) * 0.14f
             )
             TextAnimationPreset.POP -> TextAnimationState(
                 alpha = alpha,
