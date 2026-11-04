@@ -4873,6 +4873,7 @@ class VideoEditorActivity : Activity() {
             comp.addListener(object:androidx.media3.common.Player.Listener{
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
                     if (isPlaying) hidePreviewFrameOverlay()
+                    updateOverlaySelectionChrome()
                 }
                 override fun onVideoSizeChanged(videoSize:androidx.media3.common.VideoSize){
                     playerView.post{updatePreviewCanvasSize()}
@@ -4958,6 +4959,7 @@ class VideoEditorActivity : Activity() {
             selectedClipIndex=active;refreshTimelineAfterClipChange();loadTrimControls()
         }
         updateTimelinePlayheadLabel()
+        updateOverlaySelectionChrome()
     }
     private fun syncTimelinePlayheadFromPlayer(){
         val comp=timelineCompositionPlayer?:return
@@ -7916,10 +7918,23 @@ class VideoEditorActivity : Activity() {
             hidePreviewFrameOverlay()
             return
         }
-        val requestId = showPreviewFramePending(keepPreviousFrame)
-
         val lastFrameMs = (totalOutputDurationMs() - 1L).coerceAtLeast(0L)
         val safeProjectTimeMs = projectTimeMs.coerceIn(0L, lastFrameMs)
+        val hasActiveOverlay = overlayClips.any { overlay ->
+            safeProjectTimeMs >= overlay.timelineStartMs &&
+                safeProjectTimeMs < overlay.timelineStartMs + overlay.durationMs
+        }
+        // The still-frame cover contains only the main clip, so it hid paused
+        // overlays. Let Media3's composed Surface render whenever a bindirme is active.
+        if (hasActiveOverlay && timelinePreviewLoaded &&
+            timelineCompositionPlayer != null &&
+            playerView.player === timelineCompositionPlayer
+        ) {
+            hidePreviewFrameOverlay()
+            updateOverlaySelectionChrome()
+            return
+        }
+        val requestId = showPreviewFramePending(keepPreviousFrame)
         val activeIndex = activeClipIndexAt(safeProjectTimeMs)
         val clip = clips.getOrNull(activeIndex ?: -1)
         if (clip == null) return // A timeline gap is intentionally rendered as black.
