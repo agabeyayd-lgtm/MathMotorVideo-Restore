@@ -542,7 +542,7 @@ echo "Step 9/12: align a thumbnail cell with the playhead and compare the render
 # scrolls. That value is density-scaled (pixels), so a fixed 12px allowance
 # undershoots on the Pixel 2 emulator and creates a false alignment failure.
 touch_slop_px="$(timeout -k 2s 8s adb -s emulator-5554 logcat -d -v brief -s TimelineSyncTest:I \
-  | sed -n 's/.*TIMELINE_TOUCH_SLOP_PX=\\([0-9][0-9]*\\).*/\\1/p' | tail -n 1)"
+  | sed -n 's/.*TIMELINE_TOUCH_SLOP_PX=\([0-9][0-9]*\).*/\1/p' | tail -n 1)"
 if ! [[ "$touch_slop_px" =~ ^[0-9]+$ ]] || [ "$touch_slop_px" -le 0 ]; then
   echo "Could not read the emulator's actual Android touch-slop value."
   collect_capture_diagnostics timeline-touch-slop-missing
