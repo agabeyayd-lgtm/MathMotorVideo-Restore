@@ -700,3 +700,9 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Latest Git comparison before these documentation commits: 125 ahead, 4 behind `main`, 27 changed files. PR #22 remains open/unmerged; no Actions run or check was returned for the current head.
 - Added explicit Kotlin opt-in to the Media3 channel-matrix unit test so the test source correctly acknowledges the library's unstable API annotation.
 - Latest comparison after this source correction: 129 commits ahead and 4 behind `main`, 27 changed files. The current head still requires the queued CI results; no APK is claimed yet.
+
+### 2026-11-04 release preparation
+
+- Bumped the candidate app version from `versionCode 395 / 8.29-capcut-editor` to `versionCode 396 / 8.30-capcut-editor` so an eventual signed release can update the currently published version 395 installation rather than reusing its version code.
+- Merged the current `main` head into this working branch using a merge commit; the common-base and main trees were identical, and GitHub now reports the PR branch as 0 commits behind `main`. `main` itself remains unchanged.
+- Latest source head is now being checked by GitHub Actions. No test, build, emulator, signed APK, or release is claimed until the corresponding run/artifact is completed and inspected.
