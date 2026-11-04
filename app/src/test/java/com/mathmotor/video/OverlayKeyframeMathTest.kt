@@ -56,6 +56,52 @@ class OverlayKeyframeMathTest {
     }
 
     @Test
+    fun trimmedVideoOverlayDurationCannotOverrunRemainingSource() {
+        assertEquals(
+            8_000L,
+            OverlaySourceRangeMath.availableDurationMs(
+                sourceDurationMs = 10_000L,
+                sourceStartMs = 2_000L,
+                isImage = false
+            )
+        )
+        assertEquals(
+            8_000L,
+            OverlaySourceRangeMath.clampDurationMs(
+                requestedDurationMs = 10_000L,
+                sourceDurationMs = 10_000L,
+                sourceStartMs = 2_000L,
+                isImage = false
+            )
+        )
+    }
+
+    @Test
+    fun minimumDurationIsReducedWhenOnlyAShortSourceTailRemains() {
+        assertEquals(
+            400L,
+            OverlaySourceRangeMath.clampDurationMs(
+                requestedDurationMs = 100L,
+                sourceDurationMs = 10_000L,
+                sourceStartMs = 9_600L,
+                isImage = false
+            )
+        )
+    }
+
+    @Test
+    fun imageOverlayDurationDoesNotUseVideoSourceTrimOffset() {
+        assertEquals(
+            10_000L,
+            OverlaySourceRangeMath.availableDurationMs(
+                sourceDurationMs = 10_000L,
+                sourceStartMs = 9_000L,
+                isImage = true
+            )
+        )
+    }
+
+    @Test
     fun nearestIndexHonorsTheRequestedTolerance() {
         val frames = listOf(
             OverlayTransformKeyframe(0L, start),
