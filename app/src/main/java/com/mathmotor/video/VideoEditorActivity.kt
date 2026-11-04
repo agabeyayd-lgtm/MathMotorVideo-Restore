@@ -8079,6 +8079,7 @@ class VideoEditorActivity : Activity() {
 
     private fun loadTrimControls() {
         val clip = selectedClip()
+        updateClipSpeedControls()
         if (clip == null) {
             clipCoverButton?.apply { isEnabled = false; text = "Kapak" }
             selectedClipLabel.text = "Önce bir video seç."
