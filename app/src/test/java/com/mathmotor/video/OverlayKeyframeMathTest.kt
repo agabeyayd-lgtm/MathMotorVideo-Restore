@@ -38,6 +38,24 @@ class OverlayKeyframeMathTest {
     }
 
     @Test
+    fun startTrimRebasesKeyframesAndCreatesTheNewStartState() {
+        val frames = listOf(OverlayTransformKeyframe(0L, start), OverlayTransformKeyframe(1_000L, end))
+        val atCut = OverlayKeyframeMath.stateAt(start, frames, 500L)
+        val rebased = OverlayKeyframeMath.rebaseAfterStartTrim(frames, 500L, 500L, atCut)
+        assertEquals(listOf(0L, 500L), rebased.map { it.timeMs })
+        assertEquals(atCut, rebased.first().state)
+        assertEquals(end, rebased.last().state)
+    }
+
+    @Test
+    fun startTrimCanExtendTheOverlayEarlierWithoutLosingItsOriginalKeys() {
+        val frames = listOf(OverlayTransformKeyframe(0L, start), OverlayTransformKeyframe(1_000L, end))
+        val rebased = OverlayKeyframeMath.rebaseAfterStartTrim(frames, -500L, 1_500L, start)
+        assertEquals(listOf(0L, 500L, 1_500L), rebased.map { it.timeMs })
+        assertEquals(start, rebased.first().state)
+    }
+
+    @Test
     fun nearestIndexHonorsTheRequestedTolerance() {
         val frames = listOf(
             OverlayTransformKeyframe(0L, start),
