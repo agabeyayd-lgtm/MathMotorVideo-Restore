@@ -1,3 +1,11 @@
+## On-device update confirmed — 2026-11-04 (394 → 395)
+
+**PHYSICAL UPDATE SUCCESS CONFIRMED BY USER.** The production-signed app installed version 395 through its own `Kontrol et` updater from production-signed 394. This confirms the real in-app update path for this release pair. Version 395 (`8.29-capcut-editor`, `versionCode=395`) is now the active device baseline. Continue development on `main`; future updates should use the same controlled signed-release workflow and in-app updater.
+
+**Next work:** inspect the accepted editor on the updated phone and address confirmed issues with focused changes, tests and CI. Do not bump to 396 or publish another release until the next change is ready and verified. No claim is made yet about every editor feature being physically validated on 395.
+
+---
+
 ## Latest release checkpoint — 2026-11-04 (version 395)
 
 **SIGNED 395 RELEASE PUBLISHED — GREEN.** Release [app-v8.3-62](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/releases/tag/app-v8.3-62) contains `MathMotorVideo.apk` and reports `versionCode=395`, `versionName=8.29-capcut-editor`. Publish workflow [#62](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41809777933) succeeded; Android unit/build verification [#584](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41809777873) succeeded; the 395 preparation emulator run [#763](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41783330184) succeeded. Production signing continuity against published 394 was independently verified by [#41729419450](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41729419450); release #62 used the same configured signing secret and completed signed APK publication. APK SHA-256: `71a0d213338166d1ab215177dd1d9c4ed045c8c6c70d7e3d16e4aa5f368430a2`.
