@@ -22,8 +22,8 @@ android {
         applicationId = "com.mathmotor.video.next"
         minSdk = 26
         targetSdk = 35
-        versionCode = 394
-        versionName = "8.28-timeline-trim-fix"
+        versionCode = 395
+        versionName = "8.29-capcut-editor"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
