@@ -6088,6 +6088,13 @@ class VideoEditorActivity : Activity() {
                     "EditorSmokeTest",
                     "EDITOR_SMOKE_CLIP_ADDED title=$title durationMs=$duration clipCount=${clips.size}"
                 )
+                if (smokeTest) {
+                    val testOverlayUri = intent.getStringExtra("overlay_uri")
+                    if (!testOverlayUri.isNullOrBlank()) {
+                        intent.removeExtra("overlay_uri")
+                        addOverlayAsset(Uri.parse(testOverlayUri))
+                    }
+                }
             }
         }.start()
     }
@@ -6694,6 +6701,10 @@ class VideoEditorActivity : Activity() {
                 enterOverlayTools()
                 rebuildTimelinePreviewForOverlayEdit()
                 updateOverlayTransformTouchAvailability()
+                if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+                    android.util.Log.i("EditorSmokeTest",
+                        "EDITOR_SMOKE_OVERLAY_ADDED id=" + overlay.id + " aspect=" + overlay.aspectRatio)
+                }
                 status.text = if (isImage) {
                     "Fotoğraf bindirme olarak eklendi. Süre, boyut ve konumu aşağıdan düzenle."
                 } else {
