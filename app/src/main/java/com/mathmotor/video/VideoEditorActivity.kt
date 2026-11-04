@@ -6568,6 +6568,20 @@ class VideoEditorActivity : Activity() {
         }
     }
 
+    private fun chooseAnyOverlayAsset() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*"))
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+        try {
+            startActivityForResult(intent, REQUEST_OVERLAY_ASSET)
+        } catch (_: Exception) {
+            status.text = "Fotoğraf/video seçici açılamadı."
+        }
+    }
+
     private fun chooseOverlayAsset(imagesOnly: Boolean) {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
