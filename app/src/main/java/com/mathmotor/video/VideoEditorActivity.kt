@@ -546,6 +546,12 @@ class VideoEditorActivity : Activity() {
         )
         if (timelineSyncTestEnabled) {
             android.util.Log.i("TimelineSyncTest", "TIMELINE_SYNC_TEST_ENABLED")
+            // Expose the device's real pixel threshold so the emulator gesture test
+            // compensates for Android's density-scaled HorizontalScrollView touch slop.
+            android.util.Log.i(
+                "TimelineSyncTest",
+                "TIMELINE_TOUCH_SLOP_PX=${android.view.ViewConfiguration.get(this).scaledTouchSlop}"
+            )
         }
         window.statusBarColor = Color.rgb(15, 31, 45)
         window.navigationBarColor = Color.rgb(15, 31, 45)
