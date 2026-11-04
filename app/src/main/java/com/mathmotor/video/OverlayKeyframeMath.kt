@@ -26,6 +26,32 @@ internal data class OverlayTransformKeyframe(
     val state: OverlayTransformState
 )
 
+/** Keeps a video overlay's duration inside the source range remaining after its left trim. */
+internal object OverlaySourceRangeMath {
+    fun availableDurationMs(
+        sourceDurationMs: Long,
+        sourceStartMs: Long,
+        isImage: Boolean
+    ): Long {
+        val sourceDuration = sourceDurationMs.coerceAtLeast(0L)
+        val sourceStart = if (isImage) 0L else sourceStartMs.coerceIn(0L, sourceDuration)
+        return (sourceDuration - sourceStart).coerceAtLeast(0L)
+    }
+
+    fun clampDurationMs(
+        requestedDurationMs: Long,
+        sourceDurationMs: Long,
+        sourceStartMs: Long,
+        isImage: Boolean,
+        minimumDurationMs: Long = 1_000L
+    ): Long {
+        val available = availableDurationMs(sourceDurationMs, sourceStartMs, isImage)
+        if (available <= 0L) return 0L
+        val minimum = minimumDurationMs.coerceAtLeast(1L).coerceAtMost(available)
+        return requestedDurationMs.coerceIn(minimum, available)
+    }
+}
+
 /** Linear interpolation of independently editable overlay transform and opacity keyframes. */
 internal object OverlayKeyframeMath {
     fun stateAt(
