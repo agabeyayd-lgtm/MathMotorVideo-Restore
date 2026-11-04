@@ -4505,9 +4505,12 @@ class VideoEditorActivity : Activity() {
         val clip=clips[index]
         refreshTimelineAfterClipChange();loadTrimControls()
         ensureTimelinePreviewLoaded();seekTimelinePreview(timelinePlayheadMs)
-        showEditorPanel("clip")
+        // Selecting a filmstrip changes only the bottom contextual tool row.
+        // The expanded trim/settings sheet is opened only after an explicit tool tap,
+        // leaving the selected strip unobstructed for immediate long-press dragging.
+        enterClipTools()
         updateClipTransformTouchAvailability()
-        status.text="Seçili klip: ${clip.title}. Kenar tutamaçları yalnızca seçimden sonra görünür; basılı tutup sürükleyerek taşı."
+        status.text="Seçili klip: ${clip.title}. Alt araç satırından bir işlem seçebilir veya şeridi basılı tutup sürükleyebilirsin."
         updateTimelinePlayheadLabel()
     }
 
@@ -5723,15 +5726,53 @@ class VideoEditorActivity : Activity() {
     private fun selectedOverlay(): OverlayClip? =
         overlayClips.firstOrNull { it.id == selectedOverlayId }
 
+    /** Select an overlay track without opening its settings sheet over the timeline. */
+    private fun enterOverlayTools() {
+        if (!::editorDock.isInitialized || !::editorPanelScroll.isInitialized) return
+        clipToolsMode = true
+        activeClipTool = null
+        activeEditorPanel = null
+        updateClipTransformTouchAvailability()
+        updateOverlayTransformTouchAvailability()
+        textOverlayEditingEnabled = false
+        updateTextOverlayEditToggle()
+        editorPanels.values.forEach { it.visibility = View.GONE }
+        editorPanelScroll.animate().cancel()
+        editorPanelScroll.visibility = View.GONE
+        editorPanelScroll.translationY = 0f
+        editorPanelScroll.alpha = 1f
+        editorDock.removeAllViews()
+        val tools = listOf(
+            Triple("‹", "Geri", "Ana araçlara dön"),
+            Triple("▧", "Düzenle", "Seçili bindirmenin ayarlarını aç"),
+            Triple("×", "Sil", "Seçili bindirmeyi kaldır")
+        )
+        tools.forEach { (symbol, title, description) ->
+            val action: () -> Unit = when (title) {
+                "Geri" -> ({ exitClipTools() })
+                "Düzenle" -> ({ showEditorPanel("overlay") })
+                "Sil" -> ({ removeSelectedOverlay() })
+                else -> ({})
+            }
+            editorDock.addView(
+                makeClipDockTool(symbol, title, description, action),
+                LinearLayout.LayoutParams(dp(60), dp(58))
+            )
+        }
+        editorDockScroll.scrollTo(0, 0)
+        logEditorPanelGeometry("overlay-tools")
+    }
+
     private fun selectOverlay(id: Long) {
         val overlay = overlayClips.firstOrNull { it.id == id } ?: return
         selectedOverlayId = id
         timelinePlayheadMs = overlay.timelineStartMs
         loadOverlayControls()
-        showEditorPanel("overlay")
         refreshTimelineTracks()
         updateTimelinePlayheadDisplay()
         if (timelinePreviewLoaded) seekTimelinePreview(timelinePlayheadMs)
+        // Keep the timeline visible and draggable; settings rise only after "Düzenle".
+        enterOverlayTools()
     }
 
     private fun updateOverlayTransformTouchAvailability() {
