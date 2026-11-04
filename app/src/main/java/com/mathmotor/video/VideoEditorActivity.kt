@@ -107,7 +107,8 @@ class VideoEditorActivity : Activity() {
         var scale: Float = 0.35f,
         var xFraction: Float = 0.78f,
         var yFraction: Float = 0.22f,
-        var rotationDegrees: Float = 0f
+        var rotationDegrees: Float = 0f,
+        var opacity: Float = 1f
     )
 
     private data class ClipEditSnapshot(
@@ -437,12 +438,14 @@ class VideoEditorActivity : Activity() {
     private lateinit var overlayScaleLabel: TextView
     private lateinit var overlayPositionLabel: TextView
     private lateinit var overlayRotationLabel: TextView
+    private lateinit var overlayOpacityLabel: TextView
     private lateinit var overlayStartSeek: SeekBar
     private lateinit var overlayDurationSeek: SeekBar
     private lateinit var overlayScaleSeek: SeekBar
     private lateinit var overlayXSeek: SeekBar
     private lateinit var overlayYSeek: SeekBar
     private lateinit var overlayRotationSeek: SeekBar
+    private lateinit var overlayOpacitySeek: SeekBar
     private var updatingOverlayControls = false
     private var clipCoverButton: Button? = null
     private var pendingCoverSaveBitmap: Bitmap? = null
@@ -1466,6 +1469,10 @@ class VideoEditorActivity : Activity() {
         overlayPanel.addView(overlayRotationLabel)
         overlayRotationSeek = SeekBar(this).apply { max = 3600; progress = 1800 }
         overlayPanel.addView(overlayRotationSeek, matchWrap())
+        overlayOpacityLabel = label("Saydamlık", 11f, Color.rgb(205, 218, 231), false)
+        overlayPanel.addView(overlayOpacityLabel)
+        overlayOpacitySeek = SeekBar(this).apply { max = 1000; progress = 1000 }
+        overlayPanel.addView(overlayOpacitySeek, matchWrap())
         installOverlayControlListeners()
 
         val exportPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -4092,7 +4099,7 @@ class VideoEditorActivity : Activity() {
             val visible = timeMs >= layer.timelineStartMs &&
                 timeMs < layer.timelineStartMs + layer.durationMs
             return StaticOverlaySettings.Builder()
-                .setAlphaScale(if (visible) 1f else 0f)
+                .setAlphaScale(if (visible) layer.opacity.coerceIn(0f, 1f) else 0f)
                 .setScale(layer.scale, layer.scale)
                 .setBackgroundFrameAnchor(
                     layer.xFraction * 2f - 1f,
@@ -5300,6 +5307,7 @@ class VideoEditorActivity : Activity() {
                 put("xFraction", overlay.xFraction)
                 put("yFraction", overlay.yFraction)
                 put("rotationDegrees", overlay.rotationDegrees)
+                put("opacity", overlay.opacity)
             })
         }
         return JSONObject().apply {
@@ -5422,7 +5430,8 @@ class VideoEditorActivity : Activity() {
                 scale = item.optDouble("scale", 0.35).toFloat().coerceIn(0.10f, 1.50f),
                 xFraction = item.optDouble("xFraction", 0.78).toFloat().coerceIn(0f, 1f),
                 yFraction = item.optDouble("yFraction", 0.22).toFloat().coerceIn(0f, 1f),
-                rotationDegrees = item.optDouble("rotationDegrees", 0.0).toFloat().coerceIn(-180f, 180f)
+                rotationDegrees = item.optDouble("rotationDegrees", 0.0).toFloat().coerceIn(-180f, 180f),
+                opacity = item.optDouble("opacity", 1.0).toFloat().coerceIn(0f, 1f)
             )
             loadedOverlays.add(overlay)
             maxOverlayId = maxOf(maxOverlayId, overlay.id)
@@ -5675,8 +5684,11 @@ class VideoEditorActivity : Activity() {
                 }
                 val projectDuration = TimelineVideoMath.totalDuration(videoTimelineSegments()).coerceAtLeast(1_000L)
                 val startMs = timelinePlayheadMs.coerceIn(0L, projectDuration - 1L)
+                // Still images used as logos should cover the remaining project by default.
+                // Give them a virtual source duration long enough for the whole timeline.
+                val effectiveSourceDuration = if (isImage) maxOf(sourceDuration, projectDuration) else sourceDuration
                 val defaultDuration = if (isImage) {
-                    3_000L
+                    (projectDuration - startMs).coerceAtLeast(1L)
                 } else {
                     minOf(sourceDuration, (projectDuration - startMs).coerceAtLeast(1_000L))
                 }
@@ -5685,10 +5697,14 @@ class VideoEditorActivity : Activity() {
                     uri = uri,
                     title = title,
                     isImage = isImage,
-                    sourceDurationMs = sourceDuration,
+                    sourceDurationMs = effectiveSourceDuration,
                     sourceStartMs = 0L,
                     timelineStartMs = startMs,
-                    durationMs = defaultDuration.coerceIn(1L, sourceDuration)
+                    durationMs = defaultDuration.coerceIn(1L, effectiveSourceDuration),
+                    scale = if (isImage) 0.18f else 0.35f,
+                    xFraction = if (isImage) 0.88f else 0.78f,
+                    yFraction = if (isImage) 0.12f else 0.22f,
+                    opacity = if (isImage) 0.88f else 1f
                 )
                 overlayClips.add(overlay)
                 selectedOverlayId = overlay.id
@@ -5889,6 +5905,9 @@ class VideoEditorActivity : Activity() {
         attach(overlayRotationSeek) { overlay, progress ->
             overlay.rotationDegrees = progress / 10f - 180f
         }
+        attach(overlayOpacitySeek) { overlay, progress ->
+            overlay.opacity = (progress / 1000f).coerceIn(0f, 1f)
+        }
     }
 
     private fun loadOverlayControls() {
@@ -5899,16 +5918,17 @@ class VideoEditorActivity : Activity() {
             if (overlay == null) {
                 overlayTitleLabel.text = "Henüz bindirme seçilmedi. Fotoğraf veya video ekle."
                 listOf(overlayStartSeek, overlayDurationSeek, overlayScaleSeek,
-                    overlayXSeek, overlayYSeek, overlayRotationSeek).forEach { it.isEnabled = false }
+                    overlayXSeek, overlayYSeek, overlayRotationSeek, overlayOpacitySeek).forEach { it.isEnabled = false }
                 overlayStartLabel.text = "Başlangıç"
                 overlayDurationLabel.text = "Katman süresi"
                 overlayScaleLabel.text = "Boyut"
                 overlayPositionLabel.text = "Konum • yatay / dikey"
                 overlayRotationLabel.text = "Döndürme"
+                overlayOpacityLabel.text = "Saydamlık"
                 return
             }
             listOf(overlayStartSeek, overlayDurationSeek, overlayScaleSeek,
-                overlayXSeek, overlayYSeek, overlayRotationSeek).forEach { it.isEnabled = true }
+                overlayXSeek, overlayYSeek, overlayRotationSeek, overlayOpacitySeek).forEach { it.isEnabled = true }
             val projectDuration = maxOf(
                 totalOutputDurationMs(),
                 overlay.timelineStartMs + overlay.durationMs,
@@ -5926,6 +5946,7 @@ class VideoEditorActivity : Activity() {
             overlayXSeek.progress = (overlay.xFraction * 1000f).toInt().coerceIn(0, 1000)
             overlayYSeek.progress = (overlay.yFraction * 1000f).toInt().coerceIn(0, 1000)
             overlayRotationSeek.progress = ((overlay.rotationDegrees + 180f) * 10f).toInt().coerceIn(0, 3600)
+            overlayOpacitySeek.progress = (overlay.opacity * 1000f).toInt().coerceIn(0, 1000)
             updateOverlayControlLabels(overlay)
         } finally {
             updatingOverlayControls = false
@@ -5934,12 +5955,13 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun updateOverlayControlLabels(overlay: OverlayClip) {
-        overlayTitleLabel.text = "${if (overlay.isImage) "Fotoğraf" else "Video"} • ${overlay.title}"
-        overlayStartLabel.text = "Başlangıç: ${formatTimelineMs(overlay.timelineStartMs)}"
-        overlayDurationLabel.text = "Süre: ${formatTimelineMs(overlay.durationMs)} / Kaynak: ${formatTimelineMs(overlay.sourceDurationMs)}"
-        overlayScaleLabel.text = "Boyut: ${(overlay.scale * 100f).toInt()}%"
-        overlayPositionLabel.text = "Konum: X ${(overlay.xFraction * 100f).toInt()}% • Y ${(overlay.yFraction * 100f).toInt()}%"
-        overlayRotationLabel.text = "Döndürme: ${overlay.rotationDegrees.toInt()}°"
+        overlayTitleLabel.text = (if (overlay.isImage) "Fotoğraf" else "Video") + " • " + overlay.title
+        overlayStartLabel.text = "Başlangıç: " + formatTimelineMs(overlay.timelineStartMs)
+        overlayDurationLabel.text = "Süre: " + formatTimelineMs(overlay.durationMs) + " / Kaynak: " + formatTimelineMs(overlay.sourceDurationMs)
+        overlayScaleLabel.text = "Boyut: " + (overlay.scale * 100f).toInt() + "%"
+        overlayPositionLabel.text = "Konum: X " + (overlay.xFraction * 100f).toInt() + "% • Y " + (overlay.yFraction * 100f).toInt() + "%"
+        overlayRotationLabel.text = "Döndürme: " + overlay.rotationDegrees.toInt() + "°"
+        overlayOpacityLabel.text = "Saydamlık: " + (overlay.opacity * 100f).toInt() + "%"
     }
 
     private fun rebuildTimelinePreviewForOverlayEdit() {
