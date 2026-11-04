@@ -86,6 +86,15 @@ class MusicSourceRangeMathTest {
     }
 
     @Test
+    fun previewSeeksImmediatelyWhenPlaybackEscapesSelectedRange() {
+        val range = MusicSourceRange(3_000L, 7_000L)
+        assertTrue(MusicSourceRangeMath.needsPreviewSeek(7_025L, 3_025L, range))
+        assertTrue(MusicSourceRangeMath.needsPreviewSeek(2_999L, 3_000L, range))
+        assertTrue(MusicSourceRangeMath.needsPreviewSeek(4_000L, 4_500L, range))
+        assertEquals(false, MusicSourceRangeMath.needsPreviewSeek(4_050L, 4_000L, range))
+    }
+
+    @Test
     fun emptyOrInvalidSourceRangeNeverProducesNegativeDuration() {
         assertEquals(0L, MusicSourceRangeMath.normalize(MusicSourceRange(5_000L, 2_000L), 10_000L).durationMs)
         assertEquals(0L, MusicSourceRangeMath.sourcePosition(MusicSourceRange(0L, 0L), 500L, 10_000L))

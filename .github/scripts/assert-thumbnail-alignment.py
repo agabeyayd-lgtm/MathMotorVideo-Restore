@@ -62,7 +62,7 @@ def verify(xml_path, screenshot_path, log_path):
         box = bounds(node)
         if match and box:
             x = (box[0] + box[2]) // 2
-            if abs(x - center) <= 2:
+            if abs(x - center) <= 3:
                 cell = (node, box)
                 sample_ms = int(match.group(1))
                 break

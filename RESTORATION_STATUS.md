@@ -1,3 +1,78 @@
+## PR #22 audit continuation — 2026-11-04
+
+- Continued static review across overlay timing/export, clip speed export, text animation, timeline lane selection, and clip/overlay transform keyframes.
+- Confirmed the selected track flows use contextual bottom tool strips: selecting a video, text, audio, or overlay track does not itself open the expanded settings sheet; the explicit `Düzenle`/tool action opens it. Overlay transform gestures are enabled only inside its edit panel.
+- Clip transform keyframes now use the same duplicate-timestamp normalization as overlay keyframes (last stored transform wins), with a regression test added.
+- PR #22 currently remains divergent from `main`; no review threads or submitted PR reviews were returned in the latest audit. Do not merge until the branch is reconciled and the complete diff is reviewed.
+- Verification remains static source inspection only. The newly added tests have not been run, no Gradle compile or emulator test has been verified, and no APK has been produced. GitHub Actions runs are not visible for the latest commits from the available connection.
+
+---
+
+## Clip transform keyframe normalization — 2026-11-04
+
+- Static review found the same duplicate-timestamp ambiguity in video clip transform keyframes that had already been corrected for overlay keyframes. Clip transform interpolation and keyframe writes now normalize timestamps and keep the last saved transform for each timestamp.
+- Added a regression test for duplicate stored clip-transform timestamps.
+- Source commits: 8eda63d (normalization) and 1e07a58 (test). The test has not been executed; no Gradle build, emulator run or APK is claimed.
+
+---
+
+## PR #22 continuation state — 2026-11-04
+
+- Latest GitHub comparison: `feature/logo-watermark-overlay-verify` is **100 commits ahead and 4 behind `main`**, with 22 changed files. It remains divergent and is not ready to merge. `main` was not modified.
+- No workflow runs or combined commit statuses are currently returned for the newly updated source commits. Unit tests, Gradle compilation, emulator checks and physical-device validation therefore remain **unverified**. No APK was created.
+- The current source-head fixes are limited to keyframed overlay gesture anchoring, source-range-safe overlay duration, and last-saved-wins normalization for duplicate overlay keyframe timestamps. Their regression tests are committed but not yet executed.
+- The Android emulator workflow is configured for PR synchronization on source changes, but the GitHub connection available to this session has no workflow-dispatch/start action. Do not report a run as started; use the repository's Actions page to manually dispatch `Android emulator screenshots` if no PR synchronization run appears.
+
+---
+
+## Restored keyframe timestamp normalization — 2026-11-04
+
+- Added a defensive normalization pass for overlay keyframes: when a restored or manually edited project contains multiple entries at the same local timestamp, the last saved entry is authoritative. New keyframe writes also clean up duplicate timestamps before inserting.
+- Added a focused regression test for duplicate timestamps. This avoids an immediate interpolation discontinuity at malformed duplicate keyframe positions.
+- Source commits: 40d87b8 (normalization) and 3f62856 (test). Verification remains static only; the new and existing unit tests have not been executed, and no build/emulator result or APK is available for this branch head.
+
+---
+
+## Overlay trim source-boundary correction — 2026-11-04
+
+- Static review found that the Bindirme duration control used the full video source duration even after the left edge had been trimmed. For example, a 10-second source trimmed to start at 2 seconds could still be assigned a 10-second overlay duration, making the export clip request run past the source end.
+- Added shared OverlaySourceRangeMath bounds. The duration control now uses only the source time remaining after the current source start; the image path intentionally remains independent of video source offsets. The export sequence also applies the same source-remaining cap as a final defensive boundary.
+- Added unit cases for a trimmed 10-second video, a short remaining source tail, and image behavior. Source commits: 2429f26 (helper), 117ba77 (Activity integration), 5e0c5db (tests).
+- Combined with the preceding keyframed gesture continuity fix, these are focused branch-only changes. **Tests have been added but not executed; Gradle build, CI, API 35 emulator and phone verification remain pending.** No APK or green status is claimed.
+
+---
+
+## Keyframed overlay gesture continuity — 2026-11-04
+
+- Static review found that an animated overlay's first one-finger drag and the transition from two fingers back to one were re-anchored from the overlay's base transform instead of the interpolated transform visible at the playhead. This could make a keyframed overlay jump during direct manipulation.
+- Both gesture entry (ACTION_DOWN) and pointer handoff (ACTION_POINTER_UP) now capture scale/position/rotation from overlayStateAtTime(overlay, timelinePlayheadMs). The correction is limited to touch anchoring; timeline timing, keyframe interpolation, export composition, and the main branch are unchanged.
+- Source commits: 307871b (pointer handoff) and a20a836 (gesture entry).
+- Verification boundary: static source review only. Unit tests, Gradle compilation, API 35 emulator interaction/screenshot checks, and physical-phone validation have not run for these commits. No green check or APK is claimed.
+
+---
+
+## Contextual track selection — 2026-11-04
+
+**PR #22 interaction contract.** Video, Ses, Metin and Bindirme tracks must follow one shared CapCut-style rule: a normal tap selects only and changes the contextual bottom tool row in place; it must not open the expanded settings panel. Press-and-hold + drag moves the selected item; edge handles trim its timing. Only an explicit `Düzenle` / `Kırp` action in the contextual row opens the bottom settings panel. Back returns to the same track's contextual row. This behavior must be consistent across all four track types.
+
+**Latest interaction refinement:** opening a selected track's `Düzenle` panel keeps that track's contextual dock active. Closing the panel or pressing Android Back returns to the same track tools; the dock's `Geri` action exits to global editor tools. Audio move/trim operations also restore the audio contextual dock. AI features are explicitly out of scope.
+
+**Emulator CI cleanup refinement:** the emulator smoke job now creates and boots its API 35 Google APIs AVD explicitly, runs the same instrumentation and screenshot checks, and shuts down the emulator with a shell `trap`. This removes the action post-step that previously failed at `Terminate Emulator` (`stop: Not implemented` / exit 24). A new run for this head is still pending; do not mark the emulator check green until verified.
+
+---
+
+## Corner logo / watermark overlay — 2026-11-04 (PR #22)
+
+**Implementation in review; final CI and on-device validation pending.** The existing editor's `Bindirme` tool is used to add a still image as a project logo; no separate editor or image upload service is introduced.
+
+- Selecting `＋ Logo / Fotoğraf` opens Android's document picker. New still-image logos begin at project time 00:00 and span the full main-video duration, including videos longer than the old 60-second image-source limit.
+- The default placement is a small upper-right logo (18% scale) at 88% opacity. The user can move it directly in the preview, adjust scale/position/rotation and timing, and change opacity with the new `Saydamlık` slider.
+- Opacity is persisted in project JSON and applied by the shared Media3 compositor settings used for preview and MP4 export. Older projects that do not contain the new field restore at 100% opacity.
+- Video overlays retain their existing playhead-start behavior and full-opacity default. Logo image layers remain separate from the main video and occupy their own Bindirme timeline lane.
+- Unit tests cover full-project duration and corner defaults. Version remains 395; this PR does not publish or prepare version 396.
+
+---
+
 ## On-device update confirmed — 2026-11-04 (394 → 395)
 
 **PHYSICAL UPDATE SUCCESS CONFIRMED BY USER.** The production-signed app installed version 395 through its own `Kontrol et` updater from production-signed 394. This confirms the real in-app update path for this release pair. Version 395 (`8.29-capcut-editor`, `versionCode=395`) is now the active device baseline. Continue development on `main`; future updates should use the same controlled signed-release workflow and in-app updater.
@@ -544,10 +619,62 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Keep README.md and RESTORATION_STATUS.md synchronized as work progresses; do not create a new version just to test.
 - The user's immediate request was to preserve the restart point in the repository so work can continue from another ChatGPT account/session.
 
-## In-app updater status — 2026-11-03
+## In-app updater status — 2026-11-04
 
-- The home screen already provides a manual `Kontrol et` action. It checks GitHub `releases/latest`, reads the published `versionCode`, compares it with the installed app, downloads `MathMotorVideo.apk` when a higher version exists, and opens Android's package installer.
-- The latest signed release is `app-v8.3-61`, with `versionCode=394`; Gradle is also set to 394. No signed release was published by merging PR #18.
-- Publishing is separate from PR builds. The signed workflow runs manually or when `.github/release-trigger.txt` changes on `main`; it uses the persistent release-signing key. PR #18 did not touch that marker.
-- Run #754's debug APK uses the debug certificate, while public releases use the persistent release certificate. When the installed app has the debug certificate, Android will not accept the release certificate as an in-place update. A one-time signed-install migration is needed first. Uninstalling erases private editor drafts, so back up important projects before migration.
-- Before publishing a higher version, verify that the release certificate matches the currently published signed 394 APK and test a controlled upgrade. Keep 394 unchanged until that check is ready.
+- The home screen's manual `Kontrol et` action checks GitHub `releases/latest`, reads the published `versionCode`, compares it with the installed app, downloads `MathMotorVideo.apk` when a higher version exists, and opens Android's package installer.
+- Latest signed release: `app-v8.3-62` (Build 62), `versionCode=395`. The currently installed phone build is not established by repository state.
+- Candidate branch version: `versionCode=396`, `versionName=8.30-capcut-editor`. It is not published.
+- Publishing is separate from PR/debug builds. The signed workflow uses the persistent release-signing key and runs manually or when `.github/release-trigger.txt` changes on `main`. That release trigger remains unchanged in PR #22 to prevent a publish before signing continuity is checked.
+- The signing-continuity workflow now compares the configured signing source with the published 395 APK. Its workflow and trigger-note changes in PR #22 are designed to run on `main` after merge. Only if this check passes should a separate commit update the release trigger to publish 396.
+- Debug APK artifacts use the debug certificate. They cannot replace an installation signed with a different release certificate in place. Preserve/export private editor drafts before any one-time migration between signing certificates.
+
+
+## Current continuation audit — 2026-11-04
+
+- PR #18 was merged on 2026-11-03. Current published `main` is `versionCode=395`, `versionName=8.29-capcut-editor`; latest signed tag is `app-v8.3-62`, Build 62.
+- PR #22 is open and unmerged. The candidate branch includes current `main` (0 commits behind); latest comparison at this note was 137 commits ahead, 30 changed files. GitHub reports the PR mergeable. Merge remains gated on current-head verification.
+- Candidate version 396 exists only on the PR branch. Signing continuity is updated to compare against current signed 395. The release trigger file is intentionally unchanged.
+- Current-head Actions jobs for unit/build, emulator screenshots and a debug APK artifact are queued. No green result, export playback confirmation, or deliverable APK is claimed.
+- Keep `main` unchanged until current-head CI passes and the full PR diff is reviewed. After merge, verify signing continuity against 395; only then change the main release trigger separately to publish 396.
+
+
+## Follow-up static audit — 2026-11-04
+
+- Found and corrected a start-trim edge case for animated image/video overlays: keyframes are now rebased to the trimmed local timeline, and a keyframe is seeded at the new local zero using the interpolated transform at the cut point. Extending the left edge preserves the original keyframe timing relative to the source.
+- Added focused unit tests for trimming the start edge and extending it earlier. These tests are committed but **not executed yet**; the PR still has no verified green CI/build.
+- The branch comparison currently reports 78 commits ahead and 4 behind `main` (22 changed files). This is a divergent branch, not merge-ready.
+
+### 2026-11-04 audio preview audit
+
+- Found and fixed a preview-only audio activation defect: `syncPreviewAudio()` previously required the legacy single-clip ExoPlayer to be playing, which is false during multi-clip `CompositionPlayer` playback. The gate now checks `timelineCompositionPlayer.isPlaying` when the timeline composition is active and checks the legacy player only for single-clip preview.
+- Static dependency review: this branch declares Media3 `1.10.1`. Each main-video `EditedMediaItem` receives a constant `SpeedProvider`; the source audio remains part of the same edited item unless the user disables original clip audio, so video and source audio share the clip speed effect. Music and sound-effect export remain separate audio sequences at their timeline offsets.
+- Not verified dynamically: no Gradle build, unit tests, emulator playback, exported-file audio sync check, or APK for commit `6371b3555f0a0c996beeab4938e4780e99935d2e`.
+- PR #22 remains open/unmerged. Latest comparison after the fix: 109 commits ahead, 4 behind `main`; 22 changed files. No PR-triggered workflow run was returned for the fix commit.
+- Follow-up found that the music preview player repeats the entire source file while the timeline loops only the selected in/out range. The preview now forces a seek as soon as the playhead escapes that selected range, avoiding up to 400ms of untrimmed audio leakage; a regression test covers range escape and normal in-range tolerance.
+- Latest branch comparison after these additions: 115 commits ahead, 4 behind `main`, 23 changed files. The new regression test is committed but remains unexecuted; no build, emulator run, export-audio check, or APK is verified.
+
+### 2026-11-04 export pipeline verification follow-up
+
+- Media3 1.10.1 source inspection found two invalid audio sequence builder usages: the music path combined the explicit `Builder(Set<TrackType>)` constructor with the legacy `experimentalSetForceAudioTrack(true)` call (the 1.10.1 implementation rejects that combination), and the delayed sound path used the private no-argument builder. Both music and sound now use a shared audio-only sequence factory with explicit track types and preserved leading/trailing silence.
+- Media3 1.10.1's Transformer source adds 16-bit PCM normalization to composition items and adds `SpeedChangingAudioProcessor` to items with a `SpeedProvider`.
+- The channel mixing matrix helper uses the library-supported 1–6 channel constant-power matrices and explicit stereo routing for 6.1/7.1 layouts; the new tests opt in to Media3's unstable API annotation. This confirms that source audio in a speed-adjusted video item follows that item's playback speed; `setDurationUs` remains the pre-clipping/pre-speed source duration.
+- Media3 also requires audio items mixed in a composition to have the same channel count. Added stereo normalization for original clip audio, music and sound effects, including 1–8 channel inputs, plus unit tests for matrix output and sequence track declarations.
+- Static code and official-library source review only. The new tests have not been executed; no Gradle build, emulator playback, exported MP4 audio check or APK has been verified for this head.
+- Latest Git comparison before these documentation commits: 125 ahead, 4 behind `main`, 27 changed files. PR #22 remains open/unmerged; no Actions run or check was returned for the current head.
+- Added explicit Kotlin opt-in to the Media3 channel-matrix unit test so the test source correctly acknowledges the library's unstable API annotation.
+- Latest comparison after this source correction: 129 commits ahead and 4 behind `main`, 27 changed files. The current head still requires the queued CI results; no APK is claimed yet.
+
+### 2026-11-04 release preparation
+
+- Bumped the candidate app version from `versionCode 395 / 8.29-capcut-editor` to `versionCode 396 / 8.30-capcut-editor` so an eventual signed release can update the currently published version 395 installation rather than reusing its version code.
+- Merged the current `main` head into this working branch using a merge commit; the common-base and main trees were identical, and GitHub now reports the PR branch as 0 commits behind `main`. `main` itself remains unchanged.
+- Latest source head is now being checked by GitHub Actions. No test, build, emulator, signed APK, or release is claimed until the corresponding run/artifact is completed and inspected.
+
+### CI failure follow-up — 2026-11-04
+
+- First real Gradle run exposed a missing text-layer delete handler reference; the dock action now calls the existing `removeSelectedTextLayer()` implementation.
+- The next unit-test run exposed a signed-delta bug in left-trimming a clip earlier: source-time extension was being converted to a nonnegative timeline offset, so the project start did not move left. The mapping now preserves the sign and converts the magnitude through the clip speed.
+- Overlay rotation interpolation intentionally normalizes the +180° midpoint as positive 180°; updated the stale test expectation to match that documented behavior.
+- CI for the immediately preceding commit is being rerun; the newest test assertion correction is committed after that run started, so it still needs a fresh workflow run. No APK or successful test suite is claimed yet.
+- The debug APK artifact is now built and uploaded successfully from the tested source. The separate verification workflow also completed successfully.
+- The first emulator attempt passed Gradle tests and APK packaging but failed before AVD creation: `android-actions/setup-android@v3` attempted to install the removed SDK package `tools`. The workflow now uses the runner's preinstalled command-line tools directly and installs only supported SDK packages; emulator smoke tests must be rerun before claiming emulator verification.

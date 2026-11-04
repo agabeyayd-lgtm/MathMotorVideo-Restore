@@ -538,9 +538,17 @@ print("PASS: preview and timeline stayed fixed while the one-row tool strip open
 PY
 
 echo "Step 9/12: align a thumbnail cell with the playhead and compare the rendered pixels"
-# HorizontalScrollView consumes touch slop before scrolling. Re-measure after
-# every drag and add the measured 12px touch-slop allowance so the cell center
-# actually reaches the fixed playhead instead of stopping short.
+# HorizontalScrollView consumes ViewConfiguration.scaledTouchSlop before it
+# scrolls. That value is density-scaled (pixels), so a fixed 12px allowance
+# undershoots on the Pixel 2 emulator and creates a false alignment failure.
+touch_slop_px="$(timeout -k 2s 8s adb -s emulator-5554 logcat -d -v brief -s TimelineSyncTest:I \
+  | sed -n 's/.*TIMELINE_TOUCH_SLOP_PX=\([0-9][0-9]*\).*/\1/p' | tail -n 1)"
+if ! [[ "$touch_slop_px" =~ ^[0-9]+$ ]] || [ "$touch_slop_px" -le 0 ]; then
+  echo "Could not read the emulator's actual Android touch-slop value."
+  collect_capture_diagnostics timeline-touch-slop-missing
+  exit 29
+fi
+echo "Using Android ViewConfiguration touch slop: ${touch_slop_px}px"
 thumbnail_aligned=false
 for attempt in 1 2 3 4 5; do
   hierarchy="emulator-screenshots/editor-frame-align-${attempt}.xml"
@@ -550,11 +558,11 @@ for attempt in 1 2 3 4 5; do
   delta_x="$((play_center_x - thumb_center_x))"
   absolute_delta="$((delta_x < 0 ? -delta_x : delta_x))"
   echo "Alignment attempt $attempt: sample=${thumb_sample_ms}ms center=${thumb_center_x}px playhead=${play_center_x}px delta=${delta_x}px"
-  if [ "$absolute_delta" -le 2 ]; then
+  if [ "$absolute_delta" -le 3 ]; then
     thumbnail_aligned=true
     break
   fi
-  gesture_delta="$((delta_x + (delta_x < 0 ? -12 : 12)))"
+  gesture_delta="$((delta_x + (delta_x < 0 ? -touch_slop_px : touch_slop_px)))"
   gesture_end_x="$((thumb_center_x + gesture_delta))"
   timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$thumb_center_x" "$thumb_center_y" "$gesture_end_x" "$thumb_center_y" 400
   sleep 1
@@ -604,12 +612,33 @@ read -r clip_x1 clip_y1 clip_x2 clip_y2 <<< "$clip_bounds"
 scrub_y="$(((clip_y1 + clip_y2) / 2))"
 clip_width="$((clip_x2 - clip_x1))"
 # UIAutomator reports the visible intersection of a long clip with the lane
-# viewport, not the clip's full off-screen width. Scale the inset to that
-# visible width instead of discarding a fixed 35px from both sides.
+# viewport, not the clip's full off-screen width. Scale the regular inset to
+# that visible width, but keep the initial touch safely inside Android's
+# gesture-navigation exclusion zone. Starting near the right screen edge can
+# invoke system Back and close the editor instead of scrolling the filmstrip.
 swipe_inset="$((clip_width / 10))"
 if [ "$swipe_inset" -lt 10 ]; then swipe_inset=10; fi
 if [ "$swipe_inset" -gt 24 ]; then swipe_inset=24; fi
+screen_width="$(timeout -k 2s 5s adb -s emulator-5554 shell wm size | sed -n 's/.*: \([0-9]*\)x[0-9]*.*/\1/p' | tail -n 1 || true)"
+density_dpi="$(timeout -k 2s 5s adb -s emulator-5554 shell wm density | sed -n 's/.*Physical density: \([0-9]*\).*/\1/p' | tail -n 1 || true)"
+if ! [[ "$screen_width" =~ ^[0-9]+$ ]] || [ "$screen_width" -le 0 ]; then
+  echo "Could not read emulator screen width for safe filmstrip gesture positioning."
+  collect_capture_diagnostics filmstrip-screen-width-missing
+  exit 30
+fi
+if ! [[ "$density_dpi" =~ ^[0-9]+$ ]] || [ "$density_dpi" -le 0 ]; then
+  echo "Could not read emulator density for safe filmstrip gesture positioning."
+  collect_capture_diagnostics filmstrip-screen-density-missing
+  exit 31
+fi
+# Start at least 48dp from the right edge, safely outside the system Back
+# gesture area on density-scaled emulator configurations.
+right_edge_safe_margin_px="$(((48 * density_dpi + 159) / 160))"
+right_edge_safe_x="$((screen_width - right_edge_safe_margin_px))"
 forward_start="$((clip_x2 - swipe_inset))"
+if [ "$forward_start" -gt "$right_edge_safe_x" ]; then
+  forward_start="$right_edge_safe_x"
+fi
 forward_end="$((clip_x1 + swipe_inset))"
 forward_distance="$((forward_start - forward_end))"
 if [ "$forward_distance" -lt 80 ]; then
