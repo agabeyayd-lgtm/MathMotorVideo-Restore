@@ -6176,6 +6176,7 @@ class VideoEditorActivity : Activity() {
                 put("yFraction", overlay.yFraction)
                 put("rotationDegrees", overlay.rotationDegrees)
                 put("opacity", overlay.opacity)
+                put("aspectRatio", overlay.aspectRatio)
                 put("keyframes", JSONArray().apply {
                     overlay.keyframes.sortedBy { it.timeMs }.forEach { frame ->
                         put(JSONObject().apply {
@@ -6322,6 +6323,7 @@ class VideoEditorActivity : Activity() {
                 yFraction = item.optDouble("yFraction", 0.22).toFloat().coerceIn(0f, 1f),
                 rotationDegrees = item.optDouble("rotationDegrees", 0.0).toFloat().coerceIn(-180f, 180f),
                 opacity = item.optDouble("opacity", 1.0).toFloat().coerceIn(0f, 1f),
+                aspectRatio = item.optDouble("aspectRatio", 1.0).toFloat().coerceIn(0.10f, 10f),
                 keyframes = mutableListOf<OverlayTransformKeyframe>().apply {
                     val savedKeyframes = item.optJSONArray("keyframes") ?: JSONArray()
                     for (frameIndex in 0 until savedKeyframes.length()) {
