@@ -5474,7 +5474,7 @@ class VideoEditorActivity : Activity() {
             val action: () -> Unit = when (title) {
                 "Geri" -> ({ exitClipTools() })
                 "Düzenle" -> ({ showEditorPanel("text") })
-                "Sil" -> ({ selectedTextLayerId?.let { removeTextLayer(it) } })
+                "Sil" -> ({ removeSelectedTextLayer() })
                 else -> ({})
             }
             editorDock.addView(makeClipDockTool(symbol, title, description, action),
