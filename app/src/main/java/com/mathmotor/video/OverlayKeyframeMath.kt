@@ -71,6 +71,22 @@ internal object OverlayKeyframeMath {
         )).sortedBy { it.timeMs }
     }
 
+    /** Rebase local keyframe times after moving an overlay's left trim edge. */
+    fun rebaseAfterStartTrim(
+        keyframes: List<OverlayTransformKeyframe>,
+        removedStartMs: Long,
+        newDurationMs: Long,
+        stateAtNewStart: OverlayTransformState
+    ): List<OverlayTransformKeyframe> {
+        if (keyframes.isEmpty()) return emptyList()
+        val shift = removedStartMs
+        val duration = newDurationMs.coerceAtLeast(0L)
+        val rebased = keyframes
+            .filter { it.timeMs >= shift && it.timeMs <= shift + duration }
+            .map { it.copy(timeMs = it.timeMs - shift) }
+        return upsert(rebased, OverlayTransformKeyframe(0L, stateAtNewStart))
+    }
+
     fun nearestIndex(
         keyframes: List<OverlayTransformKeyframe>,
         timeMs: Long,
