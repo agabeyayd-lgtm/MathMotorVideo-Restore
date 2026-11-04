@@ -4235,7 +4235,7 @@ class VideoEditorActivity : Activity() {
 
     private fun ensureTrimHandlesReachable(index: Int): Boolean {
         val clip = clips.getOrNull(index) ?: return false
-        val durationMs = (clip.endMs - clip.startMs).coerceAtLeast(0L)
+        val durationMs = ClipSpeedMath.timelineDurationMs(clip.endMs - clip.startMs, clip.speed)
         if (durationMs <= 0L) return false
 
         // Selection may scroll the clip into view, but must never change px/sec.
@@ -4738,7 +4738,7 @@ class VideoEditorActivity : Activity() {
     private fun syncSingleClipPlayheadFromPlayer(){
         val current=player?:return
         val clip=clips.getOrNull(selectedClipIndex)?:return
-        val duration=(clip.endMs-clip.startMs).coerceAtLeast(0L)
+        val duration=ClipSpeedMath.timelineDurationMs(clip.endMs-clip.startMs,clip.speed)
         timelinePlayheadMs=(clip.timelineStartMs+current.currentPosition.coerceIn(0L,duration)).coerceIn(0L,totalOutputDurationMs())
         scrollTimelineToPlayhead()
         updateTimelinePlayheadLabel()
@@ -6868,7 +6868,7 @@ class VideoEditorActivity : Activity() {
     private fun duplicateClipAt(index:Int){
         val source=clips.getOrNull(index)?:return
         recordClipEdit()
-        val span=(source.endMs-source.startMs).coerceAtLeast(0L)
+        val span=ClipSpeedMath.timelineDurationMs(source.endMs-source.startMs,source.speed)
         clips.add(index+1,source.copy(title="${source.title} • Kopya",timelineStartMs=source.timelineStartMs+span))
         selectedClipIndex=index+1;timelinePreviewLoaded=false;previewSingleClip=false
         timelinePlayheadMs=clips[selectedClipIndex].timelineStartMs
@@ -6927,8 +6927,10 @@ class VideoEditorActivity : Activity() {
         val active=activeClipIndexAt(playhead)
         if(active==null){status.text="Oynatma noktası bir klibin üzerinde değil.";return}
         if(expectedClipIndex!=null&&expectedClipIndex!=active){status.text="Oynatma noktasını seçili klibin üzerine getir.";return}
-        val clip=clips[active];val duration=(clip.endMs-clip.startMs).coerceAtLeast(0L)
-        val local=(playhead-clip.timelineStartMs).coerceIn(0L,duration);val sourceSplit=clip.startMs+local
+        val clip=clips[active]
+        val duration=ClipSpeedMath.timelineDurationMs(clip.endMs-clip.startMs,clip.speed)
+        val local=(playhead-clip.timelineStartMs).coerceIn(0L,duration)
+        val sourceSplit=clip.startMs+ClipSpeedMath.sourceOffsetMs(local,clip.speed)
         if(local<350L||duration-local<350L){status.text="İki tarafta da en az 0,35 saniye olmalı.";return}
         recordClipEdit()
         clips[active]=clip.copy(title="${clip.title} • A",endMs=sourceSplit)
