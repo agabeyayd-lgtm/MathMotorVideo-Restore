@@ -89,13 +89,13 @@ jobs:
           fi
           echo "Using apksigner: $apksigner_path"
           if ! published_verify_output="$("$apksigner_path" verify --print-certs "$PUBLISHED_APK" 2>&1)"; then
-            printf '%s\\n' "$published_verify_output"
+            printf '%s\n' "$published_verify_output"
             echo "::error::apksigner could not verify the published APK."
             exit 1
           fi
-          published_fingerprint="$(printf '%s\\n' "$published_verify_output" | awk -F': *' 'tolower($1) ~ /signer #1 certificate sha-256 digest/ {print $2; exit}')"
+          published_fingerprint="$(printf '%s\n' "$published_verify_output" | awk -F': *' 'tolower($1) ~ /signer #1 certificate sha-256 digest/ {print $2; exit}')"
           if [ -z "$published_fingerprint" ]; then
-            printf '%s\\n' "$published_verify_output"
+            printf '%s\n' "$published_verify_output"
             echo "::error::apksigner output did not contain the expected SHA-256 certificate field."
             exit 1
           fi
@@ -210,11 +210,11 @@ jobs:
               exit 1
             fi
             {
-              printf 'storeFile=release.p12\\n'
-              printf 'storeType=PKCS12\\n'
-              printf 'storePassword=%s\\n' "$ANDROID_KEYSTORE_PASSWORD"
-              printf 'keyAlias=%s\\n' "$ANDROID_KEY_ALIAS"
-              printf 'keyPassword=%s\\n' "$ANDROID_KEY_PASSWORD"
+              printf 'storeFile=release.p12\n'
+              printf 'storeType=PKCS12\n'
+              printf 'storePassword=%s\n' "$ANDROID_KEYSTORE_PASSWORD"
+              printf 'keyAlias=%s\n' "$ANDROID_KEY_ALIAS"
+              printf 'keyPassword=%s\n' "$ANDROID_KEY_PASSWORD"
             } > "$legacy_dir/keystore.properties"
             normalize_properties "$legacy_dir/keystore.properties"
             if ! try_candidate "ANDROID_KEYSTORE_* (publisher-selected)" "$legacy_dir/keystore.properties"; then
