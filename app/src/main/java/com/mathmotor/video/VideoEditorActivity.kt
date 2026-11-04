@@ -163,6 +163,11 @@ class VideoEditorActivity : Activity() {
     private var textSizeSp = 24
     private var textColorPreset = TextColorPreset.WHITE
     private var textBold = true
+    private var textAnimationPreset = TextAnimationPreset.NONE
+    private var textAnimationDurationMs = 350L
+    private lateinit var textAnimationGroup: android.widget.RadioGroup
+    private lateinit var textAnimationDurationLabel: TextView
+    private lateinit var textAnimationDurationSeek: SeekBar
     private lateinit var textColorGroup: android.widget.RadioGroup
     private lateinit var textBoldCheck: CheckBox
     private lateinit var textOverlayEditToggle: Button
@@ -193,7 +198,9 @@ class VideoEditorActivity : Activity() {
         var isBold: Boolean,
         var xFraction: Float = 0.5f,
         var yFraction: Float = 0.84f,
-        var kind: TextLayerKind = TextLayerKind.TEXT
+        var kind: TextLayerKind = TextLayerKind.TEXT,
+        var animationPreset: TextAnimationPreset = TextAnimationPreset.NONE,
+        var animationDurationMs: Long = 350L
     )
 
     private val textLayers = mutableListOf<TextLayer>()
@@ -1228,6 +1235,58 @@ class VideoEditorActivity : Activity() {
             }
         }
         textPanel.addView(textPositionGroup, matchWrap())
+        textPanel.addView(label("Giriş / çıkış animasyonu", 11f, Color.rgb(154, 171, 190), false))
+        textAnimationGroup = android.widget.RadioGroup(this).apply {
+            orientation = android.widget.RadioGroup.HORIZONTAL
+            TextAnimationPreset.values().forEachIndexed { index, preset ->
+                addView(android.widget.RadioButton(this@VideoEditorActivity).apply {
+                    id = 31 + index
+                    text = preset.title
+                    textSize = 10f
+                    setTextColor(Color.WHITE)
+                    buttonTintList = android.content.res.ColorStateList.valueOf(Color.rgb(57, 220, 190))
+                    minHeight = dp(38)
+                    setPadding(dp(2), 0, dp(4), 0)
+                })
+            }
+            check(31)
+            setOnCheckedChangeListener { _, checkedId ->
+                if (loadingTextLayerControls) return@setOnCheckedChangeListener
+                textAnimationPreset = TextAnimationPreset.values().getOrNull(checkedId - 31)
+                    ?: TextAnimationPreset.NONE
+                selectedTextLayer()?.animationPreset = textAnimationPreset
+                updatePreviewTextOverlay()
+                refreshTimelineTracks()
+            }
+        }
+        val textAnimationScroll = android.widget.HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            addView(textAnimationGroup)
+        }
+        textPanel.addView(textAnimationScroll, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(44)
+        ))
+        textAnimationDurationLabel = label("Animasyon süresi: 350 ms", 11f, Color.rgb(205, 218, 231), false)
+        textPanel.addView(textAnimationDurationLabel)
+        textAnimationDurationSeek = SeekBar(this).apply {
+            max = 1_400
+            progress = 250
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                    if (!fromUser || loadingTextLayerControls) return
+                    textAnimationDurationMs = (progress + 100L).coerceIn(100L, 1_500L)
+                    textAnimationDurationLabel.text = "Animasyon süresi: $textAnimationDurationMs ms"
+                    selectedTextLayer()?.animationDurationMs = textAnimationDurationMs
+                    updatePreviewTextOverlay()
+                }
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+                override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                    refreshTimelineTracks()
+                }
+            })
+        }
+        textPanel.addView(textAnimationDurationSeek, matchWrap())
         textPanel.addView(label("Yazı rengi", 11f, Color.rgb(154, 171, 190), false))
         textColorGroup = android.widget.RadioGroup(this).apply {
             orientation = android.widget.RadioGroup.HORIZONTAL
