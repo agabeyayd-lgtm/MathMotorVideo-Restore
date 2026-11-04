@@ -4496,6 +4496,8 @@ class VideoEditorActivity : Activity() {
         }
     }
 
+    // A track tap is selection only: switch the bottom contextual dock and keep
+    // the timeline touch surface unobstructed until the user chooses a tool.
     private fun selectTimelineClip(index:Int){
         if(index !in clips.indices)return
         clipHandlesVisible = true
