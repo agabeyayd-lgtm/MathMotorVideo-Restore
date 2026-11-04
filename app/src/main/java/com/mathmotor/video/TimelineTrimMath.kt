@@ -437,7 +437,7 @@ internal object TimelineVideoMath {
         val minimum = minimumDurationMs.coerceAtLeast(1L).coerceAtMost(safe.durationMs)
         val delta = deltaMs.coerceIn(
             -safe.sourceStartMs,
-            (safe.durationMs - minimum).coerceAtLeast(0L)
+            ClipSpeedMath.sourceOffsetMs((safe.durationMs - minimum).coerceAtLeast(0L), safe.speed)
         )
         return safe.copy(sourceStartMs = safe.sourceStartMs + delta)
     }
