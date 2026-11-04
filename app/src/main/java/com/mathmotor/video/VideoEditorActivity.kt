@@ -1327,6 +1327,22 @@ class VideoEditorActivity : Activity() {
         })
         refreshTextLayerList()
 
+        val stickersPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        stickersPanel.addView(label("ÇIKARTMALAR", 13f, Color.rgb(121, 202, 218), true))
+        stickersPanel.addView(label("Seçtiğin çıkartma, zaman çizelgesinde bağımsız katman olur; videonun üzerinde taşıyıp boyutlandırabilirsin.", 11f, Color.rgb(154, 171, 190), false))
+        listOf("❤️", "🔥", "😂", "⭐", "✨", "🎉", "✅", "👑", "⚡", "💯", "🎵", "🎯", "🌈", "☀️", "🌙", "🚀")
+            .chunked(4).forEach { group ->
+                val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+                group.forEach { glyph ->
+                    row.addView(miniButton(glyph) { addSticker(glyph) },
+                        LinearLayout.LayoutParams(0, dp(48), 1f).apply {
+                            if (group.first() != glyph) leftMargin = dp(4)
+                        })
+                }
+                stickersPanel.addView(row, matchWrap())
+                stickersPanel.addView(gap(4))
+            }
+
         val audioPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         audioPanel.addView(label("SES KATMANLARI", 13f, Color.rgb(121, 202, 218), true))
         musicLabel = label("Müzik seçilmedi.", 12f, Color.WHITE, false)
@@ -1597,6 +1613,7 @@ class VideoEditorActivity : Activity() {
         editorPanels["clipVolume"] = clipVolumePanel
         editorPanels["overlay"] = overlayPanel
         editorPanels["effects"] = effectsPanel
+        editorPanels["stickers"] = stickersPanel
         editorPanels["text"] = textPanel
         editorPanels["audio"] = audioPanel
         editorPanels["export"] = exportPanel
@@ -1666,8 +1683,9 @@ class VideoEditorActivity : Activity() {
             Triple("audio", "Ses", "♫"),
             Triple("text", "Metin", "T"),
             Triple("effects", "Efektler", "✦"),
+            Triple("stickers", "Çıkartma", "☺"),
             Triple("overlay", "Bindirme", "▧"),
-            Triple("captions", "Yazılar", "Aa"),
+            Triple("captions", "Altyazı", "Aa"),
             Triple("export", "Proje", "⋯")
         ).forEach { (key, title, symbol) ->
             val tab = miniButton("$symbol\n$title") {
