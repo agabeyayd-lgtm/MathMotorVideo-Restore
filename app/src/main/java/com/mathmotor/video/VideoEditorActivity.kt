@@ -6639,15 +6639,26 @@ class VideoEditorActivity : Activity() {
             overlay.durationMs = requested.coerceAtMost(overlay.sourceDurationMs)
         }
         attach(overlayScaleSeek) { overlay, progress ->
-            overlay.scale = (0.10f + progress / 1000f * 1.40f).coerceIn(0.10f, 1.50f)
+            val state = overlayStateAtTime(overlay, timelinePlayheadMs)
+            updateOverlayTransformAtPlayhead(
+                overlay, state.copy(scale = (0.10f + progress / 1000f * 1.40f).coerceIn(0.10f, 1.50f))
+            )
         }
-        attach(overlayXSeek) { overlay, progress -> overlay.xFraction = progress / 1000f }
-        attach(overlayYSeek) { overlay, progress -> overlay.yFraction = progress / 1000f }
+        attach(overlayXSeek) { overlay, progress ->
+            val state = overlayStateAtTime(overlay, timelinePlayheadMs)
+            updateOverlayTransformAtPlayhead(overlay, state.copy(xFraction = progress / 1000f))
+        }
+        attach(overlayYSeek) { overlay, progress ->
+            val state = overlayStateAtTime(overlay, timelinePlayheadMs)
+            updateOverlayTransformAtPlayhead(overlay, state.copy(yFraction = progress / 1000f))
+        }
         attach(overlayRotationSeek) { overlay, progress ->
-            overlay.rotationDegrees = progress / 10f - 180f
+            val state = overlayStateAtTime(overlay, timelinePlayheadMs)
+            updateOverlayTransformAtPlayhead(overlay, state.copy(rotationDegrees = progress / 10f - 180f))
         }
         attach(overlayOpacitySeek) { overlay, progress ->
-            overlay.opacity = (progress / 1000f).coerceIn(0f, 1f)
+            val state = overlayStateAtTime(overlay, timelinePlayheadMs)
+            updateOverlayTransformAtPlayhead(overlay, state.copy(opacity = (progress / 1000f).coerceIn(0f, 1f)))
         }
     }
 
@@ -6666,6 +6677,7 @@ class VideoEditorActivity : Activity() {
                 overlayPositionLabel.text = "Konum • yatay / dikey"
                 overlayRotationLabel.text = "Döndürme"
                 overlayOpacityLabel.text = "Saydamlık"
+                overlayKeyframeLabel.text = "Anahtar kare: 0"
                 return
             }
             listOf(overlayStartSeek, overlayDurationSeek, overlayScaleSeek,
@@ -6683,11 +6695,12 @@ class VideoEditorActivity : Activity() {
             overlayDurationSeek.progress = TimelineTrimMath.progressForTime(
                 overlay.durationMs, overlay.sourceDurationMs
             )
-            overlayScaleSeek.progress = (((overlay.scale - 0.10f) / 1.40f) * 1000f).toInt().coerceIn(0, 1000)
-            overlayXSeek.progress = (overlay.xFraction * 1000f).toInt().coerceIn(0, 1000)
-            overlayYSeek.progress = (overlay.yFraction * 1000f).toInt().coerceIn(0, 1000)
-            overlayRotationSeek.progress = ((overlay.rotationDegrees + 180f) * 10f).toInt().coerceIn(0, 3600)
-            overlayOpacitySeek.progress = (overlay.opacity * 1000f).toInt().coerceIn(0, 1000)
+            val state = overlayStateAtTime(overlay, timelinePlayheadMs)
+            overlayScaleSeek.progress = (((state.scale - 0.10f) / 1.40f) * 1000f).toInt().coerceIn(0, 1000)
+            overlayXSeek.progress = (state.xFraction * 1000f).toInt().coerceIn(0, 1000)
+            overlayYSeek.progress = (state.yFraction * 1000f).toInt().coerceIn(0, 1000)
+            overlayRotationSeek.progress = ((state.rotationDegrees + 180f) * 10f).toInt().coerceIn(0, 3600)
+            overlayOpacitySeek.progress = (state.opacity * 1000f).toInt().coerceIn(0, 1000)
             updateOverlayControlLabels(overlay)
         } finally {
             updatingOverlayControls = false
@@ -6699,10 +6712,15 @@ class VideoEditorActivity : Activity() {
         overlayTitleLabel.text = (if (overlay.isImage) "Fotoğraf" else "Video") + " • " + overlay.title
         overlayStartLabel.text = "Başlangıç: " + formatTimelineMs(overlay.timelineStartMs)
         overlayDurationLabel.text = "Süre: " + formatTimelineMs(overlay.durationMs) + " / Kaynak: " + formatTimelineMs(overlay.sourceDurationMs)
-        overlayScaleLabel.text = "Boyut: " + (overlay.scale * 100f).toInt() + "%"
-        overlayPositionLabel.text = "Konum: X " + (overlay.xFraction * 100f).toInt() + "% • Y " + (overlay.yFraction * 100f).toInt() + "%"
-        overlayRotationLabel.text = "Döndürme: " + overlay.rotationDegrees.toInt() + "°"
-        overlayOpacityLabel.text = "Saydamlık: " + (overlay.opacity * 100f).toInt() + "%"
+        val state = overlayStateAtTime(overlay, timelinePlayheadMs)
+        overlayScaleLabel.text = "Boyut: " + (state.scale * 100f).toInt() + "%"
+        overlayPositionLabel.text = "Konum: X " + (state.xFraction * 100f).toInt() + "% • Y " + (state.yFraction * 100f).toInt() + "%"
+        overlayRotationLabel.text = "Döndürme: " + state.rotationDegrees.toInt() + "°"
+        overlayOpacityLabel.text = "Saydamlık: " + (state.opacity * 100f).toInt() + "%"
+        val localTimeMs = overlayLocalTimeMs(overlay)
+        val currentKeyframe = OverlayKeyframeMath.nearestIndex(overlay.keyframes, localTimeMs, 100L) != null
+        overlayKeyframeLabel.text = "Anahtar kare: ${overlay.keyframes.size} • ${formatTimelineMs(localTimeMs)}" +
+            if (currentKeyframe) " ◆" else ""
     }
 
     private fun rebuildTimelinePreviewForOverlayEdit() {
