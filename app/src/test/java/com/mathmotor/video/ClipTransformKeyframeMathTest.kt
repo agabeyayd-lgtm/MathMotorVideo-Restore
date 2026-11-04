@@ -27,6 +27,18 @@ class ClipTransformKeyframeMathTest {
     }
 
     @Test
+    fun duplicateStoredTimestampsUseTheLastSavedTransform() {
+        val alternate = ClipTransformValues(1.75f, 45f, 0.25f, -0.1f)
+        val frames = listOf(
+            ClipTransformKeyframe(0L, first),
+            ClipTransformKeyframe(1_000L, last),
+            ClipTransformKeyframe(1_000L, alternate)
+        )
+
+        assertEquals(alternate, ClipTransformKeyframeMath.stateAt(first, frames, 1_000L))
+    }
+
+    @Test
     fun keyframeUpsertAndLookupAreStable() {
         val frames = listOf(ClipTransformKeyframe(500L, first))
         val updated = ClipTransformKeyframeMath.upsert(frames, ClipTransformKeyframe(500L, last))
