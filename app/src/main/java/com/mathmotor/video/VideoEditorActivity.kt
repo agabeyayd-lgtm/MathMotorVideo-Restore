@@ -8001,6 +8001,82 @@ class VideoEditorActivity : Activity() {
         })
     }
 
+    private fun updateClipSpeedControls() {
+        if (!::clipSpeedSeek.isInitialized || !::clipSpeedLabel.isInitialized) return
+        val clip = selectedClip()
+        updatingClipSpeedControl = true
+        try {
+            if (clip == null) {
+                clipSpeedSeek.isEnabled = false
+                clipSpeedSeek.progress = 50
+                clipSpeedLabel.text = "Hız: —"
+            } else {
+                clipSpeedSeek.isEnabled = true
+                val speed = ClipSpeedMath.normalize(clip.speed)
+                clipSpeedSeek.progress = ((Math.log10(speed.toDouble()) + 1.0) * 50.0)
+                    .toInt().coerceIn(0, 100)
+                clipSpeedLabel.text = "Hız: ${"%.2f".format(Locale.US, speed)}×"
+            }
+        } finally {
+            updatingClipSpeedControl = false
+        }
+    }
+
+    private fun setSelectedClipSpeed(speed: Float) {
+        val clip = selectedClip() ?: run {
+            status.text = "Hız ayarı için önce bir klip seç."
+            return
+        }
+        val before = captureClipEditSnapshot()
+        clip.speed = ClipSpeedMath.normalize(speed)
+        finishClipSpeedEdit(before)
+    }
+
+    private fun finishClipSpeedEdit(snapshot: ClipEditSnapshot? = clipSpeedHistorySnapshot) {
+        clipSpeedHistorySnapshot = null
+        val before = snapshot ?: return
+        if (before.clips == clips) {
+            updateClipSpeedControls()
+            return
+        }
+        val index = selectedClipIndex
+        val oldClip = before.clips.getOrNull(index)
+        val newClip = clips.getOrNull(index)
+        if (oldClip != null && newClip != null) {
+            val oldDuration = ClipSpeedMath.timelineDurationMs(oldClip.endMs - oldClip.startMs, oldClip.speed)
+            val newDuration = ClipSpeedMath.timelineDurationMs(newClip.endMs - newClip.startMs, newClip.speed)
+            val oldEnd = oldClip.timelineStartMs + oldDuration
+            val delta = newDuration - oldDuration
+            if (delta != 0L) {
+                clips.forEachIndexed { otherIndex, other ->
+                    if (otherIndex != index && other.timelineStartMs >= oldEnd) {
+                        other.timelineStartMs = (other.timelineStartMs + delta).coerceAtLeast(0L)
+                    }
+                }
+                val oldPlayhead = before.timelinePlayheadMs
+                timelinePlayheadMs = when {
+                    oldPlayhead in oldClip.timelineStartMs until oldEnd -> {
+                        val sourceOffset = ClipSpeedMath.sourceOffsetMs(
+                            oldPlayhead - oldClip.timelineStartMs, oldClip.speed
+                        )
+                        oldClip.timelineStartMs + ClipSpeedMath.timelineOffsetMs(sourceOffset, newClip.speed)
+                    }
+                    oldPlayhead >= oldEnd -> oldPlayhead + delta
+                    else -> oldPlayhead
+                }
+            }
+        }
+        pushClipUndoSnapshot(before)
+        timelinePlayheadMs = timelinePlayheadMs.coerceIn(0L, totalOutputDurationMs().coerceAtLeast(0L))
+        timelinePreviewLoaded = false
+        previewSingleClip = false
+        refreshTimelineAfterClipChange()
+        loadTrimControls()
+        refreshColorGradePreview()
+        updateTimelinePlayheadLabel()
+        status.text = "Klip hızı güncellendi. Takip eden video klipleri zaman çizelgesindeki yeni bitişe göre kaydırıldı."
+    }
+
     private fun loadTrimControls() {
         val clip = selectedClip()
         if (clip == null) {
