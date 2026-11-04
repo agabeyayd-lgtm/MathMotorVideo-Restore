@@ -13,7 +13,8 @@ internal data class OverlayTransformState(
             xFraction = value.xFraction.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0.78f,
             yFraction = value.yFraction.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0.22f,
             rotationDegrees = value.rotationDegrees.takeIf { it.isFinite() }?.let {
-                (((it + 180f) % 360f + 360f) % 360f) - 180f
+                val wrapped = (((it + 180f) % 360f + 360f) % 360f) - 180f
+                if (wrapped == -180f && it > 0f) 180f else wrapped
             } ?: 0f,
             opacity = value.opacity.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 1f
         )
