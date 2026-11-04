@@ -1,3 +1,11 @@
+## Clip transform keyframe normalization — 2026-11-04
+
+- Static review found the same duplicate-timestamp ambiguity in video clip transform keyframes that had already been corrected for overlay keyframes. Clip transform interpolation and keyframe writes now normalize timestamps and keep the last saved transform for each timestamp.
+- Added a regression test for duplicate stored clip-transform timestamps.
+- Source commits: 8eda63d (normalization) and 1e07a58 (test). The test has not been executed; no Gradle build, emulator run or APK is claimed.
+
+---
+
 ## PR #22 continuation state — 2026-11-04
 
 - Latest GitHub comparison: `feature/logo-watermark-overlay-verify` is **100 commits ahead and 4 behind `main`**, with 22 changed files. It remains divergent and is not ready to merge. `main` was not modified.
