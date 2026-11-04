@@ -8976,9 +8976,11 @@ class VideoEditorActivity : Activity() {
                 return
             }
             if (musicRange.durationMs > 0L) {
+                // The explicit audio track type already guarantees silent leading
+                // gaps; do not combine it with the deprecated force-audio flag.
                 val sequenceBuilder = EditedMediaItemSequence.Builder(
                     setOf(androidx.media3.common.C.TRACK_TYPE_AUDIO)
-                ).experimentalSetForceAudioTrack(true)
+                )
                 if (musicRange.startMs > 0L) sequenceBuilder.addGap(musicRange.startMs * 1000L)
                 var remainingMs = musicRange.durationMs
                 while (remainingMs > 0L) {
@@ -9027,7 +9029,10 @@ class VideoEditorActivity : Activity() {
                 .setRemoveVideo(true)
                 .setEffects(Effects(audioEffects(soundVolume), emptyList()))
                 .build()
-            val soundSequenceBuilder = EditedMediaItemSequence.Builder()
+            // Keep this audio-only and materialize silence before delayed sound effects.
+            val soundSequenceBuilder = EditedMediaItemSequence.Builder(
+                setOf(androidx.media3.common.C.TRACK_TYPE_AUDIO)
+            )
             if (offsetMs > 0L) soundSequenceBuilder.addGap(offsetMs * 1000L)
             soundSequenceBuilder.addItem(soundItem)
             compositionSequences.add(soundSequenceBuilder.build())
