@@ -620,3 +620,10 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - The PR debug workflow artifact was renamed to generic `MathMotor-debug.apk/.zip` so a debug artifact cannot be mistaken for a specific signed release/build.
 - **Verification is still pending:** GitHub reports no Actions runs or check-runs for the current PR head. No build/test result or new APK is claimed. The local environment could not clone the repository, so an independent local Gradle build was not available.
 - Keep `main` as the canonical source. Do not merge PR #22, publish a release, or change the signed release marker until the branch is rebased/reconciled, CI is green, and the editor/export behavior is tested on the emulator and phone.
+
+
+## Follow-up static audit — 2026-11-04
+
+- Found and corrected a start-trim edge case for animated image/video overlays: keyframes are now rebased to the trimmed local timeline, and a keyframe is seeded at the new local zero using the interpolated transform at the cut point. Extending the left edge preserves the original keyframe timing relative to the source.
+- Added focused unit tests for trimming the start edge and extending it earlier. These tests are committed but **not executed yet**; the PR still has no verified green CI/build.
+- The branch comparison currently reports 78 commits ahead and 4 behind `main` (22 changed files). This is a divergent branch, not merge-ready.
