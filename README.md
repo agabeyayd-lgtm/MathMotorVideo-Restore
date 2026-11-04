@@ -680,3 +680,10 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Found and corrected a start-trim edge case for animated image/video overlays: keyframes are now rebased to the trimmed local timeline, and a keyframe is seeded at the new local zero using the interpolated transform at the cut point. Extending the left edge preserves the original keyframe timing relative to the source.
 - Added focused unit tests for trimming the start edge and extending it earlier. These tests are committed but **not executed yet**; the PR still has no verified green CI/build.
 - The branch comparison currently reports 78 commits ahead and 4 behind `main` (22 changed files). This is a divergent branch, not merge-ready.
+
+### 2026-11-04 audio preview audit
+
+- Static review found that timeline music and sound-effect preview activation checked the legacy single-clip ExoPlayer even while multi-clip playback was running through `CompositionPlayer`.
+- Updated the playback gate to use `CompositionPlayer.isPlaying` for the multi-clip timeline and the legacy player only for single-clip preview. This keeps preview music/effects synchronized with the active playback engine.
+- Media3 dependency inspected on this branch: `1.10.1`. Clip speed is applied through `SpeedProvider` on each edited clip, so the clip's source audio follows the same constant-speed effect as its video in the current composition path.
+- Verification remains static only. No Gradle build, unit test, emulator test, export playback test, or APK has been run/produced for this commit. PR #22 remains unmerged and four commits behind `main` at the last comparison.
