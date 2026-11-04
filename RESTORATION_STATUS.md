@@ -1,4 +1,12 @@
-## Canonical project checkpoint — 2026-11-04
+## Latest release checkpoint — 2026-11-04 (version 395)
+
+**SIGNED 395 RELEASE PUBLISHED — GREEN.** Release [app-v8.3-62](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/releases/tag/app-v8.3-62) contains `MathMotorVideo.apk` and reports `versionCode=395`, `versionName=8.29-capcut-editor`. Publish workflow [#62](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41809777933) succeeded; Android unit/build verification [#584](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41809777873) succeeded; the 395 preparation emulator run [#763](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41783330184) succeeded. Production signing continuity against published 394 was independently verified by [#41729419450](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41729419450); release #62 used the same configured signing secret and completed signed APK publication. APK SHA-256: `71a0d213338166d1ab215177dd1d9c4ed045c8c6c70d7e3d16e4aa5f368430a2`.
+
+**Next device step:** on the phone's production-signed 394, open the app and tap `Kontrol et`. It should now offer 395. Confirm the update prompt/install flow and that the CapCut-inspired editor opens. Do not install the unsigned debug build over production 394. Physical 394→395 in-app installation remains pending user confirmation.
+
+---
+
+## Historical checkpoint — 395 preparation before successful publication (superseded) — 2026-11-04
 
 **Version 395 preparation — 2026-11-04:** the user completed the one-time installation of production-signed 394 and confirmed the app opens to its home screen. The in-app manual update check also correctly reports “Uygulama güncel” while 394 is the latest published version. The accepted CapCut-inspired editor implementation is already integrated on `main` (PR #18–20); it is the intended 395 codebase. Gradle has now been changed to `versionCode=395`, `versionName=8.29-capcut-editor` in commit `dde5e138df104bfcbd99b3dfb8e9af922398ca51`. This is preparation only: no 395 APK has been built or published yet. Run unit/build and emulator checks on this exact main head first. Do not change `.github/release-trigger.txt` or publish until those checks are green. Once signed 395 is published, the user can use the app's `Kontrol et` action to test the real 394→395 in-place install; signer continuity against published 394 was already verified by run `41729419450`.
 
