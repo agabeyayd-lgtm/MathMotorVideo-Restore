@@ -20,7 +20,7 @@ internal object AudioCompositionSequenceFactory {
 
         val builder = EditedMediaItemSequence.Builder(setOf(C.TRACK_TYPE_AUDIO))
         if (leadingGapMs > 0L) builder.addGap(leadingGapMs * 1_000L)
-        items.forEach(builder::addItem)
+        items.forEach { item -> builder.addItem(item) }
         if (trailingGapMs > 0L) builder.addGap(trailingGapMs * 1_000L)
         return builder.build()
     }
