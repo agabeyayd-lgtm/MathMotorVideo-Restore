@@ -46,7 +46,7 @@ class TimelineVideoSpeedMathTest {
         )
 
         assertEquals(10_000L, TimelineVideoMath.totalDuration(listOf(source)))
-        assertEquals(1, TimelineVideoMath.activeSegmentIndexAt(listOf(source), 9_999L))
+        assertEquals(0, TimelineVideoMath.activeSegmentIndexAt(listOf(source), 9_999L))
         assertNull(TimelineVideoMath.activeSegmentIndexAt(listOf(source), 10_000L))
     }
 
@@ -66,7 +66,7 @@ class TimelineVideoSpeedMathTest {
         val leftTrimmed = TimelineVideoMath.trimStart(source, 1_000L)
         assertEquals(2_500L, leftTrimmed.timelineStartMs)
         assertEquals(2_000L, leftTrimmed.sourceStartMs)
-        assertEquals(7_000L, leftTrimmed.durationMs)
+        assertEquals(3_500L, leftTrimmed.durationMs)
 
         val rightTrimmed = TimelineVideoMath.trimEnd(source, -1_000L)
         assertEquals(2_000L, rightTrimmed.timelineStartMs)
