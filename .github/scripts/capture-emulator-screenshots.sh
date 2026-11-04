@@ -619,8 +619,8 @@ clip_width="$((clip_x2 - clip_x1))"
 swipe_inset="$((clip_width / 10))"
 if [ "$swipe_inset" -lt 10 ]; then swipe_inset=10; fi
 if [ "$swipe_inset" -gt 24 ]; then swipe_inset=24; fi
-screen_width="$(timeout -k 2s 5s adb -s emulator-5554 shell wm size | sed -n 's/.*: \([0-9]*\)x[0-9]*.*/\\1/p' | tail -n 1 || true)"
-density_dpi="$(timeout -k 2s 5s adb -s emulator-5554 shell wm density | sed -n 's/.*Physical density: \([0-9]*\).*/\\1/p' | tail -n 1 || true)"
+screen_width="$(timeout -k 2s 5s adb -s emulator-5554 shell wm size | sed -n 's/.*: \([0-9]*\)x[0-9]*.*/\1/p' | tail -n 1 || true)"
+density_dpi="$(timeout -k 2s 5s adb -s emulator-5554 shell wm density | sed -n 's/.*Physical density: \([0-9]*\).*/\1/p' | tail -n 1 || true)"
 if ! [[ "$screen_width" =~ ^[0-9]+$ ]] || [ "$screen_width" -le 0 ]; then
   echo "Could not read emulator screen width for safe filmstrip gesture positioning."
   collect_capture_diagnostics filmstrip-screen-width-missing
