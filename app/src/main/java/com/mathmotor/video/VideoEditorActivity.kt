@@ -4474,8 +4474,12 @@ class VideoEditorActivity : Activity() {
         outputDurationMs: Long
     ): EditedMediaItemSequence {
         val safeStartMs = overlay.timelineStartMs.coerceIn(0L, outputDurationMs)
+        val sourceRemainingMs = OverlaySourceRangeMath.availableDurationMs(
+            overlay.sourceDurationMs, overlay.sourceStartMs, overlay.isImage
+        )
         val safeDurationMs = overlay.durationMs.coerceAtLeast(1L)
             .coerceAtMost(outputDurationMs - safeStartMs)
+            .coerceAtMost(sourceRemainingMs)
         require(safeDurationMs > 0L) { "Bindirme süresi zaman çizelgesinin dışında." }
         val sequenceBuilder = EditedMediaItemSequence.Builder(
             setOf(androidx.media3.common.C.TRACK_TYPE_VIDEO)
@@ -6803,9 +6807,13 @@ class VideoEditorActivity : Activity() {
             overlay.timelineStartMs = rangeMs.coerceAtLeast(0L)
         }
         attach(overlayDurationSeek) { overlay, progress ->
-            val requested = TimelineTrimMath.timeForProgress(progress, overlay.sourceDurationMs)
-                .coerceAtLeast(1_000L)
-            overlay.durationMs = requested.coerceAtMost(overlay.sourceDurationMs)
+            val availableDurationMs = OverlaySourceRangeMath.availableDurationMs(
+                overlay.sourceDurationMs, overlay.sourceStartMs, overlay.isImage
+            )
+            val requested = TimelineTrimMath.timeForProgress(progress, availableDurationMs)
+            overlay.durationMs = OverlaySourceRangeMath.clampDurationMs(
+                requested, overlay.sourceDurationMs, overlay.sourceStartMs, overlay.isImage
+            )
         }
         attach(overlayScaleSeek) { overlay, progress ->
             val state = overlayStateAtTime(overlay, timelinePlayheadMs)
@@ -6860,9 +6868,12 @@ class VideoEditorActivity : Activity() {
             overlayStartSeek.progress = TimelineTrimMath.progressForTime(
                 overlay.timelineStartMs, projectDuration
             )
-            overlayDurationSeek.max = TimelineTrimMath.progressMax(overlay.sourceDurationMs)
+            val availableDurationMs = OverlaySourceRangeMath.availableDurationMs(
+                overlay.sourceDurationMs, overlay.sourceStartMs, overlay.isImage
+            )
+            overlayDurationSeek.max = TimelineTrimMath.progressMax(availableDurationMs)
             overlayDurationSeek.progress = TimelineTrimMath.progressForTime(
-                overlay.durationMs, overlay.sourceDurationMs
+                overlay.durationMs.coerceAtMost(availableDurationMs), availableDurationMs
             )
             val state = overlayStateAtTime(overlay, timelinePlayheadMs)
             overlayScaleSeek.progress = (((state.scale - 0.10f) / 1.40f) * 1000f).toInt().coerceIn(0, 1000)
