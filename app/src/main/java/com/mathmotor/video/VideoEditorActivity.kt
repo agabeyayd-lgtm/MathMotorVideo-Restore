@@ -5953,13 +5953,12 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun audioEffects(volumePercent: Int): List<AudioProcessor> {
-        if (volumePercent >= 100) return emptyList()
         val gain = volumePercent.coerceIn(0, 100) / 100f
         val processor = ChannelMixingAudioProcessor()
+        // Normalize original clip audio, music and effects to stereo before Media3 mixes
+        // their parallel sequences. This avoids mono/stereo/multichannel composition errors.
         for (channels in 1..8) {
-            val coefficients = FloatArray(channels * channels)
-            for (channel in 0 until channels) coefficients[channel * channels + channel] = gain
-            processor.putChannelMixingMatrix(ChannelMixingMatrix(channels, channels, coefficients))
+            processor.putChannelMixingMatrix(AudioChannelMixingMath.stereoMatrix(channels, gain))
         }
         return listOf(processor)
     }
