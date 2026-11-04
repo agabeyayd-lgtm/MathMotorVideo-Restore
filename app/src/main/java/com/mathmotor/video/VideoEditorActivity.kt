@@ -6906,8 +6906,7 @@ class VideoEditorActivity : Activity() {
                 }
                 android.view.MotionEvent.ACTION_MOVE -> {
                     val overlay = gestureOverlay ?: return@setOnTouchListener false
-                    val width = view.width.toFloat().coerceAtLeast(1f)
-                    val height = view.height.toFloat().coerceAtLeast(1f)
+                    val (width, height) = overlayCanvasSize()
                     if (event.pointerCount >= 2 && downDistance > 0f) {
                         val centerX = centroidX(event)
                         val centerY = centroidY(event)
