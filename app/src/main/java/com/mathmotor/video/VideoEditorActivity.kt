@@ -4934,6 +4934,41 @@ class VideoEditorActivity : Activity() {
         status.text = "Yeni yazı katmanı eklendi. Metnini yazıp süresini ve konumunu ayarla."
     }
 
+    private fun addSticker(glyph: String) {
+        if (clips.isEmpty()) {
+            status.text = "Çıkartma eklemeden önce bir video seç."
+            return
+        }
+        if (textLayers.size >= 12) {
+            status.text = "En fazla 12 metin ve çıkartma katmanı ekleyebilirsin."
+            return
+        }
+        syncSelectedTextLayerFromControls()
+        val total = totalOutputDurationMs()
+        val start = timelinePlayheadMs.coerceIn(0L, (total - 1L).coerceAtLeast(0L))
+        val layer = TextLayer(
+            id = nextTextLayerId++,
+            text = glyph,
+            startMs = start,
+            endMs = total,
+            timingCustomized = true,
+            position = TextPosition.CENTER,
+            sizeSp = 48,
+            colorPreset = TextColorPreset.WHITE,
+            isBold = true,
+            xFraction = 0.5f,
+            yFraction = 0.5f,
+            kind = TextLayerKind.STICKER
+        )
+        textLayers.add(layer)
+        selectedTextLayerId = layer.id
+        loadTextLayerIntoControls(layer)
+        refreshTextLayerList()
+        updatePreviewTextOverlay()
+        refreshTimelineTracks()
+        status.text = "Çıkartma eklendi. Zaman çizelgesinde bağımsız katman olarak taşıyabilir ve süresini değiştirebilirsin."
+    }
+
     private fun focusTextInputAndShowKeyboard() {
         if (!::textInput.isInitialized) return
         textInput.post {
