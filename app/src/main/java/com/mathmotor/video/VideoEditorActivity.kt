@@ -1868,6 +1868,13 @@ class VideoEditorActivity : Activity() {
                 } else if (key == "captions") {
                     if (clipToolsMode) exitClipTools()
                     toggleEditorPanel("text")
+                } else if (key == "overlay") {
+                    if (clipToolsMode) exitClipTools()
+                    selectedClipIndex = -1
+                    clipHandlesVisible = false
+                    selectedOverlayId = overlayClips.lastOrNull()?.id
+                    enterOverlayTools()
+                    if (selectedOverlay() == null) chooseAnyOverlayAsset()
                 } else if (key in editorPanels) {
                     if (clipToolsMode) exitClipTools()
                     toggleEditorPanel(key)
@@ -2324,6 +2331,7 @@ class VideoEditorActivity : Activity() {
         clipToolsMode = true
         activeClipTool = null
         activeEditorPanel = null
+        selectedOverlayId = null
         updateClipTransformTouchAvailability()
         updateOverlayTransformTouchAvailability()
         textOverlayEditingEnabled = false
@@ -5201,6 +5209,7 @@ class VideoEditorActivity : Activity() {
     // the timeline touch surface unobstructed until the user chooses a tool.
     private fun selectTimelineClip(index:Int){
         if(index !in clips.indices)return
+        selectedOverlayId = null
         clipHandlesVisible = true
         timelinePreviewLoaded=false;previewSingleClip=false
         selectedClipIndex=index;timelinePlayheadMs=clips[index].timelineStartMs
@@ -6657,15 +6666,23 @@ class VideoEditorActivity : Activity() {
         editorPanelScroll.translationY = 0f
         editorPanelScroll.alpha = 1f
         editorDock.removeAllViews()
+        clipHandlesVisible = false
+        selectedClipIndex = -1
         val tools = listOf(
             Triple("‹", "Geri", "Ana araçlara dön"),
-            Triple("▧", "Düzenle", "Seçili bindirmenin ayarlarını aç"),
+            Triple("＋", "Bindirme ekle", "Fotoğraf veya video bindirmesi ekle"),
+            Triple("✂", "Böl", "Seçili bindirmeyi oynatma çizgisinde böl"),
+            Triple("⧉", "Birleştir", "Bitişik aynı kaynak bindirme parçalarını birleştir"),
+            Triple("◇", "Animasyonlar", "Konum, boyut ve saydamlık anahtar karelerini düzenle"),
             Triple("×", "Sil", "Seçili bindirmeyi kaldır")
         )
         tools.forEach { (symbol, title, description) ->
             val action: () -> Unit = when (title) {
                 "Geri" -> ({ exitClipTools() })
-                "Düzenle" -> ({ showEditorPanel("overlay") })
+                "Bindirme ekle" -> ({ chooseAnyOverlayAsset() })
+                "Böl" -> ({ splitSelectedOverlayAtPlayhead() })
+                "Birleştir" -> ({ mergeSelectedOverlayWithAdjacent() })
+                "Animasyonlar" -> ({ showEditorPanel("overlay") })
                 "Sil" -> ({ removeSelectedOverlay() })
                 else -> ({})
             }
