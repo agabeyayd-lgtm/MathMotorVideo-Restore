@@ -60,9 +60,7 @@ internal object OverlayKeyframeMath {
         requestedTimeMs: Long
     ): OverlayTransformState {
         if (keyframes.isEmpty()) return OverlayTransformState.normalize(baseState)
-        val sorted = keyframes
-            .map { it.copy(timeMs = it.timeMs.coerceAtLeast(0L), state = OverlayTransformState.normalize(it.state)) }
-            .sortedBy { it.timeMs }
+        val sorted = normalizedKeyframes(keyframes)
         val timeMs = requestedTimeMs.coerceAtLeast(0L)
         val first = sorted.first()
         val last = sorted.last()
@@ -91,7 +89,7 @@ internal object OverlayKeyframeMath {
         keyframe: OverlayTransformKeyframe
     ): List<OverlayTransformKeyframe> {
         val timeMs = keyframe.timeMs.coerceAtLeast(0L)
-        return (keyframes.filterNot { it.timeMs == timeMs } + keyframe.copy(
+        return (normalizedKeyframes(keyframes).filterNot { it.timeMs == timeMs } + keyframe.copy(
             timeMs = timeMs,
             state = OverlayTransformState.normalize(keyframe.state)
         )).sortedBy { it.timeMs }
@@ -127,6 +125,21 @@ internal object OverlayKeyframeMath {
             kotlin.math.abs(keyframes[it].timeMs - target) <= toleranceMs.coerceAtLeast(0L)
         }
     }
+
+    /** Duplicate timestamps can occur in hand-edited/older project JSON; keep the last saved value. */
+    private fun normalizedKeyframes(
+        keyframes: List<OverlayTransformKeyframe>
+    ): List<OverlayTransformKeyframe> = keyframes
+        .map {
+            it.copy(
+                timeMs = it.timeMs.coerceAtLeast(0L),
+                state = OverlayTransformState.normalize(it.state)
+            )
+        }
+        .groupBy { it.timeMs }
+        .values
+        .map { it.last() }
+        .sortedBy { it.timeMs }
 
     private fun shortestRotationDelta(from: Float, to: Float): Float {
         var delta = (to - from) % 360f
