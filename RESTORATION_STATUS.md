@@ -669,3 +669,10 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Bumped the candidate app version from `versionCode 395 / 8.29-capcut-editor` to `versionCode 396 / 8.30-capcut-editor` so an eventual signed release can update the currently published version 395 installation rather than reusing its version code.
 - Merged the current `main` head into this working branch using a merge commit; the common-base and main trees were identical, and GitHub now reports the PR branch as 0 commits behind `main`. `main` itself remains unchanged.
 - Latest source head is now being checked by GitHub Actions. No test, build, emulator, signed APK, or release is claimed until the corresponding run/artifact is completed and inspected.
+
+### CI failure follow-up — 2026-11-04
+
+- First real Gradle run exposed a missing text-layer delete handler reference; the dock action now calls the existing `removeSelectedTextLayer()` implementation.
+- The next unit-test run exposed a signed-delta bug in left-trimming a clip earlier: source-time extension was being converted to a nonnegative timeline offset, so the project start did not move left. The mapping now preserves the sign and converts the magnitude through the clip speed.
+- Overlay rotation interpolation intentionally normalizes the +180° midpoint as positive 180°; updated the stale test expectation to match that documented behavior.
+- CI for the immediately preceding commit is being rerun; the newest test assertion correction is committed after that run started, so it still needs a fresh workflow run. No APK or successful test suite is claimed yet.
