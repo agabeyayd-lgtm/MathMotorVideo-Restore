@@ -14,15 +14,7 @@ internal object ClipTransformKeyframeMath {
         if (keyframes.isEmpty()) {
             return ClipTransformMath.normalize(base.scale, base.rotationDegrees, base.translateX, base.translateY)
         }
-        val sorted = keyframes.map {
-            it.copy(
-                timeMs = it.timeMs.coerceAtLeast(0L),
-                transform = ClipTransformMath.normalize(
-                    it.transform.scale, it.transform.rotationDegrees,
-                    it.transform.translateX, it.transform.translateY
-                )
-            )
-        }.sortedBy { it.timeMs }
+        val sorted = normalizedKeyframes(keyframes)
         val time = requestedTimeMs.coerceAtLeast(0L)
         if (time <= sorted.first().timeMs) return sorted.first().transform
         if (time >= sorted.last().timeMs) return sorted.last().transform
@@ -48,7 +40,7 @@ internal object ClipTransformKeyframeMath {
         keyframe: ClipTransformKeyframe
     ): List<ClipTransformKeyframe> {
         val time = keyframe.timeMs.coerceAtLeast(0L)
-        return (keyframes.filterNot { it.timeMs == time } + keyframe.copy(
+        return (normalizedKeyframes(keyframes).filterNot { it.timeMs == time } + keyframe.copy(
             timeMs = time,
             transform = ClipTransformMath.normalize(
                 keyframe.transform.scale, keyframe.transform.rotationDegrees,
@@ -56,6 +48,24 @@ internal object ClipTransformKeyframeMath {
             )
         )).sortedBy { it.timeMs }
     }
+
+    /** Keep the last stored transform when legacy project data repeats a timestamp. */
+    private fun normalizedKeyframes(
+        keyframes: List<ClipTransformKeyframe>
+    ): List<ClipTransformKeyframe> = keyframes
+        .map {
+            it.copy(
+                timeMs = it.timeMs.coerceAtLeast(0L),
+                transform = ClipTransformMath.normalize(
+                    it.transform.scale, it.transform.rotationDegrees,
+                    it.transform.translateX, it.transform.translateY
+                )
+            )
+        }
+        .groupBy { it.timeMs }
+        .values
+        .map { it.last() }
+        .sortedBy { it.timeMs }
 
     fun nearestIndex(keyframes: List<ClipTransformKeyframe>, timeMs: Long, toleranceMs: Long): Int? {
         if (keyframes.isEmpty()) return null
