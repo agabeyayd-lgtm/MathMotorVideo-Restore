@@ -619,24 +619,23 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Keep README.md and RESTORATION_STATUS.md synchronized as work progresses; do not create a new version just to test.
 - The user's immediate request was to preserve the restart point in the repository so work can continue from another ChatGPT account/session.
 
-## In-app updater status — 2026-11-03
+## In-app updater status — 2026-11-04
 
-- The home screen already provides a manual `Kontrol et` action. It checks GitHub `releases/latest`, reads the published `versionCode`, compares it with the installed app, downloads `MathMotorVideo.apk` when a higher version exists, and opens Android's package installer.
-- The latest signed release is `app-v8.3-61`, with `versionCode=394`; Gradle is also set to 394. No signed release was published by merging PR #18.
-- Publishing is separate from PR builds. The signed workflow runs manually or when `.github/release-trigger.txt` changes on `main`; it uses the persistent release-signing key. PR #18 did not touch that marker.
-- Run #754's debug APK uses the debug certificate, while public releases use the persistent release certificate. When the installed app has the debug certificate, Android will not accept the release certificate as an in-place update. A one-time signed-install migration is needed first. Uninstalling erases private editor drafts, so back up important projects before migration.
-- Before publishing a higher version, verify that the release certificate matches the currently published signed 394 APK and test a controlled upgrade. Keep 394 unchanged until that check is ready.
+- The home screen's manual `Kontrol et` action checks GitHub `releases/latest`, reads the published `versionCode`, compares it with the installed app, downloads `MathMotorVideo.apk` when a higher version exists, and opens Android's package installer.
+- Latest signed release: `app-v8.3-62` (Build 62), `versionCode=395`. The currently installed phone build is not established by repository state.
+- Candidate branch version: `versionCode=396`, `versionName=8.30-capcut-editor`. It is not published.
+- Publishing is separate from PR/debug builds. The signed workflow uses the persistent release-signing key and runs manually or when `.github/release-trigger.txt` changes on `main`. That release trigger remains unchanged in PR #22 to prevent a publish before signing continuity is checked.
+- The signing-continuity workflow now compares the configured signing source with the published 395 APK. Its workflow and trigger-note changes in PR #22 are designed to run on `main` after merge. Only if this check passes should a separate commit update the release trigger to publish 396.
+- Debug APK artifacts use the debug certificate. They cannot replace an installation signed with a different release certificate in place. Preserve/export private editor drafts before any one-time migration between signing certificates.
 
 
 ## Current continuation audit — 2026-11-04
 
-- Correction to the older updater notes above: PR #18 **was merged** on 2026-11-03. The current `main` Gradle configuration is `versionCode=395`, `versionName=8.29-capcut-editor`.
-- The latest signed GitHub release is `app-v8.3-62` (Build 62), published 2026-11-04, with `versionCode=395`. This supersedes the older 394 / Build 61 release note above. Do not assume which build is installed on the phone without checking the device.
-- PR #22 remains open. Its head is 73 commits ahead and 4 commits behind `main`; it changes 22 files, including a large `VideoEditorActivity.kt` diff. Do not merge it as a routine small fix; reconcile it with current `main` and review the full diff first.
-- The PR branch contains clip-speed timing/export work, overlay transform keyframes, persistence, and focused unit tests. Direct touch gestures were adjusted to write the interpolated transform at the current playhead, not only mutate the base transform.
-- The PR debug workflow artifact was renamed to generic `MathMotor-debug.apk/.zip` so a debug artifact cannot be mistaken for a specific signed release/build.
-- **Verification is still pending:** GitHub reports no Actions runs or check-runs for the current PR head. No build/test result or new APK is claimed. The local environment could not clone the repository, so an independent local Gradle build was not available.
-- Keep `main` as the canonical source. Do not merge PR #22, publish a release, or change the signed release marker until the branch is rebased/reconciled, CI is green, and the editor/export behavior is tested on the emulator and phone.
+- PR #18 was merged on 2026-11-03. Current published `main` is `versionCode=395`, `versionName=8.29-capcut-editor`; latest signed tag is `app-v8.3-62`, Build 62.
+- PR #22 is open and unmerged. The candidate branch includes current `main` (0 commits behind); latest comparison at this note was 137 commits ahead, 30 changed files. GitHub reports the PR mergeable. Merge remains gated on current-head verification.
+- Candidate version 396 exists only on the PR branch. Signing continuity is updated to compare against current signed 395. The release trigger file is intentionally unchanged.
+- Current-head Actions jobs for unit/build, emulator screenshots and a debug APK artifact are queued. No green result, export playback confirmation, or deliverable APK is claimed.
+- Keep `main` unchanged until current-head CI passes and the full PR diff is reviewed. After merge, verify signing continuity against 395; only then change the main release trigger separately to publish 396.
 
 
 ## Follow-up static audit — 2026-11-04
