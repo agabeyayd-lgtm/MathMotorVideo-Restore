@@ -2181,9 +2181,9 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun showEditorPanel(name: String) {
-        if (clipToolsMode && name != "clip" && name != "clipVolume") {
-            exitClipTools()
-        }
+        // Keep the selected track's contextual dock alive while its detail sheet
+        // is open. Closing the sheet returns to the same track tools; it must not
+        // silently replace them with the global editor tabs.
         activeEditorPanel = name
         if (name == "overlay") loadOverlayControls()
         updateClipTransformTouchAvailability()
@@ -2312,6 +2312,19 @@ class VideoEditorActivity : Activity() {
         focused?.windowToken?.let { keyboard?.hideSoftInputFromWindow(it, 0) }
         focused?.clearFocus()
         if (::editorPanelScroll.isInitialized) editorPanelScroll.scrollTo(0, 0)
+    }
+
+    override fun onBackPressed() {
+        val panel = activeEditorPanel
+        if (panel != null) {
+            toggleEditorPanel(panel)
+            return
+        }
+        if (clipToolsMode) {
+            exitClipTools()
+            return
+        }
+        super.onBackPressed()
     }
 
     private fun refreshTimelineTracks() {
