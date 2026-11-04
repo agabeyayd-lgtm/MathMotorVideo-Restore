@@ -3397,6 +3397,7 @@ class VideoEditorActivity : Activity() {
                         updateMusicTimingLabel()
                         status.text = "Müzik zaman çizelgesinde taşındı."
                         refreshTimelineTracks()
+                        enterAudioTools()
                     } else if (!bodyMoved) {
                         enterAudioTools()
                         view.performClick()
@@ -3476,6 +3477,7 @@ class VideoEditorActivity : Activity() {
                             updateMusicTimingLabel()
                             status.text = if (isStart) "Müzik başlangıcı ayarlandı." else "Müzik bitişi ayarlandı."
                             refreshTimelineTracks()
+                            enterAudioTools()
                         } else {
                             enterAudioTools()
                         }
@@ -3610,6 +3612,7 @@ class VideoEditorActivity : Activity() {
                         updateSoundControls()
                         status.text = "Ses efekti zaman çizelgesinde taşındı."
                         refreshTimelineTracks()
+                        enterAudioTools()
                     } else if (!bodyMoved) {
                         enterAudioTools()
                         view.performClick()
@@ -3698,6 +3701,7 @@ class VideoEditorActivity : Activity() {
                             updateSoundControls()
                             status.text = if (isStart) "Ses efektinin başlangıcı kırpıldı." else "Ses efektinin bitişi kırpıldı."
                             refreshTimelineTracks()
+                            enterAudioTools()
                         } else {
                             enterAudioTools()
                         }
