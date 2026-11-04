@@ -6671,10 +6671,13 @@ class VideoEditorActivity : Activity() {
                     downY = event.y
                     downCenterX = event.x
                     downCenterY = event.y
-                    downXFraction = overlay.xFraction
-                    downYFraction = overlay.yFraction
-                    downScale = overlay.scale
-                    downRotation = overlay.rotationDegrees
+                    // The base transform is not the visible transform once keyframes
+                    // exist. Start every gesture from the interpolated playhead state.
+                    val currentState = overlayStateAtTime(overlay, timelinePlayheadMs)
+                    downXFraction = currentState.xFraction
+                    downYFraction = currentState.yFraction
+                    downScale = currentState.scale
+                    downRotation = currentState.rotationDegrees
                     downDistance = 0f
                     downAngle = 0f
                     view.parent?.requestDisallowInterceptTouchEvent(true)
