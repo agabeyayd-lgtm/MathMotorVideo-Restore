@@ -5586,6 +5586,15 @@ class VideoEditorActivity : Activity() {
             overlay.setTextSize(layer.sizeSp.toFloat())
             overlay.setTextColor(layer.colorPreset.colorInt)
             overlay.setTypeface(Typeface.DEFAULT, if (layer.isBold) Typeface.BOLD else Typeface.NORMAL)
+            val animationState = TextAnimationMath.stateAt(
+                layer.animationPreset,
+                timelinePlayheadMs - layer.startMs,
+                layer.endMs - timelinePlayheadMs,
+                layer.animationDurationMs
+            )
+            overlay.alpha = animationState.alpha
+            overlay.scaleX = animationState.scale
+            overlay.scaleY = animationState.scale
             if (layer.kind == TextLayerKind.STICKER) {
                 overlay.setPadding(0, 0, 0, 0)
                 overlay.background = null
@@ -5615,8 +5624,10 @@ class VideoEditorActivity : Activity() {
             )
             val maxX = ((videoWidth - overlay.measuredWidth).coerceAtLeast(0) / 2f)
             val maxY = ((videoHeight - overlay.measuredHeight).coerceAtLeast(0) / 2f)
-            overlay.translationX = (layer.xFraction.coerceIn(0f, 1f) - 0.5f) * 2f * maxX
-            overlay.translationY = (layer.yFraction.coerceIn(0f, 1f) - 0.5f) * 2f * maxY
+            overlay.translationX = (layer.xFraction.coerceIn(0f, 1f) - 0.5f) * 2f * maxX +
+                animationState.offsetXFraction * videoWidth
+            overlay.translationY = (layer.yFraction.coerceIn(0f, 1f) - 0.5f) * 2f * maxY +
+                animationState.offsetYFraction * videoHeight
             overlay.bringToFront()
         }
     }
@@ -8831,17 +8842,30 @@ class VideoEditorActivity : Activity() {
         }
         val x = (layer.xFraction.coerceIn(0f, 1f) * 2f - 1f).coerceIn(-0.92f, 0.92f)
         val y = ((0.5f - layer.yFraction.coerceIn(0f, 1f)) * 2f).coerceIn(-0.85f, 0.85f)
-        val settings = StaticOverlaySettings.Builder()
-            .setBackgroundFrameAnchor(x, y)
-            .setOverlayFrameAnchor(0f, 0f)
-            .build()
         return object : TextOverlay() {
             override fun getText(presentationTimeUs: Long): SpannableString {
                 val timeMs = presentationTimeUs / 1000L
                 return if (timeMs >= startMs && timeMs < endMs) SpannableString(styled) else SpannableString("")
             }
 
-            override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings = settings
+            override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings {
+                val timeMs = presentationTimeUs / 1_000L
+                val animation = TextAnimationMath.stateAt(
+                    layer.animationPreset,
+                    timeMs - startMs,
+                    endMs - timeMs,
+                    layer.animationDurationMs
+                )
+                return StaticOverlaySettings.Builder()
+                    .setAlphaScale(animation.alpha)
+                    .setScale(animation.scale, animation.scale)
+                    .setBackgroundFrameAnchor(
+                        (x + animation.offsetXFraction * 2f).coerceIn(-0.92f, 0.92f),
+                        (y - animation.offsetYFraction * 2f).coerceIn(-0.85f, 0.85f)
+                    )
+                    .setOverlayFrameAnchor(0f, 0f)
+                    .build()
+            }
         }
     }
 
