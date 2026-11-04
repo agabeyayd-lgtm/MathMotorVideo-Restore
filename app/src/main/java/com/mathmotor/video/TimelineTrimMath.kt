@@ -412,7 +412,7 @@ internal object TimelineVideoMath {
             ClipSpeedMath.sourceOffsetMs(safe.timelineStartMs, safe.speed)
         )
         val maximumSourceDelta = ClipSpeedMath.sourceOffsetMs(
-            (safe.durationMs - ClipSpeedMath.timelineDurationMs(minimum, safe.speed)).coerceAtLeast(0L),
+            (safe.durationMs - minimum).coerceAtLeast(0L),
             safe.speed
         )
         val delta = deltaMs.coerceIn(lowerSourceDelta, maximumSourceDelta)
