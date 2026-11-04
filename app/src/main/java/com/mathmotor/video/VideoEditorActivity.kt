@@ -5875,6 +5875,7 @@ class VideoEditorActivity : Activity() {
                 put("transformTranslateX", clip.transformTranslateX)
                 put("transformTranslateY", clip.transformTranslateY)
                 put("coverTimeMs", clip.coverTimeMs ?: JSONObject.NULL)
+                put("speed", clip.speed)
             })
         }
         overlayClips.forEach { overlay ->
@@ -5986,11 +5987,15 @@ class VideoEditorActivity : Activity() {
                 transformTranslateY = item.optDouble("transformTranslateY", 0.0).toFloat(),
                 coverTimeMs = if (item.has("coverTimeMs") && !item.isNull("coverTimeMs")) {
                     item.optLong("coverTimeMs", start).coerceIn(start, (end - 1L).coerceAtLeast(start))
-                } else null
+                } else null,
+                speed = ClipSpeedMath.normalize(item.optDouble("speed", 1.0).toFloat())
             )
             normalizeClipTransform(loadedClip)
             loadedClips.add(loadedClip)
-            legacyTimelineCursorMs=maxOf(legacyTimelineCursorMs,timelineStartMs+(end-start).coerceAtLeast(0L))
+            legacyTimelineCursorMs=maxOf(
+                legacyTimelineCursorMs,
+                timelineStartMs + ClipSpeedMath.timelineDurationMs((end - start).coerceAtLeast(0L), loadedClip.speed)
+            )
         }
         val loadedOverlays = mutableListOf<OverlayClip>()
         val overlayArray = json.optJSONArray("overlays") ?: JSONArray()
