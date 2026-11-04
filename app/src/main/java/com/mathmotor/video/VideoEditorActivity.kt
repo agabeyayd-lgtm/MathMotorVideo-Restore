@@ -5260,6 +5260,8 @@ class VideoEditorActivity : Activity() {
         layer.sizeSp = textSizeSp.coerceIn(12, 96)
         layer.colorPreset = textColorPreset
         layer.isBold = textBold
+        layer.animationPreset = textAnimationPreset
+        layer.animationDurationMs = textAnimationDurationMs.coerceIn(100L, 1_500L)
     }
 
     private fun refreshTextLayerList() {
@@ -5526,6 +5528,8 @@ class VideoEditorActivity : Activity() {
             textSizeSp = layer?.sizeSp?.coerceIn(12, 96) ?: 24
             textColorPreset = layer?.colorPreset ?: TextColorPreset.WHITE
             textBold = layer?.isBold ?: true
+            textAnimationPreset = layer?.animationPreset ?: TextAnimationPreset.NONE
+            textAnimationDurationMs = layer?.animationDurationMs?.coerceIn(100L, 1_500L) ?: 350L
             textInput.setText(layer?.text.orEmpty())
             textSizeLabel.text = "Yazı boyutu: $textSizeSp sp"
             textSizeSeek.progress = textSizeSp - 12
@@ -5536,6 +5540,11 @@ class VideoEditorActivity : Activity() {
             })
             textColorGroup.check(11 + TextColorPreset.values().indexOf(textColorPreset).coerceAtLeast(0))
             textBoldCheck.isChecked = textBold
+            textAnimationGroup.check(
+                31 + TextAnimationPreset.values().indexOf(textAnimationPreset).coerceAtLeast(0)
+            )
+            textAnimationDurationSeek.progress = (textAnimationDurationMs - 100L).toInt().coerceIn(0, 1_400)
+            textAnimationDurationLabel.text = "Animasyon süresi: $textAnimationDurationMs ms"
             updateTextControls()
         } finally {
             loadingTextLayerControls = false
