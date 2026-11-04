@@ -7000,7 +7000,13 @@ class VideoEditorActivity : Activity() {
                     if (overlay != null) {
                         loadOverlayControls()
                         refreshTimelineTracks()
-                        rebuildTimelinePreviewForOverlayEdit()
+                        // The Media3 composition already owns this mutable OverlayClip.
+                        // Rebuilding it on ACTION_UP tears down the video surface and leaves
+                        // the paused canvas black until another playback prepare. Keep the
+                        // current graph alive and request its final frame at the playhead.
+                        timelineCompositionPlayer?.seekTo(timelinePlayheadMs)
+                        requestPreviewFrameAt(timelinePlayheadMs)
+                        updateOverlayTransformTouchAvailability()
                     }
                     true
                 }
