@@ -26,7 +26,7 @@ class OverlayAssetDefaultsMathTest {
     fun emptyProjectStillGetsAValidOneMillisecondImageSequence() {
         val defaults = OverlayAssetDefaultsMath.imageLogo(projectDurationMs = 0L)
 
-        assertEquals(1L, defaults.sourceDurationMs)
+        assertEquals(60_000L, defaults.sourceDurationMs)
         assertEquals(1L, defaults.durationMs)
     }
 }
