@@ -5920,7 +5920,14 @@ class VideoEditorActivity : Activity() {
                 if (sourceDuration > 0L && sourceDuration != androidx.media3.common.C.TIME_UNSET) {
                     val sourceRange = MusicSourceRangeMath.normalize(MusicSourceRange(musicSourceStartMs, musicSourceEndMs.takeIf { it > 0L } ?: sourceDuration), sourceDuration)
                     val target = MusicSourceRangeMath.sourcePosition(sourceRange, outputTimeMs - musicStartMs, sourceDuration)
-                    if (kotlin.math.abs(music.currentPosition - target) > 400L) music.seekTo(target)
+                    // The preview player repeats the whole file; force a seek as soon as
+                    // playback escapes the selected in/out range instead of leaking audio
+                    // from beyond the trimmed end for the 400ms drift tolerance.
+                    val outsideSelectedRange = music.currentPosition < sourceRange.startMs ||
+                        music.currentPosition >= sourceRange.endMs
+                    if (outsideSelectedRange || kotlin.math.abs(music.currentPosition - target) > 400L) {
+                        music.seekTo(target)
+                    }
                 }
                 music.playWhenReady = true
             }
