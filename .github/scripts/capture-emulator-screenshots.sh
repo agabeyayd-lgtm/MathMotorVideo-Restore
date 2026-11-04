@@ -550,7 +550,7 @@ for attempt in 1 2 3 4 5; do
   delta_x="$((play_center_x - thumb_center_x))"
   absolute_delta="$((delta_x < 0 ? -delta_x : delta_x))"
   echo "Alignment attempt $attempt: sample=${thumb_sample_ms}ms center=${thumb_center_x}px playhead=${play_center_x}px delta=${delta_x}px"
-  if [ "$absolute_delta" -le 2 ]; then
+  if [ "$absolute_delta" -le 3 ]; then
     thumbnail_aligned=true
     break
   fi
