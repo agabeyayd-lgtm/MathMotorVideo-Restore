@@ -653,3 +653,11 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - PR #22 remains open/unmerged. Latest comparison after the fix: 109 commits ahead, 4 behind `main`; 22 changed files. No PR-triggered workflow run was returned for the fix commit.
 - Follow-up found that the music preview player repeats the entire source file while the timeline loops only the selected in/out range. The preview now forces a seek as soon as the playhead escapes that selected range, avoiding up to 400ms of untrimmed audio leakage; a regression test covers range escape and normal in-range tolerance.
 - Latest branch comparison after these additions: 115 commits ahead, 4 behind `main`, 23 changed files. The new regression test is committed but remains unexecuted; no build, emulator run, export-audio check, or APK is verified.
+
+### 2026-11-04 export pipeline verification follow-up
+
+- Media3 1.10.1 source inspection found two invalid audio sequence builder usages: the music path combined the explicit `Builder(Set<TrackType>)` constructor with the legacy `experimentalSetForceAudioTrack(true)` call (the 1.10.1 implementation rejects that combination), and the delayed sound path used the private no-argument builder. Both music and sound now use a shared audio-only sequence factory with explicit track types and preserved leading/trailing silence.
+- Media3 1.10.1's Transformer source adds 16-bit PCM normalization to composition items and adds `SpeedChangingAudioProcessor` to items with a `SpeedProvider`. This confirms that source audio in a speed-adjusted video item follows that item's playback speed; `setDurationUs` remains the pre-clipping/pre-speed source duration.
+- Media3 also requires audio items mixed in a composition to have the same channel count. Added stereo normalization for original clip audio, music and sound effects, including 1–8 channel inputs, plus unit tests for matrix output and sequence track declarations.
+- Static code and official-library source review only. The new tests have not been executed; no Gradle build, emulator playback, exported MP4 audio check or APK has been verified for this head.
+- Latest Git comparison before these documentation commits: 125 ahead, 4 behind `main`, 27 changed files. PR #22 remains open/unmerged; no Actions run or check was returned for the current head.
