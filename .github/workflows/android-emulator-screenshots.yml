@@ -126,7 +126,12 @@ jobs:
           emulator_pid=$!
           cleanup_emulator() {
             adb -s emulator-5554 emu kill >/dev/null 2>&1 || true
-            kill "$emulator_pid" >/dev/null 2>&1 || true
+            # Do not let a stuck emulator launcher keep the entire Actions
+            # step open after the smoke-test script has already exited.
+            if ! timeout -k 2s 8s tail --pid="$emulator_pid" -f /dev/null; then
+              echo "Emulator did not stop cleanly; sending SIGKILL."
+              kill -KILL "$emulator_pid" >/dev/null 2>&1 || true
+            fi
             wait "$emulator_pid" 2>/dev/null || true
           }
           trap cleanup_emulator EXIT
