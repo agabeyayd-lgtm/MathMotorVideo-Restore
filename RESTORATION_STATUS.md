@@ -1,10 +1,10 @@
 ## Contextual track selection — 2026-11-04
 
-**UX correction added to PR #21; CI pending.** Selecting a main-video clip or Bindirme layer now changes the bottom dock to that layer's contextual tool strip without opening the expanded settings sheet. The timeline remains visible and available for a long-press drag. The user must explicitly tap the contextual `Düzenle` / `Kırp` action before the settings sheet rises from the bottom. Bindirme selection offers `Geri`, `Düzenle`, and `Sil`; video selection offers its clip actions in the same dock location. This separates selection from editing and prevents the sheet from covering the selected strip during the initial touch.
+**PR #22 interaction contract.** Video, Ses, Metin and Bindirme tracks must follow one shared CapCut-style rule: a normal tap selects only and changes the contextual bottom tool row in place; it must not open the expanded settings panel. Press-and-hold + drag moves the selected item; edge handles trim its timing. Only an explicit `Düzenle` / `Kırp` action in the contextual row opens the bottom settings panel. Back returns to the same track's contextual row. This behavior must be consistent across all four track types.
 
 ---
 
-## Corner logo / watermark overlay — 2026-11-04 (PR #21)
+## Corner logo / watermark overlay — 2026-11-04 (PR #22)
 
 **Implementation in review; final CI and on-device validation pending.** The existing editor's `Bindirme` tool is used to add a still image as a project logo; no separate editor or image upload service is introduced.
 
