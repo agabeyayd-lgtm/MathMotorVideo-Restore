@@ -102,6 +102,17 @@ internal object MusicSourceRangeMath {
         if (safe.durationMs <= 0L) return safe.startMs
         return safe.startMs + (projectOffsetMs.coerceAtLeast(0L) % safe.durationMs)
     }
+
+    /** Re-sync immediately if preview playback escapes the selected source range. */
+    fun needsPreviewSeek(
+        currentPositionMs: Long,
+        targetPositionMs: Long,
+        range: MusicSourceRange,
+        toleranceMs: Long = 400L
+    ): Boolean =
+        currentPositionMs < range.startMs ||
+            currentPositionMs >= range.endMs ||
+            kotlin.math.abs(currentPositionMs - targetPositionMs) > toleranceMs.coerceAtLeast(0L)
 }
 
 /** A sound item with independent source and project-timeline boundaries. */
