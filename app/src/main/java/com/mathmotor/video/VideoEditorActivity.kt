@@ -6041,6 +6041,8 @@ class VideoEditorActivity : Activity() {
                 put("colorPreset", layer.colorPreset.name)
                 put("isBold", layer.isBold)
                 put("kind", layer.kind.name)
+                put("animationPreset", layer.animationPreset.key)
+                put("animationDurationMs", layer.animationDurationMs)
             })
         }
         clips.forEach { clip ->
@@ -6365,6 +6367,8 @@ class VideoEditorActivity : Activity() {
                     kind = runCatching {
                         TextLayerKind.valueOf(item.optString("kind", "TEXT"))
                     }.getOrDefault(TextLayerKind.TEXT),
+                    animationPreset = TextAnimationPreset.fromKey(item.optString("animationPreset", "none")),
+                    animationDurationMs = item.optLong("animationDurationMs", 350L).coerceIn(100L, 1_500L),
                     xFraction = item.optDouble("xFraction", 0.5).toFloat().coerceIn(0f, 1f),
                     yFraction = item.optDouble("yFraction", defaultTextYFraction(position).toDouble()).toFloat().coerceIn(0f, 1f)
                 ))
