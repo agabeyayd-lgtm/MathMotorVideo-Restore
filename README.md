@@ -1,3 +1,12 @@
+## Overlay trim source-boundary correction — 2026-11-04
+
+- Static review found that the Bindirme duration control used the full video source duration even after the left edge had been trimmed. For example, a 10-second source trimmed to start at 2 seconds could still be assigned a 10-second overlay duration, making the export clip request run past the source end.
+- Added shared OverlaySourceRangeMath bounds. The duration control now uses only the source time remaining after the current source start; the image path intentionally remains independent of video source offsets. The export sequence also applies the same source-remaining cap as a final defensive boundary.
+- Added unit cases for a trimmed 10-second video, a short remaining source tail, and image behavior. Source commits: 2429f26 (helper), 117ba77 (Activity integration), 5e0c5db (tests).
+- Combined with the preceding keyframed gesture continuity fix, these are focused branch-only changes. **Tests have been added but not executed; Gradle build, CI, API 35 emulator and phone verification remain pending.** No APK or green status is claimed.
+
+---
+
 ## Keyframed overlay gesture continuity — 2026-11-04
 
 - Static review found that an animated overlay's first one-finger drag and the transition from two fingers back to one were re-anchored from the overlay's base transform instead of the interpolated transform visible at the playhead. This could make a keyframed overlay jump during direct manipulation.
