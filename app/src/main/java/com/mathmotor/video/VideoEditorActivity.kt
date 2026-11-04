@@ -3273,7 +3273,47 @@ class VideoEditorActivity : Activity() {
                 selected = overlay.id == selectedOverlayId,
                 onClick = { selectOverlay(overlay.id) },
                 minimumWidthDp = 48,
-                startMs = overlay.timelineStartMs
+                startMs = overlay.timelineStartMs,
+                onMove = { deltaMs ->
+                    val movableDuration = overlay.durationMs.coerceAtLeast(1L)
+                    overlay.timelineStartMs = (overlay.timelineStartMs + deltaMs).coerceIn(
+                        0L, (totalMs - movableDuration).coerceAtLeast(0L)
+                    )
+                    selectedOverlayId = overlay.id
+                    timelinePlayheadMs = overlay.timelineStartMs
+                    enterOverlayTools()
+                    rebuildTimelinePreviewForOverlayEdit()
+                    status.text = "Bindirme zaman çizelgesinde taşındı."
+                },
+                onTrimStart = { deltaMs ->
+                    val oldStart = overlay.timelineStartMs
+                    val oldDuration = overlay.durationMs
+                    val minimum = minOf(500L, oldDuration)
+                    val lower = -minOf(oldStart, if (overlay.isImage) oldStart else overlay.sourceStartMs)
+                    val shift = deltaMs.coerceIn(lower, (oldDuration - minimum).coerceAtLeast(0L))
+                    overlay.timelineStartMs = oldStart + shift
+                    overlay.durationMs = oldDuration - shift
+                    if (!overlay.isImage) overlay.sourceStartMs = (overlay.sourceStartMs + shift).coerceAtLeast(0L)
+                    selectedOverlayId = overlay.id
+                    timelinePlayheadMs = overlay.timelineStartMs
+                    enterOverlayTools()
+                    rebuildTimelinePreviewForOverlayEdit()
+                    status.text = "Bindirme başlangıcı kırpıldı."
+                },
+                onTrimEnd = { deltaMs ->
+                    val oldDuration = overlay.durationMs
+                    val sourceRemaining = if (overlay.isImage) Long.MAX_VALUE else
+                        (overlay.sourceDurationMs - overlay.sourceStartMs).coerceAtLeast(1L)
+                    val timelineRemaining = (totalMs - overlay.timelineStartMs).coerceAtLeast(1L)
+                    val maximum = minOf(sourceRemaining, timelineRemaining)
+                    val minimum = minOf(500L, maximum)
+                    overlay.durationMs = (oldDuration + deltaMs).coerceIn(minimum, maximum)
+                    selectedOverlayId = overlay.id
+                    timelinePlayheadMs = overlay.timelineStartMs
+                    enterOverlayTools()
+                    rebuildTimelinePreviewForOverlayEdit()
+                    status.text = "Bindirme bitişi kırpıldı."
+                }
             )
             addSpacer(overlayTrack, endMs, totalMs)
         }
