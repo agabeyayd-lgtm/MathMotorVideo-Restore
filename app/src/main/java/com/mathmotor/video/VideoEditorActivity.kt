@@ -8975,12 +8975,7 @@ class VideoEditorActivity : Activity() {
                 return
             }
             if (musicRange.durationMs > 0L) {
-                // The explicit audio track type already guarantees silent leading
-                // gaps; do not combine it with the deprecated force-audio flag.
-                val sequenceBuilder = EditedMediaItemSequence.Builder(
-                    setOf(androidx.media3.common.C.TRACK_TYPE_AUDIO)
-                )
-                if (musicRange.startMs > 0L) sequenceBuilder.addGap(musicRange.startMs * 1000L)
+                val musicItems = mutableListOf<EditedMediaItem>()
                 var remainingMs = musicRange.durationMs
                 while (remainingMs > 0L) {
                     val chunkMs = minOf(sourceRange.durationMs, remainingMs)
@@ -8993,7 +8988,7 @@ class VideoEditorActivity : Activity() {
                                 .build()
                         )
                         .build()
-                    sequenceBuilder.addItem(
+                    musicItems.add(
                         EditedMediaItem.Builder(musicItem)
                             .setRemoveVideo(true)
                             .setEffects(Effects(audioEffects(musicVolume), emptyList()))
@@ -9003,8 +8998,13 @@ class VideoEditorActivity : Activity() {
                 }
                 val trailingGapMs = (outputDurationMs - musicRange.startMs - musicRange.durationMs)
                     .coerceAtLeast(0L)
-                if (trailingGapMs > 0L) sequenceBuilder.addGap(trailingGapMs * 1000L)
-                compositionSequences.add(sequenceBuilder.build())
+                compositionSequences.add(
+                    AudioCompositionSequenceFactory.build(
+                        items = musicItems,
+                        leadingGapMs = musicRange.startMs,
+                        trailingGapMs = trailingGapMs
+                    )
+                )
             }
         }
         soundUri?.let { uri ->
@@ -9028,13 +9028,12 @@ class VideoEditorActivity : Activity() {
                 .setRemoveVideo(true)
                 .setEffects(Effects(audioEffects(soundVolume), emptyList()))
                 .build()
-            // Keep this audio-only and materialize silence before delayed sound effects.
-            val soundSequenceBuilder = EditedMediaItemSequence.Builder(
-                setOf(androidx.media3.common.C.TRACK_TYPE_AUDIO)
+            compositionSequences.add(
+                AudioCompositionSequenceFactory.build(
+                    items = listOf(soundItem),
+                    leadingGapMs = offsetMs
+                )
             )
-            if (offsetMs > 0L) soundSequenceBuilder.addGap(offsetMs * 1000L)
-            soundSequenceBuilder.addItem(soundItem)
-            compositionSequences.add(soundSequenceBuilder.build())
         }
         val compositionBuilder = Composition.Builder(compositionSequences)
         if (overlayClips.isNotEmpty()) {
