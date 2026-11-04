@@ -1,8 +1,10 @@
 package com.mathmotor.video
 
+import androidx.media3.common.util.UnstableApi
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
+@OptIn(UnstableApi::class)
 class AudioChannelMixingMathTest {
     @Test
     fun everySupportedInputLayoutProducesStereo() {
