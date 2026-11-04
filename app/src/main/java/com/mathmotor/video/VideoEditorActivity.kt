@@ -2693,36 +2693,158 @@ class VideoEditorActivity : Activity() {
             selected: Boolean = false,
             onClick: (() -> Unit)? = null,
             minimumWidthDp: Int = 0,
-            startMs: Long = 0L
+            startMs: Long = 0L,
+            onMove: ((Long) -> Unit)? = null,
+            onTrimStart: ((Long) -> Unit)? = null,
+            onTrimEnd: ((Long) -> Unit)? = null
         ) {
-            val safeStartMs = startMs.coerceAtLeast(0L)
-            val safeEndMs = safeStartMs + durationMs.coerceAtLeast(0L)
-            val width = maxOf(dp(minimumWidthDp), widthBetween(safeStartMs, safeEndMs).coerceAtLeast(1))
-            val block = TextView(this).apply {
+            val safeStart = startMs.coerceAtLeast(0L)
+            val safeDuration = durationMs.coerceAtLeast(1L)
+            val width = maxOf(dp(minimumWidthDp), widthBetween(safeStart, safeStart + safeDuration).coerceAtLeast(1))
+            val blockHeight = dp(if (keyboardLayoutActive) 26 else 32)
+            val frame = FrameLayout(this)
+            val body = TextView(this).apply {
                 text = title
                 textSize = 9f
                 setTextColor(Color.WHITE)
                 gravity = Gravity.CENTER_VERTICAL
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
-                setPadding(dp(6), 0, dp(6), 0)
+                setPadding(dp(7), 0, dp(7), 0)
                 background = android.graphics.drawable.GradientDrawable().apply {
                     setColor(fill)
                     cornerRadius = dp(5).toFloat()
-                    setStroke(dp(if (selected) 2 else 1), if (selected) Color.rgb(117, 240, 221) else Color.rgb(61, 79, 99))
+                    setStroke(dp(if (selected) 2 else 1),
+                        if (selected) Color.rgb(117, 240, 221) else Color.rgb(61, 79, 99))
                 }
-                if (onClick != null) {
-                    isClickable = true
-                    isFocusable = true
-                    setOnClickListener { onClick() }
-                }
+                isClickable = true
+                isFocusable = true
             }
-            val blockHeight = dp(when {
-                keyboardLayoutActive -> 26
-                compactEditorLayout -> 46
-                else -> 48
-            })
-            track.addView(block, LinearLayout.LayoutParams(width, blockHeight))
+            frame.addView(body, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+            ))
+            if (onMove != null) {
+                var downX = 0f
+                var active = false
+                var longPressed = false
+                var moved = false
+                val hold = Runnable {
+                    if (active && !moved) {
+                        longPressed = true
+                        body.parent?.requestDisallowInterceptTouchEvent(true)
+                        frame.animate().scaleX(0.96f).scaleY(0.96f).setDuration(100L).start()
+                    }
+                }
+                body.setOnTouchListener { view, event ->
+                    when (event.actionMasked) {
+                        MotionEvent.ACTION_DOWN -> {
+                            downX = event.rawX
+                            active = true
+                            moved = false
+                            longPressed = false
+                            pauseActivePreview()
+                            timelineHandler.postDelayed(hold, android.view.ViewConfiguration.getLongPressTimeout().toLong())
+                            true
+                        }
+                        MotionEvent.ACTION_MOVE -> {
+                            val dx = event.rawX - downX
+                            if (kotlin.math.abs(dx) > android.view.ViewConfiguration.get(this).scaledTouchSlop) {
+                                timelineHandler.removeCallbacks(hold)
+                                if (longPressed) {
+                                    moved = true
+                                    view.parent?.requestDisallowInterceptTouchEvent(true)
+                                    val pps = timelinePixelsPerSecond()
+                                    frame.translationX = dx.coerceIn(
+                                        -safeStart / 1000f * pps,
+                                        (totalMs - safeStart - safeDuration).coerceAtLeast(0L) / 1000f * pps
+                                    )
+                                }
+                            }
+                            true
+                        }
+                        MotionEvent.ACTION_UP -> {
+                            timelineHandler.removeCallbacks(hold)
+                            active = false
+                            frame.translationX = 0f
+                            frame.animate().scaleX(1f).scaleY(1f).setDuration(100L).start()
+                            view.parent?.requestDisallowInterceptTouchEvent(false)
+                            if (longPressed && moved) {
+                                onMove(TimelineScaleMath.millisecondsForPixels(event.rawX - downX, timelinePixelsPerSecond()))
+                                refreshTimelineTracks()
+                            } else if (!moved) onClick?.invoke()
+                            view.performClick()
+                            true
+                        }
+                        MotionEvent.ACTION_CANCEL -> {
+                            timelineHandler.removeCallbacks(hold)
+                            active = false
+                            frame.translationX = 0f
+                            view.parent?.requestDisallowInterceptTouchEvent(false)
+                            true
+                        }
+                        else -> true
+                    }
+                }
+            } else if (onClick != null) body.setOnClickListener { onClick() }
+
+            fun addEdge(isStart: Boolean, callback: ((Long) -> Unit)?) {
+                if (callback == null) return
+                val edgeWidth = minOf(dp(18), (width / 3).coerceAtLeast(dp(7)))
+                val edge = TextView(this).apply {
+                    text = if (isStart) "‹" else "›"
+                    textSize = 12f
+                    typeface = Typeface.DEFAULT_BOLD
+                    gravity = Gravity.CENTER
+                    setTextColor(Color.WHITE)
+                    setBackgroundColor(Color.rgb(23, 72, 103))
+                    contentDescription = if (isStart) "Katman başlangıcını kırp" else "Katman bitişini kırp"
+                }
+                var downX = 0f
+                var moved = false
+                edge.setOnTouchListener { view, event ->
+                    when (event.actionMasked) {
+                        MotionEvent.ACTION_DOWN -> {
+                            downX = event.rawX
+                            moved = false
+                            pauseActivePreview()
+                            view.parent?.requestDisallowInterceptTouchEvent(true)
+                            true
+                        }
+                        MotionEvent.ACTION_MOVE -> {
+                            val dx = event.rawX - downX
+                            if (kotlin.math.abs(dx) > android.view.ViewConfiguration.get(this).scaledTouchSlop) moved = true
+                            val delta = TimelineScaleMath.millisecondsForPixels(dx, timelinePixelsPerSecond())
+                            val bound = if (isStart) safeDuration - minOf(500L, safeDuration) else totalMs - safeStart - safeDuration
+                            view.translationX = dx.coerceIn(
+                                (if (isStart) -safeStart else -safeDuration + minOf(500L, safeDuration)) / 1000f * timelinePixelsPerSecond(),
+                                bound.coerceAtLeast(0L) / 1000f * timelinePixelsPerSecond()
+                            )
+                            true
+                        }
+                        MotionEvent.ACTION_UP -> {
+                            val delta = TimelineScaleMath.millisecondsForPixels(event.rawX - downX, timelinePixelsPerSecond())
+                            view.translationX = 0f
+                            view.parent?.requestDisallowInterceptTouchEvent(false)
+                            callback(if (moved) delta else 0L)
+                            refreshTimelineTracks()
+                            true
+                        }
+                        MotionEvent.ACTION_CANCEL -> {
+                            view.translationX = 0f
+                            view.parent?.requestDisallowInterceptTouchEvent(false)
+                            true
+                        }
+                        else -> true
+                    }
+                }
+                frame.addView(edge, FrameLayout.LayoutParams(
+                    edgeWidth, ViewGroup.LayoutParams.MATCH_PARENT,
+                    if (isStart) Gravity.START else Gravity.END
+                ))
+            }
+            addEdge(true, onTrimStart)
+            addEdge(false, onTrimEnd)
+            track.addView(frame, LinearLayout.LayoutParams(width, blockHeight))
         }
 
         fun addSpacer(track: LinearLayout, startMs: Long, endMs: Long) {
