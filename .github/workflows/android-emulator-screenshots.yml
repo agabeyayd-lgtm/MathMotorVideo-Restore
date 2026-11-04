@@ -121,11 +121,26 @@ jobs:
           }
           trap cleanup_emulator EXIT
 
-          adb start-server
-          adb -s emulator-5554 wait-for-device
+          timeout -k 2s 8s adb start-server || true
+          device_state=""
+          # Bound ADB startup: wait-for-device can hang indefinitely when the
+          # emulator process fails before registering its transport.
+          for attempt in $(seq 1 90); do
+            device_state="$(timeout -k 1s 4s adb -s emulator-5554 get-state 2>/dev/null || true)"
+            if [ "$device_state" = "device" ]; then break; fi
+            echo "Waiting for emulator ADB transport (attempt $attempt/90; state='$device_state')"
+            sleep 2
+          done
+          if [ "$device_state" != "device" ]; then
+            echo "Emulator never became visible to ADB; process list and boot log follow:"
+            ps -ef | grep -E '[e]mulator|[q]emu' || true
+            cat /tmp/mathmotor-emulator.log || true
+            exit 1
+          fi
+
           boot_completed=""
           for attempt in $(seq 1 120); do
-            boot_completed="$(adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')"
+            boot_completed="$(timeout -k 1s 5s adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d '\\r' || true)"
             if [ "$boot_completed" = "1" ]; then break; fi
             sleep 5
           done
