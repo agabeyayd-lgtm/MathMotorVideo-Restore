@@ -96,7 +96,8 @@ class VideoEditorActivity : Activity() {
         var transformTranslateX: Float = 0f,
         var transformTranslateY: Float = 0f,
         var frameRate: Double? = null,
-        var coverTimeMs: Long? = null
+        var coverTimeMs: Long? = null,
+        var speed: Float = 1f
     )
 
     private data class OverlayClip(
@@ -473,6 +474,10 @@ class VideoEditorActivity : Activity() {
     private var pendingCoverSaveBitmap: Bitmap? = null
     private lateinit var startLabel: TextView
     private lateinit var endLabel: TextView
+    private lateinit var clipSpeedLabel: TextView
+    private lateinit var clipSpeedSeek: SeekBar
+    private var clipSpeedHistorySnapshot: ClipEditSnapshot? = null
+    private var updatingClipSpeedControl = false
     private lateinit var startSeek: SeekBar
     private lateinit var endSeek: SeekBar
     private lateinit var musicLabel: TextView
