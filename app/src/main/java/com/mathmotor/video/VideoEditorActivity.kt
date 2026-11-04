@@ -6957,6 +6957,9 @@ class VideoEditorActivity : Activity() {
                     }
                     updateOverlayControlLabels(overlay)
                     updateOverlaySelectionChrome()
+                    // Re-seek the paused composition so mutable overlay transforms
+                    // are rendered live beneath the selection frame during dragging.
+                    timelineCompositionPlayer?.seekTo(timelinePlayheadMs)
                     true
                 }
                 android.view.MotionEvent.ACTION_POINTER_UP -> {
