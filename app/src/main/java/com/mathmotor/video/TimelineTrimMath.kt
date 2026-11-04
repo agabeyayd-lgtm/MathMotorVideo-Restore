@@ -102,6 +102,17 @@ internal object MusicSourceRangeMath {
         if (safe.durationMs <= 0L) return safe.startMs
         return safe.startMs + (projectOffsetMs.coerceAtLeast(0L) % safe.durationMs)
     }
+
+    /** Re-sync immediately if preview playback escapes the selected source range. */
+    fun needsPreviewSeek(
+        currentPositionMs: Long,
+        targetPositionMs: Long,
+        range: MusicSourceRange,
+        toleranceMs: Long = 400L
+    ): Boolean =
+        currentPositionMs < range.startMs ||
+            currentPositionMs >= range.endMs ||
+            kotlin.math.abs(currentPositionMs - targetPositionMs) > toleranceMs.coerceAtLeast(0L)
 }
 
 /** A sound item with independent source and project-timeline boundaries. */
@@ -263,9 +274,11 @@ internal data class TimelineVideoSegment(
     val timelineStartMs: Long,
     val sourceStartMs: Long,
     val sourceEndMs: Long,
-    val sourceDurationMs: Long
+    val sourceDurationMs: Long,
+    val speed: Float = 1f
 ) {
-    val durationMs: Long get() = (sourceEndMs - sourceStartMs).coerceAtLeast(0L)
+    val sourceSpanMs: Long get() = (sourceEndMs - sourceStartMs).coerceAtLeast(0L)
+    val durationMs: Long get() = ClipSpeedMath.timelineDurationMs(sourceSpanMs, speed)
     val timelineEndMs: Long get() = timelineStartMs.coerceAtLeast(0L) + durationMs
 }
 
@@ -293,7 +306,8 @@ internal object TimelineVideoMath {
             timelineStartMs = segment.timelineStartMs.coerceAtLeast(0L),
             sourceStartMs = sourceStart,
             sourceEndMs = sourceEnd,
-            sourceDurationMs = sourceDuration
+            sourceDurationMs = sourceDuration,
+            speed = ClipSpeedMath.normalize(segment.speed)
         )
     }
 
@@ -317,7 +331,9 @@ internal object TimelineVideoMath {
             projectTimeMs < safe.timelineStartMs ||
             projectTimeMs >= safe.timelineEndMs
         ) return null
-        return safe.sourceStartMs + (projectTimeMs - safe.timelineStartMs)
+        return safe.sourceStartMs + ClipSpeedMath.sourceOffsetMs(
+            projectTimeMs - safe.timelineStartMs, safe.speed
+        )
     }
 
     /**
@@ -402,12 +418,17 @@ internal object TimelineVideoMath {
         val safe = normalize(segment)
         if (safe.durationMs <= 0L) return safe
         val minimum = minimumDurationMs.coerceAtLeast(1L).coerceAtMost(safe.durationMs)
-        val delta = deltaMs.coerceIn(
-            -minOf(safe.timelineStartMs, safe.sourceStartMs),
-            (safe.durationMs - minimum).coerceAtLeast(0L)
+        val lowerSourceDelta = -minOf(
+            safe.sourceStartMs,
+            ClipSpeedMath.sourceOffsetMs(safe.timelineStartMs, safe.speed)
         )
+        val maximumSourceDelta = ClipSpeedMath.sourceOffsetMs(
+            (safe.durationMs - minimum).coerceAtLeast(0L),
+            safe.speed
+        )
+        val delta = deltaMs.coerceIn(lowerSourceDelta, maximumSourceDelta)
         return safe.copy(
-            timelineStartMs = safe.timelineStartMs + delta,
+            timelineStartMs = safe.timelineStartMs + ClipSpeedMath.timelineOffsetMs(delta, safe.speed),
             sourceStartMs = safe.sourceStartMs + delta
         )
     }
@@ -427,7 +448,7 @@ internal object TimelineVideoMath {
         val minimum = minimumDurationMs.coerceAtLeast(1L).coerceAtMost(safe.durationMs)
         val delta = deltaMs.coerceIn(
             -safe.sourceStartMs,
-            (safe.durationMs - minimum).coerceAtLeast(0L)
+            ClipSpeedMath.sourceOffsetMs((safe.durationMs - minimum).coerceAtLeast(0L), safe.speed)
         )
         return safe.copy(sourceStartMs = safe.sourceStartMs + delta)
     }
@@ -441,7 +462,8 @@ internal object TimelineVideoMath {
         val safe = normalize(segment)
         if (safe.durationMs <= 0L) return safe
         val minimum = minimumDurationMs.coerceAtLeast(1L).coerceAtMost(safe.durationMs)
-        val minimumEnd = (safe.sourceStartMs + minimum).coerceAtMost(safe.sourceDurationMs)
+        val minimumEnd = (safe.sourceStartMs + ClipSpeedMath.sourceOffsetMs(minimum, safe.speed))
+            .coerceAtMost(safe.sourceDurationMs)
         return safe.copy(
             sourceEndMs = (safe.sourceEndMs + deltaMs).coerceIn(minimumEnd, safe.sourceDurationMs)
         )

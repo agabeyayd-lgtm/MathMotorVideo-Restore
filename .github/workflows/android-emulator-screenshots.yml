@@ -54,15 +54,15 @@ jobs:
       - name: Package the tested debug APK as a ZIP
         run: |
           mkdir -p debug-apk-delivery
-          cp app/build/outputs/apk/debug/app-debug.apk debug-apk-delivery/MathMotor-debug-394-build61.apk
-          (cd debug-apk-delivery && zip -q MathMotor-debug-394-build61.zip MathMotor-debug-394-build61.apk)
-          test -s debug-apk-delivery/MathMotor-debug-394-build61.zip
+          cp app/build/outputs/apk/debug/app-debug.apk debug-apk-delivery/MathMotor-debug.apk
+          (cd debug-apk-delivery && zip -q MathMotor-debug.zip MathMotor-debug.apk)
+          test -s debug-apk-delivery/MathMotor-debug.zip
 
       - name: Upload installable debug APK ZIP
         uses: actions/upload-artifact@v4
         with:
           name: mathmotor-debug-apk-zip
-          path: debug-apk-delivery/MathMotor-debug-394-build61.zip
+          path: debug-apk-delivery/MathMotor-debug.zip
           if-no-files-found: error
           retention-days: 14
 
@@ -94,26 +94,47 @@ jobs:
             echo "WARNING: /dev/kvm is unavailable; emulator may run without hardware acceleration"
           fi
 
-      - name: Launch app and capture screen without instrumentation
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          # Use the current Google APIs image; the Android 30 AOSP ATD package
-          # could not be resolved by sdkmanager on the hosted runner.
-          target: google_apis
-          arch: x86_64
-          cores: 2
-          ram-size: 2048M
-          heap-size: 512M
-          force-avd-creation: true
-          emulator-port: 5554
-          disable-animations: true
-          disable-spellchecker: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -wipe-data
-          emulator-boot-timeout: 600
-          script: |
-            gradle --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.mathmotor.video.VideoProjectDraftBackupTest
-            bash .github/scripts/capture-emulator-screenshots.sh
+      - name: Set up Android SDK emulator
+        uses: android-actions/setup-android@v3
+
+      - name: Create API 35 Google APIs virtual device
+        run: |
+          sdkmanager --install "platform-tools" "platforms;android-35" "emulator" "system-images;android-35;google_apis;x86_64"
+          echo "no" | avdmanager create avd --force --name mathmotor-api35 --package "system-images;android-35;google_apis;x86_64" --device "pixel_2"
+
+      - name: Boot emulator, run smoke tests, and shut it down
+        timeout-minutes: 30
+        shell: bash
+        run: |
+          set -euo pipefail
+          emulator -avd mathmotor-api35 -port 5554 -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -wipe-data > /tmp/mathmotor-emulator.log 2>&1 &
+          emulator_pid=$!
+          cleanup_emulator() {
+            adb -s emulator-5554 emu kill >/dev/null 2>&1 || true
+            kill "$emulator_pid" >/dev/null 2>&1 || true
+            wait "$emulator_pid" 2>/dev/null || true
+          }
+          trap cleanup_emulator EXIT
+
+          adb start-server
+          adb -s emulator-5554 wait-for-device
+          boot_completed=""
+          for attempt in $(seq 1 120); do
+            boot_completed="$(adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')"
+            if [ "$boot_completed" = "1" ]; then break; fi
+            sleep 5
+          done
+          if [ "$boot_completed" != "1" ]; then
+            cat /tmp/mathmotor-emulator.log
+            echo "Android emulator did not finish booting within 10 minutes."
+            exit 1
+          fi
+
+          adb -s emulator-5554 shell settings put global window_animation_scale 0
+          adb -s emulator-5554 shell settings put global transition_animation_scale 0
+          adb -s emulator-5554 shell settings put global animator_duration_scale 0
+          gradle --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.mathmotor.video.VideoProjectDraftBackupTest
+          bash .github/scripts/capture-emulator-screenshots.sh
 
       - name: Upload emulator screenshots and diagnostics
         if: always()
