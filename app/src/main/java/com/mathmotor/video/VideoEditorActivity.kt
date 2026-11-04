@@ -5991,6 +5991,18 @@ class VideoEditorActivity : Activity() {
                 put("yFraction", overlay.yFraction)
                 put("rotationDegrees", overlay.rotationDegrees)
                 put("opacity", overlay.opacity)
+                put("keyframes", JSONArray().apply {
+                    overlay.keyframes.sortedBy { it.timeMs }.forEach { frame ->
+                        put(JSONObject().apply {
+                            put("timeMs", frame.timeMs)
+                            put("scale", frame.state.scale)
+                            put("xFraction", frame.state.xFraction)
+                            put("yFraction", frame.state.yFraction)
+                            put("rotationDegrees", frame.state.rotationDegrees)
+                            put("opacity", frame.state.opacity)
+                        })
+                    }
+                })
             })
         }
         return JSONObject().apply {
@@ -6124,7 +6136,31 @@ class VideoEditorActivity : Activity() {
                 xFraction = item.optDouble("xFraction", 0.78).toFloat().coerceIn(0f, 1f),
                 yFraction = item.optDouble("yFraction", 0.22).toFloat().coerceIn(0f, 1f),
                 rotationDegrees = item.optDouble("rotationDegrees", 0.0).toFloat().coerceIn(-180f, 180f),
-                opacity = item.optDouble("opacity", 1.0).toFloat().coerceIn(0f, 1f)
+                opacity = item.optDouble("opacity", 1.0).toFloat().coerceIn(0f, 1f),
+                keyframes = mutableListOf<OverlayTransformKeyframe>().apply {
+                    val savedKeyframes = item.optJSONArray("keyframes") ?: JSONArray()
+                    for (frameIndex in 0 until savedKeyframes.length()) {
+                        val frame = savedKeyframes.optJSONObject(frameIndex) ?: continue
+                        val state = OverlayTransformState.normalize(
+                            OverlayTransformState(
+                                scale = frame.optDouble("scale", item.optDouble("scale", 0.35)).toFloat(),
+                                xFraction = frame.optDouble("xFraction", item.optDouble("xFraction", 0.78)).toFloat(),
+                                yFraction = frame.optDouble("yFraction", item.optDouble("yFraction", 0.22)).toFloat(),
+                                rotationDegrees = frame.optDouble("rotationDegrees", item.optDouble("rotationDegrees", 0.0)).toFloat(),
+                                opacity = frame.optDouble("opacity", item.optDouble("opacity", 1.0)).toFloat()
+                            )
+                        )
+                        add(
+                            OverlayTransformKeyframe(
+                                timeMs = frame.optLong("timeMs", 0L).coerceIn(0L, durationMs),
+                                state = state
+                            )
+                        )
+                    }
+                    val ordered = sortedBy { it.timeMs }
+                    clear()
+                    addAll(ordered)
+                }
             )
             loadedOverlays.add(overlay)
             maxOverlayId = maxOf(maxOverlayId, overlay.id)
