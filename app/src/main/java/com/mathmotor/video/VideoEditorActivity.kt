@@ -3187,7 +3187,9 @@ class VideoEditorActivity : Activity() {
             makeLane("Metin", 30, "text")
         } else {
             textLayers.forEachIndexed { index, layer ->
-                val textTrack = makeLane("Metin ${index + 1}", 30, "text:${layer.id}")
+                val laneTitle = if (layer.kind == TextLayerKind.STICKER) "Çıkartma ${index + 1}" else "Metin ${index + 1}"
+                val laneKey = if (layer.kind == TextLayerKind.STICKER) "sticker:${layer.id}" else "text:${layer.id}"
+                val textTrack = makeLane(laneTitle, 30, laneKey)
                 addTextLayerBlock(textTrack, layer, index)
             }
         }
@@ -4878,7 +4880,9 @@ class VideoEditorActivity : Activity() {
         }
         textLayers.forEachIndexed { index, layer ->
             val selected = layer.id == selectedTextLayerId
-            val title = layer.text.trim().ifBlank { "Yazı ${index + 1}" }.take(14)
+            val title = layer.text.trim().ifBlank {
+                if (layer.kind == TextLayerKind.STICKER) "Çıkartma ${index + 1}" else "Yazı ${index + 1}"
+            }.take(14)
             val button = Button(this).apply {
                 text = "${if (selected) "✓ " else ""}${index + 1}. $title"
                 isAllCaps = false
@@ -5182,6 +5186,18 @@ class VideoEditorActivity : Activity() {
             overlay.setTextSize(layer.sizeSp.toFloat())
             overlay.setTextColor(layer.colorPreset.colorInt)
             overlay.setTypeface(Typeface.DEFAULT, if (layer.isBold) Typeface.BOLD else Typeface.NORMAL)
+            if (layer.kind == TextLayerKind.STICKER) {
+                overlay.setPadding(0, 0, 0, 0)
+                overlay.background = null
+                overlay.setShadowLayer(4f, 0f, 2f, Color.BLACK)
+            } else {
+                overlay.setPadding(dp(10), dp(6), dp(10), dp(6))
+                overlay.background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(Color.argb(210, 0, 0, 0))
+                    cornerRadius = dp(8).toFloat()
+                }
+                overlay.setShadowLayer(2f, 1f, 1f, Color.BLACK)
+            }
             overlay.visibility = View.VISIBLE
             val params = overlay.layoutParams as? FrameLayout.LayoutParams ?: return@forEachIndexed
             params.gravity = Gravity.CENTER
@@ -5624,6 +5640,7 @@ class VideoEditorActivity : Activity() {
                 put("yFraction", layer.yFraction)
                 put("colorPreset", layer.colorPreset.name)
                 put("isBold", layer.isBold)
+                put("kind", layer.kind.name)
             })
         }
         clips.forEach { clip ->
@@ -5903,6 +5920,9 @@ class VideoEditorActivity : Activity() {
                         TextColorPreset.valueOf(item.optString("colorPreset", "WHITE"))
                     }.getOrDefault(TextColorPreset.WHITE),
                     isBold = item.optBoolean("isBold", true),
+                    kind = runCatching {
+                        TextLayerKind.valueOf(item.optString("kind", "TEXT"))
+                    }.getOrDefault(TextLayerKind.TEXT),
                     xFraction = item.optDouble("xFraction", 0.5).toFloat().coerceIn(0f, 1f),
                     yFraction = item.optDouble("yFraction", defaultTextYFraction(position).toDouble()).toFloat().coerceIn(0f, 1f)
                 ))
@@ -8222,7 +8242,9 @@ class VideoEditorActivity : Activity() {
         val endMs = layer.endMs
         val styled = SpannableString(overlayText).apply {
             setSpan(ForegroundColorSpan(layer.colorPreset.colorInt), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            setSpan(BackgroundColorSpan(Color.argb(190, 0, 0, 0)), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            if (layer.kind != TextLayerKind.STICKER) {
+                setSpan(BackgroundColorSpan(Color.argb(190, 0, 0, 0)), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
             if (layer.isBold) {
                 setSpan(StyleSpan(Typeface.BOLD), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
