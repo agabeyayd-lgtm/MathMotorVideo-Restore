@@ -21,7 +21,8 @@ class ClipSpeedMathTest {
     @Test
     fun speedIsBoundedAndInvalidValuesDefaultToNormal() {
         assertEquals(0.1f, ClipSpeedMath.normalize(0f))
-        assertEquals(10f, ClipSpeedMath.normalize(40f))
+        assertEquals(40f, ClipSpeedMath.normalize(40f))
+        assertEquals(100f, ClipSpeedMath.normalize(120f))
         assertEquals(1f, ClipSpeedMath.normalize(Float.NaN))
     }
 }
