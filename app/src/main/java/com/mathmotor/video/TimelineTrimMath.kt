@@ -451,7 +451,8 @@ internal object TimelineVideoMath {
         val safe = normalize(segment)
         if (safe.durationMs <= 0L) return safe
         val minimum = minimumDurationMs.coerceAtLeast(1L).coerceAtMost(safe.durationMs)
-        val minimumEnd = (safe.sourceStartMs + minimum).coerceAtMost(safe.sourceDurationMs)
+        val minimumEnd = (safe.sourceStartMs + ClipSpeedMath.sourceOffsetMs(minimum, safe.speed))
+            .coerceAtMost(safe.sourceDurationMs)
         return safe.copy(
             sourceEndMs = (safe.sourceEndMs + deltaMs).coerceIn(minimumEnd, safe.sourceDurationMs)
         )
