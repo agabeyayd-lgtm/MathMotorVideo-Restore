@@ -1,3 +1,13 @@
+## PR #22 audit continuation — 2026-11-04
+
+- Continued static review across overlay timing/export, clip speed export, text animation, timeline lane selection, and clip/overlay transform keyframes.
+- Confirmed the selected track flows use contextual bottom tool strips: selecting a video, text, audio, or overlay track does not itself open the expanded settings sheet; the explicit `Düzenle`/tool action opens it. Overlay transform gestures are enabled only inside its edit panel.
+- Clip transform keyframes now use the same duplicate-timestamp normalization as overlay keyframes (last stored transform wins), with a regression test added.
+- PR #22 currently remains divergent from `main`; no review threads or submitted PR reviews were returned in the latest audit. Do not merge until the branch is reconciled and the complete diff is reviewed.
+- Verification remains static source inspection only. The newly added tests have not been run, no Gradle compile or emulator test has been verified, and no APK has been produced. GitHub Actions runs are not visible for the latest commits from the available connection.
+
+---
+
 ## Clip transform keyframe normalization — 2026-11-04
 
 - Static review found the same duplicate-timestamp ambiguity in video clip transform keyframes that had already been corrected for overlay keyframes. Clip transform interpolation and keyframe writes now normalize timestamps and keep the last saved transform for each timestamp.
