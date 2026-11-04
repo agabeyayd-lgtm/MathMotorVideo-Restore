@@ -2764,6 +2764,7 @@ class VideoEditorActivity : Activity() {
                             loadTextLayerIntoControls(layer)
                             status.text = "Yazı katmanı zaman çizelgesinde taşındı."
                             refreshTimelineTracks()
+                            enterTextTools()
                         } else if (!bodyMoved) {
                             view.performClick()
                             refreshTimelineTracks()
@@ -2853,6 +2854,7 @@ class VideoEditorActivity : Activity() {
                                 } else {
                                     "Yazı bitişi: ${formatTimelineMs(layer.endMs)}"
                                 }
+                                enterTextTools()
                             } else {
                                 selectTextLayer(layer.id)
                             }
@@ -3684,7 +3686,7 @@ class VideoEditorActivity : Activity() {
                             status.text = if (isStart) "Ses efektinin başlangıcı kırpıldı." else "Ses efektinin bitişi kırpıldı."
                             refreshTimelineTracks()
                         } else {
-                            showEditorPanel("audio")
+                            enterAudioTools()
                         }
                         true
                     }
