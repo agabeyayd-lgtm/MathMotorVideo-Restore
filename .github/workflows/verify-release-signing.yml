@@ -47,7 +47,7 @@ jobs:
           echo "ANDROID_HOME=$ANDROID_HOME"
           test -x "$ANDROID_HOME/build-tools/36.0.0/apksigner"
 
-      - name: Download current signed 394 release
+      - name: Download current signed 395 release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -57,8 +57,8 @@ jobs:
           code="$(RELEASE_JSON="$release_json" python3 -c 'import json,os,re; body=json.loads(os.environ["RELEASE_JSON"]).get("body") or ""; m=re.search(r"versionCode\s*=\s*(\d+)", body, re.I); print(m.group(1) if m else "")')"
           echo "Latest signed release tag: $tag"
           echo "Latest signed release versionCode: $code"
-          if [ "$code" != "394" ]; then
-            echo "::error::Expected latest signed release versionCode 394, found '$code'. Stop and review release state."
+          if [ "$code" != "395" ]; then
+            echo "::error::Expected latest signed release versionCode 395, found '$code'. Stop and review release state."
             exit 1
           fi
           mkdir -p "$RUNNER_TEMP/published-release"
@@ -170,13 +170,13 @@ jobs:
             echo "$source_name signer SHA-256: $candidate_fingerprint"
             echo "- $source_name signer SHA-256: \`$candidate_fingerprint\`" >> "$GITHUB_STEP_SUMMARY"
             if [ "$candidate_fingerprint" = "$published_fingerprint" ]; then
-              echo "::notice::$source_name MATCHES the published 394 signer."
+              echo "::notice::$source_name MATCHES the published 395 signer."
               echo "- $source_name result: MATCH" >> "$GITHUB_STEP_SUMMARY"
               echo "::endgroup::"
               return 0
             fi
 
-            echo "::warning::$source_name does not match the published 394 signer."
+            echo "::warning::$source_name does not match the published 395 signer."
             echo "- $source_name result: MISMATCH" >> "$GITHUB_STEP_SUMMARY"
             echo "::endgroup::"
             return 1
@@ -237,9 +237,9 @@ jobs:
             exit 1
           fi
           if [ "$matched" -ne 1 ]; then
-            echo "::error::No configured signing source matches the published 394 certificate. Do not uninstall the debug app or publish an update."
+            echo "::error::No configured signing source matches the published 395 certificate. Do not uninstall the debug app or publish an update."
             exit 1
           fi
 
-          echo "At least one configured signing source matches the published 394 certificate. No release was published."
+          echo "At least one configured signing source matches the published 395 certificate. No release was published."
           echo "- Overall result: MATCH" >> "$GITHUB_STEP_SUMMARY"
