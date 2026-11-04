@@ -4,6 +4,8 @@
 
 **Latest interaction refinement:** opening a selected track's `Düzenle` panel keeps that track's contextual dock active. Closing the panel or pressing Android Back returns to the same track tools; the dock's `Geri` action exits to global editor tools. Audio move/trim operations also restore the audio contextual dock. AI features are explicitly out of scope.
 
+**Emulator CI cleanup refinement:** the emulator smoke job now creates and boots its API 35 Google APIs AVD explicitly, runs the same instrumentation and screenshot checks, and shuts down the emulator with a shell `trap`. This removes the action post-step that previously failed at `Terminate Emulator` (`stop: Not implemented` / exit 24). The workflow has not yet produced a new run for this head, so this is a code change awaiting CI verification.
+
 ---
 
 ## Corner logo / watermark overlay — 2026-11-04 (PR #22)
