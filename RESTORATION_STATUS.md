@@ -1,3 +1,12 @@
+## Keyframed overlay gesture continuity — 2026-11-04
+
+- Static review found that an animated overlay's first one-finger drag and the transition from two fingers back to one were re-anchored from the overlay's base transform instead of the interpolated transform visible at the playhead. This could make a keyframed overlay jump during direct manipulation.
+- Both gesture entry (ACTION_DOWN) and pointer handoff (ACTION_POINTER_UP) now capture scale/position/rotation from overlayStateAtTime(overlay, timelinePlayheadMs). The correction is limited to touch anchoring; timeline timing, keyframe interpolation, export composition, and the main branch are unchanged.
+- Source commits: 307871b (pointer handoff) and a20a836 (gesture entry).
+- Verification boundary: static source review only. Unit tests, Gradle compilation, API 35 emulator interaction/screenshot checks, and physical-phone validation have not run for these commits. No green check or APK is claimed.
+
+---
+
 ## Contextual track selection — 2026-11-04
 
 **PR #22 interaction contract.** Video, Ses, Metin and Bindirme tracks must follow one shared CapCut-style rule: a normal tap selects only and changes the contextual bottom tool row in place; it must not open the expanded settings panel. Press-and-hold + drag moves the selected item; edge handles trim its timing. Only an explicit `Düzenle` / `Kırp` action in the contextual row opens the bottom settings panel. Back returns to the same track's contextual row. This behavior must be consistent across all four track types.
