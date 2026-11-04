@@ -499,6 +499,8 @@ class VideoEditorActivity : Activity() {
     private lateinit var exportNameInput: EditText
     private lateinit var exportResolutionGroup: android.widget.RadioGroup
     private var exportResolutionShortSide = 0
+    private var exportCanvasPreset = VideoCanvasPreset.SOURCE
+    private lateinit var exportCanvasGroup: android.widget.RadioGroup
     private var exporting = false
     private var keyboardLayoutActive = false
     private var maxEditorViewportHeightPx = 0
@@ -1580,7 +1582,43 @@ class VideoEditorActivity : Activity() {
             }
         }
         exportPanel.addView(exportResolutionGroup, matchWrap())
-        exportPanel.addView(label("Kaynak: orijinal boyut • 720p / 1080p: ölçeklenmiş MP4", 10f, Color.rgb(132, 153, 173), false))
+        exportPanel.addView(label("Video oranı / kadraj", 11f, Color.rgb(154, 171, 190), false))
+        exportCanvasGroup = android.widget.RadioGroup(this).apply {
+            orientation = android.widget.RadioGroup.HORIZONTAL
+            VideoCanvasPreset.values().forEachIndexed { index, preset ->
+                val optionId = 340 + index
+                addView(android.widget.RadioButton(this@VideoEditorActivity).apply {
+                    id = optionId
+                    text = preset.title
+                    textSize = 11f
+                    setTextColor(Color.WHITE)
+                    buttonTintList = android.content.res.ColorStateList.valueOf(Color.rgb(57, 220, 190))
+                    minHeight = dp(40)
+                    setPadding(dp(3), 0, dp(7), 0)
+                }, android.widget.RadioGroup.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                ))
+            }
+            check(340)
+            setOnCheckedChangeListener { _, checkedId ->
+                exportCanvasPreset = VideoCanvasPreset.values().getOrNull(checkedId - 340)
+                    ?: VideoCanvasPreset.SOURCE
+                refreshColorGradePreview()
+                status.text = when (exportCanvasPreset) {
+                    VideoCanvasPreset.SOURCE -> "Kaynak video oranı korunacak."
+                    else -> "Kadraj ${exportCanvasPreset.title} olarak ayarlandı. Önizleme ve MP4 çıktısı aynı kadrajı kullanacak."
+                }
+            }
+        }
+        val canvasScroll = android.widget.HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            addView(exportCanvasGroup)
+        }
+        exportPanel.addView(canvasScroll, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(46)
+        ))
+        exportPanel.addView(label("Kadraj değiştirirken kenarlardan kırpılır; kaynak: orijinal oran.", 10f, Color.rgb(132, 153, 173), false))
         exportPanel.addView(actionButton("Projeyi farklı kaydet (.JSON)") { requestSaveProject() })
         exportPanel.addView(actionButton("Kayıtlı projeyi aç") { requestOpenProject() })
         exportButton = actionButton("MP4 DIŞA AKTAR") { exportEditedVideo() }
@@ -4503,7 +4541,12 @@ class VideoEditorActivity : Activity() {
         if (overlayClips.isNotEmpty()) {
             builder.setVideoCompositorSettings(buildOverlayCompositorSettings())
         }
-        val colorEffects = buildEditorVideoEffects()
+        val colorEffects = buildEditorVideoEffects().toMutableList()
+        exportCanvasPreset.aspectRatio?.let { ratio ->
+            colorEffects.add(Presentation.createForAspectRatio(
+                ratio, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP
+            ))
+        }
         if (colorEffects.isNotEmpty()) {
             builder.setEffects(Effects(emptyList(), colorEffects))
         }
@@ -5867,6 +5910,7 @@ class VideoEditorActivity : Activity() {
             put("keepSourceAudio", keepSourceAudio.isChecked)
             put("exportName", exportNameInput.text?.toString().orEmpty())
             put("exportResolutionShortSide", exportResolutionShortSide)
+            put("exportCanvasPreset", exportCanvasPreset.key)
         }
     }
 
@@ -6109,6 +6153,8 @@ class VideoEditorActivity : Activity() {
             1080 -> 303
             else -> 301
         })
+        exportCanvasPreset = VideoCanvasPreset.fromKey(json.optString("exportCanvasPreset", "source"))
+        exportCanvasGroup.check(340 + VideoCanvasPreset.values().indexOf(exportCanvasPreset))
         updateMusicTimingLabel()
         soundLabel.text = soundTitle?.let { "Ses/efekt: $it • ${formatMs(soundDurationMs)}" } ?: "Ses veya efekt seçilmedi."
         updateMusicTimingLabel()
@@ -8518,6 +8564,11 @@ class VideoEditorActivity : Activity() {
         }
         val outputVideoEffects = mutableListOf<androidx.media3.common.Effect>()
         outputVideoEffects.addAll(buildEditorVideoEffects())
+        exportCanvasPreset.aspectRatio?.let { ratio ->
+            outputVideoEffects.add(Presentation.createForAspectRatio(
+                ratio, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP
+            ))
+        }
         when (exportResolutionShortSide) {
             720 -> outputVideoEffects.add(Presentation.createForShortSide(720))
             1080 -> outputVideoEffects.add(Presentation.createForShortSide(1080))
