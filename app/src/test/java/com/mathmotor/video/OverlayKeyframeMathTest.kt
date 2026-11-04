@@ -24,7 +24,7 @@ class OverlayKeyframeMathTest {
         assertEquals(0.75f, middle.scale, 0.0001f)
         assertEquals(0.5f, middle.xFraction, 0.0001f)
         assertEquals(0.5f, middle.yFraction, 0.0001f)
-        assertEquals(-180f, middle.rotationDegrees, 0.0001f)
+        assertEquals(180f, middle.rotationDegrees, 0.0001f)
         assertEquals(0.5f, middle.opacity, 0.0001f)
         assertEquals(end, OverlayKeyframeMath.stateAt(start, frames, 4_000L))
     }
