@@ -2780,7 +2780,8 @@ class VideoEditorActivity : Activity() {
             startMs: Long = 0L,
             onMove: ((Long) -> Unit)? = null,
             onTrimStart: ((Long) -> Unit)? = null,
-            onTrimEnd: ((Long) -> Unit)? = null
+            onTrimEnd: ((Long) -> Unit)? = null,
+            keyframeTimesMs: List<Long> = emptyList()
         ) {
             val safeStart = startMs.coerceAtLeast(0L)
             val safeDuration = durationMs.coerceAtLeast(1L)
@@ -2807,6 +2808,23 @@ class VideoEditorActivity : Activity() {
             frame.addView(body, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
             ))
+            keyframeTimesMs.forEach { keyframeTimeMs ->
+                val marker = TextView(this).apply {
+                    text = "◆"
+                    textSize = 9f
+                    setTextColor(Color.rgb(255, 226, 112))
+                    gravity = Gravity.CENTER
+                    isClickable = false
+                    isFocusable = false
+                    contentDescription = "Anahtar kare: ${formatTimelineMs(keyframeTimeMs)}"
+                }
+                val markerX = TimelineScaleMath.pixelsForTime(
+                    keyframeTimeMs.coerceIn(0L, safeDuration), timelinePixelsPerSecond()
+                ).toInt().coerceIn(0, (width - dp(10)).coerceAtLeast(0))
+                frame.addView(marker, FrameLayout.LayoutParams(dp(10), dp(10), Gravity.TOP or Gravity.LEFT).apply {
+                    leftMargin = markerX
+                })
+            }
             if (onMove != null) {
                 var downX = 0f
                 var active = false
@@ -3358,6 +3376,7 @@ class VideoEditorActivity : Activity() {
                 onClick = { selectOverlay(overlay.id) },
                 minimumWidthDp = 48,
                 startMs = overlay.timelineStartMs,
+                keyframeTimesMs = overlay.keyframes.map { it.timeMs },
                 onMove = { deltaMs ->
                     val movableDuration = overlay.durationMs.coerceAtLeast(1L)
                     overlay.timelineStartMs = (overlay.timelineStartMs + deltaMs).coerceIn(
@@ -4491,9 +4510,6 @@ class VideoEditorActivity : Activity() {
             return
         }
         val localTimeMs = overlayLocalTimeMs(overlay)
-        val existing = OverlayKeyframeMath.stateAt(
-            overlayBaseTransformState(overlay), overlay.keyframes, localTimeMs
-        )
         val frames = OverlayKeyframeMath.upsert(
             overlay.keyframes,
             OverlayTransformKeyframe(localTimeMs, normalized)
