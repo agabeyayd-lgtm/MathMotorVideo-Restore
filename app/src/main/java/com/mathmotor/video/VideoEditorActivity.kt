@@ -4432,14 +4432,15 @@ class VideoEditorActivity : Activity() {
             val timeMs = presentationTimeUs / 1_000L
             val visible = timeMs >= layer.timelineStartMs &&
                 timeMs < layer.timelineStartMs + layer.durationMs
+            val state = overlayStateAtTime(layer, timeMs)
             return StaticOverlaySettings.Builder()
-                .setAlphaScale(if (visible) layer.opacity.coerceIn(0f, 1f) else 0f)
-                .setScale(layer.scale, layer.scale)
+                .setAlphaScale(if (visible) state.opacity else 0f)
+                .setScale(state.scale, state.scale)
                 .setBackgroundFrameAnchor(
-                    layer.xFraction * 2f - 1f,
-                    1f - layer.yFraction * 2f
+                    state.xFraction * 2f - 1f,
+                    1f - state.yFraction * 2f
                 )
-                .setRotationDegrees(layer.rotationDegrees)
+                .setRotationDegrees(state.rotationDegrees)
                 .build()
         }
     }
@@ -4453,6 +4454,93 @@ class VideoEditorActivity : Activity() {
         // Media3 uses the first sequence as a foreground input. Keep the main edited
         // video last so it remains the full-frame background under every bindirme.
         return overlaySequences + buildFlattenedVideoSequence()
+    }
+
+    private fun overlayBaseTransformState(overlay: OverlayClip) = OverlayTransformState(
+        scale = overlay.scale,
+        xFraction = overlay.xFraction,
+        yFraction = overlay.yFraction,
+        rotationDegrees = overlay.rotationDegrees,
+        opacity = overlay.opacity
+    )
+
+    private fun overlayLocalTimeMs(overlay: OverlayClip): Long =
+        (timelinePlayheadMs - overlay.timelineStartMs).coerceIn(0L, overlay.durationMs.coerceAtLeast(0L))
+
+    private fun overlayStateAtTime(overlay: OverlayClip, projectTimeMs: Long): OverlayTransformState {
+        val localTimeMs = (projectTimeMs - overlay.timelineStartMs)
+            .coerceIn(0L, overlay.durationMs.coerceAtLeast(0L))
+        return OverlayKeyframeMath.stateAt(
+            overlayBaseTransformState(overlay),
+            overlay.keyframes,
+            localTimeMs
+        )
+    }
+
+    private fun updateOverlayTransformAtPlayhead(
+        overlay: OverlayClip,
+        updatedState: OverlayTransformState
+    ) {
+        val normalized = OverlayTransformState.normalize(updatedState)
+        if (overlay.keyframes.isEmpty()) {
+            overlay.scale = normalized.scale
+            overlay.xFraction = normalized.xFraction
+            overlay.yFraction = normalized.yFraction
+            overlay.rotationDegrees = normalized.rotationDegrees
+            overlay.opacity = normalized.opacity
+            return
+        }
+        val localTimeMs = overlayLocalTimeMs(overlay)
+        val existing = OverlayKeyframeMath.stateAt(
+            overlayBaseTransformState(overlay), overlay.keyframes, localTimeMs
+        )
+        val frames = OverlayKeyframeMath.upsert(
+            overlay.keyframes,
+            OverlayTransformKeyframe(localTimeMs, normalized)
+        )
+        overlay.keyframes.clear()
+        overlay.keyframes.addAll(frames)
+    }
+
+    private fun addOverlayKeyframeAtPlayhead() {
+        val overlay = selectedOverlay() ?: run {
+            status.text = "Önce bir bindirme katmanı seç."
+            return
+        }
+        val localTimeMs = overlayLocalTimeMs(overlay)
+        if (overlay.keyframes.isEmpty() && localTimeMs > 0L) {
+            overlay.keyframes.add(OverlayTransformKeyframe(0L, overlayBaseTransformState(overlay)))
+        }
+        val currentState = overlayStateAtTime(overlay, timelinePlayheadMs)
+        val frames = OverlayKeyframeMath.upsert(
+            overlay.keyframes,
+            OverlayTransformKeyframe(localTimeMs, currentState)
+        )
+        overlay.keyframes.clear()
+        overlay.keyframes.addAll(frames)
+        loadOverlayControls()
+        refreshTimelineTracks()
+        rebuildTimelinePreviewForOverlayEdit()
+        status.text = "Anahtar kare eklendi: ${formatTimelineMs(timelinePlayheadMs)}."
+    }
+
+    private fun removeOverlayKeyframeAtPlayhead() {
+        val overlay = selectedOverlay() ?: run {
+            status.text = "Önce bir bindirme katmanı seç."
+            return
+        }
+        val index = OverlayKeyframeMath.nearestIndex(
+            overlay.keyframes, overlayLocalTimeMs(overlay), toleranceMs = 250L
+        )
+        if (index == null) {
+            status.text = "Oynatma noktasına yakın bir anahtar kare yok."
+            return
+        }
+        overlay.keyframes.removeAt(index)
+        loadOverlayControls()
+        refreshTimelineTracks()
+        rebuildTimelinePreviewForOverlayEdit()
+        status.text = "Anahtar kare silindi."
     }
 
     private fun buildOverlayCompositorSettings(): VideoCompositorSettings =
