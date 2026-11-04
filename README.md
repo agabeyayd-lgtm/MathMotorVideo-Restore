@@ -1,3 +1,15 @@
+## Corner logo / watermark overlay — 2026-11-04 (PR #21)
+
+**Implementation in review; final CI and on-device validation pending.** The existing editor's `Bindirme` tool is used to add a still image as a project logo; no separate editor or image upload service is introduced.
+
+- Selecting `＋ Logo / Fotoğraf` opens Android's document picker. New still-image logos begin at project time 00:00 and span the full main-video duration, including videos longer than the old 60-second image-source limit.
+- The default placement is a small upper-right logo (18% scale) at 88% opacity. The user can move it directly in the preview, adjust scale/position/rotation and timing, and change opacity with the new `Saydamlık` slider.
+- Opacity is persisted in project JSON and applied by the shared Media3 compositor settings used for preview and MP4 export. Older projects that do not contain the new field restore at 100% opacity.
+- Video overlays retain their existing playhead-start behavior and full-opacity default. Logo image layers remain separate from the main video and occupy their own Bindirme timeline lane.
+- Unit tests cover full-project duration and corner defaults. Version remains 395; this PR does not publish or prepare version 396.
+
+---
+
 ## On-device update confirmed — 2026-11-04 (394 → 395)
 
 **PHYSICAL UPDATE SUCCESS CONFIRMED BY USER.** The production-signed app installed version 395 through its own `Kontrol et` updater from production-signed 394. This confirms the real in-app update path for this release pair. Version 395 (`8.29-capcut-editor`, `versionCode=395`) is now the active device baseline. Continue development on `main`; future updates should use the same controlled signed-release workflow and in-app updater.
