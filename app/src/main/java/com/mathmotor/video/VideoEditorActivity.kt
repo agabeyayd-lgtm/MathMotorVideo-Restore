@@ -5923,9 +5923,10 @@ class VideoEditorActivity : Activity() {
                     // The preview player repeats the whole file; force a seek as soon as
                     // playback escapes the selected in/out range instead of leaking audio
                     // from beyond the trimmed end for the 400ms drift tolerance.
-                    val outsideSelectedRange = music.currentPosition < sourceRange.startMs ||
-                        music.currentPosition >= sourceRange.endMs
-                    if (outsideSelectedRange || kotlin.math.abs(music.currentPosition - target) > 400L) {
+                    if (MusicSourceRangeMath.needsPreviewSeek(
+                            music.currentPosition, target, sourceRange
+                        )
+                    ) {
                         music.seekTo(target)
                     }
                 }
