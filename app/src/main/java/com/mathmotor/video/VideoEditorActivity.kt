@@ -1081,6 +1081,37 @@ class VideoEditorActivity : Activity() {
         endSeek = SeekBar(this)
         clipPanel.addView(endSeek, matchWrap())
         installTrimListeners()
+        clipSpeedLabel = label("Hız: 1.00×", 12f, Color.WHITE, true)
+        clipPanel.addView(clipSpeedLabel)
+        val clipSpeedPresets = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        listOf(0.5f, 1f, 2f, 4f).forEach { preset ->
+            clipSpeedPresets.addView(miniButton("${preset}×") { setSelectedClipSpeed(preset) },
+                LinearLayout.LayoutParams(0, dp(40), 1f).apply {
+                    if (preset != 0.5f) leftMargin = dp(4)
+                })
+        }
+        clipPanel.addView(clipSpeedPresets)
+        clipSpeedSeek = SeekBar(this).apply {
+            max = 100
+            progress = 50
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                    if (!fromUser || updatingClipSpeedControl) return
+                    selectedClip()?.let { clip ->
+                        clip.speed = Math.pow(10.0, progress / 50.0 - 1.0).toFloat()
+                        clipSpeedLabel.text = "Hız: ${"%.2f".format(Locale.US, clip.speed)}×"
+                    }
+                }
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                    pauseActivePreview()
+                    clipSpeedHistorySnapshot = captureClipEditSnapshot()
+                }
+                override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                    finishClipSpeedEdit()
+                }
+            })
+        }
+        clipPanel.addView(clipSpeedSeek, matchWrap())
 
         val clipVolumePanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         clipVolumePanel.addView(miniButton("‹ Araçlara dön") { returnToClipToolStrip() },
