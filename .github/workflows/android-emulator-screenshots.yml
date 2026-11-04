@@ -80,7 +80,11 @@ jobs:
             -c:a aac -b:a 64k -shortest \
             app/build/test-fixtures/editor-test-video.mp4
           test -s app/build/test-fixtures/editor-test-video.mp4
-          ls -lh app/build/test-fixtures/editor-test-video.mp4
+          ffmpeg -hide_banner -loglevel error -y \\
+            -f lavfi -i "color=c=magenta:s=256x128" -frames:v 1 \\
+            app/build/test-fixtures/editor-test-overlay.png
+          test -s app/build/test-fixtures/editor-test-overlay.png
+          ls -lh app/build/test-fixtures/editor-test-video.mp4 app/build/test-fixtures/editor-test-overlay.png
 
       - name: Enable KVM acceleration for the emulator
         run: |
