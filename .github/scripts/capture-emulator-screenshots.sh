@@ -1123,6 +1123,13 @@ if ! timeout -k 2s 15s adb -s emulator-5554 shell am start -S \
   exit 12
 fi
 sleep 3
+# Drafts live below the long tools grid on the vertically scrollable home page.
+# Scroll to the lower section before inspecting the accessibility hierarchy;
+# otherwise uiautomator may omit off-screen children even when they are present.
+for _ in 1 2 3; do
+  timeout -k 2s 8s adb -s emulator-5554 shell input swipe 540 1850 540 430 450 || true
+  sleep 1
+done
 dump_hierarchy drafts-home.xml emulator-screenshots/drafts-home-window.xml || true
 if [ -s emulator-screenshots/drafts-home-window.xml ] && ! grep -Eqi "TASLAKLAR|Taslaklar" emulator-screenshots/drafts-home-window.xml; then
   echo "Local draft was saved, but the home screen did not expose the draft section."
