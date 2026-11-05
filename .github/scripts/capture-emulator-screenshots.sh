@@ -677,7 +677,7 @@ for attempt in $(seq 1 20); do
     export_started=true
     break
   fi
-  if grep -q "EXPORT_GUARD_NO_CLIPS\|EXPORT_GUARD_INVALID_CLIP\|EXPORT_COMPOSITION_FAILED\|EXPORT_TRANSFORMER_START_FAILED" emulator-screenshots/mp4-export-tap-logcat.txt; then
+  if grep -qE "EXPORT_GUARD_NO_CLIPS|EXPORT_GUARD_INVALID_CLIP|EXPORT_COMPOSITION_FAILED|EXPORT_TRANSFORMER_START_FAILED|EXPORT_TRANSFORMER_BUILD_FAILED" emulator-screenshots/mp4-export-tap-logcat.txt; then
     break
   fi
   echo "Waiting for the MP4 tap to reach Transformer.start (attempt $attempt/20)"
@@ -688,12 +688,29 @@ if [ "$export_started" != true ]; then
   collect_capture_diagnostics mp4-export-button-tap-failed
   exit 39
 fi
-if ! take_screen emulator-screenshots/editor-export-started.png; then
-  collect_capture_diagnostics mp4-export-started-capture-failure
+export_saved=false
+for attempt in $(seq 1 40); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorExportTest:V > emulator-screenshots/mp4-export-tap-logcat.txt 2>&1 || true
+  if grep -q "EXPORT_OUTPUT_SAVED" emulator-screenshots/mp4-export-tap-logcat.txt; then
+    export_saved=true
+    break
+  fi
+  if grep -qE "EXPORT_ENCODING_FAILED|EXPORT_OUTPUT_SAVE_FAILED" emulator-screenshots/mp4-export-tap-logcat.txt; then
+    break
+  fi
+  echo "Waiting for a saved MP4 output from the fixture export (attempt $attempt/40)"
+  sleep 2
+done
+if [ "$export_saved" != true ]; then
+  echo "The Transformer started, but no successfully saved MP4 was confirmed."
+  collect_capture_diagnostics mp4-export-output-not-saved
+  exit 40
+fi
+if ! take_screen emulator-screenshots/editor-export-saved.png; then
+  collect_capture_diagnostics mp4-export-saved-capture-failure
   exit 6
 fi
-echo "PASS: tapping the visible MP4 button reached exportEditedVideo and started the MP4 Transformer."
-
+echo "PASS: visible MP4 button tap reached the export handler, started Transformer, and saved an MP4 output."
 echo "Step 9/12: align a thumbnail cell with the playhead and compare the rendered pixels"
 # HorizontalScrollView consumes ViewConfiguration.scaledTouchSlop before it
 # scrolls. That value is density-scaled (pixels), so a fixed 12px allowance
