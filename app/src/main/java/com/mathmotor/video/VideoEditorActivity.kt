@@ -9791,8 +9791,8 @@ class VideoEditorActivity : Activity() {
                     .setAlphaScale(animation.alpha)
                     .setScale(animation.scale, animation.scale)
                     .setBackgroundFrameAnchor(
-                        (x + animation.offsetXFraction * 2f).coerceIn(-0.92f, 0.92f),
-                        (y - animation.offsetYFraction * 2f).coerceIn(-0.85f, 0.85f)
+                        x + animation.offsetXFraction * 2f,
+                        y - animation.offsetYFraction * 2f
                     )
                     .setOverlayFrameAnchor(0f, 0f)
                     .build()
