@@ -8958,6 +8958,7 @@ class VideoEditorActivity : Activity() {
                     return@runOnUiThread
                 }
                 var appliedTargets = 0
+                var appliedAttachedTargets = 0
                 if (result != null && !isFinishing && !isDestroyed) {
                     timelineThumbnailCache.put(key, result)
                     val decodedAspectRatio = result.width.toFloat() / result.height.coerceAtLeast(1).toFloat()
@@ -8973,12 +8974,6 @@ class VideoEditorActivity : Activity() {
                         "TimelineFrameSyncTest",
                         "TIMELINE_THUMBNAIL_READY sourceMs=$timestampMs width=${result.width} height=${result.height} cached=false"
                     )
-                    if (timelineSyncTestEnabled && timelineTestExpectedReplacementUri == uri) {
-                        android.util.Log.i(
-                            "EditorSmokeTest",
-                            "EDITOR_SMOKE_REPLACEMENT_THUMBNAIL_READY uri=$uri sourceMs=$timestampMs"
-                        )
-                    }
                     targets.forEach { ref ->
                         val image = ref.get()
                         if (image != null && image.tag == key) {
@@ -8990,7 +8985,17 @@ class VideoEditorActivity : Activity() {
                             // image rather than continuing to report a temporary cover.
                             image.contentDescription = "Klip karesi @${timestampMs}ms"
                             appliedTargets++
+                            if (image.isAttachedToWindow) appliedAttachedTargets++
                         }
+                    }
+                    if (timelineSyncTestEnabled &&
+                        timelineTestExpectedReplacementUri == uri &&
+                        appliedAttachedTargets > 0
+                    ) {
+                        android.util.Log.i(
+                            "EditorSmokeTest",
+                            "EDITOR_SMOKE_REPLACEMENT_THUMBNAIL_READY uri=$uri sourceMs=$timestampMs attachedTargets=$appliedAttachedTargets"
+                        )
                     }
                 } else {
                     result?.recycle()
