@@ -1727,6 +1727,15 @@ class VideoEditorActivity : Activity() {
 
         val exportPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         exportPanel.addView(label("PROJE / DIŞA AKTARMA", 13f, Color.rgb(121, 202, 218), true))
+        // Keep the primary action at the top of the short export drawer so it is
+        // immediately visible and never depends on scrolling past secondary options.
+        exportButton = actionButton("MP4 DIŞA AKTAR") { exportEditedVideo() }.apply {
+            contentDescription = "MP4 olarak dışa aktar"
+            minHeight = dp(52)
+            isClickable = true
+            isFocusable = true
+        }
+        exportPanel.addView(exportButton)
         exportPanel.addView(label("Dosya adı", 11f, Color.rgb(154, 171, 190), false))
         exportNameInput = EditText(this).apply {
             setText("MathMotor_Edit")
@@ -1808,8 +1817,6 @@ class VideoEditorActivity : Activity() {
         exportPanel.addView(label("Kadraj değiştirirken kenarlardan kırpılır; kaynak: orijinal oran.", 10f, Color.rgb(132, 153, 173), false))
         exportPanel.addView(actionButton("Projeyi farklı kaydet (.JSON)") { requestSaveProject() })
         exportPanel.addView(actionButton("Kayıtlı projeyi aç") { requestOpenProject() })
-        exportButton = actionButton("MP4 DIŞA AKTAR") { exportEditedVideo() }
-        exportPanel.addView(exportButton)
 
         editorPanels["clip"] = clipPanel
         editorPanels["clipVolume"] = clipVolumePanel
@@ -9544,10 +9551,16 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun exportEditedVideo() {
+        // Keep a debug-only marker so the emulator can prove that a real tap on the
+        // visible MP4 control reached this handler and started the export pipeline.
+        if (timelineSyncTestEnabled) {
+            android.util.Log.i("EditorExportTest", "EXPORT_BUTTON_CLICKED clips=${clips.size} exporting=$exporting")
+        }
         // The export drawer can cover the compact status line; give immediate, visible
         // feedback so a tap never appears to do nothing while validation/encoding runs.
         Toast.makeText(this, "MP4 dışa aktarma isteği alındı.", Toast.LENGTH_SHORT).show()
         if (exporting) {
+            if (timelineSyncTestEnabled) android.util.Log.w("EditorExportTest", "EXPORT_GUARD_ALREADY_RUNNING")
             Toast.makeText(this, "Dışa aktarma zaten devam ediyor.", Toast.LENGTH_SHORT).show()
             return
         }
@@ -9558,12 +9571,14 @@ class VideoEditorActivity : Activity() {
             return
         }
         if (clips.isEmpty()) {
+            if (timelineSyncTestEnabled) android.util.Log.e("EditorExportTest", "EXPORT_GUARD_NO_CLIPS")
             status.text = "Önce bir video seç."
             Toast.makeText(this, status.text, Toast.LENGTH_LONG).show()
             return
         }
         val invalid = clips.firstOrNull { it.startMs < 0 || it.endMs <= it.startMs || it.endMs > it.durationMs }
         if (invalid != null) {
+            if (timelineSyncTestEnabled) android.util.Log.e("EditorExportTest", "EXPORT_GUARD_INVALID_CLIP")
             status.text = "Bir klibin kesme aralığı geçersiz. Başlangıç ve bitişi kontrol et."
             Toast.makeText(this, status.text, Toast.LENGTH_LONG).show()
             return
@@ -9574,6 +9589,7 @@ class VideoEditorActivity : Activity() {
         val videoSequences = try {
             buildVideoCompositionSequences()
         } catch (e: Exception) {
+            if (timelineSyncTestEnabled) android.util.Log.e("EditorExportTest", "EXPORT_COMPOSITION_FAILED", e)
             status.text = "Düzenleme hazırlanamadı: ${e.message ?: e.javaClass.simpleName}"
             Toast.makeText(this, status.text, Toast.LENGTH_LONG).show()
             return
@@ -9742,7 +9758,11 @@ class VideoEditorActivity : Activity() {
 
         try {
             transformer.start(composition, tempOutput.absolutePath)
+            if (timelineSyncTestEnabled) {
+                android.util.Log.i("EditorExportTest", "EXPORT_TRANSFORMER_STARTED output=${tempOutput.name}")
+            }
         } catch (e: Exception) {
+            if (timelineSyncTestEnabled) android.util.Log.e("EditorExportTest", "EXPORT_TRANSFORMER_START_FAILED", e)
             tempOutput.delete()
             exporting = false
             exportButton.isEnabled = true
