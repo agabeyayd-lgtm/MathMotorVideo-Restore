@@ -701,3 +701,12 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Debug-only EditorExportTest markers distinguish a tap reaching exportEditedVideo(), Transformer.start(), and successful MediaStore save. The emulator script opens Proje, locates the enabled MP4 button from the live accessibility hierarchy, taps its actual bounds, and requires a saved-output marker.
 - After confirming the saved MP4, the emulator test closes the Proje drawer before resuming timeline gesture/playback checks, so the drawer cannot mask later controls.
 - The encoding and save pipeline is unchanged. A passing emulator run proves the UI event, encoder startup, and MP4 save on the fixture; it does not replace physical-device playback verification.
+
+
+### Video replacement / stale filmstrip regression — 2026-11-05
+
+- A clip removal now invalidates that source URI's queued thumbnail tasks, cache entries, poster requests, and pending target references. Active workers carry a per-source generation and cannot publish a frame after the source has been removed or replaced.
+- Replacing the video timeline (including a replace-existing import) clears old source thumbnail state and re-anchors the ruler/playhead/scroll at time zero. Unrelated video sources are retained when another clip from the same source remains in the project.
+- The API 35 emulator scenario now starts with a red/hue-cycling MP4, adds the paused overlay, removes the original clip through the production removal path, and imports a distinct solid-green MP4 through the normal add path.
+- The regression check waits for an attached replacement thumbnail, verifies that the new filename is the only video clip in the accessibility hierarchy, and samples the filmstrip screenshot to confirm the new green frames are visible rather than old frames.
+- This test is part of PR #24's candidate validation. No phone-level confirmation, merge, version bump, or signed release is claimed until the candidate checks pass.
