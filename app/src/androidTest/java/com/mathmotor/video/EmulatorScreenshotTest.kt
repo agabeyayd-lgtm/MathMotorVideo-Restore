@@ -4,6 +4,7 @@ import android.os.Environment
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
+import android.content.Intent
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import java.io.File
@@ -29,15 +30,23 @@ class EmulatorScreenshotTest {
 
         assertTrue(
             "Home screen did not appear in the emulator",
-            device.wait(Until.hasObject(By.text("VİDEO STÜDYOSU")), 20_000)
+            device.wait(Until.hasObject(By.text("Hızlı Başlangıç  ›")), 20_000)
         )
+        assertTrue("Updater button should be visible on the home screen",
+            device.wait(Until.hasObject(By.text("⟳  Güncelleme")), 5_000))
+        assertTrue("New video card should be visible",
+            device.hasObject(By.text("Yeni video")))
+        assertTrue("Photo edit card should be visible",
+            device.hasObject(By.text("Fotoğrafı düzenle")))
+        assertTrue("Recent projects header should be visible",
+            device.hasObject(By.text("Son Projeler")))
         device.waitForIdle()
         takeScreenshot(device, "home.png")
 
-        val openEditor = device.findObject(
-            By.clazz("android.widget.Button").textContains("Boş proje oluştur")
-        ) ?: throw AssertionError("Could not find the Boş proje oluştur button")
-        openEditor.click()
+        instrumentation.targetContext.startActivity(
+            Intent(instrumentation.targetContext, VideoEditorActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
 
         assertTrue(
             "Editor screen did not appear in the emulator",

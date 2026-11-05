@@ -641,6 +641,9 @@ class VideoEditorActivity : Activity() {
         }
         timelineHandler.post(timelineSyncTask)
         val incoming = intent.getStringExtra("video_uri")
+        val incomingPhoto = intent.getStringExtra("photo_uri")
+            ?.takeIf { it.isNotBlank() }?.let(Uri::parse)
+        val photoEditorMode = intent.getBooleanExtra("photo_editor_mode", false)
         if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
             android.util.Log.i("EditorSmokeTest", "EDITOR_SMOKE_EDITOR_STARTED uri=$incoming")
         }
@@ -656,6 +659,14 @@ class VideoEditorActivity : Activity() {
             addClip(Uri.parse(incoming), false)
         } else if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
             android.util.Log.e("EditorSmokeTest", "EDITOR_SMOKE_MISSING_VIDEO_URI")
+        }
+        if (incomingPhoto != null && photoEditorMode && savedDraft == null) {
+            try {
+                contentResolver.takePersistableUriPermission(
+                    incomingPhoto, Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (_: Exception) { }
+            window.decorView.post { addOverlayAsset(incomingPhoto) }
         }
         logTimelineLifecycle("onCreateComplete", "draftId=$draftId clips=${clips.size}")
     }
@@ -6827,8 +6838,15 @@ class VideoEditorActivity : Activity() {
                     status.text = "Bindirme dosyasının süresi okunamadı. Başka bir görsel veya video seç."
                     return@runOnUiThread
                 }
-                val projectDuration = TimelineVideoMath.totalDuration(videoTimelineSegments()).coerceAtLeast(1_000L)
-                val logoDefaults = if (isImage) OverlayAssetDefaultsMath.imageLogo(projectDuration) else null
+                val photoEditorMode = intent.getBooleanExtra("photo_editor_mode", false) && isImage
+                val projectDuration = if (photoEditorMode && clips.isEmpty()) {
+                    10_000L
+                } else {
+                    TimelineVideoMath.totalDuration(videoTimelineSegments()).coerceAtLeast(1_000L)
+                }
+                val logoDefaults = if (isImage && !photoEditorMode) {
+                    OverlayAssetDefaultsMath.imageLogo(projectDuration)
+                } else null
                 // A logo begins at project time zero and spans the entire main video,
                 // regardless of the current playhead. Video overlays still start at the playhead.
                 val startMs = if (logoDefaults != null) 0L
@@ -6845,9 +6863,9 @@ class VideoEditorActivity : Activity() {
                     sourceStartMs = 0L,
                     timelineStartMs = startMs,
                     durationMs = defaultDuration.coerceIn(1L, effectiveSourceDuration),
-                    scale = logoDefaults?.scale ?: 0.35f,
-                    xFraction = logoDefaults?.xFraction ?: 0.78f,
-                    yFraction = logoDefaults?.yFraction ?: 0.22f,
+                    scale = logoDefaults?.scale ?: if (photoEditorMode) 0.92f else 0.35f,
+                    xFraction = logoDefaults?.xFraction ?: if (photoEditorMode) 0.5f else 0.78f,
+                    yFraction = logoDefaults?.yFraction ?: if (photoEditorMode) 0.5f else 0.22f,
                     opacity = logoDefaults?.opacity ?: 1f,
                     aspectRatio = aspectRatio
                 )
@@ -6891,7 +6909,9 @@ class VideoEditorActivity : Activity() {
                         )
                     }
                 }
-                status.text = if (isImage) {
+                status.text = if (photoEditorMode) {
+                    "Fotoğraf düzenleme alanı hazır. Görseli önizlemede taşıyıp boyutunu aşağıdan ayarla."
+                } else if (isImage) {
                     "Fotoğraf bindirme olarak eklendi. Süre, boyut ve konumu aşağıdan düzenle."
                 } else {
                     "Video bindirme olarak eklendi. Süre, boyut ve konumu aşağıdan düzenle."

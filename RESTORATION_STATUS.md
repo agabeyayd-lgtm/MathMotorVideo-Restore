@@ -1,3 +1,15 @@
+## CapCut-style home screen — 2026-11-05
+
+- Rebuilt `MainActivity` around the two supplied CapCut home-screen references: blue MathMotor hero, persistent `Güncelleme` pill, profile control, two primary cards, horizontal recent-project thumbnail strip, three-column scrollable tool grid, and fixed five-item bottom navigation.
+- The update pill is wired to the existing GitHub Releases version-check/download/installer flow. Its status text uses the installed package version.
+- Recent exported videos now appear as horizontally scrollable thumbnail cards. Thumbnail extraction runs off the UI thread.
+- `Yeni video` opens the document picker; `Fotoğrafı düzenle` opens the selected image as a full-frame editable overlay in the existing editor; camera shortcuts use Android video capture. Tools not yet implemented in MathMotor identify themselves as not ready instead of pretending to work.
+- Draft backup/restore and the local video library are retained. Empty draft sections no longer occupy the home screen.
+- The home emulator test now checks the new title, update control, both primary actions and recent-project heading before capturing the screenshot. Editor/text-panel checks remain in the same test.
+- Current version remains `399 / 8.32-capcut-editor`; this UI branch does not alter release signing or the production release trigger. Build, unit and emulator checks are pending for this branch.
+
+---
+
 ## Focused fix — first-video placement and export asset diagnostics — 2026-11-05
 
 - Working branch: `fix/export-asset-diagnostics-and-empty-video-start`, based on current `main` after the 398 release-trigger commit. No versionCode, release marker, signing or publish workflow changes.
