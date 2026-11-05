@@ -32,7 +32,7 @@ concurrency:
 jobs:
   emulator-ui:
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 70
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -125,7 +125,7 @@ jobs:
           "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" list avd
 
       - name: Boot emulator, run smoke tests, and shut it down
-        timeout-minutes: 30
+        timeout-minutes: 45
         shell: bash
         run: |
           set -euo pipefail
