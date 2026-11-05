@@ -817,3 +817,14 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Signing continuity: the publisher-selected `MMV_SIGNING_BUNDLE_B64` certificate SHA-256 matched the published 398 certificate exactly; [verification run 42093431357](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/42093431357) passed. The release workflow did not rotate or replace the signing key.
 - Runtime source includes the verified main-video insertion rule: a new main video starts at 00:00 when that lane is empty; independent image/text/audio layers do not push it later. Export failures expose nested Media3 cause details.
 - **Physical-phone acceptance still pending:** install this APK over the existing signed app, open the same gallery video that previously produced `Asset loader error`, export MP4, and report whether it succeeds. The emulator fixture export is not a substitute for this real-asset device check.
+
+---
+
+## CapCut-inspired home screen candidate — 2026-11-06
+
+- Rebuilt the Android home screen around the supplied two CapCut references: blue gradient masthead, Standart/search controls, prominent update card, paired New video/Edit photo cards, horizontal recent-project thumbnails, three-column tools, and fixed five-item bottom navigation.
+- The update card calls the existing GitHub version-check, APK download, and Android install flow; it is not a decorative placeholder.
+- Recent project thumbnails are loaded from the existing exported-video store. The draft backup/restore section remains available below the tool grid.
+- The photo picker opens the selected image in the editor as an independent image overlay; it does not claim unsupported standalone photo retouching tools.
+- First build and unit tests passed. The first emulator run reached the final draft check but the Android document picker remained in the foreground after export. CI now explicitly restarts MainActivity before checking the saved-draft section; the section heading is uppercase to match the accessibility assertion.
+- Candidate PR #28 is not merged or published. Awaiting the corrected full emulator run.
