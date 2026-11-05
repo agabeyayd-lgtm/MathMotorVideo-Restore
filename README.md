@@ -1,11 +1,13 @@
-## PR #23 — paused overlay direct editing and playback verified — 2026-11-05
+## PR #23 — paused overlay direct editing and version 397 verified — 2026-11-05
 
-- PR: [#23 — Show paused overlays and enable CapCut-style direct canvas editing](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/pull/23). Verified source head: `438c9d6542d6f9e1718005620616cf12a980fb1e`. PR remains open pending merge/release review and physical-device confirmation.
-- Paused editor preview now draws the main video still and active overlay assets as separate preview layers. A selected overlay can be dragged on the preview without starting playback; the overlay's actual pixels move with its transform.
-- Interactive timeline playback uses a single-input Media3 composition for the main edited video, while overlay views follow the same playhead clock. The full multi-input composition remains the export composition, so preview playback avoids the buffering behavior observed with the multi-input graph.
-- **Verified:** [Android unit/build check](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41976594924) green; [debug APK build/package](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41976594945) green; [Android 35 emulator interaction run](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41976594884) green.
-- Emulator evidence: paused overlay visible; direct drag changed the sampled image-pixel center; playback sync validator passed with 60 live samples, player position 0→5,092 ms, and five aligned timeline lanes. The current automated overlay fixture is a PNG image; video-overlay playback/export still needs broader validation.
-- Version remains **396** (`8.30-capcut-editor`, `versionCode=396`). No signed 397 APK or physical-device confirmation is claimed yet. Keep 396 as the installed baseline until the release-signing continuity and update checks pass.
+- PR: [#23 — Show paused overlays and enable CapCut-style direct canvas editing](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/pull/23). All current source, build, emulator, and release-signing checks are green.
+- Paused editor preview draws the main video still and active overlay assets as separate preview layers. A selected overlay can be dragged directly on the preview without starting playback; the actual image pixels move with the transform.
+- Interactive timeline playback uses a single-input Media3 composition for the main edited video, while independent overlay layers follow the same playhead clock. Export retains the full multi-input composition with the overlay compositor.
+- **Version candidate:** `versionCode=397`, `versionName=8.31-capcut-editor`. The 396 release remains the installed baseline until the signed 397 APK is published.
+- **Verified on the 397 source:** [Android build/package](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41977587305) green; [unit tests/debug compile](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41977587313) green; [release-signing continuity](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41977587580) green; [Android 35 emulator interaction](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41977587424) green.
+- Emulator evidence: paused overlay visible; drag moved sampled image pixels; overlay remained visible during playback; playback validator passed with **66 live samples**, player position **0→5,526 ms**, and **five synchronized timeline lanes**. The fixture validates a PNG overlay; video-overlay playback still needs broader coverage.
+- The signing workflow restored the publisher-selected `MMV_SIGNING_BUNDLE_B64` source and proved its certificate matches the currently published signed 396 APK. The signing check does not publish an APK.
+- No signed 397 release or physical-device install has been claimed. Publish 397 only from `main` after PR merge; keep 396 as the safe installed version until the updater/download is verified.
 
 ---
 
