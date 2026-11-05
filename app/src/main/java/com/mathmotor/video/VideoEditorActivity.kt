@@ -6881,7 +6881,9 @@ class VideoEditorActivity : Activity() {
                             "EDITOR_SMOKE_REPLACEMENT_BEGIN oldUri=$oldUri newUri=$replacementUri"
                         )
                         removeClipAt(oldClipIndex)
-                        addClip(replacementUri, true)
+                        // Exercise the same gallery multi-select import path that
+                        // users take, rather than the single-clip draft-launch path.
+                        addClipsInOrder(listOf(replacementUri), replaceExisting = false)
                     } else {
                         android.util.Log.e(
                             "EditorSmokeTest",
@@ -7691,6 +7693,18 @@ class VideoEditorActivity : Activity() {
                     item.copy(timelineStartMs=appendAtMs).also{appendAtMs+=(it.endMs-it.startMs).coerceAtLeast(0L)}
                 }
                 clips.addAll(positioned)
+                if (timelineSyncTestEnabled) {
+                    val expectedReplacement = timelineTestExpectedReplacementUri
+                    val replacementClip = clips.firstOrNull { it.uri == expectedReplacement }
+                    if (replacementClip != null) {
+                        android.util.Log.i(
+                            "EditorSmokeTest",
+                            "EDITOR_SMOKE_CLIP_REPLACED newUri=${replacementClip.uri} " +
+                                "clipCount=${clips.size} clipStartMs=${replacementClip.timelineStartMs} " +
+                                "videoLaneSources=${clips.joinToString("|") { it.uri.toString() }}"
+                        )
+                    }
+                }
                 selectedClipIndex=clips.lastIndex
                 clipHandlesVisible = false
                 timelinePreviewLoaded = false
