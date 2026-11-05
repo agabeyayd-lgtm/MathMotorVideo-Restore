@@ -6823,6 +6823,29 @@ class VideoEditorActivity : Activity() {
                     android.util.Log.i("EditorSmokeTest",
                         "EDITOR_SMOKE_OVERLAY_ADDED id=" + overlay.id + " aspect=" + overlay.aspectRatio)
                 }
+                // Test-only replacement path mirrors the user's exact sequence: remove
+                // the current video through the production removal handler, then import
+                // a second source through the normal addClip path.
+                val replacementUri = timelineTestReplacementAfterOverlayUri
+                if (replacementUri != null && timelineSyncTestEnabled) {
+                    timelineTestReplacementAfterOverlayUri = null
+                    val oldClipIndex = clips.indexOfFirst { it.uri != replacementUri }
+                    if (oldClipIndex >= 0) {
+                        val oldUri = clips[oldClipIndex].uri
+                        timelineTestExpectedReplacementUri = replacementUri
+                        android.util.Log.i(
+                            "EditorSmokeTest",
+                            "EDITOR_SMOKE_REPLACEMENT_BEGIN oldUri=$oldUri newUri=$replacementUri"
+                        )
+                        removeClipAt(oldClipIndex)
+                        addClip(replacementUri, true)
+                    } else {
+                        android.util.Log.e(
+                            "EditorSmokeTest",
+                            "EDITOR_SMOKE_REPLACEMENT_SKIPPED no-old-video newUri=$replacementUri"
+                        )
+                    }
+                }
                 status.text = if (isImage) {
                     "Fotoğraf bindirme olarak eklendi. Süre, boyut ve konumu aşağıdan düzenle."
                 } else {
