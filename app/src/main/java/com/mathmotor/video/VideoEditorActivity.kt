@@ -223,6 +223,7 @@ class VideoEditorActivity : Activity() {
     private lateinit var previewFrame: FrameLayout
     // The inner frame is the actual project canvas; the outer previewFrame is only the dark work stage.
     private lateinit var previewCanvas: FrameLayout
+    private var lastPreviewCanvasMetrics: String? = null
     private lateinit var previewFrameOverlay: ImageView
     // Paused editing uses decoded stills for the base clip and each active overlay.
     // CompositionPlayer remains the playback/export renderer.
@@ -797,6 +798,7 @@ class VideoEditorActivity : Activity() {
             setBackgroundColor(Color.BLACK)
             clipChildren = true
             clipToPadding = true
+            contentDescription = "Proje tuvali"
         }
         previewFrame.addView(
             previewCanvas,
@@ -2285,8 +2287,17 @@ class VideoEditorActivity : Activity() {
             ?: clips.firstOrNull()?.let { timelineVideoAspectRatio(it.uri) }
                 ?.takeIf { it.isFinite() && it > 0f }
             ?: TimelineThumbnailMath.DEFAULT_SOURCE_ASPECT_RATIO
-        val canvasWidth = minOf(stageWidth.toFloat(), stageHeight * aspect).toInt().coerceAtLeast(1)
-        val canvasHeight = minOf(stageHeight.toFloat(), stageWidth / aspect).toInt().coerceAtLeast(1)
+        val canvasBounds = PreviewCanvasMath.fit(stageWidth, stageHeight, aspect) ?: return
+        val canvasWidth = canvasBounds.width
+        val canvasHeight = canvasBounds.height
+        val metrics = "stage=${stageWidth}x${stageHeight} canvas=${canvasWidth}x${canvasHeight} " +
+            "offset=${canvasBounds.left},${canvasBounds.top} aspect=$aspect"
+        if (metrics != lastPreviewCanvasMetrics) {
+            lastPreviewCanvasMetrics = metrics
+            if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+                android.util.Log.i("PreviewCanvasTest", "PREVIEW_CANVAS_BOUNDS $metrics")
+            }
+        }
 
         val canvasParams = previewCanvas.layoutParams as? FrameLayout.LayoutParams
             ?: FrameLayout.LayoutParams(canvasWidth, canvasHeight, Gravity.CENTER)
