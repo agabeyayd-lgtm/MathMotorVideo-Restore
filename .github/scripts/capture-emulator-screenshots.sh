@@ -146,6 +146,11 @@ echo "Step 5/7: inspect the home screen and capture it"
 # Inspect accessibility before screencap so an Android ANR dialog cannot make
 # the screenshot call the first point of failure without any diagnostics.
 dump_hierarchy window.xml emulator-screenshots/window.xml || true
+if ! grep -q "Güncelle" emulator-screenshots/window.xml; then
+  echo "The redesigned home screen did not expose the prominent update action."
+  collect_capture_diagnostics home-update-action-missing
+  exit 30
+fi
 
 # Emulator system dialogs can appear between a hierarchy dump and a screenshot.
 # Parse XML attributes instead of relying on grep's attribute order.
@@ -1108,7 +1113,10 @@ if ! grep -q "LOCAL_DRAFT_SAVED id=11111111-1111-4111-8111-111111111111 clips=1"
   exit 11
 fi
 
-if ! timeout -k 2s 15s adb -s emulator-5554 shell am start \
+# The editor's MP4 save picker can remain the foreground system activity after
+# returning from export. Restart the app's home activity explicitly so the
+# draft assertion inspects MathMotor rather than DocumentsUI.
+if ! timeout -k 2s 15s adb -s emulator-5554 shell am start -S \
   -n com.mathmotor.video.next/com.mathmotor.video.MainActivity; then
   echo "Could not return to the home screen to verify the saved draft."
   collect_capture_diagnostics draft-home-launch-failure
