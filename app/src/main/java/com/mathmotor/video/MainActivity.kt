@@ -71,7 +71,6 @@ class MainActivity : Activity() {
     private val blueLight = Color.rgb(22, 190, 238)
     private val pickImageRequest = 2003
     private val captureVideoRequest = 2004
-    private var allToolsExpanded = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -334,7 +333,7 @@ class MainActivity : Activity() {
         hero.addView(top)
 
         updateStatus = TextView(this).apply {
-            text = "Sürüm 399  •  Güncelleme kontrolü hazır"
+            text = "Sürüm " + installedVersionCode() + "  •  Güncelleme kontrolü hazır"
             textSize = 9f
             setTextColor(Color.rgb(224, 241, 255))
             setPadding(dp(55), dp(3), 0, 0)
@@ -482,10 +481,7 @@ class MainActivity : Activity() {
             setPadding(dp(8), dp(7), 0, dp(7))
             isClickable = true
             isFocusable = true
-            setOnClickListener {
-                allToolsExpanded = !allToolsExpanded
-                rebuildHomeToolGrid()
-            }
+            setOnClickListener { scrollToHomeTools() }
         })
         body.addView(toolsHeader)
         body.addView(gap(8))
@@ -588,7 +584,7 @@ class MainActivity : Activity() {
     private fun rebuildHomeToolGrid() {
         if (!::toolGridContainer.isInitialized) return
         toolGridContainer.removeAllViews()
-        val visible = if (allToolsExpanded) homeTools else homeTools.take(9)
+        val visible = homeTools
         val rows = visible.chunked(3)
         rows.forEachIndexed { rowIndex, rowTools ->
             val row = LinearLayout(this).apply {
@@ -606,7 +602,7 @@ class MainActivity : Activity() {
             if (rowIndex != rows.lastIndex) toolGridContainer.addView(gap(3))
         }
         toolGridContainer.addView(TextView(this).apply {
-            text = if (allToolsExpanded) "Daha az göster  ↑" else "Tüm araçlar (32)  ›"
+            text = "Tüm araçlar (32)  ›"
             textSize = 12f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(accent)
@@ -614,10 +610,7 @@ class MainActivity : Activity() {
             setPadding(dp(10), dp(12), dp(10), dp(10))
             isClickable = true
             isFocusable = true
-            setOnClickListener {
-                allToolsExpanded = !allToolsExpanded
-                rebuildHomeToolGrid()
-            }
+            setOnClickListener { showToolNotReady("Tüm araçlar", "Ek araç kataloğu") }
         }, matchWrap())
     }
 
@@ -735,6 +728,28 @@ class MainActivity : Activity() {
         return nav
     }
 
+    private fun scrollToHomeTools() {
+        if (!::toolGridContainer.isInitialized) return
+        toolGridContainer.post {
+            var current: View = toolGridContainer
+            var offset = 0
+            while (true) {
+                offset += current.top
+                val parent = current.parent
+                if (parent is ScrollView) {
+                    parent.smoothScrollTo(0, offset)
+                    break
+                }
+                current = parent as? View ?: break
+            }
+        }
+    }
+
+    private fun installedVersionCode(): Long = runCatching {
+        val info = packageManager.getPackageInfo(packageName, 0)
+        if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
+    }.getOrDefault(399L)
+
     private fun showProfilePanel() {
         val version = runCatching {
             val info = packageManager.getPackageInfo(packageName, 0)
@@ -799,16 +814,11 @@ class MainActivity : Activity() {
         val allDrafts = VideoProjectDraftStore.list(this)
         val drafts = allDrafts.take(5)
         draftList.removeAllViews()
-        draftSection.visibility = View.VISIBLE
+        draftSection.visibility = if (allDrafts.isEmpty()) View.GONE else View.VISIBLE
         draftSectionGap.visibility = if (allDrafts.isEmpty()) View.GONE else View.VISIBLE
         draftBackupButton.isEnabled = allDrafts.isNotEmpty()
         draftBackupButton.alpha = if (allDrafts.isNotEmpty()) 1f else 0.45f
-        if (drafts.isEmpty()) {
-            draftList.addView(label("Henüz kaydedilmiş taslak yok.", 10f, muted, false).apply {
-                setPadding(0, dp(7), 0, dp(2))
-            })
-            return
-        }
+        if (drafts.isEmpty()) return
         drafts.forEachIndexed { index, draft ->
             val item = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
