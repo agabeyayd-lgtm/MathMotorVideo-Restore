@@ -349,15 +349,57 @@ class VideoEditorActivity : Activity() {
     private val pendingTimelinePosterLoads = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private val timelinePosterExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
     private val pendingTimelineThumbnails = mutableMapOf<String, MutableList<WeakReference<ImageView>>>()
+    private val pendingTimelineThumbnailGenerations = mutableMapOf<String, Long>()
+    private val timelineThumbnailSourceGenerations = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private val pendingTimelinePosterGenerations = java.util.concurrent.ConcurrentHashMap<String, Long>()
     // Learned from the actual decoded frame, so imported and restored clips share
     // the same aspect-ratio-aware filmstrip path without blocking the UI for metadata.
     private val timelineVideoAspectRatios = java.util.concurrent.ConcurrentHashMap<String, Float>()
     private fun timelineVideoAspectRatio(uri: Uri): Float =
         timelineVideoAspectRatios[uri.toString()] ?: TimelineThumbnailMath.DEFAULT_SOURCE_ASPECT_RATIO
 
+    private fun timelineThumbnailSourceGeneration(uri: Uri): Long =
+        timelineThumbnailSourceGenerations[uri.toString()] ?: 0L
+
+    /**
+     * Invalidate every asynchronous frame request for a video that has left the
+     * timeline. A worker may already be decoding, so generation checks also guard
+     * its UI callback; clearing only the queue would not stop an active decoder
+     * from repainting a detached/reused filmstrip target.
+     */
+    private fun invalidateTimelineThumbnailSource(uri: Uri, reason: String) {
+        val sourceKey = uri.toString()
+        val nextGeneration = timelineThumbnailSourceGeneration(uri) + 1L
+        timelineThumbnailSourceGenerations[sourceKey] = nextGeneration
+        timelineThumbnailExecutor.queue.removeIf { task ->
+            (task as? TimelineThumbnailTask)?.sourceUriKey == sourceKey
+        }
+        val prefix = "$sourceKey#"
+        pendingTimelineThumbnails.keys.filter { it.startsWith(prefix) }.forEach { key ->
+            pendingTimelineThumbnails.remove(key)
+            pendingTimelineThumbnailGenerations.remove(key)
+        }
+        timelineThumbnailCache.snapshot().keys
+            .filter { it.startsWith(prefix) }
+            .forEach { timelineThumbnailCache.remove(it) }
+        timelinePosterCache.remove(sourceKey)
+        pendingTimelinePosterTargets.remove(sourceKey)
+        pendingTimelinePosterLoads.remove(sourceKey)
+        pendingTimelinePosterGenerations.remove(sourceKey)
+        timelineVideoAspectRatios.remove(sourceKey)
+        if (timelineSyncTestEnabled || timelineLifecycleDiagnosticsEnabled) {
+            android.util.Log.i(
+                "TimelineThumbnail",
+                "TIMELINE_SOURCE_INVALIDATED uri=$sourceKey generation=$nextGeneration reason=$reason"
+            )
+        }
+    }
+
     private class TimelineThumbnailTask(
         private val distanceFromPlayheadMs: Long,
         private val sequence: Long,
+        val sourceUriKey: String? = null,
+        val sourceGeneration: Long? = null,
         private val work: () -> Unit
     ) : Runnable, Comparable<TimelineThumbnailTask> {
         override fun compareTo(other: TimelineThumbnailTask): Int {
@@ -401,6 +443,8 @@ class VideoEditorActivity : Activity() {
     private var timelinePlayheadMs = 0L
     // Enabled only by the debug emulator test bridge; no telemetry is emitted in normal app use.
     private var timelineSyncTestEnabled = false
+    private var timelineTestReplacementAfterOverlayUri: Uri? = null
+    private var timelineTestExpectedReplacementUri: Uri? = null
     // Local diagnostics are enabled only in debuggable builds; nothing is uploaded.
     private var timelineLifecycleDiagnosticsEnabled = false
     private var timelineLifecycleState = "not-created"
@@ -555,6 +599,10 @@ class VideoEditorActivity : Activity() {
         timelineSyncTestEnabled =
             (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0 &&
                 intent.getBooleanExtra("timeline_sync_test", false)
+        if (timelineSyncTestEnabled) {
+            timelineTestReplacementAfterOverlayUri =
+                intent.getStringExtra("replacement_video_uri")?.takeIf { it.isNotBlank() }?.let(Uri::parse)
+        }
         timelineLifecycleState = "created"
         logTimelineLifecycle(
             "onCreate",
@@ -6121,6 +6169,9 @@ class VideoEditorActivity : Activity() {
                 }
                 recordClipEdit()
                 if (replaceExisting) {
+                    clips.map { it.uri }.distinct().forEach { oldUri ->
+                        invalidateTimelineThumbnailSource(oldUri, "video-replaced")
+                    }
                     clips.clear()
                     selectedClipIndex = -1
                 }
@@ -6149,6 +6200,12 @@ class VideoEditorActivity : Activity() {
                     "EditorSmokeTest",
                     "EDITOR_SMOKE_CLIP_ADDED title=$title durationMs=$duration clipCount=${clips.size}"
                 )
+                if (timelineSyncTestEnabled && timelineTestExpectedReplacementUri == uri) {
+                    android.util.Log.i(
+                        "EditorSmokeTest",
+                        "EDITOR_SMOKE_CLIP_REPLACED newUri=$uri clipCount=${clips.size} videoLaneSources=${clips.joinToString("|") { it.uri.toString() }}"
+                    )
+                }
                 if (smokeTest) {
                     val testOverlayUri = intent.getStringExtra("overlay_uri")
                     if (!testOverlayUri.isNullOrBlank()) {
@@ -7622,7 +7679,11 @@ class VideoEditorActivity : Activity() {
     private fun removeClipAt(index:Int){
         if(index !in clips.indices)return
         recordClipEdit()
+        val removedUri = clips[index].uri
         clips.removeAt(index)
+        if (clips.none { it.uri == removedUri }) {
+            invalidateTimelineThumbnailSource(removedUri, "clip-removed")
+        }
         timelinePreviewLoaded=false
         selectedClipIndex=when{clips.isEmpty()->-1;index<clips.size->index;else->clips.lastIndex}
         // Update the playhead BEFORE rebuilding the lanes. Previously refreshTimelineAfterClipChange()
@@ -8634,15 +8695,27 @@ class VideoEditorActivity : Activity() {
 
     private fun requestTimelinePoster(uri: Uri) {
         val cacheKey = uri.toString()
+        val sourceGeneration = timelineThumbnailSourceGeneration(uri)
         val cached = timelinePosterCache.get(cacheKey)
         if (cached != null && !cached.isRecycled) return
-        if (!pendingTimelinePosterLoads.add(cacheKey)) return
+        if (pendingTimelinePosterGenerations[cacheKey] == sourceGeneration) return
+        pendingTimelinePosterGenerations[cacheKey] = sourceGeneration
+        pendingTimelinePosterLoads.add(cacheKey)
 
         try {
             timelinePosterExecutor.execute {
                 val poster = runCatching { decodeTimelinePoster(uri) }.getOrNull()
                 runOnUiThread {
-                    pendingTimelinePosterLoads.remove(cacheKey)
+                    val ownsPending = pendingTimelinePosterGenerations[cacheKey] == sourceGeneration
+                    if (ownsPending) {
+                        pendingTimelinePosterGenerations.remove(cacheKey)
+                        pendingTimelinePosterLoads.remove(cacheKey)
+                    }
+                    if (sourceGeneration != timelineThumbnailSourceGeneration(uri)) {
+                        poster?.let { if (!it.isRecycled) it.recycle() }
+                        if (ownsPending) pendingTimelinePosterTargets.remove(cacheKey)
+                        return@runOnUiThread
+                    }
                     if (isFinishing || isDestroyed) {
                         poster?.let { if (!it.isRecycled) it.recycle() }
                         pendingTimelinePosterTargets.remove(cacheKey)
@@ -8665,7 +8738,10 @@ class VideoEditorActivity : Activity() {
                 }
             }
         } catch (_: java.util.concurrent.RejectedExecutionException) {
-            pendingTimelinePosterLoads.remove(cacheKey)
+            if (pendingTimelinePosterGenerations[cacheKey] == sourceGeneration) {
+                pendingTimelinePosterGenerations.remove(cacheKey)
+                pendingTimelinePosterLoads.remove(cacheKey)
+            }
         }
     }
 
@@ -8712,6 +8788,8 @@ class VideoEditorActivity : Activity() {
         usePosterPlaceholder: Boolean = false
     ) {
         val timestampMs = timeMs.coerceAtLeast(0L)
+        val sourceKey = uri.toString()
+        val sourceGeneration = timelineThumbnailSourceGeneration(uri)
         val key = "${uri}#${timestampMs}"
         target.tag = key
         val cached = timelineThumbnailCache.get(key)
@@ -8776,7 +8854,7 @@ class VideoEditorActivity : Activity() {
         // Leave the cell neutral black until its own exact sample is decoded.
         // Reusing a nearby timestamp here made stale/partial frames look current.
         val waiting = pendingTimelineThumbnails[key]
-        if (waiting != null) {
+        if (waiting != null && pendingTimelineThumbnailGenerations[key] == sourceGeneration) {
             waiting.add(WeakReference(target))
             if (timelineLifecycleDiagnosticsEnabled) android.util.Log.i(
                 "TimelineThumbnail",
@@ -8784,6 +8862,8 @@ class VideoEditorActivity : Activity() {
             )
             return
         }
+        if (waiting != null) pendingTimelineThumbnails.remove(key)
+        pendingTimelineThumbnailGenerations[key] = sourceGeneration
         pendingTimelineThumbnails[key] = mutableListOf(WeakReference(target))
         val enqueuedAtUptimeMs = SystemClock.uptimeMillis()
         if (timelineLifecycleDiagnosticsEnabled) android.util.Log.i(
@@ -8793,7 +8873,9 @@ class VideoEditorActivity : Activity() {
         )
         val task = TimelineThumbnailTask(
             priorityDistanceMs.coerceAtLeast(0L),
-            timelineThumbnailTaskSequence.incrementAndGet()
+            timelineThumbnailTaskSequence.incrementAndGet(),
+            sourceUriKey = sourceKey,
+            sourceGeneration = sourceGeneration
         ) {
             val taskStartedAtUptimeMs = SystemClock.uptimeMillis()
             val queueWaitMs = taskStartedAtUptimeMs - enqueuedAtUptimeMs
@@ -8843,7 +8925,15 @@ class VideoEditorActivity : Activity() {
             runOnUiThread {
                 val uiCallbackStartedAtUptimeMs = SystemClock.uptimeMillis()
                 val uiDispatchWaitMs = uiCallbackStartedAtUptimeMs - workerCompletedAtUptimeMs
-                val targets = pendingTimelineThumbnails.remove(key).orEmpty()
+                val ownsPending = pendingTimelineThumbnailGenerations[key] == sourceGeneration
+                val targets = if (ownsPending) {
+                    pendingTimelineThumbnailGenerations.remove(key)
+                    pendingTimelineThumbnails.remove(key).orEmpty()
+                } else emptyList()
+                if (sourceGeneration != timelineThumbnailSourceGeneration(uri)) {
+                    result?.let { if (!it.isRecycled) it.recycle() }
+                    return@runOnUiThread
+                }
                 var appliedTargets = 0
                 if (result != null && !isFinishing && !isDestroyed) {
                     timelineThumbnailCache.put(key, result)
@@ -8860,6 +8950,12 @@ class VideoEditorActivity : Activity() {
                         "TimelineFrameSyncTest",
                         "TIMELINE_THUMBNAIL_READY sourceMs=$timestampMs width=${result.width} height=${result.height} cached=false"
                     )
+                    if (timelineSyncTestEnabled && timelineTestExpectedReplacementUri == uri) {
+                        android.util.Log.i(
+                            "EditorSmokeTest",
+                            "EDITOR_SMOKE_REPLACEMENT_THUMBNAIL_READY uri=$uri sourceMs=$timestampMs"
+                        )
+                    }
                     targets.forEach { ref ->
                         val image = ref.get()
                         if (image != null && image.tag == key) {
@@ -8899,7 +8995,10 @@ class VideoEditorActivity : Activity() {
         try {
             timelineThumbnailExecutor.execute(task)
         } catch (_: java.util.concurrent.RejectedExecutionException) {
-            pendingTimelineThumbnails.remove(key)
+            if (pendingTimelineThumbnailGenerations[key] == sourceGeneration) {
+                pendingTimelineThumbnailGenerations.remove(key)
+                pendingTimelineThumbnails.remove(key)
+            }
             target.setBackgroundColor(Color.TRANSPARENT)
         }
     }
@@ -9923,8 +10022,11 @@ class VideoEditorActivity : Activity() {
         timelineThumbnailExecutor.shutdownNow()
         timelinePosterExecutor.shutdownNow()
         pendingTimelineThumbnails.clear()
+        pendingTimelineThumbnailGenerations.clear()
         pendingTimelinePosterTargets.clear()
         pendingTimelinePosterLoads.clear()
+        pendingTimelinePosterGenerations.clear()
+        timelineThumbnailSourceGenerations.clear()
         timelinePosterCache.evictAll()
         timelineThumbnailCache.evictAll()
         playerView.player = null
