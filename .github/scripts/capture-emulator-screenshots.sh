@@ -661,6 +661,42 @@ if ! take_screen emulator-screenshots/editor-overlay-after-drag.png; then
 fi
 after_overlay="$(magenta_center emulator-screenshots/editor-overlay-after-drag.png)"
 read -r after_x after_y after_pixels <<< "$after_overlay"
+# The selected visual layer must be clipped by the actual green video canvas,
+# not merely constrained by the outer dark stage.
+python3 - emulator-screenshots/editor-overlay-after-drag.png <<'PY'
+from PIL import Image
+import sys
+
+image = Image.open(sys.argv[1]).convert("RGB")
+green = []
+magenta = []
+for y in range(image.height):
+    for x in range(image.width):
+        red, green_channel, blue = image.getpixel((x, y))
+        if green_channel > 200 and red < 80 and blue < 80:
+            green.append((x, y))
+        if red > 180 and blue > 180 and green_channel < 110:
+            magenta.append((x, y))
+if len(green) < 1000 or len(magenta) < 30:
+    raise SystemExit("Could not identify both the green project canvas and magenta overlay")
+left = min(x for x, _ in green)
+top = min(y for _, y in green)
+right = max(x for x, _ in green)
+bottom = max(y for _, y in green)
+outside = [
+    (x, y) for x, y in magenta
+    if x < left or x > right or y < top or y > bottom
+]
+if outside:
+    raise SystemExit(
+        f"Overlay pixels escaped the video canvas: canvas=({left},{top})-({right},{bottom}), "
+        f"outside_count={len(outside)}"
+    )
+print(
+    "PASS: every visible overlay pixel is clipped to the video canvas "
+    f"({left},{top})-({right},{bottom})"
+)
+PY
 if [ "$((after_x - before_x))" -lt 12 ] || [ "$((after_x - before_x))" -gt 34 ] ||
    [ "$((after_y - before_y))" -lt 4 ] || [ "$((after_y - before_y))" -gt 26 ]; then
   echo "Direct canvas drag did not move the paused overlay by the expected amount: before=($before_x,$before_y), after=($after_x,$after_y)."
