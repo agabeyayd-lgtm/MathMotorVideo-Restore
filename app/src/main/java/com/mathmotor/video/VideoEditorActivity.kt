@@ -7681,13 +7681,11 @@ class VideoEditorActivity : Activity() {
                     pendingTimelineScrollX = 0
                     timelinePlayheadMs = 0L
                 }
-                // A retained independent overlay/text/audio lane may keep the project
-                // duration non-zero after the last main-video clip is deleted. A newly
-                // imported first video must overlap those lanes from 00:00, not be
-                // appended after their end. Only append when a main-video sequence exists.
+                // Match the single-clip import path: append after the furthest main-video
+                // segment only. A longer independent overlay/text/audio lane must not
+                // create a blank gap before the newly imported main-video clip.
                 var appendAtMs = TimelineClipInsertionMath.startTimeMs(
-                    existingVideoClipCount = clips.size,
-                    projectDurationMs = totalOutputDurationMs()
+                    TimelineVideoMath.totalDuration(videoTimelineSegments())
                 )
                 val positioned=ready.map { item ->
                     item.copy(timelineStartMs=appendAtMs).also{appendAtMs+=(it.endMs-it.startMs).coerceAtLeast(0L)}
