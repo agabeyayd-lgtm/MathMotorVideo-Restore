@@ -55,6 +55,28 @@ class PreviewCanvasMathTest {
     }
 
     @Test
+    fun normalizedCenterUsesSameScreenTranslationAndMedia3Anchor() {
+        val extent = 400f
+        assertEquals(-200f, PreviewCanvasMath.screenTranslationForFraction(0f, extent), 0f)
+        assertEquals(0f, PreviewCanvasMath.screenTranslationForFraction(0.5f, extent), 0f)
+        assertEquals(200f, PreviewCanvasMath.screenTranslationForFraction(1f, extent), 0f)
+
+        assertEquals(-1f, PreviewCanvasMath.media3AnchorForFraction(0f), 0f)
+        assertEquals(0f, PreviewCanvasMath.media3AnchorForFraction(0.5f), 0f)
+        assertEquals(1f, PreviewCanvasMath.media3AnchorForFraction(1f), 0f)
+        assertEquals(1f, PreviewCanvasMath.media3AnchorForFraction(0f, invertY = true), 0f)
+        assertEquals(0f, PreviewCanvasMath.media3AnchorForFraction(0.5f, invertY = true), 0f)
+        assertEquals(-1f, PreviewCanvasMath.media3AnchorForFraction(1f, invertY = true), 0f)
+    }
+
+    @Test
+    fun nonFiniteCoordinateFractionsUseCanvasCenter() {
+        assertEquals(0f, PreviewCanvasMath.screenTranslationForFraction(Float.NaN, 500f), 0f)
+        assertEquals(0f, PreviewCanvasMath.screenTranslationForFraction(0.5f, Float.NaN), 0f)
+        assertEquals(0f, PreviewCanvasMath.media3AnchorForFraction(Float.POSITIVE_INFINITY), 0f)
+    }
+
+    @Test
     fun boundsNeverExceedStageOrLeaveNegativeOffsets() {
         val ratios = listOf(9f / 16f, 4f / 5f, 1f, 16f / 9f, 4f)
         ratios.forEach { ratio ->
