@@ -7681,7 +7681,14 @@ class VideoEditorActivity : Activity() {
                     pendingTimelineScrollX = 0
                     timelinePlayheadMs = 0L
                 }
-                var appendAtMs=totalOutputDurationMs()
+                // A retained independent overlay/text/audio lane may keep the project
+                // duration non-zero after the last main-video clip is deleted. A newly
+                // imported first video must overlap those lanes from 00:00, not be
+                // appended after their end. Only append when a main-video sequence exists.
+                var appendAtMs = TimelineClipInsertionMath.startTimeMs(
+                    existingVideoClipCount = clips.size,
+                    projectDurationMs = totalOutputDurationMs()
+                )
                 val positioned=ready.map { item ->
                     item.copy(timelineStartMs=appendAtMs).also{appendAtMs+=(it.endMs-it.startMs).coerceAtLeast(0L)}
                 }
@@ -9917,6 +9924,17 @@ class VideoEditorActivity : Activity() {
                     }
 
                     override fun onError(composition: Composition, exportResult: ExportResult, exportException: ExportException) {
+                        // Keep the complete Media3 cause chain in release logcat as well:
+                        // the short user-facing "Asset loader error" message otherwise
+                        // hides which source asset failed to open or decode.
+                        android.util.Log.e(
+                            "MathMotorExport",
+                            "EXPORT_FAILED code=${exportException.errorCode} " +
+                                "videoClips=${clips.size} overlays=${overlayClips.size} " +
+                                "imageOverlays=${overlayClips.count { it.isImage }} " +
+                                "outputDurationMs=${totalOutputDurationMs()} result=$exportResult",
+                            exportException
+                        )
                         if (timelineSyncTestEnabled) {
                             android.util.Log.e("EditorExportTest", "EXPORT_ENCODING_FAILED", exportException)
                         }
