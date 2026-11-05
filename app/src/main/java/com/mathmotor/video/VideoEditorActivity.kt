@@ -221,6 +221,8 @@ class VideoEditorActivity : Activity() {
     private var soundPreviewUri: Uri? = null
     private lateinit var playerView: PlayerView
     private lateinit var previewFrame: FrameLayout
+    // The inner frame is the actual project canvas; the outer previewFrame is only the dark work stage.
+    private lateinit var previewCanvas: FrameLayout
     private lateinit var previewFrameOverlay: ImageView
     // Paused editing uses decoded stills for the base clip and each active overlay.
     // CompositionPlayer remains the playback/export renderer.
@@ -788,10 +790,21 @@ class VideoEditorActivity : Activity() {
         playerView = layoutInflater.inflate(R.layout.editor_preview_player, null) as PlayerView
         previewFrame = FrameLayout(this).apply {
             setBackgroundColor(Color.rgb(5, 9, 15))
+            clipChildren = true
+            clipToPadding = true
         }
+        previewCanvas = FrameLayout(this).apply {
+            setBackgroundColor(Color.BLACK)
+            clipChildren = true
+            clipToPadding = true
+        }
+        previewFrame.addView(
+            previewCanvas,
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER)
+        )
         // The preview must use the full editor width; a fixed 180dp player
         // makes the central canvas look like a narrow phone-within-a-phone.
-        previewFrame.addView(
+        previewCanvas.addView(
             playerView,
             FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -806,7 +819,7 @@ class VideoEditorActivity : Activity() {
             isClickable = false
             isFocusable = false
         }
-        previewFrame.addView(
+        previewCanvas.addView(
             previewFrameOverlay,
             FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -821,7 +834,7 @@ class VideoEditorActivity : Activity() {
             isFocusable = false
             elevation = dp(2).toFloat()
         }
-        previewFrame.addView(
+        previewCanvas.addView(
             pausedOverlayPreviewContainer,
             FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -835,7 +848,7 @@ class VideoEditorActivity : Activity() {
             isClickable = true
             contentDescription = "Seçili video klibini sürükle, iki parmakla büyüt ve döndür"
         }
-        previewFrame.addView(
+        previewCanvas.addView(
             clipTransformTouchOverlay,
             FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -859,7 +872,7 @@ class VideoEditorActivity : Activity() {
             }
             visibility = View.GONE
         }
-        previewFrame.addView(
+        previewCanvas.addView(
             previewTextOverlay,
             FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -906,7 +919,7 @@ class VideoEditorActivity : Activity() {
         addOverlaySelectionHandle(Gravity.TOP or Gravity.RIGHT)
         addOverlaySelectionHandle(Gravity.BOTTOM or Gravity.LEFT)
         addOverlaySelectionHandle(Gravity.BOTTOM or Gravity.RIGHT)
-        previewFrame.addView(
+        previewCanvas.addView(
             overlaySelectionFrame,
             FrameLayout.LayoutParams(dp(120), dp(120), Gravity.CENTER)
         )
@@ -916,7 +929,7 @@ class VideoEditorActivity : Activity() {
             isClickable = true
             contentDescription = "Bindirmeyi önizlemede tek parmakla taşı, iki parmakla büyüt ve döndür"
         }
-        previewFrame.addView(
+        previewCanvas.addView(
             overlayTransformTouchOverlay,
             FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -2252,33 +2265,52 @@ class VideoEditorActivity : Activity() {
     }
 
     /**
-     * Fits the preview to the source video's aspect ratio inside a dark stage.
-     * Portrait clips get a true 9:16 canvas; landscape clips remain fully visible.
+     * The outer previewFrame is a dark work stage. previewCanvas is the exact
+     * project frame: video, paused stills, text, image overlays and touch layers
+     * all share its bounds, so letterbox/workspace pixels can never be edited
+     * or exported as part of the composition.
      */
     private fun updatePreviewCanvasSize() {
-        if (!::previewFrame.isInitialized || !::playerView.isInitialized) return
+        if (!::previewFrame.isInitialized || !::previewCanvas.isInitialized || !::playerView.isInitialized) return
         val stageWidth = previewFrame.width
-        if (stageWidth <= 0 || previewFrame.height <= 0) return
+        val stageHeight = previewFrame.height
+        if (stageWidth <= 0 || stageHeight <= 0) return
 
-        // Keep the PlayerView itself full-width. Media3's FIT mode preserves the
-        // source aspect ratio inside that canvas; shrinking the view to the
-        // calculated portrait-video width made the whole preview look undersized.
-        val params = playerView.layoutParams as? FrameLayout.LayoutParams ?: return
-        if (params.width != ViewGroup.LayoutParams.MATCH_PARENT ||
-            params.height != ViewGroup.LayoutParams.MATCH_PARENT ||
-            params.gravity != Gravity.CENTER
+        val activeIndex = activeClipIndexAt(timelinePlayheadMs)
+        val sourceClip = clips.getOrNull(activeIndex ?: selectedClipIndex) ?: clips.firstOrNull()
+        val aspect = sourceClip?.let { timelineVideoAspectRatio(it.uri) }
+            ?.takeIf { it.isFinite() && it > 0f }
+            ?: TimelineThumbnailMath.DEFAULT_SOURCE_ASPECT_RATIO
+        val canvasWidth = minOf(stageWidth.toFloat(), stageHeight * aspect).toInt().coerceAtLeast(1)
+        val canvasHeight = minOf(stageHeight.toFloat(), stageWidth / aspect).toInt().coerceAtLeast(1)
+
+        val canvasParams = previewCanvas.layoutParams as? FrameLayout.LayoutParams
+            ?: FrameLayout.LayoutParams(canvasWidth, canvasHeight, Gravity.CENTER)
+        if (canvasParams.width != canvasWidth || canvasParams.height != canvasHeight ||
+            canvasParams.gravity != Gravity.CENTER
         ) {
-            params.width = ViewGroup.LayoutParams.MATCH_PARENT
-            params.height = ViewGroup.LayoutParams.MATCH_PARENT
-            params.gravity = Gravity.CENTER
-            playerView.layoutParams = params
+            canvasParams.width = canvasWidth
+            canvasParams.height = canvasHeight
+            canvasParams.gravity = Gravity.CENTER
+            previewCanvas.layoutParams = canvasParams
+        }
+
+        val playerParams = playerView.layoutParams as? FrameLayout.LayoutParams ?: return
+        if (playerParams.width != ViewGroup.LayoutParams.MATCH_PARENT ||
+            playerParams.height != ViewGroup.LayoutParams.MATCH_PARENT
+        ) {
+            playerParams.width = ViewGroup.LayoutParams.MATCH_PARENT
+            playerParams.height = ViewGroup.LayoutParams.MATCH_PARENT
+            playerParams.gravity = Gravity.CENTER
+            playerView.layoutParams = playerParams
         }
         if (::previewTextOverlay.isInitialized) {
             previewTextOverlays.forEach { overlay ->
-                overlay.maxWidth = (stageWidth - dp(16)).coerceAtLeast(dp(100))
+                overlay.maxWidth = (canvasWidth - dp(16)).coerceAtLeast(dp(80))
             }
             updatePreviewTextOverlay()
         }
+        updateOverlaySelectionChrome()
     }
 
     private fun setPreviewStageHeight(heightDp: Int) {
@@ -5796,7 +5828,7 @@ class VideoEditorActivity : Activity() {
         while (previewTextOverlays.size < active.size) {
             val overlay = createPreviewTextOverlayView()
             previewTextOverlays.add(overlay)
-            previewFrame.addView(overlay, FrameLayout.LayoutParams(
+            previewCanvas.addView(overlay, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
@@ -5845,8 +5877,8 @@ class VideoEditorActivity : Activity() {
             params.leftMargin = 0
             params.rightMargin = 0
             overlay.layoutParams = params
-            val videoWidth = playerView.width.coerceAtLeast(dp(100))
-            val videoHeight = playerView.height.coerceAtLeast(dp(100))
+            val videoWidth = previewCanvas.width.coerceAtLeast(dp(100))
+            val videoHeight = previewCanvas.height.coerceAtLeast(dp(100))
             overlay.maxWidth = (videoWidth - dp(16)).coerceAtLeast(dp(80))
             overlay.measure(
                 View.MeasureSpec.makeMeasureSpec(videoWidth, View.MeasureSpec.AT_MOST),
@@ -5935,8 +5967,8 @@ class VideoEditorActivity : Activity() {
                             }
                         }
                     } else if (event.pointerCount == 1) {
-                        val videoWidth = playerView.width.coerceAtLeast(1).toFloat()
-                        val videoHeight = playerView.height.coerceAtLeast(1).toFloat()
+                        val videoWidth = previewCanvas.width.coerceAtLeast(1).toFloat()
+                        val videoHeight = previewCanvas.height.coerceAtLeast(1).toFloat()
                         layer.xFraction = (startX + (event.rawX - downRawX) / videoWidth).coerceIn(0.03f, 0.97f)
                         layer.yFraction = (startY + (event.rawY - downRawY) / videoHeight).coerceIn(0.04f, 0.96f)
                         layer.position = when {
@@ -6990,15 +7022,13 @@ class VideoEditorActivity : Activity() {
         val aspect = mainClip?.let { timelineVideoAspectRatio(it.uri) }
             ?.takeIf { it.isFinite() && it > 0f }
             ?: TimelineThumbnailMath.DEFAULT_SOURCE_ASPECT_RATIO
-        val stageWidth = previewFrame.width.toFloat().coerceAtLeast(1f)
-        val stageHeight = previewFrame.height.toFloat().coerceAtLeast(1f)
-        val width = minOf(stageWidth, stageHeight * aspect).coerceAtLeast(1f)
-        val height = minOf(stageHeight, stageWidth / aspect).coerceAtLeast(1f)
+        val width = previewCanvas.width.toFloat().coerceAtLeast(1f)
+        val height = previewCanvas.height.toFloat().coerceAtLeast(1f)
         return width to height
     }
 
     private fun updateOverlaySelectionChrome() {
-        if (!::overlaySelectionFrame.isInitialized || !::previewFrame.isInitialized) return
+        if (!::overlaySelectionFrame.isInitialized || !::previewCanvas.isInitialized) return
         updatePausedOverlayPreviewLayers(timelinePlayheadMs)
         val overlay = selectedOverlay()
         val selectedTrackActive = overlay != null &&
@@ -7008,7 +7038,7 @@ class VideoEditorActivity : Activity() {
             timelinePlayheadMs < overlay.timelineStartMs + overlay.durationMs
         if (!selectedTrackActive || !playheadInsideLayer ||
             timelineCompositionPlayer?.isPlaying == true ||
-            previewFrame.width <= 0 || previewFrame.height <= 0
+            previewCanvas.width <= 0 || previewCanvas.height <= 0
         ) {
             overlaySelectionFrame.visibility = View.GONE
             return
@@ -8393,11 +8423,11 @@ class VideoEditorActivity : Activity() {
      * make an editable overlay visible while playback is stopped.
      */
     private fun updatePausedOverlayPreviewLayers(projectTimeMs: Long) {
-        if (!::pausedOverlayPreviewContainer.isInitialized || !::previewFrame.isInitialized) return
+        if (!::pausedOverlayPreviewContainer.isInitialized || !::previewCanvas.isInitialized) return
         // These layer views remain visible during both paused editing and timeline
         // playback; only their frame/time is refreshed as the shared playhead moves.
-        if (previewFrame.width <= 0 || previewFrame.height <= 0) {
-            previewFrame.post { updatePausedOverlayPreviewLayers(timelinePlayheadMs) }
+        if (previewCanvas.width <= 0 || previewCanvas.height <= 0) {
+            previewCanvas.post { updatePausedOverlayPreviewLayers(timelinePlayheadMs) }
             return
         }
 
