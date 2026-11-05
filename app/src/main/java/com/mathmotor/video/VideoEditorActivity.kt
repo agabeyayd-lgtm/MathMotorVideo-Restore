@@ -657,6 +657,12 @@ class VideoEditorActivity : Activity() {
         } else if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
             android.util.Log.e("EditorSmokeTest", "EDITOR_SMOKE_MISSING_VIDEO_URI")
         }
+        val initialOverlay=intent.getStringExtra("initial_overlay_uri")
+        if(!initialOverlay.isNullOrBlank()) {
+            runCatching { addOverlayAsset(Uri.parse(initialOverlay)) }
+                .onFailure { status.text="Fotoğraf açılamadı: ${it.message}" }
+            intent.removeExtra("initial_overlay_uri")
+        }
         logTimelineLifecycle("onCreateComplete", "draftId=$draftId clips=${clips.size}")
     }
 
