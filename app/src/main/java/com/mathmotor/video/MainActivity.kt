@@ -317,7 +317,7 @@ class MainActivity : Activity() {
         draftSection=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; visibility=View.GONE }
         val draftsHeader=LinearLayout(this).apply {
             orientation=LinearLayout.VERTICAL
-            addView(label("Taslaklar",17f,Color.rgb(28,34,43),true))
+            addView(label("TASLAKLAR",17f,Color.rgb(28,34,43),true))
             addView(label("Kaldığın yerden devam et",10f,Color.rgb(110,122,137),false))
         }
         draftSection.addView(draftsHeader)
