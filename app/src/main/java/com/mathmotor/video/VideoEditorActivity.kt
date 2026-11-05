@@ -4641,7 +4641,16 @@ class VideoEditorActivity : Activity() {
                 .build()
         }
         val editedItem = EditedMediaItem.Builder(mediaItem)
-            .apply { if (!overlay.isImage) setRemoveAudio(true) }
+            .apply {
+                if (overlay.isImage) {
+                    // Media3 ImageAssetLoader requires an explicit frame rate in
+                    // addition to the image duration. Without this, Transformer.start()
+                    // throws IllegalStateException before encoding begins.
+                    setFrameRate(30)
+                } else {
+                    setRemoveAudio(true)
+                }
+            }
             .build()
         sequenceBuilder.addItem(editedItem)
 
