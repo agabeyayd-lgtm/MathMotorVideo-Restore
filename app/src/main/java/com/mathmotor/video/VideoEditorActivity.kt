@@ -2277,10 +2277,11 @@ class VideoEditorActivity : Activity() {
         val stageHeight = previewFrame.height
         if (stageWidth <= 0 || stageHeight <= 0) return
 
-        val activeIndex = activeClipIndexAt(timelinePlayheadMs)
-        val sourceClip = clips.getOrNull(activeIndex ?: selectedClipIndex) ?: clips.firstOrNull()
-        val aspect = sourceClip?.let { timelineVideoAspectRatio(it.uri) }
-            ?.takeIf { it.isFinite() && it > 0f }
+        // Keep one fixed project aspect ratio across the entire timeline.
+        // Explicit output framing wins; SOURCE uses the first main-video clip.
+        val aspect = exportCanvasPreset.aspectRatio
+            ?: clips.firstOrNull()?.let { timelineVideoAspectRatio(it.uri) }
+                ?.takeIf { it.isFinite() && it > 0f }
             ?: TimelineThumbnailMath.DEFAULT_SOURCE_ASPECT_RATIO
         val canvasWidth = minOf(stageWidth.toFloat(), stageHeight * aspect).toInt().coerceAtLeast(1)
         val canvasHeight = minOf(stageHeight.toFloat(), stageWidth / aspect).toInt().coerceAtLeast(1)
