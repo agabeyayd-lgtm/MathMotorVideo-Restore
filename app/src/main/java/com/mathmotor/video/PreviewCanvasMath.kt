@@ -38,4 +38,20 @@ internal object PreviewCanvasMath {
             height = height
         )
     }
+
+    /** Converts a normalized center position (0..1) into Android screen pixels. */
+    fun screenTranslationForFraction(fraction: Float, extent: Float): Float {
+        val normalized = fraction.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0.5f
+        val safeExtent = extent.takeIf { it.isFinite() && it >= 0f } ?: 0f
+        return (normalized - 0.5f) * safeExtent
+    }
+
+    /**
+     * Converts the same center position into Media3's normalized frame anchor.
+     * Media3's Y axis points up, opposite to Android screen coordinates.
+     */
+    fun media3AnchorForFraction(fraction: Float, invertY: Boolean = false): Float {
+        val normalized = fraction.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0.5f
+        return if (invertY) (0.5f - normalized) * 2f else (normalized - 0.5f) * 2f
+    }
 }
