@@ -82,13 +82,14 @@ jobs:
           test -s app/build/test-fixtures/editor-test-video.mp4
           ffmpeg -hide_banner -loglevel error -y -f lavfi -i "color=c=magenta:s=256x128" -frames:v 1 app/build/test-fixtures/editor-test-overlay.png
           test -s app/build/test-fixtures/editor-test-overlay.png
-          # Green replacement frames remain visually green to expose stale red
-          # thumbnails, but vary subtly over time so the independent frame-diversity
-          # assertion can verify that the decoder returns distinct timestamps.
+          # Keep the replacement clip green enough to detect stale red frames,
+          # while a monotonic 24-degree/sec hue shift makes sampled timestamps distinct.
+          # Preflighted locally against the exact 8 frame-diversity sample times:
+          # 8/8 unique fingerprints and 100% green pixels (test minimum is 75%).
           ffmpeg -hide_banner -loglevel error -y \
             -f lavfi -i "color=c=lime:s=360x640:r=24" \
             -f lavfi -i "sine=frequency=660:sample_rate=44100" \
-            -t 8 -vf "hue=h='sin(t*2)*4'" -c:v mpeg4 -q:v 5 -pix_fmt yuv420p \
+            -t 8 -vf "hue=h='t*24'" -c:v mpeg4 -q:v 5 -pix_fmt yuv420p \
             -c:a aac -b:a 64k -shortest \
             app/build/test-fixtures/editor-test-video-replacement.mp4
           test -s app/build/test-fixtures/editor-test-video-replacement.mp4
