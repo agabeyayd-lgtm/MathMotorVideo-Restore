@@ -792,3 +792,11 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - The photo picker opens the selected image in the editor as an independent image overlay; it does not claim unsupported standalone photo retouching tools.
 - First build and unit tests passed. The first emulator run reached the final draft check but the Android document picker remained in the foreground after export. CI now explicitly restarts MainActivity before checking the saved-draft section; the section heading is uppercase to match the accessibility assertion.
 - Candidate PR #28 is not merged or published. Awaiting the corrected full emulator run.
+
+
+## Shared project-canvas boundary — 2026-11-06
+
+- `VideoEditorActivity` now separates the dark preview work stage (`previewFrame`) from an inner, aspect-fitted project canvas (`previewCanvas`). The player, paused-frame image, paused overlay layers, text layers, overlay selection chrome, and clip/overlay touch surfaces are children of the inner canvas; the empty-state affordance and fullscreen controls remain on the outer stage.
+- The inner canvas is fitted to the active main-video source aspect ratio and clips children at its bounds. Text sizing/positioning and overlay gesture fractions now use those same inner dimensions instead of the entire preview stage. This addresses the shared canvas boundary, not just a text-only adjustment.
+- The export pipeline already stores overlay positions as normalized canvas fractions and uses normalized device coordinates for clip transforms; the new preview bounds are intended to align editing with that output coordinate space. Exact preview/export pixel parity, mixed-aspect clip behavior, touch transforms, and crop behavior still require emulator/device validation.
+- Source commit: `feb9733` (follow-up coordinate cleanup). **No Gradle build, unit test, emulator interaction test, MP4 export test, or APK is claimed yet.** Do not merge or publish from this branch until those checks pass.
