@@ -800,3 +800,8 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - The inner canvas is fitted to the active main-video source aspect ratio and clips children at its bounds. Text sizing/positioning and overlay gesture fractions now use those same inner dimensions instead of the entire preview stage. This addresses the shared canvas boundary, not just a text-only adjustment.
 - The export pipeline already stores overlay positions as normalized canvas fractions and uses normalized device coordinates for clip transforms; the new preview bounds are intended to align editing with that output coordinate space. Exact preview/export pixel parity, mixed-aspect clip behavior, touch transforms, and crop behavior still require emulator/device validation.
 - Source commit: `feb9733` (follow-up coordinate cleanup). **No Gradle build, unit test, emulator interaction test, MP4 export test, or APK is claimed yet.** Do not merge or publish from this branch until those checks pass.
+
+## Preview canvas export-framing alignment — 2026-11-06
+
+- Follow-up: the inner preview canvas now uses the selected `VideoCanvasPreset` aspect ratio; `SOURCE` uses the first main-video clip as the project reference. Changing the export framing refreshes the preview canvas immediately. This keeps the canvas fixed across clips instead of resizing whenever the playhead crosses a source with a different aspect ratio.
+- Latest source commit: `751ba224`. CI lookup for this commit returned no PR-triggered workflow runs and no combined status checks. The implementation is committed to `feature/capcut-home-screen`, but compilation and behavioral verification remain pending; do not treat this as a verified APK or merge-ready change.
