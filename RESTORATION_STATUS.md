@@ -692,3 +692,11 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - CI for the immediately preceding commit is being rerun; the newest test assertion correction is committed after that run started, so it still needs a fresh workflow run. No APK or successful test suite is claimed yet.
 - The debug APK artifact is now built and uploaded successfully from the tested source. The separate verification workflow also completed successfully.
 - The first emulator attempt passed Gradle tests and APK packaging but failed before AVD creation: `android-actions/setup-android@v3` attempted to install the removed SDK package `tools`. The workflow now uses the runner's preinstalled command-line tools directly and installs only supported SDK packages; emulator smoke tests must be rerun before claiming emulator verification.
+
+
+### MP4 export button interaction gate — 2026-11-05
+
+- The earlier emulator smoke test did not open the Proje panel or tap the MP4 export control; its green result did not verify export-button interaction.
+- The MP4 action is now placed immediately below the Proje panel heading, with an explicit accessible description and a 52dp touch height, rather than being buried below secondary options.
+- Debug-only EditorExportTest markers distinguish a tap reaching exportEditedVideo() from a successful Transformer.start() call. The emulator script opens Proje, locates the enabled MP4 button from the live accessibility hierarchy, taps its actual bounds, and requires the Transformer-start marker.
+- The export pipeline itself is unchanged. A passing emulator run proves the UI event and encoder startup on the fixture; it does not replace physical-device and saved-MP4 playback verification.
