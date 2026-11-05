@@ -314,11 +314,7 @@ class MainActivity : Activity() {
         })
         top.addView(updateFrame)
 
-        top.addView(TextView(this).apply {
-            text = "●"
-            textSize = 22f
-            gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
+        val profileIcon = FrameLayout(this).apply {
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(Color.argb(38, 255, 255, 255))
@@ -329,7 +325,24 @@ class MainActivity : Activity() {
             isClickable = true
             isFocusable = true
             setOnClickListener { showProfilePanel() }
+        }
+        profileIcon.addView(View(this).apply {
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.WHITE)
+            }
+        }, FrameLayout.LayoutParams(dp(11), dp(11), Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply {
+            topMargin = dp(8)
         })
+        profileIcon.addView(View(this).apply {
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.WHITE)
+            }
+        }, FrameLayout.LayoutParams(dp(23), dp(14), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
+            bottomMargin = dp(5)
+        })
+        top.addView(profileIcon)
         hero.addView(top)
 
         updateStatus = TextView(this).apply {
