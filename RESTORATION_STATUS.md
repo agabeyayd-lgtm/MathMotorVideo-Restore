@@ -807,3 +807,5 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Latest source commit: `751ba224`. CI lookup for this commit returned no PR-triggered workflow runs and no combined status checks. The implementation is committed to `feature/capcut-home-screen`, but compilation and behavioral verification remain pending; do not treat this as a verified APK or merge-ready change.
 
 - Final aspect correction: the canvas ratio is now fixed to the chosen output preset, or the first main-video source when `SOURCE` is selected; it no longer changes with the active clip. Source commit: `aeb61a8`. Static source checks confirmed all preview/editable visual surfaces are parented to the inner canvas and the empty-state/fullscreen controls remain on the outer stage. Build and runtime checks are still pending.
+
+- Paused-frame parity follow-up: the decoded still-image fallback now uses center-crop inside the same fixed project canvas, matching the live composition's crop-to-fill behavior when a non-source output preset is selected. Source commit: `48ee2af`. This remains statically reviewed only; no compile/emulator/export validation is available yet.
