@@ -4896,6 +4896,22 @@ class VideoEditorActivity : Activity() {
                     status.text = "Oynatıcı hatası: " + timelinePreviewError
                 }
                 override fun onPlaybackStateChanged(playbackState: Int) {
+                    if (playbackState == androidx.media3.common.Player.STATE_READY &&
+                        overlayClips.isNotEmpty()
+                    ) {
+                        // READY means the paused composition is prepared, but a
+                        // SurfaceView may not have emitted its first composed frame
+                        // yet. Nudge the paused clock off the initial timestamp and
+                        // back so both the background clip and image inputs are
+                        // actually rendered before we uncover the preview surface.
+                        playerView.postDelayed({
+                            if (timelineCompositionPlayer === comp &&
+                                !comp.isPlaying && !comp.playWhenReady
+                            ) {
+                                refreshPausedOverlayCompositionFrame(force = true)
+                            }
+                        }, 140L)
+                    }
                     if (playbackState == androidx.media3.common.Player.STATE_ENDED) {
                         timelinePlayheadMs = totalOutputDurationMs()
                         timelinePlaybackState = TimelinePlaybackState.PAUSED
@@ -6887,7 +6903,7 @@ class VideoEditorActivity : Activity() {
             // frame using the newest overlay transform.
             composition.seekTo(positionMs)
             updateOverlaySelectionChrome()
-        }, 70L)
+        }, 150L)
     }
 
     private fun installOverlayTransformTouch() {
