@@ -26,8 +26,10 @@ permissions:
   contents: read
 
 concurrency:
+  # Only the newest source on a given ref needs the expensive emulator smoke run.
+  # Cancel stale runs so an older, slow emulator cannot block current PR verification.
   group: android-emulator-screenshots-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   emulator-ui:
