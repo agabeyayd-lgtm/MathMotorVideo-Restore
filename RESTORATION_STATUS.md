@@ -1,3 +1,17 @@
+## PR #23 — paused overlay direct editing and version 397 verified — 2026-11-05
+
+- PR: [#23 — Show paused overlays and enable CapCut-style direct canvas editing](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/pull/23). All current source, build, emulator, and release-signing checks are green.
+- Paused editor preview draws the main video still and active overlay assets as separate preview layers. A selected overlay can be dragged directly on the preview without starting playback; the actual image pixels move with the transform.
+- Interactive timeline playback uses a single-input Media3 composition for the main edited video, while independent overlay layers follow the same playhead clock. Export retains the full multi-input composition with the overlay compositor.
+- **Version candidate:** `versionCode=397`, `versionName=8.31-capcut-editor`. The 396 release remains the installed baseline until the signed 397 APK is published.
+- **Verified on the 397 source:** [Android build/package](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41977587305) green; [unit tests/debug compile](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41977587313) green; [release-signing continuity](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41977587580) green; [Android 35 emulator interaction](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/41977587424) green.
+- Emulator evidence: paused overlay visible; drag moved sampled image pixels; overlay remained visible during playback; playback validator passed with **66 live samples**, player position **0→5,526 ms**, and **five synchronized timeline lanes**. The fixture validates a PNG overlay; video-overlay playback still needs broader coverage.
+- The signing workflow restored the publisher-selected `MMV_SIGNING_BUNDLE_B64` source and proved its certificate matches the currently published signed 396 APK. The signing check does not publish an APK.
+- No signed 397 release or physical-device install has been claimed. Publish 397 only from `main` after PR merge; keep 396 as the safe installed version until the updater/download is verified.
+
+---
+
+
 ## PR #22 audit continuation — 2026-11-04
 
 - Continued static review across overlay timing/export, clip speed export, text animation, timeline lane selection, and clip/overlay transform keyframes.

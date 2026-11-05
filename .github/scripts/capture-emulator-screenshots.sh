@@ -319,6 +319,19 @@ if ! timeout -k 2s 30s adb -s emulator-5554 shell -T \
   exit 10
 fi
 timeout -k 2s 8s adb -s emulator-5554 shell run-as com.mathmotor.video.next ls -l files/editor-test-video.mp4 2>&1 | tee -a emulator-screenshots/video-fixture-private-copy.txt
+overlay_fixture="app/build/test-fixtures/editor-test-overlay.png"
+app_internal_overlay="/data/user/0/com.mathmotor.video.next/files/editor-test-overlay.png"
+if [ ! -s "$overlay_fixture" ]; then
+  echo "Missing generated overlay fixture: $overlay_fixture"
+  exit 3
+fi
+if ! timeout -k 2s 30s adb -s emulator-5554 shell -T \
+  "run-as com.mathmotor.video.next sh -c 'cat > files/editor-test-overlay.png'" \
+  < "$overlay_fixture" 2>&1 | tee -a emulator-screenshots/video-fixture-private-copy.txt; then
+  echo "Streaming the overlay fixture into the app sandbox failed."
+  exit 10
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell run-as com.mathmotor.video.next ls -l files/editor-test-overlay.png 2>&1 | tee -a emulator-screenshots/video-fixture-private-copy.txt
 
 
 timeout -k 2s 8s adb -s emulator-5554 shell am force-stop com.mathmotor.video.next || true
@@ -328,6 +341,7 @@ timeout -k 2s 5s adb -s emulator-5554 logcat -c || true
 timeout -k 2s 15s adb -s emulator-5554 shell am start \
   -n com.mathmotor.video.next/com.mathmotor.video.EditorTestEntryActivity \
   --es video_uri "file://$app_internal_video" \
+  --es overlay_uri "file://$app_internal_overlay" \
   --es draft_id "11111111-1111-4111-8111-111111111111" \
   --ez timeline_sync_test true \
   --ef timeline_test_px_per_sec_dp 120 | tee emulator-screenshots/editor-video-launch.txt
@@ -356,7 +370,22 @@ if [ "$video_clip_loaded" != true ]; then
   collect_capture_diagnostics video-editor-clip-import-timeout
   exit 4
 fi
-sleep 2
+overlay_loaded=false
+for attempt in $(seq 1 20); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime > emulator-screenshots/overlay-load-logcat.txt 2>&1 || true
+  if grep -q "EDITOR_SMOKE_OVERLAY_ADDED" emulator-screenshots/overlay-load-logcat.txt; then
+    overlay_loaded=true
+    break
+  fi
+  echo "Waiting for paused overlay fixture to be inserted (attempt $attempt/20)"
+  sleep 2
+done
+if [ "$overlay_loaded" != true ]; then
+  echo "Editor did not confirm overlay insertion in the paused preview."
+  collect_capture_diagnostics overlay-editor-import-timeout
+  exit 32
+fi
+sleep 3
 if ! take_screen emulator-screenshots/editor.png; then
   collect_capture_diagnostics video-editor-capture-failure
   exit 6
@@ -415,7 +444,70 @@ print(x, y)
 PY
 }
 
-clip_tool_coords="$(find_bottom_tool emulator-screenshots/editor-window.xml "Düzenle" || true)"
+# The sample overlay must be selected in the paused preview, not hidden by a
+# settings sheet. Confirm its contextual dock and direct canvas gesture target.
+for overlay_tool in "Bindirme ekle" "Böl" "Birleştir" "Animasyonlar" "Sil"; do
+  if [ -z "$(find_bottom_tool emulator-screenshots/editor-window.xml "$overlay_tool" || true)" ]; then
+    echo "Selected overlay dock is missing '$overlay_tool'."
+    collect_capture_diagnostics "overlay-tool-missing"
+    exit 33
+  fi
+done
+if ! grep -q "Bindirmeyi önizlemede tek parmakla taşı" emulator-screenshots/editor-window.xml; then
+  echo "Selected overlay does not expose its direct-canvas touch surface."
+  collect_capture_diagnostics overlay-canvas-touch-surface-missing
+  exit 34
+fi
+cp emulator-screenshots/editor.png emulator-screenshots/editor-overlay-paused.png
+magenta_center() {
+  python3 - "$1" <<'PY'
+from PIL import Image
+import sys
+image = Image.open(sys.argv[1]).convert("RGB")
+points = []
+for y in range(image.height):
+    for x in range(image.width):
+        red, green, blue = image.getpixel((x, y))
+        if red > 180 and blue > 180 and green < 110:
+            points.append((x, y))
+if len(points) < 30:
+    raise SystemExit("Paused overlay pixels were not rendered (magenta sample not found)")
+xs = [point[0] for point in points]
+ys = [point[1] for point in points]
+print((min(xs) + max(xs)) // 2, (min(ys) + max(ys)) // 2, len(points))
+PY
+}
+before_overlay="$(magenta_center emulator-screenshots/editor-overlay-paused.png)"
+read -r before_x before_y before_pixels <<< "$before_overlay"
+echo "Paused overlay rendered at ($before_x,$before_y) with $before_pixels magenta pixels."
+drag_end_x="$((before_x + 22))"
+drag_end_y="$((before_y + 14))"
+timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$before_x" "$before_y" "$drag_end_x" "$drag_end_y" 500
+sleep 2
+if ! take_screen emulator-screenshots/editor-overlay-after-drag.png; then
+  collect_capture_diagnostics overlay-canvas-drag-capture-failure
+  exit 6
+fi
+after_overlay="$(magenta_center emulator-screenshots/editor-overlay-after-drag.png)"
+read -r after_x after_y after_pixels <<< "$after_overlay"
+if [ "$((after_x - before_x))" -lt 12 ] || [ "$((after_x - before_x))" -gt 34 ] ||
+   [ "$((after_y - before_y))" -lt 4 ] || [ "$((after_y - before_y))" -gt 26 ]; then
+  echo "Direct canvas drag did not move the paused overlay by the expected amount: before=($before_x,$before_y), after=($after_x,$after_y)."
+  collect_capture_diagnostics overlay-canvas-drag-not-applied
+  exit 35
+fi
+echo "PASS: paused overlay was visible and moved directly on the canvas without pressing Play."
+overlay_back_coords="$(find_bottom_tool emulator-screenshots/editor-window.xml "Ana araçlara dön" || true)"
+if [ -z "$overlay_back_coords" ]; then
+  echo "Could not find the overlay row's return-to-main-dock control."
+  collect_capture_diagnostics overlay-main-back-missing
+  exit 36
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $overlay_back_coords
+sleep 1
+dump_hierarchy editor-main-dock.xml emulator-screenshots/editor-main-dock.xml || true
+
+clip_tool_coords="$(find_bottom_tool emulator-screenshots/editor-main-dock.xml "Düzenle" || true)"
 if [ -z "$clip_tool_coords" ]; then
   echo "Could not locate the bottom Düzenle tool; refusing to guess its tap coordinates."
   collect_capture_diagnostics editor-panel-edit-tool-missing

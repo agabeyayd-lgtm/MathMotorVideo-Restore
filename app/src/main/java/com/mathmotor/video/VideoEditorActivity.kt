@@ -114,6 +114,7 @@ class VideoEditorActivity : Activity() {
         var yFraction: Float = 0.22f,
         var rotationDegrees: Float = 0f,
         var opacity: Float = 1f,
+        var aspectRatio: Float = 1f,
         val keyframes: MutableList<OverlayTransformKeyframe> = mutableListOf()
     )
 
@@ -128,6 +129,8 @@ class VideoEditorActivity : Activity() {
     private val overlayClips = mutableListOf<OverlayClip>()
     private var nextOverlayId = 1L
     private var selectedOverlayId: Long? = null
+    private var overlayCompositionRefreshGeneration = 0L
+    private var lastOverlayCompositionRefreshUptimeMs = 0L
     private var draftId: String? = null
     private val undoClipHistory = mutableListOf<ClipEditSnapshot>()
     private val redoClipHistory = mutableListOf<ClipEditSnapshot>()
@@ -219,6 +222,13 @@ class VideoEditorActivity : Activity() {
     private lateinit var playerView: PlayerView
     private lateinit var previewFrame: FrameLayout
     private lateinit var previewFrameOverlay: ImageView
+    // Paused editing uses decoded stills for the base clip and each active overlay.
+    // CompositionPlayer remains the playback/export renderer.
+    private lateinit var pausedOverlayPreviewContainer: FrameLayout
+    private val pausedOverlayPreviewViews = linkedMapOf<Long, ImageView>()
+    private val pausedOverlayPreviewBitmaps = mutableMapOf<Long, Bitmap>()
+    private val pausedOverlayPreviewBitmapKeys = mutableMapOf<Long, String>()
+    private val pausedOverlayPreviewPendingKeys = mutableMapOf<Long, String>()
     private val previewFrameRequestGeneration = java.util.concurrent.atomic.AtomicLong()
     private var pendingPreviewFrameTask: TimelineThumbnailTask? = null
     private var previewFrameBitmap: Bitmap? = null
@@ -237,6 +247,8 @@ class VideoEditorActivity : Activity() {
     private lateinit var previewTextOverlay: TextView
     private lateinit var clipTransformTouchOverlay: View
     private lateinit var overlayTransformTouchOverlay: View
+    private lateinit var overlaySelectionFrame: FrameLayout
+    private val overlaySelectionHandles = mutableListOf<View>()
     private lateinit var previewEmptyState: LinearLayout
     private lateinit var timelineTracks: LinearLayout
     private lateinit var timelineTracksFrame: FrameLayout
@@ -422,8 +434,12 @@ class VideoEditorActivity : Activity() {
                 (composition?.isPlaying == true || composition?.playWhenReady == true)
             ) {
                 syncTimelinePlayheadFromPlayer()
+                // Paused overlay assets are independent preview layers. Keep their
+                // transforms and moving-video frames synchronized to the playback clock.
+                updatePausedOverlayPreviewLayers(timelinePlayheadMs)
             } else if (previewSingleClip && player?.isPlaying == true) {
                 syncSingleClipPlayheadFromPlayer()
+                updatePausedOverlayPreviewLayers(timelinePlayheadMs)
             }
             syncPreviewAudio()
             updateTimelinePlayButtonState()
@@ -743,6 +759,21 @@ class VideoEditorActivity : Activity() {
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
         )
+        // A paused composition can remain BUFFERING before it emits its first frame.
+        // Keep editable still-image layers above the decoded base frame until playback.
+        pausedOverlayPreviewContainer = FrameLayout(this).apply {
+            visibility = View.GONE
+            isClickable = false
+            isFocusable = false
+            elevation = dp(2).toFloat()
+        }
+        previewFrame.addView(
+            pausedOverlayPreviewContainer,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        )
         // Transparent gesture surface sits above the video but below editable text overlays.
         clipTransformTouchOverlay = View(this).apply {
             setBackgroundColor(Color.TRANSPARENT)
@@ -788,6 +819,43 @@ class VideoEditorActivity : Activity() {
         )
         previewTextOverlays.add(previewTextOverlay)
         installPreviewTextTouch(previewTextOverlay)
+        // CapCut-style selection chrome stays visible on the paused preview.
+        overlaySelectionFrame = FrameLayout(this).apply {
+            visibility = View.GONE
+            isClickable = false
+            isFocusable = false
+            elevation = dp(10).toFloat()
+        }
+        overlaySelectionFrame.addView(View(this).apply {
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.TRANSPARENT)
+                cornerRadius = dp(1).toFloat()
+                setStroke(dp(1), Color.WHITE)
+            }
+            isClickable = false
+        }, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+        fun addOverlaySelectionHandle(gravity: Int) {
+            val handle = View(this).apply {
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.OVAL
+                    setColor(Color.rgb(14, 22, 32))
+                    setStroke(dp(1), Color.WHITE)
+                }
+                isClickable = false
+            }
+            overlaySelectionHandles.add(handle)
+            overlaySelectionFrame.addView(handle, FrameLayout.LayoutParams(dp(10), dp(10), gravity))
+        }
+        addOverlaySelectionHandle(Gravity.TOP or Gravity.LEFT)
+        addOverlaySelectionHandle(Gravity.TOP or Gravity.RIGHT)
+        addOverlaySelectionHandle(Gravity.BOTTOM or Gravity.LEFT)
+        addOverlaySelectionHandle(Gravity.BOTTOM or Gravity.RIGHT)
+        previewFrame.addView(
+            overlaySelectionFrame,
+            FrameLayout.LayoutParams(dp(120), dp(120), Gravity.CENTER)
+        )
         overlayTransformTouchOverlay = View(this).apply {
             setBackgroundColor(Color.TRANSPARENT)
             visibility = View.GONE
@@ -857,6 +925,7 @@ class VideoEditorActivity : Activity() {
         ).apply { bottomMargin = dp(8) })
         previewFrame.addOnLayoutChangeListener { view, _, _, _, _, _, _, _, _ ->
             updatePreviewCanvasSize()
+            updateOverlaySelectionChrome()
         }
 
         val timelineCard = LinearLayout(this).apply {
@@ -1827,6 +1896,13 @@ class VideoEditorActivity : Activity() {
                 } else if (key == "captions") {
                     if (clipToolsMode) exitClipTools()
                     toggleEditorPanel("text")
+                } else if (key == "overlay") {
+                    if (clipToolsMode) exitClipTools()
+                    selectedClipIndex = -1
+                    clipHandlesVisible = false
+                    selectedOverlayId = overlayClips.lastOrNull()?.id
+                    enterOverlayTools()
+                    if (selectedOverlay() == null) chooseAnyOverlayAsset()
                 } else if (key in editorPanels) {
                     if (clipToolsMode) exitClipTools()
                     toggleEditorPanel(key)
@@ -2283,6 +2359,7 @@ class VideoEditorActivity : Activity() {
         clipToolsMode = true
         activeClipTool = null
         activeEditorPanel = null
+        selectedOverlayId = null
         updateClipTransformTouchAvailability()
         updateOverlayTransformTouchAvailability()
         textOverlayEditingEnabled = false
@@ -4779,6 +4856,23 @@ class VideoEditorActivity : Activity() {
         if (overlayClips.isNotEmpty()) {
             builder.setVideoCompositorSettings(buildOverlayCompositorSettings())
         }
+        applyEditorVideoEffects(builder)
+        return builder.build()
+    }
+
+    /**
+     * The interactive preview keeps the base timeline in a single Media3 input.
+     * Editable overlays are ordinary views above the preview surface, refreshed
+     * from the exact same playhead clock. Export still uses the full multi-input
+     * composition from buildVideoTimelineComposition().
+     */
+    private fun buildTimelinePreviewComposition(): Composition {
+        val builder = Composition.Builder(listOf(buildFlattenedVideoSequence()))
+        applyEditorVideoEffects(builder)
+        return builder.build()
+    }
+
+    private fun applyEditorVideoEffects(builder: Composition.Builder) {
         val colorEffects = buildEditorVideoEffects().toMutableList()
         exportCanvasPreset.aspectRatio?.let { ratio ->
             colorEffects.add(Presentation.createForAspectRatio(
@@ -4788,7 +4882,6 @@ class VideoEditorActivity : Activity() {
         if (colorEffects.isNotEmpty()) {
             builder.setEffects(Effects(emptyList(), colorEffects))
         }
-        return builder.build()
     }
 
     private fun pauseActivePreview(){
@@ -4821,17 +4914,12 @@ class VideoEditorActivity : Activity() {
         runCatching{timelineCompositionPlayer?.release()}
         timelineCompositionPlayer=null
         try{
-            val compositionPlayerBuilder = CompositionPlayer.Builder(this)
-            // CompositionPlayer defaults to SingleInputVideoGraph. Use the multi-input
-            // graph only when overlays are present, otherwise preserve the simple path.
-            if (overlayClips.isNotEmpty()) {
-                compositionPlayerBuilder.setVideoGraphFactory(MultipleInputVideoGraph.Factory())
-            }
-            val comp = compositionPlayerBuilder.build()
+            val comp = CompositionPlayer.Builder(this).build()
             if (timelineSyncTestEnabled) android.util.Log.i("TimelineSyncTest", "TIMELINE_PREVIEW_BUILDER_OK")
             comp.addListener(object:androidx.media3.common.Player.Listener{
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
                     if (isPlaying) hidePreviewFrameOverlay()
+                    updateOverlaySelectionChrome()
                 }
                 override fun onVideoSizeChanged(videoSize:androidx.media3.common.VideoSize){
                     playerView.post{updatePreviewCanvasSize()}
@@ -4844,6 +4932,22 @@ class VideoEditorActivity : Activity() {
                     status.text = "Oynatıcı hatası: " + timelinePreviewError
                 }
                 override fun onPlaybackStateChanged(playbackState: Int) {
+                    if (playbackState == androidx.media3.common.Player.STATE_READY &&
+                        overlayClips.isNotEmpty()
+                    ) {
+                        // READY means the paused composition is prepared, but a
+                        // SurfaceView may not have emitted its first composed frame
+                        // yet. Nudge the paused clock off the initial timestamp and
+                        // back so both the background clip and image inputs are
+                        // actually rendered before we uncover the preview surface.
+                        playerView.postDelayed({
+                            if (timelineCompositionPlayer === comp &&
+                                !comp.isPlaying && !comp.playWhenReady
+                            ) {
+                                refreshPausedOverlayCompositionFrame(force = true)
+                            }
+                        }, 140L)
+                    }
                     if (playbackState == androidx.media3.common.Player.STATE_ENDED) {
                         timelinePlayheadMs = totalOutputDurationMs()
                         timelinePlaybackState = TimelinePlaybackState.PAUSED
@@ -4855,7 +4959,7 @@ class VideoEditorActivity : Activity() {
                     }
                 }
             })
-            comp.setComposition(buildVideoTimelineComposition())
+            comp.setComposition(buildTimelinePreviewComposition())
             if (timelineSyncTestEnabled) android.util.Log.i("TimelineSyncTest", "TIMELINE_PREVIEW_COMPOSITION_OK")
             comp.prepare()
             comp.playWhenReady=false
@@ -4917,6 +5021,7 @@ class VideoEditorActivity : Activity() {
             selectedClipIndex=active;refreshTimelineAfterClipChange();loadTrimControls()
         }
         updateTimelinePlayheadLabel()
+        updateOverlayTransformTouchAvailability()
     }
     private fun syncTimelinePlayheadFromPlayer(){
         val comp=timelineCompositionPlayer?:return
@@ -4932,6 +5037,7 @@ class VideoEditorActivity : Activity() {
         }
         scrollTimelineToPlayhead()
         updateTimelinePlayheadLabel()
+        updateOverlayTransformTouchAvailability()
     }
     private fun syncSingleClipPlayheadFromPlayer(){
         val current=player?:return
@@ -5158,6 +5264,7 @@ class VideoEditorActivity : Activity() {
     // the timeline touch surface unobstructed until the user chooses a tool.
     private fun selectTimelineClip(index:Int){
         if(index !in clips.indices)return
+        selectedOverlayId = null
         clipHandlesVisible = true
         timelinePreviewLoaded=false;previewSingleClip=false
         selectedClipIndex=index;timelinePlayheadMs=clips[index].timelineStartMs
@@ -6035,6 +6142,13 @@ class VideoEditorActivity : Activity() {
                     "EditorSmokeTest",
                     "EDITOR_SMOKE_CLIP_ADDED title=$title durationMs=$duration clipCount=${clips.size}"
                 )
+                if (smokeTest) {
+                    val testOverlayUri = intent.getStringExtra("overlay_uri")
+                    if (!testOverlayUri.isNullOrBlank()) {
+                        intent.removeExtra("overlay_uri")
+                        addOverlayAsset(Uri.parse(testOverlayUri))
+                    }
+                }
             }
         }.start()
     }
@@ -6124,6 +6238,7 @@ class VideoEditorActivity : Activity() {
                 put("yFraction", overlay.yFraction)
                 put("rotationDegrees", overlay.rotationDegrees)
                 put("opacity", overlay.opacity)
+                put("aspectRatio", overlay.aspectRatio)
                 put("keyframes", JSONArray().apply {
                     overlay.keyframes.sortedBy { it.timeMs }.forEach { frame ->
                         put(JSONObject().apply {
@@ -6270,6 +6385,7 @@ class VideoEditorActivity : Activity() {
                 yFraction = item.optDouble("yFraction", 0.22).toFloat().coerceIn(0f, 1f),
                 rotationDegrees = item.optDouble("rotationDegrees", 0.0).toFloat().coerceIn(-180f, 180f),
                 opacity = item.optDouble("opacity", 1.0).toFloat().coerceIn(0f, 1f),
+                aspectRatio = item.optDouble("aspectRatio", 1.0).toFloat().coerceIn(0.10f, 10f),
                 keyframes = mutableListOf<OverlayTransformKeyframe>().apply {
                     val savedKeyframes = item.optJSONArray("keyframes") ?: JSONArray()
                     for (frameIndex in 0 until savedKeyframes.length()) {
@@ -6516,6 +6632,20 @@ class VideoEditorActivity : Activity() {
         }
     }
 
+    private fun chooseAnyOverlayAsset() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*"))
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+        try {
+            startActivityForResult(intent, REQUEST_OVERLAY_ASSET)
+        } catch (_: Exception) {
+            status.text = "Fotoğraf/video seçici açılamadı."
+        }
+    }
+
     private fun chooseOverlayAsset(imagesOnly: Boolean) {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
@@ -6527,6 +6657,38 @@ class VideoEditorActivity : Activity() {
         } catch (error: Exception) {
             status.text = "Fotoğraf/video seçici açılamadı: ${error.message}"
         }
+    }
+
+    private fun readOverlayAssetAspectRatio(uri: Uri, isImage: Boolean): Float {
+        val ratio = runCatching {
+            if (isImage) {
+                val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                contentResolver.openInputStream(uri)?.use {
+                    android.graphics.BitmapFactory.decodeStream(it, null, options)
+                }
+                if (options.outWidth > 0 && options.outHeight > 0) {
+                    options.outWidth.toFloat() / options.outHeight.toFloat()
+                } else 1f
+            } else {
+                val retriever = MediaMetadataRetriever()
+                try {
+                    retriever.setDataSource(this, uri)
+                    val width = retriever.extractMetadata(
+                        MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH
+                    )?.toFloatOrNull() ?: 1f
+                    val height = retriever.extractMetadata(
+                        MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT
+                    )?.toFloatOrNull() ?: 1f
+                    val rotation = retriever.extractMetadata(
+                        MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION
+                    )?.toIntOrNull() ?: 0
+                    if (rotation % 180 != 0) height / width else width / height
+                } finally {
+                    retriever.release()
+                }
+            }
+        }.getOrDefault(1f)
+        return ratio.takeIf { it.isFinite() && it > 0f }?.coerceIn(0.10f, 10f) ?: 1f
     }
 
     private fun addOverlayAsset(uri: Uri) {
@@ -6543,6 +6705,7 @@ class VideoEditorActivity : Activity() {
         val title = queryDisplayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Bindirme"
         status.text = "Bindirme dosyası hazırlanıyor…"
         Thread {
+            val aspectRatio = readOverlayAssetAspectRatio(uri, isImage)
             val sourceDuration = if (isImage) 60_000L else runCatching {
                 val retriever = MediaMetadataRetriever()
                 try {
@@ -6578,14 +6741,24 @@ class VideoEditorActivity : Activity() {
                     scale = logoDefaults?.scale ?: 0.35f,
                     xFraction = logoDefaults?.xFraction ?: 0.78f,
                     yFraction = logoDefaults?.yFraction ?: 0.22f,
-                    opacity = logoDefaults?.opacity ?: 1f
+                    opacity = logoDefaults?.opacity ?: 1f,
+                    aspectRatio = aspectRatio
                 )
                 overlayClips.add(overlay)
                 selectedOverlayId = overlay.id
-                showEditorPanel("overlay")
+                selectedClipIndex = -1
+                clipHandlesVisible = false
+                timelinePlayheadMs = startMs
                 loadOverlayControls()
                 refreshTimelineTracks()
+                updateTimelinePlayheadDisplay()
+                enterOverlayTools()
                 rebuildTimelinePreviewForOverlayEdit()
+                updateOverlayTransformTouchAvailability()
+                if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+                    android.util.Log.i("EditorSmokeTest",
+                        "EDITOR_SMOKE_OVERLAY_ADDED id=" + overlay.id + " aspect=" + overlay.aspectRatio)
+                }
                 status.text = if (isImage) {
                     "Fotoğraf bindirme olarak eklendi. Süre, boyut ve konumu aşağıdan düzenle."
                 } else {
@@ -6614,15 +6787,23 @@ class VideoEditorActivity : Activity() {
         editorPanelScroll.translationY = 0f
         editorPanelScroll.alpha = 1f
         editorDock.removeAllViews()
+        clipHandlesVisible = false
+        selectedClipIndex = -1
         val tools = listOf(
             Triple("‹", "Geri", "Ana araçlara dön"),
-            Triple("▧", "Düzenle", "Seçili bindirmenin ayarlarını aç"),
+            Triple("＋", "Bindirme ekle", "Fotoğraf veya video bindirmesi ekle"),
+            Triple("✂", "Böl", "Seçili bindirmeyi oynatma çizgisinde böl"),
+            Triple("⧉", "Birleştir", "Bitişik aynı kaynak bindirme parçalarını birleştir"),
+            Triple("◇", "Animasyonlar", "Konum, boyut ve saydamlık anahtar karelerini düzenle"),
             Triple("×", "Sil", "Seçili bindirmeyi kaldır")
         )
         tools.forEach { (symbol, title, description) ->
             val action: () -> Unit = when (title) {
                 "Geri" -> ({ exitClipTools() })
-                "Düzenle" -> ({ showEditorPanel("overlay") })
+                "Bindirme ekle" -> ({ chooseAnyOverlayAsset() })
+                "Böl" -> ({ splitSelectedOverlayAtPlayhead() })
+                "Birleştir" -> ({ mergeSelectedOverlayWithAdjacent() })
+                "Animasyonlar" -> ({ showEditorPanel("overlay") })
                 "Sil" -> ({ removeSelectedOverlay() })
                 else -> ({})
             }
@@ -6638,19 +6819,128 @@ class VideoEditorActivity : Activity() {
     private fun selectOverlay(id: Long) {
         val overlay = overlayClips.firstOrNull { it.id == id } ?: return
         selectedOverlayId = id
+        selectedClipIndex = -1
+        clipHandlesVisible = false
         timelinePlayheadMs = overlay.timelineStartMs
         loadOverlayControls()
         refreshTimelineTracks()
         updateTimelinePlayheadDisplay()
-        if (timelinePreviewLoaded) seekTimelinePreview(timelinePlayheadMs)
-        // Keep the timeline visible and draggable; settings rise only after "Düzenle".
         enterOverlayTools()
+        // Selecting a layer establishes its paused composed frame immediately.
+        rebuildTimelinePreviewForOverlayEdit()
+        updateOverlayTransformTouchAvailability()
     }
 
     private fun updateOverlayTransformTouchAvailability() {
         if (!::overlayTransformTouchOverlay.isInitialized) return
+        val overlay = selectedOverlay()
+        val selectedTrackActive = overlay != null &&
+            (activeEditorPanel == "overlay" || (clipToolsMode && activeEditorPanel == null))
+        val playheadInsideLayer = overlay != null &&
+            timelinePlayheadMs >= overlay.timelineStartMs &&
+            timelinePlayheadMs < overlay.timelineStartMs + overlay.durationMs
         overlayTransformTouchOverlay.visibility =
-            if (activeEditorPanel == "overlay" && selectedOverlay() != null) View.VISIBLE else View.GONE
+            if (selectedTrackActive && playheadInsideLayer &&
+                timelineCompositionPlayer?.isPlaying != true
+            ) View.VISIBLE else View.GONE
+        updateOverlaySelectionChrome()
+    }
+
+    private fun overlayCanvasSize(): Pair<Float, Float> {
+        val activeIndex = activeClipIndexAt(timelinePlayheadMs)
+        val mainClip = clips.getOrNull(activeIndex ?: selectedClipIndex) ?: clips.firstOrNull()
+        val aspect = mainClip?.let { timelineVideoAspectRatio(it.uri) }
+            ?.takeIf { it.isFinite() && it > 0f }
+            ?: TimelineThumbnailMath.DEFAULT_SOURCE_ASPECT_RATIO
+        val stageWidth = previewFrame.width.toFloat().coerceAtLeast(1f)
+        val stageHeight = previewFrame.height.toFloat().coerceAtLeast(1f)
+        val width = minOf(stageWidth, stageHeight * aspect).coerceAtLeast(1f)
+        val height = minOf(stageHeight, stageWidth / aspect).coerceAtLeast(1f)
+        return width to height
+    }
+
+    private fun updateOverlaySelectionChrome() {
+        if (!::overlaySelectionFrame.isInitialized || !::previewFrame.isInitialized) return
+        updatePausedOverlayPreviewLayers(timelinePlayheadMs)
+        val overlay = selectedOverlay()
+        val selectedTrackActive = overlay != null &&
+            (activeEditorPanel == "overlay" || (clipToolsMode && activeEditorPanel == null))
+        val playheadInsideLayer = overlay != null &&
+            timelinePlayheadMs >= overlay.timelineStartMs &&
+            timelinePlayheadMs < overlay.timelineStartMs + overlay.durationMs
+        if (!selectedTrackActive || !playheadInsideLayer ||
+            timelineCompositionPlayer?.isPlaying == true ||
+            previewFrame.width <= 0 || previewFrame.height <= 0
+        ) {
+            overlaySelectionFrame.visibility = View.GONE
+            return
+        }
+        val (canvasWidth, canvasHeight) = overlayCanvasSize()
+        val overlayAspect = overlay.aspectRatio.takeIf { it.isFinite() && it > 0f }
+            ?.coerceIn(0.10f, 10f) ?: 1f
+        val frameWidth = canvasWidth.toInt().coerceAtLeast(dp(12))
+        val frameHeight = (canvasWidth / overlayAspect).toInt().coerceAtLeast(dp(12))
+        val params = overlaySelectionFrame.layoutParams as? FrameLayout.LayoutParams
+            ?: FrameLayout.LayoutParams(frameWidth, frameHeight, Gravity.CENTER)
+        if (params.width != frameWidth || params.height != frameHeight) {
+            params.width = frameWidth
+            params.height = frameHeight
+            params.gravity = Gravity.CENTER
+            overlaySelectionFrame.layoutParams = params
+        }
+        val state = overlayStateAtTime(overlay, timelinePlayheadMs)
+        overlaySelectionFrame.pivotX = frameWidth / 2f
+        overlaySelectionFrame.pivotY = frameHeight / 2f
+        overlaySelectionFrame.scaleX = state.scale
+        overlaySelectionFrame.scaleY = state.scale
+        overlaySelectionFrame.rotation = state.rotationDegrees
+        overlaySelectionFrame.translationX = (state.xFraction - 0.5f) * canvasWidth
+        overlaySelectionFrame.translationY = (state.yFraction - 0.5f) * canvasHeight
+        val inverseScale = (1f / state.scale.coerceAtLeast(0.10f)).coerceAtMost(10f)
+        overlaySelectionHandles.forEach { handle ->
+            handle.scaleX = inverseScale
+            handle.scaleY = inverseScale
+        }
+        overlaySelectionFrame.visibility = View.VISIBLE
+    }
+
+    /**
+     * A paused CompositionPlayer can keep its already-composited frame when the
+     * mutable overlay transform changes. Seek one source frame away and back so
+     * the compositor evaluates the latest OverlaySettings without rebuilding the
+     * player or blanking the preview surface.
+     */
+    private fun refreshPausedOverlayCompositionFrame(force: Boolean = false) {
+        val composition = timelineCompositionPlayer ?: return
+        if (composition.isPlaying || composition.playWhenReady) return
+
+        val now = SystemClock.uptimeMillis()
+        if (!force && now - lastOverlayCompositionRefreshUptimeMs < 80L) return
+        lastOverlayCompositionRefreshUptimeMs = now
+
+        val totalDurationMs = totalOutputDurationMs().coerceAtLeast(1L)
+        val positionMs = timelinePlayheadMs.coerceIn(0L, totalDurationMs - 1L)
+        val frameStepMs = 84L // Two frames at the 24 fps smoke-test rate.
+        val refreshPositionMs = if (positionMs + frameStepMs < totalDurationMs) {
+            positionMs + frameStepMs
+        } else {
+            (positionMs - frameStepMs).coerceAtLeast(0L)
+        }
+        if (refreshPositionMs == positionMs) return
+
+        val generation = ++overlayCompositionRefreshGeneration
+        composition.seekTo(refreshPositionMs)
+        timelineHandler.postDelayed({
+            if (generation != overlayCompositionRefreshGeneration ||
+                timelineCompositionPlayer !== composition ||
+                composition.isPlaying || composition.playWhenReady
+            ) return@postDelayed
+
+            // Return to the fixed playhead after the compositor has emitted a fresh
+            // frame using the newest overlay transform.
+            composition.seekTo(positionMs)
+            updateOverlaySelectionChrome()
+        }, 150L)
     }
 
     private fun installOverlayTransformTouch() {
@@ -6682,10 +6972,35 @@ class VideoEditorActivity : Activity() {
         fun centroidY(event: android.view.MotionEvent): Float =
             if (event.pointerCount >= 2) (event.getY(0) + event.getY(1)) / 2f else event.y
 
+        fun isInsideSelectedOverlay(view: View, x: Float, y: Float): Boolean {
+            val overlay = selectedOverlay() ?: return false
+            val (canvasWidth, canvasHeight) = overlayCanvasSize()
+            val state = overlayStateAtTime(overlay, timelinePlayheadMs)
+            val centerX = (view.width - canvasWidth) / 2f + state.xFraction * canvasWidth
+            val centerY = (view.height - canvasHeight) / 2f +
+                state.yFraction * canvasHeight
+            val dx = x - centerX
+            val dy = y - centerY
+            val radians = Math.toRadians(state.rotationDegrees.toDouble())
+            val localX = dx * kotlin.math.cos(radians).toFloat() +
+                dy * kotlin.math.sin(radians).toFloat()
+            val localY = -dx * kotlin.math.sin(radians).toFloat() +
+                dy * kotlin.math.cos(radians).toFloat()
+            val aspect = overlay.aspectRatio.coerceIn(0.10f, 10f)
+            val halfWidth = canvasWidth * state.scale / 2f
+            val halfHeight = canvasWidth / aspect * state.scale / 2f
+            val tolerance = dp(16).toFloat()
+            return kotlin.math.abs(localX) <= halfWidth + tolerance &&
+                kotlin.math.abs(localY) <= halfHeight + tolerance
+        }
+
         overlayTransformTouchOverlay.setOnTouchListener { view, event ->
             when (event.actionMasked) {
                 android.view.MotionEvent.ACTION_DOWN -> {
                     val overlay = selectedOverlay() ?: return@setOnTouchListener false
+                    if (!isInsideSelectedOverlay(view, event.x, event.y)) {
+                        return@setOnTouchListener false
+                    }
                     gestureOverlay = overlay
                     pauseActivePreview()
                     downX = event.x
@@ -6721,8 +7036,7 @@ class VideoEditorActivity : Activity() {
                 }
                 android.view.MotionEvent.ACTION_MOVE -> {
                     val overlay = gestureOverlay ?: return@setOnTouchListener false
-                    val width = view.width.toFloat().coerceAtLeast(1f)
-                    val height = view.height.toFloat().coerceAtLeast(1f)
+                    val (width, height) = overlayCanvasSize()
                     if (event.pointerCount >= 2 && downDistance > 0f) {
                         val centerX = centroidX(event)
                         val centerY = centroidY(event)
@@ -6747,6 +7061,8 @@ class VideoEditorActivity : Activity() {
                         )
                     }
                     updateOverlayControlLabels(overlay)
+                    updateOverlaySelectionChrome()
+                    refreshPausedOverlayCompositionFrame()
                     true
                 }
                 android.view.MotionEvent.ACTION_POINTER_UP -> {
@@ -6776,13 +7092,119 @@ class VideoEditorActivity : Activity() {
                     if (overlay != null) {
                         loadOverlayControls()
                         refreshTimelineTracks()
-                        rebuildTimelinePreviewForOverlayEdit()
+                        // The Media3 composition already owns this mutable OverlayClip.
+                        // Rebuilding it on ACTION_UP tears down the video surface and leaves
+                        // the paused canvas black until another playback prepare. Keep the
+                        // current graph alive and request its final frame at the playhead.
+                        refreshPausedOverlayCompositionFrame(force = true)
+                        requestPreviewFrameAt(timelinePlayheadMs)
+                        updateOverlayTransformTouchAvailability()
                     }
                     true
                 }
                 else -> gestureOverlay != null
             }
         }
+    }
+
+    private fun splitSelectedOverlayAtPlayhead() {
+        val overlay = selectedOverlay() ?: run {
+            status.text = "Bölmek için zaman çizelgesinden bir bindirme seç."
+            return
+        }
+        val offsetMs = timelinePlayheadMs - overlay.timelineStartMs
+        if (offsetMs < 250L || offsetMs > overlay.durationMs - 250L) {
+            status.text = "Bölme çizgisini bindirmenin iç kısmına getir."
+            return
+        }
+
+        val originalDuration = overlay.durationMs
+        val rightDuration = originalDuration - offsetMs
+        val cutState = overlayStateAtTime(overlay, timelinePlayheadMs)
+        val startState = overlayStateAtTime(overlay, overlay.timelineStartMs)
+        val originalFrames = overlay.keyframes.toList()
+        val leftFrames = if (originalFrames.isEmpty()) emptyList() else {
+            OverlayKeyframeMath.upsert(
+                OverlayKeyframeMath.upsert(
+                    originalFrames.filter { it.timeMs < offsetMs },
+                    OverlayTransformKeyframe(0L, startState)
+                ),
+                OverlayTransformKeyframe(offsetMs, cutState)
+            )
+        }
+        val rightFrames = if (originalFrames.isEmpty()) emptyList() else {
+            OverlayKeyframeMath.rebaseAfterStartTrim(
+                originalFrames,
+                offsetMs,
+                rightDuration,
+                cutState
+            )
+        }
+
+        overlay.durationMs = offsetMs
+        overlay.keyframes.clear()
+        overlay.keyframes.addAll(leftFrames)
+        val right = overlay.copy(
+            id = nextOverlayId++,
+            sourceStartMs = if (overlay.isImage) overlay.sourceStartMs
+                else (overlay.sourceStartMs + offsetMs).coerceAtMost(overlay.sourceDurationMs - 1L),
+            timelineStartMs = timelinePlayheadMs,
+            durationMs = rightDuration,
+            keyframes = rightFrames.toMutableList()
+        )
+        overlayClips.add(right)
+        selectedOverlayId = right.id
+        refreshTimelineTracks()
+        loadOverlayControls()
+        rebuildTimelinePreviewForOverlayEdit()
+        updateOverlayTransformTouchAvailability()
+        status.text = "Bindirme iki ayrı katmana bölündü."
+    }
+
+    private fun mergeSelectedOverlayWithAdjacent() {
+        val selected = selectedOverlay() ?: run {
+            status.text = "Birleştirmek için önce bir bindirme seç."
+            return
+        }
+        val ordered = overlayClips.sortedBy { it.timelineStartMs }
+        val index = ordered.indexOfFirst { it.id == selected.id }
+        val candidates = listOfNotNull(
+            ordered.getOrNull(index - 1),
+            ordered.getOrNull(index + 1)
+        )
+        val adjacent = candidates.firstOrNull { other ->
+            val left = if (other.timelineStartMs < selected.timelineStartMs) other else selected
+            val right = if (left.id == selected.id) other else selected
+            val continuousSource = left.isImage ||
+                left.sourceStartMs + left.durationMs == right.sourceStartMs
+            val sameTransform = kotlin.math.abs(left.scale - right.scale) < 0.0001f &&
+                kotlin.math.abs(left.xFraction - right.xFraction) < 0.0001f &&
+                kotlin.math.abs(left.yFraction - right.yFraction) < 0.0001f &&
+                kotlin.math.abs(left.rotationDegrees - right.rotationDegrees) < 0.0001f &&
+                kotlin.math.abs(left.opacity - right.opacity) < 0.0001f
+            left.uri == right.uri &&
+                left.isImage == right.isImage &&
+                left.timelineStartMs + left.durationMs == right.timelineStartMs &&
+                continuousSource &&
+                sameTransform &&
+                left.keyframes.isEmpty() &&
+                right.keyframes.isEmpty()
+        }
+        if (adjacent == null) {
+            status.text = "Birleştirme için aynı kaynaklı, bitişik ve animasyonsuz iki bindirme gerekir."
+            return
+        }
+        val left = if (adjacent.timelineStartMs < selected.timelineStartMs) adjacent else selected
+        val right = if (left.id == selected.id) adjacent else selected
+        left.durationMs += right.durationMs
+        overlayClips.removeAll { it.id == right.id }
+        selectedOverlayId = left.id
+        timelinePlayheadMs = left.timelineStartMs
+        refreshTimelineTracks()
+        loadOverlayControls()
+        rebuildTimelinePreviewForOverlayEdit()
+        updateOverlayTransformTouchAvailability()
+        status.text = "Bitişik bindirme katmanları birleştirildi."
     }
 
     private fun removeSelectedOverlay() {
@@ -7742,6 +8164,194 @@ class VideoEditorActivity : Activity() {
         }
     }
 
+    private fun hidePausedOverlayPreviewLayers() {
+        if (::pausedOverlayPreviewContainer.isInitialized) {
+            pausedOverlayPreviewContainer.visibility = View.GONE
+        }
+    }
+
+    private fun pausedOverlayPreviewKey(overlay: OverlayClip, projectTimeMs: Long): String {
+        if (overlay.isImage) return "image:" + overlay.uri
+        val sourceTimeMs = (
+            overlay.sourceStartMs + (projectTimeMs - overlay.timelineStartMs).coerceAtLeast(0L)
+        ).coerceIn(0L, (overlay.sourceDurationMs - 1L).coerceAtLeast(0L))
+        // Decode video overlays at a bounded preview cadence instead of requesting a
+        // new decoder frame on every 50ms timeline synchronization tick.
+        val frameBucketMs = if (
+            timelineCompositionPlayer?.playWhenReady == true ||
+            timelineCompositionPlayer?.isPlaying == true ||
+            player?.isPlaying == true
+        ) 100L else 1L
+        val bucketedTimeMs = sourceTimeMs / frameBucketMs * frameBucketMs
+        return "video:" + overlay.uri + "#" + bucketedTimeMs
+    }
+
+    private fun decodePausedOverlayPreviewFrame(
+        overlay: OverlayClip,
+        projectTimeMs: Long
+    ): Bitmap? {
+        if (overlay.isImage) {
+            return runCatching {
+                contentResolver.openInputStream(overlay.uri)?.use { input ->
+                    android.graphics.BitmapFactory.decodeStream(input)
+                }
+            }.getOrNull()
+        }
+        val sourceTimeMs = (
+            overlay.sourceStartMs + (projectTimeMs - overlay.timelineStartMs).coerceAtLeast(0L)
+        ).coerceIn(0L, (overlay.sourceDurationMs - 1L).coerceAtLeast(0L))
+        val retriever = timelineThumbnailRetrieverFor(overlay.uri, "TimelineOverlayPreview")
+            ?: return null
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            runCatching {
+                retriever.getScaledFrameAtTime(
+                    sourceTimeMs * 1_000L,
+                    MediaMetadataRetriever.OPTION_CLOSEST,
+                    1440,
+                    1440
+                )
+            }.getOrNull() ?: runCatching {
+                retriever.getFrameAtTime(
+                    sourceTimeMs * 1_000L,
+                    MediaMetadataRetriever.OPTION_CLOSEST
+                )
+            }.getOrNull()
+        } else {
+            runCatching {
+                retriever.getFrameAtTime(
+                    sourceTimeMs * 1_000L,
+                    MediaMetadataRetriever.OPTION_CLOSEST
+                )
+            }.getOrNull()
+        }
+    }
+
+    /**
+     * Draws the exact paused frame as ordinary Android image layers. This avoids
+     * depending on a CompositionPlayer/SurfaceView first-frame callback just to
+     * make an editable overlay visible while playback is stopped.
+     */
+    private fun updatePausedOverlayPreviewLayers(projectTimeMs: Long) {
+        if (!::pausedOverlayPreviewContainer.isInitialized || !::previewFrame.isInitialized) return
+        // These layer views remain visible during both paused editing and timeline
+        // playback; only their frame/time is refreshed as the shared playhead moves.
+        if (previewFrame.width <= 0 || previewFrame.height <= 0) {
+            previewFrame.post { updatePausedOverlayPreviewLayers(timelinePlayheadMs) }
+            return
+        }
+
+        val active = overlayClips
+            .filter { projectTimeMs >= it.timelineStartMs &&
+                projectTimeMs < it.timelineStartMs + it.durationMs }
+            .sortedBy { it.id }
+        val activeIds = active.mapTo(mutableSetOf()) { it.id }
+        (pausedOverlayPreviewViews.keys - activeIds).toList().forEach { id ->
+            pausedOverlayPreviewViews.remove(id)?.let(pausedOverlayPreviewContainer::removeView)
+            pausedOverlayPreviewPendingKeys.remove(id)
+            pausedOverlayPreviewBitmaps.remove(id)?.let { bitmap ->
+                if (!bitmap.isRecycled) bitmap.recycle()
+            }
+            pausedOverlayPreviewBitmapKeys.remove(id)
+        }
+        if (active.isEmpty()) {
+            hidePausedOverlayPreviewLayers()
+            return
+        }
+        pausedOverlayPreviewContainer.visibility = View.VISIBLE
+        val (canvasWidth, canvasHeight) = overlayCanvasSize()
+
+        active.forEach { overlay ->
+            val aspect = overlay.aspectRatio.takeIf { it.isFinite() && it > 0f }
+                ?.coerceIn(0.10f, 10f) ?: 1f
+            val frameWidth = canvasWidth.toInt().coerceAtLeast(dp(12))
+            val frameHeight = (canvasWidth / aspect).toInt().coerceAtLeast(dp(12))
+            val imageView = pausedOverlayPreviewViews.getOrPut(overlay.id) {
+                ImageView(this).apply {
+                    scaleType = ImageView.ScaleType.FIT_CENTER
+                    setBackgroundColor(Color.TRANSPARENT)
+                    isClickable = false
+                    isFocusable = false
+                    visibility = View.INVISIBLE
+                }.also { view ->
+                    pausedOverlayPreviewContainer.addView(
+                        view,
+                        FrameLayout.LayoutParams(frameWidth, frameHeight, Gravity.CENTER)
+                    )
+                }
+            }
+            val params = imageView.layoutParams as? FrameLayout.LayoutParams
+                ?: FrameLayout.LayoutParams(frameWidth, frameHeight, Gravity.CENTER)
+            if (params.width != frameWidth || params.height != frameHeight) {
+                params.width = frameWidth
+                params.height = frameHeight
+                params.gravity = Gravity.CENTER
+                imageView.layoutParams = params
+            }
+            val state = overlayStateAtTime(overlay, projectTimeMs)
+            imageView.pivotX = frameWidth / 2f
+            imageView.pivotY = frameHeight / 2f
+            imageView.scaleX = state.scale
+            imageView.scaleY = state.scale
+            imageView.rotation = state.rotationDegrees
+            imageView.translationX = (state.xFraction - 0.5f) * canvasWidth
+            imageView.translationY = (state.yFraction - 0.5f) * canvasHeight
+            imageView.alpha = state.opacity
+
+            val desiredKey = pausedOverlayPreviewKey(overlay, projectTimeMs)
+            val cachedBitmap = pausedOverlayPreviewBitmaps[overlay.id]
+            if (cachedBitmap != null && !cachedBitmap.isRecycled &&
+                pausedOverlayPreviewBitmapKeys[overlay.id] == desiredKey
+            ) {
+                if (imageView.drawable == null) imageView.setImageBitmap(cachedBitmap)
+                imageView.visibility = View.VISIBLE
+            } else {
+                imageView.setImageDrawable(null)
+                imageView.visibility = View.INVISIBLE
+                if (pausedOverlayPreviewPendingKeys[overlay.id] != desiredKey) {
+                    pausedOverlayPreviewPendingKeys[overlay.id] = desiredKey
+                    val overlayId = overlay.id
+                    val requestedTimeMs = projectTimeMs
+                    val task = TimelineThumbnailTask(
+                        0L,
+                        timelineThumbnailTaskSequence.incrementAndGet()
+                    ) {
+                        val decoded = decodePausedOverlayPreviewFrame(overlay, requestedTimeMs)
+                        runOnUiThread {
+                            val stillActive = overlayClips.firstOrNull { it.id == overlayId }
+                            val isStillCurrent = stillActive != null &&
+                                timelinePlayheadMs >= stillActive.timelineStartMs &&
+                                timelinePlayheadMs < stillActive.timelineStartMs + stillActive.durationMs &&
+                                pausedOverlayPreviewKey(stillActive, timelinePlayheadMs) == desiredKey &&
+                                pausedOverlayPreviewPendingKeys[overlayId] == desiredKey
+                            if (isStillCurrent && decoded != null && !decoded.isRecycled) {
+                                pausedOverlayPreviewPendingKeys.remove(overlayId)
+                                val previous = pausedOverlayPreviewBitmaps.put(overlayId, decoded)
+                                pausedOverlayPreviewBitmapKeys[overlayId] = desiredKey
+                                pausedOverlayPreviewViews[overlayId]?.let { view ->
+                                    view.setImageBitmap(decoded)
+                                    view.visibility = View.VISIBLE
+                                }
+                                if (previous != null && previous !== decoded && !previous.isRecycled) {
+                                    previous.recycle()
+                                }
+                            } else {
+                                if (pausedOverlayPreviewPendingKeys[overlayId] == desiredKey) {
+                                    pausedOverlayPreviewPendingKeys.remove(overlayId)
+                                }
+                                decoded?.let { if (!it.isRecycled) it.recycle() }
+                            }
+                        }
+                    }
+                    try {
+                        timelineThumbnailExecutor.execute(task)
+                    } catch (_: java.util.concurrent.RejectedExecutionException) {
+                        pausedOverlayPreviewPendingKeys.remove(overlay.id)
+                    }
+                }
+            }
+        }
+    }
+
     private fun hidePreviewFrameOverlay() {
         if (!::previewFrameOverlay.isInitialized) return
         previewFrameRequestGeneration.incrementAndGet()
@@ -7812,10 +8422,12 @@ class VideoEditorActivity : Activity() {
             hidePreviewFrameOverlay()
             return
         }
-        val requestId = showPreviewFramePending(keepPreviousFrame)
-
         val lastFrameMs = (totalOutputDurationMs() - 1L).coerceAtLeast(0L)
         val safeProjectTimeMs = projectTimeMs.coerceIn(0L, lastFrameMs)
+        // Decode the paused main frame and paint each active overlay as its own
+        // transformable ImageView. Playback still uses the Media3 composition.
+        updatePausedOverlayPreviewLayers(safeProjectTimeMs)
+        val requestId = showPreviewFramePending(keepPreviousFrame)
         val activeIndex = activeClipIndexAt(safeProjectTimeMs)
         val clip = clips.getOrNull(activeIndex ?: -1)
         if (clip == null) return // A timeline gap is intentionally rendered as black.
@@ -9249,6 +9861,15 @@ class VideoEditorActivity : Activity() {
         pendingPreviewFrameTask?.let { timelineThumbnailExecutor.remove(it) }
         pendingPreviewFrameTask = null
         if (::previewFrameOverlay.isInitialized) previewFrameOverlay.setImageDrawable(null)
+        hidePausedOverlayPreviewLayers()
+        pausedOverlayPreviewViews.values.forEach { view -> view.setImageDrawable(null) }
+        pausedOverlayPreviewViews.clear()
+        pausedOverlayPreviewPendingKeys.clear()
+        pausedOverlayPreviewBitmaps.values.forEach { bitmap ->
+            if (!bitmap.isRecycled) bitmap.recycle()
+        }
+        pausedOverlayPreviewBitmaps.clear()
+        pausedOverlayPreviewBitmapKeys.clear()
         previewFrameBitmap?.let { if (!it.isRecycled) it.recycle() }
         previewFrameBitmap = null
         // Drop queued thumbnail work. Each decoder worker releases its own retriever
