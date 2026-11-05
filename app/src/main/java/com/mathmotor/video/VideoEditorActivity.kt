@@ -434,8 +434,12 @@ class VideoEditorActivity : Activity() {
                 (composition?.isPlaying == true || composition?.playWhenReady == true)
             ) {
                 syncTimelinePlayheadFromPlayer()
+                // Paused overlay assets are independent preview layers. Keep their
+                // transforms and moving-video frames synchronized to the playback clock.
+                updatePausedOverlayPreviewLayers(timelinePlayheadMs)
             } else if (previewSingleClip && player?.isPlaying == true) {
                 syncSingleClipPlayheadFromPlayer()
+                updatePausedOverlayPreviewLayers(timelinePlayheadMs)
             }
             syncPreviewAudio()
             updateTimelinePlayButtonState()
@@ -4852,6 +4856,23 @@ class VideoEditorActivity : Activity() {
         if (overlayClips.isNotEmpty()) {
             builder.setVideoCompositorSettings(buildOverlayCompositorSettings())
         }
+        applyEditorVideoEffects(builder)
+        return builder.build()
+    }
+
+    /**
+     * The interactive preview keeps the base timeline in a single Media3 input.
+     * Editable overlays are ordinary views above the preview surface, refreshed
+     * from the exact same playhead clock. Export still uses the full multi-input
+     * composition from buildVideoTimelineComposition().
+     */
+    private fun buildTimelinePreviewComposition(): Composition {
+        val builder = Composition.Builder(listOf(buildFlattenedVideoSequence()))
+        applyEditorVideoEffects(builder)
+        return builder.build()
+    }
+
+    private fun applyEditorVideoEffects(builder: Composition.Builder) {
         val colorEffects = buildEditorVideoEffects().toMutableList()
         exportCanvasPreset.aspectRatio?.let { ratio ->
             colorEffects.add(Presentation.createForAspectRatio(
@@ -4861,7 +4882,6 @@ class VideoEditorActivity : Activity() {
         if (colorEffects.isNotEmpty()) {
             builder.setEffects(Effects(emptyList(), colorEffects))
         }
-        return builder.build()
     }
 
     private fun pauseActivePreview(){
@@ -4894,13 +4914,7 @@ class VideoEditorActivity : Activity() {
         runCatching{timelineCompositionPlayer?.release()}
         timelineCompositionPlayer=null
         try{
-            val compositionPlayerBuilder = CompositionPlayer.Builder(this)
-            // CompositionPlayer defaults to SingleInputVideoGraph. Use the multi-input
-            // graph only when overlays are present, otherwise preserve the simple path.
-            if (overlayClips.isNotEmpty()) {
-                compositionPlayerBuilder.setVideoGraphFactory(MultipleInputVideoGraph.Factory())
-            }
-            val comp = compositionPlayerBuilder.build()
+            val comp = CompositionPlayer.Builder(this).build()
             if (timelineSyncTestEnabled) android.util.Log.i("TimelineSyncTest", "TIMELINE_PREVIEW_BUILDER_OK")
             comp.addListener(object:androidx.media3.common.Player.Listener{
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -4945,7 +4959,7 @@ class VideoEditorActivity : Activity() {
                     }
                 }
             })
-            comp.setComposition(buildVideoTimelineComposition())
+            comp.setComposition(buildTimelinePreviewComposition())
             if (timelineSyncTestEnabled) android.util.Log.i("TimelineSyncTest", "TIMELINE_PREVIEW_COMPOSITION_OK")
             comp.prepare()
             comp.playWhenReady=false
@@ -8161,7 +8175,15 @@ class VideoEditorActivity : Activity() {
         val sourceTimeMs = (
             overlay.sourceStartMs + (projectTimeMs - overlay.timelineStartMs).coerceAtLeast(0L)
         ).coerceIn(0L, (overlay.sourceDurationMs - 1L).coerceAtLeast(0L))
-        return "video:" + overlay.uri + "#" + sourceTimeMs
+        // Decode video overlays at a bounded preview cadence instead of requesting a
+        // new decoder frame on every 50ms timeline synchronization tick.
+        val frameBucketMs = if (
+            timelineCompositionPlayer?.playWhenReady == true ||
+            timelineCompositionPlayer?.isPlaying == true ||
+            player?.isPlaying == true
+        ) 100L else 1L
+        val bucketedTimeMs = sourceTimeMs / frameBucketMs * frameBucketMs
+        return "video:" + overlay.uri + "#" + bucketedTimeMs
     }
 
     private fun decodePausedOverlayPreviewFrame(
@@ -8211,11 +8233,8 @@ class VideoEditorActivity : Activity() {
      */
     private fun updatePausedOverlayPreviewLayers(projectTimeMs: Long) {
         if (!::pausedOverlayPreviewContainer.isInitialized || !::previewFrame.isInitialized) return
-        val composition = timelineCompositionPlayer
-        if (composition?.isPlaying == true || composition?.playWhenReady == true) {
-            hidePausedOverlayPreviewLayers()
-            return
-        }
+        // These layer views remain visible during both paused editing and timeline
+        // playback; only their frame/time is refreshed as the shared playhead moves.
         if (previewFrame.width <= 0 || previewFrame.height <= 0) {
             previewFrame.post { updatePausedOverlayPreviewLayers(timelinePlayheadMs) }
             return
@@ -8340,7 +8359,6 @@ class VideoEditorActivity : Activity() {
         pendingPreviewFrameTask = null
         previewFrameOverlay.visibility = View.GONE
         previewFrameCacheKey = null
-        hidePausedOverlayPreviewLayers()
     }
 
     /** Cover the player immediately while a new playhead frame is being decoded. */
