@@ -319,6 +319,21 @@ if ! timeout -k 2s 30s adb -s emulator-5554 shell -T \
   exit 10
 fi
 timeout -k 2s 8s adb -s emulator-5554 shell run-as com.mathmotor.video.next ls -l files/editor-test-video.mp4 2>&1 | tee -a emulator-screenshots/video-fixture-private-copy.txt
+
+replacement_fixture="app/build/test-fixtures/editor-test-video-replacement.mp4"
+app_internal_replacement_video="/data/user/0/com.mathmotor.video.next/files/editor-test-video-replacement.mp4"
+if [ ! -s "$replacement_fixture" ]; then
+  echo "Missing replacement video fixture: $replacement_fixture"
+  exit 3
+fi
+if ! timeout -k 2s 30s adb -s emulator-5554 shell -T \
+  "run-as com.mathmotor.video.next sh -c 'cat > files/editor-test-video-replacement.mp4'" \
+  < "$replacement_fixture" 2>&1 | tee -a emulator-screenshots/video-fixture-private-copy.txt; then
+  echo "Streaming the replacement video fixture into the app sandbox failed."
+  exit 10
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell run-as com.mathmotor.video.next ls -l files/editor-test-video-replacement.mp4 2>&1 | tee -a emulator-screenshots/video-fixture-private-copy.txt
+
 overlay_fixture="app/build/test-fixtures/editor-test-overlay.png"
 app_internal_overlay="/data/user/0/com.mathmotor.video.next/files/editor-test-overlay.png"
 if [ ! -s "$overlay_fixture" ]; then
@@ -342,6 +357,7 @@ timeout -k 2s 15s adb -s emulator-5554 shell am start \
   -n com.mathmotor.video.next/com.mathmotor.video.EditorTestEntryActivity \
   --es video_uri "file://$app_internal_video" \
   --es overlay_uri "file://$app_internal_overlay" \
+  --es replacement_video_uri "file://$app_internal_replacement_video" \
   --es draft_id "11111111-1111-4111-8111-111111111111" \
   --ez timeline_sync_test true \
   --ef timeline_test_px_per_sec_dp 120 | tee emulator-screenshots/editor-video-launch.txt
@@ -385,7 +401,79 @@ if [ "$overlay_loaded" != true ]; then
   collect_capture_diagnostics overlay-editor-import-timeout
   exit 32
 fi
-sleep 3
+
+# Regression: after the overlay is present, the debug bridge calls the production
+# removeClipAt() path for the original red/hue-cycling source, then imports a
+# distinct solid-green video through addClip(replaceExisting=true).
+replacement_complete=false
+for attempt in $(seq 1 30); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime > emulator-screenshots/video-replacement-logcat.txt 2>&1 || true
+  if grep -Fq "EDITOR_SMOKE_CLIP_REPLACED newUri=file://$app_internal_replacement_video" emulator-screenshots/video-replacement-logcat.txt \
+     && grep -Fq "EDITOR_SMOKE_REPLACEMENT_THUMBNAIL_READY uri=file://$app_internal_replacement_video" emulator-screenshots/video-replacement-logcat.txt; then
+    replacement_complete=true
+    break
+  fi
+  if grep -q "EDITOR_SMOKE_REPLACEMENT_SKIPPED" emulator-screenshots/video-replacement-logcat.txt; then
+    echo "Video replacement regression path was skipped."
+    collect_capture_diagnostics video-replacement-skipped
+    exit 41
+  fi
+  echo "Waiting for old-video removal, new-video import, and its first exact thumbnail (attempt $attempt/30)"
+  sleep 2
+done
+if [ "$replacement_complete" != true ]; then
+  echo "Old filmstrip was not replaced by the new video fixture within 60 seconds."
+  collect_capture_diagnostics video-replacement-timeout
+  exit 42
+fi
+if ! take_screen emulator-screenshots/editor-after-video-replacement.png; then
+  collect_capture_diagnostics video-replacement-capture-failure
+  exit 6
+fi
+dump_hierarchy editor-after-video-replacement.xml emulator-screenshots/editor-after-video-replacement.xml || true
+if ! grep -Fq "editor-test-video-replacement.mp4" emulator-screenshots/editor-after-video-replacement.xml; then
+  echo "The visible video lane does not identify the replacement source."
+  collect_capture_diagnostics video-replacement-source-not-visible
+  exit 43
+fi
+if grep -Fq "editor-test-video.mp4" emulator-screenshots/editor-after-video-replacement.xml; then
+  echo "The deleted source is still exposed in the current video lane hierarchy."
+  collect_capture_diagnostics old-video-still-in-lane
+  exit 44
+fi
+python3 - emulator-screenshots/editor-after-video-replacement.xml emulator-screenshots/editor-after-video-replacement.png <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+from PIL import Image
+
+try:
+    root = ET.parse(sys.argv[1]).getroot()
+except (OSError, ET.ParseError) as error:
+    raise SystemExit(f"Cannot parse replacement editor hierarchy: {error}")
+
+bounds = None
+for node in root.iter("node"):
+    desc = node.attrib.get("content-desc", "")
+    if desc.startswith("Klip 1:") and "editor-test-video-replacement.mp4" in desc:
+        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+        if match:
+            bounds = tuple(map(int, match.groups()))
+            break
+if bounds is None:
+    raise SystemExit("Replacement clip accessibility bounds were not found.")
+
+x1, y1, x2, y2 = bounds
+image = Image.open(sys.argv[2]).convert("RGB")
+crop = image.crop((x1 + 3, y1 + 3, x2 - 3, y2 - 3))
+pixels = list(crop.getdata())
+green = sum(1 for r, g, b in pixels if g > 115 and g > r * 1.45 and g > b * 1.20)
+ratio = green / max(1, len(pixels))
+print(f"Replacement filmstrip green-pixel ratio: {ratio:.3f}")
+if green < 80 or ratio < 0.08:
+    raise SystemExit("Replacement filmstrip does not render the new green source frames.")
+PY
+sleep 1
 if ! take_screen emulator-screenshots/editor.png; then
   collect_capture_diagnostics video-editor-capture-failure
   exit 6
