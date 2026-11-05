@@ -129,6 +129,8 @@ class VideoEditorActivity : Activity() {
     private val overlayClips = mutableListOf<OverlayClip>()
     private var nextOverlayId = 1L
     private var selectedOverlayId: Long? = null
+    private var overlayCompositionRefreshGeneration = 0L
+    private var lastOverlayCompositionRefreshUptimeMs = 0L
     private var draftId: String? = null
     private val undoClipHistory = mutableListOf<ClipEditSnapshot>()
     private val redoClipHistory = mutableListOf<ClipEditSnapshot>()
@@ -832,9 +834,6 @@ class VideoEditorActivity : Activity() {
             setBackgroundColor(Color.TRANSPARENT)
             visibility = View.GONE
             isClickable = true
-            // Keep the transparent gesture target above both the TextureView and
-            // the non-clickable selection frame so direct manipulation receives input.
-            elevation = dp(12).toFloat()
             contentDescription = "Bindirmeyi önizlemede tek parmakla taşı, iki parmakla büyüt ve döndür"
         }
         previewFrame.addView(
@@ -6852,6 +6851,45 @@ class VideoEditorActivity : Activity() {
         overlaySelectionFrame.visibility = View.VISIBLE
     }
 
+    /**
+     * A paused CompositionPlayer can keep its already-composited frame when the
+     * mutable overlay transform changes. Seek one source frame away and back so
+     * the compositor evaluates the latest OverlaySettings without rebuilding the
+     * player or blanking the preview surface.
+     */
+    private fun refreshPausedOverlayCompositionFrame(force: Boolean = false) {
+        val composition = timelineCompositionPlayer ?: return
+        if (composition.isPlaying || composition.playWhenReady) return
+
+        val now = SystemClock.uptimeMillis()
+        if (!force && now - lastOverlayCompositionRefreshUptimeMs < 80L) return
+        lastOverlayCompositionRefreshUptimeMs = now
+
+        val totalDurationMs = totalOutputDurationMs().coerceAtLeast(1L)
+        val positionMs = timelinePlayheadMs.coerceIn(0L, totalDurationMs - 1L)
+        val frameStepMs = 84L // Two frames at the 24 fps smoke-test rate.
+        val refreshPositionMs = if (positionMs + frameStepMs < totalDurationMs) {
+            positionMs + frameStepMs
+        } else {
+            (positionMs - frameStepMs).coerceAtLeast(0L)
+        }
+        if (refreshPositionMs == positionMs) return
+
+        val generation = ++overlayCompositionRefreshGeneration
+        composition.seekTo(refreshPositionMs)
+        timelineHandler.postDelayed({
+            if (generation != overlayCompositionRefreshGeneration ||
+                timelineCompositionPlayer !== composition ||
+                composition.isPlaying || composition.playWhenReady
+            ) return@postDelayed
+
+            // Return to the fixed playhead after the compositor has emitted a fresh
+            // frame using the newest overlay transform.
+            composition.seekTo(positionMs)
+            updateOverlaySelectionChrome()
+        }, 70L)
+    }
+
     private fun installOverlayTransformTouch() {
         var gestureOverlay: OverlayClip? = null
         var downX = 0f
@@ -6971,9 +7009,7 @@ class VideoEditorActivity : Activity() {
                     }
                     updateOverlayControlLabels(overlay)
                     updateOverlaySelectionChrome()
-                    // Re-seek the paused composition so mutable overlay transforms
-                    // are rendered live beneath the selection frame during dragging.
-                    timelineCompositionPlayer?.seekTo(timelinePlayheadMs)
+                    refreshPausedOverlayCompositionFrame()
                     true
                 }
                 android.view.MotionEvent.ACTION_POINTER_UP -> {
@@ -7007,7 +7043,7 @@ class VideoEditorActivity : Activity() {
                         // Rebuilding it on ACTION_UP tears down the video surface and leaves
                         // the paused canvas black until another playback prepare. Keep the
                         // current graph alive and request its final frame at the playhead.
-                        timelineCompositionPlayer?.seekTo(timelinePlayheadMs)
+                        refreshPausedOverlayCompositionFrame(force = true)
                         requestPreviewFrameAt(timelinePlayheadMs)
                         updateOverlayTransformTouchAvailability()
                     }
