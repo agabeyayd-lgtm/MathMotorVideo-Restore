@@ -441,7 +441,13 @@ if grep -Fq "editor-test-video.mp4" emulator-screenshots/editor-after-video-repl
   collect_capture_diagnostics old-video-still-in-lane
   exit 44
 fi
-python3 - emulator-screenshots/editor-after-video-replacement.xml emulator-screenshots/editor-after-video-replacement.png <<'PY'
+replacement_visual_ready=false
+for attempt in $(seq 1 25); do
+  if ! take_screen emulator-screenshots/editor-after-video-replacement.png; then
+    collect_capture_diagnostics video-replacement-capture-failure
+    exit 6
+  fi
+  replacement_green_ratio="$(python3 - emulator-screenshots/editor-after-video-replacement.xml emulator-screenshots/editor-after-video-replacement.png <<'PY'
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -469,10 +475,30 @@ crop = image.crop((x1 + 3, y1 + 3, x2 - 3, y2 - 3))
 pixels = list(crop.getdata())
 green = sum(1 for r, g, b in pixels if g > 115 and g > r * 1.45 and g > b * 1.20)
 ratio = green / max(1, len(pixels))
-print(f"Replacement filmstrip green-pixel ratio: {ratio:.3f}")
-if green < 80 or ratio < 0.08:
-    raise SystemExit("Replacement filmstrip does not render the new green source frames.")
+print(f"{ratio:.4f}")
 PY
+)"
+  echo "Replacement filmstrip visible green-pixel ratio attempt $attempt/25: $replacement_green_ratio"
+  if python3 - "$replacement_green_ratio" <<'PY'
+import sys
+try:
+    ratio = float(sys.argv[1])
+except (ValueError, IndexError):
+    raise SystemExit(1)
+raise SystemExit(0 if ratio >= 0.75 else 1)
+PY
+  then
+    replacement_visual_ready=true
+    break
+  fi
+  sleep 2
+done
+if [ "$replacement_visual_ready" != true ]; then
+  echo "Replacement filmstrip did not finish rendering the visible green frames; stale/blank cells remain."
+  collect_capture_diagnostics video-replacement-filmstrip-not-fully-refreshed
+  exit 45
+fi
+echo "PASS: the visible replacement filmstrip is populated with the new green source frames (ratio >= 0.75)."
 sleep 1
 if ! take_screen emulator-screenshots/editor.png; then
   collect_capture_diagnostics video-editor-capture-failure
@@ -739,7 +765,11 @@ except (OSError, ET.ParseError):
     raise SystemExit(1)
 for node in root.iter("node"):
     text = " ".join(node.attrib.get("text", "").split()).casefold()
-    if text == "mp4 dışa aktar" and node.attrib.get("class") == "android.widget.Button":
+    words = text.split()
+    # Turkish case-folding maps capital dotted/dotless I differently from
+    # a hand-written lowercase literal. Match the invariant words instead.
+    is_mp4_export = len(words) >= 3 and words[0] == "mp4" and words[-1] == "aktar"
+    if is_mp4_export and node.attrib.get("class") == "android.widget.Button":
         if node.attrib.get("clickable") != "true" or node.attrib.get("enabled") != "true":
             continue
         match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
