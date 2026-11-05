@@ -1124,7 +1124,7 @@ if ! timeout -k 2s 15s adb -s emulator-5554 shell am start -S \
 fi
 sleep 3
 dump_hierarchy drafts-home.xml emulator-screenshots/drafts-home-window.xml || true
-if [ -s emulator-screenshots/drafts-home-window.xml ] && ! grep -q "TASLAKLAR" emulator-screenshots/drafts-home-window.xml; then
+if [ -s emulator-screenshots/drafts-home-window.xml ] && ! grep -Eqi "TASLAKLAR|Taslaklar" emulator-screenshots/drafts-home-window.xml; then
   echo "Local draft was saved, but the home screen did not expose the draft section."
   collect_capture_diagnostics draft-home-section-missing
   exit 13
