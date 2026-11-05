@@ -10,6 +10,8 @@ import android.net.Uri
 import android.os.Environment
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.graphics.Bitmap
+import android.media.MediaMetadataRetriever
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
@@ -17,6 +19,7 @@ import android.os.Bundle
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.provider.MediaStore
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -25,6 +28,9 @@ import android.view.HapticFeedbackConstants
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -53,13 +59,19 @@ class MainActivity : Activity() {
     private val latestApkUrl = "https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/releases/latest/download/MathMotorVideo.apk"
     private val latestReleaseApi = "https://api.github.com/repos/agabeyayd-lgtm/MathMotorVideo-Restore/releases/latest"
 
-    private val bg = Color.rgb(8, 13, 22)
-    private val panel = Color.rgb(16, 25, 38)
-    private val panelRaised = Color.rgb(23, 36, 53)
-    private val line = Color.rgb(43, 61, 80)
-    private val accent = Color.rgb(64, 232, 198)
-    private val muted = Color.rgb(174, 190, 207)
-    private val white = Color.rgb(245, 248, 252)
+    private val bg = Color.rgb(247, 249, 253)
+    private val panel = Color.WHITE
+    private val panelRaised = Color.rgb(238, 245, 255)
+    private val line = Color.rgb(224, 233, 245)
+    private val accent = Color.rgb(18, 126, 242)
+    private val muted = Color.rgb(105, 120, 145)
+    private val white = Color.rgb(18, 28, 48)
+    private val blueDeep = Color.rgb(11, 65, 184)
+    private val blueMid = Color.rgb(13, 130, 241)
+    private val blueLight = Color.rgb(22, 190, 238)
+    private val pickImageRequest = 2003
+    private val captureVideoRequest = 2004
+    private var allToolsExpanded = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -208,96 +220,211 @@ class MainActivity : Activity() {
     }
 
     private fun buildUi() {
+        window.statusBarColor = blueDeep
+        window.navigationBarColor = Color.WHITE
+        window.decorView.systemUiVisibility =
+            (window.decorView.systemUiVisibility and View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv()) or
+                View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+
+        val screen = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.WHITE)
+        }
         val scroll = ScrollView(this).apply {
-            setBackgroundColor(bg)
+            tag = "mathmotor_home_scroll"
+            setBackgroundColor(Color.WHITE)
             clipToPadding = false
             isFillViewport = true
             overScrollMode = View.OVER_SCROLL_NEVER
         }
-        val root = LinearLayout(this).apply {
+        val page = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(12), dp(16), dp(22))
+            setBackgroundColor(Color.WHITE)
         }
-        scroll.addView(root)
+        scroll.addView(page, ScrollView.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
 
-        // Compact brand row: the primary task now appears much higher on screen.
-        val topBar = LinearLayout(this).apply {
+        // Blue hero with MathMotor identity and a persistent updater control.
+        val hero = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(13), dp(18), dp(20))
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(blueDeep, blueMid, blueLight)
+            )
+        }
+        val top = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        val mark = TextView(this).apply {
-            text = "MM"
-            textSize = 13f
-            setTextColor(Color.rgb(7, 25, 31))
+        top.addView(TextView(this).apply {
+            text = "▶"
+            textSize = 23f
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
-            background = rounded(accent, 13)
-            layoutParams = LinearLayout.LayoutParams(dp(42), dp(42))
-        }
-        topBar.addView(mark)
+            setTextColor(blueMid)
+            background = rounded(Color.WHITE, 13)
+            layoutParams = LinearLayout.LayoutParams(dp(45), dp(45))
+            contentDescription = "MathMotor logosu"
+        })
         val brand = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(11), 0, 0, 0)
-            addView(label("MathMotor Video", 17f, white, true))
-            addView(label("VİDEO DÜZENLEYİCİ", 9f, muted, true))
+            setPadding(dp(10), 0, dp(7), 0)
+            addView(TextView(this@MainActivity).apply {
+                text = "MathMotor"
+                textSize = 20f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(Color.WHITE)
+                includeFontPadding = false
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = "Video Düzenleyici"
+                textSize = 11f
+                setTextColor(Color.rgb(224, 241, 255))
+            })
         }
-        topBar.addView(brand, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        val localTag = label("TELEFONDA", 9f, accent, true).apply {
-            background = rounded(Color.rgb(15, 48, 48), 9)
-            setPadding(dp(10), dp(6), dp(10), dp(6))
-        }
-        topBar.addView(localTag)
-        root.addView(topBar)
-        root.addView(gap(16))
+        top.addView(brand, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
 
-        root.addView(label("VİDEO STÜDYOSU", 10f, accent, true))
-        root.addView(label("Videonu hazırla.", 26f, white, true))
-        root.addView(label("Kes, birleştir, yazı ve ses ekle.", 13f, muted, false).apply {
-            setLineSpacing(dp(2).toFloat(), 1f)
+        val updateFrame = FrameLayout(this)
+        val updateButton = TextView(this).apply {
+            text = "⟳  Güncelleme"
+            textSize = 12f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(13, 45, 88))
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = rounded(Color.rgb(238, 248, 255), 24)
+            isClickable = true
+            isFocusable = true
+            contentDescription = "Uygulama güncellemesini kontrol et"
+            setOnClickListener {
+                performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                checkForUpdates()
+            }
+        }
+        updateFrame.addView(updateButton, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, dp(42), Gravity.CENTER
+        ))
+        updateFrame.addView(View(this).apply {
+            background = rounded(Color.rgb(255, 91, 103), 8)
+            contentDescription = "Güncelleme kontrolü"
+        }, FrameLayout.LayoutParams(dp(9), dp(9), Gravity.TOP or Gravity.END).apply {
+            topMargin = dp(2)
+            rightMargin = dp(2)
         })
-        root.addView(gap(13))
+        top.addView(updateFrame)
 
-        // One clear primary action, with the empty-project option kept secondary.
-        val startCard = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(15), dp(15), dp(15), dp(15))
-            background = rounded(panelRaised, 18).apply { setStroke(dp(1), line) }
+        top.addView(TextView(this).apply {
+            text = "●"
+            textSize = 22f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.argb(38, 255, 255, 255))
+                setStroke(dp(1), Color.rgb(222, 242, 255))
+            }
+            layoutParams = LinearLayout.LayoutParams(dp(42), dp(42)).apply { leftMargin = dp(9) }
+            contentDescription = "Profil ve uygulama bilgileri"
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { showProfilePanel() }
+        })
+        hero.addView(top)
+
+        updateStatus = TextView(this).apply {
+            text = "Sürüm 399  •  Güncelleme kontrolü hazır"
+            textSize = 9f
+            setTextColor(Color.rgb(224, 241, 255))
+            setPadding(dp(55), dp(3), 0, 0)
+            maxLines = 2
         }
-        val cardHeader = LinearLayout(this).apply {
+        hero.addView(updateStatus)
+        hero.addView(gap(17))
+        hero.addView(TextView(this).apply {
+            text = "VIDEO CREATE"
+            textSize = 10f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.rgb(218, 241, 255))
+            letterSpacing = 0.08f
+        })
+        hero.addView(TextView(this).apply {
+            text = "Hızlı Başlangıç  ›"
+            textSize = 24f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.WHITE)
+            setPadding(0, dp(1), 0, dp(12))
+        })
+
+        val actionRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        val cardIcon = TextView(this).apply {
-            text = "✂"
-            textSize = 22f
-            setTextColor(accent)
-            gravity = Gravity.CENTER
-            background = rounded(Color.rgb(16, 57, 57), 12)
-            layoutParams = LinearLayout.LayoutParams(dp(46), dp(46))
-        }
-        cardHeader.addView(cardIcon)
-        val cardCopy = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(11), 0, 0, 0)
-            addView(label("Yeni düzenleme", 16f, white, true))
-            addView(label("Bir videoyla hemen başla.", 11f, muted, false))
-        }
-        cardHeader.addView(cardCopy, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        startCard.addView(cardHeader)
-        startCard.addView(gap(13))
-        startCard.addView(primaryButton("＋   Galeriden video seç") { chooseVideo() }.apply {
-            minHeight = dp(54)
-            textSize = 15f
-        }, matchWrap())
-        startCard.addView(gap(7))
-        startCard.addView(secondaryButton("Boş proje oluştur   ›") { openEditor(null) }.apply {
-            minHeight = dp(44)
-            textSize = 13f
-        }, matchWrap())
-        root.addView(startCard, matchWrap())
+        actionRow.addView(homeActionCard(
+            icon = "+",
+            title = "Yeni video",
+            subtitle = "Videonu düzenle",
+            tint = Color.rgb(225, 246, 255),
+            weight = 1.18f
+        ) { chooseVideo() }, LinearLayout.LayoutParams(0, dp(132), 1.18f))
+        actionRow.addView(gapWidth(10))
+        actionRow.addView(homeActionCard(
+            icon = "▧",
+            title = "Fotoğrafı düzenle",
+            subtitle = "Fotoğrafını düzenle",
+            tint = Color.rgb(242, 240, 255),
+            weight = 0.92f
+        ) { choosePhoto() }, LinearLayout.LayoutParams(0, dp(132), 0.92f))
+        hero.addView(actionRow)
+        page.addView(hero, matchWrap())
 
-        draftSectionGap = gap(14)
-        root.addView(draftSectionGap)
+        val body = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(17), dp(18), dp(24))
+            setBackgroundColor(Color.WHITE)
+        }
+        page.addView(body, matchWrap())
+
+        val recentHeader = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        recentHeader.addView(TextView(this).apply {
+            text = "Son Projeler"
+            textSize = 19f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.rgb(20, 29, 48))
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        recentHeader.addView(TextView(this).apply {
+            text = "Tümünü Gör  ›"
+            textSize = 12f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(accent)
+            setPadding(dp(8), dp(7), 0, dp(7))
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                startActivity(Intent(this@MainActivity, VideoPlayerActivity::class.java))
+            }
+        })
+        body.addView(recentHeader)
+        body.addView(gap(9))
+
+        val recentScroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            clipToPadding = false
+        }
+        recentList = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        recentScroll.addView(recentList, HorizontalScrollView.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+        body.addView(recentScroll, matchWrap())
+        refreshRecentProjects()
+
+        draftSectionGap = gap(12)
+        body.addView(draftSectionGap)
         draftSection = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             visibility = View.GONE
@@ -318,15 +445,14 @@ class MainActivity : Activity() {
             setPadding(dp(8), dp(5), dp(8), dp(5))
         }
         backupActions.addView(draftBackupButton, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        backupActions.addView(View(this), LinearLayout.LayoutParams(dp(6), 1))
+        backupActions.addView(gapWidth(6))
         backupActions.addView(secondaryButton("Yedekten geri yükle") { requestDraftRestore() }.apply {
             minHeight = dp(40)
             textSize = 10f
             setPadding(dp(8), dp(5), dp(8), dp(5))
         })
-        draftSection.addView(gap(8))
+        draftSection.addView(gap(7))
         draftSection.addView(backupActions, matchWrap())
-        draftSection.addView(gap(4))
         draftSection.addView(label(
             "Yedek proje ayarlarını ve zaman çizelgesini saklar; kaynak video ve ses dosyalarını içermez.",
             9f, muted, false
@@ -334,81 +460,316 @@ class MainActivity : Activity() {
         draftList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         draftSection.addView(gap(6))
         draftSection.addView(draftList, matchWrap())
-        root.addView(draftSection, matchWrap())
+        body.addView(draftSection, matchWrap())
         refreshDraftProjects()
 
-        root.addView(gap(20))
-
-        // Compact gallery heading: refresh is an icon action instead of two crowded buttons.
-        val recentHeader = LinearLayout(this).apply {
+        body.addView(gap(17))
+        val toolsHeader = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        val recentTitle = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            addView(label("SON ÇALIŞMALAR", 12f, white, true))
-            addView(label("Dışa aktardığın videolar", 10f, muted, false))
-        }
-        recentHeader.addView(recentTitle, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        val refresh = secondaryButton("↻") {
-            syncGalleryRecords()
-            Toast.makeText(this, "Video galerisi yenileniyor.", Toast.LENGTH_SHORT).show()
-        }.apply {
-            contentDescription = "Galeriyi yenile"
-            minWidth = dp(38)
-            minHeight = dp(38)
-            textSize = 18f
-            setPadding(dp(4), 0, dp(4), 0)
-        }
-        recentHeader.addView(refresh)
-        recentHeader.addView(secondaryButton("Tümünü gör  ›") {
-            startActivity(Intent(this, VideoPlayerActivity::class.java))
-        }.apply {
-            minHeight = dp(38)
+        toolsHeader.addView(TextView(this).apply {
+            text = "Araçlar"
+            textSize = 19f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.rgb(20, 29, 48))
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        toolsHeader.addView(TextView(this).apply {
+            text = "Tümünü gör  ›"
+            textSize = 12f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(accent)
+            setPadding(dp(8), dp(7), 0, dp(7))
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                allToolsExpanded = !allToolsExpanded
+                rebuildHomeToolGrid()
+            }
+        })
+        body.addView(toolsHeader)
+        body.addView(gap(8))
+        toolGridContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        body.addView(toolGridContainer, matchWrap())
+        rebuildHomeToolGrid()
+
+        body.addView(gap(11))
+        body.addView(TextView(this).apply {
+            text = "Videoların telefonunda kalır. Dosyaların MathMotor hesabına yüklenmez."
             textSize = 10f
-            setPadding(dp(8), dp(5), dp(8), dp(5))
-        })
-        root.addView(recentHeader)
-        root.addView(gap(9))
-        recentList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        root.addView(recentList, matchWrap())
-        refreshRecentProjects()
-
-        // Updates remain available inside the app, but no longer dominate the home screen.
-        root.addView(gap(17))
-        val divider = View(this).apply {
-            setBackgroundColor(line)
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1))
-        }
-        root.addView(divider)
-        root.addView(gap(13))
-        val updateHeader = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        val updateCopy = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            addView(label("UYGULAMA GÜNCELLEMESİ", 10f, accent, true))
-            addView(label("Yeni sürüm varsa buradan yükleyebilirsin.", 10f, muted, false))
-        }
-        updateHeader.addView(updateCopy, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        updateHeader.addView(secondaryButton("Kontrol et") { checkForUpdates() }.apply {
-            minHeight = dp(38)
-            textSize = 11f
-            setPadding(dp(10), dp(5), dp(10), dp(5))
-        })
-        root.addView(updateHeader)
-        updateStatus = label("Son sürümü kontrol etmek için aşağıdaki düğmeye dokun.", 10f, muted, false).apply {
-            setPadding(0, dp(6), 0, dp(2))
-        }
-        root.addView(updateStatus)
-
-        root.addView(gap(12))
-        root.addView(label("Videoların telefonunda kalır.", 10f, Color.rgb(130, 153, 174), false).apply {
+            setTextColor(Color.rgb(137, 149, 166))
             gravity = Gravity.CENTER
-            setPadding(0, dp(5), 0, dp(4))
+            setPadding(0, dp(7), 0, dp(3))
         })
-        setContentView(scroll)
+        screen.addView(scroll, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
+        screen.addView(buildBottomNavigation(), matchWrap())
+        setContentView(screen)
+    }
+
+    private lateinit var toolGridContainer: LinearLayout
+
+    private data class HomeTool(
+        val icon: String,
+        val title: String,
+        val detail: String,
+        val action: String
+    )
+
+    private val homeTools = listOf(
+        HomeTool("✂", "AutoCut", "Videoyla başla", "video"),
+        HomeTool("✧", "Rötuş yap", "Renk ve görüntü", "video"),
+        HomeTool("✦", "Yapay zekâ oluşturucu", "Yapay zekâ araçları", "soon"),
+        HomeTool("▧", "Fotoğraf araçları", "Fotoğraf katmanı", "photo"),
+        HomeTool("◉", "Çekim ve kayıt", "Kamerayı aç", "camera"),
+        HomeTool("✧", "Otomatik iyileştir", "Video düzenleme", "video"),
+        HomeTool("▣", "Kapak oluşturma aracı", "Kapak karesi seç", "video"),
+        HomeTool("CC", "Otomatik altyazı", "Metin düzenleme", "video"),
+        HomeTool("✂", "YZ klip aracı", "Klip düzenleme", "video"),
+        HomeTool("◉", "Arka planı kaldır", "Fotoğraf araçları", "soon"),
+        HomeTool("▧", "Yapay zekâ fotoğraf", "Görsel oluşturma", "soon"),
+        HomeTool("☁", "Alan", "Video kütüphanesi", "library"),
+        HomeTool("◴", "Hızı ayarla", "Klip hızını düzenle", "video"),
+        HomeTool("▣", "Pazarlama araçları", "Hazırlanıyor", "soon"),
+        HomeTool("●", "Kayıt", "Kamerayla video çek", "camera"),
+        HomeTool("♙", "Avatar araçları", "Hazırlanıyor", "soon"),
+        HomeTool("▧", "Medya oluşturma", "Hazırlanıyor", "soon")
+    )
+
+    private fun homeActionCard(
+        icon: String,
+        title: String,
+        subtitle: String,
+        tint: Int,
+        weight: Float,
+        action: () -> Unit
+    ): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(13), dp(12), dp(10), dp(11))
+            background = rounded(tint, 20).apply {
+                setStroke(dp(1), Color.argb(150, 255, 255, 255))
+            }
+            isClickable = true
+            isFocusable = true
+            contentDescription = "$title. $subtitle"
+            setOnClickListener {
+                performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                action()
+            }
+            addView(TextView(this@MainActivity).apply {
+                text = icon
+                textSize = if (icon == "+") 33f else 28f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(Color.rgb(10, 27, 52))
+                gravity = Gravity.CENTER
+                background = rounded(Color.WHITE, 12)
+                layoutParams = LinearLayout.LayoutParams(dp(45), dp(45))
+            })
+            addView(gap(7))
+            addView(TextView(this@MainActivity).apply {
+                text = title
+                textSize = if (weight > 1f) 15f else 13f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(Color.rgb(13, 24, 43))
+                maxLines = 2
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = subtitle
+                textSize = 10f
+                setTextColor(Color.rgb(80, 100, 130))
+                maxLines = 1
+            })
+        }
+    }
+
+    private fun rebuildHomeToolGrid() {
+        if (!::toolGridContainer.isInitialized) return
+        toolGridContainer.removeAllViews()
+        val visible = if (allToolsExpanded) homeTools else homeTools.take(9)
+        val rows = visible.chunked(3)
+        rows.forEachIndexed { rowIndex, rowTools ->
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.TOP
+            }
+            rowTools.forEachIndexed { column, tool ->
+                row.addView(homeToolTile(tool), LinearLayout.LayoutParams(0, dp(116), 1f))
+                if (column != rowTools.lastIndex) row.addView(gapWidth(6))
+            }
+            repeat(3 - rowTools.size) {
+                row.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
+            }
+            toolGridContainer.addView(row, matchWrap())
+            if (rowIndex != rows.lastIndex) toolGridContainer.addView(gap(3))
+        }
+        toolGridContainer.addView(TextView(this).apply {
+            text = if (allToolsExpanded) "Daha az göster  ↑" else "Tüm araçlar (32)  ›"
+            textSize = 12f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(accent)
+            gravity = Gravity.CENTER
+            setPadding(dp(10), dp(12), dp(10), dp(10))
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                allToolsExpanded = !allToolsExpanded
+                rebuildHomeToolGrid()
+            }
+        }, matchWrap())
+    }
+
+    private fun homeToolTile(tool: HomeTool): View {
+        val cell = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(3), dp(5), dp(3), dp(5))
+            isClickable = true
+            isFocusable = true
+            contentDescription = tool.title
+            setOnClickListener { handleHomeTool(tool) }
+        }
+        cell.addView(TextView(this).apply {
+            text = tool.icon
+            textSize = if (tool.icon == "CC") 20f else 25f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(16, 38, 68))
+            background = rounded(
+                when (tool.title) {
+                    "Rötuş yap", "Yapay zekâ oluşturucu", "Otomatik iyileştir" -> Color.rgb(237, 244, 255)
+                    "Fotoğraf araçları", "Kapak oluşturma aracı" -> Color.rgb(237, 248, 255)
+                    else -> Color.rgb(244, 247, 252)
+                }, 18
+            )
+            layoutParams = LinearLayout.LayoutParams(dp(48), dp(48))
+        })
+        cell.addView(gap(5))
+        cell.addView(TextView(this).apply {
+            text = tool.title
+            textSize = 11f
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            setTextColor(Color.rgb(25, 34, 54))
+            gravity = Gravity.CENTER
+            maxLines = 2
+            minLines = 2
+            setLineSpacing(dp(1).toFloat(), 1f)
+        })
+        return cell
+    }
+
+    private fun handleHomeTool(tool: HomeTool) {
+        performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+        when (tool.action) {
+            "video" -> {
+                Toast.makeText(this, tool.title + ": Düzenlemek için bir video seç.", Toast.LENGTH_SHORT).show()
+                chooseVideo()
+            }
+            "photo" -> choosePhoto()
+            "camera" -> captureVideo()
+            "library" -> startActivity(Intent(this, VideoPlayerActivity::class.java))
+            else -> showToolNotReady(tool.title, tool.detail)
+        }
+    }
+
+    private fun showToolNotReady(title: String, detail: String) {
+        android.app.AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(detail + " aracı MathMotor'a henüz eklenmedi. Ana düzenleme, video, kapak ve fotoğraf katmanı akışları kullanılabilir.")
+            .setPositiveButton("Tamam", null)
+            .show()
+    }
+
+    private fun buildBottomNavigation(): View {
+        val nav = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(dp(4), dp(6), dp(4), dp(5))
+            setBackgroundColor(Color.WHITE)
+            elevation = dp(10).toFloat()
+        }
+        val tabs = listOf(
+            Triple("✂", "Düzenle", "home"),
+            Triple("▣", "Şablonlar", "templates"),
+            Triple("✧", "YZ Lab", "ai"),
+            Triple("▱", "Kütüphane", "library"),
+            Triple("♙", "Ben", "profile")
+        )
+        tabs.forEachIndexed { index, item ->
+            val selected = index == 0
+            val tab = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setPadding(0, dp(3), 0, dp(2))
+                isClickable = true
+                isFocusable = true
+                contentDescription = item.second
+                setOnClickListener {
+                    when (item.third) {
+                        "home" -> window.decorView.findViewWithTag<ScrollView>("mathmotor_home_scroll")?.smoothScrollTo(0, 0)
+                        "templates" -> showToolNotReady("Şablonlar", "Şablon galerisi")
+                        "ai" -> showToolNotReady("YZ Lab", "Yapay zekâ")
+                        "library" -> startActivity(Intent(this@MainActivity, VideoPlayerActivity::class.java))
+                        "profile" -> showProfilePanel()
+                    }
+                }
+            }
+            tab.addView(TextView(this).apply {
+                text = item.first
+                textSize = 23f
+                gravity = Gravity.CENTER
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(if (selected) accent else Color.rgb(151, 163, 181))
+            })
+            tab.addView(TextView(this).apply {
+                text = item.second
+                textSize = 9f
+                typeface = if (selected) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+                gravity = Gravity.CENTER
+                setTextColor(if (selected) accent else Color.rgb(151, 163, 181))
+            })
+            nav.addView(tab, LinearLayout.LayoutParams(0, dp(53), 1f))
+        }
+        return nav
+    }
+
+    private fun showProfilePanel() {
+        val version = runCatching {
+            val info = packageManager.getPackageInfo(packageName, 0)
+            if (Build.VERSION.SDK_INT >= 28) info.longVersionCode.toString() else info.versionCode.toString()
+        }.getOrDefault("399")
+        android.app.AlertDialog.Builder(this)
+            .setTitle("MathMotor")
+            .setMessage("Video Düzenleyici\nSürüm " + version + "\n\nProjelerin telefonunda saklanır.")
+            .setPositiveButton("Güncellemeyi kontrol et") { _, _ -> checkForUpdates() }
+            .setNeutralButton("Kütüphane") { _, _ ->
+                startActivity(Intent(this, VideoPlayerActivity::class.java))
+            }
+            .setNegativeButton("Kapat", null)
+            .show()
+    }
+
+    private fun choosePhoto() {
+        val pick = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "image/*"
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+        try {
+            startActivityForResult(pick, pickImageRequest)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Fotoğraf seçici açılamadı: " + (e.message ?: "bilinmeyen hata"), Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun captureVideo() {
+        try {
+            startActivityForResult(Intent(MediaStore.ACTION_VIDEO_CAPTURE), captureVideoRequest)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Kamera açılamadı: " + (e.message ?: "bilinmeyen hata"), Toast.LENGTH_LONG).show()
+        }
     }
 
     /**
