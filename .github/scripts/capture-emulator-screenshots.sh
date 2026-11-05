@@ -391,6 +391,53 @@ if [ "$video_clip_loaded" != true ]; then
   collect_capture_diagnostics video-editor-clip-import-timeout
   exit 4
 fi
+
+# Verify the editor's real inner project canvas is fitted and centered inside
+# the dark work stage. The deterministic fixture is 360x640 (9:16).
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTest:I \
+  > emulator-screenshots/preview-canvas-logcat.txt 2>&1 || true
+python3 - emulator-screenshots/preview-canvas-logcat.txt <<'PY'
+import math
+import re
+import sys
+
+lines = open(sys.argv[1], errors="replace").read().splitlines()
+matches = [line for line in lines if "PREVIEW_CANVAS_BOUNDS" in line]
+if not matches:
+    raise SystemExit("Editor did not log the measured preview project-canvas bounds.")
+line = matches[-1]
+match = re.search(
+    r"stage=(\d+)x(\d+) canvas=(\d+)x(\d+) offset=(\d+),(\d+) aspect=([0-9.]+)",
+    line,
+)
+if not match:
+    raise SystemExit(f"Malformed preview canvas bounds marker: {line}")
+stage_w, stage_h, canvas_w, canvas_h, left, top = map(int, match.groups()[:6])
+aspect = float(match.group(7))
+expected_w = max(1, min(stage_w, int(stage_h * aspect)))
+expected_h = max(1, min(stage_h, int(stage_w / aspect)))
+expected_left = (stage_w - expected_w) // 2
+expected_top = (stage_h - expected_h) // 2
+if stage_w <= 0 or stage_h <= 0:
+    raise SystemExit(f"Invalid preview work-stage size: {stage_w}x{stage_h}")
+if (canvas_w, canvas_h, left, top) != (
+    expected_w, expected_h, expected_left, expected_top
+):
+    raise SystemExit(
+        "Project canvas is not aspect-fitted and centered: "
+        f"stage={stage_w}x{stage_h}, observed={canvas_w}x{canvas_h}@{left},{top}, "
+        f"expected={expected_w}x{expected_h}@{expected_left},{expected_top}"
+    )
+if abs(canvas_w / canvas_h - 9 / 16) > 0.002:
+    raise SystemExit(
+        f"Project canvas does not match the 9:16 source fixture: {canvas_w}x{canvas_h}"
+    )
+print(
+    "PASS: project canvas is centered, clipped to the stage and preserves 9:16: "
+    f"{canvas_w}x{canvas_h} inside {stage_w}x{stage_h} at {left},{top}"
+)
+PY
+
 overlay_loaded=false
 for attempt in $(seq 1 20); do
   timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime > emulator-screenshots/overlay-load-logcat.txt 2>&1 || true
