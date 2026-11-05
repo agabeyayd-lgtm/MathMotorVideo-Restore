@@ -54,7 +54,7 @@ jobs:
           echo "ANDROID_HOME=$ANDROID_HOME"
           test -x "$ANDROID_HOME/build-tools/36.0.0/apksigner"
 
-      - name: Download current signed 397 release
+      - name: Download current signed 398 release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -64,8 +64,8 @@ jobs:
           code="$(RELEASE_JSON="$release_json" python3 -c 'import json,os,re; body=json.loads(os.environ["RELEASE_JSON"]).get("body") or ""; m=re.search(r"versionCode\s*=\s*(\d+)", body, re.I); print(m.group(1) if m else "")')"
           echo "Latest signed release tag: $tag"
           echo "Latest signed release versionCode: $code"
-          if [ "$code" != "397" ]; then
-            echo "::error::Expected latest signed release versionCode 397, found '$code'. Stop and review release state."
+          if [ "$code" != "398" ]; then
+            echo "::error::Expected latest signed release versionCode 398, found '$code'. Stop and review release state."
             exit 1
           fi
           mkdir -p "$RUNNER_TEMP/published-release"
@@ -177,13 +177,13 @@ jobs:
             echo "$source_name signer SHA-256: $candidate_fingerprint"
             echo "- $source_name signer SHA-256: \`$candidate_fingerprint\`" >> "$GITHUB_STEP_SUMMARY"
             if [ "$candidate_fingerprint" = "$published_fingerprint" ]; then
-              echo "::notice::$source_name MATCHES the published 397 signer."
+              echo "::notice::$source_name MATCHES the published 398 signer."
               echo "- $source_name result: MATCH" >> "$GITHUB_STEP_SUMMARY"
               echo "::endgroup::"
               return 0
             fi
 
-            echo "::warning::$source_name does not match the published 397 signer."
+            echo "::warning::$source_name does not match the published 398 signer."
             echo "- $source_name result: MISMATCH" >> "$GITHUB_STEP_SUMMARY"
             echo "::endgroup::"
             return 1
@@ -204,7 +204,7 @@ jobs:
             fi
             normalize_properties "$bundle_dir/keystore.properties"
             if ! try_candidate "MMV_SIGNING_BUNDLE_B64 (publisher-selected)" "$bundle_dir/keystore.properties"; then
-              echo "::error::The signing bundle selected by the publisher does not match the published 397 certificate."
+              echo "::error::The signing bundle selected by the publisher does not match the published 398 certificate."
               exit 1
             fi
           elif [ -n "$ANDROID_KEYSTORE_BASE64" ] && [ -n "$ANDROID_KEYSTORE_PASSWORD" ] \
@@ -225,7 +225,7 @@ jobs:
             } > "$legacy_dir/keystore.properties"
             normalize_properties "$legacy_dir/keystore.properties"
             if ! try_candidate "ANDROID_KEYSTORE_* (publisher-selected)" "$legacy_dir/keystore.properties"; then
-              echo "::error::The legacy signing source selected by the publisher does not match the published 397 certificate."
+              echo "::error::The legacy signing source selected by the publisher does not match the published 398 certificate."
               exit 1
             fi
           else
@@ -233,5 +233,5 @@ jobs:
             exit 1
           fi
 
-          echo "The exact signing source selected by the publisher matches the published 397 certificate. No release was published."
+          echo "The exact signing source selected by the publisher matches the published 398 certificate. No release was published."
           echo "- Overall result: MATCH (publisher-selected source)" >> "$GITHUB_STEP_SUMMARY"
