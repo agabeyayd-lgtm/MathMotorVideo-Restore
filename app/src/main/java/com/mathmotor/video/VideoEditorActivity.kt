@@ -6168,12 +6168,18 @@ class VideoEditorActivity : Activity() {
                     return@runOnUiThread
                 }
                 recordClipEdit()
+                val startsFreshVideoTimeline = replaceExisting || clips.isEmpty()
                 if (replaceExisting) {
                     clips.map { it.uri }.distinct().forEach { oldUri ->
                         invalidateTimelineThumbnailSource(oldUri, "video-replaced")
                     }
                     clips.clear()
                     selectedClipIndex = -1
+                }
+                if (startsFreshVideoTimeline) {
+                    timelineHorizontalScrollX = 0
+                    pendingTimelineScrollX = 0
+                    timelinePlayheadMs = 0L
                 }
                 timelinePreviewLoaded = false
                 previewSingleClip = true
@@ -7627,6 +7633,9 @@ class VideoEditorActivity : Activity() {
                 recordClipEdit()
                 val startsFreshTimeline = replaceExisting || clips.isEmpty()
                 if (replaceExisting) {
+                    clips.map { it.uri }.distinct().forEach { oldUri ->
+                        invalidateTimelineThumbnailSource(oldUri, "video-list-replaced")
+                    }
                     clips.clear()
                     selectedClipIndex = -1
                 }
