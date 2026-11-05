@@ -819,3 +819,12 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Source commits: `7386c23` (math helper), `59339e3` (unit tests), `e61d6ad` (Activity integration/log marker), `0ce6919` (emulator assertion). Verification awaits the PR-triggered run for this latest branch head; no new green result or APK is claimed for these follow-up changes yet.
 
 - Layout reflow follow-up: a `previewCanvas` size-change listener now recomputes editable text geometry and overlay selection/paused layers after the inner canvas has actually completed layout. This avoids calculating touch/selection bounds against the previous dimensions immediately after changing the output aspect preset. Source commit: `2218a22`; CI for this final follow-up commit is pending.
+
+
+## Unified preview/export layer anchors — 2026-11-06
+
+- Added shared normalized-center conversions to `PreviewCanvasMath`: normalized x/y fractions become Android preview translations and Media3 normalized frame anchors using one rule, including Media3's inverted Y axis.
+- Text preview no longer maps its center only across the remaining safe width/height of the text box. Text and image/video overlays now position their centers from the same project-canvas fractions used by export; content that crosses the canvas edge is clipped by the canvas rather than silently repositioned inward.
+- Removed the old text export anchor clamps so edge positions and text animation offsets are not pulled back inside the frame differently from the preview.
+- Added unit cases for left/center/right anchors, top/center/bottom Y mapping and non-finite fallback. Extended emulator coverage to confirm the visible magenta overlay pixels do not escape the actual green video canvas after direct dragging.
+- Source commits: `19cd81b` (coordinate mapping), `8a215fd` (unit coverage), `49a9281` (Activity wiring), `102c5c1` (animation anchor parity), `4b772a8` (visual clipping assertion). **Latest follow-up commits await their own build and emulator result.**
