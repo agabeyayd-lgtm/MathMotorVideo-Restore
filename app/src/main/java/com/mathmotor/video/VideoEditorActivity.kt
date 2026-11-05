@@ -9951,10 +9951,20 @@ class VideoEditorActivity : Activity() {
                             android.util.Log.e("EditorExportTest", "EXPORT_ENCODING_FAILED", exportException)
                         }
                         tempOutput.delete()
+                        val causeSummary = generateSequence<Throwable?>(exportException) { it.cause }
+                            .take(6)
+                            .map { cause ->
+                                cause.message?.takeIf { it.isNotBlank() } ?: cause.javaClass.simpleName
+                            }
+                            .distinct()
+                            .joinToString(" → ")
+                            .ifBlank { "Kod ${exportException.errorCode}" }
                         runOnUiThread {
                             exporting = false
                             exportButton.isEnabled = true
-                            status.text = "DIŞA AKTARMA BAŞARISIZ\n${exportException.message ?: "Kod ${exportException.errorCode}"}"
+                            // Show nested asset/decoder failures instead of hiding them
+                            // behind Media3's generic "Asset loader error" headline.
+                            status.text = "DIŞA AKTARMA BAŞARISIZ\n$causeSummary"
                             Toast.makeText(this@VideoEditorActivity, status.text, Toast.LENGTH_LONG).show()
                         }
                     }
