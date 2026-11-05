@@ -724,3 +724,10 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - The latest full emulator run stopped later at the thumbnail/playhead alignment helper: after five measured gestures, the remaining center difference was 4 physical pixels. This was a test-coordinate tolerance failure, not an export or replacement failure. The test now accepts a 5px residual (under 3dp at the emulator density) in both preparation and pixel-verification stages.
 - The MP4 save path now checks the persisted MediaStore file descriptor size (and the legacy target file size) is greater than zero before reporting success. Debug export logs include the encoded byte count.
 - These changes require a fresh complete emulator run; the full timeline scrub/playback/autosave suite has not yet passed on the current PR head. No merge, version bump, or signed release is claimed here.
+
+
+### 2026-11-05 thumbnail-diversity test-fixture correction
+
+- The API 35 run reached the real MP4 export path and saved a non-empty MP4 successfully. The later `1/8 unique thumbnails` assertion was a test-fixture mismatch: the replacement video was intentionally a single solid-green frame repeated for all timestamps, while the generic frame-diversity assertion requires time-varying pixels.
+- The replacement fixture now keeps the green identity needed to detect stale red frames but adds a small time-based hue variation. The replacement green-pixel threshold remains 75%; the thumbnail-diversity assertion can now independently check that multiple timestamps produce distinct images.
+- This corrects the test input, not an asserted app-code defect. A fresh full emulator run is required to validate it; merge and signed release remain blocked until that run passes.
