@@ -1,3 +1,14 @@
+## Focused fix — first-video placement and export asset diagnostics — 2026-11-05
+
+- Working branch: `fix/export-asset-diagnostics-and-empty-video-start`, based on current `main` after the 398 release-trigger commit. No versionCode, release marker, signing or publish workflow changes.
+- **Timeline finding:** the blue `editor.png` strip visible after deleting the main video is an independent image-overlay lane, not the deleted main-video filmstrip. Independent overlay/text/audio lanes are intentionally preserved. The bug was that `addClipsInOrder()` used the whole project duration as the insertion point even when the main-video clip list was empty; a retained 10-second overlay therefore pushed the next main video to 00:10. New first-video insertion now starts at 00:00 and overlaps retained independent lanes; adding a later video while a main-video clip exists still appends after the project content.
+- Added `TimelineClipInsertionMath` and unit coverage for overlay-only projects, normal append behavior, and negative duration clamping.
+- **Export finding:** the screenshot exposes Media3's generic `Asset loader error`, but does not include the underlying cause or identify which asset failed. The export error callback now always writes the full `ExportException` cause/stack, error code, composition summary, video/overlay counts and image-overlay count to logcat under `MathMotorExport`. This is diagnostic instrumentation, not a claim that MP4 export is fixed. The next reproduction can identify the failing source asset and decoder/URI cause without relying on the short toast.
+- Existing image-overlay export already sets `MediaItem.setImageDurationMs()` and `EditedMediaItem.setFrameRate(30)`, matching the current Media3 image-input requirements; do not change that path speculatively without the captured cause.
+- Verification boundary: focused unit tests, Gradle build, emulator export reproduction and device MP4 export are pending. No APK or green check is claimed.
+
+---
+
 ## PR #23 — paused overlay direct editing and version 397 verified — 2026-11-05
 
 - PR: [#23 — Show paused overlays and enable CapCut-style direct canvas editing](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/pull/23). All current source, build, emulator, and release-signing checks are green.
