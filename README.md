@@ -833,3 +833,8 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 ### Preview canvas architecture
 
 The editor preview separates the dark work stage from the fitted project canvas. The player, paused-frame image, editable text, image/video overlays, selection chrome and gesture surfaces share the inner canvas bounds; the outer stage is only workspace. The canvas is fitted to the active source-video aspect ratio and clips anything outside its frame. Preview geometry and overlay gesture fractions therefore use the same project-frame dimensions rather than the full stage.
+
+
+### Preview canvas geometry tests
+
+The aspect-fit/centering calculation is centralized in `PreviewCanvasMath` and covered by JVM tests for 9:16 portrait, 16:9 landscape, square output, invalid ratios, empty stages, and stage-boundary containment. The emulator smoke script also checks the measured inner-canvas bounds against the dark preview stage for its deterministic 9:16 source fixture.
