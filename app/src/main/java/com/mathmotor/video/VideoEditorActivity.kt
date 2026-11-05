@@ -812,7 +812,9 @@ class VideoEditorActivity : Activity() {
             )
         )
         previewFrameOverlay = ImageView(this).apply {
-            scaleType = ImageView.ScaleType.FIT_CENTER
+            // The paused raw source frame must fill the same project canvas as
+            // the live composition when a non-source output aspect is selected.
+            scaleType = ImageView.ScaleType.CENTER_CROP
             setBackgroundColor(Color.BLACK)
             visibility = View.GONE
             contentDescription = "Oynatma noktasındaki tam video karesi"
