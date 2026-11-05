@@ -1,1 +1,1 @@
-Signing verification for the next editor update: compare the configured Actions signing source with app-v8.3-63 (versionCode 396) before publishing versionCode 397. Verification only; this file does not publish an APK.
+Signing verification for the next editor update: compare the exact publisher-selected Actions signing source with the latest signed app release (versionCode 398) before publishing versionCode 399 (8.32-capcut-editor). Verification only; this file does not publish an APK.

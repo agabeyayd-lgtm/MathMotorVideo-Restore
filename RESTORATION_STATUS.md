@@ -758,3 +758,13 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Increased the deterministic replacement fixture's hue progression to `t*24` degrees. A local FFmpeg reproduction at the exact eight assertion timestamps produced 8/8 distinct 3×3 sample fingerprints while retaining a 100% green-pixel ratio under the workflow's green test (threshold: at least 75%). This is a preflight check only; Android decoder/emulator confirmation is still pending.
 - Run 849 also showed the new Play control remained accessible and the replacement/MP4-export checks passed; the stale-player teardown callback was no longer poisoning the new preview state in this scenario. The remaining red assertion was fixture diversity only.
 - Do not weaken the 75% green requirement or the 75% unique-frame requirement to make this pass. Re-run the complete emulator workflow against the revised fixture; merge, version bump, and signed release remain blocked until the full run is green.
+
+---
+
+## Signed update candidate — version 399 — 2026-11-05
+
+- Candidate: `versionCode=399`, `versionName=8.32-capcut-editor`; base is main merge commit `42fff263`.
+- Scope is the already-verified first-video-at-zero/gallery-replacement correction and detailed Media3 export failure diagnostics. No editor redesign or unrelated feature changes.
+- Before publication, the release-signing workflow is updated to compare the exact publisher-selected Actions signing source against the latest signed release, expected `versionCode=398`. It must pass before the 399 release trigger is changed.
+- Required gates: unit tests/debug compile, signed APK build, signing certificate continuity against 398, and Android 35 emulator smoke test. The emulator's MP4 fixture is not a substitute for testing the user's actual gallery asset on the physical phone.
+- Publication is deliberately separated from this candidate PR. Do not touch `.github/release-trigger.txt` until the signing and build gates are green.
