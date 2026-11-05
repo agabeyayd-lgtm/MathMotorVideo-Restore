@@ -4905,9 +4905,7 @@ class VideoEditorActivity : Activity() {
         if (clips.isEmpty()) return
         val wasPlaying = timelineCompositionPlayer?.playWhenReady == true
         val position = timelinePlayheadMs.coerceIn(0L, totalOutputDurationMs())
-        timelineCompositionPlayer?.release()
-        timelineCompositionPlayer = null
-        timelinePreviewLoaded = false
+        releaseTimelineCompositionPlayer()
         ensureTimelinePreviewLoaded()
         timelineCompositionPlayer?.seekTo(position)
         timelineCompositionPlayer?.playWhenReady = wasPlaying
@@ -4952,18 +4950,37 @@ class VideoEditorActivity : Activity() {
         player?.playWhenReady=false
         timelineCompositionPlayer?.playWhenReady=false
     }
+
+    /**
+     * Detach a composition player before releasing it. Media3 can surface a
+     * release-time ExoTimeoutException through its listener while teardown is
+     * in progress; a player that is already being discarded must not put the
+     * replacement timeline into the ERROR state or overwrite its controls.
+     */
+    private fun releaseTimelineCompositionPlayer() {
+        val previous = timelineCompositionPlayer
+        timelineCompositionPlayer = null
+        timelinePreviewLoaded = false
+        if (previous == null) return
+
+        runCatching { previous.playWhenReady = false }
+        if (::playerView.isInitialized && playerView.player === previous) {
+            playerView.player = null
+        }
+        runCatching { previous.release() }.onFailure {
+            android.util.Log.w("MathMotorTimeline", "Composition player release failed during teardown", it)
+        }
+    }
     private fun showSingleClipPreview(){
         hidePreviewFrameOverlay()
-        timelineCompositionPlayer?.release()
-        timelineCompositionPlayer=null
-        timelinePreviewLoaded=false
+        releaseTimelineCompositionPlayer()
         if(::playerView.isInitialized)playerView.player=player
     }
     private fun refreshTimelineSourceAudio(){
         if(!timelinePreviewLoaded)return
         val wasPlaying=timelineCompositionPlayer?.playWhenReady==true
         val position=timelinePlayheadMs
-        timelineCompositionPlayer?.release();timelineCompositionPlayer=null;timelinePreviewLoaded=false
+        releaseTimelineCompositionPlayer()
         ensureTimelinePreviewLoaded()
         timelineCompositionPlayer?.seekTo(position)
         timelineCompositionPlayer?.playWhenReady=wasPlaying
@@ -4975,20 +4992,30 @@ class VideoEditorActivity : Activity() {
             "TIMELINE_PREVIEW_INIT clips=${clips.size} playheadMs=$timelinePlayheadMs playerViewInitialized=${::playerView.isInitialized}")
         previewSingleClip=false
         pauseActivePreview()
-        runCatching{timelineCompositionPlayer?.release()}
-        timelineCompositionPlayer=null
+        releaseTimelineCompositionPlayer()
         try{
             val comp = CompositionPlayer.Builder(this).build()
             if (timelineSyncTestEnabled) android.util.Log.i("TimelineSyncTest", "TIMELINE_PREVIEW_BUILDER_OK")
             comp.addListener(object:androidx.media3.common.Player.Listener{
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
+                    if (timelineCompositionPlayer !== comp) return
                     if (isPlaying) hidePreviewFrameOverlay()
                     updateOverlaySelectionChrome()
                 }
                 override fun onVideoSizeChanged(videoSize:androidx.media3.common.VideoSize){
-                    playerView.post{updatePreviewCanvasSize()}
+                    if (timelineCompositionPlayer !== comp) return
+                    playerView.post{
+                        if (timelineCompositionPlayer === comp) updatePreviewCanvasSize()
+                    }
                 }
                 override fun onPlayerError(error:androidx.media3.common.PlaybackException){
+                    if (timelineCompositionPlayer !== comp) {
+                        android.util.Log.i(
+                            "MathMotorTimeline",
+                            "Ignoring error from released composition player: ${error.message}"
+                        )
+                        return
+                    }
                     android.util.Log.e("MathMotorTimeline","Composition player failed",error)
                     timelinePreviewError = error.message ?: "Media3 oynatma hatası"
                     timelinePlaybackState = TimelinePlaybackState.ERROR
@@ -4996,6 +5023,7 @@ class VideoEditorActivity : Activity() {
                     status.text = "Oynatıcı hatası: " + timelinePreviewError
                 }
                 override fun onPlaybackStateChanged(playbackState: Int) {
+                    if (timelineCompositionPlayer !== comp) return
                     if (playbackState == androidx.media3.common.Player.STATE_READY &&
                         overlayClips.isNotEmpty()
                     ) {
@@ -5036,7 +5064,7 @@ class VideoEditorActivity : Activity() {
             android.util.Log.e("MathMotorTimeline", "Timeline preview setup failed", error)
             if (timelineSyncTestEnabled) android.util.Log.e("TimelineSyncTest",
                 "TIMELINE_PREVIEW_FAILED type=${error.javaClass.name} message=${error.message}", error)
-            timelineCompositionPlayer?.release();timelineCompositionPlayer=null;timelinePreviewLoaded=false
+            releaseTimelineCompositionPlayer()
             playerView.player=player
             status.text="Zaman çizelgesi önizlemesi kurulamadı: ${error.message ?: error.javaClass.simpleName}"
         }
@@ -7448,9 +7476,7 @@ class VideoEditorActivity : Activity() {
         val wasPlaying = timelineCompositionPlayer?.playWhenReady == true
         val position = timelinePlayheadMs
         pauseActivePreview()
-        runCatching { timelineCompositionPlayer?.release() }
-        timelineCompositionPlayer = null
-        timelinePreviewLoaded = false
+        releaseTimelineCompositionPlayer()
         if (clips.isNotEmpty()) {
             ensureTimelinePreviewLoaded()
             seekTimelinePreview(position.coerceAtMost(totalOutputDurationMs()))
@@ -7742,8 +7768,9 @@ class VideoEditorActivity : Activity() {
         refreshTimelineAfterClipChange()
         loadTrimControls()
         if(selected==null){
-            pauseActivePreview();timelineCompositionPlayer?.release();timelineCompositionPlayer=null
-            timelinePreviewLoaded=false;player?.clearMediaItems()
+            pauseActivePreview()
+            releaseTimelineCompositionPlayer()
+            player?.clearMediaItems()
         }else{
             ensureTimelinePreviewLoaded()
             seekTimelinePreview(timelinePlayheadMs)
@@ -10082,8 +10109,7 @@ class VideoEditorActivity : Activity() {
         playerView.player = null
         player?.release()
         player = null
-        timelineCompositionPlayer?.release()
-        timelineCompositionPlayer = null
+        releaseTimelineCompositionPlayer()
         musicPreviewPlayer?.release()
         musicPreviewPlayer = null
         soundPreviewPlayer?.release()
