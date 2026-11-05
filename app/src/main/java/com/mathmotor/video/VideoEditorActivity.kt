@@ -7017,11 +7017,8 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun overlayCanvasSize(): Pair<Float, Float> {
-        val activeIndex = activeClipIndexAt(timelinePlayheadMs)
-        val mainClip = clips.getOrNull(activeIndex ?: selectedClipIndex) ?: clips.firstOrNull()
-        val aspect = mainClip?.let { timelineVideoAspectRatio(it.uri) }
-            ?.takeIf { it.isFinite() && it > 0f }
-            ?: TimelineThumbnailMath.DEFAULT_SOURCE_ASPECT_RATIO
+        // Fractions and gesture deltas are measured against the same fitted
+        // project-frame view used by the player and every other visual layer.
         val width = previewCanvas.width.toFloat().coerceAtLeast(1f)
         val height = previewCanvas.height.toFloat().coerceAtLeast(1f)
         return width to height
