@@ -828,3 +828,8 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - The photo picker opens the selected image in the editor as an independent image overlay; it does not claim unsupported standalone photo retouching tools.
 - First build and unit tests passed. The first emulator run reached the final draft check but the Android document picker remained in the foreground after export. CI now explicitly restarts MainActivity before checking the saved-draft section; the section heading is uppercase to match the accessibility assertion.
 - Candidate PR #28 is not merged or published. Awaiting the corrected full emulator run.
+
+
+### Preview canvas architecture
+
+The editor preview separates the dark work stage from the fitted project canvas. The player, paused-frame image, editable text, image/video overlays, selection chrome and gesture surfaces share the inner canvas bounds; the outer stage is only workspace. The canvas is fitted to the active source-video aspect ratio and clips anything outside its frame. Preview geometry and overlay gesture fractions therefore use the same project-frame dimensions rather than the full stage.
