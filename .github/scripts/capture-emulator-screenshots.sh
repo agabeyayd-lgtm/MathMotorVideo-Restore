@@ -590,6 +590,7 @@ if ! take_screen emulator-screenshots/editor-panel-closed.png; then
   collect_capture_diagnostics editor-panel-close-capture-failure
   exit 6
 fi
+dump_hierarchy editor-panel-closed.xml emulator-screenshots/editor-panel-closed.xml || true
 timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime -s EditorPanelLayoutTest:I > emulator-screenshots/editor-panel-layout-logcat.txt 2>&1 || true
 
 python3 - emulator-screenshots/editor-panel-layout-logcat.txt <<'PY'
@@ -671,7 +672,7 @@ echo "Tapping the visible, enabled MP4 export button at $mp4_coords"
 timeout -k 2s 8s adb -s emulator-5554 shell input tap $mp4_coords
 export_started=false
 for attempt in $(seq 1 20); do
-  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorExportTest:I EditorExportTest:W EditorExportTest:E > emulator-screenshots/mp4-export-tap-logcat.txt 2>&1 || true
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorExportTest:V > emulator-screenshots/mp4-export-tap-logcat.txt 2>&1 || true
   if grep -q "EXPORT_TRANSFORMER_STARTED" emulator-screenshots/mp4-export-tap-logcat.txt; then
     export_started=true
     break
