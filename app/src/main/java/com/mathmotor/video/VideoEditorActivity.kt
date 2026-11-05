@@ -4740,8 +4740,8 @@ class VideoEditorActivity : Activity() {
                 .setAlphaScale(if (visible) state.opacity else 0f)
                 .setScale(state.scale, state.scale)
                 .setBackgroundFrameAnchor(
-                    state.xFraction * 2f - 1f,
-                    1f - state.yFraction * 2f
+                    PreviewCanvasMath.media3AnchorForFraction(state.xFraction),
+                    PreviewCanvasMath.media3AnchorForFraction(state.yFraction, invertY = true)
                 )
                 .setRotationDegrees(state.rotationDegrees)
                 .build()
@@ -5905,12 +5905,12 @@ class VideoEditorActivity : Activity() {
                 View.MeasureSpec.makeMeasureSpec(videoWidth, View.MeasureSpec.AT_MOST),
                 View.MeasureSpec.makeMeasureSpec(videoHeight, View.MeasureSpec.AT_MOST)
             )
-            val maxX = ((videoWidth - overlay.measuredWidth).coerceAtLeast(0) / 2f)
-            val maxY = ((videoHeight - overlay.measuredHeight).coerceAtLeast(0) / 2f)
-            overlay.translationX = (layer.xFraction.coerceIn(0f, 1f) - 0.5f) * 2f * maxX +
-                animationState.offsetXFraction * videoWidth
-            overlay.translationY = (layer.yFraction.coerceIn(0f, 1f) - 0.5f) * 2f * maxY +
-                animationState.offsetYFraction * videoHeight
+            overlay.translationX =
+                PreviewCanvasMath.screenTranslationForFraction(layer.xFraction, videoWidth) +
+                    animationState.offsetXFraction * videoWidth
+            overlay.translationY =
+                PreviewCanvasMath.screenTranslationForFraction(layer.yFraction, videoHeight) +
+                    animationState.offsetYFraction * videoHeight
             overlay.bringToFront()
         }
     }
@@ -7080,8 +7080,10 @@ class VideoEditorActivity : Activity() {
         overlaySelectionFrame.scaleX = state.scale
         overlaySelectionFrame.scaleY = state.scale
         overlaySelectionFrame.rotation = state.rotationDegrees
-        overlaySelectionFrame.translationX = (state.xFraction - 0.5f) * canvasWidth
-        overlaySelectionFrame.translationY = (state.yFraction - 0.5f) * canvasHeight
+        overlaySelectionFrame.translationX =
+            PreviewCanvasMath.screenTranslationForFraction(state.xFraction, canvasWidth)
+        overlaySelectionFrame.translationY =
+            PreviewCanvasMath.screenTranslationForFraction(state.yFraction, canvasHeight)
         val inverseScale = (1f / state.scale.coerceAtLeast(0.10f)).coerceAtMost(10f)
         overlaySelectionHandles.forEach { handle ->
             handle.scaleX = inverseScale
@@ -7162,9 +7164,10 @@ class VideoEditorActivity : Activity() {
             val overlay = selectedOverlay() ?: return false
             val (canvasWidth, canvasHeight) = overlayCanvasSize()
             val state = overlayStateAtTime(overlay, timelinePlayheadMs)
-            val centerX = (view.width - canvasWidth) / 2f + state.xFraction * canvasWidth
-            val centerY = (view.height - canvasHeight) / 2f +
-                state.yFraction * canvasHeight
+            val centerX = view.width / 2f +
+                PreviewCanvasMath.screenTranslationForFraction(state.xFraction, canvasWidth)
+            val centerY = view.height / 2f +
+                PreviewCanvasMath.screenTranslationForFraction(state.yFraction, canvasHeight)
             val dx = x - centerX
             val dy = y - centerY
             val radians = Math.toRadians(state.rotationDegrees.toDouble())
@@ -8502,8 +8505,10 @@ class VideoEditorActivity : Activity() {
             imageView.scaleX = state.scale
             imageView.scaleY = state.scale
             imageView.rotation = state.rotationDegrees
-            imageView.translationX = (state.xFraction - 0.5f) * canvasWidth
-            imageView.translationY = (state.yFraction - 0.5f) * canvasHeight
+            imageView.translationX =
+                PreviewCanvasMath.screenTranslationForFraction(state.xFraction, canvasWidth)
+            imageView.translationY =
+                PreviewCanvasMath.screenTranslationForFraction(state.yFraction, canvasHeight)
             imageView.alpha = state.opacity
 
             val desiredKey = pausedOverlayPreviewKey(overlay, projectTimeMs)
@@ -9766,8 +9771,8 @@ class VideoEditorActivity : Activity() {
                 Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
             )
         }
-        val x = (layer.xFraction.coerceIn(0f, 1f) * 2f - 1f).coerceIn(-0.92f, 0.92f)
-        val y = ((0.5f - layer.yFraction.coerceIn(0f, 1f)) * 2f).coerceIn(-0.85f, 0.85f)
+        val x = PreviewCanvasMath.media3AnchorForFraction(layer.xFraction)
+        val y = PreviewCanvasMath.media3AnchorForFraction(layer.yFraction, invertY = true)
         return object : TextOverlay() {
             override fun getText(presentationTimeUs: Long): SpannableString {
                 val timeMs = presentationTimeUs / 1000L
