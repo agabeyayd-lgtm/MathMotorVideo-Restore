@@ -240,7 +240,7 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.WHITE)
         }
-        scroll.addView(page, ScrollView.LayoutParams(
+        scroll.addView(page, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ))
 
@@ -429,7 +429,7 @@ class MainActivity : Activity() {
             clipToPadding = false
         }
         recentList = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        recentScroll.addView(recentList, HorizontalScrollView.LayoutParams(
+        recentScroll.addView(recentList, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ))
         body.addView(recentScroll, matchWrap())
@@ -667,7 +667,7 @@ class MainActivity : Activity() {
     }
 
     private fun handleHomeTool(tool: HomeTool) {
-        performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+        window.decorView.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
         when (tool.action) {
             "video" -> {
                 Toast.makeText(this, tool.title + ": Düzenlemek için bir video seç.", Toast.LENGTH_SHORT).show()
