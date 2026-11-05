@@ -699,4 +699,5 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - The earlier emulator smoke test did not open the Proje panel or tap the MP4 export control; its green result did not verify export-button interaction.
 - The MP4 action is now placed immediately below the Proje panel heading, with an explicit accessible description and a 52dp touch height, rather than being buried below secondary options.
 - Debug-only EditorExportTest markers distinguish a tap reaching exportEditedVideo(), Transformer.start(), and successful MediaStore save. The emulator script opens Proje, locates the enabled MP4 button from the live accessibility hierarchy, taps its actual bounds, and requires a saved-output marker.
+- After confirming the saved MP4, the emulator test closes the Proje drawer before resuming timeline gesture/playback checks, so the drawer cannot mask later controls.
 - The encoding and save pipeline is unchanged. A passing emulator run proves the UI event, encoder startup, and MP4 save on the fixture; it does not replace physical-device playback verification.
