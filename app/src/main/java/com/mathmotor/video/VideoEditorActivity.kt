@@ -832,6 +832,9 @@ class VideoEditorActivity : Activity() {
             setBackgroundColor(Color.TRANSPARENT)
             visibility = View.GONE
             isClickable = true
+            // Keep the transparent gesture target above both the TextureView and
+            // the non-clickable selection frame so direct manipulation receives input.
+            elevation = dp(12).toFloat()
             contentDescription = "Bindirmeyi önizlemede tek parmakla taşı, iki parmakla büyüt ve döndür"
         }
         previewFrame.addView(
