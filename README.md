@@ -1,3 +1,28 @@
+## Focused fix — first-video placement and export asset diagnostics — 2026-11-05
+
+- Working branch: `fix/export-asset-diagnostics-and-empty-video-start`, based on current `main` after the 398 release-trigger commit. No versionCode, release marker, signing or publish workflow changes.
+- **Timeline finding:** the blue `editor.png` strip visible after deleting the main video is an independent image-overlay lane, not the deleted main-video filmstrip. Independent overlay/text/audio lanes are preserved. The gallery multi-select import path used total project duration when calculating the next main-video start, while the single-clip import path used main-video duration. Both paths now share one rule: insert at the end of the main-video lane, or at 00:00 when that lane is empty. Independent overlay/text/audio durations can no longer create a blank gap before a new main-video clip.
+- Added `TimelineClipInsertionMath` and unit coverage for an empty main-video lane, appending after the existing video lane, and negative-duration clamping.
+- The emulator replacement bridge exercises `addClipsInOrder()` (the actual gallery multi-select import path) after deleting the original main video. The smoke script requires the replacement clip's logged timeline start to equal 0 ms before continuing. **This assertion passed** on commit `131a1ceddc3fdf3e70b1a6174176456b016e66a8`.
+- **Export diagnostics:** the screenshot exposed Media3's generic `Asset loader error` without the underlying cause. Export failures now log the full `ExportException` cause/stack, error code and composition summary under `MathMotorExport`; the on-screen failure status shows the nested cause chain instead of only the generic headline.
+- **Verified on commit `131a1ced`:** [APK build/artifact](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/42089036171) green; [unit tests/debug compile](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/42089035944) green; [Android 35 emulator](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/42089036015) green.
+- Emulator evidence: gallery replacement started at 00:00; the new green filmstrip populated and old source disappeared; paused image overlay drag passed; preview/timeline geometry, frame alignment, bidirectional scrubbing and live timeline playback synchronization passed; the MP4 button reached `Transformer.start` and a video+PNG-overlay MP4 was saved.
+- **Remaining boundary:** the emulator proved MP4 export with its internal fixture assets. The user's exact gallery-selected asset on the physical phone has not yet been re-tested, so the original phone-specific `Asset loader error` is not declared fixed until that check. The new nested-cause message will expose the underlying cause if it recurs.
+- Emulator workflow concurrency is keyed by source SHA so a wedged older revision cannot block the latest PR verification. No production release or version bump was created.
+
+---
+
+- Working branch: `fix/export-asset-diagnostics-and-empty-video-start`, based on current `main` after the 398 release-trigger commit. No versionCode, release marker, signing or publish workflow changes.
+- **Timeline finding:** the blue `editor.png` strip visible after deleting the main video is an independent image-overlay lane, not the deleted main-video filmstrip. Independent overlay/text/audio lanes are preserved. The galeri multi-select import path used total project duration when calculating the next main-video start, while the single-clip import path used main-video duration. Both paths now share one rule: insert at the end of the main-video lane, or at 00:00 when that lane is empty. Independent overlay/text/audio durations can no longer create a blank gap before a new main-video clip.
+- Added `TimelineClipInsertionMath` and unit coverage for an empty main-video lane, appending after the existing video lane, and negative-duration clamping.
+- The emulator replacement bridge now exercises `addClipsInOrder()` (the actual gallery multi-select import path) after deleting the original main video. The smoke script requires the replacement clip's logged timeline start to equal 0 ms before continuing to thumbnail and MP4 export validation.
+- Emulator workflow concurrency is keyed by source SHA, preventing a wedged run from an older commit from blocking the latest PR revision; duplicate runs of the same SHA replace one another.
+- **Export finding:** the screenshot exposes Media3's generic `Asset loader error`, but does not include the underlying cause or identify which asset failed. The export error callback writes the full `ExportException` cause/stack, error code and composition summary to logcat under `MathMotorExport`; the on-screen failure status now also shows the nested cause chain instead of only the generic headline. This is diagnostic instrumentation, not a claim that MP4 export is fixed.
+- Existing image-overlay export already sets `MediaItem.setImageDurationMs()` and `EditedMediaItem.setFrameRate(30)`, matching the current Media3 image-input requirements; do not change that path speculatively without the captured cause.
+- Verification boundary: focused unit tests, Gradle build, emulator export reproduction and device MP4 export are pending. No APK or green check is claimed.
+
+---
+
 ## PR #23 — paused overlay direct editing and version 397 verified — 2026-11-05
 
 - PR: [#23 — Show paused overlays and enable CapCut-style direct canvas editing](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/pull/23). All current source, build, emulator, and release-signing checks are green.

@@ -426,6 +426,11 @@ if [ "$replacement_complete" != true ]; then
   collect_capture_diagnostics video-replacement-timeout
   exit 42
 fi
+if ! grep -F "EDITOR_SMOKE_CLIP_REPLACED newUri=file://$app_internal_replacement_video" emulator-screenshots/video-replacement-logcat.txt | grep -Fq "clipStartMs=0"; then
+  echo "Gallery multi-select replacement did not place its first video at 00:00."
+  collect_capture_diagnostics video-replacement-not-at-zero
+  exit 46
+fi
 if ! take_screen emulator-screenshots/editor-after-video-replacement.png; then
   collect_capture_diagnostics video-replacement-capture-failure
   exit 6

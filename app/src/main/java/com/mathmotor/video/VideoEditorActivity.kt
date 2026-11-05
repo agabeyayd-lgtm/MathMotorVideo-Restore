@@ -6881,7 +6881,9 @@ class VideoEditorActivity : Activity() {
                             "EDITOR_SMOKE_REPLACEMENT_BEGIN oldUri=$oldUri newUri=$replacementUri"
                         )
                         removeClipAt(oldClipIndex)
-                        addClip(replacementUri, true)
+                        // Exercise the same gallery multi-select import path that
+                        // users take, rather than the single-clip draft-launch path.
+                        addClipsInOrder(listOf(replacementUri), replaceExisting = false)
                     } else {
                         android.util.Log.e(
                             "EditorSmokeTest",
@@ -7681,11 +7683,28 @@ class VideoEditorActivity : Activity() {
                     pendingTimelineScrollX = 0
                     timelinePlayheadMs = 0L
                 }
-                var appendAtMs=totalOutputDurationMs()
+                // Match the single-clip import path: append after the furthest main-video
+                // segment only. A longer independent overlay/text/audio lane must not
+                // create a blank gap before the newly imported main-video clip.
+                var appendAtMs = TimelineClipInsertionMath.startTimeMs(
+                    TimelineVideoMath.totalDuration(videoTimelineSegments())
+                )
                 val positioned=ready.map { item ->
                     item.copy(timelineStartMs=appendAtMs).also{appendAtMs+=(it.endMs-it.startMs).coerceAtLeast(0L)}
                 }
                 clips.addAll(positioned)
+                if (timelineSyncTestEnabled) {
+                    val expectedReplacement = timelineTestExpectedReplacementUri
+                    val replacementClip = clips.firstOrNull { it.uri == expectedReplacement }
+                    if (replacementClip != null) {
+                        android.util.Log.i(
+                            "EditorSmokeTest",
+                            "EDITOR_SMOKE_CLIP_REPLACED newUri=${replacementClip.uri} " +
+                                "clipCount=${clips.size} clipStartMs=${replacementClip.timelineStartMs} " +
+                                "videoLaneSources=${clips.joinToString("|") { it.uri.toString() }}"
+                        )
+                    }
+                }
                 selectedClipIndex=clips.lastIndex
                 clipHandlesVisible = false
                 timelinePreviewLoaded = false
@@ -9917,14 +9936,35 @@ class VideoEditorActivity : Activity() {
                     }
 
                     override fun onError(composition: Composition, exportResult: ExportResult, exportException: ExportException) {
+                        // Keep the complete Media3 cause chain in release logcat as well:
+                        // the short user-facing "Asset loader error" message otherwise
+                        // hides which source asset failed to open or decode.
+                        android.util.Log.e(
+                            "MathMotorExport",
+                            "EXPORT_FAILED code=${exportException.errorCode} " +
+                                "videoClips=${clips.size} overlays=${overlayClips.size} " +
+                                "imageOverlays=${overlayClips.count { it.isImage }} " +
+                                "outputDurationMs=${totalOutputDurationMs()} result=$exportResult",
+                            exportException
+                        )
                         if (timelineSyncTestEnabled) {
                             android.util.Log.e("EditorExportTest", "EXPORT_ENCODING_FAILED", exportException)
                         }
                         tempOutput.delete()
+                        val causeSummary = generateSequence<Throwable>(exportException) { it.cause }
+                            .take(6)
+                            .map { cause ->
+                                cause.message?.takeIf { it.isNotBlank() } ?: cause.javaClass.simpleName
+                            }
+                            .distinct()
+                            .joinToString(" → ")
+                            .ifBlank { "Kod ${exportException.errorCode}" }
                         runOnUiThread {
                             exporting = false
                             exportButton.isEnabled = true
-                            status.text = "DIŞA AKTARMA BAŞARISIZ\n${exportException.message ?: "Kod ${exportException.errorCode}"}"
+                            // Show nested asset/decoder failures instead of hiding them
+                            // behind Media3's generic "Asset loader error" headline.
+                            status.text = "DIŞA AKTARMA BAŞARISIZ\n$causeSummary"
                             Toast.makeText(this@VideoEditorActivity, status.text, Toast.LENGTH_LONG).show()
                         }
                     }

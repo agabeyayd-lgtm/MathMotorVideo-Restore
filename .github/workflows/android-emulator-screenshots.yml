@@ -26,8 +26,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: android-emulator-screenshots-${{ github.ref }}
-  cancel-in-progress: false
+  # Isolate each source revision so a wedged emulator run from an older commit
+  # cannot hold the lock for the latest PR head. Duplicate runs of one SHA replace each other.
+  group: android-emulator-screenshots-${{ github.ref }}-${{ github.sha }}
+  cancel-in-progress: true
 
 jobs:
   emulator-ui:
