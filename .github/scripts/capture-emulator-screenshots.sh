@@ -710,7 +710,11 @@ if ! take_screen emulator-screenshots/editor-export-saved.png; then
   collect_capture_diagnostics mp4-export-saved-capture-failure
   exit 6
 fi
-echo "PASS: visible MP4 button tap reached the export handler, started Transformer, and saved an MP4 output."
+# Close the Proje drawer so it cannot cover the timeline checks that follow.
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $proje_coords
+sleep 1
+dump_hierarchy editor-export-closed.xml emulator-screenshots/editor-export-closed.xml || true
+echo "PASS: visible MP4 button tap reached the export handler, started Transformer, saved an MP4 output, and closed the drawer."
 echo "Step 9/12: align a thumbnail cell with the playhead and compare the rendered pixels"
 # HorizontalScrollView consumes ViewConfiguration.scaledTouchSlop before it
 # scrolls. That value is density-scaled (pixels), so a fixed 12px allowance
