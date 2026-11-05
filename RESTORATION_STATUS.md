@@ -809,3 +809,11 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Final aspect correction: the canvas ratio is now fixed to the chosen output preset, or the first main-video source when `SOURCE` is selected; it no longer changes with the active clip. Source commit: `aeb61a8`. Static source checks confirmed all preview/editable visual surfaces are parented to the inner canvas and the empty-state/fullscreen controls remain on the outer stage. Build and runtime checks are still pending.
 
 - Paused-frame parity follow-up: the decoded still-image fallback now uses center-crop inside the same fixed project canvas, matching the live composition's crop-to-fill behavior when a non-source output preset is selected. Source commit: `48ee2af`. This remains statically reviewed only; no compile/emulator/export validation is available yet.
+
+
+## Preview canvas geometry regression coverage — 2026-11-06
+
+- Added pure `PreviewCanvasMath.fit()` so the project-frame fit/centering rule is independently testable; `VideoEditorActivity.updatePreviewCanvasSize()` now uses the helper instead of duplicating the geometry calculation.
+- Added JVM tests for 9:16, 16:9 and square frames, invalid aspect fallback, zero-size stages, and bounds containment. These tests are included in the new PR-triggered unit/build run.
+- Added a debug-only `PREVIEW_CANVAS_BOUNDS` marker and emulator assertion. The screenshot workflow checks that the actual measured canvas bounds are centered, remain inside the outer work stage, and preserve the 9:16 deterministic source ratio.
+- Source commits: `7386c23` (math helper), `59339e3` (unit tests), `e61d6ad` (Activity integration/log marker), `0ce6919` (emulator assertion). Verification awaits the PR-triggered run for this latest branch head; no new green result or APK is claimed for these follow-up changes yet.
