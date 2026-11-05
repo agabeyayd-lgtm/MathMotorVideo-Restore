@@ -1867,6 +1867,7 @@ class VideoEditorActivity : Activity() {
                 exportCanvasPreset = VideoCanvasPreset.values().getOrNull(checkedId - 340)
                     ?: VideoCanvasPreset.SOURCE
                 refreshColorGradePreview()
+                updatePreviewCanvasSize()
                 status.text = when (exportCanvasPreset) {
                     VideoCanvasPreset.SOURCE -> "Kaynak video oranı korunacak."
                     else -> "Kadraj ${exportCanvasPreset.title} olarak ayarlandı. Önizleme ve MP4 çıktısı aynı kadrajı kullanacak."
