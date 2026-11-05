@@ -629,6 +629,70 @@ for state in required[1:]:
 print("PASS: preview and timeline stayed fixed while the one-row tool strip opened, detail rose above it, the strip returned, and the main dock was restored.")
 PY
 
+echo "Step 8b/12: open the Proje panel and prove the MP4 button receives a real tap"
+proje_coords="$(find_bottom_tool emulator-screenshots/editor-panel-closed.xml "Proje" || true)"
+if [ -z "$proje_coords" ]; then
+  echo "Could not locate the Proje tab before testing MP4 export."
+  collect_capture_diagnostics mp4-export-project-tab-missing
+  exit 37
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $proje_coords
+sleep 1
+dump_hierarchy editor-export-panel.xml emulator-screenshots/editor-export-panel.xml || true
+find_mp4_export_button() {
+  python3 - "$1" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+try:
+    root = ET.parse(sys.argv[1]).getroot()
+except (OSError, ET.ParseError):
+    raise SystemExit(1)
+for node in root.iter("node"):
+    text = " ".join(node.attrib.get("text", "").split()).casefold()
+    if text == "mp4 dışa aktar" and node.attrib.get("class") == "android.widget.Button":
+        if node.attrib.get("clickable") != "true" or node.attrib.get("enabled") != "true":
+            continue
+        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+        if match:
+            x1, y1, x2, y2 = map(int, match.groups())
+            if x2 > x1 and y2 > y1:
+                print((x1 + x2) // 2, (y1 + y2) // 2)
+                break
+PY
+}
+mp4_coords="$(find_mp4_export_button emulator-screenshots/editor-export-panel.xml || true)"
+if [ -z "$mp4_coords" ]; then
+  echo "The MP4 button is not visible/clickable in the initial Proje panel viewport."
+  collect_capture_diagnostics mp4-export-button-not-visible
+  exit 38
+fi
+echo "Tapping the visible, enabled MP4 export button at $mp4_coords"
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $mp4_coords
+export_started=false
+for attempt in $(seq 1 20); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorExportTest:I EditorExportTest:W EditorExportTest:E > emulator-screenshots/mp4-export-tap-logcat.txt 2>&1 || true
+  if grep -q "EXPORT_TRANSFORMER_STARTED" emulator-screenshots/mp4-export-tap-logcat.txt; then
+    export_started=true
+    break
+  fi
+  if grep -q "EXPORT_GUARD_NO_CLIPS\|EXPORT_GUARD_INVALID_CLIP\|EXPORT_COMPOSITION_FAILED\|EXPORT_TRANSFORMER_START_FAILED" emulator-screenshots/mp4-export-tap-logcat.txt; then
+    break
+  fi
+  echo "Waiting for the MP4 tap to reach Transformer.start (attempt $attempt/20)"
+  sleep 2
+done
+if [ "$export_started" != true ]; then
+  echo "The MP4 button tap did not reach a successful Transformer.start call."
+  collect_capture_diagnostics mp4-export-button-tap-failed
+  exit 39
+fi
+if ! take_screen emulator-screenshots/editor-export-started.png; then
+  collect_capture_diagnostics mp4-export-started-capture-failure
+  exit 6
+fi
+echo "PASS: tapping the visible MP4 button reached exportEditedVideo and started the MP4 Transformer."
+
 echo "Step 9/12: align a thumbnail cell with the playhead and compare the rendered pixels"
 # HorizontalScrollView consumes ViewConfiguration.scaledTouchSlop before it
 # scrolls. That value is density-scaled (pixels), so a fixed 12px allowance
