@@ -856,32 +856,45 @@ class MainActivity : Activity() {
 
     private fun refreshRecentProjects() {
         recentList.removeAllViews()
-        val records = VideoRecordStore.list(this).take(5)
+        val records = VideoRecordStore.list(this).take(8)
         if (records.isEmpty()) {
             val empty = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(14), dp(15), dp(14), dp(15))
-                background = rounded(panel, 14).apply { setStroke(dp(1), line) }
-            }
-            val icon = label("▣", 23f, muted, true)
-            empty.addView(icon, LinearLayout.LayoutParams(dp(42), ViewGroup.LayoutParams.WRAP_CONTENT))
-            val copy = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
-                addView(label("Henüz video yok", 13f, white, true))
-                addView(label("Dışa aktardığın videolar burada görünecek.", 11f, muted, false))
+                gravity = Gravity.CENTER
+                setPadding(dp(12), dp(12), dp(12), dp(12))
+                background = rounded(Color.rgb(242, 247, 253), 16).apply {
+                    setStroke(dp(1), line)
+                }
+                layoutParams = LinearLayout.LayoutParams(dp(132), dp(132))
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { chooseVideo() }
             }
-            empty.addView(copy, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            recentList.addView(empty, matchWrap())
+            empty.addView(TextView(this).apply {
+                text = "+"
+                textSize = 27f
+                typeface = Typeface.DEFAULT_BOLD
+                gravity = Gravity.CENTER
+                setTextColor(accent)
+                background = rounded(Color.WHITE, 12)
+                layoutParams = LinearLayout.LayoutParams(dp(42), dp(42))
+            })
+            empty.addView(TextView(this).apply {
+                text = "Henüz proje yok"
+                textSize = 11f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(Color.rgb(47, 62, 85))
+                gravity = Gravity.CENTER
+                setPadding(0, dp(7), 0, 0)
+            })
+            recentList.addView(empty)
             return
         }
 
         records.forEachIndexed { index, record ->
-            val item = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(12), dp(11), dp(12), dp(11))
-                background = ripple(panel, line, 14)
+            val card = FrameLayout(this).apply {
+                background = rounded(Color.rgb(229, 238, 249), 16)
+                clipToOutline = true
                 isClickable = true
                 isFocusable = true
                 contentDescription = "Videoyu aç: " + record.title
@@ -890,28 +903,64 @@ class MainActivity : Activity() {
                         putExtra("video_uri", record.uri)
                     })
                 }
+                layoutParams = LinearLayout.LayoutParams(dp(112), dp(132)).apply {
+                    if (index > 0) leftMargin = dp(9)
+                }
             }
-            val number = TextView(this).apply {
-                text = String.format("%02d", index + 1)
-                textSize = 13f
+            val thumbnail = ImageView(this).apply {
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                setBackgroundColor(Color.rgb(220, 232, 247))
+                tag = record.uri
+                contentDescription = record.title
+            }
+            card.addView(thumbnail, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+            ))
+            val bottomShade = View(this).apply {
+                background = GradientDrawable(
+                    GradientDrawable.Orientation.TOP_BOTTOM,
+                    intArrayOf(Color.TRANSPARENT, Color.argb(210, 8, 18, 38))
+                )
+            }
+            card.addView(bottomShade, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(50), Gravity.BOTTOM
+            ))
+            val title = TextView(this).apply {
+                text = record.title.ifBlank { "MathMotor projesi" }
+                textSize = 10f
                 typeface = Typeface.DEFAULT_BOLD
-                setTextColor(accent)
-                gravity = Gravity.CENTER
-                background = rounded(Color.rgb(18, 49, 58), 10)
-                layoutParams = LinearLayout.LayoutParams(dp(42), dp(42))
+                setTextColor(Color.WHITE)
+                maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setPadding(dp(8), 0, dp(6), dp(7))
+                gravity = Gravity.BOTTOM or Gravity.START
             }
-            item.addView(number)
-            val info = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(dp(11), 0, dp(6), 0)
-                addView(label(record.title.ifBlank { "Düzenlenmiş video" }, 13f, white, true))
-                addView(label(DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(record.createdAt)), 11f, muted, false))
-            }
-            item.addView(info, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            item.addView(label("›", 24f, muted, false))
-            recentList.addView(item, matchWrap())
-            if (index != records.lastIndex) recentList.addView(gap(7))
+            card.addView(title, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(48), Gravity.BOTTOM
+            ))
+            recentList.addView(card)
+            loadRecentThumbnail(thumbnail, record.uri)
         }
+    }
+
+    private fun loadRecentThumbnail(target: ImageView, uriValue: String) {
+        Thread {
+            val bitmap = runCatching {
+                val retriever = MediaMetadataRetriever()
+                try {
+                    retriever.setDataSource(this, Uri.parse(uriValue))
+                    retriever.getFrameAtTime(500_000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                } finally {
+                    retriever.release()
+                }
+            }.getOrNull()
+            if (bitmap != null) {
+                mainHandler.post {
+                    if (!isFinishing && target.tag == uriValue) target.setImageBitmap(bitmap)
+                    else bitmap.recycle()
+                }
+            }
+        }.start()
     }
 
     private fun chooseVideo() {
@@ -1011,6 +1060,20 @@ class MainActivity : Activity() {
             }
             return
         }
+        if (requestCode == pickImageRequest && resultCode == RESULT_OK) {
+            val imageUri = data?.data ?: return
+            try {
+                contentResolver.takePersistableUriPermission(imageUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (_: Exception) { }
+            openPhotoEditor(imageUri)
+            return
+        }
+        if (requestCode == captureVideoRequest && resultCode == RESULT_OK) {
+            val captured = data?.data
+            if (captured != null) openEditor(captured.toString())
+            else Toast.makeText(this, "Kamera video döndürmedi.", Toast.LENGTH_LONG).show()
+            return
+        }
         if (requestCode != pickVideoRequest || resultCode != RESULT_OK) return
         val uri = data?.data ?: run {
             Toast.makeText(this, "Video seçilmedi.", Toast.LENGTH_SHORT).show()
@@ -1031,6 +1094,15 @@ class MainActivity : Activity() {
                 putExtra("video_uri", uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
+        })
+    }
+
+    private fun openPhotoEditor(uri: Uri) {
+        startActivity(Intent(this, VideoEditorActivity::class.java).apply {
+            putExtra("draft_id", VideoProjectDraftStore.newId())
+            putExtra("photo_uri", uri.toString())
+            putExtra("photo_editor_mode", true)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         })
     }
 
