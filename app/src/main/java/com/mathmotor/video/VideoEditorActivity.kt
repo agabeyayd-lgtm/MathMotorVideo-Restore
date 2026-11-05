@@ -9544,7 +9544,13 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun exportEditedVideo() {
-        if (exporting) return
+        // The export drawer can cover the compact status line; give immediate, visible
+        // feedback so a tap never appears to do nothing while validation/encoding runs.
+        Toast.makeText(this, "MP4 dışa aktarma isteği alındı.", Toast.LENGTH_SHORT).show()
+        if (exporting) {
+            Toast.makeText(this, "Dışa aktarma zaten devam ediyor.", Toast.LENGTH_SHORT).show()
+            return
+        }
         if (Build.VERSION.SDK_INT in 26..28 &&
             checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), REQUEST_LEGACY_STORAGE)
@@ -9553,11 +9559,13 @@ class VideoEditorActivity : Activity() {
         }
         if (clips.isEmpty()) {
             status.text = "Önce bir video seç."
+            Toast.makeText(this, status.text, Toast.LENGTH_LONG).show()
             return
         }
         val invalid = clips.firstOrNull { it.startMs < 0 || it.endMs <= it.startMs || it.endMs > it.durationMs }
         if (invalid != null) {
             status.text = "Bir klibin kesme aralığı geçersiz. Başlangıç ve bitişi kontrol et."
+            Toast.makeText(this, status.text, Toast.LENGTH_LONG).show()
             return
         }
 
@@ -9567,6 +9575,7 @@ class VideoEditorActivity : Activity() {
             buildVideoCompositionSequences()
         } catch (e: Exception) {
             status.text = "Düzenleme hazırlanamadı: ${e.message ?: e.javaClass.simpleName}"
+            Toast.makeText(this, status.text, Toast.LENGTH_LONG).show()
             return
         }
 
@@ -9706,6 +9715,7 @@ class VideoEditorActivity : Activity() {
                                     Toast.makeText(this@VideoEditorActivity, "Video kaydedildi.", Toast.LENGTH_LONG).show()
                                 } else {
                                     status.text = "Video işlendi ancak kaydedilemedi: ${saved.exceptionOrNull()?.message}"
+                                    Toast.makeText(this@VideoEditorActivity, status.text, Toast.LENGTH_LONG).show()
                                 }
                             }
                         }.start()
@@ -9717,6 +9727,7 @@ class VideoEditorActivity : Activity() {
                             exporting = false
                             exportButton.isEnabled = true
                             status.text = "DIŞA AKTARMA BAŞARISIZ\n${exportException.message ?: "Kod ${exportException.errorCode}"}"
+                            Toast.makeText(this@VideoEditorActivity, status.text, Toast.LENGTH_LONG).show()
                         }
                     }
                 })
@@ -9725,6 +9736,7 @@ class VideoEditorActivity : Activity() {
             exporting = false
             exportButton.isEnabled = true
             status.text = "Dışa aktarıcı başlatılamadı: ${e.message}"
+            Toast.makeText(this, status.text, Toast.LENGTH_LONG).show()
             return
         }
 
@@ -9735,6 +9747,7 @@ class VideoEditorActivity : Activity() {
             exporting = false
             exportButton.isEnabled = true
             status.text = "Dışa aktarma başlatılamadı: ${e.message ?: e.javaClass.simpleName}"
+            Toast.makeText(this, status.text, Toast.LENGTH_LONG).show()
         }
     }
 
