@@ -274,7 +274,13 @@ class MainActivity : Activity() {
         actions.addView(homeActionCard("＋","Yeni video","Galeriden video seç") { chooseVideo() },LinearLayout.LayoutParams(0,dp(150),1f))
         actions.addView(gapWidth(10))
         actions.addView(homeActionCard("▧","Fotoğrafı\ndüzenle","Fotoğraf seç") { choosePhoto() },LinearLayout.LayoutParams(0,dp(150),0.78f))
-        root.addView(actions,matchWrap()); root.addView(gap(22))
+        root.addView(actions,matchWrap())
+        root.addView(secondaryButton("Boş proje oluştur  ›") { openEditor(null) }.apply {
+            minHeight=dp(38); textSize=11f; setTextColor(Color.rgb(35,93,147))
+            background=rounded(Color.rgb(244,249,253),14)
+            contentDescription="Boş proje oluştur"
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin=dp(8) })
+        root.addView(gap(22))
 
         val recentHeader = LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL; gravity=Gravity.CENTER_VERTICAL }
         recentHeader.addView(label("Son çalışmalar",17f,Color.rgb(28,34,43),true),LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f))
@@ -304,7 +310,7 @@ class MainActivity : Activity() {
                     "Fotoğraf araçları","Arka planı kaldır" -> ({ choosePhoto() })
                     "Çekim ve kayıt","Kayıt" -> ({ launchCapture() })
                     "Kapak oluşturma\naracı" -> ({ choosePhoto() })
-                    else -> ({ Toast.makeText(this, "\${item.second.replace('\n',' ')} henüz etkin değil.",Toast.LENGTH_SHORT).show() })
+                    else -> ({ Toast.makeText(this, "${item.second.replace('\n',' ')} henüz etkin değil.",Toast.LENGTH_SHORT).show() })
                 }
                 row.addView(homeToolTile(item.first,item.second,action),LinearLayout.LayoutParams(0,dp(116),1f).apply { if(index>0) leftMargin=dp(7) })
             }
@@ -338,7 +344,7 @@ class MainActivity : Activity() {
                 when(index) {
                     0 -> chooseVideo()
                     3 -> startActivity(Intent(this,VideoPlayerActivity::class.java))
-                    else -> Toast.makeText(this,"\${pair.second} bölümü henüz etkin değil.",Toast.LENGTH_SHORT).show()
+                    else -> Toast.makeText(this,"${pair.second} bölümü henüz etkin değil.",Toast.LENGTH_SHORT).show()
                 }
             },LinearLayout.LayoutParams(0,dp(58),1f))
         }
@@ -380,7 +386,7 @@ class MainActivity : Activity() {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
         }
         try { startActivityForResult(pick,pickPhotoRequest) }
-        catch(error:Exception) { Toast.makeText(this,"Fotoğraf seçici açılamadı: \${error.message}",Toast.LENGTH_LONG).show() }
+        catch(error:Exception) { Toast.makeText(this,"Fotoğraf seçici açılamadı: ${error.message}",Toast.LENGTH_LONG).show() }
     }
 
     private fun launchCapture() {
@@ -486,7 +492,7 @@ class MainActivity : Activity() {
         records.forEachIndexed { index,record ->
             val card=LinearLayout(this).apply {
                 orientation=LinearLayout.VERTICAL; background=rounded(Color.rgb(241,246,250),13); clipToOutline=true
-                isClickable=true; isFocusable=true; contentDescription="Videoyu aç: \${record.title}"
+                isClickable=true; isFocusable=true; contentDescription="Videoyu aç: ${record.title}"
                 setOnClickListener {
                     startActivity(Intent(this@MainActivity,VideoPlayerActivity::class.java).apply { putExtra("video_uri",record.uri) })
                 }
