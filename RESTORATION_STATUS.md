@@ -768,3 +768,16 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Before publication, the release-signing workflow is updated to compare the exact publisher-selected Actions signing source against the latest signed release, expected `versionCode=398`. It must pass before the 399 release trigger is changed.
 - Required gates: unit tests/debug compile, signed APK build, signing certificate continuity against 398, and Android 35 emulator smoke test. The emulator's MP4 fixture is not a substitute for testing the user's actual gallery asset on the physical phone.
 - Publication is deliberately separated from this candidate PR. Do not touch `.github/release-trigger.txt` until the signing and build gates are green.
+
+---
+
+## Published signed version 399 — 2026-11-05
+
+- Release: [MathMotor Video signed APK build 66](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/releases/tag/app-v8.3-66).
+- Installable production APK: [MathMotorVideo.apk](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/releases/download/app-v8.3-66/MathMotorVideo.apk).
+- Package version: `versionCode=399`, `versionName=8.32-capcut-editor`; application ID remains `com.mathmotor.video.next`.
+- APK asset SHA-256: `4f4fca205f148a60f19c60d0568ba568076d4db2f6183167bf8df2b55ef0e14e`.
+- Signed release workflow: [run 42094217987](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/42094217987) completed successfully. Unit tests, signing-key restore, signed release build, APK preparation, and GitHub release upload all passed.
+- Signing continuity: the publisher-selected `MMV_SIGNING_BUNDLE_B64` certificate SHA-256 matched the published 398 certificate exactly; [verification run 42093431357](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/42093431357) passed. The release workflow did not rotate or replace the signing key.
+- Runtime source includes the verified main-video insertion rule: a new main video starts at 00:00 when that lane is empty; independent image/text/audio layers do not push it later. Export failures expose nested Media3 cause details.
+- **Physical-phone acceptance still pending:** install this APK over the existing signed app, open the same gallery video that previously produced `Asset loader error`, export MP4, and report whether it succeeds. The emulator fixture export is not a substitute for this real-asset device check.
