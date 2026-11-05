@@ -710,3 +710,8 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - The API 35 emulator scenario now starts with a red/hue-cycling MP4, adds the paused overlay, removes the original clip through the production removal path, and imports a distinct solid-green MP4 through the normal add path.
 - The regression check waits for an attached replacement thumbnail, verifies that the new filename is the only video clip in the accessibility hierarchy, and samples the filmstrip screenshot to confirm the new green frames are visible rather than old frames.
 - This test is part of PR #24's candidate validation. No phone-level confirmation, merge, version bump, or signed release is claimed until the candidate checks pass.
+
+
+- MP4 export root cause isolated from emulator logs: the actual button tap reached exportEditedVideo() with one valid clip, but Media3 ImageAssetLoader threw IllegalStateException while constructing the still-image overlay input. Its constructor requires both a known duration and an explicit frame rate; the image overlay supplied duration but left EditedMediaItem.frameRate unset.
+- Fixed still-image overlay export by setting an explicit 30 fps frame rate on the image EditedMediaItem. Video overlays retain their source frame rate.
+- Re-run the actual Proje → MP4 tap test and require Transformer startup, completion, a MediaStore-saved MP4, and a non-empty output file before considering export fixed.
