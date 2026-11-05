@@ -5,35 +5,19 @@ import org.junit.Test
 
 class TimelineClipInsertionMathTest {
     @Test
-    fun firstVideoStartsAtZeroEvenWhenIndependentLanesKeepProjectDuration() {
-        assertEquals(
-            0L,
-            TimelineClipInsertionMath.startTimeMs(
-                existingVideoClipCount = 0,
-                projectDurationMs = 10_000L
-            )
-        )
+    fun firstVideoStartsAtZeroWhenOnlyIndependentLanesRemain() {
+        // Overlay/text/audio durations are deliberately not inputs to this rule.
+        assertEquals(0L, TimelineClipInsertionMath.startTimeMs(0L))
     }
 
     @Test
-    fun additionalVideoAppendsAfterExistingProjectContent() {
-        assertEquals(
-            10_000L,
-            TimelineClipInsertionMath.startTimeMs(
-                existingVideoClipCount = 1,
-                projectDurationMs = 10_000L
-            )
-        )
+    fun nextVideoStartsAtTheEndOfTheExistingVideoLane() {
+        // A longer independent lane must not add a blank gap to the video row.
+        assertEquals(8_000L, TimelineClipInsertionMath.startTimeMs(8_000L))
     }
 
     @Test
-    fun negativeProjectDurationIsClampedWhenAppending() {
-        assertEquals(
-            0L,
-            TimelineClipInsertionMath.startTimeMs(
-                existingVideoClipCount = 2,
-                projectDurationMs = -1L
-            )
-        )
+    fun negativeVideoDurationIsClampedToZero() {
+        assertEquals(0L, TimelineClipInsertionMath.startTimeMs(-1L))
     }
 }
