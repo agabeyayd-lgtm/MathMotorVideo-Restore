@@ -9727,9 +9727,15 @@ class VideoEditorActivity : Activity() {
                                         .removeSuffix(".mp4").removeSuffix(".MP4")
                                         .ifBlank { "Düzenlenmiş video" }
                                     VideoRecordStore.add(this@VideoEditorActivity, VideoRecord(savedTitle, resultUri, now, now))
+                                    if (timelineSyncTestEnabled) {
+                                        android.util.Log.i("EditorExportTest", "EXPORT_OUTPUT_SAVED uri=$resultUri")
+                                    }
                                     status.text = "BAŞARILI • " + savedTitle + " kaydedildi.\n" + resultUri
                                     Toast.makeText(this@VideoEditorActivity, "Video kaydedildi.", Toast.LENGTH_LONG).show()
                                 } else {
+                                    if (timelineSyncTestEnabled) {
+                                        android.util.Log.e("EditorExportTest", "EXPORT_OUTPUT_SAVE_FAILED", saved.exceptionOrNull())
+                                    }
                                     status.text = "Video işlendi ancak kaydedilemedi: ${saved.exceptionOrNull()?.message}"
                                     Toast.makeText(this@VideoEditorActivity, status.text, Toast.LENGTH_LONG).show()
                                 }
@@ -9738,6 +9744,9 @@ class VideoEditorActivity : Activity() {
                     }
 
                     override fun onError(composition: Composition, exportResult: ExportResult, exportException: ExportException) {
+                        if (timelineSyncTestEnabled) {
+                            android.util.Log.e("EditorExportTest", "EXPORT_ENCODING_FAILED", exportException)
+                        }
                         tempOutput.delete()
                         runOnUiThread {
                             exporting = false
@@ -9749,6 +9758,7 @@ class VideoEditorActivity : Activity() {
                 })
                 .build()
         } catch (e: Exception) {
+            if (timelineSyncTestEnabled) android.util.Log.e("EditorExportTest", "EXPORT_TRANSFORMER_BUILD_FAILED", e)
             exporting = false
             exportButton.isEnabled = true
             status.text = "Dışa aktarıcı başlatılamadı: ${e.message}"
