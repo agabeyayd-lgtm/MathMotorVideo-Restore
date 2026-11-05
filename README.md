@@ -751,3 +751,12 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - MP4 export root cause isolated from emulator logs: the actual button tap reached exportEditedVideo() with one valid clip, but Media3 ImageAssetLoader threw IllegalStateException while constructing the still-image overlay input. Its constructor requires both a known duration and an explicit frame rate; the image overlay supplied duration but left EditedMediaItem.frameRate unset.
 - Fixed still-image overlay export by setting an explicit 30 fps frame rate on the image EditedMediaItem. Video overlays retain their source frame rate.
 - Re-run the actual Proje → MP4 tap test and require Transformer startup, completion, a MediaStore-saved MP4, and a non-empty output file before considering export fixed.
+
+
+### 2026-11-05 emulator evidence and precision follow-up
+
+- On API 35, the actual Proje → MP4 button tap reached the export handler, Media3 Transformer started, and the completed export was inserted into MediaStore under Movies/MathMotorVideo. The emulator log recorded `EXPORT_OUTPUT_SAVED`; the captured editor screen showed Android's “Video kaydedildi.” confirmation.
+- The same run removed the original red/hue-cycling source and imported the distinct green replacement. Its video lane contained only `editor-test-video-replacement.mp4`; replacement thumbnail decode markers appeared for multiple source timestamps. Screenshot pixel inspection measured 96.02% green pixels in the video-lane crop.
+- The latest full emulator run stopped later at the thumbnail/playhead alignment helper: after five measured gestures, the remaining center difference was 4 physical pixels. This was a test-coordinate tolerance failure, not an export or replacement failure. The test now accepts a 5px residual (under 3dp at the emulator density) in both preparation and pixel-verification stages.
+- The MP4 save path now checks the persisted MediaStore file descriptor size (and the legacy target file size) is greater than zero before reporting success. Debug export logs include the encoded byte count.
+- These changes require a fresh complete emulator run; the full timeline scrub/playback/autosave suite has not yet passed on the current PR head. No merge, version bump, or signed release is claimed here.

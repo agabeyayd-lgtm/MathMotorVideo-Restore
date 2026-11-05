@@ -9860,6 +9860,7 @@ class VideoEditorActivity : Activity() {
                 .addListener(object : Transformer.Listener {
                     override fun onCompleted(composition: Composition, exportResult: ExportResult) {
                         Thread {
+                            val encodedBytes = tempOutput.length()
                             val saved = runCatching { saveToMovies(tempOutput, requestedExportName) }
                             tempOutput.delete()
                             runOnUiThread {
@@ -9873,7 +9874,7 @@ class VideoEditorActivity : Activity() {
                                         .ifBlank { "Düzenlenmiş video" }
                                     VideoRecordStore.add(this@VideoEditorActivity, VideoRecord(savedTitle, resultUri, now, now))
                                     if (timelineSyncTestEnabled) {
-                                        android.util.Log.i("EditorExportTest", "EXPORT_OUTPUT_SAVED uri=$resultUri")
+                                        android.util.Log.i("EditorExportTest", "EXPORT_OUTPUT_SAVED uri=$resultUri bytes=$encodedBytes")
                                     }
                                     status.text = "BAŞARILI • " + savedTitle + " kaydedildi.\n" + resultUri
                                     Toast.makeText(this@VideoEditorActivity, "Video kaydedildi.", Toast.LENGTH_LONG).show()
@@ -9948,6 +9949,8 @@ class VideoEditorActivity : Activity() {
                     FileInputStream(source).use { input -> input.copyTo(output) }
                 } ?: error("Kayıt dosyası açılamadı.")
                 contentResolver.update(uri, ContentValues().apply { put(MediaStore.Video.Media.IS_PENDING, 0) }, null, null)
+                val savedBytes = contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: -1L
+                check(savedBytes > 0L) { "Kaydedilen MP4 dosyası boş." }
                 return uri.toString()
             } catch (t: Throwable) {
                 contentResolver.delete(uri, null, null)
@@ -9959,6 +9962,7 @@ class VideoEditorActivity : Activity() {
         if (!folder.exists() && !folder.mkdirs()) error("Movies/MathMotorVideo klasörü oluşturulamadı.")
         val target = File(folder, name)
         source.copyTo(target, overwrite = true)
+        check(target.isFile && target.length() > 0L) { "Kaydedilen MP4 dosyası boş." }
         return Uri.fromFile(target).toString()
     }
 
