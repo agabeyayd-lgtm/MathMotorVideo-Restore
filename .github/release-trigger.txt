@@ -1,1 +1,1 @@
-Build and publish signed APK for versionCode 396 (8.30-capcut-editor). Includes the merged CapCut-inspired editor features and verified 395-to-396 signing continuity.
+Build and publish signed APK for versionCode 397 (8.31-capcut-editor). Includes paused overlay direct editing, synchronized overlay preview layers, and the verified CapCut-style timeline interaction improvements. Release signing continuity checked against signed versionCode 396 before publishing.
