@@ -804,6 +804,12 @@ class VideoEditorActivity : Activity() {
             previewCanvas,
             FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER)
         )
+        previewCanvas.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+            if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) {
+                if (::previewTextOverlay.isInitialized) updatePreviewTextOverlay()
+                if (::overlaySelectionFrame.isInitialized) updateOverlaySelectionChrome()
+            }
+        }
         // The preview must use the full editor width; a fixed 180dp player
         // makes the central canvas look like a narrow phone-within-a-phone.
         previewCanvas.addView(
