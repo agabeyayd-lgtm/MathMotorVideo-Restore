@@ -838,3 +838,8 @@ The editor preview separates the dark work stage from the fitted project canvas.
 ### Preview canvas geometry tests
 
 The aspect-fit/centering calculation is centralized in `PreviewCanvasMath` and covered by JVM tests for 9:16 portrait, 16:9 landscape, square output, invalid ratios, empty stages, and stage-boundary containment. The emulator smoke script also checks the measured inner-canvas bounds against the dark preview stage for its deterministic 9:16 source fixture.
+
+
+### Shared layer anchor coordinates
+
+Text and image/video overlay layers use the same normalized canvas-center mapping in preview and Media3 export. Android screen translations and Media3 normalized frame anchors are converted by `PreviewCanvasMath`; the Media3 Y-axis inversion is handled in that helper. Text now moves and clips at the same canvas boundaries instead of being kept artificially inside the frame only in preview. JVM tests cover center/edge positions and axis inversion, and the emulator screenshot test asserts that visible overlay pixels remain within the video canvas.
