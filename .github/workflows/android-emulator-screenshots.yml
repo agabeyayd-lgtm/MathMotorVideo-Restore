@@ -26,9 +26,9 @@ permissions:
   contents: read
 
 concurrency:
-  # Only the newest source on a given ref needs the expensive emulator smoke run.
-  # Cancel stale runs so an older, slow emulator cannot block current PR verification.
-  group: android-emulator-screenshots-${{ github.ref }}
+  # Isolate each source revision so a wedged emulator run from an older commit
+  # cannot hold the lock for the latest PR head. Duplicate runs of one SHA replace each other.
+  group: android-emulator-screenshots-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: true
 
 jobs:
