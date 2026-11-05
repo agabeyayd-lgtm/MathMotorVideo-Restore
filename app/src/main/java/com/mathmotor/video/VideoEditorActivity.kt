@@ -9951,7 +9951,7 @@ class VideoEditorActivity : Activity() {
                             android.util.Log.e("EditorExportTest", "EXPORT_ENCODING_FAILED", exportException)
                         }
                         tempOutput.delete()
-                        val causeSummary = generateSequence<Throwable?>(exportException) { it.cause }
+                        val causeSummary = generateSequence<Throwable>(exportException) { it.cause }
                             .take(6)
                             .map { cause ->
                                 cause.message?.takeIf { it.isNotBlank() } ?: cause.javaClass.simpleName
