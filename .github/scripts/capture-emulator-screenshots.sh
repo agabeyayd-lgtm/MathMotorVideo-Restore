@@ -1123,13 +1123,27 @@ if ! timeout -k 2s 15s adb -s emulator-5554 shell am start -S \
   exit 12
 fi
 sleep 3
-# Drafts live below the long tools grid on the vertically scrollable home page.
-# Scroll to the lower section before inspecting the accessibility hierarchy;
-# otherwise uiautomator may omit off-screen children even when they are present.
+# Confirm MathMotor is still foregrounded. A swipe beginning at y=1850 lands
+# in Android's bottom gesture-navigation area on this 1920px emulator and
+# launches the system home screen instead of scrolling the app.
+focused_home="$(timeout -k 2s 5s adb -s emulator-5554 shell dumpsys window 2>/dev/null | grep -E 'mCurrentFocus|mFocusedApp' | tail -n 2 || true)"
+if ! echo "$focused_home" | grep -q "com.mathmotor.video.next"; then
+  echo "MathMotor home activity is not foregrounded before draft-list inspection: $focused_home"
+  collect_capture_diagnostics draft-home-not-focused
+  exit 12
+fi
+# Keep the gesture inside the app content, above its fixed bottom navigation
+# and safely away from Android's system navigation gesture region.
 for _ in 1 2 3; do
-  timeout -k 2s 8s adb -s emulator-5554 shell input swipe 540 1850 540 430 450 || true
+  timeout -k 2s 8s adb -s emulator-5554 shell input swipe 540 1650 540 700 450 || true
   sleep 1
 done
+focused_home="$(timeout -k 2s 5s adb -s emulator-5554 shell dumpsys window 2>/dev/null | grep -E 'mCurrentFocus|mFocusedApp' | tail -n 2 || true)"
+if ! echo "$focused_home" | grep -q "com.mathmotor.video.next"; then
+  echo "Draft-list scroll unexpectedly left MathMotor: $focused_home"
+  collect_capture_diagnostics draft-home-scroll-left-app
+  exit 12
+fi
 dump_hierarchy drafts-home.xml emulator-screenshots/drafts-home-window.xml || true
 if [ -s emulator-screenshots/drafts-home-window.xml ] && ! grep -Eqi "TASLAKLAR|Taslaklar" emulator-screenshots/drafts-home-window.xml; then
   echo "Local draft was saved, but the home screen did not expose the draft section."
