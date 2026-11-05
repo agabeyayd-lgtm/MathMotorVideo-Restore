@@ -319,6 +319,21 @@ if ! timeout -k 2s 30s adb -s emulator-5554 shell -T \
   exit 10
 fi
 timeout -k 2s 8s adb -s emulator-5554 shell run-as com.mathmotor.video.next ls -l files/editor-test-video.mp4 2>&1 | tee -a emulator-screenshots/video-fixture-private-copy.txt
+
+replacement_fixture="app/build/test-fixtures/editor-test-video-replacement.mp4"
+app_internal_replacement_video="/data/user/0/com.mathmotor.video.next/files/editor-test-video-replacement.mp4"
+if [ ! -s "$replacement_fixture" ]; then
+  echo "Missing replacement video fixture: $replacement_fixture"
+  exit 3
+fi
+if ! timeout -k 2s 30s adb -s emulator-5554 shell -T \
+  "run-as com.mathmotor.video.next sh -c 'cat > files/editor-test-video-replacement.mp4'" \
+  < "$replacement_fixture" 2>&1 | tee -a emulator-screenshots/video-fixture-private-copy.txt; then
+  echo "Streaming the replacement video fixture into the app sandbox failed."
+  exit 10
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell run-as com.mathmotor.video.next ls -l files/editor-test-video-replacement.mp4 2>&1 | tee -a emulator-screenshots/video-fixture-private-copy.txt
+
 overlay_fixture="app/build/test-fixtures/editor-test-overlay.png"
 app_internal_overlay="/data/user/0/com.mathmotor.video.next/files/editor-test-overlay.png"
 if [ ! -s "$overlay_fixture" ]; then
@@ -342,6 +357,7 @@ timeout -k 2s 15s adb -s emulator-5554 shell am start \
   -n com.mathmotor.video.next/com.mathmotor.video.EditorTestEntryActivity \
   --es video_uri "file://$app_internal_video" \
   --es overlay_uri "file://$app_internal_overlay" \
+  --es replacement_video_uri "file://$app_internal_replacement_video" \
   --es draft_id "11111111-1111-4111-8111-111111111111" \
   --ez timeline_sync_test true \
   --ef timeline_test_px_per_sec_dp 120 | tee emulator-screenshots/editor-video-launch.txt
@@ -385,7 +401,105 @@ if [ "$overlay_loaded" != true ]; then
   collect_capture_diagnostics overlay-editor-import-timeout
   exit 32
 fi
-sleep 3
+
+# Regression: after the overlay is present, the debug bridge calls the production
+# removeClipAt() path for the original red/hue-cycling source, then imports a
+# distinct solid-green video through addClip(replaceExisting=true).
+replacement_complete=false
+for attempt in $(seq 1 30); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime > emulator-screenshots/video-replacement-logcat.txt 2>&1 || true
+  if grep -Fq "EDITOR_SMOKE_CLIP_REPLACED newUri=file://$app_internal_replacement_video" emulator-screenshots/video-replacement-logcat.txt \
+     && grep -Fq "EDITOR_SMOKE_REPLACEMENT_THUMBNAIL_READY uri=file://$app_internal_replacement_video" emulator-screenshots/video-replacement-logcat.txt; then
+    replacement_complete=true
+    break
+  fi
+  if grep -q "EDITOR_SMOKE_REPLACEMENT_SKIPPED" emulator-screenshots/video-replacement-logcat.txt; then
+    echo "Video replacement regression path was skipped."
+    collect_capture_diagnostics video-replacement-skipped
+    exit 41
+  fi
+  echo "Waiting for old-video removal, new-video import, and its first exact thumbnail (attempt $attempt/30)"
+  sleep 2
+done
+if [ "$replacement_complete" != true ]; then
+  echo "Old filmstrip was not replaced by the new video fixture within 60 seconds."
+  collect_capture_diagnostics video-replacement-timeout
+  exit 42
+fi
+if ! take_screen emulator-screenshots/editor-after-video-replacement.png; then
+  collect_capture_diagnostics video-replacement-capture-failure
+  exit 6
+fi
+dump_hierarchy editor-after-video-replacement.xml emulator-screenshots/editor-after-video-replacement.xml || true
+if ! grep -Fq "editor-test-video-replacement.mp4" emulator-screenshots/editor-after-video-replacement.xml; then
+  echo "The visible video lane does not identify the replacement source."
+  collect_capture_diagnostics video-replacement-source-not-visible
+  exit 43
+fi
+if grep -Fq "editor-test-video.mp4" emulator-screenshots/editor-after-video-replacement.xml; then
+  echo "The deleted source is still exposed in the current video lane hierarchy."
+  collect_capture_diagnostics old-video-still-in-lane
+  exit 44
+fi
+replacement_visual_ready=false
+for attempt in $(seq 1 25); do
+  if ! take_screen emulator-screenshots/editor-after-video-replacement.png; then
+    collect_capture_diagnostics video-replacement-capture-failure
+    exit 6
+  fi
+  replacement_green_ratio="$(python3 - emulator-screenshots/editor-after-video-replacement.xml emulator-screenshots/editor-after-video-replacement.png <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+from PIL import Image
+
+try:
+    root = ET.parse(sys.argv[1]).getroot()
+except (OSError, ET.ParseError) as error:
+    raise SystemExit(f"Cannot parse replacement editor hierarchy: {error}")
+
+bounds = None
+for node in root.iter("node"):
+    desc = node.attrib.get("content-desc", "")
+    if desc.startswith("Klip 1:") and "editor-test-video-replacement.mp4" in desc:
+        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+        if match:
+            bounds = tuple(map(int, match.groups()))
+            break
+if bounds is None:
+    raise SystemExit("Replacement clip accessibility bounds were not found.")
+
+x1, y1, x2, y2 = bounds
+image = Image.open(sys.argv[2]).convert("RGB")
+crop = image.crop((x1 + 3, y1 + 3, x2 - 3, y2 - 3))
+pixels = list(crop.getdata())
+green = sum(1 for r, g, b in pixels if g > 115 and g > r * 1.45 and g > b * 1.20)
+ratio = green / max(1, len(pixels))
+print(f"{ratio:.4f}")
+PY
+)"
+  echo "Replacement filmstrip visible green-pixel ratio attempt $attempt/25: $replacement_green_ratio"
+  if python3 - "$replacement_green_ratio" <<'PY'
+import sys
+try:
+    ratio = float(sys.argv[1])
+except (ValueError, IndexError):
+    raise SystemExit(1)
+raise SystemExit(0 if ratio >= 0.75 else 1)
+PY
+  then
+    replacement_visual_ready=true
+    break
+  fi
+  sleep 2
+done
+if [ "$replacement_visual_ready" != true ]; then
+  echo "Replacement filmstrip did not finish rendering the visible green frames; stale/blank cells remain."
+  collect_capture_diagnostics video-replacement-filmstrip-not-fully-refreshed
+  exit 45
+fi
+echo "PASS: the visible replacement filmstrip is populated with the new green source frames (ratio >= 0.75)."
+sleep 1
 if ! take_screen emulator-screenshots/editor.png; then
   collect_capture_diagnostics video-editor-capture-failure
   exit 6
@@ -590,6 +704,7 @@ if ! take_screen emulator-screenshots/editor-panel-closed.png; then
   collect_capture_diagnostics editor-panel-close-capture-failure
   exit 6
 fi
+dump_hierarchy editor-panel-closed.xml emulator-screenshots/editor-panel-closed.xml || true
 timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime -s EditorPanelLayoutTest:I > emulator-screenshots/editor-panel-layout-logcat.txt 2>&1 || true
 
 python3 - emulator-screenshots/editor-panel-layout-logcat.txt <<'PY'
@@ -629,10 +744,100 @@ for state in required[1:]:
 print("PASS: preview and timeline stayed fixed while the one-row tool strip opened, detail rose above it, the strip returned, and the main dock was restored.")
 PY
 
+echo "Step 8b/12: open the Proje panel and prove the MP4 button receives a real tap"
+proje_coords="$(find_bottom_tool emulator-screenshots/editor-panel-closed.xml "Proje" || true)"
+if [ -z "$proje_coords" ]; then
+  echo "Could not locate the Proje tab before testing MP4 export."
+  collect_capture_diagnostics mp4-export-project-tab-missing
+  exit 37
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $proje_coords
+sleep 1
+dump_hierarchy editor-export-panel.xml emulator-screenshots/editor-export-panel.xml || true
+find_mp4_export_button() {
+  python3 - "$1" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+try:
+    root = ET.parse(sys.argv[1]).getroot()
+except (OSError, ET.ParseError):
+    raise SystemExit(1)
+for node in root.iter("node"):
+    text = " ".join(node.attrib.get("text", "").split()).casefold()
+    words = text.split()
+    # Turkish case-folding maps capital dotted/dotless I differently from
+    # a hand-written lowercase literal. Match the invariant words instead.
+    is_mp4_export = len(words) >= 3 and words[0] == "mp4" and words[-1] == "aktar"
+    if is_mp4_export and node.attrib.get("class") == "android.widget.Button":
+        if node.attrib.get("clickable") != "true" or node.attrib.get("enabled") != "true":
+            continue
+        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+        if match:
+            x1, y1, x2, y2 = map(int, match.groups())
+            if x2 > x1 and y2 > y1:
+                print((x1 + x2) // 2, (y1 + y2) // 2)
+                break
+PY
+}
+mp4_coords="$(find_mp4_export_button emulator-screenshots/editor-export-panel.xml || true)"
+if [ -z "$mp4_coords" ]; then
+  echo "The MP4 button is not visible/clickable in the initial Proje panel viewport."
+  collect_capture_diagnostics mp4-export-button-not-visible
+  exit 38
+fi
+echo "Tapping the visible, enabled MP4 export button at $mp4_coords"
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $mp4_coords
+export_started=false
+for attempt in $(seq 1 20); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorExportTest:V > emulator-screenshots/mp4-export-tap-logcat.txt 2>&1 || true
+  if grep -q "EXPORT_TRANSFORMER_STARTED" emulator-screenshots/mp4-export-tap-logcat.txt; then
+    export_started=true
+    break
+  fi
+  if grep -qE "EXPORT_GUARD_NO_CLIPS|EXPORT_GUARD_INVALID_CLIP|EXPORT_COMPOSITION_FAILED|EXPORT_TRANSFORMER_START_FAILED|EXPORT_TRANSFORMER_BUILD_FAILED" emulator-screenshots/mp4-export-tap-logcat.txt; then
+    break
+  fi
+  echo "Waiting for the MP4 tap to reach Transformer.start (attempt $attempt/20)"
+  sleep 2
+done
+if [ "$export_started" != true ]; then
+  echo "The MP4 button tap did not reach a successful Transformer.start call."
+  collect_capture_diagnostics mp4-export-button-tap-failed
+  exit 39
+fi
+export_saved=false
+for attempt in $(seq 1 40); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorExportTest:V > emulator-screenshots/mp4-export-tap-logcat.txt 2>&1 || true
+  if grep -q "EXPORT_OUTPUT_SAVED" emulator-screenshots/mp4-export-tap-logcat.txt; then
+    export_saved=true
+    break
+  fi
+  if grep -qE "EXPORT_ENCODING_FAILED|EXPORT_OUTPUT_SAVE_FAILED" emulator-screenshots/mp4-export-tap-logcat.txt; then
+    break
+  fi
+  echo "Waiting for a saved MP4 output from the fixture export (attempt $attempt/40)"
+  sleep 2
+done
+if [ "$export_saved" != true ]; then
+  echo "The Transformer started, but no successfully saved MP4 was confirmed."
+  collect_capture_diagnostics mp4-export-output-not-saved
+  exit 40
+fi
+if ! take_screen emulator-screenshots/editor-export-saved.png; then
+  collect_capture_diagnostics mp4-export-saved-capture-failure
+  exit 6
+fi
+# Close the Proje drawer so it cannot cover the timeline checks that follow.
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $proje_coords
+sleep 1
+dump_hierarchy editor-export-closed.xml emulator-screenshots/editor-export-closed.xml || true
+echo "PASS: visible MP4 button tap reached the export handler, started Transformer, saved an MP4 output, and closed the drawer."
 echo "Step 9/12: align a thumbnail cell with the playhead and compare the rendered pixels"
 # HorizontalScrollView consumes ViewConfiguration.scaledTouchSlop before it
-# scrolls. That value is density-scaled (pixels), so a fixed 12px allowance
-# undershoots on the Pixel 2 emulator and creates a false alignment failure.
+# scrolls. Android reports integer-pixel view bounds and ADB gesture coordinates;
+# accept a 5px center residual (under 3dp on this emulator) rather than treating
+# coordinate rounding as a timeline synchronization failure.
 touch_slop_px="$(timeout -k 2s 8s adb -s emulator-5554 logcat -d -v brief -s TimelineSyncTest:I \
   | sed -n 's/.*TIMELINE_TOUCH_SLOP_PX=\([0-9][0-9]*\).*/\1/p' | tail -n 1)"
 if ! [[ "$touch_slop_px" =~ ^[0-9]+$ ]] || [ "$touch_slop_px" -le 0 ]; then
@@ -650,7 +855,7 @@ for attempt in 1 2 3 4 5; do
   delta_x="$((play_center_x - thumb_center_x))"
   absolute_delta="$((delta_x < 0 ? -delta_x : delta_x))"
   echo "Alignment attempt $attempt: sample=${thumb_sample_ms}ms center=${thumb_center_x}px playhead=${play_center_x}px delta=${delta_x}px"
-  if [ "$absolute_delta" -le 3 ]; then
+  if [ "$absolute_delta" -le 5 ]; then
     thumbnail_aligned=true
     break
   fi

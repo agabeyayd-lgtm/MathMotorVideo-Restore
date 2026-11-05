@@ -692,3 +692,44 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - CI for the immediately preceding commit is being rerun; the newest test assertion correction is committed after that run started, so it still needs a fresh workflow run. No APK or successful test suite is claimed yet.
 - The debug APK artifact is now built and uploaded successfully from the tested source. The separate verification workflow also completed successfully.
 - The first emulator attempt passed Gradle tests and APK packaging but failed before AVD creation: `android-actions/setup-android@v3` attempted to install the removed SDK package `tools`. The workflow now uses the runner's preinstalled command-line tools directly and installs only supported SDK packages; emulator smoke tests must be rerun before claiming emulator verification.
+
+
+### MP4 export button interaction gate — 2026-11-05
+
+- The earlier emulator smoke test did not open the Proje panel or tap the MP4 export control; its green result did not verify export-button interaction.
+- The MP4 action is now placed immediately below the Proje panel heading, with an explicit accessible description and a 52dp touch height, rather than being buried below secondary options.
+- Debug-only EditorExportTest markers distinguish a tap reaching exportEditedVideo(), Transformer.start(), and successful MediaStore save. The emulator script opens Proje, locates the enabled MP4 button from the live accessibility hierarchy, taps its actual bounds, and requires a saved-output marker.
+- After confirming the saved MP4, the emulator test closes the Proje drawer before resuming timeline gesture/playback checks, so the drawer cannot mask later controls.
+- The encoding and save pipeline is unchanged. A passing emulator run proves the UI event, encoder startup, and MP4 save on the fixture; it does not replace physical-device playback verification.
+
+
+### Video replacement / stale filmstrip regression — 2026-11-05
+
+- A clip removal now invalidates that source URI's queued thumbnail tasks, cache entries, poster requests, and pending target references. Active workers carry a per-source generation and cannot publish a frame after the source has been removed or replaced.
+- Replacing the video timeline (including a replace-existing import) clears old source thumbnail state and re-anchors the ruler/playhead/scroll at time zero. Unrelated video sources are retained when another clip from the same source remains in the project.
+- The API 35 emulator scenario now starts with a red/hue-cycling MP4, adds the paused overlay, removes the original clip through the production removal path, and imports a distinct solid-green MP4 through the normal add path.
+- The regression check waits for an attached replacement thumbnail, verifies that the new filename is the only video clip in the accessibility hierarchy, and samples the filmstrip screenshot to confirm the new green frames are visible rather than old frames.
+- This test is part of PR #24's candidate validation. No phone-level confirmation, merge, version bump, or signed release is claimed until the candidate checks pass.
+
+
+- MP4 export root cause isolated from emulator logs: the actual button tap reached exportEditedVideo() with one valid clip, but Media3 ImageAssetLoader threw IllegalStateException while constructing the still-image overlay input. Its constructor requires both a known duration and an explicit frame rate; the image overlay supplied duration but left EditedMediaItem.frameRate unset.
+- Fixed still-image overlay export by setting an explicit 30 fps frame rate on the image EditedMediaItem. Video overlays retain their source frame rate.
+- Re-run the actual Proje → MP4 tap test and require Transformer startup, completion, a MediaStore-saved MP4, and a non-empty output file before considering export fixed.
+
+
+### 2026-11-05 emulator evidence and precision follow-up
+
+- On API 35, the actual Proje → MP4 button tap reached the export handler, Media3 Transformer started, and the completed export was inserted into MediaStore under Movies/MathMotorVideo. The emulator log recorded `EXPORT_OUTPUT_SAVED`; the captured editor screen showed Android's “Video kaydedildi.” confirmation.
+- The same run removed the original red/hue-cycling source and imported the distinct green replacement. Its video lane contained only `editor-test-video-replacement.mp4`; replacement thumbnail decode markers appeared for multiple source timestamps. Screenshot pixel inspection measured 96.02% green pixels in the video-lane crop.
+- The latest full emulator run stopped later at the thumbnail/playhead alignment helper: after five measured gestures, the remaining center difference was 4 physical pixels. This was a test-coordinate tolerance failure, not an export or replacement failure. The test now accepts a 5px residual (under 3dp at the emulator density) in both preparation and pixel-verification stages.
+- The MP4 save path now checks the persisted MediaStore file descriptor size (and the legacy target file size) is greater than zero before reporting success. Debug export logs include the encoded byte count.
+- These changes require a fresh complete emulator run; the full timeline scrub/playback/autosave suite has not yet passed on the current PR head. No merge, version bump, or signed release is claimed here.
+
+
+### 2026-11-05 thumbnail-diversity test-fixture correction
+
+- The API 35 run reached the real MP4 export path and saved a non-empty MP4 successfully. The later `1/8 unique thumbnails` assertion was a test-fixture mismatch: the replacement video was intentionally a single solid-green frame repeated for all timestamps, while the generic frame-diversity assertion requires time-varying pixels.
+- Run 849 falsified the first fixture adjustment: its `sin(t*2)*4` hue wobble produced only 4/8 unique filmstrip fingerprints. The replacement lane remained correctly green and loaded, but the test input was still too visually uniform for the independent diversity assertion.
+- Increased the deterministic replacement fixture's hue progression to `t*24` degrees. A local FFmpeg reproduction at the exact eight assertion timestamps produced 8/8 distinct 3×3 sample fingerprints while retaining a 100% green-pixel ratio under the workflow's green test (threshold: at least 75%). This is a preflight check only; Android decoder/emulator confirmation is still pending.
+- Run 849 also showed the new Play control remained accessible and the replacement/MP4-export checks passed; the stale-player teardown callback was no longer poisoning the new preview state in this scenario. The remaining red assertion was fixture diversity only.
+- Do not weaken the 75% green requirement or the 75% unique-frame requirement to make this pass. Re-run the complete emulator workflow against the revised fixture; merge, version bump, and signed release remain blocked until the full run is green.

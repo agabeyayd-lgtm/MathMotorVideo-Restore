@@ -349,15 +349,57 @@ class VideoEditorActivity : Activity() {
     private val pendingTimelinePosterLoads = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private val timelinePosterExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
     private val pendingTimelineThumbnails = mutableMapOf<String, MutableList<WeakReference<ImageView>>>()
+    private val pendingTimelineThumbnailGenerations = mutableMapOf<String, Long>()
+    private val timelineThumbnailSourceGenerations = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private val pendingTimelinePosterGenerations = java.util.concurrent.ConcurrentHashMap<String, Long>()
     // Learned from the actual decoded frame, so imported and restored clips share
     // the same aspect-ratio-aware filmstrip path without blocking the UI for metadata.
     private val timelineVideoAspectRatios = java.util.concurrent.ConcurrentHashMap<String, Float>()
     private fun timelineVideoAspectRatio(uri: Uri): Float =
         timelineVideoAspectRatios[uri.toString()] ?: TimelineThumbnailMath.DEFAULT_SOURCE_ASPECT_RATIO
 
+    private fun timelineThumbnailSourceGeneration(uri: Uri): Long =
+        timelineThumbnailSourceGenerations[uri.toString()] ?: 0L
+
+    /**
+     * Invalidate every asynchronous frame request for a video that has left the
+     * timeline. A worker may already be decoding, so generation checks also guard
+     * its UI callback; clearing only the queue would not stop an active decoder
+     * from repainting a detached/reused filmstrip target.
+     */
+    private fun invalidateTimelineThumbnailSource(uri: Uri, reason: String) {
+        val sourceKey = uri.toString()
+        val nextGeneration = timelineThumbnailSourceGeneration(uri) + 1L
+        timelineThumbnailSourceGenerations[sourceKey] = nextGeneration
+        timelineThumbnailExecutor.queue.removeIf { task ->
+            (task as? TimelineThumbnailTask)?.sourceUriKey == sourceKey
+        }
+        val prefix = "$sourceKey#"
+        pendingTimelineThumbnails.keys.filter { it.startsWith(prefix) }.forEach { key ->
+            pendingTimelineThumbnails.remove(key)
+            pendingTimelineThumbnailGenerations.remove(key)
+        }
+        timelineThumbnailCache.snapshot().keys
+            .filter { it.startsWith(prefix) }
+            .forEach { timelineThumbnailCache.remove(it) }
+        timelinePosterCache.remove(sourceKey)
+        pendingTimelinePosterTargets.remove(sourceKey)
+        pendingTimelinePosterLoads.remove(sourceKey)
+        pendingTimelinePosterGenerations.remove(sourceKey)
+        timelineVideoAspectRatios.remove(sourceKey)
+        if (timelineSyncTestEnabled || timelineLifecycleDiagnosticsEnabled) {
+            android.util.Log.i(
+                "TimelineThumbnail",
+                "TIMELINE_SOURCE_INVALIDATED uri=$sourceKey generation=$nextGeneration reason=$reason"
+            )
+        }
+    }
+
     private class TimelineThumbnailTask(
         private val distanceFromPlayheadMs: Long,
         private val sequence: Long,
+        val sourceUriKey: String? = null,
+        val sourceGeneration: Long? = null,
         private val work: () -> Unit
     ) : Runnable, Comparable<TimelineThumbnailTask> {
         override fun compareTo(other: TimelineThumbnailTask): Int {
@@ -401,6 +443,8 @@ class VideoEditorActivity : Activity() {
     private var timelinePlayheadMs = 0L
     // Enabled only by the debug emulator test bridge; no telemetry is emitted in normal app use.
     private var timelineSyncTestEnabled = false
+    private var timelineTestReplacementAfterOverlayUri: Uri? = null
+    private var timelineTestExpectedReplacementUri: Uri? = null
     // Local diagnostics are enabled only in debuggable builds; nothing is uploaded.
     private var timelineLifecycleDiagnosticsEnabled = false
     private var timelineLifecycleState = "not-created"
@@ -555,6 +599,10 @@ class VideoEditorActivity : Activity() {
         timelineSyncTestEnabled =
             (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0 &&
                 intent.getBooleanExtra("timeline_sync_test", false)
+        if (timelineSyncTestEnabled) {
+            timelineTestReplacementAfterOverlayUri =
+                intent.getStringExtra("replacement_video_uri")?.takeIf { it.isNotBlank() }?.let(Uri::parse)
+        }
         timelineLifecycleState = "created"
         logTimelineLifecycle(
             "onCreate",
@@ -1727,6 +1775,15 @@ class VideoEditorActivity : Activity() {
 
         val exportPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         exportPanel.addView(label("PROJE / DIŞA AKTARMA", 13f, Color.rgb(121, 202, 218), true))
+        // Keep the primary action at the top of the short export drawer so it is
+        // immediately visible and never depends on scrolling past secondary options.
+        exportButton = actionButton("MP4 DIŞA AKTAR") { exportEditedVideo() }.apply {
+            contentDescription = "MP4 olarak dışa aktar"
+            minHeight = dp(52)
+            isClickable = true
+            isFocusable = true
+        }
+        exportPanel.addView(exportButton)
         exportPanel.addView(label("Dosya adı", 11f, Color.rgb(154, 171, 190), false))
         exportNameInput = EditText(this).apply {
             setText("MathMotor_Edit")
@@ -1808,8 +1865,6 @@ class VideoEditorActivity : Activity() {
         exportPanel.addView(label("Kadraj değiştirirken kenarlardan kırpılır; kaynak: orijinal oran.", 10f, Color.rgb(132, 153, 173), false))
         exportPanel.addView(actionButton("Projeyi farklı kaydet (.JSON)") { requestSaveProject() })
         exportPanel.addView(actionButton("Kayıtlı projeyi aç") { requestOpenProject() })
-        exportButton = actionButton("MP4 DIŞA AKTAR") { exportEditedVideo() }
-        exportPanel.addView(exportButton)
 
         editorPanels["clip"] = clipPanel
         editorPanels["clipVolume"] = clipVolumePanel
@@ -4586,7 +4641,16 @@ class VideoEditorActivity : Activity() {
                 .build()
         }
         val editedItem = EditedMediaItem.Builder(mediaItem)
-            .apply { if (!overlay.isImage) setRemoveAudio(true) }
+            .apply {
+                if (overlay.isImage) {
+                    // Media3 ImageAssetLoader requires an explicit frame rate in
+                    // addition to the image duration. Without this, Transformer.start()
+                    // throws IllegalStateException before encoding begins.
+                    setFrameRate(30)
+                } else {
+                    setRemoveAudio(true)
+                }
+            }
             .build()
         sequenceBuilder.addItem(editedItem)
 
@@ -4841,9 +4905,7 @@ class VideoEditorActivity : Activity() {
         if (clips.isEmpty()) return
         val wasPlaying = timelineCompositionPlayer?.playWhenReady == true
         val position = timelinePlayheadMs.coerceIn(0L, totalOutputDurationMs())
-        timelineCompositionPlayer?.release()
-        timelineCompositionPlayer = null
-        timelinePreviewLoaded = false
+        releaseTimelineCompositionPlayer()
         ensureTimelinePreviewLoaded()
         timelineCompositionPlayer?.seekTo(position)
         timelineCompositionPlayer?.playWhenReady = wasPlaying
@@ -4888,18 +4950,37 @@ class VideoEditorActivity : Activity() {
         player?.playWhenReady=false
         timelineCompositionPlayer?.playWhenReady=false
     }
+
+    /**
+     * Detach a composition player before releasing it. Media3 can surface a
+     * release-time ExoTimeoutException through its listener while teardown is
+     * in progress; a player that is already being discarded must not put the
+     * replacement timeline into the ERROR state or overwrite its controls.
+     */
+    private fun releaseTimelineCompositionPlayer() {
+        val previous = timelineCompositionPlayer
+        timelineCompositionPlayer = null
+        timelinePreviewLoaded = false
+        if (previous == null) return
+
+        runCatching { previous.playWhenReady = false }
+        if (::playerView.isInitialized && playerView.player === previous) {
+            playerView.player = null
+        }
+        runCatching { previous.release() }.onFailure {
+            android.util.Log.w("MathMotorTimeline", "Composition player release failed during teardown", it)
+        }
+    }
     private fun showSingleClipPreview(){
         hidePreviewFrameOverlay()
-        timelineCompositionPlayer?.release()
-        timelineCompositionPlayer=null
-        timelinePreviewLoaded=false
+        releaseTimelineCompositionPlayer()
         if(::playerView.isInitialized)playerView.player=player
     }
     private fun refreshTimelineSourceAudio(){
         if(!timelinePreviewLoaded)return
         val wasPlaying=timelineCompositionPlayer?.playWhenReady==true
         val position=timelinePlayheadMs
-        timelineCompositionPlayer?.release();timelineCompositionPlayer=null;timelinePreviewLoaded=false
+        releaseTimelineCompositionPlayer()
         ensureTimelinePreviewLoaded()
         timelineCompositionPlayer?.seekTo(position)
         timelineCompositionPlayer?.playWhenReady=wasPlaying
@@ -4911,20 +4992,30 @@ class VideoEditorActivity : Activity() {
             "TIMELINE_PREVIEW_INIT clips=${clips.size} playheadMs=$timelinePlayheadMs playerViewInitialized=${::playerView.isInitialized}")
         previewSingleClip=false
         pauseActivePreview()
-        runCatching{timelineCompositionPlayer?.release()}
-        timelineCompositionPlayer=null
+        releaseTimelineCompositionPlayer()
         try{
             val comp = CompositionPlayer.Builder(this).build()
             if (timelineSyncTestEnabled) android.util.Log.i("TimelineSyncTest", "TIMELINE_PREVIEW_BUILDER_OK")
             comp.addListener(object:androidx.media3.common.Player.Listener{
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
+                    if (timelineCompositionPlayer !== comp) return
                     if (isPlaying) hidePreviewFrameOverlay()
                     updateOverlaySelectionChrome()
                 }
                 override fun onVideoSizeChanged(videoSize:androidx.media3.common.VideoSize){
-                    playerView.post{updatePreviewCanvasSize()}
+                    if (timelineCompositionPlayer !== comp) return
+                    playerView.post{
+                        if (timelineCompositionPlayer === comp) updatePreviewCanvasSize()
+                    }
                 }
                 override fun onPlayerError(error:androidx.media3.common.PlaybackException){
+                    if (timelineCompositionPlayer !== comp) {
+                        android.util.Log.i(
+                            "MathMotorTimeline",
+                            "Ignoring error from released composition player: ${error.message}"
+                        )
+                        return
+                    }
                     android.util.Log.e("MathMotorTimeline","Composition player failed",error)
                     timelinePreviewError = error.message ?: "Media3 oynatma hatası"
                     timelinePlaybackState = TimelinePlaybackState.ERROR
@@ -4932,6 +5023,7 @@ class VideoEditorActivity : Activity() {
                     status.text = "Oynatıcı hatası: " + timelinePreviewError
                 }
                 override fun onPlaybackStateChanged(playbackState: Int) {
+                    if (timelineCompositionPlayer !== comp) return
                     if (playbackState == androidx.media3.common.Player.STATE_READY &&
                         overlayClips.isNotEmpty()
                     ) {
@@ -4972,7 +5064,7 @@ class VideoEditorActivity : Activity() {
             android.util.Log.e("MathMotorTimeline", "Timeline preview setup failed", error)
             if (timelineSyncTestEnabled) android.util.Log.e("TimelineSyncTest",
                 "TIMELINE_PREVIEW_FAILED type=${error.javaClass.name} message=${error.message}", error)
-            timelineCompositionPlayer?.release();timelineCompositionPlayer=null;timelinePreviewLoaded=false
+            releaseTimelineCompositionPlayer()
             playerView.player=player
             status.text="Zaman çizelgesi önizlemesi kurulamadı: ${error.message ?: error.javaClass.simpleName}"
         }
@@ -6113,9 +6205,18 @@ class VideoEditorActivity : Activity() {
                     return@runOnUiThread
                 }
                 recordClipEdit()
+                val startsFreshVideoTimeline = replaceExisting || clips.isEmpty()
                 if (replaceExisting) {
+                    clips.map { it.uri }.distinct().forEach { oldUri ->
+                        invalidateTimelineThumbnailSource(oldUri, "video-replaced")
+                    }
                     clips.clear()
                     selectedClipIndex = -1
+                }
+                if (startsFreshVideoTimeline) {
+                    timelineHorizontalScrollX = 0
+                    pendingTimelineScrollX = 0
+                    timelinePlayheadMs = 0L
                 }
                 timelinePreviewLoaded = false
                 previewSingleClip = true
@@ -6142,6 +6243,12 @@ class VideoEditorActivity : Activity() {
                     "EditorSmokeTest",
                     "EDITOR_SMOKE_CLIP_ADDED title=$title durationMs=$duration clipCount=${clips.size}"
                 )
+                if (timelineSyncTestEnabled && timelineTestExpectedReplacementUri == uri) {
+                    android.util.Log.i(
+                        "EditorSmokeTest",
+                        "EDITOR_SMOKE_CLIP_REPLACED newUri=$uri clipCount=${clips.size} videoLaneSources=${clips.joinToString("|") { it.uri.toString() }}"
+                    )
+                }
                 if (smokeTest) {
                     val testOverlayUri = intent.getStringExtra("overlay_uri")
                     if (!testOverlayUri.isNullOrBlank()) {
@@ -6759,6 +6866,29 @@ class VideoEditorActivity : Activity() {
                     android.util.Log.i("EditorSmokeTest",
                         "EDITOR_SMOKE_OVERLAY_ADDED id=" + overlay.id + " aspect=" + overlay.aspectRatio)
                 }
+                // Test-only replacement path mirrors the user's exact sequence: remove
+                // the current video through the production removal handler, then import
+                // a second source through the normal addClip path.
+                val replacementUri = timelineTestReplacementAfterOverlayUri
+                if (replacementUri != null && timelineSyncTestEnabled) {
+                    timelineTestReplacementAfterOverlayUri = null
+                    val oldClipIndex = clips.indexOfFirst { it.uri != replacementUri }
+                    if (oldClipIndex >= 0) {
+                        val oldUri = clips[oldClipIndex].uri
+                        timelineTestExpectedReplacementUri = replacementUri
+                        android.util.Log.i(
+                            "EditorSmokeTest",
+                            "EDITOR_SMOKE_REPLACEMENT_BEGIN oldUri=$oldUri newUri=$replacementUri"
+                        )
+                        removeClipAt(oldClipIndex)
+                        addClip(replacementUri, true)
+                    } else {
+                        android.util.Log.e(
+                            "EditorSmokeTest",
+                            "EDITOR_SMOKE_REPLACEMENT_SKIPPED no-old-video newUri=$replacementUri"
+                        )
+                    }
+                }
                 status.text = if (isImage) {
                     "Fotoğraf bindirme olarak eklendi. Süre, boyut ve konumu aşağıdan düzenle."
                 } else {
@@ -7346,9 +7476,7 @@ class VideoEditorActivity : Activity() {
         val wasPlaying = timelineCompositionPlayer?.playWhenReady == true
         val position = timelinePlayheadMs
         pauseActivePreview()
-        runCatching { timelineCompositionPlayer?.release() }
-        timelineCompositionPlayer = null
-        timelinePreviewLoaded = false
+        releaseTimelineCompositionPlayer()
         if (clips.isNotEmpty()) {
             ensureTimelinePreviewLoaded()
             seekTimelinePreview(position.coerceAtMost(totalOutputDurationMs()))
@@ -7540,6 +7668,9 @@ class VideoEditorActivity : Activity() {
                 recordClipEdit()
                 val startsFreshTimeline = replaceExisting || clips.isEmpty()
                 if (replaceExisting) {
+                    clips.map { it.uri }.distinct().forEach { oldUri ->
+                        invalidateTimelineThumbnailSource(oldUri, "video-list-replaced")
+                    }
                     clips.clear()
                     selectedClipIndex = -1
                 }
@@ -7615,7 +7746,11 @@ class VideoEditorActivity : Activity() {
     private fun removeClipAt(index:Int){
         if(index !in clips.indices)return
         recordClipEdit()
+        val removedUri = clips[index].uri
         clips.removeAt(index)
+        if (clips.none { it.uri == removedUri }) {
+            invalidateTimelineThumbnailSource(removedUri, "clip-removed")
+        }
         timelinePreviewLoaded=false
         selectedClipIndex=when{clips.isEmpty()->-1;index<clips.size->index;else->clips.lastIndex}
         // Update the playhead BEFORE rebuilding the lanes. Previously refreshTimelineAfterClipChange()
@@ -7633,8 +7768,9 @@ class VideoEditorActivity : Activity() {
         refreshTimelineAfterClipChange()
         loadTrimControls()
         if(selected==null){
-            pauseActivePreview();timelineCompositionPlayer?.release();timelineCompositionPlayer=null
-            timelinePreviewLoaded=false;player?.clearMediaItems()
+            pauseActivePreview()
+            releaseTimelineCompositionPlayer()
+            player?.clearMediaItems()
         }else{
             ensureTimelinePreviewLoaded()
             seekTimelinePreview(timelinePlayheadMs)
@@ -8627,15 +8763,27 @@ class VideoEditorActivity : Activity() {
 
     private fun requestTimelinePoster(uri: Uri) {
         val cacheKey = uri.toString()
+        val sourceGeneration = timelineThumbnailSourceGeneration(uri)
         val cached = timelinePosterCache.get(cacheKey)
         if (cached != null && !cached.isRecycled) return
-        if (!pendingTimelinePosterLoads.add(cacheKey)) return
+        if (pendingTimelinePosterGenerations[cacheKey] == sourceGeneration) return
+        pendingTimelinePosterGenerations[cacheKey] = sourceGeneration
+        pendingTimelinePosterLoads.add(cacheKey)
 
         try {
             timelinePosterExecutor.execute {
                 val poster = runCatching { decodeTimelinePoster(uri) }.getOrNull()
                 runOnUiThread {
-                    pendingTimelinePosterLoads.remove(cacheKey)
+                    val ownsPending = pendingTimelinePosterGenerations[cacheKey] == sourceGeneration
+                    if (ownsPending) {
+                        pendingTimelinePosterGenerations.remove(cacheKey)
+                        pendingTimelinePosterLoads.remove(cacheKey)
+                    }
+                    if (sourceGeneration != timelineThumbnailSourceGeneration(uri)) {
+                        poster?.let { if (!it.isRecycled) it.recycle() }
+                        if (ownsPending) pendingTimelinePosterTargets.remove(cacheKey)
+                        return@runOnUiThread
+                    }
                     if (isFinishing || isDestroyed) {
                         poster?.let { if (!it.isRecycled) it.recycle() }
                         pendingTimelinePosterTargets.remove(cacheKey)
@@ -8658,7 +8806,10 @@ class VideoEditorActivity : Activity() {
                 }
             }
         } catch (_: java.util.concurrent.RejectedExecutionException) {
-            pendingTimelinePosterLoads.remove(cacheKey)
+            if (pendingTimelinePosterGenerations[cacheKey] == sourceGeneration) {
+                pendingTimelinePosterGenerations.remove(cacheKey)
+                pendingTimelinePosterLoads.remove(cacheKey)
+            }
         }
     }
 
@@ -8705,6 +8856,8 @@ class VideoEditorActivity : Activity() {
         usePosterPlaceholder: Boolean = false
     ) {
         val timestampMs = timeMs.coerceAtLeast(0L)
+        val sourceKey = uri.toString()
+        val sourceGeneration = timelineThumbnailSourceGeneration(uri)
         val key = "${uri}#${timestampMs}"
         target.tag = key
         val cached = timelineThumbnailCache.get(key)
@@ -8769,7 +8922,7 @@ class VideoEditorActivity : Activity() {
         // Leave the cell neutral black until its own exact sample is decoded.
         // Reusing a nearby timestamp here made stale/partial frames look current.
         val waiting = pendingTimelineThumbnails[key]
-        if (waiting != null) {
+        if (waiting != null && pendingTimelineThumbnailGenerations[key] == sourceGeneration) {
             waiting.add(WeakReference(target))
             if (timelineLifecycleDiagnosticsEnabled) android.util.Log.i(
                 "TimelineThumbnail",
@@ -8777,6 +8930,8 @@ class VideoEditorActivity : Activity() {
             )
             return
         }
+        if (waiting != null) pendingTimelineThumbnails.remove(key)
+        pendingTimelineThumbnailGenerations[key] = sourceGeneration
         pendingTimelineThumbnails[key] = mutableListOf(WeakReference(target))
         val enqueuedAtUptimeMs = SystemClock.uptimeMillis()
         if (timelineLifecycleDiagnosticsEnabled) android.util.Log.i(
@@ -8786,7 +8941,9 @@ class VideoEditorActivity : Activity() {
         )
         val task = TimelineThumbnailTask(
             priorityDistanceMs.coerceAtLeast(0L),
-            timelineThumbnailTaskSequence.incrementAndGet()
+            timelineThumbnailTaskSequence.incrementAndGet(),
+            sourceUriKey = sourceKey,
+            sourceGeneration = sourceGeneration
         ) {
             val taskStartedAtUptimeMs = SystemClock.uptimeMillis()
             val queueWaitMs = taskStartedAtUptimeMs - enqueuedAtUptimeMs
@@ -8836,8 +8993,17 @@ class VideoEditorActivity : Activity() {
             runOnUiThread {
                 val uiCallbackStartedAtUptimeMs = SystemClock.uptimeMillis()
                 val uiDispatchWaitMs = uiCallbackStartedAtUptimeMs - workerCompletedAtUptimeMs
-                val targets = pendingTimelineThumbnails.remove(key).orEmpty()
+                val ownsPending = pendingTimelineThumbnailGenerations[key] == sourceGeneration
+                val targets = if (ownsPending) {
+                    pendingTimelineThumbnailGenerations.remove(key)
+                    pendingTimelineThumbnails.remove(key).orEmpty()
+                } else emptyList()
+                if (sourceGeneration != timelineThumbnailSourceGeneration(uri)) {
+                    result?.let { if (!it.isRecycled) it.recycle() }
+                    return@runOnUiThread
+                }
                 var appliedTargets = 0
+                var appliedAttachedTargets = 0
                 if (result != null && !isFinishing && !isDestroyed) {
                     timelineThumbnailCache.put(key, result)
                     val decodedAspectRatio = result.width.toFloat() / result.height.coerceAtLeast(1).toFloat()
@@ -8864,7 +9030,17 @@ class VideoEditorActivity : Activity() {
                             // image rather than continuing to report a temporary cover.
                             image.contentDescription = "Klip karesi @${timestampMs}ms"
                             appliedTargets++
+                            if (image.isAttachedToWindow) appliedAttachedTargets++
                         }
+                    }
+                    if (timelineSyncTestEnabled &&
+                        timelineTestExpectedReplacementUri == uri &&
+                        appliedAttachedTargets > 0
+                    ) {
+                        android.util.Log.i(
+                            "EditorSmokeTest",
+                            "EDITOR_SMOKE_REPLACEMENT_THUMBNAIL_READY uri=$uri sourceMs=$timestampMs attachedTargets=$appliedAttachedTargets"
+                        )
                     }
                 } else {
                     result?.recycle()
@@ -8892,7 +9068,10 @@ class VideoEditorActivity : Activity() {
         try {
             timelineThumbnailExecutor.execute(task)
         } catch (_: java.util.concurrent.RejectedExecutionException) {
-            pendingTimelineThumbnails.remove(key)
+            if (pendingTimelineThumbnailGenerations[key] == sourceGeneration) {
+                pendingTimelineThumbnailGenerations.remove(key)
+                pendingTimelineThumbnails.remove(key)
+            }
             target.setBackgroundColor(Color.TRANSPARENT)
         }
     }
@@ -9544,7 +9723,19 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun exportEditedVideo() {
-        if (exporting) return
+        // Keep a debug-only marker so the emulator can prove that a real tap on the
+        // visible MP4 control reached this handler and started the export pipeline.
+        if (timelineSyncTestEnabled) {
+            android.util.Log.i("EditorExportTest", "EXPORT_BUTTON_CLICKED clips=${clips.size} exporting=$exporting")
+        }
+        // The export drawer can cover the compact status line; give immediate, visible
+        // feedback so a tap never appears to do nothing while validation/encoding runs.
+        Toast.makeText(this, "MP4 dışa aktarma isteği alındı.", Toast.LENGTH_SHORT).show()
+        if (exporting) {
+            if (timelineSyncTestEnabled) android.util.Log.w("EditorExportTest", "EXPORT_GUARD_ALREADY_RUNNING")
+            Toast.makeText(this, "Dışa aktarma zaten devam ediyor.", Toast.LENGTH_SHORT).show()
+            return
+        }
         if (Build.VERSION.SDK_INT in 26..28 &&
             checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), REQUEST_LEGACY_STORAGE)
@@ -9552,12 +9743,16 @@ class VideoEditorActivity : Activity() {
             return
         }
         if (clips.isEmpty()) {
+            if (timelineSyncTestEnabled) android.util.Log.e("EditorExportTest", "EXPORT_GUARD_NO_CLIPS")
             status.text = "Önce bir video seç."
+            Toast.makeText(this, status.text, Toast.LENGTH_LONG).show()
             return
         }
         val invalid = clips.firstOrNull { it.startMs < 0 || it.endMs <= it.startMs || it.endMs > it.durationMs }
         if (invalid != null) {
+            if (timelineSyncTestEnabled) android.util.Log.e("EditorExportTest", "EXPORT_GUARD_INVALID_CLIP")
             status.text = "Bir klibin kesme aralığı geçersiz. Başlangıç ve bitişi kontrol et."
+            Toast.makeText(this, status.text, Toast.LENGTH_LONG).show()
             return
         }
 
@@ -9566,7 +9761,9 @@ class VideoEditorActivity : Activity() {
         val videoSequences = try {
             buildVideoCompositionSequences()
         } catch (e: Exception) {
+            if (timelineSyncTestEnabled) android.util.Log.e("EditorExportTest", "EXPORT_COMPOSITION_FAILED", e)
             status.text = "Düzenleme hazırlanamadı: ${e.message ?: e.javaClass.simpleName}"
+            Toast.makeText(this, status.text, Toast.LENGTH_LONG).show()
             return
         }
 
@@ -9690,6 +9887,7 @@ class VideoEditorActivity : Activity() {
                 .addListener(object : Transformer.Listener {
                     override fun onCompleted(composition: Composition, exportResult: ExportResult) {
                         Thread {
+                            val encodedBytes = tempOutput.length()
                             val saved = runCatching { saveToMovies(tempOutput, requestedExportName) }
                             tempOutput.delete()
                             runOnUiThread {
@@ -9702,39 +9900,57 @@ class VideoEditorActivity : Activity() {
                                         .removeSuffix(".mp4").removeSuffix(".MP4")
                                         .ifBlank { "Düzenlenmiş video" }
                                     VideoRecordStore.add(this@VideoEditorActivity, VideoRecord(savedTitle, resultUri, now, now))
+                                    if (timelineSyncTestEnabled) {
+                                        android.util.Log.i("EditorExportTest", "EXPORT_OUTPUT_SAVED uri=$resultUri bytes=$encodedBytes")
+                                    }
                                     status.text = "BAŞARILI • " + savedTitle + " kaydedildi.\n" + resultUri
                                     Toast.makeText(this@VideoEditorActivity, "Video kaydedildi.", Toast.LENGTH_LONG).show()
                                 } else {
+                                    if (timelineSyncTestEnabled) {
+                                        android.util.Log.e("EditorExportTest", "EXPORT_OUTPUT_SAVE_FAILED", saved.exceptionOrNull())
+                                    }
                                     status.text = "Video işlendi ancak kaydedilemedi: ${saved.exceptionOrNull()?.message}"
+                                    Toast.makeText(this@VideoEditorActivity, status.text, Toast.LENGTH_LONG).show()
                                 }
                             }
                         }.start()
                     }
 
                     override fun onError(composition: Composition, exportResult: ExportResult, exportException: ExportException) {
+                        if (timelineSyncTestEnabled) {
+                            android.util.Log.e("EditorExportTest", "EXPORT_ENCODING_FAILED", exportException)
+                        }
                         tempOutput.delete()
                         runOnUiThread {
                             exporting = false
                             exportButton.isEnabled = true
                             status.text = "DIŞA AKTARMA BAŞARISIZ\n${exportException.message ?: "Kod ${exportException.errorCode}"}"
+                            Toast.makeText(this@VideoEditorActivity, status.text, Toast.LENGTH_LONG).show()
                         }
                     }
                 })
                 .build()
         } catch (e: Exception) {
+            if (timelineSyncTestEnabled) android.util.Log.e("EditorExportTest", "EXPORT_TRANSFORMER_BUILD_FAILED", e)
             exporting = false
             exportButton.isEnabled = true
             status.text = "Dışa aktarıcı başlatılamadı: ${e.message}"
+            Toast.makeText(this, status.text, Toast.LENGTH_LONG).show()
             return
         }
 
         try {
             transformer.start(composition, tempOutput.absolutePath)
+            if (timelineSyncTestEnabled) {
+                android.util.Log.i("EditorExportTest", "EXPORT_TRANSFORMER_STARTED output=${tempOutput.name}")
+            }
         } catch (e: Exception) {
+            if (timelineSyncTestEnabled) android.util.Log.e("EditorExportTest", "EXPORT_TRANSFORMER_START_FAILED", e)
             tempOutput.delete()
             exporting = false
             exportButton.isEnabled = true
             status.text = "Dışa aktarma başlatılamadı: ${e.message ?: e.javaClass.simpleName}"
+            Toast.makeText(this, status.text, Toast.LENGTH_LONG).show()
         }
     }
 
@@ -9760,6 +9976,8 @@ class VideoEditorActivity : Activity() {
                     FileInputStream(source).use { input -> input.copyTo(output) }
                 } ?: error("Kayıt dosyası açılamadı.")
                 contentResolver.update(uri, ContentValues().apply { put(MediaStore.Video.Media.IS_PENDING, 0) }, null, null)
+                val savedBytes = contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: -1L
+                check(savedBytes > 0L) { "Kaydedilen MP4 dosyası boş." }
                 return uri.toString()
             } catch (t: Throwable) {
                 contentResolver.delete(uri, null, null)
@@ -9771,6 +9989,7 @@ class VideoEditorActivity : Activity() {
         if (!folder.exists() && !folder.mkdirs()) error("Movies/MathMotorVideo klasörü oluşturulamadı.")
         val target = File(folder, name)
         source.copyTo(target, overwrite = true)
+        check(target.isFile && target.length() > 0L) { "Kaydedilen MP4 dosyası boş." }
         return Uri.fromFile(target).toString()
     }
 
@@ -9880,15 +10099,17 @@ class VideoEditorActivity : Activity() {
         timelineThumbnailExecutor.shutdownNow()
         timelinePosterExecutor.shutdownNow()
         pendingTimelineThumbnails.clear()
+        pendingTimelineThumbnailGenerations.clear()
         pendingTimelinePosterTargets.clear()
         pendingTimelinePosterLoads.clear()
+        pendingTimelinePosterGenerations.clear()
+        timelineThumbnailSourceGenerations.clear()
         timelinePosterCache.evictAll()
         timelineThumbnailCache.evictAll()
         playerView.player = null
         player?.release()
         player = null
-        timelineCompositionPlayer?.release()
-        timelineCompositionPlayer = null
+        releaseTimelineCompositionPlayer()
         musicPreviewPlayer?.release()
         musicPreviewPlayer = null
         soundPreviewPlayer?.release()
