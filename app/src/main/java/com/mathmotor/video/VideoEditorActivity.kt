@@ -5631,8 +5631,10 @@ class VideoEditorActivity : Activity() {
     private fun installClipTransformTouch() {
         var activeIndex = -1
         var beforeSnapshot: ClipEditSnapshot? = null
-        var downRawX = 0f
-        var downRawY = 0f
+        // Keep one-finger drag coordinates in the gesture surface's local space,
+        // matching the project canvas and the overlay/text transform handlers.
+        var downX = 0f
+        var downY = 0f
         var baseScale = 1f
         var baseRotation = 0f
         var baseTranslateX = 0f
@@ -5671,13 +5673,13 @@ class VideoEditorActivity : Activity() {
                     baseRotation = selected.transformRotationDegrees
                     baseTranslateX = selected.transformTranslateX
                     baseTranslateY = selected.transformTranslateY
-                    downRawX = event.rawX
-                    downRawY = event.rawY
+                    downX = event.x
+                    downY = event.y
                     twoFingerStartDistance = 0f
                     if (timelineSyncTestEnabled) {
                         android.util.Log.i(
                             "EditorTouchTest",
-                            "VIDEO_CANVAS_TOUCH_DOWN host=${view.width}x${view.height} canvas=${previewCanvas.width}x${previewCanvas.height} raw=${downRawX},${downRawY} startTransform=${selected.transformTranslateX},${selected.transformTranslateY}"
+                            "VIDEO_CANVAS_TOUCH_DOWN host=${view.width}x${view.height} canvas=${previewCanvas.width}x${previewCanvas.height} local=${downX},${downY} raw=${event.rawX},${event.rawY} startTransform=${selected.transformTranslateX},${selected.transformTranslateY}"
                         )
                     }
                     view.parent?.requestDisallowInterceptTouchEvent(true)
@@ -5725,11 +5727,11 @@ class VideoEditorActivity : Activity() {
                         // Transform fractions are normalized against the exact project
                         // canvas, not a potentially inset/scaled gesture-host View.
                         clip.transformTranslateX = (
-                            baseTranslateX + (event.rawX - downRawX) * 2f /
+                            baseTranslateX + (event.x - downX) * 2f /
                                 canvasWidth
                             ).coerceIn(-2f, 2f)
                         clip.transformTranslateY = (
-                            baseTranslateY + (event.rawY - downRawY) * 2f /
+                            baseTranslateY + (event.y - downY) * 2f /
                                 canvasHeight
                             ).coerceIn(-2f, 2f)
                     }
@@ -5739,10 +5741,11 @@ class VideoEditorActivity : Activity() {
                 MotionEvent.ACTION_POINTER_UP -> {
                     if (clip != null && event.pointerCount >= 2) {
                         val remainingIndex = if (event.actionIndex == 0) 1 else 0
-                        val location = IntArray(2)
-                        view.getLocationOnScreen(location)
-                        downRawX = location[0] + event.getX(remainingIndex)
-                        downRawY = location[1] + event.getY(remainingIndex)
+                        // ACTION_POINTER_UP continues as a one-finger local drag.
+                        // Re-anchor in that same local coordinate system; mixing raw
+                        // screen coordinates here would create a jump on finger handoff.
+                        downX = event.getX(remainingIndex)
+                        downY = event.getY(remainingIndex)
                         baseTranslateX = clip.transformTranslateX
                         baseTranslateY = clip.transformTranslateY
                         baseScale = clip.transformScale
@@ -5755,7 +5758,7 @@ class VideoEditorActivity : Activity() {
                     if (timelineSyncTestEnabled && clip != null) {
                         android.util.Log.i(
                             "EditorTouchTest",
-                            "VIDEO_CANVAS_TOUCH_UP host=${view.width}x${view.height} canvas=${previewCanvas.width}x${previewCanvas.height} transform=${clip.transformTranslateX},${clip.transformTranslateY} scale=${clip.transformScale}"
+                            "VIDEO_CANVAS_TOUCH_UP host=${view.width}x${view.height} canvas=${previewCanvas.width}x${previewCanvas.height} local=${event.x},${event.y} raw=${event.rawX},${event.rawY} transform=${clip.transformTranslateX},${clip.transformTranslateY} scale=${clip.transformScale}"
                         )
                     }
                     view.parent?.requestDisallowInterceptTouchEvent(false)
