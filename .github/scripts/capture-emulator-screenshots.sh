@@ -1457,39 +1457,112 @@ if ! take_screen emulator-screenshots/editor-text-selected.png; then
   collect_capture_diagnostics text-canvas-selection-capture-failure
   exit 6
 fi
-if ! dump_hierarchy editor-text-selected.xml emulator-screenshots/editor-text-selected.xml; then
-  echo "UIAutomator could not capture the selected-text hierarchy after two attempts."
-  collect_capture_diagnostics text-canvas-selection-hierarchy-unavailable
-  exit 60
-fi
-python3 - emulator-screenshots/editor-text-selected.xml <<'PY'
+# The selected-text drawer contains a large, rapidly changing accessibility tree.
+# UIAutomator can time out while dumping it even though the editor is still responsive.
+# Verify the rendered selection frame against the measured project-canvas bounds instead.
+detect_text_selection_bounds() {
+  python3 - "$1" emulator-screenshots/preview-canvas-logcat.txt <<'PY'
 import re
 import sys
-import xml.etree.ElementTree as ET
+from PIL import Image
 
-root = ET.parse(sys.argv[1]).getroot()
-selection = []
-text_nodes = []
-for node in root.iter("node"):
-    desc = node.attrib.get("content-desc", "")
-    value = node.attrib.get("text", "")
-    bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
-    if bounds:
-        box = tuple(map(int, bounds.groups()))
-        if desc == "Seçili metin katmanı sınırı":
-            selection.append(box)
-        if value == "CanvasSmoke" and node.attrib.get("class") == "android.widget.TextView":
-            text_nodes.append(box)
-if not selection:
-    raise SystemExit("Selected text layer did not expose its white canvas selection frame.")
-if not text_nodes:
-    raise SystemExit("New text is missing from the visible preview accessibility tree.")
-print(f"PASS: selected text has a visible selection box {selection[-1]} and preview text bounds {text_nodes[-1]}")
+image_path, log_path = sys.argv[1:3]
+lines = [line for line in open(log_path, errors="replace") if "PREVIEW_CANVAS_BOUNDS" in line]
+if not lines:
+    raise SystemExit("No measured preview-canvas bounds are available for the text selection check.")
+match = re.search(
+    r"canvas=(\d+)x(\d+) offset=(\d+),(\d+) origin=(-?\d+),(-?\d+)",
+    lines[-1],
+)
+if not match:
+    raise SystemExit(f"Malformed preview-canvas marker: {lines[-1]}")
+canvas_w, canvas_h, offset_x, offset_y, origin_x, origin_y = map(int, match.groups())
+left, top = origin_x + offset_x, origin_y + offset_y
+right, bottom = left + canvas_w - 1, top + canvas_h - 1
+
+image = Image.open(image_path).convert("RGB")
+if left < 0 or top < 0 or right >= image.width or bottom >= image.height:
+    raise SystemExit(
+        f"Measured project canvas lies outside screenshot: "
+        f"({left},{top})-({right},{bottom}) in {image.width}x{image.height}"
+    )
+
+def is_white(pixel):
+    red, green, blue = pixel
+    return min(red, green, blue) >= 220 and max(red, green, blue) - min(red, green, blue) <= 35
+
+# A selected text layer has a thin white rectangular frame. Search only inside
+# the actual project canvas so timeline labels and panel controls cannot match.
+rows = []
+minimum_width = max(80, int(canvas_w * 0.60))
+for y in range(top, bottom + 1):
+    xs = [x for x in range(left, right + 1) if is_white(image.getpixel((x, y)))]
+    if not xs:
+        continue
+    runs = []
+    start = previous = xs[0]
+    for x in xs[1:]:
+        if x > previous + 2:
+            runs.append((start, previous))
+            start = x
+        previous = x
+    runs.append((start, previous))
+    for x1, x2 in runs:
+        if x2 - x1 + 1 >= minimum_width:
+            rows.append((y, x1, x2))
+
+matches = []
+for i, (top_y, x1, x2) in enumerate(rows):
+    for bottom_y, bx1, bx2 in rows[i + 1:]:
+        height = bottom_y - top_y + 1
+        if height < 35:
+            continue
+        if abs(x1 - bx1) > 8 or abs(x2 - bx2) > 8:
+            continue
+        width = x2 - x1 + 1
+        if abs(width - (bx2 - bx1 + 1)) > 10:
+            continue
+        # The rounded frame's vertical sides sit a few pixels outside the
+        # horizontal runs. Require both side strokes over most of the height.
+        left_strength = max(
+            sum(is_white(image.getpixel((x, y))) for y in range(top_y + 2, bottom_y - 1))
+            for x in range(max(left, x1 - 5), min(right, x1 + 5) + 1)
+        )
+        right_strength = max(
+            sum(is_white(image.getpixel((x, y))) for y in range(top_y + 2, bottom_y - 1))
+            for x in range(max(left, x2 - 5), min(right, x2 + 5) + 1)
+        )
+        if left_strength < height * 0.70 or right_strength < height * 0.70:
+            continue
+        interior_white = sum(
+            1
+            for y in range(top_y + 4, bottom_y - 3)
+            for x in range(x1 + 4, x2 - 3)
+            if is_white(image.getpixel((x, y)))
+        )
+        if interior_white < 40:
+            continue
+        matches.append((width * height, x1, top_y, x2, bottom_y, left_strength, right_strength))
+
+if not matches:
+    raise SystemExit("A white text-selection rectangle with visible text was not found inside the project canvas.")
+_, x1, y1, x2, y2, left_strength, right_strength = max(matches)
+center_x, center_y = (x1 + x2) // 2, (y1 + y2) // 2
+print(x1, y1, x2, y2, center_x, center_y)
 PY
+}
+
+if ! text_selection_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-selected.png)"; then
+  echo "The selected text did not render a measurable white selection frame inside the project canvas."
+  collect_capture_diagnostics text-canvas-selection-frame-missing
+  exit 60
+fi
+read -r text_frame_left text_frame_top text_frame_right text_frame_bottom text_before_x text_before_y <<< "$text_selection_bounds"
+echo "PASS: new text and its white selection frame are visible inside the measured project canvas at ($text_before_x,$text_before_y)."
 
 # The text detail panel normally opens with direct editing already enabled.
 # Only toggle it on if the accessibility state says it is currently closed.
-text_edit_toggle_info="$(python3 - emulator-screenshots/editor-text-selected.xml <<'PY'
+text_edit_toggle_info="$(python3 - emulator-screenshots/editor-text-panel.xml <<'PY'
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -1518,56 +1591,32 @@ if [ "$text_toggle_state" = "kapalı" ]; then
   sleep 1
   text_edit_toggle_changed=true
 fi
-text_drag_start="$(python3 - emulator-screenshots/editor-text-selected.xml <<'PY'
-import re
-import sys
-import xml.etree.ElementTree as ET
-root = ET.parse(sys.argv[1]).getroot()
-for node in root.iter("node"):
-    if node.attrib.get("text") != "CanvasSmoke" or node.attrib.get("class") != "android.widget.TextView":
-        continue
-    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
-    if match:
-        x1, y1, x2, y2 = map(int, match.groups())
-        print((x1 + x2) // 2, (y1 + y2) // 2)
-        break
-PY
-)"
-read -r text_before_x text_before_y <<< "$text_drag_start"
+
 timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$text_before_x" "$text_before_y" "$((text_before_x + 28))" "$((text_before_y + 18))" 500
 sleep 1
-if ! dump_hierarchy editor-text-after-drag.xml emulator-screenshots/editor-text-after-drag.xml; then
-  echo "UIAutomator could not capture the text layer after direct canvas drag."
-  collect_capture_diagnostics text-canvas-drag-hierarchy-unavailable
+if ! take_screen emulator-screenshots/editor-text-after-drag.png; then
+  collect_capture_diagnostics text-canvas-drag-capture-failure
+  exit 6
+fi
+if ! text_after_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-after-drag.png)"; then
+  echo "The selected text frame disappeared after the direct-canvas drag."
+  collect_capture_diagnostics text-canvas-drag-selection-frame-missing
   exit 62
 fi
-python3 - emulator-screenshots/editor-text-after-drag.xml "$text_before_x" "$text_before_y" <<'PY'
-import re
-import sys
-import xml.etree.ElementTree as ET
-root = ET.parse(sys.argv[1]).getroot()
-before_x, before_y = map(int, sys.argv[2:4])
-for node in root.iter("node"):
-    if node.attrib.get("text") != "CanvasSmoke" or node.attrib.get("class") != "android.widget.TextView":
-        continue
-    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
-    if not match:
-        continue
-    x1, y1, x2, y2 = map(int, match.groups())
-    after_x, after_y = (x1 + x2) // 2, (y1 + y2) // 2
-    if after_x - before_x < 12 or after_y - before_y < 6:
-        raise SystemExit(f"Text drag did not move the rendered layer enough: before=({before_x},{before_y}), after=({after_x},{after_y})")
-    print(f"PASS: direct text drag moved its canvas hit target from ({before_x},{before_y}) to ({after_x},{after_y})")
-    break
-else:
-    raise SystemExit("Rendered CanvasSmoke text layer disappeared after direct drag.")
-PY
+read -r text_after_left text_after_top text_after_right text_after_bottom text_after_x text_after_y <<< "$text_after_bounds"
+if [ "$((text_after_x - text_before_x))" -lt 12 ] || [ "$((text_after_y - text_before_y))" -lt 6 ]; then
+  echo "Direct text drag did not move the rendered selection frame enough: before=($text_before_x,$text_before_y), after=($text_after_x,$text_after_y)."
+  collect_capture_diagnostics text-canvas-drag-did-not-move
+  exit 62
+fi
+echo "PASS: direct text drag moved the rendered text-selection frame from ($text_before_x,$text_before_y) to ($text_after_x,$text_after_y)."
+
 if [ "$text_edit_toggle_changed" = true ]; then
   timeout -k 2s 8s adb -s emulator-5554 shell input tap "$text_toggle_x" "$text_toggle_y"
   sleep 1
 fi
 
-text_panel_back="$(find_bottom_tool emulator-screenshots/editor-text-selected.xml "Araçlara dön" || true)"
+text_panel_back="$(find_bottom_tool emulator-screenshots/editor-text-panel.xml "Araçlara dön" || true)"
 if [ -z "$text_panel_back" ]; then
   echo "Text detail panel did not expose its return-to-tools control."
   collect_capture_diagnostics text-canvas-panel-back-missing
@@ -1576,22 +1625,7 @@ fi
 timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_panel_back
 sleep 1
 dump_hierarchy editor-text-panel-closed.xml emulator-screenshots/editor-text-panel-closed.xml || true
-text_preview_center="$(python3 - emulator-screenshots/editor-text-panel-closed.xml <<'PY'
-import re
-import sys
-import xml.etree.ElementTree as ET
-
-root = ET.parse(sys.argv[1]).getroot()
-for node in root.iter("node"):
-    if node.attrib.get("text") != "CanvasSmoke":
-        continue
-    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
-    if match:
-        x1, y1, x2, y2 = map(int, match.groups())
-        print((x1 + x2) // 2, (y1 + y2) // 2)
-        break
-PY
-)"
+text_preview_center="$text_after_x $text_after_y"
 if [ -z "$text_preview_center" ]; then
   echo "Could not locate the visible text layer after closing its settings panel."
   collect_capture_diagnostics text-canvas-preview-hit-target-missing
