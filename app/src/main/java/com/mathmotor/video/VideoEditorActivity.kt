@@ -2111,14 +2111,13 @@ class VideoEditorActivity : Activity() {
         dockScroll.addView(dock, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT
         ))
-        // The dock and contextual tools share one bottom-anchored overlay. The
-        // base editor reserves only the dock height; opening the detail panel
-        // therefore overlays the lower timeline instead of shrinking the preview.
+        // The dock and contextual tools are a real final row in the editor's
+        // vertical layout. Opening a panel therefore takes its own measured space
+        // instead of covering the timeline or stealing its touch targets.
         val bottomSheet = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             clipChildren = false
             clipToPadding = false
-            elevation = dp(14).toFloat()
         }
         editorBottomSheet = bottomSheet
         bottomSheet.addView(editorPanelReturnButton, LinearLayout.LayoutParams(
@@ -2130,8 +2129,8 @@ class VideoEditorActivity : Activity() {
         bottomSheet.addView(dockScroll, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(66)
         ))
-        root.addView(View(this), LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(66)
+        root.addView(bottomSheet, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ))
 
         val editorWorkspace = FrameLayout(this).apply {
@@ -2141,11 +2140,6 @@ class VideoEditorActivity : Activity() {
             addView(root, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
-            ))
-            addView(bottomSheet, FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.BOTTOM
             ))
         }
 
@@ -2518,12 +2512,6 @@ class VideoEditorActivity : Activity() {
                     child.visibility = View.GONE
                 }
             }
-            // The dock/sheet is now a sibling overlay of the base root, so
-            // explicitly include it in the same fullscreen hide/restore cycle.
-            if (::editorBottomSheet.isInitialized) {
-                previewFocusOriginalVisibility[editorBottomSheet] = editorBottomSheet.visibility
-                editorBottomSheet.visibility = View.GONE
-            }
             root.setPadding(dp(4), dp(4), dp(4), dp(4))
             val params = previewFrame.layoutParams as LinearLayout.LayoutParams
             params.height = 0
@@ -2760,15 +2748,6 @@ class VideoEditorActivity : Activity() {
                 editorPanelScroll.layoutParams = params
             }
             editorPanelScroll.visibility = View.VISIBLE
-            // The open detail sheet must own touches in its bounds. The dock can
-            // overlap it visually, but must stay below the sheet in both elevation
-            // and sibling drawing order so hidden dock controls cannot steal taps.
-            if (::editorDockScroll.isInitialized) {
-                editorDockScroll.elevation = dp(24).toFloat()
-                editorDockScroll.bringToFront()
-            }
-            editorPanelScroll.elevation = dp(32).toFloat()
-            editorPanelScroll.bringToFront()
             editorPanelScroll.animate().cancel()
             if (wasVisible) {
                 // Switching tools reuses the same sheet without replaying its entrance.
@@ -2776,9 +2755,9 @@ class VideoEditorActivity : Activity() {
                 editorPanelScroll.alpha = 1f
                 editorPanelScroll.post { logEditorPanelGeometry("switch:" + name) }
             } else {
-                // The details panel rises from the bottom dock like a native
-                // editing drawer. It is an overlay, so the preview/timeline are
-                // not remeasured when it appears.
+                // The details panel rises from the dock inside the measured
+                // workspace. Its height is reserved before the timeline is drawn,
+                // so neither the timeline nor its touch targets are covered.
                 editorPanelScroll.alpha = 0f
                 editorPanelScroll.translationY = editorPanelScroll.layoutParams.height.toFloat()
                 editorPanelScroll.post {
