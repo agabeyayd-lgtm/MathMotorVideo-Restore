@@ -679,6 +679,17 @@ class VideoEditorActivity : Activity() {
                 .onFailure { status.text="Fotoğraf açılamadı: ${it.message}" }
             intent.removeExtra("initial_overlay_uri")
         }
+        // CI's debug-only entry activity supplies local audio fixtures through the
+        // exact same metadata/import path as the document picker. This keeps audio
+        // timeline gestures covered without adding any release UI or test surface.
+        if (timelineSyncTestEnabled) {
+            intent.getStringExtra("test_music_uri")
+                ?.takeIf { it.isNotBlank() }
+                ?.let { loadAudioTrack(Uri.parse(it), forMusic = true) }
+            intent.getStringExtra("test_sound_uri")
+                ?.takeIf { it.isNotBlank() }
+                ?.let { loadAudioTrack(Uri.parse(it), forMusic = false) }
+        }
         logTimelineLifecycle("onCreateComplete", "draftId=$draftId clips=${clips.size}")
     }
 
@@ -4180,6 +4191,12 @@ class VideoEditorActivity : Activity() {
                             } else {
                                 TimelineRangeMath.trimEnd(initial, deltaMs, totalMs)
                             }
+                            if (timelineSyncTestEnabled) {
+                                android.util.Log.i(
+                                    "EditorTouchTest",
+                                    "AUDIO_EDGE_TRIM kind=music edge=${if (isStart) "start" else "end"} beforeStartMs=${initial.startMs} beforeDurationMs=${initial.durationMs} afterStartMs=${updated.startMs} afterDurationMs=${updated.durationMs} deltaPx=$deltaPx"
+                                )
+                            }
                             musicStartMs = updated.startMs
                             musicDurationMs = updated.durationMs
                             updateMusicTimingLabel()
@@ -4407,6 +4424,12 @@ class VideoEditorActivity : Activity() {
                             } else {
                                 TimelineAudioMath.trimEnd(
                                     initial, deltaMs, soundSourceDurationMs, totalMs
+                                )
+                            }
+                            if (timelineSyncTestEnabled) {
+                                android.util.Log.i(
+                                    "EditorTouchTest",
+                                    "AUDIO_EDGE_TRIM kind=sound edge=${if (isStart) "start" else "end"} beforeStartMs=${initial.timelineStartMs} beforeDurationMs=${initial.durationMs} beforeSourceStartMs=${initial.sourceStartMs} afterStartMs=${updated.timelineStartMs} afterDurationMs=${updated.durationMs} afterSourceStartMs=${updated.sourceStartMs} deltaPx=$deltaPx"
                                 )
                             }
                             soundStartMs = updated.timelineStartMs
@@ -5512,6 +5535,8 @@ class VideoEditorActivity : Activity() {
                 }
                 MotionEvent.ACTION_POINTER_DOWN -> {
                     if (clip == null || event.pointerCount < 2) return@setOnTouchListener true
+                    val canvasWidth = previewCanvas.width.coerceAtLeast(1)
+                    val canvasHeight = previewCanvas.height.coerceAtLeast(1)
                     val dx = event.getX(0) - event.getX(1)
                     val dy = event.getY(0) - event.getY(1)
                     twoFingerStartDistance = kotlin.math.hypot(dx.toDouble(), dy.toDouble())
@@ -5540,20 +5565,24 @@ class VideoEditorActivity : Activity() {
                         clip.transformRotationDegrees = twoFingerBaseRotation + angleDelta
                         clip.transformTranslateX = (
                             twoFingerBaseTranslateX + (centerX - twoFingerStartCenterX) * 2f /
-                                view.width.coerceAtLeast(1)
+                                canvasWidth
                             ).coerceIn(-2f, 2f)
                         clip.transformTranslateY = (
                             twoFingerBaseTranslateY + (centerY - twoFingerStartCenterY) * 2f /
-                                view.height.coerceAtLeast(1)
+                                canvasHeight
                             ).coerceIn(-2f, 2f)
                     } else if (event.pointerCount == 1) {
+                        // Transform fractions are normalized against the exact project
+                        // canvas, not a potentially inset/scaled gesture-host View.
+                        val canvasWidth = previewCanvas.width.coerceAtLeast(1)
+                        val canvasHeight = previewCanvas.height.coerceAtLeast(1)
                         clip.transformTranslateX = (
                             baseTranslateX + (event.rawX - downRawX) * 2f /
-                                view.width.coerceAtLeast(1)
+                                canvasWidth
                             ).coerceIn(-2f, 2f)
                         clip.transformTranslateY = (
                             baseTranslateY + (event.rawY - downRawY) * 2f /
-                                view.height.coerceAtLeast(1)
+                                canvasHeight
                             ).coerceIn(-2f, 2f)
                     }
                     applyTemporaryClipTransform(clip)
@@ -7819,6 +7848,76 @@ class VideoEditorActivity : Activity() {
         }
     }
 
+    /** Shared importer for picker selections and the debug-only emulator fixtures. */
+    private fun loadAudioTrack(uri: Uri, forMusic: Boolean) {
+        status.text = if (forMusic) "Müzik dosyasının süresi okunuyor…" else "Ses dosyasının süresi okunuyor…"
+        Thread {
+            val duration = runCatching {
+                val retriever = MediaMetadataRetriever()
+                try {
+                    retriever.setDataSource(this, uri)
+                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                } finally {
+                    retriever.release()
+                }
+            }.getOrDefault(0L)
+            val fallbackTitle = if (forMusic) "Müzik" else "Ses efekti"
+            val title = queryDisplayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: fallbackTitle
+            runOnUiThread {
+                if (duration <= 0L) {
+                    status.text = if (forMusic) {
+                        "Müzik dosyasının süresi okunamadı. Başka bir ses dosyası seç."
+                    } else {
+                        "Ses dosyasının süresi okunamadı. Başka bir ses dosyası seç."
+                    }
+                    if (timelineSyncTestEnabled) {
+                        android.util.Log.e("EditorTouchTest", "EDITOR_SMOKE_AUDIO_REJECTED kind=${if (forMusic) "music" else "sound"} uri=$uri")
+                    }
+                    return@runOnUiThread
+                }
+
+                if (forMusic) {
+                    musicUri = uri
+                    musicTitle = title
+                    musicSourceDurationMs = duration
+                    musicSourceStartMs = 0L
+                    musicSourceEndMs = duration
+                    updateMusicSourceRangeControls()
+                    musicStartMs = 0L
+                    if (::musicSourceStartSeek.isInitialized) musicSourceStartSeek.progress = 0
+                    if (::musicSourceEndSeek.isInitialized) musicSourceEndSeek.progress = 1000
+                    if (::musicSourceRangeLabel.isInitialized) {
+                        musicSourceRangeLabel.text = "Dosya içi: 00:00 – ${formatTimelineMs(duration)}"
+                    }
+                    // Keep the full selected source range; if it extends beyond the
+                    // video, the shared project timeline grows to include the music.
+                    musicDurationMs = (musicSourceEndMs - musicSourceStartMs).coerceAtLeast(0L)
+                    updateMusicTimingLabel()
+                    refreshTimelineTracks()
+                    status.text = "Müzik eklendi. Zaman çizelgesinde sürükleyip başlangıç ve bitişini ayarlayabilirsin."
+                } else {
+                    soundUri = uri
+                    soundTitle = title
+                    soundSourceDurationMs = duration
+                    soundSourceStartMs = 0L
+                    soundDurationMs = duration
+                    soundStartMs = 0L
+                    soundLabel.text = "Ses/efekt: ${title} • ${formatMs(duration)}"
+                    updateSoundControls()
+                    refreshTimelineTracks()
+                    status.text = "Ses katmanı eklendi. Başlama saniyesini aşağıdaki kaydırıcıdan ayarla."
+                }
+
+                if (timelineSyncTestEnabled) {
+                    android.util.Log.i(
+                        "EditorTouchTest",
+                        "EDITOR_SMOKE_AUDIO_ADDED kind=${if (forMusic) "music" else "sound"} durationMs=$duration title=$title"
+                    )
+                }
+            }
+        }.start()
+    }
+
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<out String>,
@@ -7878,75 +7977,9 @@ class VideoEditorActivity : Activity() {
                     applyProjectJson(JSONObject(json))
                 }.onFailure { status.text = "Proje açılamadı: ${it.message}" }
             }
-            REQUEST_MUSIC -> {
-                status.text = "Müzik dosyasının süresi okunuyor…"
-                Thread {
-                    val duration = runCatching {
-                        val retriever = MediaMetadataRetriever()
-                        try {
-                            retriever.setDataSource(this, uri)
-                            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-                        } finally {
-                            retriever.release()
-                        }
-                    }.getOrDefault(0L)
-                    val title = queryDisplayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Müzik"
-                    runOnUiThread {
-                        if (duration <= 0L) {
-                            status.text = "Müzik dosyasının süresi okunamadı. Başka bir ses dosyası seç."
-                        } else {
-                            musicUri = uri
-                            musicTitle = title
-                            musicSourceDurationMs = duration
-                            musicSourceStartMs = 0L
-                            musicSourceEndMs = duration
-                            updateMusicSourceRangeControls()
-                            musicStartMs = 0L
-                            if (::musicSourceStartSeek.isInitialized) musicSourceStartSeek.progress = 0
-                            if (::musicSourceEndSeek.isInitialized) musicSourceEndSeek.progress = 1000
-                            if (::musicSourceRangeLabel.isInitialized) musicSourceRangeLabel.text = "Dosya içi: 00:00 – ${formatTimelineMs(duration)}"
-                            // Keep the full selected source range; if it extends beyond the
-                            // video, the shared project timeline grows to include the music.
-                            musicDurationMs = (musicSourceEndMs - musicSourceStartMs).coerceAtLeast(0L)
-                            updateMusicTimingLabel()
-                            refreshTimelineTracks()
-                            status.text = "Müzik eklendi. Zaman çizelgesinde sürükleyip başlangıç ve bitişini ayarlayabilirsin."
-                        }
-                    }
-                }.start()
-            }
+            REQUEST_MUSIC -> loadAudioTrack(uri, forMusic = true)
             REQUEST_OVERLAY_ASSET -> addOverlayAsset(uri)
-            REQUEST_SOUND -> {
-                status.text = "Ses dosyasının süresi okunuyor…"
-                Thread {
-                    val duration = runCatching {
-                        val retriever = MediaMetadataRetriever()
-                        try {
-                            retriever.setDataSource(this, uri)
-                            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-                        } finally {
-                            retriever.release()
-                        }
-                    }.getOrDefault(0L)
-                    val title = queryDisplayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Ses efekti"
-                    runOnUiThread {
-                        if (duration <= 0L) {
-                            status.text = "Ses dosyasının süresi okunamadı. Başka bir ses dosyası seç."
-                        } else {
-                            soundUri = uri
-                            soundTitle = title
-                            soundSourceDurationMs = duration
-                            soundSourceStartMs = 0L
-                            soundDurationMs = duration
-                            soundStartMs = 0L
-                            soundLabel.text = "Ses/efekt: ${title} • ${formatMs(duration)}"
-                            updateSoundControls()
-                            refreshTimelineTracks()
-                            status.text = "Ses katmanı eklendi. Başlama saniyesini aşağıdaki kaydırıcıdan ayarla."
-                        }
-                    }
-                }.start()
-            }
+            REQUEST_SOUND -> loadAudioTrack(uri, forMusic = false)
         }
     }
 
