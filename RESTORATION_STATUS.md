@@ -880,3 +880,5 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Visible canvas boundary: added a thin turquoise outline as a workspace-only sibling of the inner project canvas. It tracks the exact measured/fitted canvas rectangle but is outside the inner canvas and is never part of MP4 composition/export; it is non-clickable and does not intercept gestures. Source commit: `ac36120`; CI pending.
 
 - The emulator screenshot pixel check now verifies that the turquoise workspace-only outline is visibly drawn on all four measured project-canvas edges, while still asserting that no magenta overlay pixels escape the inner canvas. Source commit: `a738908`; the new assertion is awaiting its emulator run.
+
+- Cross-mode selection cleanup: entering video tools or image/video overlay tools now clears a stale selected text layer and refreshes its selection outline before enabling the new transform surface. Audio, video, text and visual-overlay modes no longer leave an unrelated text selection frame active. Source commit: `c485854`; CI pending.
