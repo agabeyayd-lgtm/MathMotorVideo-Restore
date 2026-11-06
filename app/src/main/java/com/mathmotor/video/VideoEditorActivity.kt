@@ -892,14 +892,14 @@ class VideoEditorActivity : Activity() {
             visibility = View.GONE
             isClickable = false
             isFocusable = false
-            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
             background = android.graphics.drawable.GradientDrawable().apply {
                 setColor(Color.TRANSPARENT)
                 cornerRadius = dp(1).toFloat()
                 setStroke(dp(1), Color.WHITE)
             }
             elevation = dp(9).toFloat()
-            contentDescription = null
+            contentDescription = "Seçili video klibi sınırı"
         }
         previewCanvas.addView(
             clipSelectionFrame,
