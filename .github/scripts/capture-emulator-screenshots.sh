@@ -1702,6 +1702,11 @@ PY
 echo "Captured the text editor with the IME open; now dismissing it for the remaining touch tests."
 timeout -k 2s 8s adb -s emulator-5554 shell input keyevent 4
 sleep 1
+# The preview is resized when the text detail panel/IME changes the workspace.
+# Re-snapshot the latest canvas marker here; the startup measurement is stale
+# and points to the previous, full-height canvas.
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTest:I \
+  > emulator-screenshots/editor-text-selected-canvas-logcat.txt 2>&1 || true
 if ! take_screen emulator-screenshots/editor-text-selected.png; then
   collect_capture_diagnostics text-canvas-selection-capture-failure
   exit 6
@@ -1710,7 +1715,7 @@ fi
 # UIAutomator can time out while dumping it even though the editor is still responsive.
 # Verify the rendered selection frame against the measured project-canvas bounds instead.
 detect_text_selection_bounds() {
-  python3 - "$1" emulator-screenshots/preview-canvas-logcat.txt <<'PY'
+  python3 - "$1" "$2" <<'PY'
 import re
 import sys
 from PIL import Image
@@ -1801,7 +1806,7 @@ print(x1, y1, x2, y2, center_x, center_y)
 PY
 }
 
-if ! text_selection_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-selected.png)"; then
+if ! text_selection_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-selected.png emulator-screenshots/editor-text-selected-canvas-logcat.txt)"; then
   echo "The selected text did not render a measurable white selection frame inside the project canvas."
   collect_capture_diagnostics text-canvas-selection-frame-missing
   exit 60
@@ -1850,11 +1855,13 @@ text_drag_to_x="$text_before_x"
 text_drag_to_y=$((text_before_y - 28))
 timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$text_before_x" "$text_before_y" "$text_drag_to_x" "$text_drag_to_y" 500
 sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTest:I \
+  > emulator-screenshots/editor-text-after-drag-canvas-logcat.txt 2>&1 || true
 if ! take_screen emulator-screenshots/editor-text-after-drag.png; then
   collect_capture_diagnostics text-canvas-drag-capture-failure
   exit 6
 fi
-if ! text_after_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-after-drag.png)"; then
+if ! text_after_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-after-drag.png emulator-screenshots/editor-text-after-drag-canvas-logcat.txt)"; then
   echo "The selected text frame was not fully visible after the in-canvas direct drag."
   collect_capture_diagnostics text-canvas-drag-selection-frame-missing
   exit 62
