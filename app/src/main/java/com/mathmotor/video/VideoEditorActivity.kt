@@ -201,6 +201,7 @@ class VideoEditorActivity : Activity() {
         var isBold: Boolean,
         var xFraction: Float = 0.5f,
         var yFraction: Float = 0.84f,
+        var rotationDegrees: Float = 0f,
         var kind: TextLayerKind = TextLayerKind.TEXT,
         var animationPreset: TextAnimationPreset = TextAnimationPreset.NONE,
         var animationDurationMs: Long = 350L
@@ -5909,6 +5910,7 @@ class VideoEditorActivity : Activity() {
             overlay.alpha = animationState.alpha
             overlay.scaleX = animationState.scale
             overlay.scaleY = animationState.scale
+            overlay.rotation = PreviewCanvasMath.normalizeRotationDegrees(layer.rotationDegrees)
             if (layer.kind == TextLayerKind.STICKER) {
                 overlay.setPadding(0, 0, 0, 0)
                 overlay.background = null
@@ -5969,6 +5971,7 @@ class VideoEditorActivity : Activity() {
             textSelectionFrame.translationY = selectedTextView.translationY
             textSelectionFrame.scaleX = selectedTextView.scaleX
             textSelectionFrame.scaleY = selectedTextView.scaleY
+            textSelectionFrame.rotation = selectedTextView.rotation
             textSelectionFrame.visibility = View.VISIBLE
             textSelectionFrame.bringToFront()
         }
@@ -6002,7 +6005,9 @@ class VideoEditorActivity : Activity() {
         var startX = 0.5f
         var startY = 0.84f
         var startDistance = 0f
+        var startAngle = 0f
         var startSize = 24
+        var startRotationDegrees = 0f
         overlay.isClickable = true
         overlay.setOnTouchListener { view, event ->
             if (!textOverlayEditingEnabled) return@setOnTouchListener false
@@ -6022,7 +6027,9 @@ class VideoEditorActivity : Activity() {
                     startX = layer.xFraction
                     startY = layer.yFraction
                     startSize = layer.sizeSp
+                    startRotationDegrees = layer.rotationDegrees
                     startDistance = 0f
+                    startAngle = 0f
                     player?.playWhenReady = false
                     true
                 }
@@ -6031,7 +6038,9 @@ class VideoEditorActivity : Activity() {
                         val dx = (event.getX(0) - event.getX(1)).toDouble()
                         val dy = (event.getY(0) - event.getY(1)).toDouble()
                         startDistance = kotlin.math.sqrt(dx * dx + dy * dy).toFloat().coerceAtLeast(1f)
+                        startAngle = Math.toDegrees(kotlin.math.atan2(dy, dx)).toFloat()
                         startSize = layer.sizeSp
+                        startRotationDegrees = layer.rotationDegrees
                     }
                     true
                 }
@@ -6040,6 +6049,11 @@ class VideoEditorActivity : Activity() {
                         val dx = (event.getX(0) - event.getX(1)).toDouble()
                         val dy = (event.getY(0) - event.getY(1)).toDouble()
                         val distance = kotlin.math.sqrt(dx * dx + dy * dy).toFloat()
+                        val currentAngle = Math.toDegrees(kotlin.math.atan2(dy, dx)).toFloat()
+                        val rotationDelta = PreviewCanvasMath.rotationDeltaDegrees(startAngle, currentAngle)
+                        layer.rotationDegrees = PreviewCanvasMath.normalizeRotationDegrees(
+                            startRotationDegrees + rotationDelta
+                        )
                         layer.sizeSp = (startSize * distance / startDistance).toInt().coerceIn(12, 96)
                         textSizeSp = layer.sizeSp
                         if (selectedTextLayerId == layer.id) {
@@ -6095,6 +6109,8 @@ class VideoEditorActivity : Activity() {
                     }
                     startX = layer.xFraction
                     startY = layer.yFraction
+                    startSize = layer.sizeSp
+                    startRotationDegrees = layer.rotationDegrees
                     startDistance = 0f
                     true
                 }
@@ -6429,6 +6445,7 @@ class VideoEditorActivity : Activity() {
                 put("sizeSp", layer.sizeSp)
                 put("xFraction", layer.xFraction)
                 put("yFraction", layer.yFraction)
+                put("rotationDegrees", layer.rotationDegrees)
                 put("colorPreset", layer.colorPreset.name)
                 put("isBold", layer.isBold)
                 put("kind", layer.kind.name)
@@ -6763,7 +6780,10 @@ class VideoEditorActivity : Activity() {
                     animationPreset = TextAnimationPreset.fromKey(item.optString("animationPreset", "none")),
                     animationDurationMs = item.optLong("animationDurationMs", 350L).coerceIn(100L, 1_500L),
                     xFraction = item.optDouble("xFraction", 0.5).toFloat().coerceIn(0f, 1f),
-                    yFraction = item.optDouble("yFraction", defaultTextYFraction(position).toDouble()).toFloat().coerceIn(0f, 1f)
+                    yFraction = item.optDouble("yFraction", defaultTextYFraction(position).toDouble()).toFloat().coerceIn(0f, 1f),
+                    rotationDegrees = PreviewCanvasMath.normalizeRotationDegrees(
+                        item.optDouble("rotationDegrees", 0.0).toFloat()
+                    )
                 ))
             }
         } else {
@@ -9871,6 +9891,7 @@ class VideoEditorActivity : Activity() {
                         y - animation.offsetYFraction * 2f
                     )
                     .setOverlayFrameAnchor(0f, 0f)
+                    .setRotationDegrees(PreviewCanvasMath.normalizeRotationDegrees(layer.rotationDegrees))
                     .build()
             }
         }
