@@ -2766,6 +2766,13 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun showEditorPanel(name: String) {
+        // Capture the real pre-panel geometry before panel mode changes timeline
+        // sizing. Logging after setTimelinePanelMode(true) records the resized
+        // layout as the baseline and makes the emulator compare the wrong state.
+        val panelWasVisible = ::editorPanelScroll.isInitialized &&
+            editorPanelScroll.visibility == View.VISIBLE
+        if (!panelWasVisible) logEditorPanelGeometry("before-open:" + name)
+
         // Keep the selected track's contextual dock alive while its detail sheet
         // is open. Closing the sheet returns to the same track tools; it must not
         // silently replace them with the global editor tabs.
@@ -2779,7 +2786,6 @@ class VideoEditorActivity : Activity() {
         updateOverlayTransformTouchAvailability()
         if (::editorPanelScroll.isInitialized) {
             val wasVisible = editorPanelScroll.visibility == View.VISIBLE
-            if (!wasVisible) logEditorPanelGeometry("before-open:" + name)
             val params = editorPanelScroll.layoutParams as? LinearLayout.LayoutParams
             if (params != null) {
                 val basePanelHeight = when (name) {
