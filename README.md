@@ -927,3 +927,8 @@ Main-video one-finger transform gestures use the same local coordinate space as 
 ### Emulator smoke-test note — 2026-11-06
 
 The text-layer re-selection check now passes after closing the text panel: tapping the preview text restores the three-action contextual dock and keeps the portrait preview canvas intact. The subsequent timeline check exposed a test-harness ordering issue: the script cleared logcat to isolate text-panel events before reading the startup-only Android touch-slop marker. The capture script now stores that value immediately after launching the editor, before later logcat clears. A fresh emulator run is required to verify the harness correction; this is not yet marked green.
+
+
+### Timeline viewport sizing
+
+The outer timeline workspace remains a stable height as video, text, music, and sound-effect rows are added: 220dp in the main editor, 132dp while a detail panel is open, and 88dp while the keyboard is active. Additional independent track rows stay inside the timeline viewport instead of resizing the editor shell and shifting the preview or dock. Verification for commit `046539e295bef2383de59eeb9db1326499001727` is pending.
