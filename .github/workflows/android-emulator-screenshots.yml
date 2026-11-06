@@ -95,7 +95,17 @@ jobs:
             -c:a aac -b:a 64k -shortest \
             app/build/test-fixtures/editor-test-video-replacement.mp4
           test -s app/build/test-fixtures/editor-test-video-replacement.mp4
-          ls -lh app/build/test-fixtures/editor-test-video.mp4 app/build/test-fixtures/editor-test-overlay.png app/build/test-fixtures/editor-test-video-replacement.mp4
+          # Two deterministic PCM fixtures feed the production audio-import path
+          # so the timeline smoke can drag music and sound-effect edge targets.
+          ffmpeg -hide_banner -loglevel error -y \
+            -f lavfi -i "sine=frequency=523:sample_rate=48000:duration=7" \
+            -ac 2 -c:a pcm_s16le app/build/test-fixtures/editor-test-music.wav
+          test -s app/build/test-fixtures/editor-test-music.wav
+          ffmpeg -hide_banner -loglevel error -y \
+            -f lavfi -i "sine=frequency=784:sample_rate=48000:duration=5" \
+            -ac 2 -c:a pcm_s16le app/build/test-fixtures/editor-test-sound.wav
+          test -s app/build/test-fixtures/editor-test-sound.wav
+          ls -lh app/build/test-fixtures/editor-test-video.mp4 app/build/test-fixtures/editor-test-overlay.png app/build/test-fixtures/editor-test-video-replacement.mp4 app/build/test-fixtures/editor-test-music.wav app/build/test-fixtures/editor-test-sound.wav
 
       - name: Enable KVM acceleration for the emulator
         run: |
