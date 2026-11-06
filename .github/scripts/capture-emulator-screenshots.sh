@@ -1304,9 +1304,9 @@ if not text_nodes:
 print(f"PASS: selected text has a visible selection box {selection[-1]} and preview text bounds {text_nodes[-1]}")
 PY
 
-# Exercise the same direct-manipulation path used by the text tool: enable it,
-# drag the rendered text on the canvas, and verify its accessibility bounds move.
-text_edit_toggle="$(python3 - emulator-screenshots/editor-text-selected.xml <<'PY'
+# The text detail panel normally opens with direct editing already enabled.
+# Only toggle it on if the accessibility state says it is currently closed.
+text_edit_toggle_info="$(python3 - emulator-screenshots/editor-text-selected.xml <<'PY'
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -1318,17 +1318,23 @@ for node in root.iter("node"):
     match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
     if match:
         x1, y1, x2, y2 = map(int, match.groups())
-        print((x1 + x2) // 2, (y1 + y2) // 2)
+        state = "kapalı" if "kapalı" in label.casefold() else "açık"
+        print((x1 + x2) // 2, (y1 + y2) // 2, state)
         break
 PY
 )"
-if [ -z "$text_edit_toggle" ]; then
+if [ -z "$text_edit_toggle_info" ]; then
   echo "The text panel did not expose its shared preview-gesture toggle."
   collect_capture_diagnostics text-canvas-edit-toggle-missing
   exit 61
 fi
-timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_edit_toggle
-sleep 1
+read -r text_toggle_x text_toggle_y text_toggle_state <<< "$text_edit_toggle_info"
+text_edit_toggle_changed=false
+if [ "$text_toggle_state" = "kapalı" ]; then
+  timeout -k 2s 8s adb -s emulator-5554 shell input tap "$text_toggle_x" "$text_toggle_y"
+  sleep 1
+  text_edit_toggle_changed=true
+fi
 text_drag_start="$(python3 - emulator-screenshots/editor-text-selected.xml <<'PY'
 import re
 import sys
@@ -1373,8 +1379,10 @@ for node in root.iter("node"):
 else:
     raise SystemExit("Rendered CanvasSmoke text layer disappeared after direct drag.")
 PY
-timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_edit_toggle
-sleep 1
+if [ "$text_edit_toggle_changed" = true ]; then
+  timeout -k 2s 8s adb -s emulator-5554 shell input tap "$text_toggle_x" "$text_toggle_y"
+  sleep 1
+fi
 
 text_panel_back="$(find_bottom_tool emulator-screenshots/editor-text-selected.xml "Araçlara dön" || true)"
 if [ -z "$text_panel_back" ]; then
