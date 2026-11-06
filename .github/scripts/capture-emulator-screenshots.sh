@@ -1059,34 +1059,44 @@ if ! dump_hierarchy editor-panel-trim-after-drag.xml emulator-screenshots/editor
   collect_capture_diagnostics video-canvas-transform-after-hierarchy-unavailable
   exit 65
 fi
-clip_after_center="$(python3 - emulator-screenshots/editor-panel-trim-after-drag.xml <<'PY'
-import re
-import sys
-import xml.etree.ElementTree as ET
-root = ET.parse(sys.argv[1]).getroot()
-for node in root.iter("node"):
-    if node.attrib.get("content-desc") != "Seçili video klibi sınırı":
-        continue
-    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
-    if match:
-        x1, y1, x2, y2 = map(int, match.groups())
-        print((x1 + x2) // 2, (y1 + y2) // 2)
-        break
-PY
-)"
-if [ -z "$clip_after_center" ]; then
+if ! grep -q "Seçili video klibi sınırı" emulator-screenshots/editor-panel-trim-after-drag.xml; then
   echo "Video selection frame disappeared after the direct canvas drag."
   collect_capture_diagnostics video-canvas-transform-after-target-missing
   exit 65
 fi
-read -r clip_after_x clip_after_y <<< "$clip_after_center"
-if [ "$((clip_after_x - clip_before_x))" -lt 28 ] || [ "$((clip_after_x - clip_before_x))" -gt 52 ] ||
-   [ "$((clip_after_y - clip_before_y))" -lt 14 ] || [ "$((clip_after_y - clip_before_y))" -gt 34 ]; then
-  echo "Direct video canvas drag did not move the selection frame: before=($clip_before_x,$clip_before_y), after=($clip_after_x,$clip_after_y)."
-  collect_capture_diagnostics video-canvas-transform-not-applied
-  exit 66
-fi
-timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$clip_after_x" "$clip_after_y" "$clip_before_x" "$clip_before_y" 500
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I \
+  > emulator-screenshots/video-canvas-touch-logcat.txt 2>&1 || true
+python3 - emulator-screenshots/video-canvas-touch-logcat.txt <<'PY'
+import re
+import sys
+
+lines = open(sys.argv[1], errors="replace").read().splitlines()
+down_lines = [line for line in lines if "VIDEO_CANVAS_TOUCH_DOWN" in line]
+up_lines = [line for line in lines if "VIDEO_CANVAS_TOUCH_UP" in line]
+if not down_lines or not up_lines:
+    raise SystemExit("The video canvas gesture surface did not report both ACTION_DOWN and ACTION_UP.")
+down, up = down_lines[-1], up_lines[-1]
+canvas = re.search(r"canvas=(\d+)x(\d+)", down)
+start = re.search(r"startTransform=([-+0-9.eE]+),([-+0-9.eE]+)", down)
+end = re.search(r"transform=([-+0-9.eE]+),([-+0-9.eE]+)", up)
+if not canvas or not start or not end:
+    raise SystemExit(f"Incomplete video transform diagnostics. DOWN={down} UP={up}")
+width, height = map(float, canvas.groups())
+sx, sy = map(float, start.groups())
+ex, ey = map(float, end.groups())
+moved_x = (ex - sx) * width / 2
+moved_y = (ey - sy) * height / 2
+if not (28 <= moved_x <= 52 and 14 <= moved_y <= 34):
+    raise SystemExit(
+        "Video transform model did not retain the expected canvas movement: "
+        f"observed=({moved_x:.1f},{moved_y:.1f})px expected=(40,24)px; DOWN={down} UP={up}"
+    )
+print(
+    "PASS: direct video drag changed the saved transform by "
+    f"({moved_x:.1f},{moved_y:.1f}) project-canvas px, independent of the clipped selection-frame bounds."
+)
+PY
+timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$((clip_before_x + 40))" "$((clip_before_y + 24))" "$clip_before_x" "$clip_before_y" 500
 sleep 1
 if ! dump_hierarchy editor-panel-trim-restored.xml emulator-screenshots/editor-panel-trim-restored.xml; then
   echo "Could not verify restoration of the video transform after the reverse gesture."
