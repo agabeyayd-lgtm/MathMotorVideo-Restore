@@ -1671,7 +1671,7 @@ lines = open(sys.argv[1], errors="replace").read().splitlines()
 matches = [line for line in lines if "PREVIEW_CANVAS_BOUNDS" in line]
 if not matches:
     raise SystemExit("No measured project-canvas bounds were logged while the keyboard was open.")
-match = re.search(r"canvas=(\\d+)x(\\d+).*aspect=([0-9.]+)", matches[-1])
+match = re.search(r"canvas=(\d+)x(\d+).*aspect=([0-9.]+)", matches[-1])
 if not match:
     raise SystemExit("Malformed project-canvas measurement while the keyboard was open: " + matches[-1])
 width, height = map(int, match.groups()[:2])
