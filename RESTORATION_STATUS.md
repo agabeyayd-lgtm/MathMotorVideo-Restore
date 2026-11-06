@@ -882,3 +882,10 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - The emulator screenshot pixel check now verifies that the turquoise workspace-only outline is visibly drawn on all four measured project-canvas edges, while still asserting that no magenta overlay pixels escape the inner canvas. Source commit: `a738908`; the new assertion is awaiting its emulator run.
 
 - Cross-mode selection cleanup: entering video tools or image/video overlay tools now clears a stale selected text layer and refreshes its selection outline before enabling the new transform surface. Audio, video, text and visual-overlay modes no longer leave an unrelated text selection frame active. Source commit: `c485854`; CI pending.
+
+
+## Main-video selection frame — 2026-11-06
+
+- Added a non-interactive white selection rectangle for the selected main-video clip. Its bounds follow the clip's stored scale, rotation and normalized translation in the inner project canvas, so the selection box visibly tracks the same transform as the preview image.
+- The frame is visible while a video clip is selected on the timeline (not only while its detail panel is open). It hides when selection moves to text, an image/video overlay or an audio track. The touch surface remains separately gated by the explicit video-edit tool panel.
+- Source commits: `a3b64cd` (clip frame geometry and update hooks), `d9901f8` (clear clip selection when switching to overlay/audio tools). CI pending.
