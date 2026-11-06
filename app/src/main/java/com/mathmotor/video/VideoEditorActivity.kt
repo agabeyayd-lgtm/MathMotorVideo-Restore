@@ -9091,9 +9091,13 @@ class VideoEditorActivity : Activity() {
                     if (previousAspectRatio == null &&
                         kotlin.math.abs(decodedAspectRatio - TimelineThumbnailMath.DEFAULT_SOURCE_ASPECT_RATIO) > 0.02f
                     ) {
-                        // First decoded frame reveals the source's real orientation/ratio.
-                        // Rebuild once with aspect-aware cell widths; all decoded frames remain cached.
+                        // The first decoded frame reveals the real source orientation.
+                        // Reflow both the timeline cells and the SOURCE project canvas;
+                        // video-size callbacks can arrive before this thumbnail is decoded.
                         refreshTimelineTracks()
+                        if (exportCanvasPreset == VideoCanvasPreset.SOURCE) {
+                            updatePreviewCanvasSize()
+                        }
                     }
                     if (timelineSyncTestEnabled) android.util.Log.i(
                         "TimelineFrameSyncTest",
