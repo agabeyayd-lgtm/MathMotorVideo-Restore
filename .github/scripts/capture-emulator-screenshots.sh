@@ -429,6 +429,23 @@ timeout -k 2s 15s adb -s emulator-5554 shell am start \
   --ez timeline_sync_test true \
   --ef timeline_test_px_per_sec_dp 120 | tee emulator-screenshots/editor-video-launch.txt
 
+# Capture the emulator touch-slop immediately after the test activity starts.
+# Later interaction checks clear logcat to isolate their own events, so reading
+# this startup marker at the end loses it from the bounded ring buffer.
+touch_slop_px=""
+for attempt in $(seq 1 8); do
+  touch_slop_px="$(timeout -k 2s 8s adb -s emulator-5554 logcat -d -v brief -s TimelineSyncTest:I \
+    | sed -n 's/.*TIMELINE_TOUCH_SLOP_PX=\([0-9][0-9]*\).*/\1/p' | tail -n 1)"
+  if [[ "$touch_slop_px" =~ ^[0-9]+$ ]] && [ "$touch_slop_px" -gt 0 ]; then break; fi
+  sleep 1
+done
+if ! [[ "$touch_slop_px" =~ ^[0-9]+$ ]] || [ "$touch_slop_px" -le 0 ]; then
+  echo "Could not capture Android touch-slop at editor startup."
+  collect_capture_diagnostics timeline-touch-slop-startup-missing
+  exit 29
+fi
+echo "Captured Android ViewConfiguration touch slop at startup: ${touch_slop_px}px"
+
 # Do not assert that a filename appears in uiautomator XML: on these images
 # uiautomator frequently fails, and the editor is free to display a friendly
 # clip title rather than a source filename. Verify the real addClip outcome
@@ -1968,14 +1985,7 @@ echo "Step 9/12: align a thumbnail cell with the playhead and compare the render
 # scrolls. Android reports integer-pixel view bounds and ADB gesture coordinates;
 # accept a 5px center residual (under 3dp on this emulator) rather than treating
 # coordinate rounding as a timeline synchronization failure.
-touch_slop_px="$(timeout -k 2s 8s adb -s emulator-5554 logcat -d -v brief -s TimelineSyncTest:I \
-  | sed -n 's/.*TIMELINE_TOUCH_SLOP_PX=\([0-9][0-9]*\).*/\1/p' | tail -n 1)"
-if ! [[ "$touch_slop_px" =~ ^[0-9]+$ ]] || [ "$touch_slop_px" -le 0 ]; then
-  echo "Could not read the emulator's actual Android touch-slop value."
-  collect_capture_diagnostics timeline-touch-slop-missing
-  exit 29
-fi
-echo "Using Android ViewConfiguration touch slop: ${touch_slop_px}px"
+echo "Using startup-captured Android ViewConfiguration touch slop: ${touch_slop_px}px"
 thumbnail_aligned=false
 for attempt in 1 2 3 4 5; do
   hierarchy="emulator-screenshots/editor-frame-align-${attempt}.xml"
