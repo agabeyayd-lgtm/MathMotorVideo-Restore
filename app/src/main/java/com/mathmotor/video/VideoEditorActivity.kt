@@ -5906,10 +5906,10 @@ class VideoEditorActivity : Activity() {
                 View.MeasureSpec.makeMeasureSpec(videoHeight, View.MeasureSpec.AT_MOST)
             )
             overlay.translationX =
-                PreviewCanvasMath.screenTranslationForFraction(layer.xFraction, videoWidth) +
+                PreviewCanvasMath.screenTranslationForFraction(layer.xFraction, videoWidth.toFloat()) +
                     animationState.offsetXFraction * videoWidth
             overlay.translationY =
-                PreviewCanvasMath.screenTranslationForFraction(layer.yFraction, videoHeight) +
+                PreviewCanvasMath.screenTranslationForFraction(layer.yFraction, videoHeight.toFloat()) +
                     animationState.offsetYFraction * videoHeight
             overlay.bringToFront()
         }
