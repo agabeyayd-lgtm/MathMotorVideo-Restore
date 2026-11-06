@@ -1882,11 +1882,11 @@ if [ "$text_edit_toggle_changed" = true ]; then
 fi
 
 assert_full_preview_canvas() {
-  python3 - "$1" emulator-screenshots/preview-canvas-logcat.txt "$2" <<'PY'
+  python3 - "$1" "$2" "${3:-emulator-screenshots/preview-canvas-logcat.txt}" <<'PY'
 import re
 import sys
 from PIL import Image
-image_path, log_path, label = sys.argv[1:4]
+image_path, label, log_path = sys.argv[1:4]
 lines = [line for line in open(log_path, errors="replace") if "PREVIEW_CANVAS_BOUNDS" in line]
 if not lines:
     raise SystemExit(f"{label}: preview-canvas measurement marker is missing")
@@ -1937,14 +1937,26 @@ if ! take_screen emulator-screenshots/editor-text-panel-closed.png; then
   collect_capture_diagnostics text-canvas-panel-closed-capture-failure
   exit 6
 fi
-assert_full_preview_canvas emulator-screenshots/editor-text-panel-closed.png "text panel close"
-text_preview_center="$text_after_x $text_after_y"
+# Closing the detail panel expands the project canvas and changes the screen
+# coordinate of the text layer. Measure both again instead of reusing the
+# compressed-panel coordinates from the preceding screenshot.
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTest:I \
+  > emulator-screenshots/editor-text-panel-closed-canvas-logcat.txt 2>&1 || true
+assert_full_preview_canvas emulator-screenshots/editor-text-panel-closed.png "text panel close" \
+  emulator-screenshots/editor-text-panel-closed-canvas-logcat.txt
+text_preview_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-panel-closed.png emulator-screenshots/editor-text-panel-closed-canvas-logcat.txt)" || {
+  echo "The text layer did not retain a complete selection frame after the detail panel closed."
+  collect_capture_diagnostics text-canvas-preview-hit-target-missing
+  exit 53
+}
+read -r text_preview_left text_preview_top text_preview_right text_preview_bottom text_preview_x text_preview_y <<< "$text_preview_bounds"
+text_preview_center="$text_preview_x $text_preview_y"
 if [ -z "$text_preview_center" ]; then
   echo "Could not locate the visible text layer after closing its settings panel."
   collect_capture_diagnostics text-canvas-preview-hit-target-missing
   exit 53
 fi
-echo "Tapping the in-canvas text centre at $text_preview_center after confirming the keyboard-free full preview."
+echo "Tapping the remeasured in-canvas text centre at $text_preview_center after confirming the keyboard-free full preview."
 timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_preview_center
 sleep 1
 timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTest:I \
@@ -1953,7 +1965,8 @@ if ! take_screen emulator-screenshots/editor-text-reselected.png; then
   collect_capture_diagnostics text-canvas-reselection-capture-failure
   exit 6
 fi
-assert_full_preview_canvas emulator-screenshots/editor-text-reselected.png "text preview reselection"
+assert_full_preview_canvas emulator-screenshots/editor-text-reselected.png "text preview reselection" \
+  emulator-screenshots/editor-text-reselected-canvas-logcat.txt
 text_reselected_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-reselected.png emulator-screenshots/editor-text-reselected-canvas-logcat.txt)" || {
   echo "Tapping the preview text did not restore a complete canvas selection frame."
   collect_capture_diagnostics text-canvas-tap-selection-frame-missing
