@@ -6003,8 +6003,12 @@ class VideoEditorActivity : Activity() {
         visibility = View.GONE
         isClickable = true
         setOnClickListener {
-            val layerId = tag as? Long ?: return@setOnClickListener
-            selectTextLayer(layerId)
+            // Direct-edit gestures call performClick() on ACTION_UP for accessibility.
+            // Do not treat the end of a drag/pinch/rotate as a new selection tap.
+            if (!textOverlayEditingEnabled) {
+                val layerId = tag as? Long ?: return@setOnClickListener
+                selectTextLayer(layerId)
+            }
         }
         installPreviewTextTouch(this)
     }
