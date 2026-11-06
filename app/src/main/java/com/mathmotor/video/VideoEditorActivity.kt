@@ -3448,15 +3448,21 @@ class VideoEditorActivity : Activity() {
             fun addTextTrimHandle(isStart: Boolean) {
                 if (totalMs <= 0L) return
                 val handleWidth = timelineEdgeTouchWidth(blockWidth)
-                val handle = TextView(this).apply {
-                    text = if (isStart) "‹" else "›"
-                    textSize = 13f
-                    typeface = Typeface.DEFAULT_BOLD
-                    setTextColor(Color.WHITE)
-                    gravity = Gravity.CENTER
-                    setBackgroundColor(Color.rgb(0, 164, 146))
+                val handle = FrameLayout(this).apply {
+                    setBackgroundColor(Color.TRANSPARENT)
                     elevation = dp(TouchPriority.TIMELINE_EDGE_HANDLE_DP).toFloat()
                     contentDescription = if (isStart) "Yazı başlangıcını sürükle" else "Yazı bitişini sürükle"
+                    isClickable = true
+                    isFocusable = true
+                    addView(View(this@VideoEditorActivity).apply {
+                        background = android.graphics.drawable.GradientDrawable().apply {
+                            setColor(Color.rgb(0, 164, 146))
+                            cornerRadius = dp(3).toFloat()
+                        }
+                        isClickable = false
+                        isFocusable = false
+                    }, FrameLayout.LayoutParams(dp(5), dp(24), Gravity.CENTER))
+                    setOnClickListener { /* The transparent edge target is primarily a drag control. */ }
                 }
                 var downRawX = 0f
                 var initialStartMs = startMs
@@ -4114,15 +4120,21 @@ class VideoEditorActivity : Activity() {
 
         fun addMusicTrimHandle(isStart: Boolean) {
             val handleWidth = timelineEdgeTouchWidth(blockWidth)
-            val handle = TextView(this).apply {
-                text = if (isStart) "‹" else "›"
-                textSize = 12f
-                typeface = Typeface.DEFAULT_BOLD
-                setTextColor(Color.WHITE)
-                gravity = Gravity.CENTER
-                setBackgroundColor(Color.rgb(27, 91, 57))
+            val handle = FrameLayout(this).apply {
+                setBackgroundColor(Color.TRANSPARENT)
                 elevation = dp(TouchPriority.TIMELINE_EDGE_HANDLE_DP).toFloat()
                 contentDescription = if (isStart) "Müzik başlangıç tutamacı" else "Müzik bitiş tutamacı"
+                isClickable = true
+                isFocusable = true
+                addView(View(this@VideoEditorActivity).apply {
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        setColor(Color.rgb(27, 91, 57))
+                        cornerRadius = dp(3).toFloat()
+                    }
+                    isClickable = false
+                    isFocusable = false
+                }, FrameLayout.LayoutParams(dp(5), dp(24), Gravity.CENTER))
+                setOnClickListener { /* The transparent edge target is primarily a drag control. */ }
             }
             var downRawX = 0f
             var initial = normalized
@@ -4329,15 +4341,21 @@ class VideoEditorActivity : Activity() {
 
         fun addTrimHandle(isStart: Boolean) {
             val handleWidth = timelineEdgeTouchWidth(blockWidth)
-            val handle = TextView(this).apply {
-                text = if (isStart) "‹" else "›"
-                textSize = 12f
-                typeface = Typeface.DEFAULT_BOLD
-                setTextColor(Color.WHITE)
-                gravity = Gravity.CENTER
-                setBackgroundColor(Color.rgb(116, 65, 25))
+            val handle = FrameLayout(this).apply {
+                setBackgroundColor(Color.TRANSPARENT)
                 elevation = dp(TouchPriority.TIMELINE_EDGE_HANDLE_DP).toFloat()
                 contentDescription = if (isStart) "Efekt başlangıç tutamacı" else "Efekt bitiş tutamacı"
+                isClickable = true
+                isFocusable = true
+                addView(View(this@VideoEditorActivity).apply {
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        setColor(Color.rgb(116, 65, 25))
+                        cornerRadius = dp(3).toFloat()
+                    }
+                    isClickable = false
+                    isFocusable = false
+                }, FrameLayout.LayoutParams(dp(5), dp(24), Gravity.CENTER))
+                setOnClickListener { /* The transparent edge target is primarily a drag control. */ }
             }
             var downRawX = 0f
             var initial = normalized
