@@ -875,3 +875,12 @@ The exact inner export rectangle is outlined with a thin turquoise guide in the 
 
 
 Video clips now show their own white selection frame when selected in the timeline. The rectangle follows the selected clip's scale, rotation and position transform inside the project canvas. It is a non-interactive guide and disappears when the user switches selection to text, image/video overlays or audio.
+
+
+### Shared editor touch priority and trim hit targets
+
+Preview interactions now follow one shared priority contract instead of relying on unrelated per-view elevation values: passive text remains tappable above paused media, the active video/overlay/text gesture surface is raised above media content, and selection outlines remain non-interactive chrome above the gesture surface. Only the active tool surface is shown, so this is not a full-screen catch-all touch layer and it does not take ownership of timeline scrolling or pinch zoom.
+
+Text, music and sound-effect trim handles share a preferred transparent hit width of up to 32dp (constrained by the clip block) and a common 12dp handle elevation; video trim handles retain their wider 40dp target and use the same handle priority. The visible grip remains narrow so the larger hit area does not visually clutter the timeline.
+
+The emulator smoke now retries compressed UIAutomator hierarchy capture and reports a dedicated diagnostic if the hierarchy is still unavailable. It also exercises direct text-layer dragging and verifies that the rendered text bounds move, in addition to the existing direct overlay drag and layer-selection checks.
