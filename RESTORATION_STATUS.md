@@ -847,3 +847,10 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Paused image/video overlay views are clickable. Tapping one selects its timeline layer and restores its overlay tool dock and gesture surface. A tap on the already-selected layer also reopens the overlay tools after the user has returned to the main dock.
 - Extended the emulator smoke sequence to exit the overlay dock, tap the unselected visible magenta layer, and assert that the overlay tool dock plus direct-canvas gesture surface return before drag/clipping checks.
 - Source commits: `c4cedb0` (canvas tap handlers), `f71e376` (reopen tool strip for a repeated tap), `167e67e` (emulator tap-to-select check). CI for this branch head is pending.
+
+
+## Text selection outline — 2026-11-06
+
+- Added a dedicated white selection frame around the selected text/sticker preview view. Its width/height are derived from the measured TextView bounds, and it follows the same normalized canvas translation and text-animation scale. It is clipped by the inner project canvas.
+- Text selection now clears the previous image/video overlay and clip gesture targets; selecting an image/video overlay clears the text outline; selecting an audio track clears the text selection outline. This prevents a stale transform target from remaining active after changing layer type.
+- Source commits: `59b4dc8` (text outline and selection-state clearing), `0e3676b` (gesture-target cleanup and initialization guard). CI for these source commits is still running.
