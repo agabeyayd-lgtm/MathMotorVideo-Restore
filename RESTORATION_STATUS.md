@@ -921,3 +921,10 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Current source head: `7935e0eb8771545b867f9ceab41d6cad3483a59c`. APK build #769 and Android unit/build verification #813 are green. Android 35 emulator run #981 is still in progress; do not mark the interaction suite green until it concludes.
 - A prior compile failure on `49749f44` was caused by escaped Kotlin string-template markers in test diagnostics. The markers were corrected on `7935e0eb`; both subsequent compile/build checks passed.
 - No version bump, signed APK publication, release-trigger change or physical-phone acceptance is included. The app remains at versionCode 399 / 8.32-capcut-editor until the current emulator gate and the separate physical-device checks pass.
+
+
+### Overlay end-edge visibility diagnosis — 2026-11-06
+
+- Emulator run #983 confirmed the overlay end hit view is created and measured at 84×84 emulator pixels, but its screen bounds were outside the horizontally scrolled overlay-row viewport (the end edge was at x=2982 while the viewport ended at x=1039). The prior “missing handle” failure was therefore a test navigation/visibility issue, not evidence that the app failed to create the end hit target.
+- Updated `.github/scripts/capture-emulator-screenshots.sh` to identify the overlay's own HorizontalScrollView and scroll that row toward its end, re-dumping accessibility until the end handle is visible before asserting its bounds and dragging it. The app touch/trim implementation is unchanged by this test-harness correction.
+- Follow-up emulator verification is required before marking shared overlay trim complete. No APK release or version bump.
