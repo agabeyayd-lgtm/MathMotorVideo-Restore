@@ -1104,3 +1104,10 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 
 
 - Follow-up commit `abfb2b1894fcd2a8da88dbe0e0d655441a32325a` refreshes the reference dimensions from the latest settled keyboard-free, panel-free layout instead of retaining a transient oversized startup canvas. Validation remains pending on this exact revision.
+
+
+## Text target after closing detail panel — 2026-11-06
+
+- The full-preview canvas expands when the text panel closes, so the text layer's on-screen coordinate changes with the project canvas. The previous smoke script reused the compressed-panel center for the later reselect tap.
+- Script commit `f03f1a12e9510b6310fa8490eed10af81bf7d59f` now captures fresh canvas bounds after panel close, verifies the full-size selection frame, and taps its newly measured center. It also uses fresh bounds for the reselected screenshot. This preserves the pixel/gesture assertions rather than weakening them.
+- Validate on the next complete API 35 run together with responsive text preview scaling.
