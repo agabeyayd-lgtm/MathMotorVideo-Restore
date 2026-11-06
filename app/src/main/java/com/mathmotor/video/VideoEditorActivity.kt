@@ -2727,15 +2727,15 @@ class VideoEditorActivity : Activity() {
                 editorPanelScroll.layoutParams = params
             }
             editorPanelScroll.visibility = View.VISIBLE
-            // Keep the detail sheet above timeline hit targets even when sibling
-            // drawing order is affected by nested scrolling containers. Elevation
-            // controls both rendering and touch dispatch; the dock remains above it.
-            editorPanelScroll.elevation = dp(24).toFloat()
-            editorPanelScroll.bringToFront()
+            // The open detail sheet must own touches in its bounds. The dock can
+            // overlap it visually, but must stay below the sheet in both elevation
+            // and sibling drawing order so hidden dock controls cannot steal taps.
             if (::editorDockScroll.isInitialized) {
-                editorDockScroll.elevation = dp(28).toFloat()
+                editorDockScroll.elevation = dp(24).toFloat()
                 editorDockScroll.bringToFront()
             }
+            editorPanelScroll.elevation = dp(32).toFloat()
+            editorPanelScroll.bringToFront()
             editorPanelScroll.animate().cancel()
             if (wasVisible) {
                 // Switching tools reuses the same sheet without replaying its entrance.
