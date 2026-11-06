@@ -3279,7 +3279,7 @@ class VideoEditorActivity : Activity() {
                         isFocusable = false
                     }, FrameLayout.LayoutParams(
                         dp(5), dp(24),
-                        Gravity.CENTER_VERTICAL or if (isStart) Gravity.START else Gravity.END
+                        Gravity.CENTER_VERTICAL or (if (isStart) Gravity.START else Gravity.END)
                     ))
                     setOnClickListener { /* The transparent edge target is primarily a drag control. */ }
                 }
@@ -3793,6 +3793,12 @@ class VideoEditorActivity : Activity() {
                         overlay.keyframes.clear()
                         overlay.keyframes.addAll(rebased)
                     }
+                    if (timelineSyncTestEnabled) {
+                        android.util.Log.i(
+                            "EditorTouchTest",
+                            "OVERLAY_EDGE_TRIM kind=\${if (overlay.isImage) "image" else "video"} edge=start beforeStartMs=$oldStart beforeDurationMs=$oldDuration afterStartMs=\${overlay.timelineStartMs} afterDurationMs=\${overlay.durationMs} deltaMs=$shift"
+                        )
+                    }
                     selectedOverlayId = overlay.id
                     timelinePlayheadMs = overlay.timelineStartMs
                     enterOverlayTools()
@@ -3807,6 +3813,12 @@ class VideoEditorActivity : Activity() {
                     val maximum = minOf(sourceRemaining, timelineRemaining)
                     val minimum = minOf(500L, maximum)
                     overlay.durationMs = (oldDuration + deltaMs).coerceIn(minimum, maximum)
+                    if (timelineSyncTestEnabled) {
+                        android.util.Log.i(
+                            "EditorTouchTest",
+                            "OVERLAY_EDGE_TRIM kind=\${if (overlay.isImage) "image" else "video"} edge=end beforeStartMs=\${overlay.timelineStartMs} beforeDurationMs=$oldDuration afterStartMs=\${overlay.timelineStartMs} afterDurationMs=\${overlay.durationMs} deltaMs=$deltaMs"
+                        )
+                    }
                     selectedOverlayId = overlay.id
                     timelinePlayheadMs = overlay.timelineStartMs
                     enterOverlayTools()
