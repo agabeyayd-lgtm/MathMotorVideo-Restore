@@ -953,3 +953,6 @@ The outer timeline workspace remains a stable height as video, text, music, and 
 - The API 35 text-selection screenshot showed that a 24sp overlay and fixed 10dp insets were still rendered at full screen size after the preview canvas had contracted to roughly 137×245px. The text wrapped/clipped and its selection chrome ran outside the canvas.
 - Source commit `54de4fe0e4cf1346669e4fb6cb8e12e5c62d4882` stores the normal project-canvas dimensions and scales only the preview rendering (font, padding, corner radius and shadow) by the current-to-normal canvas ratio. The authored `TextLayer.sizeSp` remains unchanged for project/export data.
 - Latest emulator verification is pending. The selected text frame, text drag and preview restoration must pass on the same source commit before this is considered fixed.
+
+
+- Follow-up commit `abfb2b1894fcd2a8da88dbe0e0d655441a32325a` records the latest settled normal preview dimensions rather than the largest transient startup measurement, so full-size text returns to its authored preview scale after insets/layout settle.
