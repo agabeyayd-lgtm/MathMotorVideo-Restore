@@ -921,20 +921,44 @@ timeout -k 2s 8s adb -s emulator-5554 shell input tap $overlay_back_coords
 sleep 1
 dump_hierarchy editor-main-dock.xml emulator-screenshots/editor-main-dock.xml || true
 
-clip_tool_coords="$(find_bottom_tool emulator-screenshots/editor-main-dock.xml "Düzenle" || true)"
-if [ -z "$clip_tool_coords" ]; then
-  echo "Could not locate the bottom Düzenle tool; refusing to guess its tap coordinates."
-  collect_capture_diagnostics editor-panel-edit-tool-missing
+video_clip_coords="$(python3 - emulator-screenshots/editor-main-dock.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if not node.attrib.get("content-desc", "").startswith("Klip 1:"):
+        continue
+    if node.attrib.get("clickable") != "true":
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        x1, y1, x2, y2 = map(int, match.groups())
+        print((x1 + x2) // 2, (y1 + y2) // 2)
+        break
+PY
+)"
+if [ -z "$video_clip_coords" ]; then
+  echo "Could not locate the video clip block after returning from overlay tools."
+  collect_capture_diagnostics editor-video-reselect-target-missing
   exit 25
 fi
-echo "Opening the one-row clip tool strip at $clip_tool_coords"
-timeout -k 2s 8s adb -s emulator-5554 shell input tap $clip_tool_coords
+echo "Reselecting the main video clip before testing its canvas transform at $video_clip_coords"
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $video_clip_coords
 sleep 1
 if ! take_screen emulator-screenshots/editor-panel-clip-open.png; then
   collect_capture_diagnostics editor-panel-open-capture-failure
   exit 6
 fi
-dump_hierarchy editor-panel-clip-open.xml emulator-screenshots/editor-panel-clip-open.xml || true
+if ! dump_hierarchy editor-panel-clip-open.xml emulator-screenshots/editor-panel-clip-open.xml; then
+  collect_capture_diagnostics editor-panel-clip-open-hierarchy-unavailable
+  exit 25
+fi
+if ! grep -q "Seçili video klibi sınırı" emulator-screenshots/editor-panel-clip-open.xml; then
+  echo "Tapping the main video track did not restore its selected preview frame."
+  collect_capture_diagnostics editor-video-reselect-frame-missing
+  exit 25
+fi
 
 trim_tool_coords="$(find_bottom_tool emulator-screenshots/editor-panel-clip-open.xml "Kırp" || true)"
 if [ -z "$trim_tool_coords" ]; then
