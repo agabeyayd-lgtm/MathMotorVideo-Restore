@@ -751,9 +751,36 @@ if outside:
         f"canvas=({canvas_left},{canvas_top})-({canvas_right},{canvas_bottom}), "
         f"outside_count={len(outside)}"
     )
+
+# The turquoise canvas border is a workspace guide, outside the inner canvas
+# content and therefore outside the exported frame. Verify all four edges.
+def turquoise(pixel):
+    red, green, blue = pixel
+    return red < 130 and green > 145 and blue > 120
+
+edge_hits = {"left": 0, "right": 0, "top": 0, "bottom": 0}
+for y in range(max(0, canvas_top - 3), min(image.height, canvas_bottom + 4)):
+    for x in range(max(0, canvas_left - 3), min(image.width, canvas_right + 4)):
+        if not turquoise(image.getpixel((x, y))):
+            continue
+        if abs(x - canvas_left) <= 3:
+            edge_hits["left"] += 1
+        if abs(x - canvas_right) <= 3:
+            edge_hits["right"] += 1
+        if abs(y - canvas_top) <= 3:
+            edge_hits["top"] += 1
+        if abs(y - canvas_bottom) <= 3:
+            edge_hits["bottom"] += 1
+missing_edges = [name for name, count in edge_hits.items() if count < 3]
+if missing_edges:
+    raise SystemExit(
+        "Turquoise project-canvas outline is not visible on all four edges: "
+        + ", ".join(missing_edges)
+        + f"; edge hits={edge_hits}"
+    )
 print(
-    "PASS: every visible overlay pixel is clipped to the measured project canvas "
-    f"({canvas_left},{canvas_top})-({canvas_right},{canvas_bottom})"
+    "PASS: overlay pixels are clipped to the canvas and the separate turquoise "
+    f"workspace border is visible on all four edges ({edge_hits})"
 )
 PY
 if [ "$((after_x - before_x))" -lt 12 ] || [ "$((after_x - before_x))" -gt 34 ] ||
