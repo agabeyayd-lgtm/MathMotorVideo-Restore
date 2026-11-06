@@ -856,3 +856,12 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Source commits: `59b4dc8` (text outline and selection-state clearing), `0e3676b` (gesture-target cleanup and initialization guard). CI for these source commits is still running.
 
 - Layer-type switch follow-up: entering the audio tool strip now clears stale text and image/video selection IDs before refreshing preview chrome. This keeps a previous visual selection outline/gesture target from remaining active while audio is selected. Source commit: `ec516ec`; its CI run is pending.
+
+
+## Text/sticker two-finger rotation — 2026-11-06
+
+- Added a per-layer `rotationDegrees` field to text/sticker layers. It is written to project JSON and restored on load; older project files without the field remain at 0°.
+- In preview edit mode, the two-finger gesture now updates font size and rotation together. Rotation uses the shortest signed angular delta so crossing the ±180° boundary does not spin the text the long way around.
+- The TextView and its white selection outline render the same rotation; `buildTimedTextOverlay()` passes that saved angle into Media3's export overlay settings.
+- Updated the text panel and gesture status copy to mention rotate support. Added pure math tests for wrap-around and canonical angle normalization.
+- Source commits: `bc97359` (rotation math), `5b7d7b7` (unit cases), `b1cf8c6` (text model/gesture/preview/export/persistence), `a837f6f` (UI guidance). Build and emulator verification pending.
