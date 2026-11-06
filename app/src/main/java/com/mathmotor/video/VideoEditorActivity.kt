@@ -6148,6 +6148,8 @@ class VideoEditorActivity : Activity() {
         gravity = Gravity.CENTER
         maxLines = 2
         maxWidth = dp(170)
+        minimumWidth = dp(48)
+        minimumHeight = dp(44)
         setTextColor(Color.WHITE)
         setTypeface(Typeface.DEFAULT, Typeface.BOLD)
         setPadding(dp(10), dp(6), dp(10), dp(6))
