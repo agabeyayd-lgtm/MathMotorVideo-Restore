@@ -5368,7 +5368,9 @@ class VideoEditorActivity : Activity() {
         if (::textSelectionFrame.isInitialized) textSelectionFrame.elevation = chromeElevation
         if (::overlaySelectionFrame.isInitialized) overlaySelectionFrame.elevation = chromeElevation
         previewTextOverlays.forEach { textView ->
-            textView.elevation = if (textOverlayEditingEnabled && textView.visibility == View.VISIBLE) {
+            textView.elevation = if (
+                textOverlayEditingEnabled && activeEditorPanel == "text" && textView.visibility == View.VISIBLE
+            ) {
                 gestureElevation
             } else {
                 passiveElevation
@@ -6161,7 +6163,7 @@ class VideoEditorActivity : Activity() {
         var startRotationDegrees = 0f
         overlay.isClickable = true
         overlay.setOnTouchListener { view, event ->
-            if (!textOverlayEditingEnabled) return@setOnTouchListener false
+            if (!textOverlayEditingEnabled || activeEditorPanel != "text") return@setOnTouchListener false
             val layerId = view.tag as? Long ?: return@setOnTouchListener false
             val layer = textLayers.firstOrNull { it.id == layerId } ?: return@setOnTouchListener false
             when (event.actionMasked) {
