@@ -1028,3 +1028,11 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - This is a production layout issue, not an emulator startup failure. The keyboard mode now temporarily hides the timeline card while text entry is active, allowing the preview stage and project canvas to remain large enough for text positioning. The timeline is restored when the keyboard closes.
 - Removed obsolete bottom-sheet inset handling that attempted to cast the now-root-child `LinearLayout` to `FrameLayout.LayoutParams`; root padding is the single inset source.
 - Fix commit: `3d4758aacf726a02295287163fb72a389e40aa17`. Fresh build and emulator verification are pending; do not mark this correction complete until the keyboard-open canvas measurement passes. No version bump or APK release.
+
+
+### Text-panel preview starvation after keyboard dismissal — production layout correction — 2026-11-06
+
+- Emulator run #1018 verified the keyboard-open project canvas at 216x385 (9:16), but after dismissing the keyboard the still-open text panel left the preview stage at 1038x161 (project canvas 90x161). The selected text layer's preview selection frame was consequently not measurable in the screenshot.
+- This exposed a second real layout issue: the fixed 220dp timeline card and expanded tool panel competed with the preview after IME dismissal. The timeline is now compacted to 132dp while any second-level editor panel is open, and restored to 220dp when that panel closes. Timeline rows remain present and vertically scrollable; the preview receives the released height.
+- The keyboard-open mode continues to temporarily hide the timeline while the IME is visible, restoring the compact timeline when the keyboard closes.
+- Fix commit: `d754573096ce9e6a57963115fc85ed0cd2caec29`. Fresh build and emulator verification are pending. Do not mark text editing layout complete until the post-keyboard preview and text-selection frame checks pass. No version bump or APK release.
