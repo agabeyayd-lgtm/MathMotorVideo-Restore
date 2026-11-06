@@ -900,3 +900,14 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Emulator run #952 passed canvas sizing, replacement filmstrip, main-video selection frame, overlay reselection and direct overlay drag/clipping. It then failed in the later text test because uiautomator dump timed out and did not create editor-text-selected.xml; this was a test-harness hierarchy-capture failure, not an overlay-drag failure.
 - Test harness follow-up commit eed391b retries compressed hierarchy dumps with a longer timeout, emits a dedicated diagnostic if XML is still missing, and adds a direct text-drag assertion that compares the preview TextView bounds before/after the gesture.
 - Runs #953 (source-policy verification) and #954 (updated emulator interaction smoke) plus build/verify runs #742 and #786 were pending at the time of this update. Do not mark cross-tool touch handling complete until the updated emulator run passes.
+
+
+## Touch target sizing and gesture consistency — 2026-11-06
+
+- Text preview views now have a minimum 48×44dp touch box; their selection outline still follows the measured view bounds.
+- Text, music and sound-effect trim handles now use transparent FrameLayout hit areas with narrow 5dp visual grips. Their preferred hit width is up to 32dp, constrained to half the clip block to prevent start/end overlap. Video trim retains a wider 40dp target with the same narrow visual grip.
+- Video, text, music and sound-effect trim movement now uses Android scaledTouchSlop consistently. The text-edit toggle accessibility description now reports the active direct-manipulation mode so automated tests can preserve its initial state.
+- Additional test-harness commits: 833ac16 (activity touch-slop context fix), f0dace1 (transparent trim hit regions), 41fa43c (text minimum hit box), 9ff9e7e (text gesture accessibility state), 2d20595 (reselect clip before video-transform smoke), 2de525d (preserve initial text-edit toggle state in smoke).
+- Emulator run #960 reached the video-transform check after passing canvas geometry, replacement filmstrip, main-video selection frame, overlay reselection and direct overlay drag/clipping. It failed because the test had switched selection to the overlay and then opened clip tools without reselecting the video; the screenshot confirmed the clip was not selected, so the absent frame was expected. The test now taps the video track to reselect it before opening Kırp.
+- Run #952 had separately failed at a missing UIAutomator XML after the overlay drag had passed. The hierarchy capture now retries with compressed XML and explicit diagnostics.
+- Latest cross-tool emulator runs #963–#965 are pending; do not close this work until the video, text and overlay direct-drag assertions pass on the latest run. Build/verify runs for commits through 41fa43c passed; later commits are under CI.
