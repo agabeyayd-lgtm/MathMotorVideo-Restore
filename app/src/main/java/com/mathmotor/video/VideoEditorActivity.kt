@@ -2790,6 +2790,9 @@ class VideoEditorActivity : Activity() {
             if (params != null) {
                 val basePanelHeight = when (name) {
                     "clipVolume" -> if (keyboardLayoutActive) 112 else 150
+                    // Keep a usable project preview visible while text controls
+                    // remain in this scrollable detail panel.
+                    "text" -> if (keyboardLayoutActive) 124 else 168
                     else -> if (keyboardLayoutActive) 124 else 196
                 }
                 val stickyHeaderHeight = if (name == "text") 40 else 0
