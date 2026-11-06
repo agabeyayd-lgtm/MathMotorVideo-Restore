@@ -1087,3 +1087,10 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 
 - The first text-bounds implementation did not compile because the rotated bounding-box math mixed `Float` and `Double`. The failing compiler locations were `VideoEditorActivity.kt:6331–6340`.
 - Commit `798f7288a626d34345b5ac1966e239932e4a04d8` normalizes the trigonometric bounds to `Float` before calculating the canvas clamp. The previous red runs are not treated as successful; a fresh build and emulator run on this correction is required.
+
+
+## Compact text-panel layout — 2026-11-06
+
+- The text detail panel occupied 156dp after its sticky header, leaving the 9:16 preview too narrow for a useful text transform/selection affordance on the API 35 emulator.
+- Source commit `b530525c7ebacf9d9ff7a054c728071635a52905` reduces the normal text-panel viewport to 128dp while retaining its scrollable controls and leaving keyboard-mode sizing unchanged. This reserves more screen area for the project preview instead of hiding controls or covering the timeline.
+- Confirm with a fresh screenshot that the preview canvas is larger, the white selection frame is fully visible, text dragging works, and panel close restores the full preview.
