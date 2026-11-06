@@ -931,3 +931,12 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 
 
 - Follow-up run #985 showed why the first test-harness correction did not work: swiping directly on the overlay row is intercepted by the selected clip's drag gesture, so the row never scrolls. The end handle remains correctly laid out offscreen (84×84px at x=2982), and no app crash was found. The harness now scrolls the shared timeline ruler instead; the timeline rows follow the ruler's horizontal position. This avoids sending navigation gestures through the clip's own touch target. Re-run the emulator gate before considering the fix verified.
+
+
+### Emulator run #988 — overlay end-edge scroll harness follow-up — 2026-11-06
+
+- Run #988 (source `96b72f31986601f239c85c8aa48217251bbbd237`) passed unit tests and debug APK assembly, as well as all earlier emulator checks through overlay start trim and music/sound start/end trims. It stopped at overlay end-handle discovery with exit code 82.
+- The saved `EditorTouchTest` diagnostics confirm the overlay end hit target is created at 84×84px inside a 2,527px-wide clip block (`left=2443 right=2527)); the selected row's viewport exposes only the first part of that content. Overlay start trim passed and changed timing from 0/8,023ms to 133/7,890ms.
+- The harness attempted to reveal the far edge by starting a 708px swipe at x=1004, close to the API 35 emulator's right-side system-navigation region. The post-gesture hierarchy ended up on the Android launcher, so #988 does not establish an app crash or a missing end-handle implementation; the harness gesture is the likely failure point.
+- Corrected the ruler-scroll gesture to start/end within the inner 50% of the ruler viewport and added a foreground-package assertion after every scroll. This guards against silently leaving the editor and gives a specific diagnostic if navigation wins the gesture.
+- The app's trim implementation and version are unchanged. This harness correction still needs a fresh emulator run; do not mark overlay end trim verified, publish an APK, or bump the app version until that run passes.
