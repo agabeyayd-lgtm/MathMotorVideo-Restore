@@ -1074,3 +1074,10 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Historical emulator #1017/#1018 failure: `text-canvas-selection-frame-missing`. Screenshot review showed the text panel reduced the project canvas to about 90×161px, while `updatePreviewTextOverlay()` forced dimensions to at least 100dp and the text view to at least 80dp width. The text/selection frame could therefore be larger than the real project canvas and clip out of view.
 - **Source correction:** commit `7d7c3f80377ee84da074770fc6736c78c5d798d7` uses actual `previewCanvas.width/height`, dynamically constrains the text view to available canvas width/height, and clamps the rotated selection frame within the real canvas. The test was not weakened.
 - **Verification pending:** require the actual white selection frame, text drag, panel/keyboard geometry and timeline layout to pass in a fresh API 35 emulator run. No release/APK is being prepared.
+
+
+## Text selection smoke-test measurement correction — 2026-11-06
+
+- Additional review of the #1018 screenshot artifact found the pixel detector reused `preview-canvas-logcat.txt` captured before the text panel/keyboard resized the workspace. The detector therefore searched the old 376×669 canvas region although the live text-panel canvas was much smaller. The image assertion was using stale geometry, independently of the text overlay sizing defect.
+- Script commit `9efb587741ad6aa12b5e608a42fdf9cf05fe485e` snapshots the latest `PREVIEW_CANVAS_BOUNDS` immediately before both the selected-text and post-drag screenshots, and supplies those fresh bounds to the unchanged pixel/drag assertions. This updates measurement, not success thresholds.
+- Await fresh API 35 emulator evidence for text selection, in-canvas drag and stable timeline geometry.
