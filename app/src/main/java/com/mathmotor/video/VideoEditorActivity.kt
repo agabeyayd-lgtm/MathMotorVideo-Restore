@@ -252,6 +252,7 @@ class VideoEditorActivity : Activity() {
     private lateinit var previewTextOverlay: TextView
     private lateinit var textSelectionFrame: View
     private lateinit var clipTransformTouchOverlay: View
+    private lateinit var clipSelectionFrame: View
     private lateinit var overlayTransformTouchOverlay: View
     private lateinit var overlaySelectionFrame: FrameLayout
     private val overlaySelectionHandles = mutableListOf<View>()
@@ -810,6 +811,7 @@ class VideoEditorActivity : Activity() {
         previewCanvas.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
             if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) {
                 if (::previewTextOverlay.isInitialized) updatePreviewTextOverlay()
+                if (::clipSelectionFrame.isInitialized) updateClipSelectionChrome()
                 if (::overlaySelectionFrame.isInitialized) updateOverlaySelectionChrome()
             }
         }
@@ -886,6 +888,23 @@ class VideoEditorActivity : Activity() {
             )
         )
         installClipTransformTouch()
+        clipSelectionFrame = View(this).apply {
+            visibility = View.GONE
+            isClickable = false
+            isFocusable = false
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.TRANSPARENT)
+                cornerRadius = dp(1).toFloat()
+                setStroke(dp(1), Color.WHITE)
+            }
+            elevation = dp(9).toFloat()
+            contentDescription = null
+        }
+        previewCanvas.addView(
+            clipSelectionFrame,
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        )
 
         previewTextOverlay = TextView(this).apply {
             textSize = textSizeSp.toFloat()
@@ -2382,6 +2401,7 @@ class VideoEditorActivity : Activity() {
             }
             updatePreviewTextOverlay()
         }
+        updateClipSelectionChrome()
         updateOverlaySelectionChrome()
     }
 
@@ -5273,6 +5293,39 @@ class VideoEditorActivity : Activity() {
         clip.transformTranslateY = normalized.translateY
     }
 
+    private fun updateClipSelectionChrome() {
+        if (!::clipSelectionFrame.isInitialized || !::previewCanvas.isInitialized) return
+        val clip = clips.getOrNull(selectedClipIndex)
+        val selectedAtPlayhead = clip != null &&
+            clipHandlesVisible &&
+            activeClipIndexAt(timelinePlayheadMs) == selectedClipIndex &&
+            previewCanvas.width > 0 && previewCanvas.height > 0
+        if (!selectedAtPlayhead || clip == null) {
+            clipSelectionFrame.visibility = View.GONE
+            return
+        }
+
+        normalizeClipTransform(clip)
+        val width = previewCanvas.width
+        val height = previewCanvas.height
+        val params = clipSelectionFrame.layoutParams as? FrameLayout.LayoutParams
+            ?: FrameLayout.LayoutParams(width, height, Gravity.CENTER)
+        if (params.width != width || params.height != height || params.gravity != Gravity.CENTER) {
+            params.width = width
+            params.height = height
+            params.gravity = Gravity.CENTER
+            clipSelectionFrame.layoutParams = params
+        }
+        clipSelectionFrame.pivotX = width / 2f
+        clipSelectionFrame.pivotY = height / 2f
+        clipSelectionFrame.scaleX = clip.transformScale
+        clipSelectionFrame.scaleY = clip.transformScale
+        clipSelectionFrame.rotation = clip.transformRotationDegrees
+        clipSelectionFrame.translationX = clip.transformTranslateX * width / 2f
+        clipSelectionFrame.translationY = clip.transformTranslateY * height / 2f
+        clipSelectionFrame.visibility = View.VISIBLE
+    }
+
     private fun updateClipTransformTouchAvailability() {
         if (!::clipTransformTouchOverlay.isInitialized) return
         val enabled = clipHandlesVisible &&
@@ -5281,6 +5334,7 @@ class VideoEditorActivity : Activity() {
         clipTransformTouchOverlay.visibility = if (enabled) View.VISIBLE else View.GONE
         clipTransformTouchOverlay.isClickable = enabled
         if (!enabled) resetPlayerViewTransform()
+        updateClipSelectionChrome()
     }
 
     private fun resetPlayerViewTransform() {
@@ -5293,6 +5347,7 @@ class VideoEditorActivity : Activity() {
         playerView.translationX = 0f
         playerView.translationY = 0f
         resetPreviewFrameTransform()
+        updateClipSelectionChrome()
     }
 
     private fun applyTemporaryClipTransform(clip: Clip) {
@@ -5306,6 +5361,7 @@ class VideoEditorActivity : Activity() {
         playerView.translationX = clip.transformTranslateX * playerView.width / 2f
         playerView.translationY = clip.transformTranslateY * playerView.height / 2f
         applyPreviewFrameTransform(clip)
+        updateClipSelectionChrome()
     }
 
     private fun finishClipTransformGesture(
