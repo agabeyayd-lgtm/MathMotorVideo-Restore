@@ -7198,6 +7198,17 @@ class VideoEditorActivity : Activity() {
             status.text = "Bindirme için yalnızca fotoğraf veya video dosyası seçebilirsin."
             return
         }
+        // ACTION_OPEN_DOCUMENT grants a temporary read token unless it is persisted.
+        // Overlay URIs are saved in project JSON and decoded again for the canvas cover;
+        // without this grant the image can disappear after returning to the editor/reopening
+        // a project even though the timeline still contains its clip.
+        val persistedReadGrant = runCatching {
+            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            true
+        }.getOrDefault(false)
+        if (!persistedReadGrant && (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            android.util.Log.w("EditorSmokeTest", "OVERLAY_URI_PERSIST_FAILED uri=$uri")
+        }
         val title = queryDisplayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Bindirme"
         status.text = "Bindirme dosyası hazırlanıyor…"
         Thread {
