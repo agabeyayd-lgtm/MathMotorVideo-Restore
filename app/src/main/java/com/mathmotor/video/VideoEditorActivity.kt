@@ -2441,8 +2441,10 @@ class VideoEditorActivity : Activity() {
         val canvasWidth = canvasBounds.width
         val canvasHeight = canvasBounds.height
         if (activeEditorPanel == null && !keyboardLayoutActive && !previewFocusMode) {
-            referencePreviewCanvasWidth = maxOf(referencePreviewCanvasWidth, canvasWidth)
-            referencePreviewCanvasHeight = maxOf(referencePreviewCanvasHeight, canvasHeight)
+            // Use the latest settled normal layout, not the largest transient
+            // pre-inset measurement during Activity startup.
+            referencePreviewCanvasWidth = canvasWidth
+            referencePreviewCanvasHeight = canvasHeight
         }
         val stageScreenLocation = IntArray(2)
         previewFrame.getLocationOnScreen(stageScreenLocation)
