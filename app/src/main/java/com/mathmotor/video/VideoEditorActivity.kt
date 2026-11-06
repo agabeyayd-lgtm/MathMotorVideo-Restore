@@ -8483,7 +8483,7 @@ class VideoEditorActivity : Activity() {
                         }
                         android.view.MotionEvent.ACTION_MOVE -> {
                             val delta = event.rawX - downRawX
-                            if (kotlin.math.abs(delta) > android.view.ViewConfiguration.get(this).scaledTouchSlop) moved = true
+                            if (kotlin.math.abs(delta) > android.view.ViewConfiguration.get(this@VideoEditorActivity).scaledTouchSlop) moved = true
                             val (minimumDeltaPx, maximumDeltaPx) = allowedDeltaPx(initialStartMs, initialEndMs)
                             // Keep the handle visible while the gesture crosses beyond the
                             // current cut edge to restore trimmed-away source footage.
