@@ -1013,3 +1013,9 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - The next tap on the text did not emit `TEXT_TOOLS_DOCK_VISIBLE childCount=3`. This is a real interaction failure, distinct from the previous hierarchy-dump timeout.
 - Production correction: the preview text overlay now explicitly recognizes a passive tap while its detail panel is closed and calls `selectTextLayer`, which rebuilds the contextual text dock. Movement outside the active detail-edit mode is consumed without moving the text. Direct drag/pinch/rotate remains restricted to the active text-edit panel.
 - Fix commit: `4c572d430b5bacdafc9bd8abaf5431c58241e7f0`. A fresh emulator run is required; this correction is not yet verified. No version bump or release.
+
+
+### Editor panel / keyboard layout correction
+- Contextual editor panels now participate in the root vertical workspace layout instead of floating as a bottom overlay. Opening text tools reserves measured space above the dock, so the timeline and its touch targets are not covered.
+- The dock remains in the same layout flow; fullscreen preview hides/restores it through the root child visibility cycle.
+- Responsive keyboard handling continues to resize the preview workspace and fit the project canvas to the available stage; emulator verification is pending.
