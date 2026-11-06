@@ -2296,8 +2296,10 @@ class VideoEditorActivity : Activity() {
         val canvasBounds = PreviewCanvasMath.fit(stageWidth, stageHeight, aspect) ?: return
         val canvasWidth = canvasBounds.width
         val canvasHeight = canvasBounds.height
+        val stageScreenLocation = IntArray(2)
+        previewFrame.getLocationOnScreen(stageScreenLocation)
         val metrics = "stage=${stageWidth}x${stageHeight} canvas=${canvasWidth}x${canvasHeight} " +
-            "offset=${canvasBounds.left},${canvasBounds.top} aspect=$aspect"
+            "offset=${canvasBounds.left},${canvasBounds.top} origin=${stageScreenLocation[0]},${stageScreenLocation[1]} aspect=$aspect"
         if (metrics != lastPreviewCanvasMetrics) {
             lastPreviewCanvasMetrics = metrics
             if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
