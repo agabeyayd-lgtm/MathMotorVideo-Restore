@@ -1029,7 +1029,7 @@ for node in root.iter("node"):
         box = tuple(map(int, bounds.groups()))
         if desc == "Seçili metin katmanı sınırı":
             selection.append(box)
-        if value == "CanvasSmoke":
+        if value == "CanvasSmoke" and node.attrib.get("class") == "android.widget.TextView":
             text_nodes.append(box)
 if not selection:
     raise SystemExit("Selected text layer did not expose its white canvas selection frame.")
