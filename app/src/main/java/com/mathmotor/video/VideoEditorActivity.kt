@@ -3796,7 +3796,7 @@ class VideoEditorActivity : Activity() {
                     if (timelineSyncTestEnabled) {
                         android.util.Log.i(
                             "EditorTouchTest",
-                            "OVERLAY_EDGE_TRIM kind=\${if (overlay.isImage) "image" else "video"} edge=start beforeStartMs=$oldStart beforeDurationMs=$oldDuration afterStartMs=\${overlay.timelineStartMs} afterDurationMs=\${overlay.durationMs} deltaMs=$shift"
+                            "OVERLAY_EDGE_TRIM kind=${if (overlay.isImage) "image" else "video"} edge=start beforeStartMs=$oldStart beforeDurationMs=$oldDuration afterStartMs=${overlay.timelineStartMs} afterDurationMs=${overlay.durationMs} deltaMs=$shift"
                         )
                     }
                     selectedOverlayId = overlay.id
@@ -3816,7 +3816,7 @@ class VideoEditorActivity : Activity() {
                     if (timelineSyncTestEnabled) {
                         android.util.Log.i(
                             "EditorTouchTest",
-                            "OVERLAY_EDGE_TRIM kind=\${if (overlay.isImage) "image" else "video"} edge=end beforeStartMs=\${overlay.timelineStartMs} beforeDurationMs=$oldDuration afterStartMs=\${overlay.timelineStartMs} afterDurationMs=\${overlay.durationMs} deltaMs=$deltaMs"
+                            "OVERLAY_EDGE_TRIM kind=${if (overlay.isImage) "image" else "video"} edge=end beforeStartMs=${overlay.timelineStartMs} beforeDurationMs=$oldDuration afterStartMs=${overlay.timelineStartMs} afterDurationMs=${overlay.durationMs} deltaMs=$deltaMs"
                         )
                     }
                     selectedOverlayId = overlay.id

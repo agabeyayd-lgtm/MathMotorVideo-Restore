@@ -1274,21 +1274,83 @@ run_audio_edge_smoke music end "Müzik bitiş tutamacı" left
 run_audio_edge_smoke sound start "Efekt başlangıç tutamacı" right
 run_audio_edge_smoke sound end "Efekt bitiş tutamacı" left
 
-# Each direct trim gesture intentionally opens that track's contextual tools.
-# Return to the global dock using a fresh hierarchy before tapping Proje; never
-# reuse the pre-audio dock coordinates after the selected audio panel has changed.
-if ! dump_hierarchy editor-audio-tools-final.xml emulator-screenshots/editor-audio-tools-final.xml; then
+run_overlay_edge_smoke() {
+  local edge="$1" description="$2" direction="$3"
+  local before_xml="editor-overlay-${edge}-before.xml"
+  local after_xml="editor-overlay-${edge}-after.xml"
+  local coords cx cy target_w target_h x1 y1 x2 y2 delta marker
+  if ! dump_hierarchy "$before_xml" "emulator-screenshots/$before_xml"; then
+    echo "Could not inspect overlay trim target."
+    collect_capture_diagnostics "overlay-$edge-before-hierarchy-failed"
+    exit 81
+  fi
+  coords="$(find_content_description_bounds "emulator-screenshots/$before_xml" "$description")"
+  if [ -z "$coords" ]; then
+    echo "The overlay trim handle is missing from the timeline: $description"
+    collect_capture_diagnostics "overlay-$edge-target-missing"
+    exit 82
+  fi
+  read -r cx cy target_w target_h x1 y1 x2 y2 <<< "$coords"
+  if [ "$target_w" -lt 40 ] || [ "$target_h" -lt 20 ]; then
+    echo "Overlay hit target is undersized: ${target_w}x${target_h}px bounds=[$x1,$y1][$x2,$y2]."
+    collect_capture_diagnostics "overlay-$edge-target-undersized"
+    exit 83
+  fi
+  delta=42
+  if [ "$direction" = "left" ]; then delta=-42; fi
+  echo "Dragging $description from ($cx,$cy) by ${delta}px; hit area=${target_w}x${target_h}px."
+  timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$cx" "$cy" "$((cx + delta))" "$cy" 500
+  sleep 1
+  if ! dump_hierarchy "$after_xml" "emulator-screenshots/$after_xml"; then
+    echo "Could not inspect the timeline after overlay trim."
+    collect_capture_diagnostics "overlay-$edge-after-hierarchy-failed"
+    exit 84
+  fi
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I > "emulator-screenshots/overlay-$edge-touch-logcat.txt" 2>&1 || true
+  marker="$(grep -F "OVERLAY_EDGE_TRIM kind=image edge=$edge " "emulator-screenshots/overlay-$edge-touch-logcat.txt" | tail -n 1 || true)"
+  if [ -z "$marker" ]; then
+    echo "The overlay trim gesture did not reach its handler."
+    collect_capture_diagnostics "overlay-$edge-gesture-not-received"
+    exit 85
+  fi
+  python3 - "$marker" "$edge" <<PY
+import re
+import sys
+line, edge = sys.argv[1:]
+fields = dict(re.findall(r"([A-Za-z]+)=([^ ]+)", line))
+required = ["beforeStartMs", "beforeDurationMs", "afterStartMs", "afterDurationMs"]
+missing = [key for key in required if key not in fields]
+if missing:
+    raise SystemExit("Overlay trim event was incomplete: " + ", ".join(missing) + " :: " + line)
+before_start = int(fields["beforeStartMs"])
+before_duration = int(fields["beforeDurationMs"])
+after_start = int(fields["afterStartMs"])
+after_duration = int(fields["afterDurationMs"])
+if edge == "start" and not (after_start > before_start and after_duration < before_duration):
+    raise SystemExit("Overlay start edge did not trim the start: " + line)
+if edge == "end" and not after_duration < before_duration:
+    raise SystemExit("Overlay end edge did not shorten duration: " + line)
+print(f"PASS: overlay {edge} edge changed timing independently ({before_start}ms/{before_duration}ms -> {after_start}ms/{after_duration}ms)")
+PY
+}
+
+run_overlay_edge_smoke start "Katman başlangıcını kırp" right
+run_overlay_edge_smoke end "Katman bitişini kırp" left
+
+# Each direct trim gesture opens its selected track's contextual tools.
+# Return to the global dock after audio and overlay trimming using a fresh hierarchy.
+if ! dump_hierarchy editor-layer-tools-final.xml emulator-screenshots/editor-layer-tools-final.xml; then
   echo "Could not inspect the final audio contextual dock before returning to the main dock."
-  collect_capture_diagnostics audio-tools-final-hierarchy-unavailable
+  collect_capture_diagnostics layer-tools-final-hierarchy-unavailable
   exit 77
 fi
-audio_main_back_coords="$(find_bottom_tool emulator-screenshots/editor-audio-tools-final.xml "Ana araçlara dön" || true)"
-if [ -z "$audio_main_back_coords" ]; then
+layer_main_back_coords="$(find_bottom_tool emulator-screenshots/editor-layer-tools-final.xml "Ana araçlara dön" || true)"
+if [ -z "$layer_main_back_coords" ]; then
   echo "The final audio tool strip did not expose its return-to-main-dock control."
-  collect_capture_diagnostics audio-tools-main-back-missing
+  collect_capture_diagnostics layer-tools-main-back-missing
   exit 78
 fi
-timeout -k 2s 8s adb -s emulator-5554 shell input tap $audio_main_back_coords
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $layer_main_back_coords
 sleep 1
 if ! dump_hierarchy editor-main-dock-after-audio.xml emulator-screenshots/editor-main-dock-after-audio.xml; then
   echo "Could not verify that the global editor dock returned after the audio trim tests."
