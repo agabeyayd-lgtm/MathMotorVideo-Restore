@@ -872,3 +872,6 @@ During direct text editing, the accessibility `performClick()` issued at the end
 
 
 The exact inner export rectangle is outlined with a thin turquoise guide in the editor workspace. It is drawn as a non-interactive sibling of the project canvas, so it remains visible to the user but is excluded from the MP4 render and does not intercept layer gestures.
+
+
+Video clips now show their own white selection frame when selected in the timeline. The rectangle follows the selected clip's scale, rotation and position transform inside the project canvas. It is a non-interactive guide and disappears when the user switches selection to text, image/video overlays or audio.
