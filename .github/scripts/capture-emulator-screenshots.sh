@@ -407,7 +407,7 @@ if not matches:
     raise SystemExit("Editor did not log the measured preview project-canvas bounds.")
 line = matches[-1]
 match = re.search(
-    r"stage=(\d+)x(\d+) canvas=(\d+)x(\d+) offset=(\d+),(\d+) aspect=([0-9.]+)",
+    r"stage=(\d+)x(\d+) canvas=(\d+)x(\d+) offset=(\d+),(\d+)(?: origin=-?\d+,-?\d+)? aspect=([0-9.]+)",
     line,
 )
 if not match:
