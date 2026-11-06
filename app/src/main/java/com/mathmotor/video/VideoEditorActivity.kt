@@ -2168,7 +2168,7 @@ class VideoEditorActivity : Activity() {
     private fun setTimelinePanelMode(panelOpen: Boolean) {
         if (!::editorTimelineCard.isInitialized) return
         val params = editorTimelineCard.layoutParams as? LinearLayout.LayoutParams ?: return
-        val targetHeight = dp(if (panelOpen) 132 else 220)
+        val targetHeight = dp(if (keyboardLayoutActive) 88 else 220)
         if (params.height != targetHeight) {
             params.height = targetHeight
             editorTimelineCard.layoutParams = params
@@ -4060,7 +4060,6 @@ class VideoEditorActivity : Activity() {
             val desiredHeight = dp(
                 when {
                     keyboardLayoutActive -> 88
-                    activeEditorPanel != null -> 132
                     else -> 220
                 }
             )
