@@ -1060,3 +1060,10 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - The same run then exposed a separate real layout regression: after audio and overlay rows were added, the timeline card expanded from 577px to 661px and moved its top from y=1076 to y=992. The dynamic content-sized card calculation (up to 280dp) was overriding the editor's intended 220dp/132dp workspace heights, pushing the preview and destabilizing panel geometry.
 - Replaced content-driven outer-card expansion with a stable viewport height: 220dp normally, 132dp while a detail panel is open, and 88dp while the keyboard is active. Track rows remain independent inside the viewport rather than changing the editor shell geometry.
 - Fix commit: `046539e295bef2383de59eeb9db1326499001727`. Fresh build and emulator verification are pending; do not mark the layout correction complete until all panel geometry and track interaction checks pass. No version bump or APK release.
+
+
+## Timeline viewport height regression — 2026-11-06
+
+- **Root cause from emulator #1027–#1029:** two independent height controllers collapsed the timeline card from 220dp to 132dp whenever a detail panel opened: `setTimelinePanelMode()` and the outer-card sizing in `refreshTimelineTracks()`. The measured geometry changed from `(x=21,y=1076,w=1038,h=577)` to `(x=21,y=793,w=1038,h=346)`, violating the intended layout contract.
+- **Source fix:** commit `212db75d4130cc5bf253edf9fde8845c64b4b50e` keeps the timeline card at 220dp during detail panels in both code paths; only keyboard mode retains the compact 88dp height. Track rows remain in the scrollable viewport instead of resizing the editor shell.
+- **Verification pending:** build, unit tests and fresh API 35 emulator geometry validation must pass on this commit. Required proof: timeline width/height remain unchanged while the preview shrinks by the detail panel height; close/switch restores the original preview and timeline geometry. No APK/release is being prepared.
