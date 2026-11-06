@@ -1325,10 +1325,24 @@ PY
     scroll_end=$((ruler_left + ruler_width / 4))
     echo "Timeline ruler bounds=[$ruler_left,$ruler_top][$ruler_right,$ruler_bottom]; safe scroll=($scroll_start,$ruler_y)->($scroll_end,$ruler_y)."
     for scroll_attempt in $(seq 1 8); do
-      if [ -n "$(find_content_description_bounds "emulator-screenshots/$before_xml" "$description")" ]; then
-        break
+      visible_bounds="$(find_content_description_bounds "emulator-screenshots/$before_xml" "$description")"
+      if [ -n "$visible_bounds" ]; then
+        read -r _ _ visible_width visible_height _ <<< "$visible_bounds"
+        if [ "$visible_width" -ge 40 ] && [ "$visible_height" -ge 20 ]; then
+          echo "Overlay end hit target is fully reachable: ${visible_width}x${visible_height}px."
+          break
+        fi
+        echo "Overlay end hit target is only partially visible (${visible_width}x${visible_height}px); applying a short inner-ruler nudge."
+        # A large initial swipe can move the far edge to the extreme viewport
+        # boundary, where only a sliver of its transparent hit box is exposed.
+        # Nudge by 40 screen pixels from the ruler centre so the full 84px
+        # target is inside the viewport without approaching system navigation.
+        ruler_center=$(((ruler_left + ruler_right) / 2))
+        scroll_start=$((ruler_center + 20))
+        scroll_end=$((ruler_center - 20))
+      else
+        echo "Revealing overlay end handle through the inner timeline ruler (scroll $scroll_attempt/8)."
       fi
-      echo "Revealing overlay end handle through the inner timeline ruler (scroll $scroll_attempt/8)."
       timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$scroll_start" "$ruler_y" "$scroll_end" "$ruler_y" 450
       sleep 0.4
       dump_hierarchy "$before_xml" "emulator-screenshots/$before_xml" || true
