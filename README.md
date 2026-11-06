@@ -884,3 +884,7 @@ Preview interactions now follow one shared priority contract instead of relying 
 Text, music and sound-effect trim handles share a preferred transparent hit width of up to 32dp (constrained by the clip block) and a common 12dp handle elevation; video trim handles retain their wider 40dp target and use the same handle priority. The visible grip remains narrow so the larger hit area does not visually clutter the timeline.
 
 The emulator smoke now retries compressed UIAutomator hierarchy capture and reports a dedicated diagnostic if the hierarchy is still unavailable. It also exercises direct text-layer dragging and verifies that the rendered text bounds move, in addition to the existing direct overlay drag and layer-selection checks.
+
+Preview text layers now keep a minimum 48×44dp hit box while the selection frame follows the measured text view. Text, music and sound-effect trim controls use transparent FrameLayout hit regions with a narrow 5dp visible grip; the larger hit region remains visually unobtrusive. Video trim handles use the same visual-grip pattern.
+
+Timeline trim gestures now use Android's scaled touch slop consistently across video, text, music and sound-effect edges. Short clip blocks constrain each edge target to at most half the block width so the two handles do not overlap.
