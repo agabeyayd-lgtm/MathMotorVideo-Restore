@@ -922,3 +922,8 @@ A text layer remains directly selectable on the project canvas after its setting
 ### Canvas drag interaction
 
 Main-video one-finger transform gestures use the same local coordinate space as the preview's project canvas and overlay transform handlers. This keeps drag deltas independent of screen/window coordinate offsets and keeps pointer handoff consistent with pinch gestures. Verification for commit `edad968a8a0056611dc49c7faeac2770d10e5154` is pending.
+
+
+### Emulator smoke-test note — 2026-11-06
+
+The text-layer re-selection check now passes after closing the text panel: tapping the preview text restores the three-action contextual dock and keeps the portrait preview canvas intact. The subsequent timeline check exposed a test-harness ordering issue: the script cleared logcat to isolate text-panel events before reading the startup-only Android touch-slop marker. The capture script now stores that value immediately after launching the editor, before later logcat clears. A fresh emulator run is required to verify the harness correction; this is not yet marked green.
