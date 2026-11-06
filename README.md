@@ -1,3 +1,12 @@
+## Text panel sticky return control — 2026-11-06
+
+- Run #1003 exposed a real editor usability issue after text entry: focusing the text field moved the shared settings ScrollView, taking “Araçlara dön” out of view. The app remained alive; this was not a crash.
+- Moved the text-panel return action into a fixed header above the scrolling settings content. The header remains independently visible/tappable while the text settings scroll and while the keyboard changes the viewport; the scroll area is shortened by the header height rather than covered by it.
+- Updated the emulator smoke assertion to verify the pinned control directly after text editing. The previous compensating swipe is removed; this test now checks the production layout instead of trying to recover the hidden button.
+- No app version bump, APK release or signing/publishing change. The fix requires a fresh unit/build and emulator run before it is considered verified.
+
+---
+
 ## Focused fix — first-video placement and export asset diagnostics — 2026-11-05
 
 - Working branch: `fix/export-asset-diagnostics-and-empty-video-start`, based on current `main` after the 398 release-trigger commit. No versionCode, release marker, signing or publish workflow changes.

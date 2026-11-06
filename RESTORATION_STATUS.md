@@ -987,3 +987,12 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Production fix: the narrow trailing trim handle now registers only its own bounds in `systemGestureExclusionRects` on Android Q+ so its leftward drag reaches the app while the rest of the screen retains normal system navigation. Diagnostic log now records `gestureExclusion=true`.
 - Emulator harness now asserts the trailing handle's gesture exclusion was registered before dragging and still requires the actual `OVERLAY_EDGE_TRIM kind=image edge=end` callback plus changed duration. This is not considered fixed until a fresh emulator run passes.
 - Commits: `efb31a91e63d7cd4ba9cc922c526673b1fe41ba1` (app), `e7923312644070e1fa2740bef503e452aba180fb` (harness). No release/version bump.
+
+
+### Text panel return control — production layout correction — 2026-11-06
+
+- Emulator run #1003 remained red at `text-canvas-panel-back-missing`. The app process stayed RESUMED, no fatal exception or ANR was found, and the text layer/editor controls were still visible.
+- Source inspection found the root cause: text entry focuses the `EditText`, whose `requestRectangleOnScreen()` scrolls the shared settings `ScrollView`. The “Araçlara dön” button was its first child, so it scrolled out of view. The earlier test-only swipe workaround did not reliably restore it.
+- Production correction: moved the text-panel return action into a fixed sibling header above the settings ScrollView. The text settings viewport now reserves the header height in both normal and IME-visible layouts. Closing the text panel, switching panels, and entering text-track tools hide the header.
+- Emulator smoke coverage now checks the pinned return action directly after the text manipulation, without a compensating swipe. This verifies the production control remains visible rather than masking the layout defect.
+- Build, unit tests and emulator verification for this correction are pending. No version bump, APK release, signing or publishing was performed.

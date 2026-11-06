@@ -514,6 +514,7 @@ class VideoEditorActivity : Activity() {
     }
     private val editorPanels = linkedMapOf<String, LinearLayout>()
     private lateinit var editorPanelScroll: ScrollView
+    private lateinit var editorPanelReturnButton: Button
     private lateinit var editorBottomSheet: View
     private lateinit var editorTimelineCard: View
     private lateinit var editorDock: LinearLayout
@@ -1391,7 +1392,6 @@ class VideoEditorActivity : Activity() {
         ))
 
         val textPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        textPanel.addView(miniButton("‹ Araçlara dön") { closeVisualLayerPanel("text") }, matchWrap())
         textPanel.addView(label("METİN KATMANLARI", 13f, Color.rgb(121, 202, 218), true))
         textPanel.addView(label("Yazıyı videonun üstünde sürükle; iki parmakla büyüt, küçült veya döndür.", 11f, Color.rgb(154, 171, 190), false))
         textOverlayEditToggle = miniButton("Önizlemede yazı düzenleme: KAPALI") {
@@ -2003,6 +2003,20 @@ class VideoEditorActivity : Activity() {
                 setStroke(dp(1), Color.rgb(37, 53, 69))
             }
         }
+        // Keep the text-panel exit action outside the scrolling settings content.
+        // Focusing the EditText can scroll the settings list; a sticky header must
+        // remain reachable after the IME opens, closes, or requests its text field.
+        editorPanelReturnButton = miniButton("‹ Araçlara dön") {
+            closeVisualLayerPanel("text")
+        }.apply {
+            contentDescription = "Araçlara dön"
+            minHeight = dp(38)
+            minimumHeight = dp(38)
+            textSize = 12f
+            elevation = dp(36).toFloat()
+            visibility = View.GONE
+        }
+
         val panelHolder = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(4), dp(2), dp(4), dp(4))
@@ -2107,6 +2121,9 @@ class VideoEditorActivity : Activity() {
             elevation = dp(14).toFloat()
         }
         editorBottomSheet = bottomSheet
+        bottomSheet.addView(editorPanelReturnButton, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(38)
+        ))
         bottomSheet.addView(editorPanelScroll, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(196)
         ))
@@ -2236,7 +2253,16 @@ class VideoEditorActivity : Activity() {
                 ) {
                     val panelParams = editorPanelScroll.layoutParams as? LinearLayout.LayoutParams
                     if (panelParams != null) {
-                        panelParams.height = dp(if (imeVisible) 124 else 196)
+                        val basePanelHeight = if (activeEditorPanel == "clipVolume") {
+                            if (imeVisible) 112 else 150
+                        } else {
+                            if (imeVisible) 124 else 196
+                        }
+                        val stickyHeaderHeight = if (activeEditorPanel == "text" &&
+                            ::editorPanelReturnButton.isInitialized &&
+                            editorPanelReturnButton.visibility == View.VISIBLE
+                        ) 40 else 0
+                        panelParams.height = dp((basePanelHeight - stickyHeaderHeight).coerceAtLeast(72))
                         editorPanelScroll.layoutParams = panelParams
                     }
                 }
@@ -2646,6 +2672,7 @@ class VideoEditorActivity : Activity() {
 
     private fun returnToClipToolStrip() {
         if (!clipToolsMode) return
+        if (::editorPanelReturnButton.isInitialized) editorPanelReturnButton.visibility = View.GONE
         activeEditorPanel = null
         activeClipTool = null
         updateClipTransformTouchAvailability()
@@ -2713,6 +2740,9 @@ class VideoEditorActivity : Activity() {
         // is open. Closing the sheet returns to the same track tools; it must not
         // silently replace them with the global editor tabs.
         activeEditorPanel = name
+        if (::editorPanelReturnButton.isInitialized) {
+            editorPanelReturnButton.visibility = if (name == "text") View.VISIBLE else View.GONE
+        }
         if (name == "overlay") loadOverlayControls()
         updateClipTransformTouchAvailability()
         updateOverlayTransformTouchAvailability()
@@ -2721,12 +2751,12 @@ class VideoEditorActivity : Activity() {
             if (!wasVisible) logEditorPanelGeometry("before-open:" + name)
             val params = editorPanelScroll.layoutParams as? LinearLayout.LayoutParams
             if (params != null) {
-                val panelHeight = when (name) {
-                    "clip" -> if (keyboardLayoutActive) 124 else 196
+                val basePanelHeight = when (name) {
                     "clipVolume" -> if (keyboardLayoutActive) 112 else 150
                     else -> if (keyboardLayoutActive) 124 else 196
                 }
-                params.height = dp(panelHeight)
+                val stickyHeaderHeight = if (name == "text") 40 else 0
+                params.height = dp((basePanelHeight - stickyHeaderHeight).coerceAtLeast(72))
                 editorPanelScroll.layoutParams = params
             }
             editorPanelScroll.visibility = View.VISIBLE
@@ -2813,6 +2843,7 @@ class VideoEditorActivity : Activity() {
             showEditorPanel(name)
             return
         }
+        if (::editorPanelReturnButton.isInitialized) editorPanelReturnButton.visibility = View.GONE
         activeEditorPanel = null
         updateClipTransformTouchAvailability()
         updateOverlayTransformTouchAvailability()
@@ -6023,6 +6054,7 @@ class VideoEditorActivity : Activity() {
     /** Text-track selection mirrors video and overlay: selection changes only the dock. */
     private fun enterTextTools() {
         if (!::editorDock.isInitialized || !::editorPanelScroll.isInitialized) return
+        if (::editorPanelReturnButton.isInitialized) editorPanelReturnButton.visibility = View.GONE
         clipToolsMode = true
         activeClipTool = null
         activeEditorPanel = null
