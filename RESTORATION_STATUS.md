@@ -874,3 +874,5 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Source commits: `dbe3460` (return flow), `af66df5` (text selection UI smoke). Latest CI pending.
 
 - Direct-text-gesture click guard: `performClick()` is still fired after a drag/pinch/rotation for accessibility, but the TextView click listener now ignores it while direct text editing is enabled. This prevents the end of a gesture from being misinterpreted as a fresh selection tap and collapsing the open text settings panel. Repeated preview taps still reselect/reopen tools when direct editing is disabled. Source commit: `8041f71`; CI pending.
+
+- Text smoke target refinement: the hierarchy assertion now distinguishes the rendered preview `TextView` from the similarly named `EditText` field in the settings drawer, so the tap coordinate is taken from the on-canvas layer itself. Source commit: `1787a84`; pending CI.
