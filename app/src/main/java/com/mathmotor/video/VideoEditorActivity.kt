@@ -5931,6 +5931,11 @@ class VideoEditorActivity : Activity() {
             cornerRadius = dp(8).toFloat()
         }
         visibility = View.GONE
+        isClickable = true
+        setOnClickListener {
+            val layerId = tag as? Long ?: return@setOnClickListener
+            if (selectedTextLayerId != layerId) selectTextLayer(layerId)
+        }
         installPreviewTextTouch(this)
     }
 
@@ -8483,8 +8488,13 @@ class VideoEditorActivity : Activity() {
                 ImageView(this).apply {
                     scaleType = ImageView.ScaleType.FIT_CENTER
                     setBackgroundColor(Color.TRANSPARENT)
-                    isClickable = false
+                    isClickable = true
                     isFocusable = false
+                    contentDescription = "Önizlemede bindirme katmanını seç"
+                    setOnClickListener {
+                        val layerId = tag as? Long ?: return@setOnClickListener
+                        if (selectedOverlayId != layerId) selectOverlay(layerId)
+                    }
                     visibility = View.INVISIBLE
                 }.also { view ->
                     pausedOverlayPreviewContainer.addView(
@@ -8501,6 +8511,7 @@ class VideoEditorActivity : Activity() {
                 params.gravity = Gravity.CENTER
                 imageView.layoutParams = params
             }
+            imageView.tag = overlay.id
             val state = overlayStateAtTime(overlay, projectTimeMs)
             imageView.pivotX = frameWidth / 2f
             imageView.pivotY = frameHeight / 2f
