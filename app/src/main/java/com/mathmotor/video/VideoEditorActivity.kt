@@ -2771,9 +2771,9 @@ class VideoEditorActivity : Activity() {
             setStroke(dp(1), if (enabled) Color.rgb(100, 245, 218) else Color.rgb(42, 59, 77))
         }
         textOverlayEditToggle.contentDescription = if (enabled) {
-            "Önizlemede yazı düzenleme açık. Kapatmak için dokun."
+            "Önizleme üzerindeki yazıyı sürükleme, iki parmakla boyutlandırma ve döndürme açık. Kapatmak için dokun."
         } else {
-            "Önizlemede yazı düzenleme kapalı. Açmak için dokun."
+            "Önizleme üzerindeki yazıyı sürükleme, iki parmakla boyutlandırma ve döndürme kapalı. Açmak için dokun."
         }
         applyPreviewTouchPriority()
     }
