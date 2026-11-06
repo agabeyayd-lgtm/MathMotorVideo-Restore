@@ -1020,3 +1020,11 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - The dock remains in the same layout flow; fullscreen preview hides/restores it through the root child visibility cycle.
 - Responsive keyboard handling continues to resize the preview workspace and fit the project canvas to the available stage; emulator verification is pending.
 - Panel geometry assertion was corrected: opening a detail panel is expected to move the unchanged-size timeline upward by the exact height removed from the preview; closing the panel must restore both. A fixed timeline Y-coordinate was an invalid test expectation, not an app regression.
+
+
+### Text-entry keyboard preview sizing — production layout correction — 2026-11-06
+
+- Emulator run #1016 on `f96b088ff0a0d82dc3f905780c8aecf53b1260fc` passed build and verification workflows but failed the real keyboard/canvas check. The keyboard remained visible; the measured 9:16 project canvas collapsed to only `90x161` pixels because the full multi-track timeline, contextual text panel and IME competed for the available vertical space.
+- This is a production layout issue, not an emulator startup failure. The keyboard mode now temporarily hides the timeline card while text entry is active, allowing the preview stage and project canvas to remain large enough for text positioning. The timeline is restored when the keyboard closes.
+- Removed obsolete bottom-sheet inset handling that attempted to cast the now-root-child `LinearLayout` to `FrameLayout.LayoutParams`; root padding is the single inset source.
+- Fix commit: `3d4758aacf726a02295287163fb72a389e40aa17`. Fresh build and emulator verification are pending; do not mark this correction complete until the keyboard-open canvas measurement passes. No version bump or APK release.
