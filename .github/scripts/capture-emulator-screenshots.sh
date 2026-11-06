@@ -966,7 +966,7 @@ root = ET.parse(sys.argv[1]).getroot()
 for node in root.iter("node"):
     if node.attrib.get("content-desc") != "Seçili video klibi sınırı":
         continue
-    match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
     if match:
         x1, y1, x2, y2 = map(int, match.groups())
         print((x1 + x2) // 2, (y1 + y2) // 2)
@@ -994,13 +994,18 @@ root = ET.parse(sys.argv[1]).getroot()
 for node in root.iter("node"):
     if node.attrib.get("content-desc") != "Seçili video klibi sınırı":
         continue
-    match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
     if match:
         x1, y1, x2, y2 = map(int, match.groups())
         print((x1 + x2) // 2, (y1 + y2) // 2)
         break
 PY
 )"
+if [ -z "$clip_after_center" ]; then
+  echo "Video selection frame disappeared after the direct canvas drag."
+  collect_capture_diagnostics video-canvas-transform-after-target-missing
+  exit 65
+fi
 read -r clip_after_x clip_after_y <<< "$clip_after_center"
 if [ "$((clip_after_x - clip_before_x))" -lt 12 ] || [ "$((clip_after_x - clip_before_x))" -gt 34 ] ||
    [ "$((clip_after_y - clip_before_y))" -lt 6 ] || [ "$((clip_after_y - clip_before_y))" -gt 26 ]; then
@@ -1024,7 +1029,7 @@ expected_x, expected_y = map(int, sys.argv[2:4])
 for node in root.iter("node"):
     if node.attrib.get("content-desc") != "Seçili video klibi sınırı":
         continue
-    match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
     if match:
         x1, y1, x2, y2 = map(int, match.groups())
         actual_x, actual_y = (x1 + x2) // 2, (y1 + y2) // 2
