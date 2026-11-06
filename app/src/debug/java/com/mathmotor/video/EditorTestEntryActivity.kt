@@ -17,6 +17,8 @@ class EditorTestEntryActivity : Activity() {
         val videoUri = intent.getStringExtra("video_uri")
         val overlayUri = intent.getStringExtra("overlay_uri")
         val replacementVideoUri = intent.getStringExtra("replacement_video_uri")
+        val testMusicUri = intent.getStringExtra("test_music_uri")
+        val testSoundUri = intent.getStringExtra("test_sound_uri")
         val draftId = intent.getStringExtra("draft_id")
         val timelineSyncTest = intent.getBooleanExtra("timeline_sync_test", false)
         val timelineTestScaleDp = intent.getFloatExtra("timeline_test_px_per_sec_dp", 0f)
@@ -33,6 +35,8 @@ class EditorTestEntryActivity : Activity() {
             if (!replacementVideoUri.isNullOrBlank()) {
                 putExtra("replacement_video_uri", replacementVideoUri)
             }
+            if (!testMusicUri.isNullOrBlank()) putExtra("test_music_uri", testMusicUri)
+            if (!testSoundUri.isNullOrBlank()) putExtra("test_sound_uri", testSoundUri)
             if (!draftId.isNullOrBlank()) putExtra("draft_id", draftId)
             if (timelineSyncTest) putExtra("timeline_sync_test", true)
             if (timelineTestScaleDp > 0f) putExtra("timeline_test_px_per_sec_dp", timelineTestScaleDp)
