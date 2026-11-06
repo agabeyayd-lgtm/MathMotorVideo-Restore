@@ -1767,6 +1767,42 @@ if [ "$text_edit_toggle_changed" = true ]; then
   sleep 1
 fi
 
+assert_full_preview_canvas() {
+  python3 - "$1" emulator-screenshots/preview-canvas-logcat.txt "$2" <<'PY'
+import re
+import sys
+from PIL import Image
+image_path, log_path, label = sys.argv[1:4]
+lines = [line for line in open(log_path, errors="replace") if "PREVIEW_CANVAS_BOUNDS" in line]
+if not lines:
+    raise SystemExit(f"{label}: preview-canvas measurement marker is missing")
+match = re.search(r"canvas=(\d+)x(\d+) offset=(\d+),(\d+) origin=(-?\d+),(-?\d+)", lines[-1])
+if not match:
+    raise SystemExit(f"{label}: malformed preview-canvas marker: {lines[-1]}")
+w, h, ox, oy, sx, sy = map(int, match.groups())
+left, top = sx + ox, sy + oy
+right, bottom = left + w, top + h
+image = Image.open(image_path).convert("RGB")
+if left < 0 or top < 0 or right > image.width or bottom > image.height:
+    raise SystemExit(f"{label}: measured canvas [{left},{top}]-[{right},{bottom}] is outside screenshot {image.width}x{image.height}")
+green = []
+for y in range(top, bottom):
+    for x in range(left, right):
+        red, green_channel, blue = image.getpixel((x, y))
+        if green_channel > 150 and red < 120 and blue < 120:
+            green.append((x, y))
+if len(green) < 10000:
+    raise SystemExit(f"{label}: only {len(green)} green fixture pixels remain in the measured canvas; preview may still be keyboard-compressed")
+xs = [p[0] for p in green]
+ys = [p[1] for p in green]
+gw, gh = max(xs) - min(xs) + 1, max(ys) - min(ys) + 1
+ratio = gw / max(1, gh)
+if gw < 300 or gh < 500 or not 0.50 <= ratio <= 0.62:
+    raise SystemExit(f"{label}: project preview is not full portrait size ({gw}x{gh}, ratio={ratio:.3f})")
+print(f"PASS: {label} kept the full portrait preview visible ({gw}x{gh}, ratio={ratio:.3f}, greenPixels={len(green)}).")
+PY
+}
+
 text_panel_back="$(find_bottom_tool emulator-screenshots/editor-text-panel.xml "Araçlara dön" || true)"
 if [ -z "$text_panel_back" ]; then
   echo "Text detail panel did not expose its return-to-tools control."
@@ -1775,40 +1811,64 @@ if [ -z "$text_panel_back" ]; then
 fi
 timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_panel_back
 sleep 1
-dump_hierarchy editor-text-panel-closed.xml emulator-screenshots/editor-text-panel-closed.xml || true
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I > emulator-screenshots/text-panel-return-logcat.txt 2>&1 || true
+if ! grep -Fq "TEXT_PANEL_RETURN_TAPPED" emulator-screenshots/text-panel-return-logcat.txt ||
+   ! grep -Fq "TEXT_PANEL_CLOSED activePanel=none" emulator-screenshots/text-panel-return-logcat.txt; then
+  echo "The text detail panel did not confirm its return-to-tools action."
+  collect_capture_diagnostics text-canvas-panel-return-not-confirmed
+  exit 56
+fi
+if ! take_screen emulator-screenshots/editor-text-panel-closed.png; then
+  collect_capture_diagnostics text-canvas-panel-closed-capture-failure
+  exit 6
+fi
+assert_full_preview_canvas emulator-screenshots/editor-text-panel-closed.png "text panel close"
 text_preview_center="$text_after_x $text_after_y"
 if [ -z "$text_preview_center" ]; then
   echo "Could not locate the visible text layer after closing its settings panel."
   collect_capture_diagnostics text-canvas-preview-hit-target-missing
   exit 53
 fi
+echo "Tapping the in-canvas text centre at $text_preview_center after confirming the keyboard-free full preview."
 timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_preview_center
 sleep 1
 if ! take_screen emulator-screenshots/editor-text-reselected.png; then
   collect_capture_diagnostics text-canvas-reselection-capture-failure
   exit 6
 fi
-dump_hierarchy editor-text-reselected.xml emulator-screenshots/editor-text-reselected.xml || true
-for text_tool in "Düzenle" "Sil"; do
-  if [ -z "$(find_bottom_tool emulator-screenshots/editor-text-reselected.xml "$text_tool" || true)" ]; then
-    echo "Tapping the text in the preview did not reopen its text tool strip ('$text_tool' missing)."
-    collect_capture_diagnostics text-canvas-tap-did-not-reopen-tools
-    exit 54
-  fi
-done
-if ! grep -q "Seçili metin katmanı sınırı" emulator-screenshots/editor-text-reselected.xml; then
-  echo "Tapping the preview text did not restore its canvas selection frame."
+assert_full_preview_canvas emulator-screenshots/editor-text-reselected.png "text preview reselection"
+text_reselected_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-reselected.png)" || {
+  echo "Tapping the preview text did not restore a complete canvas selection frame."
   collect_capture_diagnostics text-canvas-tap-selection-frame-missing
   exit 55
+}
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I > emulator-screenshots/text-preview-reselection-logcat.txt 2>&1 || true
+if ! grep -Fq "TEXT_TOOLS_DOCK_VISIBLE childCount=3" emulator-screenshots/text-preview-reselection-logcat.txt ||
+   ! grep -Fq "Düzenle" emulator-screenshots/text-preview-reselection-logcat.txt ||
+   ! grep -Fq "Sil" emulator-screenshots/text-preview-reselection-logcat.txt; then
+  echo "Tapping the text did not emit proof that the three-action contextual text dock was rebuilt."
+  collect_capture_diagnostics text-canvas-tap-did-not-reopen-tools
+  exit 54
 fi
-echo "PASS: tapping text in the preview restores the text layer tool strip and white selection frame."
-text_delete_coords="$(find_bottom_tool emulator-screenshots/editor-text-reselected.xml "Sil" || true)"
-timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_delete_coords
-sleep 1
-text_main_back="$(find_bottom_tool emulator-screenshots/editor-text-reselected.xml "Ana araçlara dön" || true)"
-if [ -n "$text_main_back" ]; then
-  timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_main_back
-  sleep 1
+echo "PASS: tapping the preview text restored its three-action text dock and selection frame at $text_reselected_bounds."
+
+# UIAutomator can time out on this large panel even after the direct interaction
+# has succeeded. The app-side dock marker plus the full-canvas screenshot and
+# pixel-verified selection frame are authoritative; hierarchy-based cleanup is
+# best-effort so a slow accessibility dump cannot turn a valid editor state red.
+if dump_hierarchy editor-text-reselected.xml emulator-screenshots/editor-text-reselected.xml; then
+  text_delete_coords="$(find_bottom_tool emulator-screenshots/editor-text-reselected.xml "Sil" || true)"
+  if [ -n "$text_delete_coords" ]; then
+    timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_delete_coords
+    sleep 1
+    text_main_back="$(find_bottom_tool emulator-screenshots/editor-text-reselected.xml "Ana araçlara dön" || true)"
+    if [ -n "$text_main_back" ]; then
+      timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_main_back
+      sleep 1
+    fi
+  fi
+else
+  echo "UIAutomator cleanup hierarchy unavailable; retaining the verified text layer for the remaining timeline checks."
 fi
 dump_hierarchy editor-text-cleanup.xml emulator-screenshots/editor-text-cleanup.xml || true
 
