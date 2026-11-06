@@ -1493,13 +1493,32 @@ required = [
 missing = [state for state in required if state not in states]
 if missing:
     raise SystemExit("Missing two-stage editor geometry markers: " + ", ".join(missing))
-baseline = states["before-open:clip-tools"]
+baseline_preview, baseline_timeline = states["before-open:clip-tools"]
+def rect(value):
+    size, origin = value.split("@")
+    width, height = map(int, size.split("x"))
+    left, top = map(int, origin.split(","))
+    return left, top, width, height
+
+base_preview = rect(baseline_preview)
+base_timeline = rect(baseline_timeline)
 for state in required[1:]:
-    if states[state] != baseline:
+    preview_value, timeline_value = states[state]
+    preview = rect(preview_value)
+    timeline = rect(timeline_value)
+    if timeline != base_timeline:
         raise SystemExit(
-            f"Editor layout moved during {state}: baseline={baseline}, observed={states[state]}"
+            f"Timeline moved or changed size during {state}: baseline={base_timeline}, observed={timeline}"
         )
-print("PASS: preview and timeline stayed fixed while the one-row tool strip opened, detail rose above it, the strip returned, and the main dock was restored.")
+    if preview[:3] != base_preview[:3] or preview[3] > base_preview[3]:
+        raise SystemExit(
+            f"Preview did not resize safely inside the workspace during {state}: baseline={base_preview}, observed={preview}"
+        )
+    if state in ("clip-tools", "clip-tool-strip", "closed") and preview != base_preview:
+        raise SystemExit(
+            f"Preview did not restore after closing the detail panel ({state}): baseline={base_preview}, observed={preview}"
+        )
+print("PASS: the timeline retained its exact position and touch bounds; detail panels used reserved workspace height by shrinking only the preview, then restored it on close.")
 PY
 
 echo "Step 8b/12: open the Proje panel and prove the MP4 button receives a real tap"
