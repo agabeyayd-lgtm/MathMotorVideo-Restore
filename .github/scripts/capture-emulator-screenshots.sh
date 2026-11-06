@@ -1284,46 +1284,44 @@ run_overlay_edge_smoke() {
     collect_capture_diagnostics "overlay-$edge-before-hierarchy-failed"
     exit 81
   fi
-  # The overlay row is a horizontally scrolling timeline. After the start-edge
-  # test, the far end can be several screen widths to the right; scroll that
-  # SAME row until its end handle is actually inside the viewport before
-  # declaring the target missing. This tests the real hit area, not visibility
-  # at the current scroll offset.
+  # The clip itself owns horizontal drags for trim/move, so swiping on the
+  # overlay row is consumed by the clip gesture instead of its parent scroller.
+  # All timeline rows share the ruler's horizontal scroll position; swipe the
+  # ruler viewport to reveal the far edge without touching the selected clip.
   if [ "$edge" = "end" ] && [ -z "$(find_content_description_bounds "emulator-screenshots/$before_xml" "$description")" ]; then
-    row_bounds="$(python3 - "emulator-screenshots/$before_xml" <<'PY'
+    ruler_bounds="$(python3 - "emulator-screenshots/$before_xml" <<'PY'
 import re
 import sys
 import xml.etree.ElementTree as ET
 root = ET.parse(sys.argv[1]).getroot()
-def walk(node, ancestors):
-    desc = node.attrib.get("content-desc", "")
-    if desc == "Katman başlangıcını kırp":
-        for parent in reversed(ancestors):
-            if parent.attrib.get("class") == "android.widget.HorizontalScrollView":
-                match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", parent.attrib.get("bounds", ""))
-                if match:
-                    print(*map(int, match.groups()))
-                    return True
+def walk(node):
+    if node.attrib.get("class") == "android.widget.HorizontalScrollView" and node.attrib.get("scrollable") == "true":
+        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+        if match:
+            left, top, right, bottom = map(int, match.groups())
+            if right - left > 500 and 0 < bottom - top <= 100 and top < 1150:
+                print(left, top, right, bottom)
+                return True
     for child in node:
-        if walk(child, ancestors + [node]):
+        if walk(child):
             return True
     return False
-walk(root, [])
+walk(root)
 PY
 )"
-    if [ -z "$row_bounds" ]; then
-      echo "Could not locate the overlay's horizontal timeline row to reveal its end handle."
-      collect_capture_diagnostics overlay-end-row-not-found
+    if [ -z "$ruler_bounds" ]; then
+      echo "Could not locate the horizontally scrollable timeline ruler."
+      collect_capture_diagnostics overlay-end-ruler-not-found
       exit 82
     fi
-    read -r row_left row_top row_right row_bottom <<< "$row_bounds"
-    row_y=$(((row_top + row_bottom) / 2))
+    read -r ruler_left ruler_top ruler_right ruler_bottom <<< "$ruler_bounds"
+    ruler_y=$(((ruler_top + ruler_bottom) / 2))
     for scroll_attempt in $(seq 1 8); do
       if [ -n "$(find_content_description_bounds "emulator-screenshots/$before_xml" "$description")" ]; then
         break
       fi
-      echo "Revealing overlay end handle (horizontal scroll $scroll_attempt/8)."
-      timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$((row_right - 35))" "$row_y" "$((row_left + 35))" "$row_y" 450
+      echo "Revealing overlay end handle through timeline ruler (scroll $scroll_attempt/8)."
+      timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$((ruler_right - 35))" "$ruler_y" "$((ruler_left + 35))" "$ruler_y" 450
       sleep 0.4
       dump_hierarchy "$before_xml" "emulator-screenshots/$before_xml" || true
     done
