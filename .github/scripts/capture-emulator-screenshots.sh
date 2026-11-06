@@ -1506,19 +1506,26 @@ for state in required[1:]:
     preview_value, timeline_value = states[state]
     preview = rect(preview_value)
     timeline = rect(timeline_value)
-    if timeline != base_timeline:
+    if timeline[0] != base_timeline[0] or timeline[2:] != base_timeline[2:]:
         raise SystemExit(
-            f"Timeline moved or changed size during {state}: baseline={base_timeline}, observed={timeline}"
+            f"Timeline width/height or horizontal position changed during {state}: baseline={base_timeline}, observed={timeline}"
         )
-    if preview[:3] != base_preview[:3] or preview[3] > base_preview[3]:
+    if preview[:2] != base_preview[:2] or preview[2] != base_preview[2] or preview[3] > base_preview[3]:
         raise SystemExit(
             f"Preview did not resize safely inside the workspace during {state}: baseline={base_preview}, observed={preview}"
         )
-    if state in ("clip-tools", "clip-tool-strip", "closed") and preview != base_preview:
-        raise SystemExit(
-            f"Preview did not restore after closing the detail panel ({state}): baseline={base_preview}, observed={preview}"
-        )
-print("PASS: the timeline retained its exact position and touch bounds; detail panels used reserved workspace height by shrinking only the preview, then restored it on close.")
+    if state in ("open:clip", "open:clipVolume"):
+        expected_timeline_top = base_timeline[1] - (base_preview[3] - preview[3])
+        if abs(timeline[1] - expected_timeline_top) > 3:
+            raise SystemExit(
+                f"Detail panel did not reserve exactly its preview-space height during {state}: expected timeline top={expected_timeline_top}, observed={timeline[1]}"
+            )
+    else:
+        if timeline[1] != base_timeline[1] or preview != base_preview:
+            raise SystemExit(
+                f"Editor geometry did not restore after closing/switching tools ({state}): baseline preview={base_preview}, observed={preview}, baseline timeline={base_timeline}, observed timeline={timeline}"
+            )
+print("PASS: opening a detail panel moved the unchanged-size timeline upward by exactly the height removed from the preview; closing restored both. Timeline touch bounds never shrank or became covered.")
 PY
 
 echo "Step 8b/12: open the Proje panel and prove the MP4 button receives a real tap"
