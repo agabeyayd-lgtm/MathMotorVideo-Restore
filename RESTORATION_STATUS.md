@@ -1051,3 +1051,12 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Emulator run #1006 still ended red later in timeline alignment setup because the test script attempted to read `TIMELINE_TOUCH_SLOP_PX` after clearing logcat during text-panel isolation.
 - Fixed the harness ordering in commit `5c2bc6f`: capture and validate the device touch-slop marker immediately after launching the editor, then reuse the stored value during timeline alignment.
 - Build and unit tests passed on the prior source revision; emulator verification of this harness change is pending. Do not mark #1006 as green.
+
+
+
+### Stable timeline viewport after adding independent tracks — 2026-11-06
+
+- Emulator run #1026 verified the corrected main-video drag exactly: saved transform changed by (39.9, 24.0) project-canvas pixels and the reverse gesture restored the preview. This closes the prior 40x24 drag discrepancy.
+- The same run then exposed a separate real layout regression: after audio and overlay rows were added, the timeline card expanded from 577px to 661px and moved its top from y=1076 to y=992. The dynamic content-sized card calculation (up to 280dp) was overriding the editor's intended 220dp/132dp workspace heights, pushing the preview and destabilizing panel geometry.
+- Replaced content-driven outer-card expansion with a stable viewport height: 220dp normally, 132dp while a detail panel is open, and 88dp while the keyboard is active. Track rows remain independent inside the viewport rather than changing the editor shell geometry.
+- Fix commit: `046539e295bef2383de59eeb9db1326499001727`. Fresh build and emulator verification are pending; do not mark the layout correction complete until all panel geometry and track interaction checks pass. No version bump or APK release.
