@@ -84,6 +84,15 @@ import kotlin.math.ceil
 
 @OptIn(UnstableApi::class)
 class VideoEditorActivity : Activity() {
+    /** Shared hit-testing policy for every editor interaction surface. */
+    private object TouchPriority {
+        const val PASSIVE_PREVIEW_DP = 4
+        const val ACTIVE_CANVAS_GESTURE_DP = 16
+        const val SELECTION_CHROME_DP = 20
+        const val TIMELINE_EDGE_HANDLE_DP = 12
+        const val TIMELINE_EDGE_TARGET_DP = 32
+    }
+
     private data class Clip(
         val uri: Uri,
         val title: String,
@@ -878,6 +887,7 @@ class VideoEditorActivity : Activity() {
             setBackgroundColor(Color.TRANSPARENT)
             visibility = View.GONE
             isClickable = true
+            elevation = dp(TouchPriority.ACTIVE_CANVAS_GESTURE_DP).toFloat()
             contentDescription = "Seçili video klibini sürükle, iki parmakla büyüt ve döndür"
         }
         previewCanvas.addView(
@@ -898,7 +908,7 @@ class VideoEditorActivity : Activity() {
                 cornerRadius = dp(1).toFloat()
                 setStroke(dp(1), Color.WHITE)
             }
-            elevation = dp(9).toFloat()
+            elevation = dp(TouchPriority.SELECTION_CHROME_DP).toFloat()
             contentDescription = "Seçili video klibi sınırı"
         }
         previewCanvas.addView(
@@ -944,7 +954,7 @@ class VideoEditorActivity : Activity() {
                 cornerRadius = dp(2).toFloat()
                 setStroke(dp(1), Color.WHITE)
             }
-            elevation = dp(11).toFloat()
+            elevation = dp(TouchPriority.SELECTION_CHROME_DP).toFloat()
             contentDescription = "Seçili metin katmanı sınırı"
         }
         previewCanvas.addView(
@@ -956,7 +966,7 @@ class VideoEditorActivity : Activity() {
             visibility = View.GONE
             isClickable = false
             isFocusable = false
-            elevation = dp(10).toFloat()
+            elevation = dp(TouchPriority.SELECTION_CHROME_DP).toFloat()
         }
         overlaySelectionFrame.addView(View(this).apply {
             background = android.graphics.drawable.GradientDrawable().apply {
@@ -992,10 +1002,9 @@ class VideoEditorActivity : Activity() {
             setBackgroundColor(Color.TRANSPARENT)
             visibility = View.GONE
             isClickable = true
-            // The paused image container is elevated (2dp). Keep this hit surface
-            // above those clickable image children, but below the selection chrome (10dp),
-            // so direct drag/pinch gestures reach installOverlayTransformTouch().
-            elevation = dp(8).toFloat()
+            // Match the active clip/text gesture surface. Selection chrome is
+            // non-interactive and stays above every active hit target.
+            elevation = dp(TouchPriority.ACTIVE_CANVAS_GESTURE_DP).toFloat()
             contentDescription = "Bindirmeyi önizlemede tek parmakla taşı, iki parmakla büyüt ve döndür"
         }
         previewCanvas.addView(
@@ -2766,6 +2775,7 @@ class VideoEditorActivity : Activity() {
         } else {
             "Önizlemede yazı düzenleme kapalı. Açmak için dokun."
         }
+        applyPreviewTouchPriority()
     }
 
     /** Tapping the currently selected tool a second time closes its panel. */
@@ -3437,7 +3447,7 @@ class VideoEditorActivity : Activity() {
 
             fun addTextTrimHandle(isStart: Boolean) {
                 if (totalMs <= 0L) return
-                val handleWidth = minOf(dp(20), (blockWidth / 2).coerceAtLeast(1))
+                val handleWidth = timelineEdgeTouchWidth(blockWidth)
                 val handle = TextView(this).apply {
                     text = if (isStart) "‹" else "›"
                     textSize = 13f
@@ -3445,7 +3455,7 @@ class VideoEditorActivity : Activity() {
                     setTextColor(Color.WHITE)
                     gravity = Gravity.CENTER
                     setBackgroundColor(Color.rgb(0, 164, 146))
-                    elevation = dp(3).toFloat()
+                    elevation = dp(TouchPriority.TIMELINE_EDGE_HANDLE_DP).toFloat()
                     contentDescription = if (isStart) "Yazı başlangıcını sürükle" else "Yazı bitişini sürükle"
                 }
                 var downRawX = 0f
@@ -4103,7 +4113,7 @@ class VideoEditorActivity : Activity() {
         }
 
         fun addMusicTrimHandle(isStart: Boolean) {
-            val handleWidth = minOf(dp(16), (blockWidth / 3).coerceAtLeast(dp(7)))
+            val handleWidth = timelineEdgeTouchWidth(blockWidth)
             val handle = TextView(this).apply {
                 text = if (isStart) "‹" else "›"
                 textSize = 12f
@@ -4111,7 +4121,7 @@ class VideoEditorActivity : Activity() {
                 setTextColor(Color.WHITE)
                 gravity = Gravity.CENTER
                 setBackgroundColor(Color.rgb(27, 91, 57))
-                elevation = dp(3).toFloat()
+                elevation = dp(TouchPriority.TIMELINE_EDGE_HANDLE_DP).toFloat()
                 contentDescription = if (isStart) "Müzik başlangıç tutamacı" else "Müzik bitiş tutamacı"
             }
             var downRawX = 0f
@@ -4318,7 +4328,7 @@ class VideoEditorActivity : Activity() {
         }
 
         fun addTrimHandle(isStart: Boolean) {
-            val handleWidth = minOf(dp(16), (blockWidth / 3).coerceAtLeast(dp(7)))
+            val handleWidth = timelineEdgeTouchWidth(blockWidth)
             val handle = TextView(this).apply {
                 text = if (isStart) "‹" else "›"
                 textSize = 12f
@@ -4326,7 +4336,7 @@ class VideoEditorActivity : Activity() {
                 setTextColor(Color.WHITE)
                 gravity = Gravity.CENTER
                 setBackgroundColor(Color.rgb(116, 65, 25))
-                elevation = dp(3).toFloat()
+                elevation = dp(TouchPriority.TIMELINE_EDGE_HANDLE_DP).toFloat()
                 contentDescription = if (isStart) "Efekt başlangıç tutamacı" else "Efekt bitiş tutamacı"
             }
             var downRawX = 0f
@@ -5339,7 +5349,38 @@ class VideoEditorActivity : Activity() {
         clipTransformTouchOverlay.isClickable = enabled
         if (!enabled) resetPlayerViewTransform()
         updateClipSelectionChrome()
+        applyPreviewTouchPriority()
     }
+
+    /**
+     * One z-order contract for preview hit targets: media beneath active gestures,
+     * selectable text above paused media, and non-clickable selection chrome above all.
+     * Only the currently active tool surface is visible; this avoids a full-screen
+     * transparent layer stealing taps from unrelated tools.
+     */
+    private fun applyPreviewTouchPriority() {
+        val gestureElevation = dp(TouchPriority.ACTIVE_CANVAS_GESTURE_DP).toFloat()
+        val passiveElevation = dp(TouchPriority.PASSIVE_PREVIEW_DP).toFloat()
+        val chromeElevation = dp(TouchPriority.SELECTION_CHROME_DP).toFloat()
+        if (::clipTransformTouchOverlay.isInitialized) clipTransformTouchOverlay.elevation = gestureElevation
+        if (::overlayTransformTouchOverlay.isInitialized) overlayTransformTouchOverlay.elevation = gestureElevation
+        if (::clipSelectionFrame.isInitialized) clipSelectionFrame.elevation = chromeElevation
+        if (::textSelectionFrame.isInitialized) textSelectionFrame.elevation = chromeElevation
+        if (::overlaySelectionFrame.isInitialized) overlaySelectionFrame.elevation = chromeElevation
+        previewTextOverlays.forEach { textView ->
+            textView.elevation = if (textOverlayEditingEnabled && textView.visibility == View.VISIBLE) {
+                gestureElevation
+            } else {
+                passiveElevation
+            }
+        }
+    }
+
+    /** Shared width for timeline trim hit targets; the visible grip remains narrow. */
+    private fun timelineEdgeTouchWidth(blockWidth: Int): Int = minOf(
+        dp(TouchPriority.TIMELINE_EDGE_TARGET_DP),
+        (blockWidth / 2).coerceAtLeast(dp(12))
+    )
 
     private fun resetPlayerViewTransform() {
         if (!::playerView.isInitialized) return
@@ -6079,6 +6120,7 @@ class VideoEditorActivity : Activity() {
             textSelectionFrame.visibility = View.VISIBLE
             textSelectionFrame.bringToFront()
         }
+        applyPreviewTouchPriority()
     }
 
     private fun createPreviewTextOverlayView(): TextView = TextView(this).apply {
@@ -6096,6 +6138,7 @@ class VideoEditorActivity : Activity() {
         }
         visibility = View.GONE
         isClickable = true
+        elevation = dp(TouchPriority.PASSIVE_PREVIEW_DP).toFloat()
         setOnClickListener {
             // Direct-edit gestures call performClick() on ACTION_UP for accessibility.
             // Do not treat the end of a drag/pinch/rotate as a new selection tap.
@@ -7232,6 +7275,7 @@ class VideoEditorActivity : Activity() {
                 timelineCompositionPlayer?.isPlaying != true
             ) View.VISIBLE else View.GONE
         updateOverlaySelectionChrome()
+        applyPreviewTouchPriority()
     }
 
     private fun overlayCanvasSize(): Pair<Float, Float> {
@@ -8407,7 +8451,7 @@ class VideoEditorActivity : Activity() {
                 // CapCut-style clean white trim edge: keep the wide transparent
                 // touch target, but remove the oversized turquoise arrow blocks.
                 setBackgroundColor(Color.TRANSPARENT)
-                elevation = dp(8).toFloat()
+                elevation = dp(TouchPriority.TIMELINE_EDGE_HANDLE_DP).toFloat()
                 contentDescription = if (isStart) "Sol beyaz tutamaç: klibin başlangıcını sürükleyerek kısalt veya uzat" else "Sağ beyaz tutamaç: klibin bitişini sürükleyerek kısalt veya uzat"
                 val grip = View(this@VideoEditorActivity).apply {
                     background = android.graphics.drawable.GradientDrawable().apply {
