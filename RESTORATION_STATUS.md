@@ -940,3 +940,12 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - The harness attempted to reveal the far edge by starting a 708px swipe at x=1004, close to the API 35 emulator's right-side system-navigation region. The post-gesture hierarchy ended up on the Android launcher, so #988 does not establish an app crash or a missing end-handle implementation; the harness gesture is the likely failure point.
 - Corrected the ruler-scroll gesture to start/end within the inner 50% of the ruler viewport and added a foreground-package assertion after every scroll. This guards against silently leaving the editor and gives a specific diagnostic if navigation wins the gesture.
 - The app's trim implementation and version are unchanged. This harness correction still needs a fresh emulator run; do not mark overlay end trim verified, publish an APK, or bump the app version until that run passes.
+
+
+### Emulator run #989 — partial overlay end-hitbox visibility — 2026-11-06
+
+- Run #989 on source `077c33f58a28ed23d6ceae94113839ef7b809160` passed unit tests/debug APK assembly and all emulator checks up to the overlay end-edge assertion. The previous system-back navigation issue was avoided; every scroll hierarchy still reported the MathMotor package.
+- The inner-ruler swipe exposed the overlay end hitbox, but only 22×84px were inside the ruler viewport: `[1017,1227][1039,1311]`. The check correctly stopped with exit 83 because it requires at least 40×20px to avoid a gesture being clipped. This is not a missing view or undersized app-side hitbox; the view itself is clipped by the horizontal lane viewport.
+- The captured paused-editor screenshot shows the magenta still-image overlay rendered visibly on the project canvas; image preview is present at this stage. The selected overlay's end handle remains the outstanding interaction assertion.
+- Updated the harness so a partially exposed edge does not count as success: it performs a short 40px nudge from the ruler centre and rechecks the actual accessible bounds, while retaining the app-foreground guard. The first large swipe remains reserved for a handle that is not visible at all.
+- No change to the production overlay target width/trim handler, app version, or release state. A fresh emulator pass must still prove at least 40×20px is visible and that dragging the end handle changes its saved duration.
