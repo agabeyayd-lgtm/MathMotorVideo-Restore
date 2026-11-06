@@ -906,3 +906,7 @@ The emulator smoke now retries compressed UIAutomator hierarchy capture and repo
 Preview text layers now keep a minimum 48×44dp hit box while the selection frame follows the measured text view. Text, music and sound-effect trim controls use transparent FrameLayout hit regions with a narrow 5dp visible grip; the larger hit region remains visually unobtrusive. Video trim handles use the same visual-grip pattern.
 
 Timeline trim gestures now use Android's scaled touch slop consistently across video, text, music and sound-effect edges. Short clip blocks constrain each edge target to at most half the block width so the two handles do not overlap.
+
+### Preview text tap selection after closing settings
+
+A text layer remains directly selectable on the project canvas after its settings panel closes. The preview overlay now owns passive tap recognition and opens the three-action contextual text dock on a tap; this avoids losing the selection callback when other canvas touch surfaces are present. Dragging while the detail panel is closed does not move the text; direct move/scale/rotate remains enabled only while the text detail panel is active.
