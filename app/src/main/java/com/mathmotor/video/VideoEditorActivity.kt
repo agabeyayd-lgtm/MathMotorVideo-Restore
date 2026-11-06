@@ -1327,6 +1327,7 @@ class VideoEditorActivity : Activity() {
         ))
 
         val textPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        textPanel.addView(miniButton("‹ Araçlara dön") { returnToClipToolStrip() }, matchWrap())
         textPanel.addView(label("METİN KATMANLARI", 13f, Color.rgb(121, 202, 218), true))
         textPanel.addView(label("Yazıyı videonun üstünde sürükle; iki parmakla büyüt, küçült veya döndür.", 11f, Color.rgb(154, 171, 190), false))
         textOverlayEditToggle = miniButton("Önizlemede yazı düzenleme: KAPALI") {
@@ -1768,6 +1769,7 @@ class VideoEditorActivity : Activity() {
         })
 
         val overlayPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        overlayPanel.addView(miniButton("‹ Araçlara dön") { returnToClipToolStrip() }, matchWrap())
         overlayPanel.addView(label("GÖRSEL / VİDEO BİNDİRME", 13f, Color.rgb(121, 202, 218), true))
         overlayPanel.addView(label("Logo seçtiğinde tüm video boyunca sağ üstte başlar. Önizlemede sürükleyebilir, iki parmakla boyutunu değiştirebilirsin.", 11f, Color.rgb(154, 171, 190), false))
         val overlayActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
