@@ -5533,7 +5533,7 @@ class VideoEditorActivity : Activity() {
                     if (timelineSyncTestEnabled) {
                         android.util.Log.i(
                             "EditorTouchTest",
-                            "VIDEO_CANVAS_TOUCH_DOWN host=${view.width}x${view.height} canvas=${previewCanvas.width}x${previewCanvas.height} raw=${downRawX},${downRawY}"
+                            "VIDEO_CANVAS_TOUCH_DOWN host=${view.width}x${view.height} canvas=${previewCanvas.width}x${previewCanvas.height} raw=${downRawX},${downRawY} startTransform=${selected.transformTranslateX},${selected.transformTranslateY}"
                         )
                     }
                     view.parent?.requestDisallowInterceptTouchEvent(true)
