@@ -3338,11 +3338,22 @@ class VideoEditorActivity : Activity() {
                     edgeWidth, ViewGroup.LayoutParams.MATCH_PARENT,
                     if (isStart) Gravity.LEFT else Gravity.RIGHT
                 ))
-                if (timelineSyncTestEnabled) {
-                    edge.post {
+                edge.post {
+                    // The trailing trim handle can sit against the physical right
+                    // edge of the display when the clip end is scrolled into view.
+                    // Android's gesture-navigation back edge otherwise steals a
+                    // leftward drag before it reaches this view. Exclude only this
+                    // narrow interactive handle from system gestures; keep the
+                    // rest of the editor available to normal system navigation.
+                    if (!isStart && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                        edge.systemGestureExclusionRects = listOf(
+                            android.graphics.Rect(0, 0, edge.width, edge.height)
+                        )
+                    }
+                    if (timelineSyncTestEnabled) {
                         android.util.Log.i(
                             "EditorTouchTest",
-                            "OVERLAY_EDGE_TARGET edge=${if (isStart) "start" else "end"} width=${edge.width} left=${edge.left} right=${edge.right} parentWidth=${frame.width} shown=${edge.isShown} accessibility=${edge.importantForAccessibility}"
+                            "OVERLAY_EDGE_TARGET edge=${if (isStart) "start" else "end"} width=${edge.width} left=${edge.left} right=${edge.right} parentWidth=${frame.width} shown=${edge.isShown} accessibility=${edge.importantForAccessibility} gestureExclusion=${!isStart && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q}"
                         )
                     }
                 }
