@@ -1602,6 +1602,14 @@ fi
 timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_tab_coords
 sleep 1
 dump_hierarchy editor-text-panel.xml emulator-screenshots/editor-text-panel.xml || true
+# Measure the pinned return button while the text panel is first opened. Its
+# sibling-header position is independent of the scrolling settings/IME.
+text_panel_back="$(find_bottom_tool emulator-screenshots/editor-text-panel.xml "Araçlara dön" || true)"
+if [ -z "$text_panel_back" ]; then
+  echo "The text panel did not expose its pinned return control when opened."
+  collect_capture_diagnostics text-canvas-panel-return-missing-on-open
+  exit 52
+fi
 new_text_coords="$(find_bottom_tool emulator-screenshots/editor-text-panel.xml "＋ Yeni" || true)"
 if [ -z "$new_text_coords" ]; then
   echo "The Metin panel did not expose its Yeni text-layer action."
@@ -1822,21 +1830,13 @@ print(f"PASS: {label} kept the full portrait preview visible ({gw}x{gh}, ratio={
 PY
 }
 
-# The return action is a pinned sibling header, not part of the editable
-# ScrollView. It must remain visible after the IME scrolls the text field into
-# view; verify it directly without a compensating swipe or stale coordinates.
-if ! dump_hierarchy editor-text-return-visible.xml emulator-screenshots/editor-text-return-visible.xml; then
-  echo "Could not inspect the pinned text-panel return control."
-  collect_capture_diagnostics text-canvas-panel-return-hierarchy-unavailable
-  exit 52
-fi
-text_panel_back="$(find_bottom_tool emulator-screenshots/editor-text-return-visible.xml "Araçlara dön" || true)"
-if [ -z "$text_panel_back" ]; then
-  echo "Text detail panel did not keep its pinned return-to-tools control visible after text editing."
-  collect_capture_diagnostics text-canvas-panel-back-missing
-  exit 52
-fi
-echo "Tapping the freshly measured text-panel return control at $text_panel_back."
+# The pinned sibling header was measured before editing. Its position is not
+# part of the scrolling settings content, so reuse that measured target after
+# the IME is dismissed. Avoid a second full UI hierarchy traversal here: the
+# timeline exposes thousands of off-screen thumbnail nodes and can make
+# UiAutomator dump time out even though the application is healthy.
+echo "Tapping the pinned text-panel return control at $text_panel_back after text editing."
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
 timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_panel_back
 sleep 1
 timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I > emulator-screenshots/text-panel-return-logcat.txt 2>&1 || true

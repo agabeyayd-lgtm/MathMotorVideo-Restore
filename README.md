@@ -1,3 +1,12 @@
+## Text-panel return smoke-test correction — 2026-11-06
+
+- Emulator run #1004 confirmed the production layout: the screenshot after text editing shows “Araçlara dön” pinned above the dock and fully visible at screen bounds `[0,1166][1080,1265]`.
+- The run failed because a second UiAutomator hierarchy dump after editing traversed the large timeline/accessibility tree and produced no XML within the retry window. The app remained foregrounded, with no ANR; this was a test-inspection timeout, not evidence that the return button was hidden.
+- Updated the smoke test to measure the pinned button from the initial text-panel hierarchy, then tap that fixed sibling-header target after text editing and verify the app's `TEXT_PANEL_RETURN_TAPPED` / `TEXT_PANEL_CLOSED` events. This removes only the expensive second hierarchy dump; it does not weaken the actual button interaction check.
+- No app-version bump, APK release, signing or publishing change. Fresh emulator verification is still required.
+
+---
+
 ## Text panel sticky return control — 2026-11-06
 
 - Run #1003 exposed a real editor usability issue after text entry: focusing the text field moved the shared settings ScrollView, taking “Araçlara dön” out of view. The app remained alive; this was not a crash.

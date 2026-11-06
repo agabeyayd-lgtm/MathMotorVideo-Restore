@@ -996,3 +996,11 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Production correction: moved the text-panel return action into a fixed sibling header above the settings ScrollView. The text settings viewport now reserves the header height in both normal and IME-visible layouts. Closing the text panel, switching panels, and entering text-track tools hide the header.
 - Emulator smoke coverage now checks the pinned return action directly after the text manipulation, without a compensating swipe. This verifies the production control remains visible rather than masking the layout defect.
 - Build, unit tests and emulator verification for this correction are pending. No version bump, APK release, signing or publishing was performed.
+
+
+### Text-panel return smoke-test — UiAutomator timeout correction — 2026-11-06
+
+- Emulator run #1004 failed at the post-edit hierarchy inspection (exit 52), not at the return-button interaction. The app was still foregrounded; ANR files were empty. The captured `editor-text-after-drag.png` visibly shows the pinned “Araçlara dön” button fully on screen.
+- The second `uiautomator dump --compressed` after text editing did not produce XML in two attempts. The timeline accessibility tree contains many off-screen thumbnail nodes; the dump timed out despite the app remaining responsive. The earlier hierarchy dump, before text editing, successfully measured the pinned button bounds `[0,1166][1080,1265]`.
+- Test harness correction: capture the return-button coordinates from the initial text-panel hierarchy, reuse the pinned sibling-header target after text editing, clear logcat, tap it, and require both `TEXT_PANEL_RETURN_TAPPED` and `TEXT_PANEL_CLOSED` events. No post-edit full hierarchy dump is required.
+- Production UI code is unchanged in this follow-up. Build/unit tests and the emulator interaction must be rerun before this flow is considered verified. No version bump or APK release.
