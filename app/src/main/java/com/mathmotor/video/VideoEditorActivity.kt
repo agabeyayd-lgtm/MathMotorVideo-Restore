@@ -2628,6 +2628,12 @@ class VideoEditorActivity : Activity() {
 
     /** Stage two: return from the expanded tool content to the single tool strip. */
     private fun closeVisualLayerPanel(panelName: String) {
+        if (timelineSyncTestEnabled && panelName == "text") {
+            android.util.Log.i(
+                "EditorTouchTest",
+                "TEXT_PANEL_RETURN_TAPPED activePanel=$activeEditorPanel clipToolsMode=$clipToolsMode"
+            )
+        }
         if (clipToolsMode) {
             returnToClipToolStrip()
         } else if (activeEditorPanel == panelName) {
@@ -2832,6 +2838,12 @@ class VideoEditorActivity : Activity() {
         focused?.windowToken?.let { keyboard?.hideSoftInputFromWindow(it, 0) }
         focused?.clearFocus()
         if (::editorPanelScroll.isInitialized) editorPanelScroll.scrollTo(0, 0)
+        if (timelineSyncTestEnabled && name == "text") {
+            android.util.Log.i(
+                "EditorTouchTest",
+                "TEXT_PANEL_CLOSED activePanel=${activeEditorPanel ?: "none"} keyboardLayoutActive=$keyboardLayoutActive"
+            )
+        }
     }
 
     override fun onBackPressed() {
@@ -5985,6 +5997,16 @@ class VideoEditorActivity : Activity() {
         editorPanelScroll.visibility = View.GONE
         editorPanelScroll.translationY = 0f
         editorPanelScroll.alpha = 1f
+        // A text-layer tap can arrive while the text EditText still owns IME
+        // focus. Entering the contextual text dock must dismiss that keyboard;
+        // otherwise Android keeps the preview compressed to a narrow strip and
+        // the tap appears not to have selected the text layer.
+        val focusedForTextTools = currentFocus
+        val textToolsIme = getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
+            as? android.view.inputmethod.InputMethodManager
+        focusedForTextTools?.windowToken?.let { textToolsIme?.hideSoftInputFromWindow(it, 0) }
+        focusedForTextTools?.clearFocus()
+        if (::textInput.isInitialized) textInput.clearFocus()
         editorDock.removeAllViews()
         val tools = listOf(
             Triple("‹", "Geri", "Ana araçlara dön"),
@@ -6002,6 +6024,15 @@ class VideoEditorActivity : Activity() {
                 LinearLayout.LayoutParams(dp(60), dp(58)))
         }
         editorDockScroll.scrollTo(0, 0)
+        if (timelineSyncTestEnabled) {
+            val toolLabels = (0 until editorDock.childCount).map { index ->
+                (editorDock.getChildAt(index) as? TextView)?.text?.toString()?.replace('\n', ' ') ?: "?"
+            }
+            android.util.Log.i(
+                "EditorTouchTest",
+                "TEXT_TOOLS_DOCK_VISIBLE childCount=${editorDock.childCount} labels=${toolLabels.joinToString("|")}"
+            )
+        }
         logEditorPanelGeometry("text-tools")
     }
 
