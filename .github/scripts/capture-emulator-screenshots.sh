@@ -611,7 +611,8 @@ import xml.etree.ElementTree as ET
 root = ET.parse(sys.argv[1]).getroot()
 matches = []
 for node in root.iter("node"):
-    if "Ana araçlara dön" not in node.attrib.get("text", ""):
+    label = node.attrib.get("text", "") + " " + node.attrib.get("content-desc", "")
+    if "Ana araçlara dön" not in label:
         continue
     match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
     if match:
