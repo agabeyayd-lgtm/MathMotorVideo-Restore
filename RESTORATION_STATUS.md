@@ -1004,3 +1004,12 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - The second `uiautomator dump --compressed` after text editing did not produce XML in two attempts. The timeline accessibility tree contains many off-screen thumbnail nodes; the dump timed out despite the app remaining responsive. The earlier hierarchy dump, before text editing, successfully measured the pinned button bounds `[0,1166][1080,1265]`.
 - Test harness correction: capture the return-button coordinates from the initial text-panel hierarchy, reuse the pinned sibling-header target after text editing, clear logcat, tap it, and require both `TEXT_PANEL_RETURN_TAPPED` and `TEXT_PANEL_CLOSED` events. No post-edit full hierarchy dump is required.
 - Production UI code is unchanged in this follow-up. Build/unit tests and the emulator interaction must be rerun before this flow is considered verified. No version bump or APK release.
+
+
+### Emulator run #1005 — text panel closes, but preview tap did not reopen contextual tools — 2026-11-06
+
+- Run #1005 on `5f281ec3f1f7ea9ab35333f4d909d37639c1d08e` passed Gradle/unit tests and debug APK packaging, but failed in the emulator smoke at `text-canvas-tap-did-not-reopen-tools` (exit 54).
+- The pinned text-panel return button was tapped successfully: logcat contains both `TEXT_PANEL_RETURN_TAPPED` and `TEXT_PANEL_CLOSED activePanel=none`. The preview remained full portrait size, and the text selection frame stayed visible after the panel closed.
+- The next tap on the text did not emit `TEXT_TOOLS_DOCK_VISIBLE childCount=3`. This is a real interaction failure, distinct from the previous hierarchy-dump timeout.
+- Production correction: the preview text overlay now explicitly recognizes a passive tap while its detail panel is closed and calls `selectTextLayer`, which rebuilds the contextual text dock. Movement outside the active detail-edit mode is consumed without moving the text. Direct drag/pinch/rotate remains restricted to the active text-edit panel.
+- Fix commit: `4c572d430b5bacdafc9bd8abaf5431c58241e7f0`. A fresh emulator run is required; this correction is not yet verified. No version bump or release.
