@@ -866,3 +866,6 @@ Text/sticker layers support simultaneous two-finger scaling and rotation on the 
 
 
 The text and image/video overlay panels have an explicit return control that respects whether the editor is in the global dock or a selected-track tool strip. The emulator smoke now creates a real text layer, verifies its visible selection outline, closes the panel, taps the text in the preview, confirms the text tool strip/selection frame reopen, and removes the test layer before timeline checks.
+
+
+During direct text editing, the accessibility `performClick()` issued at the end of a gesture is ignored by the layer-selection click handler. The active text tools therefore stay open after a drag, pinch or rotation; with direct editing disabled, an ordinary tap selects the layer and opens its contextual tools.
