@@ -6349,6 +6349,9 @@ class VideoEditorActivity : Activity() {
     private fun installPreviewTextTouch(overlay: TextView) {
         var downRawX = 0f
         var downRawY = 0f
+        var passiveTapDownX = 0f
+        var passiveTapDownY = 0f
+        var passiveTapCandidate = false
         var startX = 0.5f
         var startY = 0.84f
         var startDistance = 0f
@@ -6357,10 +6360,47 @@ class VideoEditorActivity : Activity() {
         var startRotationDegrees = 0f
         overlay.isClickable = true
         overlay.setOnTouchListener { view, event ->
-            if (!textOverlayEditingEnabled || activeEditorPanel != "text") return@setOnTouchListener false
             val layerId = view.tag as? Long ?: return@setOnTouchListener false
             val layer = textLayers.firstOrNull { it.id == layerId } ?: return@setOnTouchListener false
-            when (event.actionMasked) {
+            val editingTextInPlace = textOverlayEditingEnabled && activeEditorPanel == "text"
+            if (!editingTextInPlace) {
+                // The preview text must remain directly selectable after its settings
+                // panel is closed. Handle the tap on the overlay itself instead of
+                // relying on a click callback that can be bypassed by canvas touch layers.
+                when (event.actionMasked) {
+                    android.view.MotionEvent.ACTION_DOWN -> {
+                        passiveTapDownX = event.rawX
+                        passiveTapDownY = event.rawY
+                        passiveTapCandidate = true
+                        true
+                    }
+                    android.view.MotionEvent.ACTION_MOVE -> {
+                        val slop = android.view.ViewConfiguration.get(this).scaledTouchSlop.toFloat()
+                        if (kotlin.math.abs(event.rawX - passiveTapDownX) > slop ||
+                            kotlin.math.abs(event.rawY - passiveTapDownY) > slop) {
+                            passiveTapCandidate = false
+                        }
+                        true
+                    }
+                    android.view.MotionEvent.ACTION_UP -> {
+                        val shouldSelect = passiveTapCandidate
+                        passiveTapCandidate = false
+                        if (shouldSelect) {
+                            if (timelineSyncTestEnabled) {
+                                android.util.Log.i("EditorTouchTest", "TEXT_CANVAS_TAP_SELECT layerId=$layerId")
+                            }
+                            selectTextLayer(layerId)
+                            view.performClick()
+                        }
+                        true
+                    }
+                    android.view.MotionEvent.ACTION_CANCEL -> {
+                        passiveTapCandidate = false
+                        true
+                    }
+                    else -> true
+                }
+            } else when (event.actionMasked) {
                 android.view.MotionEvent.ACTION_DOWN -> {
                     // The parent editor ScrollView must not intercept vertical text drags.
                     view.parent?.requestDisallowInterceptTouchEvent(true)
