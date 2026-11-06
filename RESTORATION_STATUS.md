@@ -976,3 +976,14 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Production `enterTextTools()` now dismisses the IME and clears the text EditText focus before rebuilding the contextual dock. Added diagnostic markers for text-panel return/close and the rebuilt three-action dock.
 - The emulator harness now checks both post-close and post-reselection screenshots against the measured project-canvas bounds and green video-fixture pixels, and uses the app-side `TEXT_TOOLS_DOCK_VISIBLE` marker plus a pixel-verified selection border as proof. UIAutomator cleanup is best-effort to avoid turning an accessibility timeout into a false negative after direct interaction already passed.
 - Source keyboard-focus fix: `92d2f1d85b368d5dcef63a11601bfd0ca4b8c422`. Harness follow-up is committed separately and must pass a fresh emulator run. No release/version bump.
+
+
+### Emulator run #994 — photo overlay end-trim gesture intercepted at Android's right system edge — 2026-11-06
+
+- Run #994 on `765e6df070a9eef51628118c42c304d0bbe5c107` built and passed unit/build and Android verification, but the emulator smoke test failed at `overlay-end-gesture-not-received` (exit 85).
+- The photo overlay start trim was verified: `OVERLAY_EDGE_TRIM kind=image edge=start beforeStartMs=0 beforeDurationMs=8023 afterStartMs=133 afterDurationMs=7890 deltaMs=133`.
+- The end trim hit target was found at screen bounds `[965,1227]-[1039,1311]` (74×84px visible) and the harness swiped left from its center `(1002,1269)`. No `OVERLAY_EDGE_TRIM kind=image edge=end` callback arrived. Music/sound start+end trims and photo start trim passed earlier in the same run.
+- Diagnosis: the trailing handle is at the physical right display edge. On Android gesture navigation, the system back gesture can intercept a leftward drag beginning there before the app's touch listener receives it. The test was not merely a flaky selector: it exposed a real touch-priority conflict at the right edge.
+- Production fix: the narrow trailing trim handle now registers only its own bounds in `systemGestureExclusionRects` on Android Q+ so its leftward drag reaches the app while the rest of the screen retains normal system navigation. Diagnostic log now records `gestureExclusion=true`.
+- Emulator harness now asserts the trailing handle's gesture exclusion was registered before dragging and still requires the actual `OVERLAY_EDGE_TRIM kind=image edge=end` callback plus changed duration. This is not considered fixed until a fresh emulator run passes.
+- Commits: `efb31a91e63d7cd4ba9cc922c526673b1fe41ba1` (app), `e7923312644070e1fa2740bef503e452aba180fb` (harness). No release/version bump.
