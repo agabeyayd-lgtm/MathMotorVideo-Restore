@@ -3270,6 +3270,7 @@ class VideoEditorActivity : Activity() {
                     contentDescription = if (isStart) "Katman başlangıcını kırp" else "Katman bitişini kırp"
                     isClickable = true
                     isFocusable = true
+                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
                     addView(View(this@VideoEditorActivity).apply {
                         background = android.graphics.drawable.GradientDrawable().apply {
                             setColor(Color.rgb(0, 164, 146))
@@ -3279,7 +3280,7 @@ class VideoEditorActivity : Activity() {
                         isFocusable = false
                     }, FrameLayout.LayoutParams(
                         dp(5), dp(24),
-                        Gravity.CENTER_VERTICAL or (if (isStart) Gravity.START else Gravity.END)
+                        Gravity.CENTER_VERTICAL or (if (isStart) Gravity.LEFT else Gravity.RIGHT)
                     ))
                     setOnClickListener { /* The transparent edge target is primarily a drag control. */ }
                 }
@@ -3323,8 +3324,16 @@ class VideoEditorActivity : Activity() {
                 }
                 frame.addView(edge, FrameLayout.LayoutParams(
                     edgeWidth, ViewGroup.LayoutParams.MATCH_PARENT,
-                    if (isStart) Gravity.START else Gravity.END
+                    if (isStart) Gravity.LEFT else Gravity.RIGHT
                 ))
+                if (timelineSyncTestEnabled) {
+                    edge.post {
+                        android.util.Log.i(
+                            "EditorTouchTest",
+                            "OVERLAY_EDGE_TARGET edge=${if (isStart) "start" else "end"} width=${edge.width} left=${edge.left} right=${edge.right} parentWidth=${frame.width} shown=${edge.isShown} accessibility=${edge.importantForAccessibility}"
+                        )
+                    }
+                }
             }
             addEdge(true, onTrimStart)
             addEdge(false, onTrimEnd)
