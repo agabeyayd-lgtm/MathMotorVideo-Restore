@@ -848,3 +848,8 @@ Text and image/video overlay layers use the same normalized canvas-center mappin
 ### Canvas coordinate and clipping verification
 
 The pixel-level emulator clipping check reads the Activity's measured absolute screen origin and inner-canvas offset, then checks every visible magenta overlay pixel against that exact rectangle. This avoids guessing canvas bounds from screenshot colors or nearby timeline controls. The shared preview/export anchor helper is covered for screen translations, Media3 normalized anchors and Y-axis inversion.
+
+
+### Tap-to-select visual layers
+
+Editable text and image/video overlay previews now respond to direct canvas taps by selecting the corresponding timeline layer and opening its contextual tool dock. The emulator script closes the selected overlay dock, taps the visible overlay pixels, and asserts that the overlay dock and direct gesture surface reopen before it tests a drag.
