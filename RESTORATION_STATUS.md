@@ -1101,3 +1101,6 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Screenshot evidence from emulator #1032 showed the preview project canvas shrinking from 423×753px to 137×245px when the text detail panel opened, while the overlay remained at 24sp with 10dp side padding. "CanvasSmoke" wrapped beyond its available width and the selected frame was clipped at the canvas edges.
 - **Source fix:** commit `54de4fe0e4cf1346669e4fb6cb8e12e5c62d4882` remembers the largest normal, keyboard-free project-canvas dimensions and scales preview text size and its visual insets/corner/shadow by the current canvas ratio. The saved text layer size and export dimensions are not changed.
 - **Validation pending:** require a visible complete selection rectangle inside the measured canvas, successful in-canvas text movement, preview restoration after closing the panel, and the three-action text dock on tap. Do not mark complete until the latest emulator run passes.
+
+
+- Follow-up commit `abfb2b1894fcd2a8da88dbe0e0d655441a32325a` refreshes the reference dimensions from the latest settled keyboard-free, panel-free layout instead of retaining a transient oversized startup canvas. Validation remains pending on this exact revision.
