@@ -828,3 +828,10 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Removed the old text export anchor clamps so edge positions and text animation offsets are not pulled back inside the frame differently from the preview.
 - Added unit cases for left/center/right anchors, top/center/bottom Y mapping and non-finite fallback. Extended emulator coverage to confirm the visible magenta overlay pixels do not escape the actual green video canvas after direct dragging.
 - Source commits: `19cd81b` (coordinate mapping), `8a215fd` (unit coverage), `49a9281` (Activity wiring), `102c5c1` (animation anchor parity), `4b772a8` (visual clipping assertion). **Latest follow-up commits await their own build and emulator result.**
+
+
+## Coordinate compile correction and pixel-boundary test — 2026-11-06
+
+- The first shared-anchor integration build exposed two Kotlin type errors: text preview passed integer canvas width/height into a float coordinate helper. Both call sites now explicitly convert the dimensions to `Float` (source commit `245ed7a`). The red run was a compile-time type mismatch, not a runtime preview/export failure.
+- The emulator clipping assertion now reads the Activity's absolute `previewFrame` screen origin and the inner-canvas offset from `PREVIEW_CANVAS_BOUNDS`, then checks all magenta overlay pixels against that exact screen-space rectangle. This replaces the earlier color-inferred green-video bounding box, which could have included unrelated green timeline UI.
+- Source commits: `9d7d36b` (absolute stage origin marker), `0605686` (pixel test uses measured canvas rectangle). These fixes are committed; their new CI run is required before marking the build and emulator checks green.
