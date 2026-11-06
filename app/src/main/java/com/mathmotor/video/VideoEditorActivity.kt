@@ -2524,7 +2524,9 @@ class VideoEditorActivity : Activity() {
         clipToolsMode = true
         activeClipTool = null
         activeEditorPanel = null
+        selectedTextLayerId = null
         selectedOverlayId = null
+        updatePreviewTextOverlay()
         updateClipTransformTouchAvailability()
         updateOverlayTransformTouchAvailability()
         textOverlayEditingEnabled = false
@@ -7092,6 +7094,8 @@ class VideoEditorActivity : Activity() {
     /** Select an overlay track without opening its settings sheet over the timeline. */
     private fun enterOverlayTools() {
         if (!::editorDock.isInitialized || !::editorPanelScroll.isInitialized) return
+        selectedTextLayerId = null
+        updatePreviewTextOverlay()
         clipToolsMode = true
         activeClipTool = null
         activeEditorPanel = null
