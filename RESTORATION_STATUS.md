@@ -1067,3 +1067,10 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - **Root cause from emulator #1027–#1029:** two independent height controllers collapsed the timeline card from 220dp to 132dp whenever a detail panel opened: `setTimelinePanelMode()` and the outer-card sizing in `refreshTimelineTracks()`. The measured geometry changed from `(x=21,y=1076,w=1038,h=577)` to `(x=21,y=793,w=1038,h=346)`, violating the intended layout contract.
 - **Source fix:** commit `212db75d4130cc5bf253edf9fde8845c64b4b50e` keeps the timeline card at 220dp during detail panels in both code paths; only keyboard mode retains the compact 88dp height. Track rows remain in the scrollable viewport instead of resizing the editor shell.
 - **Verification pending:** build, unit tests and fresh API 35 emulator geometry validation must pass on this commit. Required proof: timeline width/height remain unchanged while the preview shrinks by the detail panel height; close/switch restores the original preview and timeline geometry. No APK/release is being prepared.
+
+
+## Text overlay clipping regression — 2026-11-06
+
+- Historical emulator #1017/#1018 failure: `text-canvas-selection-frame-missing`. Screenshot review showed the text panel reduced the project canvas to about 90×161px, while `updatePreviewTextOverlay()` forced dimensions to at least 100dp and the text view to at least 80dp width. The text/selection frame could therefore be larger than the real project canvas and clip out of view.
+- **Source correction:** commit `7d7c3f80377ee84da074770fc6736c78c5d798d7` uses actual `previewCanvas.width/height`, dynamically constrains the text view to available canvas width/height, and clamps the rotated selection frame within the real canvas. The test was not weakened.
+- **Verification pending:** require the actual white selection frame, text drag, panel/keyboard geometry and timeline layout to pass in a fresh API 35 emulator run. No release/APK is being prepared.
