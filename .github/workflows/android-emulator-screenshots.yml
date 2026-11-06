@@ -98,11 +98,11 @@ jobs:
           # Two deterministic PCM fixtures feed the production audio-import path
           # so the timeline smoke can drag music and sound-effect edge targets.
           ffmpeg -hide_banner -loglevel error -y \
-            -f lavfi -i "sine=frequency=523:sample_rate=48000:duration=7" \
+            -f lavfi -i "sine=frequency=523:sample_rate=48000:duration=1.6" \
             -ac 2 -c:a pcm_s16le app/build/test-fixtures/editor-test-music.wav
           test -s app/build/test-fixtures/editor-test-music.wav
           ffmpeg -hide_banner -loglevel error -y \
-            -f lavfi -i "sine=frequency=784:sample_rate=48000:duration=5" \
+            -f lavfi -i "sine=frequency=784:sample_rate=48000:duration=1.4" \
             -ac 2 -c:a pcm_s16le app/build/test-fixtures/editor-test-sound.wav
           test -s app/build/test-fixtures/editor-test-sound.wav
           ls -lh app/build/test-fixtures/editor-test-video.mp4 app/build/test-fixtures/editor-test-overlay.png app/build/test-fixtures/editor-test-video-replacement.mp4 app/build/test-fixtures/editor-test-music.wav app/build/test-fixtures/editor-test-sound.wav
