@@ -878,3 +878,5 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Text smoke target refinement: the hierarchy assertion now distinguishes the rendered preview `TextView` from the similarly named `EditText` field in the settings drawer, so the tap coordinate is taken from the on-canvas layer itself. Source commit: `1787a84`; pending CI.
 
 - Visible canvas boundary: added a thin turquoise outline as a workspace-only sibling of the inner project canvas. It tracks the exact measured/fitted canvas rectangle but is outside the inner canvas and is never part of MP4 composition/export; it is non-clickable and does not intercept gestures. Source commit: `ac36120`; CI pending.
+
+- The emulator screenshot pixel check now verifies that the turquoise workspace-only outline is visibly drawn on all four measured project-canvas edges, while still asserting that no magenta overlay pixels escape the inner canvas. Source commit: `a738908`; the new assertion is awaiting its emulator run.
