@@ -155,6 +155,29 @@ dump_hierarchy() {
   return 1
 }
 
+find_content_description_bounds() {
+  local hierarchy="$1" description="$2"
+  python3 - "$hierarchy" "$description" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+try:
+    root = ET.parse(sys.argv[1]).getroot()
+except (OSError, ET.ParseError) as error:
+    raise SystemExit(f"Cannot parse accessibility hierarchy: {error}")
+for node in root.iter("node"):
+    if node.attrib.get("content-desc") != sys.argv[2]:
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if not match:
+        continue
+    x1, y1, x2, y2 = map(int, match.groups())
+    if x2 > x1 and y2 > y1:
+        print((x1 + x2) // 2, (y1 + y2) // 2, x2 - x1, y2 - y1, x1, y1, x2, y2)
+        break
+PY
+}
+
 echo "Step 5/7: inspect the home screen and capture it"
 # Inspect accessibility before screencap so an Android ANR dialog cannot make
 # the screenshot call the first point of failure without any diagnostics.
@@ -366,6 +389,30 @@ if ! timeout -k 2s 30s adb -s emulator-5554 shell -T \
 fi
 timeout -k 2s 8s adb -s emulator-5554 shell run-as com.mathmotor.video.next ls -l files/editor-test-overlay.png 2>&1 | tee -a emulator-screenshots/video-fixture-private-copy.txt
 
+music_fixture="app/build/test-fixtures/editor-test-music.wav"
+sound_fixture="app/build/test-fixtures/editor-test-sound.wav"
+app_internal_music="/data/user/0/com.mathmotor.video.next/files/editor-test-music.wav"
+app_internal_sound="/data/user/0/com.mathmotor.video.next/files/editor-test-sound.wav"
+for audio_fixture in "$music_fixture" "$sound_fixture"; do
+  if [ ! -s "$audio_fixture" ]; then
+    echo "Missing generated audio fixture: $audio_fixture"
+    exit 3
+  fi
+done
+if ! timeout -k 2s 30s adb -s emulator-5554 shell -T \
+  "run-as com.mathmotor.video.next sh -c 'cat > files/editor-test-music.wav'" \
+  < "$music_fixture" 2>&1 | tee -a emulator-screenshots/video-fixture-private-copy.txt; then
+  echo "Streaming the music test fixture into the app sandbox failed."
+  exit 10
+fi
+if ! timeout -k 2s 30s adb -s emulator-5554 shell -T \
+  "run-as com.mathmotor.video.next sh -c 'cat > files/editor-test-sound.wav'" \
+  < "$sound_fixture" 2>&1 | tee -a emulator-screenshots/video-fixture-private-copy.txt; then
+  echo "Streaming the sound-effect test fixture into the app sandbox failed."
+  exit 10
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell run-as com.mathmotor.video.next ls -l files/editor-test-music.wav files/editor-test-sound.wav \
+  2>&1 | tee -a emulator-screenshots/video-fixture-private-copy.txt
 
 timeout -k 2s 8s adb -s emulator-5554 shell am force-stop com.mathmotor.video.next || true
 # Avoid -W for the same slow-emulator first-frame wait that affected the home launch.
@@ -376,6 +423,8 @@ timeout -k 2s 15s adb -s emulator-5554 shell am start \
   --es video_uri "file://$app_internal_video" \
   --es overlay_uri "file://$app_internal_overlay" \
   --es replacement_video_uri "file://$app_internal_replacement_video" \
+  --es test_music_uri "file://$app_internal_music" \
+  --es test_sound_uri "file://$app_internal_sound" \
   --es draft_id "11111111-1111-4111-8111-111111111111" \
   --ez timeline_sync_test true \
   --ef timeline_test_px_per_sec_dp 120 | tee emulator-screenshots/editor-video-launch.txt
@@ -1119,6 +1168,76 @@ if ! take_screen emulator-screenshots/editor-panel-closed.png; then
   exit 6
 fi
 dump_hierarchy editor-panel-closed.xml emulator-screenshots/editor-panel-closed.xml || true
+
+echo "Step 8c/12: drag the music and sound-effect edge targets independently"
+run_audio_edge_smoke() {
+  local kind="$1" edge="$2" description="$3" direction="$4"
+  local before_xml="editor-audio-${kind}-${edge}-before.xml"
+  local after_xml="editor-audio-${kind}-${edge}-after.xml"
+  local coords cx cy target_w target_h x1 y1 x2 y2 delta marker
+  if ! dump_hierarchy "$before_xml" "emulator-screenshots/$before_xml"; then
+    echo "Could not inspect the $kind $edge trim target."
+    collect_capture_diagnostics "audio-$kind-$edge-before-hierarchy-failed"
+    exit 70
+  fi
+  coords="$(find_content_description_bounds "emulator-screenshots/$before_xml" "$description")"
+  if [ -z "$coords" ]; then
+    echo "The $kind $edge trim handle ('$description') is missing from the timeline."
+    collect_capture_diagnostics "audio-$kind-$edge-target-missing"
+    exit 71
+  fi
+  read -r cx cy target_w target_h x1 y1 x2 y2 <<< "$coords"
+  if [ "$target_w" -lt 40 ] || [ "$target_h" -lt 20 ]; then
+    echo "The $kind $edge touch target is undersized: ${target_w}x${target_h}px bounds=[$x1,$y1][$x2,$y2]."
+    collect_capture_diagnostics "audio-$kind-$edge-target-undersized"
+    exit 72
+  fi
+  delta=42
+  if [ "$direction" = "left" ]; then
+    delta=-42
+  fi
+  echo "Dragging $description from ($cx,$cy) by ${delta}px; hit area=${target_w}x${target_h}px."
+  timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$cx" "$cy" "$((cx + delta))" "$cy" 500
+  sleep 1
+  if ! dump_hierarchy "$after_xml" "emulator-screenshots/$after_xml"; then
+    echo "Could not inspect the timeline after dragging $kind $edge."
+    collect_capture_diagnostics "audio-$kind-$edge-after-hierarchy-failed"
+    exit 73
+  fi
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I \
+    > "emulator-screenshots/audio-$kind-$edge-touch-logcat.txt" 2>&1 || true
+  marker="$(grep -F "AUDIO_EDGE_TRIM kind=$kind edge=$edge " "emulator-screenshots/audio-$kind-$edge-touch-logcat.txt" | tail -n 1 || true)"
+  if [ -z "$marker" ]; then
+    echo "The $kind $edge gesture did not reach its edge-trim handler."
+    collect_capture_diagnostics "audio-$kind-$edge-gesture-not-received"
+    exit 74
+  fi
+  python3 - "$marker" "$kind" "$edge" <<'PY'
+import re
+import sys
+line, kind, edge = sys.argv[1:]
+fields = dict(re.findall(r"([A-Za-z]+)=([^ ]+)", line))
+required = ["beforeStartMs", "beforeDurationMs", "afterStartMs", "afterDurationMs"]
+missing = [key for key in required if key not in fields]
+if missing:
+    raise SystemExit("Trim event was incomplete: " + ", ".join(missing) + " :: " + line)
+before_start = int(fields["beforeStartMs"])
+before_duration = int(fields["beforeDurationMs"])
+after_start = int(fields["afterStartMs"])
+after_duration = int(fields["afterDurationMs"])
+if edge == "start" and not (after_start > before_start and after_duration < before_duration):
+    raise SystemExit(f"{kind} start edge did not trim the start: {line}")
+if edge == "end" and not after_duration < before_duration:
+    raise SystemExit(f"{kind} end edge did not shorten duration: {line}")
+print(f"PASS: {kind} {edge} edge changed its saved timing independently ({before_start}ms/{before_duration}ms -> {after_start}ms/{after_duration}ms)")
+PY
+}
+
+run_audio_edge_smoke music start "Müzik başlangıç tutamacı" right
+run_audio_edge_smoke music end "Müzik bitiş tutamacı" left
+run_audio_edge_smoke sound start "Efekt başlangıç tutamacı" right
+run_audio_edge_smoke sound end "Efekt bitiş tutamacı" left
+
 timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime -s EditorPanelLayoutTest:I > emulator-screenshots/editor-panel-layout-logcat.txt 2>&1 || true
 
 python3 - emulator-screenshots/editor-panel-layout-logcat.txt <<'PY'
