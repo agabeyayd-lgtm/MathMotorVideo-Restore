@@ -1328,17 +1328,17 @@ class VideoEditorActivity : Activity() {
 
         val textPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         textPanel.addView(label("METİN KATMANLARI", 13f, Color.rgb(121, 202, 218), true))
-        textPanel.addView(label("Yazıyı videonun üstünde sürükle; iki parmakla büyüt veya küçült.", 11f, Color.rgb(154, 171, 190), false))
+        textPanel.addView(label("Yazıyı videonun üstünde sürükle; iki parmakla büyüt, küçült veya döndür.", 11f, Color.rgb(154, 171, 190), false))
         textOverlayEditToggle = miniButton("Önizlemede yazı düzenleme: KAPALI") {
             textOverlayEditingEnabled = !textOverlayEditingEnabled
             updateTextOverlayEditToggle()
             status.text = if (textOverlayEditingEnabled) {
-                "Yazıyı videonun üzerinde sürükleyebilir ve iki parmakla boyutlandırabilirsin."
+                "Yazıyı sürükleyebilir, iki parmakla boyutlandırıp döndürebilirsin."
             } else {
                 "Önizlemede yazı hareketi kapalı. Metin alanı ve boyut düğmeleri kullanılabilir."
             }
         }.apply {
-            contentDescription = "Önizleme üzerindeki yazıyı sürükleme ve iki parmakla boyutlandırmayı aç veya kapat"
+            contentDescription = "Önizleme üzerindeki yazıyı sürükleme, iki parmakla boyutlandırma ve döndürmeyi aç veya kapat"
             minHeight = dp(42)
         }
         textPanel.addView(textOverlayEditToggle, matchWrap())
@@ -6119,7 +6119,7 @@ class VideoEditorActivity : Activity() {
                     if (selectedTextLayerId == layer.id) syncSelectedTextLayerFromControls()
                     refreshTextLayerList()
                     refreshTimelineTracks()
-                    status.text = "Yazı konumu güncellendi. Sürükle veya iki parmağınla boyutlandır."
+                    status.text = "Yazı konumu, boyutu veya açısı güncellendi."
                     view.performClick()
                     true
                 }
