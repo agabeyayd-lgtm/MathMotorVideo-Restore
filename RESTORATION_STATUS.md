@@ -1043,3 +1043,11 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Emulator run #1021 reached the main-video transform gesture but measured only 27.8x16.7 project-canvas pixels from a requested 40x24 px drag. Build and code verification passed; the emulator interaction remained red.
 - The main-video handler mixed raw screen coordinates for one-finger movement with local view coordinates for pinch movement and pointer handoff. Overlay transforms already use the gesture surface's local coordinates. The video handler now follows the same single local coordinate space for down, move and finger handoff, normalized against the project canvas dimensions. Diagnostics record both local and raw coordinates.
 - Fix commit: `edad968a8a0056611dc49c7faeac2770d10e5154`. A fresh build and emulator run must verify the requested 40x24 px drag and reverse restoration before this item is complete. No version bump or APK release.
+
+
+## 2026-11-06 — Emulator #1006 follow-up
+
+- Verified in emulator logs: closing the text panel succeeds, tapping the preview text restores the three-action text dock, and the full portrait preview remains visible.
+- Emulator run #1006 still ended red later in timeline alignment setup because the test script attempted to read `TIMELINE_TOUCH_SLOP_PX` after clearing logcat during text-panel isolation.
+- Fixed the harness ordering in commit `5c2bc6f`: capture and validate the device touch-slop marker immediately after launching the editor, then reuse the stored value during timeline alignment.
+- Build and unit tests passed on the prior source revision; emulator verification of this harness change is pending. Do not mark #1006 as green.
