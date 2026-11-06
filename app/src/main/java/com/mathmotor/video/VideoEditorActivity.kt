@@ -225,6 +225,9 @@ class VideoEditorActivity : Activity() {
     private lateinit var textLayerList: LinearLayout
     private var player: ExoPlayer? = null
     private var timelineCompositionPlayer: CompositionPlayer? = null
+    // A freshly prepared CompositionPlayer has no seekable periods until STATE_READY.
+    private var pendingTimelineCompositionSeekMs: Long? = null
+    private var pendingTimelineCompositionResumeAfterSeek = false
     private var musicPreviewPlayer: ExoPlayer? = null
     private var soundPreviewPlayer: ExoPlayer? = null
     private var musicPreviewUri: Uri? = null
@@ -5285,6 +5288,21 @@ class VideoEditorActivity : Activity() {
                 }
                 override fun onPlaybackStateChanged(playbackState: Int) {
                     if (timelineCompositionPlayer !== comp) return
+                    if (playbackState == androidx.media3.common.Player.STATE_READY) {
+                        // CompositionPlayer.prepare() is asynchronous. Seeking before its
+                        // concatenated timeline exposes a period can crash Media3 with
+                        // IndexOutOfBoundsException(-1). Apply edit seeks only after READY.
+                        val pendingSeek = pendingTimelineCompositionSeekMs
+                        if (pendingSeek != null && !comp.currentTimeline.isEmpty) {
+                            pendingTimelineCompositionSeekMs = null
+                            comp.seekTo(pendingSeek.coerceIn(0L, totalOutputDurationMs()))
+                            timelinePlayheadMs = pendingSeek.coerceIn(0L, totalOutputDurationMs())
+                            comp.playWhenReady = pendingTimelineCompositionResumeAfterSeek
+                            pendingTimelineCompositionResumeAfterSeek = false
+                            requestPreviewFrameAt(timelinePlayheadMs)
+                            updateTimelinePlayheadLabel()
+                        }
+                    }
                     if (playbackState == androidx.media3.common.Player.STATE_READY &&
                         overlayClips.isNotEmpty()
                     ) {
@@ -7931,13 +7949,27 @@ class VideoEditorActivity : Activity() {
 
     private fun rebuildTimelinePreviewForOverlayEdit() {
         val wasPlaying = timelineCompositionPlayer?.playWhenReady == true
-        val position = timelinePlayheadMs
+        val position = timelinePlayheadMs.coerceAtMost(totalOutputDurationMs())
         pauseActivePreview()
         releaseTimelineCompositionPlayer()
+        pendingTimelineCompositionSeekMs = null
+        pendingTimelineCompositionResumeAfterSeek = false
         if (clips.isNotEmpty()) {
+            // Keep the requested playhead, but do not seek the replacement composition
+            // until Media3 reports STATE_READY and has a non-empty timeline.
+            pendingTimelineCompositionSeekMs = position
+            pendingTimelineCompositionResumeAfterSeek = wasPlaying
             ensureTimelinePreviewLoaded()
-            seekTimelinePreview(position.coerceAtMost(totalOutputDurationMs()))
-            timelineCompositionPlayer?.playWhenReady = wasPlaying
+            val replacement = timelineCompositionPlayer
+            if (replacement != null &&
+                replacement.playbackState == androidx.media3.common.Player.STATE_READY &&
+                !replacement.currentTimeline.isEmpty
+            ) {
+                pendingTimelineCompositionSeekMs = null
+                replacement.seekTo(position)
+                replacement.playWhenReady = wasPlaying
+                pendingTimelineCompositionResumeAfterSeek = false
+            }
         }
     }
 
