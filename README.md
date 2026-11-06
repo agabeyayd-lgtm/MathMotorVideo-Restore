@@ -910,3 +910,9 @@ Timeline trim gestures now use Android's scaled touch slop consistently across v
 ### Preview text tap selection after closing settings
 
 A text layer remains directly selectable on the project canvas after its settings panel closes. The preview overlay now owns passive tap recognition and opens the three-action contextual text dock on a tap; this avoids losing the selection callback when other canvas touch surfaces are present. Dragging while the detail panel is closed does not move the text; direct move/scale/rotate remains enabled only while the text detail panel is active.
+
+
+### Editor panel / keyboard layout correction
+- Contextual editor panels now participate in the root vertical workspace layout instead of floating as a bottom overlay. Opening text tools reserves measured space above the dock, so the timeline and its touch targets are not covered.
+- The dock remains in the same layout flow; fullscreen preview hides/restores it through the root child visibility cycle.
+- Responsive keyboard handling continues to resize the preview workspace and fit the project canvas to the available stage; emulator verification is pending.
