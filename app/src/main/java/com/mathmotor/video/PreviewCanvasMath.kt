@@ -54,4 +54,16 @@ internal object PreviewCanvasMath {
         val normalized = fraction.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0.5f
         return if (invertY) (0.5f - normalized) * 2f else (normalized - 0.5f) * 2f
     }
+
+    /** Smallest signed rotation taking startDegrees to endDegrees, in [-180, 180]. */
+    fun rotationDeltaDegrees(startDegrees: Float, endDegrees: Float): Float {
+        if (!startDegrees.isFinite() || !endDegrees.isFinite()) return 0f
+        return ((endDegrees - startDegrees + 540f) % 360f) - 180f
+    }
+
+    /** Keeps a stored layer rotation finite and inside the canonical angular range. */
+    fun normalizeRotationDegrees(degrees: Float): Float {
+        if (!degrees.isFinite()) return 0f
+        return ((degrees + 180f) % 360f + 360f) % 360f - 180f
+    }
 }
