@@ -5541,8 +5541,6 @@ class VideoEditorActivity : Activity() {
                 }
                 MotionEvent.ACTION_POINTER_DOWN -> {
                     if (clip == null || event.pointerCount < 2) return@setOnTouchListener true
-                    val canvasWidth = previewCanvas.width.coerceAtLeast(1)
-                    val canvasHeight = previewCanvas.height.coerceAtLeast(1)
                     val dx = event.getX(0) - event.getX(1)
                     val dy = event.getY(0) - event.getY(1)
                     twoFingerStartDistance = kotlin.math.hypot(dx.toDouble(), dy.toDouble())
@@ -5558,6 +5556,8 @@ class VideoEditorActivity : Activity() {
                 }
                 MotionEvent.ACTION_MOVE -> {
                     if (clip == null) return@setOnTouchListener true
+                    val canvasWidth = previewCanvas.width.coerceAtLeast(1)
+                    val canvasHeight = previewCanvas.height.coerceAtLeast(1)
                     if (event.pointerCount >= 2 && twoFingerStartDistance > 0f) {
                         val dx = event.getX(0) - event.getX(1)
                         val dy = event.getY(0) - event.getY(1)
@@ -5580,8 +5580,6 @@ class VideoEditorActivity : Activity() {
                     } else if (event.pointerCount == 1) {
                         // Transform fractions are normalized against the exact project
                         // canvas, not a potentially inset/scaled gesture-host View.
-                        val canvasWidth = previewCanvas.width.coerceAtLeast(1)
-                        val canvasHeight = previewCanvas.height.coerceAtLeast(1)
                         clip.transformTranslateX = (
                             baseTranslateX + (event.rawX - downRawX) * 2f /
                                 canvasWidth
