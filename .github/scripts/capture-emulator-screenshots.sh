@@ -556,6 +556,113 @@ if [ "$replacement_visual_ready" != true ]; then
   exit 45
 fi
 echo "PASS: the visible replacement filmstrip is populated with the new green source frames (ratio >= 0.75)."
+
+# Select the main-video timeline clip and verify that its white transform
+# selection frame appears around the transformed source canvas.
+video_clip_center="$(python3 - emulator-screenshots/editor-after-video-replacement.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+candidates = []
+for node in root.iter("node"):
+    desc = node.attrib.get("content-desc", "")
+    text = node.attrib.get("text", "")
+    if "editor-test-video-replacement.mp4" not in desc + " " + text:
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        x1, y1, x2, y2 = map(int, match.groups())
+        if x2 > x1 and y2 > y1:
+            candidates.append((node.attrib.get("clickable") == "true", (x1 + x2) // 2, (y1 + y2) // 2))
+if not candidates:
+    raise SystemExit("Could not locate the replacement video timeline clip hit target.")
+candidates.sort(reverse=True)
+print(candidates[0][1], candidates[0][2])
+PY
+)"
+if [ -z "$video_clip_center" ]; then
+  echo "Could not find the replacement video clip to test selection chrome."
+  collect_capture_diagnostics video-clip-selection-target-missing
+  exit 56
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $video_clip_center
+sleep 1
+if ! take_screen emulator-screenshots/editor-video-clip-selected.png; then
+  collect_capture_diagnostics video-clip-selection-capture-failure
+  exit 6
+fi
+dump_hierarchy editor-video-clip-selected.xml emulator-screenshots/editor-video-clip-selected.xml || true
+if ! grep -q "Seçili video klibi sınırı" emulator-screenshots/editor-video-clip-selected.xml; then
+  echo "Selecting the main-video timeline clip did not show its white preview selection frame."
+  collect_capture_diagnostics video-clip-selection-frame-missing
+  exit 57
+fi
+echo "PASS: selecting the main video clip shows its own white transform selection frame."
+
+# Return to the global dock, then tap the visible overlay to restore its own
+# selection and tools before the visual-overlay direct-manipulation checks.
+video_tools_back="$(python3 - emulator-screenshots/editor-video-clip-selected.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+matches = []
+for node in root.iter("node"):
+    if "Ana araçlara dön" not in node.attrib.get("text", ""):
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        x1, y1, x2, y2 = map(int, match.groups())
+        if x2 > x1 and y2 > y1:
+            matches.append(((x1 + x2) // 2, (y1 + y2) // 2))
+if not matches:
+    raise SystemExit("Video contextual tool strip return button was not found.")
+print(*matches[-1])
+PY
+)"
+if [ -z "$video_tools_back" ]; then
+  collect_capture_diagnostics video-clip-tools-return-missing
+  exit 58
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $video_tools_back
+sleep 1
+if ! take_screen emulator-screenshots/editor-video-clip-deselected.png; then
+  collect_capture_diagnostics video-clip-return-capture-failure
+  exit 6
+fi
+overlay_reselect_center="$(python3 - emulator-screenshots/editor-video-clip-deselected.png <<'PY'
+from PIL import Image
+import sys
+
+image = Image.open(sys.argv[1]).convert("RGB")
+points = []
+for y in range(image.height):
+    for x in range(image.width):
+        red, green, blue = image.getpixel((x, y))
+        if red > 180 and blue > 180 and green < 110:
+            points.append((x, y))
+if len(points) < 30:
+    raise SystemExit("Magenta overlay fixture is not visible after returning from video selection.")
+xs = [x for x, _ in points]
+ys = [y for _, y in points]
+print((min(xs) + max(xs)) // 2, (min(ys) + max(ys)) // 2)
+PY
+)"
+if [ -z "$overlay_reselect_center" ]; then
+  collect_capture_diagnostics overlay-reselect-after-video-selection-missing
+  exit 59
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $overlay_reselect_center
+sleep 1
+if ! take_screen emulator-screenshots/editor.png; then
+  collect_capture_diagnostics editor-recapture-after-video-selection-failure
+  exit 6
+fi
+dump_hierarchy editor-window.xml emulator-screenshots/editor-window.xml || true
+
 sleep 1
 if ! take_screen emulator-screenshots/editor.png; then
   collect_capture_diagnostics video-editor-capture-failure
