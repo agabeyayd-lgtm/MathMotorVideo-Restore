@@ -881,7 +881,7 @@ Video clips now show their own white selection frame when selected in the timeli
 
 Preview interactions now follow one shared priority contract instead of relying on unrelated per-view elevation values: passive text remains tappable above paused media, the active video/overlay/text gesture surface is raised above media content, and selection outlines remain non-interactive chrome above the gesture surface. Only the active tool surface is shown, so this is not a full-screen catch-all touch layer and it does not take ownership of timeline scrolling or pinch zoom.
 
-Text, music and sound-effect trim handles share a preferred transparent hit width of up to 32dp (constrained by the clip block) and a common 12dp handle elevation; video trim handles retain their wider 40dp target and use the same handle priority. The visible grip remains narrow so the larger hit area does not visually clutter the timeline.
+Text, music, sound-effect and image/video-overlay trim handles share a preferred transparent hit width of up to 32dp (constrained by the clip block) and a common 12dp handle elevation; main-video trim handles retain their wider 40dp target and use the same handle priority. The visible grip remains narrow so the larger hit area does not visually clutter the timeline. Overlay start/end trims preserve source bounds and rebase animated keyframes when the left edge moves.
 
 The emulator smoke now retries compressed UIAutomator hierarchy capture and reports a dedicated diagnostic if the hierarchy is still unavailable. It also exercises direct text-layer dragging and verifies that the rendered text bounds move, in addition to the existing direct overlay drag and layer-selection checks.
 
