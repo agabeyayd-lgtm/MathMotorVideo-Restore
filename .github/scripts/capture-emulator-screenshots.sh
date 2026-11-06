@@ -1734,24 +1734,31 @@ if [ "$text_toggle_state" = "kapalı" ]; then
   text_edit_toggle_changed=true
 fi
 
-timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$text_before_x" "$text_before_y" "$((text_before_x + 28))" "$((text_before_y + 18))" 500
+# The default text fixture is bottom-centred and nearly fills the canvas
+# width. Drag right/up so the full selection outline remains inside the project
+# canvas; a right/down swipe moves the box beyond the canvas edge and clips the
+# white outline, which made the pixel assertion mistake a clipped frame for a
+# disappeared selection. The diagonal remains above Android's measured slop.
+text_drag_to_x=$((text_before_x + 12))
+text_drag_to_y=$((text_before_y - 28))
+timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$text_before_x" "$text_before_y" "$text_drag_to_x" "$text_drag_to_y" 500
 sleep 1
 if ! take_screen emulator-screenshots/editor-text-after-drag.png; then
   collect_capture_diagnostics text-canvas-drag-capture-failure
   exit 6
 fi
 if ! text_after_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-after-drag.png)"; then
-  echo "The selected text frame disappeared after the direct-canvas drag."
+  echo "The selected text frame was not fully visible after the in-canvas direct drag."
   collect_capture_diagnostics text-canvas-drag-selection-frame-missing
   exit 62
 fi
 read -r text_after_left text_after_top text_after_right text_after_bottom text_after_x text_after_y <<< "$text_after_bounds"
-if [ "$((text_after_x - text_before_x))" -lt 12 ] || [ "$((text_after_y - text_before_y))" -lt 6 ]; then
+if [ "$((text_after_x - text_before_x))" -lt 12 ] || [ "$((text_after_y - text_before_y))" -gt -6 ]; then
   echo "Direct text drag did not move the rendered selection frame enough: before=($text_before_x,$text_before_y), after=($text_after_x,$text_after_y)."
   collect_capture_diagnostics text-canvas-drag-did-not-move
   exit 62
 fi
-echo "PASS: direct text drag moved the rendered text-selection frame from ($text_before_x,$text_before_y) to ($text_after_x,$text_after_y)."
+echo "PASS: in-canvas direct text drag moved the rendered text-selection frame from ($text_before_x,$text_before_y) to ($text_after_x,$text_after_y)."
 
 if [ "$text_edit_toggle_changed" = true ]; then
   timeout -k 2s 8s adb -s emulator-5554 shell input tap "$text_toggle_x" "$text_toggle_y"
