@@ -858,3 +858,8 @@ Editable text and image/video overlay previews now respond to direct canvas taps
 ### Text-layer selection outline
 
 When a text/sticker layer is selected from the preview or timeline, a white selection outline is drawn around its actual measured preview bounds. The outline follows the same center position and animated scale as the text, and is clipped by the project canvas. Selecting a video or image/video overlay clears the text selection outline and switches the active transform target.
+
+
+### Text and sticker rotation
+
+Text/sticker layers support simultaneous two-finger scaling and rotation on the project canvas. Rotation is stored per layer, restored from project JSON (legacy projects default to 0°), shown by the live preview and selection outline, and written to the Media3 text overlay export settings. Angle deltas use the shortest path across the -180°/180° boundary.
