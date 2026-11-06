@@ -992,6 +992,10 @@ class VideoEditorActivity : Activity() {
             setBackgroundColor(Color.TRANSPARENT)
             visibility = View.GONE
             isClickable = true
+            // The paused image container is elevated (2dp). Keep this hit surface
+            // above those clickable image children, but below the selection chrome (10dp),
+            // so direct drag/pinch gestures reach installOverlayTransformTouch().
+            elevation = dp(8).toFloat()
             contentDescription = "Bindirmeyi önizlemede tek parmakla taşı, iki parmakla büyüt ve döndür"
         }
         previewCanvas.addView(
