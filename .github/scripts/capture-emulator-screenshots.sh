@@ -1052,7 +1052,7 @@ if [ -z "$clip_canvas_center" ]; then
   exit 64
 fi
 read -r clip_before_x clip_before_y <<< "$clip_canvas_center"
-timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$clip_before_x" "$clip_before_y" "$((clip_before_x + 22))" "$((clip_before_y + 14))" 500
+timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$clip_before_x" "$clip_before_y" "$((clip_before_x + 40))" "$((clip_before_y + 24))" 500
 sleep 1
 if ! dump_hierarchy editor-panel-trim-after-drag.xml emulator-screenshots/editor-panel-trim-after-drag.xml; then
   echo "Could not capture the video selection frame after its direct canvas drag."
@@ -1080,8 +1080,8 @@ if [ -z "$clip_after_center" ]; then
   exit 65
 fi
 read -r clip_after_x clip_after_y <<< "$clip_after_center"
-if [ "$((clip_after_x - clip_before_x))" -lt 12 ] || [ "$((clip_after_x - clip_before_x))" -gt 34 ] ||
-   [ "$((clip_after_y - clip_before_y))" -lt 6 ] || [ "$((clip_after_y - clip_before_y))" -gt 26 ]; then
+if [ "$((clip_after_x - clip_before_x))" -lt 28 ] || [ "$((clip_after_x - clip_before_x))" -gt 52 ] ||
+   [ "$((clip_after_y - clip_before_y))" -lt 14 ] || [ "$((clip_after_y - clip_before_y))" -gt 34 ]; then
   echo "Direct video canvas drag did not move the selection frame: before=($clip_before_x,$clip_before_y), after=($clip_after_x,$clip_after_y)."
   collect_capture_diagnostics video-canvas-transform-not-applied
   exit 66
