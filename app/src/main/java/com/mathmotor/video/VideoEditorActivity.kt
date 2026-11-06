@@ -248,6 +248,7 @@ class VideoEditorActivity : Activity() {
     private var previewFocusMode = false
     private val previewFocusOriginalVisibility = linkedMapOf<View, Int>()
     private lateinit var previewTextOverlay: TextView
+    private lateinit var textSelectionFrame: View
     private lateinit var clipTransformTouchOverlay: View
     private lateinit var overlayTransformTouchOverlay: View
     private lateinit var overlaySelectionFrame: FrameLayout
@@ -896,6 +897,22 @@ class VideoEditorActivity : Activity() {
         )
         previewTextOverlays.add(previewTextOverlay)
         installPreviewTextTouch(previewTextOverlay)
+        textSelectionFrame = View(this).apply {
+            visibility = View.GONE
+            isClickable = false
+            isFocusable = false
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.TRANSPARENT)
+                cornerRadius = dp(2).toFloat()
+                setStroke(dp(1), Color.WHITE)
+            }
+            elevation = dp(11).toFloat()
+            contentDescription = "Seçili metin katmanı sınırı"
+        }
+        previewCanvas.addView(
+            textSelectionFrame,
+            FrameLayout.LayoutParams(dp(1), dp(1), Gravity.CENTER)
+        )
         // CapCut-style selection chrome stays visible on the paused preview.
         overlaySelectionFrame = FrameLayout(this).apply {
             visibility = View.GONE
@@ -5417,7 +5434,9 @@ class VideoEditorActivity : Activity() {
     // the timeline touch surface unobstructed until the user chooses a tool.
     private fun selectTimelineClip(index:Int){
         if(index !in clips.indices)return
+        selectedTextLayerId = null
         selectedOverlayId = null
+        updatePreviewTextOverlay()
         clipHandlesVisible = true
         timelinePreviewLoaded=false;previewSingleClip=false
         selectedClipIndex=index;timelinePlayheadMs=clips[index].timelineStartMs
@@ -5753,6 +5772,8 @@ class VideoEditorActivity : Activity() {
     /** Audio-track selection mirrors every other timeline track. */
     private fun enterAudioTools() {
         if (!::editorDock.isInitialized || !::editorPanelScroll.isInitialized) return
+        selectedTextLayerId = null
+        updatePreviewTextOverlay()
         clipToolsMode = true
         activeClipTool = null
         activeEditorPanel = null
@@ -5786,6 +5807,9 @@ class VideoEditorActivity : Activity() {
     private fun selectTextLayer(id: Long) {
         if (textLayers.none { it.id == id }) return
         syncSelectedTextLayerFromControls()
+        selectedOverlayId = null
+        selectedClipIndex = -1
+        clipHandlesVisible = false
         selectedTextLayerId = id
         val layer = selectedTextLayer()
         loadTextLayerIntoControls(layer)
@@ -5914,6 +5938,34 @@ class VideoEditorActivity : Activity() {
                 PreviewCanvasMath.screenTranslationForFraction(layer.yFraction, videoHeight.toFloat()) +
                     animationState.offsetYFraction * videoHeight
             overlay.bringToFront()
+        }
+
+        val selectedTextView = selectedTextLayerId?.let { selectedId ->
+            previewTextOverlays.firstOrNull { it.visibility == View.VISIBLE && it.tag == selectedId }
+        }
+        if (selectedTextView == null) {
+            textSelectionFrame.visibility = View.GONE
+        } else {
+            val frameWidth = (selectedTextView.measuredWidth + dp(8)).coerceAtLeast(dp(12))
+            val frameHeight = (selectedTextView.measuredHeight + dp(8)).coerceAtLeast(dp(12))
+            val frameParams = textSelectionFrame.layoutParams as? FrameLayout.LayoutParams
+                ?: FrameLayout.LayoutParams(frameWidth, frameHeight, Gravity.CENTER)
+            frameParams.width = frameWidth
+            frameParams.height = frameHeight
+            frameParams.gravity = Gravity.CENTER
+            frameParams.leftMargin = 0
+            frameParams.topMargin = 0
+            frameParams.rightMargin = 0
+            frameParams.bottomMargin = 0
+            textSelectionFrame.layoutParams = frameParams
+            textSelectionFrame.pivotX = frameWidth / 2f
+            textSelectionFrame.pivotY = frameHeight / 2f
+            textSelectionFrame.translationX = selectedTextView.translationX
+            textSelectionFrame.translationY = selectedTextView.translationY
+            textSelectionFrame.scaleX = selectedTextView.scaleX
+            textSelectionFrame.scaleY = selectedTextView.scaleY
+            textSelectionFrame.visibility = View.VISIBLE
+            textSelectionFrame.bringToFront()
         }
     }
 
@@ -7016,8 +7068,10 @@ class VideoEditorActivity : Activity() {
 
     private fun selectOverlay(id: Long) {
         val overlay = overlayClips.firstOrNull { it.id == id } ?: return
+        selectedTextLayerId = null
         selectedOverlayId = id
         selectedClipIndex = -1
+        updatePreviewTextOverlay()
         clipHandlesVisible = false
         timelinePlayheadMs = overlay.timelineStartMs
         loadOverlayControls()
