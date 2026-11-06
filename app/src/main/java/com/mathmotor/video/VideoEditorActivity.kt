@@ -6324,12 +6324,12 @@ class VideoEditorActivity : Activity() {
             val frameWidth = overlay.measuredWidth + dp(8)
             val frameHeight = overlay.measuredHeight + dp(8)
             val angle = Math.toRadians(overlay.rotation.toDouble())
-            val rotatedBoundsWidth = kotlin.math.abs(frameWidth * kotlin.math.cos(angle)) +
-                kotlin.math.abs(frameHeight * kotlin.math.sin(angle))
-            val rotatedBoundsHeight = kotlin.math.abs(frameHeight * kotlin.math.cos(angle)) +
-                kotlin.math.abs(frameWidth * kotlin.math.sin(angle))
-            val maxTranslationX = ((videoWidth - rotatedBoundsWidth) / 2f).coerceAtLeast(0f)
-            val maxTranslationY = ((videoHeight - rotatedBoundsHeight) / 2f).coerceAtLeast(0f)
+            val cosine = kotlin.math.abs(kotlin.math.cos(angle)).toFloat()
+            val sine = kotlin.math.abs(kotlin.math.sin(angle)).toFloat()
+            val rotatedBoundsWidth = frameWidth * cosine + frameHeight * sine
+            val rotatedBoundsHeight = frameHeight * cosine + frameWidth * sine
+            val maxTranslationX = ((videoWidth.toFloat() - rotatedBoundsWidth) / 2f).coerceAtLeast(0f)
+            val maxTranslationY = ((videoHeight.toFloat() - rotatedBoundsHeight) / 2f).coerceAtLeast(0f)
             val requestedTranslationX =
                 PreviewCanvasMath.screenTranslationForFraction(layer.xFraction, videoWidth.toFloat()) +
                     animationState.offsetXFraction * videoWidth
