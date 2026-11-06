@@ -6304,19 +6304,40 @@ class VideoEditorActivity : Activity() {
             params.leftMargin = 0
             params.rightMargin = 0
             overlay.layoutParams = params
-            val videoWidth = previewCanvas.width.coerceAtLeast(dp(100))
-            val videoHeight = previewCanvas.height.coerceAtLeast(dp(100))
-            overlay.maxWidth = (videoWidth - dp(16)).coerceAtLeast(dp(80))
+            // Text geometry must use the real project-canvas bounds. A fixed dp
+            // minimum makes overlays wider/taller than the canvas when the editor
+            // workspace is compressed (for example, while the keyboard is open).
+            val videoWidth = previewCanvas.width.coerceAtLeast(1)
+            val videoHeight = previewCanvas.height.coerceAtLeast(1)
+            val availableTextWidth = (videoWidth - dp(16)).coerceAtLeast(1)
+            val availableTextHeight = (videoHeight - dp(8)).coerceAtLeast(1)
+            overlay.maxWidth = availableTextWidth
+            overlay.minWidth = minOf(dp(48), availableTextWidth)
+            overlay.minimumHeight = minOf(dp(44), availableTextHeight)
             overlay.measure(
-                View.MeasureSpec.makeMeasureSpec(videoWidth, View.MeasureSpec.AT_MOST),
-                View.MeasureSpec.makeMeasureSpec(videoHeight, View.MeasureSpec.AT_MOST)
+                View.MeasureSpec.makeMeasureSpec(availableTextWidth, View.MeasureSpec.AT_MOST),
+                View.MeasureSpec.makeMeasureSpec(availableTextHeight, View.MeasureSpec.AT_MOST)
             )
-            overlay.translationX =
+
+            // Keep the complete selection chrome inside the project canvas. This
+            // matters for short previews and for layers that have been rotated.
+            val frameWidth = overlay.measuredWidth + dp(8)
+            val frameHeight = overlay.measuredHeight + dp(8)
+            val angle = Math.toRadians(overlay.rotation.toDouble())
+            val rotatedBoundsWidth = kotlin.math.abs(frameWidth * kotlin.math.cos(angle)) +
+                kotlin.math.abs(frameHeight * kotlin.math.sin(angle))
+            val rotatedBoundsHeight = kotlin.math.abs(frameHeight * kotlin.math.cos(angle)) +
+                kotlin.math.abs(frameWidth * kotlin.math.sin(angle))
+            val maxTranslationX = ((videoWidth - rotatedBoundsWidth) / 2f).coerceAtLeast(0f)
+            val maxTranslationY = ((videoHeight - rotatedBoundsHeight) / 2f).coerceAtLeast(0f)
+            val requestedTranslationX =
                 PreviewCanvasMath.screenTranslationForFraction(layer.xFraction, videoWidth.toFloat()) +
                     animationState.offsetXFraction * videoWidth
-            overlay.translationY =
+            val requestedTranslationY =
                 PreviewCanvasMath.screenTranslationForFraction(layer.yFraction, videoHeight.toFloat()) +
                     animationState.offsetYFraction * videoHeight
+            overlay.translationX = requestedTranslationX.coerceIn(-maxTranslationX, maxTranslationX)
+            overlay.translationY = requestedTranslationY.coerceIn(-maxTranslationY, maxTranslationY)
             overlay.bringToFront()
         }
 
