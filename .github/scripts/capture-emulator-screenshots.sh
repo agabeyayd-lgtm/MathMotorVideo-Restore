@@ -661,40 +661,60 @@ if ! take_screen emulator-screenshots/editor-overlay-after-drag.png; then
 fi
 after_overlay="$(magenta_center emulator-screenshots/editor-overlay-after-drag.png)"
 read -r after_x after_y after_pixels <<< "$after_overlay"
-# The selected visual layer must be clipped by the actual green video canvas,
-# not merely constrained by the outer dark stage.
-python3 - emulator-screenshots/editor-overlay-after-drag.png <<'PY'
+# The selected visual layer must be clipped to the actual project-canvas
+# rectangle measured in the Activity, not inferred from unrelated green UI pixels.
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTest:I \
+  > emulator-screenshots/preview-canvas-logcat-after-drag.txt 2>&1 || true
+python3 - emulator-screenshots/preview-canvas-logcat-after-drag.txt emulator-screenshots/editor-overlay-after-drag.png <<'PY'
 from PIL import Image
+import re
 import sys
 
-image = Image.open(sys.argv[1]).convert("RGB")
-green = []
+log_path, screenshot_path = sys.argv[1:]
+matches = [
+    line for line in open(log_path, errors="replace")
+    if "PREVIEW_CANVAS_BOUNDS" in line
+]
+if not matches:
+    raise SystemExit("Measured preview canvas bounds were not logged after the overlay drag.")
+match = re.search(
+    r"stage=(\d+)x(\d+) canvas=(\d+)x(\d+) "
+    r"offset=(\d+),(\d+) origin=(-?\d+),(-?\d+) aspect=([0-9.]+)",
+    matches[-1],
+)
+if not match:
+    raise SystemExit(f"Malformed measured canvas bounds: {matches[-1]}")
+(
+    stage_w, stage_h, canvas_w, canvas_h,
+    offset_x, offset_y, origin_x, origin_y
+) = map(int, match.groups()[:8])
+canvas_left = origin_x + offset_x
+canvas_top = origin_y + offset_y
+canvas_right = canvas_left + canvas_w - 1
+canvas_bottom = canvas_top + canvas_h - 1
+
+image = Image.open(screenshot_path).convert("RGB")
 magenta = []
 for y in range(image.height):
     for x in range(image.width):
-        red, green_channel, blue = image.getpixel((x, y))
-        if green_channel > 200 and red < 80 and blue < 80:
-            green.append((x, y))
-        if red > 180 and blue > 180 and green_channel < 110:
+        red, green, blue = image.getpixel((x, y))
+        if red > 180 and blue > 180 and green < 110:
             magenta.append((x, y))
-if len(green) < 1000 or len(magenta) < 30:
-    raise SystemExit("Could not identify both the green project canvas and magenta overlay")
-left = min(x for x, _ in green)
-top = min(y for _, y in green)
-right = max(x for x, _ in green)
-bottom = max(y for _, y in green)
+if len(magenta) < 30:
+    raise SystemExit("Paused overlay pixels were not visible after direct drag.")
 outside = [
     (x, y) for x, y in magenta
-    if x < left or x > right or y < top or y > bottom
+    if x < canvas_left or x > canvas_right or y < canvas_top or y > canvas_bottom
 ]
 if outside:
     raise SystemExit(
-        f"Overlay pixels escaped the video canvas: canvas=({left},{top})-({right},{bottom}), "
+        "Overlay pixels escaped the actual project canvas: "
+        f"canvas=({canvas_left},{canvas_top})-({canvas_right},{canvas_bottom}), "
         f"outside_count={len(outside)}"
     )
 print(
-    "PASS: every visible overlay pixel is clipped to the video canvas "
-    f"({left},{top})-({right},{bottom})"
+    "PASS: every visible overlay pixel is clipped to the measured project canvas "
+    f"({canvas_left},{canvas_top})-({canvas_right},{canvas_bottom})"
 )
 PY
 if [ "$((after_x - before_x))" -lt 12 ] || [ "$((after_x - before_x))" -gt 34 ] ||
