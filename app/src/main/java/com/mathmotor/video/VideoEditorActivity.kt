@@ -2179,6 +2179,31 @@ class VideoEditorActivity : Activity() {
         )
     }
 
+    /**
+     * A hidden panel changes the height of the root's wrap-content bottom sheet.
+     * Wait for the next completed layout pass before recording geometry; reading
+     * bounds inside the animation end callback can capture the previous frame.
+     */
+    private fun logEditorPanelGeometryAfterLayout(state: String) {
+        if (!timelineSyncTestEnabled ||
+            !::previewFrame.isInitialized ||
+            !::editorTimelineCard.isInitialized
+        ) return
+        val observer = previewFrame.viewTreeObserver
+        val listener = object : android.view.ViewTreeObserver.OnPreDrawListener {
+            override fun onPreDraw(): Boolean {
+                if (previewFrame.viewTreeObserver.isAlive) {
+                    previewFrame.viewTreeObserver.removeOnPreDrawListener(this)
+                }
+                previewFrame.post { logEditorPanelGeometry(state) }
+                return true
+            }
+        }
+        observer.addOnPreDrawListener(listener)
+        previewFrame.requestLayout()
+        (previewFrame.parent as? View)?.requestLayout()
+    }
+
     private fun installResponsiveEditorLayout(
         root: LinearLayout,
         previewFrame: FrameLayout,
@@ -2680,13 +2705,17 @@ class VideoEditorActivity : Activity() {
                         editorPanelScroll.visibility = View.GONE
                         editorPanelScroll.translationY = 0f
                         editorPanelScroll.alpha = 1f
-                        logEditorPanelGeometry("clip-tool-strip")
+                        editorPanelScroll.requestLayout()
+                        (editorPanelScroll.parent as? View)?.requestLayout()
+                        logEditorPanelGeometryAfterLayout("clip-tool-strip")
                     }
                 }
                 .start()
         } else {
             editorPanelScroll.visibility = View.GONE
-            logEditorPanelGeometry("clip-tool-strip")
+            editorPanelScroll.requestLayout()
+            (editorPanelScroll.parent as? View)?.requestLayout()
+            logEditorPanelGeometryAfterLayout("clip-tool-strip")
         }
         val focused = currentFocus
         val keyboard = getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
