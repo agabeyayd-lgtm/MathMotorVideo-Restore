@@ -839,3 +839,11 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Added a direct parity regression: for fractions from 0 to 1 (including safe inset-like positions), the normalized Media3 export anchor must equal the corresponding Android preview translation scaled by `2 / canvasExtent`, with the Y-axis inversion explicitly accounted for. Source commit: `ee52e27`; its PR-triggered test run is pending.
 
 - SOURCE-aspect timing follow-up: the source ratio is first learned from the decoded thumbnail. If the PlayerView size callback happened before that decode, the inner project frame could stay on the 9:16 fallback for a landscape/square source. The first non-default aspect discovery now also refreshes the SOURCE canvas (custom 9:16/4:5/1:1/16:9 presets remain fixed). Source commit: `b9efe23`; build and emulator checks are pending.
+
+
+## Direct preview tap selection — 2026-11-06
+
+- Text overlay views now select their matching text track when tapped, even when direct text dragging is not currently enabled. Selecting a text item opens its contextual text tools; when text editing is enabled, the existing touch handler continues to support direct drag/pinch.
+- Paused image/video overlay views are clickable. Tapping one selects its timeline layer and restores its overlay tool dock and gesture surface. A tap on the already-selected layer also reopens the overlay tools after the user has returned to the main dock.
+- Extended the emulator smoke sequence to exit the overlay dock, tap the unselected visible magenta layer, and assert that the overlay tool dock plus direct-canvas gesture surface return before drag/clipping checks.
+- Source commits: `c4cedb0` (canvas tap handlers), `f71e376` (reopen tool strip for a repeated tap), `167e67e` (emulator tap-to-select check). CI for this branch head is pending.
