@@ -5773,6 +5773,7 @@ class VideoEditorActivity : Activity() {
     private fun enterAudioTools() {
         if (!::editorDock.isInitialized || !::editorPanelScroll.isInitialized) return
         selectedTextLayerId = null
+        selectedOverlayId = null
         updatePreviewTextOverlay()
         clipToolsMode = true
         activeClipTool = null
