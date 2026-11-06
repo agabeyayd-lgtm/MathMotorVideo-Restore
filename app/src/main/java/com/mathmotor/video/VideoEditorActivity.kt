@@ -5934,7 +5934,7 @@ class VideoEditorActivity : Activity() {
         isClickable = true
         setOnClickListener {
             val layerId = tag as? Long ?: return@setOnClickListener
-            if (selectedTextLayerId != layerId) selectTextLayer(layerId)
+            selectTextLayer(layerId)
         }
         installPreviewTextTouch(this)
     }
@@ -8493,7 +8493,7 @@ class VideoEditorActivity : Activity() {
                     contentDescription = "Önizlemede bindirme katmanını seç"
                     setOnClickListener {
                         val layerId = tag as? Long ?: return@setOnClickListener
-                        if (selectedOverlayId != layerId) selectOverlay(layerId)
+                        selectOverlay(layerId)
                     }
                     visibility = View.INVISIBLE
                 }.also { view ->
