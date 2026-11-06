@@ -1036,3 +1036,10 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - This exposed a second real layout issue: the fixed 220dp timeline card and expanded tool panel competed with the preview after IME dismissal. The timeline is now compacted to 132dp while any second-level editor panel is open, and restored to 220dp when that panel closes. Timeline rows remain present and vertically scrollable; the preview receives the released height.
 - The keyboard-open mode continues to temporarily hide the timeline while the IME is visible, restoring the compact timeline when the keyboard closes.
 - Fix commit: `d754573096ce9e6a57963115fc85ed0cd2caec29`. Fresh build and emulator verification are pending. Do not mark text editing layout complete until the post-keyboard preview and text-selection frame checks pass. No version bump or APK release.
+
+
+### Main video canvas drag coordinate consistency — 2026-11-06
+
+- Emulator run #1021 reached the main-video transform gesture but measured only 27.8x16.7 project-canvas pixels from a requested 40x24 px drag. Build and code verification passed; the emulator interaction remained red.
+- The main-video handler mixed raw screen coordinates for one-finger movement with local view coordinates for pinch movement and pointer handoff. Overlay transforms already use the gesture surface's local coordinates. The video handler now follows the same single local coordinate space for down, move and finger handoff, normalized against the project canvas dimensions. Diagnostics record both local and raw coordinates.
+- Fix commit: `edad968a8a0056611dc49c7faeac2770d10e5154`. A fresh build and emulator run must verify the requested 40x24 px drag and reverse restoration before this item is complete. No version bump or APK release.
