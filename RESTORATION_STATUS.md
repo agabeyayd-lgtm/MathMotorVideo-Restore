@@ -1019,3 +1019,4 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Contextual editor panels now participate in the root vertical workspace layout instead of floating as a bottom overlay. Opening text tools reserves measured space above the dock, so the timeline and its touch targets are not covered.
 - The dock remains in the same layout flow; fullscreen preview hides/restores it through the root child visibility cycle.
 - Responsive keyboard handling continues to resize the preview workspace and fit the project canvas to the available stage; emulator verification is pending.
+- Panel geometry assertion was corrected: opening a detail panel is expected to move the unchanged-size timeline upward by the exact height removed from the preview; closing the panel must restore both. A fixed timeline Y-coordinate was an invalid test expectation, not an app regression.
