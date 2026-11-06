@@ -865,3 +865,10 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - The TextView and its white selection outline render the same rotation; `buildTimedTextOverlay()` passes that saved angle into Media3's export overlay settings.
 - Updated the text panel and gesture status copy to mention rotate support. Added pure math tests for wrap-around and canonical angle normalization.
 - Source commits: `bc97359` (rotation math), `5b7d7b7` (unit cases), `b1cf8c6` (text model/gesture/preview/export/persistence), `a837f6f` (UI guidance). Build and emulator verification pending.
+
+
+## Text canvas interaction smoke and visual-panel return — 2026-11-06
+
+- Text and image/video overlay detail panels now use one contextual return helper: from the global editor tab it closes the panel back to the global dock; from a selected visual layer's tool strip it returns to that layer's one-row tools.
+- The emulator workflow now taps the global Metin tab, creates a text layer, enters `CanvasSmoke`, and requires both the visible preview TextView and `Seçili metin katmanı sınırı` accessibility bounds. It closes the panel, taps the text itself in the preview, requires the `Düzenle`/`Sil` text tool strip and selection frame to return, then deletes the smoke layer before timeline alignment/scrubbing tests.
+- Source commits: `dbe3460` (return flow), `af66df5` (text selection UI smoke). Latest CI pending.
