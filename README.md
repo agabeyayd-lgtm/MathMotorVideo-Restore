@@ -939,3 +939,10 @@ The outer timeline workspace remains a stable height as video, text, music, and 
 - Emulator runs #1027–#1029 exposed a real regression: opening a detail panel reduced the timeline card from 220dp to 132dp in both the panel-mode controller and timeline refresh path. The emulator measured 577px before opening and 346px afterward.
 - Source commit `212db75d4130cc5bf253edf9fde8845c64b4b50e` removes that panel-only shrink. The timeline viewport stays at 220dp while a detail panel is open; keyboard mode remains 88dp.
 - Verification is pending on this source commit. Do not mark the emulator layout check green until the timeline remains the same size, the preview gives up the panel height, and close/restore geometry passes.
+
+
+## Text overlay canvas-bounds correction — 2026-11-06
+
+- A review of emulator run #1018 showed the text-detail preview could collapse to roughly 90×161px while text sizing still forced a 100dp minimum canvas and 80dp minimum text width. That allowed text and its selection frame to exceed the actual project canvas and be clipped.
+- Source commit `7d7c3f80377ee84da074770fc6736c78c5d798d7` now measures text against the actual canvas dimensions, limits minimum and maximum text size to the available canvas, and clamps the rotated selection bounds inside the canvas.
+- Fresh emulator verification is pending. The white text-selection frame must be detected in the actual project canvas, and text dragging plus the timeline geometry check must pass before this is marked complete.
