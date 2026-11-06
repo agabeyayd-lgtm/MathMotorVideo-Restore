@@ -1169,6 +1169,32 @@ if ! take_screen emulator-screenshots/editor-panel-closed.png; then
 fi
 dump_hierarchy editor-panel-closed.xml emulator-screenshots/editor-panel-closed.xml || true
 
+# Both audio fixture imports run on background metadata threads. Do not start
+# hit-target interaction until the exact production importer confirms both.
+audio_fixtures_ready=false
+for attempt in $(seq 1 25); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I \
+    > emulator-screenshots/audio-fixture-import-logcat.txt 2>&1 || true
+  if grep -Fq "EDITOR_SMOKE_AUDIO_REJECTED" emulator-screenshots/audio-fixture-import-logcat.txt; then
+    echo "At least one deterministic audio fixture was rejected by the production importer."
+    collect_capture_diagnostics audio-fixture-import-rejected
+    exit 75
+  fi
+  if grep -Fq "EDITOR_SMOKE_AUDIO_ADDED kind=music" emulator-screenshots/audio-fixture-import-logcat.txt \
+      && grep -Fq "EDITOR_SMOKE_AUDIO_ADDED kind=sound" emulator-screenshots/audio-fixture-import-logcat.txt; then
+    audio_fixtures_ready=true
+    break
+  fi
+  echo "Waiting for production audio import to finish (attempt $attempt/25)"
+  sleep 1
+done
+if [ "$audio_fixtures_ready" != true ]; then
+  echo "Music and sound-effect fixtures were not both added before timeline touch tests."
+  collect_capture_diagnostics audio-fixture-import-timeout
+  exit 76
+fi
+echo "PASS: both music and sound-effect fixtures reached the production timeline importer."
+
 echo "Step 8c/12: drag the music and sound-effect edge targets independently"
 run_audio_edge_smoke() {
   local kind="$1" edge="$2" description="$3" direction="$4"
