@@ -3260,15 +3260,28 @@ class VideoEditorActivity : Activity() {
 
             fun addEdge(isStart: Boolean, callback: ((Long) -> Unit)?) {
                 if (callback == null) return
-                val edgeWidth = minOf(dp(18), (width / 3).coerceAtLeast(dp(7)))
-                val edge = TextView(this).apply {
-                    text = if (isStart) "‹" else "›"
-                    textSize = 12f
-                    typeface = Typeface.DEFAULT_BOLD
-                    gravity = Gravity.CENTER
-                    setTextColor(Color.WHITE)
-                    setBackgroundColor(Color.rgb(23, 72, 103))
+                // Bindirme uses the same transparent edge hit target as text,
+                // music and sound effects. Keep the visible grip narrow so the
+                // larger target improves touch accuracy without adding clutter.
+                val edgeWidth = timelineEdgeTouchWidth(width)
+                val edge = FrameLayout(this).apply {
+                    setBackgroundColor(Color.TRANSPARENT)
+                    elevation = dp(TouchPriority.TIMELINE_EDGE_HANDLE_DP).toFloat()
                     contentDescription = if (isStart) "Katman başlangıcını kırp" else "Katman bitişini kırp"
+                    isClickable = true
+                    isFocusable = true
+                    addView(View(this@VideoEditorActivity).apply {
+                        background = android.graphics.drawable.GradientDrawable().apply {
+                            setColor(Color.rgb(0, 164, 146))
+                            cornerRadius = dp(3).toFloat()
+                        }
+                        isClickable = false
+                        isFocusable = false
+                    }, FrameLayout.LayoutParams(
+                        dp(5), dp(24),
+                        Gravity.CENTER_VERTICAL or if (isStart) Gravity.START else Gravity.END
+                    ))
+                    setOnClickListener { /* The transparent edge target is primarily a drag control. */ }
                 }
                 var downX = 0f
                 var moved = false
@@ -3284,7 +3297,6 @@ class VideoEditorActivity : Activity() {
                         MotionEvent.ACTION_MOVE -> {
                             val dx = event.rawX - downX
                             if (kotlin.math.abs(dx) > android.view.ViewConfiguration.get(this).scaledTouchSlop) moved = true
-                            val delta = TimelineScaleMath.millisecondsForPixels(dx, timelinePixelsPerSecond())
                             val bound = if (isStart) safeDuration - minOf(500L, safeDuration) else totalMs - safeStart - safeDuration
                             view.translationX = dx.coerceIn(
                                 (if (isStart) -safeStart else -safeDuration + minOf(500L, safeDuration)) / 1000f * timelinePixelsPerSecond(),
@@ -3297,6 +3309,7 @@ class VideoEditorActivity : Activity() {
                             view.translationX = 0f
                             view.parent?.requestDisallowInterceptTouchEvent(false)
                             callback(if (moved) delta else 0L)
+                            view.performClick()
                             refreshTimelineTracks()
                             true
                         }
