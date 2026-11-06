@@ -70,6 +70,23 @@ class PreviewCanvasMathTest {
     }
 
     @Test
+    fun screenPreviewAndMedia3ExportRepresentTheSameNormalizedPoint() {
+        val fractions = listOf(0f, 0.03f, 0.25f, 0.5f, 0.75f, 0.97f, 1f)
+        val width = 1012f
+        val height = 1800f
+
+        fractions.forEach { fraction ->
+            val screenX = PreviewCanvasMath.screenTranslationForFraction(fraction, width)
+            val screenY = PreviewCanvasMath.screenTranslationForFraction(fraction, height)
+            val exportX = PreviewCanvasMath.media3AnchorForFraction(fraction)
+            val exportY = PreviewCanvasMath.media3AnchorForFraction(fraction, invertY = true)
+
+            assertEquals(exportX, screenX * 2f / width, 0.000001f)
+            assertEquals(exportY, -screenY * 2f / height, 0.000001f)
+        }
+    }
+
+    @Test
     fun nonFiniteCoordinateFractionsUseCanvasCenter() {
         assertEquals(0f, PreviewCanvasMath.screenTranslationForFraction(Float.NaN, 500f), 0f)
         assertEquals(0f, PreviewCanvasMath.screenTranslationForFraction(0.5f, Float.NaN), 0f)
