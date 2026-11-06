@@ -949,7 +949,92 @@ if ! take_screen emulator-screenshots/editor-panel-trim.png; then
   collect_capture_diagnostics editor-panel-trim-capture-failure
   exit 6
 fi
-dump_hierarchy editor-panel-trim.xml emulator-screenshots/editor-panel-trim.xml || true
+if ! dump_hierarchy editor-panel-trim.xml emulator-screenshots/editor-panel-trim.xml; then
+  echo "Could not capture the selected video transform surface before the drag test."
+  collect_capture_diagnostics video-canvas-transform-hierarchy-unavailable
+  exit 63
+fi
+
+# With the clip detail tool active, the main-video gesture surface must receive
+# the canvas drag above paused media and text/overlay content. Verify its frame
+# moves, then reverse the gesture so later export checks use the original transform.
+clip_canvas_center="$(python3 - emulator-screenshots/editor-panel-trim.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("content-desc") != "Seçili video klibi sınırı":
+        continue
+    match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+    if match:
+        x1, y1, x2, y2 = map(int, match.groups())
+        print((x1 + x2) // 2, (y1 + y2) // 2)
+        break
+PY
+)"
+if [ -z "$clip_canvas_center" ]; then
+  echo "Selected video clip did not expose its preview transform bounds."
+  collect_capture_diagnostics video-canvas-transform-target-missing
+  exit 64
+fi
+read -r clip_before_x clip_before_y <<< "$clip_canvas_center"
+timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$clip_before_x" "$clip_before_y" "$((clip_before_x + 22))" "$((clip_before_y + 14))" 500
+sleep 1
+if ! dump_hierarchy editor-panel-trim-after-drag.xml emulator-screenshots/editor-panel-trim-after-drag.xml; then
+  echo "Could not capture the video selection frame after its direct canvas drag."
+  collect_capture_diagnostics video-canvas-transform-after-hierarchy-unavailable
+  exit 65
+fi
+clip_after_center="$(python3 - emulator-screenshots/editor-panel-trim-after-drag.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("content-desc") != "Seçili video klibi sınırı":
+        continue
+    match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+    if match:
+        x1, y1, x2, y2 = map(int, match.groups())
+        print((x1 + x2) // 2, (y1 + y2) // 2)
+        break
+PY
+)"
+read -r clip_after_x clip_after_y <<< "$clip_after_center"
+if [ "$((clip_after_x - clip_before_x))" -lt 12 ] || [ "$((clip_after_x - clip_before_x))" -gt 34 ] ||
+   [ "$((clip_after_y - clip_before_y))" -lt 6 ] || [ "$((clip_after_y - clip_before_y))" -gt 26 ]; then
+  echo "Direct video canvas drag did not move the selection frame: before=($clip_before_x,$clip_before_y), after=($clip_after_x,$clip_after_y)."
+  collect_capture_diagnostics video-canvas-transform-not-applied
+  exit 66
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$clip_after_x" "$clip_after_y" "$clip_before_x" "$clip_before_y" 500
+sleep 1
+if ! dump_hierarchy editor-panel-trim-restored.xml emulator-screenshots/editor-panel-trim-restored.xml; then
+  echo "Could not verify restoration of the video transform after the reverse gesture."
+  collect_capture_diagnostics video-canvas-transform-restore-hierarchy-unavailable
+  exit 67
+fi
+python3 - emulator-screenshots/editor-panel-trim-restored.xml "$clip_before_x" "$clip_before_y" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+expected_x, expected_y = map(int, sys.argv[2:4])
+for node in root.iter("node"):
+    if node.attrib.get("content-desc") != "Seçili video klibi sınırı":
+        continue
+    match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+    if match:
+        x1, y1, x2, y2 = map(int, match.groups())
+        actual_x, actual_y = (x1 + x2) // 2, (y1 + y2) // 2
+        if abs(actual_x - expected_x) > 6 or abs(actual_y - expected_y) > 6:
+            raise SystemExit(f"Reverse gesture did not restore the video transform: expected=({expected_x},{expected_y}), actual=({actual_x},{actual_y})")
+        print(f"PASS: direct video drag moved the preview frame and the reverse gesture restored it at ({actual_x},{actual_y})")
+        break
+else:
+    raise SystemExit("Selected video frame disappeared after the reverse transform gesture.")
+PY
 
 trim_back_coords="$(find_bottom_tool emulator-screenshots/editor-panel-trim.xml "Araçlara dön" || true)"
 if [ -z "$trim_back_coords" ]; then
