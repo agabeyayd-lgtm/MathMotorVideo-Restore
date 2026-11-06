@@ -985,6 +985,119 @@ timeout -k 2s 8s adb -s emulator-5554 shell input tap $proje_coords
 sleep 1
 dump_hierarchy editor-export-closed.xml emulator-screenshots/editor-export-closed.xml || true
 echo "PASS: visible MP4 button tap reached the export handler, started Transformer, saved an MP4 output, and closed the drawer."
+
+echo "Step 8c/12: add text, verify its canvas selection frame, and reselect it by tapping the preview"
+text_tab_coords="$(find_bottom_tool emulator-screenshots/editor-export-closed.xml "Metin" || true)"
+if [ -z "$text_tab_coords" ]; then
+  echo "Could not locate the Metin tab to verify direct text selection."
+  collect_capture_diagnostics text-canvas-tab-missing
+  exit 50
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_tab_coords
+sleep 1
+dump_hierarchy editor-text-panel.xml emulator-screenshots/editor-text-panel.xml || true
+new_text_coords="$(find_bottom_tool emulator-screenshots/editor-text-panel.xml "＋ Yeni" || true)"
+if [ -z "$new_text_coords" ]; then
+  echo "The Metin panel did not expose its Yeni text-layer action."
+  collect_capture_diagnostics text-canvas-add-action-missing
+  exit 51
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $new_text_coords
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 shell input text "CanvasSmoke"
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 shell input keyevent 4
+sleep 1
+if ! take_screen emulator-screenshots/editor-text-selected.png; then
+  collect_capture_diagnostics text-canvas-selection-capture-failure
+  exit 6
+fi
+dump_hierarchy editor-text-selected.xml emulator-screenshots/editor-text-selected.xml || true
+python3 - emulator-screenshots/editor-text-selected.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+selection = []
+text_nodes = []
+for node in root.iter("node"):
+    desc = node.attrib.get("content-desc", "")
+    value = node.attrib.get("text", "")
+    bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if bounds:
+        box = tuple(map(int, bounds.groups()))
+        if desc == "Seçili metin katmanı sınırı":
+            selection.append(box)
+        if value == "CanvasSmoke":
+            text_nodes.append(box)
+if not selection:
+    raise SystemExit("Selected text layer did not expose its white canvas selection frame.")
+if not text_nodes:
+    raise SystemExit("New text is missing from the visible preview accessibility tree.")
+print(f"PASS: selected text has a visible selection box {selection[-1]} and preview text bounds {text_nodes[-1]}")
+PY
+
+text_panel_back="$(find_bottom_tool emulator-screenshots/editor-text-selected.xml "Araçlara dön" || true)"
+if [ -z "$text_panel_back" ]; then
+  echo "Text detail panel did not expose its return-to-tools control."
+  collect_capture_diagnostics text-canvas-panel-back-missing
+  exit 52
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_panel_back
+sleep 1
+dump_hierarchy editor-text-panel-closed.xml emulator-screenshots/editor-text-panel-closed.xml || true
+text_preview_center="$(python3 - emulator-screenshots/editor-text-panel-closed.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("text") != "CanvasSmoke":
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        x1, y1, x2, y2 = map(int, match.groups())
+        print((x1 + x2) // 2, (y1 + y2) // 2)
+        break
+PY
+)"
+if [ -z "$text_preview_center" ]; then
+  echo "Could not locate the visible text layer after closing its settings panel."
+  collect_capture_diagnostics text-canvas-preview-hit-target-missing
+  exit 53
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_preview_center
+sleep 1
+if ! take_screen emulator-screenshots/editor-text-reselected.png; then
+  collect_capture_diagnostics text-canvas-reselection-capture-failure
+  exit 6
+fi
+dump_hierarchy editor-text-reselected.xml emulator-screenshots/editor-text-reselected.xml || true
+for text_tool in "Düzenle" "Sil"; do
+  if [ -z "$(find_bottom_tool emulator-screenshots/editor-text-reselected.xml "$text_tool" || true)" ]; then
+    echo "Tapping the text in the preview did not reopen its text tool strip ('$text_tool' missing)."
+    collect_capture_diagnostics text-canvas-tap-did-not-reopen-tools
+    exit 54
+  fi
+done
+if ! grep -q "Seçili metin katmanı sınırı" emulator-screenshots/editor-text-reselected.xml; then
+  echo "Tapping the preview text did not restore its canvas selection frame."
+  collect_capture_diagnostics text-canvas-tap-selection-frame-missing
+  exit 55
+fi
+echo "PASS: tapping text in the preview restores the text layer tool strip and white selection frame."
+text_delete_coords="$(find_bottom_tool emulator-screenshots/editor-text-reselected.xml "Sil" || true)"
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_delete_coords
+sleep 1
+text_main_back="$(find_bottom_tool emulator-screenshots/editor-text-reselected.xml "Ana araçlara dön" || true)"
+if [ -n "$text_main_back" ]; then
+  timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_main_back
+  sleep 1
+fi
+dump_hierarchy editor-text-cleanup.xml emulator-screenshots/editor-text-cleanup.xml || true
+
 echo "Step 9/12: align a thumbnail cell with the playhead and compare the rendered pixels"
 # HorizontalScrollView consumes ViewConfiguration.scaledTouchSlop before it
 # scrolls. Android reports integer-pixel view bounds and ADB gesture coordinates;
