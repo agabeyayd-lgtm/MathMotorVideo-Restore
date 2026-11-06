@@ -648,6 +648,45 @@ ys = [point[1] for point in points]
 print((min(xs) + max(xs)) // 2, (min(ys) + max(ys)) // 2, len(points))
 PY
 }
+
+# Leave the selected overlay tools, tap the visible layer itself, and require
+# the overlay-specific dock and gesture surface to reopen from that canvas tap.
+overlay_back_coords="$(find_bottom_tool emulator-screenshots/editor-window.xml "Ana araçlara dön" || true)"
+if [ -z "$overlay_back_coords" ]; then
+  echo "Could not find the overlay tools' return control before preview tap selection."
+  collect_capture_diagnostics overlay-tap-select-back-missing
+  exit 47
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $overlay_back_coords
+sleep 1
+dump_hierarchy editor-overlay-tools-closed.xml emulator-screenshots/editor-overlay-tools-closed.xml || true
+if ! take_screen emulator-screenshots/editor-overlay-unselected.png; then
+  collect_capture_diagnostics overlay-tap-select-target-capture-failure
+  exit 6
+fi
+overlay_target="$(magenta_center emulator-screenshots/editor-overlay-unselected.png)"
+read -r overlay_target_x overlay_target_y overlay_target_pixels <<< "$overlay_target"
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$overlay_target_x" "$overlay_target_y"
+sleep 2
+if ! take_screen emulator-screenshots/editor-overlay-reselected.png; then
+  collect_capture_diagnostics overlay-tap-select-result-capture-failure
+  exit 6
+fi
+dump_hierarchy editor-overlay-reselected.xml emulator-screenshots/editor-overlay-reselected.xml || true
+for overlay_tool in "Bindirme ekle" "Böl" "Birleştir" "Animasyonlar" "Sil"; do
+  if [ -z "$(find_bottom_tool emulator-screenshots/editor-overlay-reselected.xml "$overlay_tool" || true)" ]; then
+    echo "Tapping a visual layer did not reopen its contextual dock ('$overlay_tool' missing)."
+    collect_capture_diagnostics overlay-tap-select-did-not-reopen-tools
+    exit 48
+  fi
+done
+if ! grep -q "Bindirmeyi önizlemede tek parmakla taşı" emulator-screenshots/editor-overlay-reselected.xml; then
+  echo "Tapping the visual layer did not reactivate its direct-canvas gesture surface."
+  collect_capture_diagnostics overlay-tap-select-gesture-surface-missing
+  exit 49
+fi
+echo "PASS: tapping an unselected visual layer on the preview reopens its layer tools and gesture surface."
+cp emulator-screenshots/editor-overlay-reselected.png emulator-screenshots/editor-overlay-paused.png
 before_overlay="$(magenta_center emulator-screenshots/editor-overlay-paused.png)"
 read -r before_x before_y before_pixels <<< "$before_overlay"
 echo "Paused overlay rendered at ($before_x,$before_y) with $before_pixels magenta pixels."
