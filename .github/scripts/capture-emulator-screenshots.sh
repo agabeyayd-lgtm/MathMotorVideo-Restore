@@ -1947,12 +1947,14 @@ fi
 echo "Tapping the in-canvas text centre at $text_preview_center after confirming the keyboard-free full preview."
 timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_preview_center
 sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTest:I \
+  > emulator-screenshots/editor-text-reselected-canvas-logcat.txt 2>&1 || true
 if ! take_screen emulator-screenshots/editor-text-reselected.png; then
   collect_capture_diagnostics text-canvas-reselection-capture-failure
   exit 6
 fi
 assert_full_preview_canvas emulator-screenshots/editor-text-reselected.png "text preview reselection"
-text_reselected_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-reselected.png)" || {
+text_reselected_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-reselected.png emulator-screenshots/editor-text-reselected-canvas-logcat.txt)" || {
   echo "Tapping the preview text did not restore a complete canvas selection frame."
   collect_capture_diagnostics text-canvas-tap-selection-frame-missing
   exit 55
