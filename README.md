@@ -917,3 +917,8 @@ A text layer remains directly selectable on the project canvas after its setting
 - The dock remains in the same layout flow; fullscreen preview hides/restores it through the root child visibility cycle.
 - Responsive keyboard handling continues to resize the preview workspace and fit the project canvas to the available stage; emulator verification is pending.
 - Panel geometry assertion was corrected: opening a detail panel is expected to move the unchanged-size timeline upward by the exact height removed from the preview; closing the panel must restore both. A fixed timeline Y-coordinate was an invalid test expectation, not an app regression.
+
+
+### Canvas drag interaction
+
+Main-video one-finger transform gestures use the same local coordinate space as the preview's project canvas and overlay transform handlers. This keeps drag deltas independent of screen/window coordinate offsets and keeps pointer handoff consistent with pinch gestures. Verification for commit `edad968a8a0056611dc49c7faeac2770d10e5154` is pending.
