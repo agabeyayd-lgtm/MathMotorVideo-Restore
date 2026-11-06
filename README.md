@@ -853,3 +853,8 @@ The pixel-level emulator clipping check reads the Activity's measured absolute s
 ### Tap-to-select visual layers
 
 Editable text and image/video overlay previews now respond to direct canvas taps by selecting the corresponding timeline layer and opening its contextual tool dock. The emulator script closes the selected overlay dock, taps the visible overlay pixels, and asserts that the overlay dock and direct gesture surface reopen before it tests a drag.
+
+
+### Text-layer selection outline
+
+When a text/sticker layer is selected from the preview or timeline, a white selection outline is drawn around its actual measured preview bounds. The outline follows the same center position and animated scale as the text, and is clipped by the project canvas. Selecting a video or image/video overlay clears the text selection outline and switches the active transform target.
