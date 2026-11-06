@@ -764,20 +764,30 @@ try:
 except (OSError, ET.ParseError):
     raise SystemExit(1)
 
-target = sys.argv[2].casefold()
+target = " ".join(sys.argv[2].casefold().split())
 matches = []
 for node in root.iter("node"):
-    # Match the visible button text first. Only accept an exact content-desc
-    # fallback: substring matching would confuse "Araçlara dön" with the
-    # Geri button's description, "Ana araçlara dön".
-    visible_text = node.attrib.get("text", "").casefold()
-    content_desc = node.attrib.get("content-desc", "").casefold()
-    match_kind = 2 if target in visible_text else (1 if target == content_desc else 0)
+    # Prefer exact visible labels and real dock buttons. A substring-only
+    # search for "Metin" previously selected the timeline row "Metin ekle"
+    # instead of the bottom-dock Metin button, producing a false emulator
+    # failure after the export drawer closed.
+    visible_text = " ".join(node.attrib.get("text", "").casefold().split())
+    content_desc = " ".join(node.attrib.get("content-desc", "").casefold().split())
+    exact_text = visible_text == target
+    exact_desc = content_desc == target
+    partial_text = bool(target) and target in visible_text
+    if not (exact_text or exact_desc or partial_text):
+        continue
     bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
-    if match_kind and bounds:
-        x1, y1, x2, y2 = map(int, bounds.groups())
-        if x2 > x1 and y2 > y1:
-            matches.append((match_kind, y1, (x1 + x2) // 2, (y1 + y2) // 2))
+    if not bounds:
+        continue
+    x1, y1, x2, y2 = map(int, bounds.groups())
+    if x2 <= x1 or y2 <= y1:
+        continue
+    is_button = node.attrib.get("class") == "android.widget.Button"
+    is_clickable = node.attrib.get("clickable") == "true" and node.attrib.get("enabled") == "true"
+    score = (8 if exact_desc else 0) + (6 if exact_text else 0) + (3 if is_button else 0) + (1 if is_clickable else 0)
+    matches.append((score, y1, (x1 + x2) // 2, (y1 + y2) // 2))
 if not matches:
     raise SystemExit(1)
 _, _, x, y = max(matches)
