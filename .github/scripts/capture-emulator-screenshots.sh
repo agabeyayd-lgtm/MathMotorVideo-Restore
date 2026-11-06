@@ -1376,6 +1376,15 @@ PY
     collect_capture_diagnostics "overlay-$edge-target-undersized"
     exit 83
   fi
+  if [ "$edge" = "end" ]; then
+    timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I > emulator-screenshots/overlay-end-target-logcat.txt 2>&1 || true
+    if ! grep -Fq "OVERLAY_EDGE_TARGET edge=end" emulator-screenshots/overlay-end-target-logcat.txt ||
+       ! grep -F "OVERLAY_EDGE_TARGET edge=end" emulator-screenshots/overlay-end-target-logcat.txt | tail -n 1 | grep -Fq "gestureExclusion=true"; then
+      echo "The trailing trim handle did not register its Android gesture-navigation exclusion."
+      collect_capture_diagnostics overlay-end-gesture-exclusion-missing
+      exit 87
+    fi
+  fi
   delta=42
   if [ "$direction" = "left" ]; then delta=-42; fi
   echo "Dragging $description from ($cx,$cy) by ${delta}px; hit area=${target_w}x${target_h}px."
