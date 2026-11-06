@@ -70,6 +70,23 @@ class PreviewCanvasMathTest {
     }
 
     @Test
+    fun rotationDeltaUsesShortestDirectionAcrossZeroDegrees() {
+        assertEquals(20f, PreviewCanvasMath.rotationDeltaDegrees(170f, -170f), 0f)
+        assertEquals(-20f, PreviewCanvasMath.rotationDeltaDegrees(-170f, 170f), 0f)
+        assertEquals(90f, PreviewCanvasMath.rotationDeltaDegrees(10f, 100f), 0f)
+        assertEquals(-90f, PreviewCanvasMath.rotationDeltaDegrees(100f, 10f), 0f)
+    }
+
+    @Test
+    fun rotationNormalizationKeepsFiniteCanonicalAngle() {
+        assertEquals(0f, PreviewCanvasMath.normalizeRotationDegrees(360f), 0f)
+        assertEquals(-90f, PreviewCanvasMath.normalizeRotationDegrees(270f), 0f)
+        assertEquals(90f, PreviewCanvasMath.normalizeRotationDegrees(-270f), 0f)
+        assertEquals(0f, PreviewCanvasMath.normalizeRotationDegrees(Float.NaN), 0f)
+        assertEquals(0f, PreviewCanvasMath.normalizeRotationDegrees(Float.POSITIVE_INFINITY), 0f)
+    }
+
+    @Test
     fun screenPreviewAndMedia3ExportRepresentTheSameNormalizedPoint() {
         val fractions = listOf(0f, 0.03f, 0.25f, 0.5f, 0.75f, 0.97f, 1f)
         val width = 1012f
