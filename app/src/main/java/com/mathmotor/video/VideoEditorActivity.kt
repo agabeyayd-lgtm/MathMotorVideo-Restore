@@ -2233,21 +2233,8 @@ class VideoEditorActivity : Activity() {
                 dp(if (imeVisible) 4 else 8) + insetRight,
                 dp(if (imeVisible) 2 else 4) + maxOf(insetBottom, keyboardBottom)
             )
-            // The overlay is outside the padded root, so mirror the safe bottom
-            // inset explicitly. When adjustResize already moved the viewport
-            // above the IME, no second keyboard offset is applied.
-            val sheetParams = bottomSheet.layoutParams as? FrameLayout.LayoutParams
-            if (sheetParams != null) {
-                val safeBottom = when {
-                    imeVisible && !resizedForIme -> dp(2) + maxOf(insetBottom, imeInsetBottom)
-                    imeVisible -> dp(2) + insetBottom
-                    else -> dp(4) + insetBottom
-                }
-                if (sheetParams.bottomMargin != safeBottom) {
-                    sheetParams.bottomMargin = safeBottom
-                    bottomSheet.layoutParams = sheetParams
-                }
-            }
+            // bottomSheet is a child of the vertical root, not a FrameLayout
+            // overlay. Root padding is therefore the single source of safe insets.
         }
 
         fun applyKeyboardMode(imeVisible: Boolean, viewportHeight: Int) {
@@ -2285,6 +2272,13 @@ class VideoEditorActivity : Activity() {
                         editorPanelScroll.layoutParams = panelParams
                     }
                 }
+
+                // The keyboard is a temporary text-entry mode. Keep the project
+                // canvas large enough to see and position text: collapse the timeline
+                // while the IME is visible, then restore it when text entry ends.
+                // Leaving the full multi-track timeline in place starves the flexible
+                // preview stage and can reduce a 9:16 canvas to a tiny thumbnail.
+                timelineCard.visibility = if (imeVisible) View.GONE else View.VISIBLE
 
                 // Hide decorative strips and fixed docks so the active tool gets
                 // the visible space left by the keyboard.
