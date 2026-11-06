@@ -2727,6 +2727,11 @@ class VideoEditorActivity : Activity() {
                 editorPanelScroll.layoutParams = params
             }
             editorPanelScroll.visibility = View.VISIBLE
+            // The detail sheet is an overlay above the timeline, but the fixed
+            // editor dock must remain the topmost control row. Without explicit
+            // z-order, timeline children can intercept taps on the sheet header.
+            editorPanelScroll.bringToFront()
+            if (::editorDockScroll.isInitialized) editorDockScroll.bringToFront()
             editorPanelScroll.animate().cancel()
             if (wasVisible) {
                 // Switching tools reuses the same sheet without replaying its entrance.
