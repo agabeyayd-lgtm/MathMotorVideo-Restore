@@ -1274,6 +1274,34 @@ run_audio_edge_smoke music end "Müzik bitiş tutamacı" left
 run_audio_edge_smoke sound start "Efekt başlangıç tutamacı" right
 run_audio_edge_smoke sound end "Efekt bitiş tutamacı" left
 
+# Each direct trim gesture intentionally opens that track's contextual tools.
+# Return to the global dock using a fresh hierarchy before tapping Proje; never
+# reuse the pre-audio dock coordinates after the selected audio panel has changed.
+if ! dump_hierarchy editor-audio-tools-final.xml emulator-screenshots/editor-audio-tools-final.xml; then
+  echo "Could not inspect the final audio contextual dock before returning to the main dock."
+  collect_capture_diagnostics audio-tools-final-hierarchy-unavailable
+  exit 77
+fi
+audio_main_back_coords="$(find_bottom_tool emulator-screenshots/editor-audio-tools-final.xml "Ana araçlara dön" || true)"
+if [ -z "$audio_main_back_coords" ]; then
+  echo "The final audio tool strip did not expose its return-to-main-dock control."
+  collect_capture_diagnostics audio-tools-main-back-missing
+  exit 78
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $audio_main_back_coords
+sleep 1
+if ! dump_hierarchy editor-main-dock-after-audio.xml emulator-screenshots/editor-main-dock-after-audio.xml; then
+  echo "Could not verify that the global editor dock returned after the audio trim tests."
+  collect_capture_diagnostics audio-tools-main-dock-restore-failed
+  exit 79
+fi
+if ! grep -q "Proje" emulator-screenshots/editor-main-dock-after-audio.xml; then
+  echo "The global Proje tab did not return after closing the audio contextual tools."
+  collect_capture_diagnostics audio-tools-main-dock-proje-missing
+  exit 80
+fi
+echo "PASS: returned from the audio contextual strip to the global editor dock."
+
 timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime -s EditorPanelLayoutTest:I > emulator-screenshots/editor-panel-layout-logcat.txt 2>&1 || true
 
 python3 - emulator-screenshots/editor-panel-layout-logcat.txt <<'PY'
@@ -1314,7 +1342,7 @@ print("PASS: preview and timeline stayed fixed while the one-row tool strip open
 PY
 
 echo "Step 8b/12: open the Proje panel and prove the MP4 button receives a real tap"
-proje_coords="$(find_bottom_tool emulator-screenshots/editor-panel-closed.xml "Proje" || true)"
+proje_coords="$(find_bottom_tool emulator-screenshots/editor-main-dock-after-audio.xml "Proje" || true)"
 if [ -z "$proje_coords" ]; then
   echo "Could not locate the Proje tab before testing MP4 export."
   collect_capture_diagnostics mp4-export-project-tab-missing
