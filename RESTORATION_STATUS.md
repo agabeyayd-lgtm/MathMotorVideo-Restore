@@ -854,3 +854,5 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Added a dedicated white selection frame around the selected text/sticker preview view. Its width/height are derived from the measured TextView bounds, and it follows the same normalized canvas translation and text-animation scale. It is clipped by the inner project canvas.
 - Text selection now clears the previous image/video overlay and clip gesture targets; selecting an image/video overlay clears the text outline; selecting an audio track clears the text selection outline. This prevents a stale transform target from remaining active after changing layer type.
 - Source commits: `59b4dc8` (text outline and selection-state clearing), `0e3676b` (gesture-target cleanup and initialization guard). CI for these source commits is still running.
+
+- Layer-type switch follow-up: entering the audio tool strip now clears stale text and image/video selection IDs before refreshing preview chrome. This keeps a previous visual selection outline/gesture target from remaining active while audio is selected. Source commit: `ec516ec`; its CI run is pending.
