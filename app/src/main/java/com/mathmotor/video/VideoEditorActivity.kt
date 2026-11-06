@@ -2160,6 +2160,23 @@ class VideoEditorActivity : Activity() {
         previewFrame.post { logEditorPanelGeometry("closed-initial") }
     }
 
+    /**
+     * Keep a useful preview visible while a second-level tool panel is open.
+     * The timeline remains present and vertically scrollable, but gives back
+     * enough height for the project canvas instead of starving it to a sliver.
+     */
+    private fun setTimelinePanelMode(panelOpen: Boolean) {
+        if (!::editorTimelineCard.isInitialized) return
+        val params = editorTimelineCard.layoutParams as? LinearLayout.LayoutParams ?: return
+        val targetHeight = dp(if (panelOpen) 132 else 220)
+        if (params.height != targetHeight) {
+            params.height = targetHeight
+            editorTimelineCard.layoutParams = params
+            editorTimelineCard.requestLayout()
+            (editorTimelineCard.parent as? View)?.requestLayout()
+        }
+    }
+
     private fun logEditorPanelGeometry(state: String) {
         if (!timelineSyncTestEnabled ||
             !::previewFrame.isInitialized ||
@@ -2682,6 +2699,7 @@ class VideoEditorActivity : Activity() {
         if (::editorPanelReturnButton.isInitialized) editorPanelReturnButton.visibility = View.GONE
         activeEditorPanel = null
         activeClipTool = null
+        setTimelinePanelMode(panelOpen = false)
         updateClipTransformTouchAvailability()
         updateOverlayTransformTouchAvailability()
         textOverlayEditingEnabled = false
@@ -2725,6 +2743,7 @@ class VideoEditorActivity : Activity() {
         clipToolsMode = false
         activeClipTool = null
         activeEditorPanel = null
+        setTimelinePanelMode(panelOpen = false)
         updateClipTransformTouchAvailability()
         updateOverlayTransformTouchAvailability()
         textOverlayEditingEnabled = false
@@ -2751,6 +2770,7 @@ class VideoEditorActivity : Activity() {
         // is open. Closing the sheet returns to the same track tools; it must not
         // silently replace them with the global editor tabs.
         activeEditorPanel = name
+        setTimelinePanelMode(panelOpen = true)
         if (::editorPanelReturnButton.isInitialized) {
             editorPanelReturnButton.visibility = if (name == "text") View.VISIBLE else View.GONE
         }
@@ -2847,6 +2867,7 @@ class VideoEditorActivity : Activity() {
         }
         if (::editorPanelReturnButton.isInitialized) editorPanelReturnButton.visibility = View.GONE
         activeEditorPanel = null
+        setTimelinePanelMode(panelOpen = false)
         updateClipTransformTouchAvailability()
         updateOverlayTransformTouchAvailability()
         textOverlayEditingEnabled = false
