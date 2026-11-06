@@ -90,7 +90,7 @@ class VideoEditorActivity : Activity() {
         const val ACTIVE_CANVAS_GESTURE_DP = 16
         const val SELECTION_CHROME_DP = 20
         const val TIMELINE_EDGE_HANDLE_DP = 12
-        const val TIMELINE_EDGE_TARGET_DP = 32
+        const val TIMELINE_EDGE_TARGET_DP = 48
     }
 
     private data class Clip(
