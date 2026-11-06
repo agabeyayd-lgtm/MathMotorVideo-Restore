@@ -238,6 +238,10 @@ class VideoEditorActivity : Activity() {
     private lateinit var previewCanvas: FrameLayout
     private lateinit var previewCanvasOutline: View
     private var lastPreviewCanvasMetrics: String? = null
+    // Preserve the normal preview scale so text/stickers shrink proportionally
+    // while detail panels or the keyboard compress the visible project canvas.
+    private var referencePreviewCanvasWidth = 0
+    private var referencePreviewCanvasHeight = 0
     private lateinit var previewFrameOverlay: ImageView
     // Paused editing uses decoded stills for the base clip and each active overlay.
     // CompositionPlayer remains the playback/export renderer.
@@ -2436,6 +2440,10 @@ class VideoEditorActivity : Activity() {
         val canvasBounds = PreviewCanvasMath.fit(stageWidth, stageHeight, aspect) ?: return
         val canvasWidth = canvasBounds.width
         val canvasHeight = canvasBounds.height
+        if (activeEditorPanel == null && !keyboardLayoutActive && !previewFocusMode) {
+            referencePreviewCanvasWidth = maxOf(referencePreviewCanvasWidth, canvasWidth)
+            referencePreviewCanvasHeight = maxOf(referencePreviewCanvasHeight, canvasHeight)
+        }
         val stageScreenLocation = IntArray(2)
         previewFrame.getLocationOnScreen(stageScreenLocation)
         val metrics = "stage=${stageWidth}x${stageHeight} canvas=${canvasWidth}x${canvasHeight} " +
@@ -6274,7 +6282,20 @@ class VideoEditorActivity : Activity() {
             visiblePositionCounts[layer.position] = positionIndex + 1
             overlay.tag = layer.id
             overlay.text = layer.text.trim()
-            overlay.setTextSize(layer.sizeSp.toFloat())
+            val videoWidth = previewCanvas.width.coerceAtLeast(1)
+            val videoHeight = previewCanvas.height.coerceAtLeast(1)
+            val referenceWidth = referencePreviewCanvasWidth.takeIf { it > 0 } ?: videoWidth
+            val referenceHeight = referencePreviewCanvasHeight.takeIf { it > 0 } ?: videoHeight
+            val previewScale = minOf(
+                videoWidth.toFloat() / referenceWidth.toFloat(),
+                videoHeight.toFloat() / referenceHeight.toFloat()
+            ).coerceIn(0.15f, 1f)
+            // Text is authored in project coordinates. Scale its screen rendering
+            // with the canvas so a short detail-panel preview does not crop it.
+            overlay.setTextSize(
+                android.util.TypedValue.COMPLEX_UNIT_SP,
+                (layer.sizeSp * previewScale).coerceAtLeast(6f)
+            )
             overlay.setTextColor(layer.colorPreset.colorInt)
             overlay.setTypeface(Typeface.DEFAULT, if (layer.isBold) Typeface.BOLD else Typeface.NORMAL)
             val animationState = TextAnimationMath.stateAt(
@@ -6292,12 +6313,17 @@ class VideoEditorActivity : Activity() {
                 overlay.background = null
                 overlay.setShadowLayer(4f, 0f, 2f, Color.BLACK)
             } else {
-                overlay.setPadding(dp(10), dp(6), dp(10), dp(6))
+                val horizontalInsetDp = (10f * previewScale).toInt().coerceAtLeast(1)
+                val verticalInsetDp = (6f * previewScale).toInt().coerceAtLeast(1)
+                overlay.setPadding(
+                    dp(horizontalInsetDp), dp(verticalInsetDp),
+                    dp(horizontalInsetDp), dp(verticalInsetDp)
+                )
                 overlay.background = android.graphics.drawable.GradientDrawable().apply {
                     setColor(Color.argb(210, 0, 0, 0))
-                    cornerRadius = dp(8).toFloat()
+                    cornerRadius = dp((8f * previewScale).toInt().coerceAtLeast(1)).toFloat()
                 }
-                overlay.setShadowLayer(2f, 1f, 1f, Color.BLACK)
+                overlay.setShadowLayer(2f * previewScale, previewScale, previewScale, Color.BLACK)
             }
             overlay.visibility = View.VISIBLE
             val params = overlay.layoutParams as? FrameLayout.LayoutParams ?: return@forEachIndexed
@@ -6310,8 +6336,6 @@ class VideoEditorActivity : Activity() {
             // Text geometry must use the real project-canvas bounds. A fixed dp
             // minimum makes overlays wider/taller than the canvas when the editor
             // workspace is compressed (for example, while the keyboard is open).
-            val videoWidth = previewCanvas.width.coerceAtLeast(1)
-            val videoHeight = previewCanvas.height.coerceAtLeast(1)
             val availableTextWidth = (videoWidth - dp(16)).coerceAtLeast(1)
             val availableTextHeight = (videoHeight - dp(8)).coerceAtLeast(1)
             overlay.maxWidth = availableTextWidth
