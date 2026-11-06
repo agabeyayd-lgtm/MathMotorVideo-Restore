@@ -889,3 +889,14 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Added a non-interactive white selection rectangle for the selected main-video clip. Its bounds follow the clip's stored scale, rotation and normalized translation in the inner project canvas, so the selection box visibly tracks the same transform as the preview image.
 - The frame is visible while a video clip is selected on the timeline (not only while its detail panel is open). It hides when selection moves to text, an image/video overlay or an audio track. The touch surface remains separately gated by the explicit video-edit tool panel.
 - Source commits: `a3b64cd` (clip frame geometry and update hooks), `d9901f8` (clear clip selection when switching to overlay/audio tools). CI pending.
+
+
+## Shared editor touch priority — 2026-11-06
+
+- Added a shared TouchPriority contract for preview hit layers: passive text at 4dp, active canvas gesture surfaces at 16dp, and non-interactive selection chrome at 20dp. Main-video and image/video-overlay transform surfaces now use the same active priority; visible text layers remain above paused media and rise to active priority only while direct text editing is enabled.
+- Standardized text/music/sound trim hit widths to a preferred 32dp (bounded by the track block) and brought all timeline trim handles to the same 12dp elevation. Main-video trim handles keep their existing wider 40dp target while sharing that elevation.
+- This is deliberate mode arbitration, not one global transparent overlay: only the active canvas tool receives canvas gestures, while timeline scrubbing/pinch and per-track body/edge gestures remain owned by their own interaction zones.
+- Source commit: 71d11c8.
+- Emulator run #952 passed canvas sizing, replacement filmstrip, main-video selection frame, overlay reselection and direct overlay drag/clipping. It then failed in the later text test because uiautomator dump timed out and did not create editor-text-selected.xml; this was a test-harness hierarchy-capture failure, not an overlay-drag failure.
+- Test harness follow-up commit eed391b retries compressed hierarchy dumps with a longer timeout, emits a dedicated diagnostic if XML is still missing, and adds a direct text-drag assertion that compares the preview TextView bounds before/after the gesture.
+- Runs #953 (source-policy verification) and #954 (updated emulator interaction smoke) plus build/verify runs #742 and #786 were pending at the time of this update. Do not mark cross-tool touch handling complete until the updated emulator run passes.
