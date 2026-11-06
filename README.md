@@ -869,3 +869,6 @@ The text and image/video overlay panels have an explicit return control that res
 
 
 During direct text editing, the accessibility `performClick()` issued at the end of a gesture is ignored by the layer-selection click handler. The active text tools therefore stay open after a drag, pinch or rotation; with direct editing disabled, an ordinary tap selects the layer and opens its contextual tools.
+
+
+The exact inner export rectangle is outlined with a thin turquoise guide in the editor workspace. It is drawn as a non-interactive sibling of the project canvas, so it remains visible to the user but is excluded from the MP4 render and does not intercept layer gestures.
