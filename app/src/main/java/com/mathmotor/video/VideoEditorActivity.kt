@@ -224,6 +224,7 @@ class VideoEditorActivity : Activity() {
     private lateinit var previewFrame: FrameLayout
     // The inner frame is the actual project canvas; the outer previewFrame is only the dark work stage.
     private lateinit var previewCanvas: FrameLayout
+    private lateinit var previewCanvasOutline: View
     private var lastPreviewCanvasMetrics: String? = null
     private lateinit var previewFrameOverlay: ImageView
     // Paused editing uses decoded stills for the base clip and each active overlay.
@@ -812,6 +813,23 @@ class VideoEditorActivity : Activity() {
                 if (::overlaySelectionFrame.isInitialized) updateOverlaySelectionChrome()
             }
         }
+        // A workspace-only outline makes the exact export canvas visible without
+        // becoming part of the rendered video or intercepting any layer gesture.
+        previewCanvasOutline = View(this).apply {
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.TRANSPARENT)
+                setStroke(dp(1), Color.rgb(57, 220, 190))
+            }
+            isClickable = false
+            isFocusable = false
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            contentDescription = null
+            elevation = dp(3).toFloat()
+        }
+        previewFrame.addView(
+            previewCanvasOutline,
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER)
+        )
         // The preview must use the full editor width; a fixed 180dp player
         // makes the central canvas look like a narrow phone-within-a-phone.
         previewCanvas.addView(
@@ -2336,6 +2354,17 @@ class VideoEditorActivity : Activity() {
             canvasParams.height = canvasHeight
             canvasParams.gravity = Gravity.CENTER
             previewCanvas.layoutParams = canvasParams
+        }
+
+        val outlineParams = previewCanvasOutline.layoutParams as? FrameLayout.LayoutParams
+            ?: FrameLayout.LayoutParams(canvasWidth, canvasHeight, Gravity.CENTER)
+        if (outlineParams.width != canvasWidth || outlineParams.height != canvasHeight ||
+            outlineParams.gravity != Gravity.CENTER
+        ) {
+            outlineParams.width = canvasWidth
+            outlineParams.height = canvasHeight
+            outlineParams.gravity = Gravity.CENTER
+            previewCanvasOutline.layoutParams = outlineParams
         }
 
         val playerParams = playerView.layoutParams as? FrameLayout.LayoutParams ?: return
