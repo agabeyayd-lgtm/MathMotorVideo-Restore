@@ -1822,12 +1822,29 @@ print(f"PASS: {label} kept the full portrait preview visible ({gw}x{gh}, ratio={
 PY
 }
 
-text_panel_back="$(find_bottom_tool emulator-screenshots/editor-text-panel.xml "Araçlara dön" || true)"
+# Entering text and dismissing the IME can leave the shared detail-panel
+# ScrollView scrolled down to the EditText. The return button is its first
+# child, so do not reuse coordinates from editor-text-panel.xml (captured
+# before text creation). Scroll the panel back to its top in the empty left
+# gutter, then take a fresh hierarchy and select the currently visible button.
+text_panel_back=""
+for attempt in 1 2 3; do
+  timeout -k 2s 8s adb -s emulator-5554 shell input swipe 5 1450 5 1810 350
+  sleep 0.5
+  if ! dump_hierarchy editor-text-return-visible.xml emulator-screenshots/editor-text-return-visible.xml; then
+    continue
+  fi
+  text_panel_back="$(find_bottom_tool emulator-screenshots/editor-text-return-visible.xml "Araçlara dön" || true)"
+  if [ -n "$text_panel_back" ]; then
+    break
+  fi
+done
 if [ -z "$text_panel_back" ]; then
-  echo "Text detail panel did not expose its return-to-tools control."
+  echo "Text detail panel did not expose its return-to-tools control after scrolling to the top."
   collect_capture_diagnostics text-canvas-panel-back-missing
   exit 52
 fi
+echo "Tapping the freshly measured text-panel return control at $text_panel_back."
 timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_panel_back
 sleep 1
 timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I > emulator-screenshots/text-panel-return-logcat.txt 2>&1 || true
