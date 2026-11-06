@@ -946,3 +946,10 @@ The outer timeline workspace remains a stable height as video, text, music, and 
 - A review of emulator run #1018 showed the text-detail preview could collapse to roughly 90×161px while text sizing still forced a 100dp minimum canvas and 80dp minimum text width. That allowed text and its selection frame to exceed the actual project canvas and be clipped.
 - Source commit `7d7c3f80377ee84da074770fc6736c78c5d798d7` now measures text against the actual canvas dimensions, limits minimum and maximum text size to the available canvas, and clamps the rotated selection bounds inside the canvas.
 - Fresh emulator verification is pending. The white text-selection frame must be detected in the actual project canvas, and text dragging plus the timeline geometry check must pass before this is marked complete.
+
+
+## Responsive text preview scaling — 2026-11-06
+
+- The API 35 text-selection screenshot showed that a 24sp overlay and fixed 10dp insets were still rendered at full screen size after the preview canvas had contracted to roughly 137×245px. The text wrapped/clipped and its selection chrome ran outside the canvas.
+- Source commit `54de4fe0e4cf1346669e4fb6cb8e12e5c62d4882` stores the normal project-canvas dimensions and scales only the preview rendering (font, padding, corner radius and shadow) by the current-to-normal canvas ratio. The authored `TextLayer.sizeSp` remains unchanged for project/export data.
+- Latest emulator verification is pending. The selected text frame, text drag and preview restoration must pass on the same source commit before this is considered fixed.
