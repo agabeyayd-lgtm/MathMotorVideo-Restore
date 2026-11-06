@@ -956,3 +956,6 @@ The outer timeline workspace remains a stable height as video, text, music, and 
 
 
 - Follow-up commit `abfb2b1894fcd2a8da88dbe0e0d655441a32325a` records the latest settled normal preview dimensions rather than the largest transient startup measurement, so full-size text returns to its authored preview scale after insets/layout settle.
+
+
+- Test follow-up `f03f1a12e9510b6310fa8490eed10af81bf7d59f` remeasures the full-size preview canvas and selected text frame after the detail panel closes, then taps the remeasured screen coordinate. This avoids reusing coordinates from the compressed panel layout.
