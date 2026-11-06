@@ -1316,19 +1316,43 @@ PY
     fi
     read -r ruler_left ruler_top ruler_right ruler_bottom <<< "$ruler_bounds"
     ruler_y=$(((ruler_top + ruler_bottom) / 2))
+    ruler_width=$((ruler_right - ruler_left))
+    # Start well inside the ruler viewport. The previous gesture began only
+    # 35px from its right edge, close enough to Android's system-back region
+    # on API 35 to dismiss the editor instead of reliably scrolling the lane.
+    # A centered swipe still covers enough content to reveal the offscreen end.
+    scroll_start=$((ruler_left + ruler_width * 3 / 4))
+    scroll_end=$((ruler_left + ruler_width / 4))
+    echo "Timeline ruler bounds=[$ruler_left,$ruler_top][$ruler_right,$ruler_bottom]; safe scroll=($scroll_start,$ruler_y)->($scroll_end,$ruler_y)."
     for scroll_attempt in $(seq 1 8); do
       if [ -n "$(find_content_description_bounds "emulator-screenshots/$before_xml" "$description")" ]; then
         break
       fi
-      echo "Revealing overlay end handle through timeline ruler (scroll $scroll_attempt/8)."
-      timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$((ruler_right - 35))" "$ruler_y" "$((ruler_left + 35))" "$ruler_y" 450
+      echo "Revealing overlay end handle through the inner timeline ruler (scroll $scroll_attempt/8)."
+      timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$scroll_start" "$ruler_y" "$scroll_end" "$ruler_y" 450
       sleep 0.4
       dump_hierarchy "$before_xml" "emulator-screenshots/$before_xml" || true
+      root_package="$(python3 - "emulator-screenshots/$before_xml" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+try:
+    root = ET.parse(sys.argv[1]).getroot()
+except (OSError, ET.ParseError):
+    raise SystemExit(0)
+node = root.find("node")
+print(node.attrib.get("package", "") if node is not None else "")
+PY
+)"
+      if [ "$root_package" != "com.mathmotor.video.next" ]; then
+        echo "Ruler scrolling unexpectedly left MathMotor (foreground hierarchy package='$root_package')."
+        collect_capture_diagnostics overlay-end-scroll-left-app
+        exit 86
+      fi
     done
   fi
   coords="$(find_content_description_bounds "emulator-screenshots/$before_xml" "$description")"
   if [ -z "$coords" ]; then
-    echo "The overlay trim handle is not visible after scrolling its timeline row: $description"
+    echo "The overlay end trim handle is not visible after scrolling the timeline ruler: $description"
     collect_capture_diagnostics "overlay-$edge-target-missing"
     exit 82
   fi
