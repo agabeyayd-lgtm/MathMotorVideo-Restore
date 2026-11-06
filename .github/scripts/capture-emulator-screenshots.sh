@@ -136,10 +136,23 @@ collect_capture_diagnostics() {
 }
 dump_hierarchy() {
   local remote="$1" local_file="$2"
-  rm -f "$local_file"
-  timeout -k 2s 10s adb -s emulator-5554 shell uiautomator dump "/sdcard/$remote" >/dev/null 2>&1 || true
-  timeout -k 2s 6s adb -s emulator-5554 pull "/sdcard/$remote" "$local_file" >/dev/null 2>&1 || true
-  [ -s "$local_file" ]
+  local attempt
+  for attempt in 1 2; do
+    rm -f "$local_file"
+    timeout -k 2s 5s adb -s emulator-5554 shell rm -f "/sdcard/$remote" >/dev/null 2>&1 || true
+    # UIAutomator can take longer than a screenshot after the keyboard closes
+    # or while Media3 is finalizing a preview. Retry rather than parsing a file
+    # that was never produced; --compressed also reduces hierarchy transfer time.
+    if timeout -k 2s 20s adb -s emulator-5554 shell uiautomator dump --compressed "/sdcard/$remote" >/dev/null 2>&1; then
+      if timeout -k 2s 8s adb -s emulator-5554 pull "/sdcard/$remote" "$local_file" >/dev/null 2>&1 \
+          && [ -s "$local_file" ]; then
+        return 0
+      fi
+    fi
+    echo "UI hierarchy dump attempt $attempt/2 did not produce $local_file."
+    sleep 1
+  done
+  return 1
 }
 
 echo "Step 5/7: inspect the home screen and capture it"
@@ -1147,7 +1160,11 @@ if ! take_screen emulator-screenshots/editor-text-selected.png; then
   collect_capture_diagnostics text-canvas-selection-capture-failure
   exit 6
 fi
-dump_hierarchy editor-text-selected.xml emulator-screenshots/editor-text-selected.xml || true
+if ! dump_hierarchy editor-text-selected.xml emulator-screenshots/editor-text-selected.xml; then
+  echo "UIAutomator could not capture the selected-text hierarchy after two attempts."
+  collect_capture_diagnostics text-canvas-selection-hierarchy-unavailable
+  exit 60
+fi
 python3 - emulator-screenshots/editor-text-selected.xml <<'PY'
 import re
 import sys
@@ -1172,6 +1189,78 @@ if not text_nodes:
     raise SystemExit("New text is missing from the visible preview accessibility tree.")
 print(f"PASS: selected text has a visible selection box {selection[-1]} and preview text bounds {text_nodes[-1]}")
 PY
+
+# Exercise the same direct-manipulation path used by the text tool: enable it,
+# drag the rendered text on the canvas, and verify its accessibility bounds move.
+text_edit_toggle="$(python3 - emulator-screenshots/editor-text-selected.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    label = node.attrib.get("content-desc", "")
+    if "Önizleme üzerindeki yazıyı sürükleme" not in label:
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        x1, y1, x2, y2 = map(int, match.groups())
+        print((x1 + x2) // 2, (y1 + y2) // 2)
+        break
+PY
+)"
+if [ -z "$text_edit_toggle" ]; then
+  echo "The text panel did not expose its shared preview-gesture toggle."
+  collect_capture_diagnostics text-canvas-edit-toggle-missing
+  exit 61
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_edit_toggle
+sleep 1
+text_drag_start="$(python3 - emulator-screenshots/editor-text-selected.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("text") != "CanvasSmoke" or node.attrib.get("class") != "android.widget.TextView":
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        x1, y1, x2, y2 = map(int, match.groups())
+        print((x1 + x2) // 2, (y1 + y2) // 2)
+        break
+PY
+)"
+read -r text_before_x text_before_y <<< "$text_drag_start"
+timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$text_before_x" "$text_before_y" "$((text_before_x + 28))" "$((text_before_y + 18))" 500
+sleep 1
+if ! dump_hierarchy editor-text-after-drag.xml emulator-screenshots/editor-text-after-drag.xml; then
+  echo "UIAutomator could not capture the text layer after direct canvas drag."
+  collect_capture_diagnostics text-canvas-drag-hierarchy-unavailable
+  exit 62
+fi
+python3 - emulator-screenshots/editor-text-after-drag.xml "$text_before_x" "$text_before_y" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+before_x, before_y = map(int, sys.argv[2:4])
+for node in root.iter("node"):
+    if node.attrib.get("text") != "CanvasSmoke" or node.attrib.get("class") != "android.widget.TextView":
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if not match:
+        continue
+    x1, y1, x2, y2 = map(int, match.groups())
+    after_x, after_y = (x1 + x2) // 2, (y1 + y2) // 2
+    if after_x - before_x < 12 or after_y - before_y < 6:
+        raise SystemExit(f"Text drag did not move the rendered layer enough: before=({before_x},{before_y}), after=({after_x},{after_y})")
+    print(f"PASS: direct text drag moved its canvas hit target from ({before_x},{before_y}) to ({after_x},{after_y})")
+    break
+else:
+    raise SystemExit("Rendered CanvasSmoke text layer disappeared after direct drag.")
+PY
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_edit_toggle
+sleep 1
 
 text_panel_back="$(find_bottom_tool emulator-screenshots/editor-text-selected.xml "Araçlara dön" || true)"
 if [ -z "$text_panel_back" ]; then
