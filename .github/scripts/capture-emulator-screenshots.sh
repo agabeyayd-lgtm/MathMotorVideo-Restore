@@ -1646,6 +1646,43 @@ timeout -k 2s 8s adb -s emulator-5554 shell input tap $new_text_coords
 sleep 1
 timeout -k 2s 8s adb -s emulator-5554 shell input text "CanvasSmoke"
 sleep 1
+
+# Keep the IME open long enough to verify the real keyboard layout. The old
+# smoke path dismissed it immediately, so keyboard-induced preview/timeline
+# compression could never be observed.
+if ! take_screen emulator-screenshots/editor-text-keyboard-open.png; then
+  collect_capture_diagnostics text-keyboard-open-capture-failure
+  exit 6
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell dumpsys input_method \
+  > emulator-screenshots/text-keyboard-input-method.txt 2>&1 || true
+if ! grep -Eiq "mInputShown=true|isInputViewShown=true|mShowRequested=true" \
+    emulator-screenshots/text-keyboard-input-method.txt; then
+  echo "Text input did not keep the Android keyboard visibly open for layout verification."
+  collect_capture_diagnostics text-keyboard-not-visible
+  exit 90
+fi
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTest:I \
+  > emulator-screenshots/text-keyboard-preview-canvas-logcat.txt 2>&1 || true
+python3 - emulator-screenshots/text-keyboard-preview-canvas-logcat.txt <<'PY'
+import re
+import sys
+lines = open(sys.argv[1], errors="replace").read().splitlines()
+matches = [line for line in lines if "PREVIEW_CANVAS_BOUNDS" in line]
+if not matches:
+    raise SystemExit("No measured project-canvas bounds were logged while the keyboard was open.")
+match = re.search(r"canvas=(\\d+)x(\\d+).*aspect=([0-9.]+)", matches[-1])
+if not match:
+    raise SystemExit("Malformed project-canvas measurement while the keyboard was open: " + matches[-1])
+width, height = map(int, match.groups()[:2])
+aspect = float(match.group(3))
+if width <= 0 or height <= 0 or abs(width / height - 9 / 16) > 0.002 or abs(aspect - 9 / 16) > 0.002:
+    raise SystemExit(
+        f"Keyboard changed the 9:16 project canvas geometry: canvas={width}x{height}, aspect={aspect}"
+    )
+print(f"PASS: keyboard remained visible while the actual project canvas stayed 9:16 ({width}x{height}).")
+PY
+echo "Captured the text editor with the IME open; now dismissing it for the remaining touch tests."
 timeout -k 2s 8s adb -s emulator-5554 shell input keyevent 4
 sleep 1
 if ! take_screen emulator-screenshots/editor-text-selected.png; then
