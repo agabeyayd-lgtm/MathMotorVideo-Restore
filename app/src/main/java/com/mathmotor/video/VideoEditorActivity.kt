@@ -5811,6 +5811,8 @@ class VideoEditorActivity : Activity() {
         selectedClipIndex = -1
         clipHandlesVisible = false
         selectedTextLayerId = id
+        updateClipTransformTouchAvailability()
+        updateOverlayTransformTouchAvailability()
         val layer = selectedTextLayer()
         loadTextLayerIntoControls(layer)
         val total = totalOutputDurationMs()
@@ -5865,7 +5867,9 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun updatePreviewTextOverlay() {
-        if (!::previewTextOverlay.isInitialized || !::textInput.isInitialized) return
+        if (!::previewTextOverlay.isInitialized || !::textInput.isInitialized ||
+            !::textSelectionFrame.isInitialized
+        ) return
         val totalMs = totalOutputDurationMs()
         val active = textLayers.filter { layer ->
             layer.text.isNotBlank() &&
