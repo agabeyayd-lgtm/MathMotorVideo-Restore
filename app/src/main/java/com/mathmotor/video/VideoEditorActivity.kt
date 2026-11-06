@@ -4051,15 +4051,18 @@ class VideoEditorActivity : Activity() {
                 timelineTracksFrame.layoutParams = params
             }
         }
-        // Size the timeline card from its real track content instead of reserving
-        // a large fixed empty panel on small phones. Each added layer earns its own row.
+        // Keep the timeline workspace height stable as tracks are added.
+        // Every video/text/audio layer gets its own row inside the track viewport;
+        // the viewport scrolls instead of pushing the preview or moving the dock.
+        // Second-level tools and the keyboard use the same compact heights as the
+        // editor's panel-mode controller.
         (timelineTracksFrame.parent?.parent as? LinearLayout)?.let { card ->
-            val desiredHeight = TimelineLayoutMath.contentSizedCardHeightPx(
-                laneContentHeightPx = laneContentHeight,
-                timeRowHeightPx = dp(26),
-                verticalPaddingPx = dp(6),
-                minimumHeightPx = if (keyboardLayoutActive) dp(88) else dp(220),
-                maximumHeightPx = if (keyboardLayoutActive) dp(154) else dp(280)
+            val desiredHeight = dp(
+                when {
+                    keyboardLayoutActive -> 88
+                    activeEditorPanel != null -> 132
+                    else -> 220
+                }
             )
             val cardParams = card.layoutParams as? LinearLayout.LayoutParams
             if (cardParams != null && cardParams.height != desiredHeight) {
