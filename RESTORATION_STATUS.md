@@ -1094,3 +1094,10 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - The text detail panel occupied 156dp after its sticky header, leaving the 9:16 preview too narrow for a useful text transform/selection affordance on the API 35 emulator.
 - Source commit `b530525c7ebacf9d9ff7a054c728071635a52905` reduces the normal text-panel viewport to 128dp while retaining its scrollable controls and leaving keyboard-mode sizing unchanged. This reserves more screen area for the project preview instead of hiding controls or covering the timeline.
 - Confirm with a fresh screenshot that the preview canvas is larger, the white selection frame is fully visible, text dragging works, and panel close restores the full preview.
+
+
+## Responsive text preview scale — 2026-11-06
+
+- Screenshot evidence from emulator #1032 showed the preview project canvas shrinking from 423×753px to 137×245px when the text detail panel opened, while the overlay remained at 24sp with 10dp side padding. "CanvasSmoke" wrapped beyond its available width and the selected frame was clipped at the canvas edges.
+- **Source fix:** commit `54de4fe0e4cf1346669e4fb6cb8e12e5c62d4882` remembers the largest normal, keyboard-free project-canvas dimensions and scales preview text size and its visual insets/corner/shadow by the current canvas ratio. The saved text layer size and export dimensions are not changed.
+- **Validation pending:** require a visible complete selection rectangle inside the measured canvas, successful in-canvas text movement, preview restoration after closing the panel, and the three-action text dock on tap. Do not mark complete until the latest emulator run passes.
