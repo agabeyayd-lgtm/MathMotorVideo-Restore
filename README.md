@@ -863,3 +863,6 @@ When a text/sticker layer is selected from the preview or timeline, a white sele
 ### Text and sticker rotation
 
 Text/sticker layers support simultaneous two-finger scaling and rotation on the project canvas. Rotation is stored per layer, restored from project JSON (legacy projects default to 0°), shown by the live preview and selection outline, and written to the Media3 text overlay export settings. Angle deltas use the shortest path across the -180°/180° boundary.
+
+
+The text and image/video overlay panels have an explicit return control that respects whether the editor is in the global dock or a selected-track tool strip. The emulator smoke now creates a real text layer, verifies its visible selection outline, closes the panel, taps the text in the preview, confirms the text tool strip/selection frame reopen, and removes the test layer before timeline checks.
