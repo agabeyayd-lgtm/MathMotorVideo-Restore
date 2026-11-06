@@ -5872,7 +5872,10 @@ class VideoEditorActivity : Activity() {
         if (!::editorDock.isInitialized || !::editorPanelScroll.isInitialized) return
         selectedTextLayerId = null
         selectedOverlayId = null
+        clipHandlesVisible = false
+        selectedClipIndex = -1
         updatePreviewTextOverlay()
+        updateClipTransformTouchAvailability()
         clipToolsMode = true
         activeClipTool = null
         activeEditorPanel = null
@@ -7167,6 +7170,7 @@ class VideoEditorActivity : Activity() {
         editorDock.removeAllViews()
         clipHandlesVisible = false
         selectedClipIndex = -1
+        updateClipTransformTouchAvailability()
         val tools = listOf(
             Triple("‹", "Geri", "Ana araçlara dön"),
             Triple("＋", "Bindirme ekle", "Fotoğraf veya video bindirmesi ekle"),
