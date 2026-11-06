@@ -5530,6 +5530,12 @@ class VideoEditorActivity : Activity() {
                     downRawX = event.rawX
                     downRawY = event.rawY
                     twoFingerStartDistance = 0f
+                    if (timelineSyncTestEnabled) {
+                        android.util.Log.i(
+                            "EditorTouchTest",
+                            "VIDEO_CANVAS_TOUCH_DOWN host=${view.width}x${view.height} canvas=${previewCanvas.width}x${previewCanvas.height} raw=${downRawX},${downRawY}"
+                        )
+                    }
                     view.parent?.requestDisallowInterceptTouchEvent(true)
                     true
                 }
@@ -5604,6 +5610,12 @@ class VideoEditorActivity : Activity() {
                     true
                 }
                 MotionEvent.ACTION_UP -> {
+                    if (timelineSyncTestEnabled && clip != null) {
+                        android.util.Log.i(
+                            "EditorTouchTest",
+                            "VIDEO_CANVAS_TOUCH_UP host=${view.width}x${view.height} canvas=${previewCanvas.width}x${previewCanvas.height} transform=${clip.transformTranslateX},${clip.transformTranslateY} scale=${clip.transformScale}"
+                        )
+                    }
                     view.parent?.requestDisallowInterceptTouchEvent(false)
                     finishClipTransformGesture(activeIndex, beforeSnapshot, cancelled = false)
                     activeIndex = -1
