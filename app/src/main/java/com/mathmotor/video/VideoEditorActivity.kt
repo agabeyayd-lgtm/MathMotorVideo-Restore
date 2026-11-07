@@ -6829,7 +6829,20 @@ class VideoEditorActivity : Activity() {
                     refreshTextLayerList()
                     refreshTimelineTracks()
                     status.text = "Yazı katmanı taşındı veya dönüştürüldü."
-                    view.performClick()
+                    // The selection chrome can sit above the TextView in the
+                    // preview hit-test order. Route the completed gesture directly
+                    // to layer selection so a tap/drag after closing the text panel
+                    // always restores the contextual text dock.
+                    if (activeEditorPanel == null) {
+                        if (selectedTextLayerId == layer.id && clipToolsMode) {
+                            enterTextTools()
+                        } else {
+                            selectTextLayer(layer.id)
+                        }
+                    }
+                    view.sendAccessibilityEvent(
+                        android.view.accessibility.AccessibilityEvent.TYPE_VIEW_CLICKED
+                    )
                     true
                 }
                 android.view.MotionEvent.ACTION_CANCEL -> {
