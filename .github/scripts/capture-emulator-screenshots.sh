@@ -513,6 +513,16 @@ if ! [[ "$touch_slop_px" =~ ^[0-9]+$ ]] || [ "$touch_slop_px" -le 0 ]; then
   exit 29
 fi
 echo "Captured Android ViewConfiguration touch slop at startup: ${touch_slop_px}px"
+# Preserve the startup enable marker before later UI interaction checks clear logcat.
+# The editor remains test-enabled, but the live-playback validator needs proof
+# that this exact editor instance received the requested launch extra.
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineSyncTest:I \
+  > emulator-screenshots/timeline-sync-startup-logcat.txt 2>&1 || true
+if ! grep -q "TIMELINE_SYNC_TEST_ENABLED" emulator-screenshots/timeline-sync-startup-logcat.txt; then
+  echo "Editor launch did not confirm timeline sync test mode."
+  collect_capture_diagnostics timeline-sync-test-mode-not-enabled
+  exit 30
+fi
 
 # Do not assert that a filename appears in uiautomator XML: on these images
 # uiautomator frequently fails, and the editor is free to display a friendly
@@ -2492,6 +2502,7 @@ fi
 # file truncated before the editor's playback samples. Keep only the dedicated
 # debug sync tag so the validator receives the startup marker and all samples.
 timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime -s TimelineSyncTest:I > emulator-screenshots/timeline-sync-logcat.txt 2>&1 || true
+cat emulator-screenshots/timeline-sync-startup-logcat.txt >> emulator-screenshots/timeline-sync-logcat.txt
 if ! python3 .github/scripts/assert-timeline-sync.py emulator-screenshots/timeline-sync-logcat.txt 2>&1 | tee emulator-screenshots/timeline-sync-validation.txt; then
   echo "Live playback/timeline synchronization assertions failed."
   collect_capture_diagnostics timeline-sync-assertion-failure
