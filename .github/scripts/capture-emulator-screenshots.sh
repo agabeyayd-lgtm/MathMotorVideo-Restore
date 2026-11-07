@@ -2525,7 +2525,7 @@ for node in root.iter("node"):
         and node.attrib.get("clickable") == "true"
         and node.attrib.get("enabled") == "true"
     ):
-        match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
         if match:
             left, top, right, bottom = map(int, match.groups())
             print((left + right) // 2, (top + bottom) // 2)
