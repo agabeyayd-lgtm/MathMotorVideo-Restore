@@ -1135,3 +1135,11 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Updated `refreshDraftProjects()` so the heading, helper copy, explanation and list appear only when at least one saved draft exists. The `Taslakları yedekle` action stays visible but disabled when there are no drafts; `Yedekten geri yükle` remains visible and usable, so an empty device can still restore a backup.
 - Added an API 35 emulator smoke assertion on the fresh home screen: both backup/restore actions must be present while the empty draft heading/placeholder must be absent. The existing saved-draft check still requires the heading and both actions after the test creates a draft.
 - Unit/build and the complete API 35 emulator run on this exact head are required before marking this correction green. The current screenshot run from the prior source does not cover this change.
+
+
+## Empty-draft smoke assertion coordinate correction — 2026-11-07
+
+- API 35 emulator run #1055 on commit `61f974a1f71fb82cf87fa01d29e560f1f2485233` passed unit tests, Debug APK packaging, FFmpeg setup/fixture generation, KVM, SDK installation, emulator boot and the two `VideoProjectDraftBackupTest` instrumentation tests.
+- The screenshot script then failed at its fresh-home empty-draft assertion (exit 31). The captured UI hierarchy shows the home screen at scroll position zero: the hero, primary cards, recent-project placeholder and fixed footer are visible, while the backup/restore section is farther down the ScrollView after the tool grid. The buttons were therefore off-screen and absent from that hierarchy; this is not evidence that the app failed to create them.
+- Corrected the test ordering: capture the top-of-home screenshot first, scroll the home content down to the draft section, assert both backup/restore actions are present and empty draft heading/helper/placeholder are absent, then scroll back to the top and refresh the hierarchy before opening the empty editor.
+- This is a test-coordinate/scroll-state correction. It does not weaken the empty-state assertions or alter app behavior. Run #1055 did not reach the editor/export/timeline/text smoke tests; API 35 full smoke verification remains pending on the corrected script.
