@@ -1,13 +1,14 @@
-## Preserve preview size during keyboard text entry — 2026-11-07
+## Fixed-size project preview across editor tools — 2026-11-07
 
-- Emulator evidence on the previous candidate showed the 9:16 project canvas shrinking from **423×753 px** with the keyboard closed to **216×385 px** while typing. The aspect ratio remained correct, but the visible project became roughly half-size.
-- Updated `VideoEditorActivity` responsive keyboard mode: hide the redundant playback row and sticky return header while the IME is open, collapse the text-layer chip strip, and reduce the text settings panel to a compact height. The full timeline and dock return when the keyboard closes.
-- Strengthened the emulator assertion: while the keyboard is visible, the real canvas must remain 9:16 and retain at least **75% of its keyboard-closed height**.
-- The return button's post-keyboard screen bounds are now emitted by the app for the test to tap directly. This avoids a second accessibility-hierarchy traversal across thousands of timeline nodes.
-- Source and test updates are on `feature/capcut-home-screen` (PR #28). Unit tests/debug APK build and the independent verification workflow passed on the latest candidate. The latest full emulator screenshot workflow is still running; do not treat this as fully accepted until its keyboard-size and return-button checks finish green.
-- No app version change, release APK, signing, publication, or merge is included.
+- The product requirement is now explicit: the actual project canvas must keep the **same measured width and height** as the normal editor preview. The previous 75% allowance is removed; any resize while opening a tool or the keyboard is a test failure.
+- The app records the settled preview-stage height before a tool opens. While a detail tool panel or the keyboard is active, that exact stage height is held; the 9:16 project canvas therefore stays pixel-identical.
+- Vertical room is recovered from surrounding controls: the playback row and global dock are hidden while a detail panel owns the controls, and the timeline lane area is compacted. The full timeline/dock return after leaving the panel. The keyboard hides the timeline and dock while retaining the fixed preview.
+- Emulator assertions now require identical canvas width/height with the keyboard open and identical preview-frame geometry while tools open, switch and close. Only the timeline/control area may compact.
+- A previous candidate measured **423×753 px** normally versus **216×385 px** with the keyboard. That failure is the regression baseline, not accepted behavior.
+- Source and emulator checks are on `feature/capcut-home-screen` (PR #28). Unit/build and emulator runs must be green on the exact latest commit before this fix is accepted. No version bump, release, signing, publication or merge is included.
 
 ---
+
 
 ## Text-panel return smoke-test correction — 2026-11-06
 
