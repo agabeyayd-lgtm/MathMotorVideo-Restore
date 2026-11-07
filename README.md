@@ -1019,6 +1019,6 @@ The outer timeline workspace remains a stable height as video, text, music, and 
 
 - Investigated emulator run `42340561594` (`d5bcb29da4d26cd64190c39fc0a84ca3e5542581`). The text rendered and the keyboard/9:16 canvas assertion passed, but the selection-frame assertion could only see three sides: the preview-canvas outline was a higher-level sibling of the canvas and painted over the white selection chrome where they met.
 - Moved the non-interactive canvas outline into the project-canvas drawing stack, below text and selection chrome. Text/sticker transforms now retain a 2 dp inner safety inset so the selection stroke is not clipped when a layer reaches a canvas edge.
-- The emulator pixel assertion now reads root-window and `Proje tuvali` bounds from a fresh accessibility hierarchy captured after keyboard dismissal and again after the drag. It no longer pairs a screenshot with potentially stale IME-era canvas dimensions.
+- The emulator pixel assertion now reads root-window and `Proje tuvali` bounds from a fresh accessibility hierarchy for each relevant screenshot: after keyboard dismissal, after the direct drag, after closing the text panel, and after preview reselection. It no longer pairs pixels with IME-era or previous-panel canvas dimensions.
 - Added JVM coverage for the safe selection-frame translation bounds.
 - Unit/build/emulator verification is pending for this exact follow-up commit. No app version, release signing, or publish workflow was changed.

@@ -1779,9 +1779,8 @@ if ! take_screen emulator-screenshots/editor-text-selected.png; then
   collect_capture_diagnostics text-canvas-selection-capture-failure
   exit 6
 fi
-# The selected-text drawer contains a large, rapidly changing accessibility tree.
-# UIAutomator can time out while dumping it even though the editor is still responsive.
-# Verify the rendered selection frame against the measured project-canvas bounds instead.
+# Snapshot the current project-canvas bounds alongside each selection screenshot.
+# The IME and editor-panel transitions change the canvas rectangle independently.
 detect_text_selection_bounds() {
   python3 - "$1" "$2" <<'PY'
 import re
@@ -2029,6 +2028,7 @@ if ! take_screen emulator-screenshots/editor-text-panel-closed.png; then
   collect_capture_diagnostics text-canvas-panel-closed-capture-failure
   exit 6
 fi
+dump_hierarchy editor-text-panel-closed.xml emulator-screenshots/editor-text-panel-closed.xml
 # Closing the detail panel expands the project canvas and changes the screen
 # coordinate of the text layer. Measure both again instead of reusing the
 # compressed-panel coordinates from the preceding screenshot.
@@ -2036,7 +2036,7 @@ timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTe
   > emulator-screenshots/editor-text-panel-closed-canvas-logcat.txt 2>&1 || true
 assert_full_preview_canvas emulator-screenshots/editor-text-panel-closed.png "text panel close" \
   emulator-screenshots/editor-text-panel-closed-canvas-logcat.txt
-text_preview_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-panel-closed.png emulator-screenshots/editor-text-panel-closed-canvas-logcat.txt)" || {
+text_preview_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-panel-closed.png emulator-screenshots/editor-text-panel-closed.xml)" || {
   echo "The text layer did not retain a complete selection frame after the detail panel closed."
   collect_capture_diagnostics text-canvas-preview-hit-target-missing
   exit 53
@@ -2057,9 +2057,10 @@ if ! take_screen emulator-screenshots/editor-text-reselected.png; then
   collect_capture_diagnostics text-canvas-reselection-capture-failure
   exit 6
 fi
+dump_hierarchy editor-text-reselected.xml emulator-screenshots/editor-text-reselected.xml
 assert_full_preview_canvas emulator-screenshots/editor-text-reselected.png "text preview reselection" \
   emulator-screenshots/editor-text-reselected-canvas-logcat.txt
-text_reselected_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-reselected.png emulator-screenshots/editor-text-reselected-canvas-logcat.txt emulator-screenshots/editor-text-panel.xml)" || {
+text_reselected_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-reselected.png emulator-screenshots/editor-text-reselected.xml)" || {
   echo "Tapping the preview text did not restore a complete canvas selection frame."
   collect_capture_diagnostics text-canvas-tap-selection-frame-missing
   exit 55
