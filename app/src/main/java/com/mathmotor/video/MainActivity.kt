@@ -44,6 +44,11 @@ class MainActivity : Activity() {
     private lateinit var draftSection: LinearLayout
     private lateinit var draftList: LinearLayout
     private lateinit var draftSectionGap: View
+    private lateinit var draftHeader: LinearLayout
+    private lateinit var draftHeaderGap: View
+    private lateinit var draftActionsNoteGap: View
+    private lateinit var draftInfoNote: TextView
+    private lateinit var draftListGap: View
     private lateinit var draftBackupButton: Button
     private lateinit var updateStatus: TextView
     private var pendingDraftBackup: JSONObject? = null
@@ -321,21 +326,26 @@ class MainActivity : Activity() {
         root.addView(gap(13))
         draftSectionGap=gap(8)
         draftSection=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; visibility=View.GONE }
-        val draftsHeader=LinearLayout(this).apply {
+        draftHeader=LinearLayout(this).apply {
             orientation=LinearLayout.VERTICAL
             addView(label("TASLAKLAR",17f,Color.rgb(28,34,43),true))
             addView(label("Kaldığın yerden devam et",10f,Color.rgb(110,122,137),false))
         }
-        draftSection.addView(draftsHeader)
+        draftSection.addView(draftHeader)
         val backupActions=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL; gravity=Gravity.CENTER_VERTICAL }
         draftBackupButton=secondaryButton("Taslakları yedekle") { requestDraftBackup() }.apply { minHeight=dp(40); textSize=10f }
         backupActions.addView(draftBackupButton,LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f))
         backupActions.addView(gapWidth(6))
         backupActions.addView(secondaryButton("Yedekten geri yükle") { requestDraftRestore() }.apply { minHeight=dp(40); textSize=10f })
-        draftSection.addView(gap(8)); draftSection.addView(backupActions,matchWrap()); draftSection.addView(gap(4))
-        draftSection.addView(label("Yedek proje ayarlarını ve zaman çizelgesini saklar; kaynak medya dosyalarını içermez.",9f,Color.rgb(110,122,137),false))
+        draftHeaderGap=gap(8)
+        draftSection.addView(draftHeaderGap); draftSection.addView(backupActions,matchWrap())
+        draftActionsNoteGap=gap(4)
+        draftSection.addView(draftActionsNoteGap)
+        draftInfoNote=label("Yedek proje ayarlarını ve zaman çizelgesini saklar; kaynak medya dosyalarını içermez.",9f,Color.rgb(110,122,137),false)
+        draftSection.addView(draftInfoNote)
         draftList=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL }
-        draftSection.addView(gap(6)); draftSection.addView(draftList,matchWrap())
+        draftListGap=gap(6)
+        draftSection.addView(draftListGap); draftSection.addView(draftList,matchWrap())
         root.addView(draftSection,matchWrap()); refreshDraftProjects(); root.addView(gap(10))
 
         val footer=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL; gravity=Gravity.CENTER; setPadding(0,dp(8),0,dp(5)) }
@@ -420,17 +430,22 @@ class MainActivity : Activity() {
         if (!::draftSection.isInitialized || !::draftList.isInitialized) return
         val allDrafts = VideoProjectDraftStore.list(this)
         val drafts = allDrafts.take(5)
+        val hasDrafts = allDrafts.isNotEmpty()
         draftList.removeAllViews()
+        // Keep backup/restore reachable at all times, but do not show an empty
+        // draft heading, explanatory copy, or placeholder when there is nothing
+        // to continue. The backup action stays disabled until a draft exists.
         draftSection.visibility = View.VISIBLE
-        draftSectionGap.visibility = if (allDrafts.isEmpty()) View.GONE else View.VISIBLE
-        draftBackupButton.isEnabled = allDrafts.isNotEmpty()
-        draftBackupButton.alpha = if (allDrafts.isNotEmpty()) 1f else 0.45f
-        if (drafts.isEmpty()) {
-            draftList.addView(label("Henüz kaydedilmiş taslak yok.", 10f, muted, false).apply {
-                setPadding(0, dp(7), 0, dp(2))
-            })
-            return
-        }
+        draftSectionGap.visibility = if (hasDrafts) View.VISIBLE else View.GONE
+        draftHeader.visibility = if (hasDrafts) View.VISIBLE else View.GONE
+        draftHeaderGap.visibility = if (hasDrafts) View.VISIBLE else View.GONE
+        draftActionsNoteGap.visibility = if (hasDrafts) View.VISIBLE else View.GONE
+        draftInfoNote.visibility = if (hasDrafts) View.VISIBLE else View.GONE
+        draftListGap.visibility = if (hasDrafts) View.VISIBLE else View.GONE
+        draftList.visibility = if (hasDrafts) View.VISIBLE else View.GONE
+        draftBackupButton.isEnabled = hasDrafts
+        draftBackupButton.alpha = if (hasDrafts) 1f else 0.45f
+        if (drafts.isEmpty()) return
         drafts.forEachIndexed { index, draft ->
             val item = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
