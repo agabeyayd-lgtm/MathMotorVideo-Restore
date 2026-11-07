@@ -2179,9 +2179,15 @@ class VideoEditorActivity : Activity() {
         val params = previewFrame.layoutParams as? LinearLayout.LayoutParams ?: return
         val fixed = keyboardLayoutActive || activeEditorPanel != null
         if (fixed) {
-            val fixedStageHeight = referencePreviewStageHeightPx
+            // The dark work stage is allowed to collapse to the project's
+            // measured canvas height while a detail sheet is open. Keeping the
+            // old outer-stage height here wastes the exact vertical space needed
+            // by the timeline and detail controls, pushing the timeline downward.
+            // The inner project canvas remains pixel-identical; only its empty
+            // surrounding stage margin is removed.
+            val fixedStageHeight = referencePreviewCanvasHeight
                 .takeIf { it > 0 }
-                ?: referencePreviewCanvasHeight.takeIf { it > 0 }
+                ?: referencePreviewStageHeightPx.takeIf { it > 0 }
                 ?: dp(previewStageHeightDp)
             if (params.height != fixedStageHeight || params.weight != 0f) {
                 params.height = fixedStageHeight
