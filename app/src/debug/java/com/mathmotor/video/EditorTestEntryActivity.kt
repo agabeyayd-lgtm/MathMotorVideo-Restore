@@ -56,7 +56,7 @@ class EditorTestEntryActivity : Activity() {
             "EDITOR_SMOKE_ENTRY_STARTED uri=" + videoUri +
                 " initialPhoto=" + !initialPhotoUri.isNullOrBlank()
         )
-        if (videoUri.isNullOrBlank() && initialPhotoUri.isNullOrBlank()) {
+        if (videoUri.isNullOrBlank() && initialPhotoUri.isNullOrBlank() && draftId.isNullOrBlank()) {
             finish()
             return
         }
