@@ -2174,6 +2174,27 @@ class VideoEditorActivity : Activity() {
      * The timeline remains present and vertically scrollable, but gives back
      * enough height for the project canvas instead of starving it to a sliver.
      */
+    private fun applyPreviewStageSizing() {
+        if (!::previewFrame.isInitialized) return
+        val params = previewFrame.layoutParams as? LinearLayout.LayoutParams ?: return
+        val fixed = keyboardLayoutActive || activeEditorPanel != null
+        if (fixed) {
+            val fixedStageHeight = referencePreviewStageHeightPx
+                .takeIf { it > 0 }
+                ?: referencePreviewCanvasHeight.takeIf { it > 0 }
+                ?: dp(previewStageHeightDp)
+            if (params.height != fixedStageHeight || params.weight != 0f) {
+                params.height = fixedStageHeight
+                params.weight = 0f
+                previewFrame.layoutParams = params
+            }
+        } else if (params.height != 0 || params.weight != 1f) {
+            params.height = 0
+            params.weight = 1f
+            previewFrame.layoutParams = params
+        }
+    }
+
     private fun setTimelinePanelMode(panelOpen: Boolean) {
         if (!::editorTimelineCard.isInitialized) return
         val params = editorTimelineCard.layoutParams as? LinearLayout.LayoutParams ?: return
@@ -2297,22 +2318,9 @@ class VideoEditorActivity : Activity() {
             keyboardLayoutActive = imeVisible
             applyingResponsiveLayout = true
             try {
-                // The project preview is a fixed-size work surface, not a flexible
-                // remainder. On IME open keep the exact stage height measured in the
-                // normal editor; collapse surrounding rows instead of shrinking video.
-                val previewParams = previewFrame.layoutParams as LinearLayout.LayoutParams
-                if (imeVisible) {
-                    val fixedStageHeight = referencePreviewStageHeightPx
-                        .takeIf { it > 0 }
-                        ?: referencePreviewCanvasHeight.takeIf { it > 0 }
-                        ?: dp(previewStageHeightDp)
-                    previewParams.height = fixedStageHeight
-                    previewParams.weight = 0f
-                } else {
-                    previewParams.height = 0
-                    previewParams.weight = 1f
-                }
-                previewFrame.layoutParams = previewParams
+                // Keep the measured project preview fixed during keyboard mode
+                // and while any detail tool panel is open.
+                applyPreviewStageSizing()
 
                 if (::editorPanelScroll.isInitialized &&
                     editorPanelScroll.visibility == View.VISIBLE &&
@@ -2837,6 +2845,7 @@ class VideoEditorActivity : Activity() {
         // is open. Closing the sheet returns to the same track tools; it must not
         // silently replace them with the global editor tabs.
         activeEditorPanel = name
+        applyPreviewStageSizing()
         setTimelinePanelMode(panelOpen = true)
         if (::editorPanelReturnButton.isInitialized) {
             editorPanelReturnButton.visibility = if (name == "text") View.VISIBLE else View.GONE
@@ -2936,6 +2945,7 @@ class VideoEditorActivity : Activity() {
         }
         if (::editorPanelReturnButton.isInitialized) editorPanelReturnButton.visibility = View.GONE
         activeEditorPanel = null
+        applyPreviewStageSizing()
         setTimelinePanelMode(panelOpen = false)
         updateClipTransformTouchAvailability()
         updateOverlayTransformTouchAvailability()
