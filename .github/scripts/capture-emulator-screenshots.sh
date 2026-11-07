@@ -2023,21 +2023,35 @@ print(f"PASS: {label} kept the full portrait preview visible ({gw}x{gh}, ratio={
 PY
 }
 
-# Dismissing the IME changes the vertical layout, so the pre-keyboard
-# return-button coordinates are stale. Re-read the accessibility bounds after
-# the keyboard is gone instead of tapping the old screen position.
-if ! dump_hierarchy editor-text-panel-after-keyboard.xml emulator-screenshots/editor-text-panel-after-keyboard.xml; then
-  echo "Could not inspect the text panel after dismissing the keyboard."
-  collect_capture_diagnostics text-panel-after-keyboard-hierarchy-missing
-  exit 56
-fi
-text_panel_back="$(find_bottom_tool emulator-screenshots/editor-text-panel-after-keyboard.xml "Araçlara dön" || true)"
+# The keyboard changed the vertical layout. Use the application's
+# measured post-layout bounds for the sticky sibling return control; do not
+# traverse the large timeline accessibility hierarchy again.
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I \
+  > emulator-screenshots/text-panel-return-bounds-logcat.txt 2>&1 || true
+text_panel_back="$(python3 - emulator-screenshots/text-panel-return-bounds-logcat.txt <<'PY'
+import re
+import sys
+
+for line in reversed(open(sys.argv[1], errors="replace").read().splitlines()):
+    match = re.search(
+        r"TEXT_PANEL_RETURN_BOUNDS visible=true x=(\\d+) y=(\\d+) width=(\\d+) height=(\\d+)",
+        line,
+    )
+    if not match:
+        continue
+    x, y, width, height = map(int, match.groups())
+    if width > 0 and height > 0:
+        print(x + width // 2, y + height // 2)
+        raise SystemExit(0)
+raise SystemExit("No visible measured text-panel return bounds were logged after keyboard dismissal.")
+PY
+)"
 if [ -z "$text_panel_back" ]; then
-  echo "The text-panel return control was not visible after the keyboard closed."
+  echo "The text-panel return control did not report visible post-keyboard bounds."
   collect_capture_diagnostics text-panel-return-after-keyboard-missing
   exit 56
 fi
-echo "Tapping the remeasured text-panel return control at $text_panel_back after text editing."
+echo "Tapping the measured text-panel return control at $text_panel_back after text editing."
 timeout -k 2s 8s adb -s emulator-5554 logcat -c
 timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_panel_back
 sleep 1
