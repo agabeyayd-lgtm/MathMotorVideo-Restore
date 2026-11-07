@@ -1,3 +1,13 @@
+## CapCut-style main video lane: split seam, overlap repair, direct drag — 2026-11-07
+
+- Main-video clips now use the clip surface for immediate one-finger horizontal movement; timeline scrubbing remains on the empty lane/ruler and two-finger pinch keeps its Activity-level cancellation path.
+- Split timing is derived from one source-time cut. The right segment starts at the calculated end of the left segment, avoiding a millisecond-rounding seam at non-1× speed.
+- Legacy overlaps in the single main-video lane are shifted forward only as needed; source in/out points and intentional gaps are preserved. Drag/drop reorders clips and repacks the main video lane without overlap.
+- Added JVM coverage for split continuity at 0.5×, 1×, 1.75× and 2×, invalid split locations, overlap repair and drag reflow.
+- **Verification is pending on this branch.** Do not call this complete until unit tests, Debug APK compilation and the API 35 emulator smoke pass on the same commit, including a real one-finger clip drag. No versionCode, release signing, publish workflow or production APK was changed.
+
+---
+
 ## Fixed-size project preview across editor tools — 2026-11-07
 
 - The product requirement is now explicit: the actual project canvas must keep the **same measured width and height** as the normal editor preview. The previous 75% allowance is removed; any resize while opening a tool or the keyboard is a test failure.

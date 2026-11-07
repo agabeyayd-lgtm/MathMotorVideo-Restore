@@ -391,13 +391,74 @@ class TimelineVideoMathTest {
     }
 
     @Test
-    fun reorderRejectsOverlappingLayersInsteadOfDestroyingTheirPositions() {
+    fun reorderRepairsOverlappingMainVideoClipsAndNeverReturnsAnOverlap() {
         val overlapping = listOf(
             TimelineVideoSegment(0L, 0L, 5_000L, 5_000L),
-            TimelineVideoSegment(2_000L, 0L, 4_000L, 4_000L)
+            TimelineVideoSegment(2_000L, 500L, 4_000L, 4_000L),
+            TimelineVideoSegment(9_000L, 0L, 1_000L, 1_000L)
         )
 
-        assertEquals(null, TimelineVideoMath.reorderForDrop(overlapping, 0, 4_000L))
+        val plan = TimelineVideoMath.reorderForDrop(overlapping, 1, 8_000L)
+
+        assertTrue(plan != null)
+        val resolved = plan!!.orderedClipIndices.map { index ->
+            overlapping[index].copy(
+                timelineStartMs = plan.timelineStartByClipIndex[index]!!
+            )
+        }
+        assertEquals(listOf(0, 2, 1), plan.orderedClipIndices)
+        assertEquals(0L, resolved[0].timelineStartMs)
+        assertEquals(resolved[0].timelineEndMs, resolved[1].timelineStartMs)
+        assertEquals(resolved[1].timelineEndMs, resolved[2].timelineStartMs)
+        assertEquals(overlapping[1].sourceStartMs, resolved[2].sourceStartMs)
+        assertEquals(overlapping[1].sourceEndMs, resolved[2].sourceEndMs)
+    }
+
+    @Test
+    fun overlapRepairPreservesExistingGapsButPushesOnlyTheCollidingClip() {
+        val segments = listOf(
+            TimelineVideoSegment(0L, 0L, 2_000L, 2_000L),
+            TimelineVideoSegment(1_500L, 300L, 3_000L, 3_000L),
+            TimelineVideoSegment(7_000L, 0L, 1_000L, 1_000L)
+        )
+
+        val plan = TimelineVideoMath.resolveOverlaps(segments)!!
+
+        assertEquals(listOf(0, 1, 2), plan.orderedClipIndices)
+        assertEquals(0L, plan.timelineStartByClipIndex[0])
+        assertEquals(2_000L, plan.timelineStartByClipIndex[1])
+        assertEquals(7_000L, plan.timelineStartByClipIndex[2])
+    }
+
+    @Test
+    fun splitUsesTheLeftSegmentEndAsTheRightSegmentStartForEveryPlaybackSpeed() {
+        listOf(0.5f, 1f, 1.75f, 2f).forEach { speed ->
+            val segment = TimelineVideoSegment(
+                timelineStartMs = 1_250L,
+                sourceStartMs = 1_000L,
+                sourceEndMs = 9_000L,
+                sourceDurationMs = 10_000L,
+                speed = speed
+            )
+            val requested = segment.timelineStartMs + segment.durationMs / 2L + 7L
+            val split = TimelineVideoMath.splitAtProjectTime(segment, requested)!!
+
+            assertEquals(split.first.timelineEndMs, split.second.timelineStartMs)
+            assertEquals(split.first.sourceEndMs, split.second.sourceStartMs)
+            assertTrue(split.first.durationMs >= 350L)
+            assertTrue(split.second.durationMs >= 350L)
+            assertEquals(segment.timelineStartMs, split.first.timelineStartMs)
+        }
+    }
+
+    @Test
+    fun splitRejectsAPlayheadOutsideTheClipOrTooCloseToEitherEdge() {
+        val segment = TimelineVideoSegment(1_000L, 0L, 2_000L, 2_000L)
+
+        assertEquals(null, TimelineVideoMath.splitAtProjectTime(segment, 999L))
+        assertEquals(null, TimelineVideoMath.splitAtProjectTime(segment, 1_100L))
+        assertEquals(null, TimelineVideoMath.splitAtProjectTime(segment, 2_900L))
+        assertEquals(null, TimelineVideoMath.splitAtProjectTime(segment, 3_000L))
     }
 
     @Test

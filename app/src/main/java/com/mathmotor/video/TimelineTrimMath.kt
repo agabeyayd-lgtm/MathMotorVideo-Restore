@@ -296,6 +296,12 @@ internal data class TimelineVideoReorderPlan(
     val timelineStartByClipIndex: Map<Int, Long>
 )
 
+internal data class TimelineVideoSplitPlan(
+    val first: TimelineVideoSegment,
+    val second: TimelineVideoSegment,
+    val splitTimelineMs: Long
+)
+
 /** Independent video placement, overlap selection and edge-trim math. */
 internal object TimelineVideoMath {
     fun normalize(segment: TimelineVideoSegment): TimelineVideoSegment {
@@ -355,10 +361,75 @@ internal object TimelineVideoMath {
         }
 
     /**
-     * Builds a CapCut-style insertion/reorder plan for a non-overlapping video sequence.
+     * Resolves old/invalid overlaps in the single main-video lane without changing source trims.
+     * Existing intentional gaps are retained; a clip is moved right only when its start would
+     * otherwise collide with the previous clip.
+     */
+    fun resolveOverlaps(segments: List<TimelineVideoSegment>): TimelineVideoReorderPlan? {
+        if (segments.isEmpty()) return null
+        val safe = segments.map(::normalize)
+        if (safe.any { it.durationMs <= 0L }) return null
+
+        val ordered = segments.indices.sortedWith(
+            compareBy<Int> { safe[it].timelineStartMs }.thenBy { it }
+        )
+        var cursorMs = safe[ordered.first()].timelineStartMs
+        val starts = linkedMapOf<Int, Long>()
+        ordered.forEach { index ->
+            val startMs = maxOf(safe[index].timelineStartMs, cursorMs)
+            starts[index] = startMs
+            cursorMs = startMs + safe[index].durationMs
+        }
+        return TimelineVideoReorderPlan(ordered, starts)
+    }
+
+    /**
+     * Splits a clip at the closest source-time boundary represented by the requested
+     * project timestamp. The right segment starts at the exact calculated end of the
+     * left segment, so speed-conversion rounding can never leave a one-pixel grey seam.
+     */
+    fun splitAtProjectTime(
+        segment: TimelineVideoSegment,
+        projectTimeMs: Long,
+        minimumSegmentDurationMs: Long = 350L
+    ): TimelineVideoSplitPlan? {
+        val safe = normalize(segment)
+        val durationMs = safe.durationMs
+        val minimum = minimumSegmentDurationMs.coerceAtLeast(1L)
+        if (durationMs < minimum * 2L) return null
+        if (projectTimeMs <= safe.timelineStartMs || projectTimeMs >= safe.timelineEndMs) return null
+
+        val localTimeMs = projectTimeMs - safe.timelineStartMs
+        if (localTimeMs < minimum || durationMs - localTimeMs < minimum) return null
+        val sourceOffsetMs = ClipSpeedMath.sourceOffsetMs(localTimeMs, safe.speed)
+        val sourceSplitMs = (safe.sourceStartMs + sourceOffsetMs)
+            .coerceIn(safe.sourceStartMs + 1L, safe.sourceEndMs - 1L)
+        val firstTimelineDurationMs = ClipSpeedMath.timelineDurationMs(
+            sourceSplitMs - safe.sourceStartMs,
+            safe.speed
+        )
+        val secondTimelineDurationMs = ClipSpeedMath.timelineDurationMs(
+            safe.sourceEndMs - sourceSplitMs,
+            safe.speed
+        )
+        if (firstTimelineDurationMs < minimum || secondTimelineDurationMs < minimum) return null
+
+        val splitTimelineMs = safe.timelineStartMs + firstTimelineDurationMs
+        return TimelineVideoSplitPlan(
+            first = safe.copy(sourceEndMs = sourceSplitMs),
+            second = safe.copy(
+                timelineStartMs = splitTimelineMs,
+                sourceStartMs = sourceSplitMs
+            ),
+            splitTimelineMs = splitTimelineMs
+        )
+    }
+
+    /**
+     * Builds a CapCut-style insertion/reorder plan for the single, non-overlapping main-video lane.
      * Drop position is interpreted by the moved clip's center against the other clip centers.
-     * When order changes, all clips are packed sequentially from the original first timestamp.
-     * Overlapping ranges return null so a multi-layer composition is never silently flattened.
+     * The result is packed sequentially from the original first timestamp. Old overlapping
+     * positions are repaired by the same operation instead of blocking clip movement.
      */
     fun reorderForDrop(
         segments: List<TimelineVideoSegment>,
@@ -372,11 +443,6 @@ internal object TimelineVideoMath {
         val timeOrder = segments.indices.sortedWith(
             compareBy<Int> { safe[it].timelineStartMs }.thenBy { it }
         )
-        if (timeOrder.zipWithNext().any { (first, second) ->
-                safe[first].timelineEndMs > safe[second].timelineStartMs
-            }
-        ) return null
-
         val others = timeOrder.filterNot { it == movingIndex }
         val moving = safe[movingIndex]
         val requestedCenterMs = requestedStartMs.coerceAtLeast(0L) + moving.durationMs / 2L

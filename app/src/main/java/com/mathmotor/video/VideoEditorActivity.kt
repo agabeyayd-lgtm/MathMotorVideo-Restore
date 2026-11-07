@@ -3108,6 +3108,7 @@ class VideoEditorActivity : Activity() {
 
     private fun refreshTimelineTracks() {
         if (!::timelineTracks.isInitialized) return
+        normalizeMainVideoLaneOverlaps()
         if (timelineLifecycleDiagnosticsEnabled) {
             val caller = Throwable().stackTrace.getOrNull(2)?.let {
                 "${it.className.substringAfterLast('.')}.${it.methodName}"
@@ -8804,16 +8805,43 @@ class VideoEditorActivity : Activity() {
         if(active==null){status.text="Oynatma noktası bir klibin üzerinde değil.";return}
         if(expectedClipIndex!=null&&expectedClipIndex!=active){status.text="Oynatma noktasını seçili klibin üzerine getir.";return}
         val clip=clips[active]
-        val duration=ClipSpeedMath.timelineDurationMs(clip.endMs-clip.startMs,clip.speed)
-        val local=(playhead-clip.timelineStartMs).coerceIn(0L,duration)
-        val sourceSplit=clip.startMs+ClipSpeedMath.sourceOffsetMs(local,clip.speed)
-        if(local<350L||duration-local<350L){status.text="İki tarafta da en az 0,35 saniye olmalı.";return}
+        val split=TimelineVideoMath.splitAtProjectTime(
+            videoTimelineSegments()[active],
+            playhead,
+            minimumSegmentDurationMs=350L
+        ) ?: run {
+            status.text="İki tarafta da en az 0,35 saniye olmalı."
+            return
+        }
+        val firstCover=clip.coverTimeMs?.coerceIn(
+            clip.startMs,(split.first.sourceEndMs-1L).coerceAtLeast(clip.startMs)
+        )
+        val secondCover=clip.coverTimeMs?.coerceIn(
+            split.second.sourceStartMs,(clip.endMs-1L).coerceAtLeast(split.second.sourceStartMs)
+        )
         recordClipEdit()
-        clips[active]=clip.copy(title="${clip.title} • A",endMs=sourceSplit)
-        clips.add(active+1,clip.copy(title="${clip.title} • B",startMs=sourceSplit,timelineStartMs=playhead))
-        selectedClipIndex=active+1;timelinePreviewLoaded=false;previewSingleClip=false;timelinePlayheadMs=playhead
-        refreshTimelineAfterClipChange();loadTrimControls();ensureTimelinePreviewLoaded();seekTimelinePreview(playhead);updateTimelinePlayheadLabel()
-        status.text="Klip bölündü; ikinci parça aynı oynatma noktasında başlıyor."
+        clips[active]=clip.copy(
+            title="${clip.title} • A",
+            endMs=split.first.sourceEndMs,
+            coverTimeMs=firstCover
+        )
+        clips.add(active+1,clip.copy(
+            title="${clip.title} • B",
+            startMs=split.second.sourceStartMs,
+            timelineStartMs=split.second.timelineStartMs,
+            coverTimeMs=secondCover
+        ))
+        selectedClipIndex=active+1
+        clipHandlesVisible=true
+        timelinePreviewLoaded=false
+        previewSingleClip=false
+        timelinePlayheadMs=split.splitTimelineMs
+        if(timelineSyncTestEnabled) android.util.Log.i(
+            "TimelineSyncTest",
+            "VIDEO_CLIP_SPLIT firstEndMs=${split.first.timelineEndMs} secondStartMs=${split.second.timelineStartMs} gapMs=${split.second.timelineStartMs-split.first.timelineEndMs} sourceCutMs=${split.second.sourceStartMs} speed=${clip.speed}"
+        )
+        refreshTimelineAfterClipChange();loadTrimControls();ensureTimelinePreviewLoaded();seekTimelinePreview(timelinePlayheadMs);updateTimelinePlayheadLabel()
+        status.text="Klip bölündü; iki parça aynı kesim noktasında birleşiyor."
     }
 
     
@@ -8831,7 +8859,7 @@ class VideoEditorActivity : Activity() {
             requestedStartMs = requestedStartMs
         )
         if (plan == null) {
-            status.text = "Video klipleri üst üste biniyor. Katman düzenini bozmamak için sıralama yapılmadı."
+            status.text = "Klip taşınamadı. Video kaynağını ve süre aralığını kontrol et."
             return
         }
 
@@ -8866,6 +8894,10 @@ class VideoEditorActivity : Activity() {
         ensureTimelinePreviewLoaded()
         seekTimelinePreview(timelinePlayheadMs)
         updateTimelinePlayheadLabel()
+        if(timelineSyncTestEnabled) android.util.Log.i(
+            "TimelineSyncTest",
+            "VIDEO_CLIP_DROP movedIndex=$index ordered=${plan.orderedClipIndices.joinToString(",")} starts=${plan.orderedClipIndices.joinToString(","){ i -> "$i:${plan.timelineStartByClipIndex[i]}" }}"
+        )
         status.text = "Klip sırası değiştirildi; video parçaları art arda hizalandı."
     }
 
@@ -8938,9 +8970,10 @@ class VideoEditorActivity : Activity() {
                         downRawX = event.rawX
                         initialStartMs = clip.timelineStartMs
                         pauseActivePreview()
-                        // Do not steal the horizontal gesture from the parent lane:
-                        // an ordinary drag scrubs; a hold-then-drag moves the clip.
-                        view.parent?.requestDisallowInterceptTouchEvent(false)
+                        // A finger-down on a clip owns its one-finger horizontal gesture.
+                        // Scrubbing remains available from the empty lane/ruler; a second
+                        // finger still cancels this child gesture in Activity.dispatchTouchEvent.
+                        view.parent?.requestDisallowInterceptTouchEvent(true)
                         timelineHandler.postDelayed(
                             longPressAction,
                             android.view.ViewConfiguration.getLongPressTimeout().toLong()
@@ -8954,18 +8987,14 @@ class VideoEditorActivity : Activity() {
                         ) {
                             filmstripMoved = true
                             timelineHandler.removeCallbacks(longPressAction)
-                            if (filmstripLongPressed) {
-                                view.parent?.requestDisallowInterceptTouchEvent(true)
-                                val minimumPx = -TimelineScaleMath.pixelsForTime(
-                                    initialStartMs, timelinePixelsPerSecond()
-                                )
-                                // Let the first clip travel right as well: the drop target
-                                // determines its new sequence position, not a free timeline gap.
-                                view.translationX = maxOf(minimumPx.toFloat(), dx)
-                            } else {
-                                // Let HorizontalScrollView take over this gesture and scrub.
-                                view.parent?.requestDisallowInterceptTouchEvent(false)
-                            }
+                            view.parent?.requestDisallowInterceptTouchEvent(true)
+                            val minimumPx = -TimelineScaleMath.pixelsForTime(
+                                initialStartMs, timelinePixelsPerSecond()
+                            )
+                            // Move immediately with the finger. On release the drop point
+                            // is converted into a new sequence slot and neighbouring clips
+                            // are reflowed without leaving overlaps or split seams.
+                            view.translationX = maxOf(minimumPx.toFloat(), dx)
                         }
                         true
                     }
@@ -8975,7 +9004,7 @@ class VideoEditorActivity : Activity() {
                         view.parent?.requestDisallowInterceptTouchEvent(false)
                         view.translationX = 0f
                         view.animate().scaleX(1f).scaleY(1f).setDuration(100L).start()
-                        if (filmstripLongPressed && filmstripMoved) {
+                        if (filmstripMoved) {
                             val rawDeltaPx = event.rawX - downRawX
                             val minimumDeltaPx = -TimelineScaleMath.pixelsForTime(
                                 initialStartMs, timelinePixelsPerSecond()
@@ -10504,6 +10533,54 @@ class VideoEditorActivity : Activity() {
         }
     }
 
+
+    private fun normalizeMainVideoLaneOverlaps() {
+        if (clips.size < 2) return
+        val segments = videoTimelineSegments()
+        val chronological = segments.indices.sortedWith(
+            compareBy<Int> { segments[it].timelineStartMs }.thenBy { it }
+        )
+        val hasOverlap = chronological.zipWithNext().any { (left, right) ->
+            segments[left].timelineEndMs > segments[right].timelineStartMs
+        }
+        if (!hasOverlap) return
+
+        val oldSelectedIndex = selectedClipIndex
+        val oldPlayheadMs = timelinePlayheadMs
+        val oldActiveIndex = TimelineVideoMath.activeSegmentIndexAt(segments, oldPlayheadMs)
+        val oldLocalMs = oldActiveIndex?.let { index ->
+            (oldPlayheadMs - segments[index].timelineStartMs).coerceAtLeast(0L)
+        } ?: 0L
+        val plan = TimelineVideoMath.resolveOverlaps(segments) ?: return
+        val previous = clips.toList()
+        val repaired = plan.orderedClipIndices.map { originalIndex ->
+            previous[originalIndex].copy(
+                timelineStartMs = plan.timelineStartByClipIndex[originalIndex]
+                    ?: previous[originalIndex].timelineStartMs
+            )
+        }
+        clips.clear()
+        clips.addAll(repaired)
+        selectedClipIndex = plan.orderedClipIndices.indexOf(oldSelectedIndex).takeIf { it >= 0 } ?: -1
+        val newActiveIndex = oldActiveIndex?.let(plan.orderedClipIndices::indexOf) ?: -1
+        if (newActiveIndex >= 0) {
+            val active = clips[newActiveIndex]
+            val duration = ClipSpeedMath.timelineDurationMs(active.endMs - active.startMs, active.speed)
+            timelinePlayheadMs = active.timelineStartMs + oldLocalMs.coerceIn(
+                0L, (duration - 1L).coerceAtLeast(0L)
+            )
+        } else {
+            timelinePlayheadMs = oldPlayheadMs.coerceIn(0L, totalOutputDurationMs())
+        }
+        pendingTimelineScrollX = TimelineScaleMath.pixelsForTime(
+            timelinePlayheadMs, timelinePixelsPerSecond()
+        ).coerceAtLeast(0)
+        timelineHorizontalScrollX = pendingTimelineScrollX ?: 0
+        if (timelineSyncTestEnabled) android.util.Log.w(
+            "TimelineSyncTest",
+            "VIDEO_LANE_OVERLAP_REPAIRED clipCount=${clips.size} starts=${clips.indices.joinToString(","){ "$it:${clips[it].timelineStartMs}" }}"
+        )
+    }
 
     private fun videoTimelineSegments(): List<TimelineVideoSegment> =
         clips.map { TimelineVideoSegment(it.timelineStartMs,it.startMs,it.endMs,it.durationMs,it.speed) }
