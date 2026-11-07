@@ -1715,12 +1715,13 @@ fi
 # UIAutomator can time out while dumping it even though the editor is still responsive.
 # Verify the rendered selection frame against the measured project-canvas bounds instead.
 detect_text_selection_bounds() {
-  python3 - "$1" "$2" <<'PY'
+  python3 - "$1" "$2" "$3" <<'PY'
 import re
 import sys
+import xml.etree.ElementTree as ET
 from PIL import Image
 
-image_path, log_path = sys.argv[1:3]
+image_path, log_path, hierarchy_path = sys.argv[1:4]
 lines = [line for line in open(log_path, errors="replace") if "PREVIEW_CANVAS_BOUNDS" in line]
 if not lines:
     raise SystemExit("No measured preview-canvas bounds are available for the text selection check.")
@@ -1731,10 +1732,28 @@ match = re.search(
 if not match:
     raise SystemExit(f"Malformed preview-canvas marker: {lines[-1]}")
 canvas_w, canvas_h, offset_x, offset_y, origin_x, origin_y = map(int, match.groups())
-left, top = origin_x + offset_x, origin_y + offset_y
-right, bottom = left + canvas_w - 1, top + canvas_h - 1
 
+# PreviewCanvasTest logs Android view coordinates, while screencap PNGs may
+# be returned at a different raster size. Convert the root-window coordinate
+# space to the screenshot pixel space before sampling the project canvas.
+root = ET.parse(hierarchy_path).getroot()
+root_node = root.find("node")
+root_bounds = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]",
+                           root_node.attrib.get("bounds", "") if root_node is not None else "")
+if not root_bounds:
+    raise SystemExit("Could not read the Android root-window bounds for screenshot scaling.")
+window_left, window_top, window_right, window_bottom = map(int, root_bounds.groups())
+window_width = window_right - window_left
+window_height = window_bottom - window_top
+if window_width <= 0 or window_height <= 0:
+    raise SystemExit("Invalid Android root-window dimensions in hierarchy.")
 image = Image.open(image_path).convert("RGB")
+scale_x = image.width / window_width
+scale_y = image.height / window_height
+left = round((origin_x + offset_x - window_left) * scale_x)
+top = round((origin_y + offset_y - window_top) * scale_y)
+right = round((origin_x + offset_x + canvas_w - window_left) * scale_x) - 1
+bottom = round((origin_y + offset_y + canvas_h - window_top) * scale_y) - 1
 if left < 0 or top < 0 or right >= image.width or bottom >= image.height:
     raise SystemExit(
         f"Measured project canvas lies outside screenshot: "
@@ -1806,7 +1825,7 @@ print(x1, y1, x2, y2, center_x, center_y)
 PY
 }
 
-if ! text_selection_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-selected.png emulator-screenshots/editor-text-selected-canvas-logcat.txt)"; then
+if ! text_selection_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-selected.png emulator-screenshots/editor-text-selected-canvas-logcat.txt emulator-screenshots/editor-text-panel.xml)"; then
   echo "The selected text did not render a measurable white selection frame inside the project canvas."
   collect_capture_diagnostics text-canvas-selection-frame-missing
   exit 60
@@ -1861,7 +1880,7 @@ if ! take_screen emulator-screenshots/editor-text-after-drag.png; then
   collect_capture_diagnostics text-canvas-drag-capture-failure
   exit 6
 fi
-if ! text_after_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-after-drag.png emulator-screenshots/editor-text-after-drag-canvas-logcat.txt)"; then
+if ! text_after_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-after-drag.png emulator-screenshots/editor-text-after-drag-canvas-logcat.txt emulator-screenshots/editor-text-panel.xml)"; then
   echo "The selected text frame was not fully visible after the in-canvas direct drag."
   collect_capture_diagnostics text-canvas-drag-selection-frame-missing
   exit 62
@@ -1967,7 +1986,7 @@ if ! take_screen emulator-screenshots/editor-text-reselected.png; then
 fi
 assert_full_preview_canvas emulator-screenshots/editor-text-reselected.png "text preview reselection" \
   emulator-screenshots/editor-text-reselected-canvas-logcat.txt
-text_reselected_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-reselected.png emulator-screenshots/editor-text-reselected-canvas-logcat.txt)" || {
+text_reselected_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-reselected.png emulator-screenshots/editor-text-reselected-canvas-logcat.txt emulator-screenshots/editor-text-panel.xml)" || {
   echo "Tapping the preview text did not restore a complete canvas selection frame."
   collect_capture_diagnostics text-canvas-tap-selection-frame-missing
   exit 55
