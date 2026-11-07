@@ -2272,6 +2272,39 @@ else
 fi
 dump_hierarchy editor-text-cleanup.xml emulator-screenshots/editor-text-cleanup.xml || true
 
+# Resolve the ruler's actual screen Y coordinate once. Clip surfaces now own
+# horizontal one-finger drags; ruler swipes remain the timeline-scrub gesture.
+ruler_y="$(python3 - emulator-screenshots/editor-window.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+candidates = []
+for node in root.iter("node"):
+    if node.attrib.get("class") != "android.widget.HorizontalScrollView":
+        continue
+    if node.attrib.get("scrollable") != "true":
+        continue
+    match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+    if not match:
+        continue
+    left, top, right, bottom = map(int, match.groups())
+    width, height = right - left, bottom - top
+    if width > 500 and 20 <= height <= 100 and 0 < top < 1200:
+        candidates.append((bottom, (top + bottom) // 2, left, right, height))
+if not candidates:
+    raise SystemExit("Could not locate the horizontally scrollable timeline ruler in the editor hierarchy.")
+_, y, left, right, height = max(candidates)
+print(y)
+PY
+)"
+if [ -z "$ruler_y" ]; then
+  echo "Could not locate the timeline ruler touch row for scrubbing."
+  collect_capture_diagnostics timeline-ruler-scrub-target-missing
+  exit 98
+fi
+
 echo "Step 9/12: align a thumbnail cell with the playhead and compare the rendered pixels"
 # Use app-measured Android View bounds. UIAutomator's full accessibility-tree
 # dump becomes unreliable after repeated panel/keyboard operations.
@@ -2292,7 +2325,7 @@ for attempt in 1 2 3 4 5; do
   fi
   gesture_delta="$((delta_x + (delta_x < 0 ? -touch_slop_px : touch_slop_px)))"
   gesture_end_x="$((thumb_center_x + gesture_delta))"
-  timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$thumb_center_x" "$thumb_center_y" "$gesture_end_x" "$thumb_center_y" 400
+  timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$thumb_center_x" "$ruler_y" "$gesture_end_x" "$ruler_y" 400
   sleep 1
 done
 if [ "$thumbnail_aligned" != true ]; then
@@ -2312,7 +2345,7 @@ python3 .github/scripts/assert-thumbnail-alignment.py verify \
   emulator-screenshots/thumbnail-alignment-logcat.txt \
   emulator-screenshots/editor-frame-aligned.png
 
-echo "Step 10/12: exercise filmstrip scrubbing in both directions"
+echo "Step 10/12: exercise timeline ruler scrubbing in both directions"
 clip_bounds="$(python3 - emulator-screenshots/thumbnail-alignment-logcat.txt <<'PY'
 import re
 import sys
@@ -2331,7 +2364,7 @@ if [ -z "$clip_bounds" ]; then
   exit 17
 fi
 read -r clip_x1 clip_y1 clip_x2 clip_y2 <<< "$clip_bounds"
-scrub_y="$(((clip_y1 + clip_y2) / 2))"
+scrub_y="$ruler_y"
 clip_width="$((clip_x2 - clip_x1))"
 # UIAutomator reports the visible intersection of a long clip with the lane
 # viewport, not the clip's full off-screen width. Scale the regular inset to
@@ -2354,7 +2387,8 @@ if ! [[ "$density_dpi" =~ ^[0-9]+$ ]] || [ "$density_dpi" -le 0 ]; then
   exit 31
 fi
 # Start at least 48dp from the right edge, safely outside the system Back
-# gesture area on density-scaled emulator configurations.
+# gesture area on density-scaled emulator configurations. Gesture vertically
+# through the ruler, never through a video clip (which now means move/reorder).
 right_edge_safe_margin_px="$(((48 * density_dpi + 159) / 160))"
 right_edge_safe_x="$((screen_width - right_edge_safe_margin_px))"
 forward_start="$((clip_x2 - swipe_inset))"
@@ -2421,7 +2455,7 @@ if [ -z "$reverse_bounds" ]; then
   exit 21
 fi
 read -r reverse_x1 reverse_y1 reverse_x2 reverse_y2 <<< "$reverse_bounds"
-reverse_y="$(((reverse_y1 + reverse_y2) / 2))"
+reverse_y="$ruler_y"
 reverse_width="$((reverse_x2 - reverse_x1))"
 reverse_inset="$((reverse_width / 10))"
 if [ "$reverse_inset" -lt 10 ]; then reverse_inset=10; fi
