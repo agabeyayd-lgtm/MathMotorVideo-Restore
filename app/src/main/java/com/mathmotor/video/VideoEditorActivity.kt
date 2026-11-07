@@ -2284,26 +2284,36 @@ class VideoEditorActivity : Activity() {
                 ) {
                     val panelParams = editorPanelScroll.layoutParams as? LinearLayout.LayoutParams
                     if (panelParams != null) {
-                        val basePanelHeight = if (activeEditorPanel == "clipVolume") {
-                            if (imeVisible) 112 else 150
-                        } else {
-                            if (imeVisible) 124 else 196
+                        val basePanelHeight = when {
+                            activeEditorPanel == "clipVolume" -> if (imeVisible) 112 else 150
+                            activeEditorPanel == "text" && imeVisible -> 68
+                            else -> if (imeVisible) 124 else 196
                         }
-                        val stickyHeaderHeight = if (activeEditorPanel == "text" &&
+                        val stickyHeaderHeight = if (!imeVisible && activeEditorPanel == "text" &&
                             ::editorPanelReturnButton.isInitialized &&
                             editorPanelReturnButton.visibility == View.VISIBLE
                         ) 40 else 0
-                        panelParams.height = dp((basePanelHeight - stickyHeaderHeight).coerceAtLeast(72))
+                        panelParams.height = dp((basePanelHeight - stickyHeaderHeight).coerceAtLeast(64))
                         editorPanelScroll.layoutParams = panelParams
                     }
                 }
 
-                // The keyboard is a temporary text-entry mode. Keep the project
-                // canvas large enough to see and position text: collapse the timeline
-                // while the IME is visible, then restore it when text entry ends.
-                // Leaving the full multi-track timeline in place starves the flexible
-                // preview stage and can reduce a 9:16 canvas to a tiny thumbnail.
+                // The keyboard is a temporary text-entry mode. Collapse every
+                // nonessential row around the project canvas; keeping the playback
+                // controls and sticky panel header visible here cuts the actual 9:16
+                // canvas almost in half on a short viewport.
                 timelineCard.visibility = if (imeVisible) View.GONE else View.VISIBLE
+                centeredPlaybackRow.visibility = if (imeVisible) View.GONE else View.VISIBLE
+                if (::editorPanelReturnButton.isInitialized) {
+                    editorPanelReturnButton.visibility =
+                        if (!imeVisible && activeEditorPanel == "text" &&
+                            editorPanelScroll.visibility == View.VISIBLE
+                        ) View.VISIBLE else View.GONE
+                }
+                if (::textLayerList.isInitialized) {
+                    (textLayerList.parent as? View)?.visibility =
+                        if (imeVisible && activeEditorPanel == "text") View.GONE else View.VISIBLE
+                }
 
                 // Hide decorative strips and fixed docks so the active tool gets
                 // the visible space left by the keyboard.
