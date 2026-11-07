@@ -1765,7 +1765,28 @@ if width <= 0 or height <= 0 or abs(width / height - 9 / 16) > 0.002 or abs(aspe
     raise SystemExit(
         f"Keyboard changed the 9:16 project canvas geometry: canvas={width}x{height}, aspect={aspect}"
     )
-print(f"PASS: keyboard remained visible while the actual project canvas stayed 9:16 ({width}x{height}).")
+
+baseline_lines = [
+    line for line in open("emulator-screenshots/preview-canvas-logcat.txt", errors="replace")
+    if "PREVIEW_CANVAS_BOUNDS" in line
+]
+if not baseline_lines:
+    raise SystemExit("The normal keyboard-closed preview baseline is missing.")
+baseline_match = re.search(r"canvas=(\\d+)x(\\d+)", baseline_lines[-1])
+if not baseline_match:
+    raise SystemExit("Malformed normal preview-canvas baseline: " + baseline_lines[-1])
+baseline_height = int(baseline_match.group(2))
+minimum_height = int(baseline_height * 0.75)
+if height < minimum_height:
+    raise SystemExit(
+        "Keyboard-open project canvas is still too small: "
+        f"{width}x{height}, normal height={baseline_height}, "
+        f"required at least {minimum_height}px (75%)."
+    )
+print(
+    "PASS: keyboard stayed visible, the project remained 9:16, and preview height "
+    f"retained at least 75% of normal size ({height}px / {baseline_height}px)."
+)
 PY
 echo "Captured the text editor with the IME open; now dismissing it for the remaining touch tests."
 timeout -k 2s 8s adb -s emulator-5554 shell input keyevent 4
@@ -2002,12 +2023,21 @@ print(f"PASS: {label} kept the full portrait preview visible ({gw}x{gh}, ratio={
 PY
 }
 
-# The pinned sibling header was measured before editing. Its position is not
-# part of the scrolling settings content, so reuse that measured target after
-# the IME is dismissed. Avoid a second full UI hierarchy traversal here: the
-# timeline exposes thousands of off-screen thumbnail nodes and can make
-# UiAutomator dump time out even though the application is healthy.
-echo "Tapping the pinned text-panel return control at $text_panel_back after text editing."
+# Dismissing the IME changes the vertical layout, so the pre-keyboard
+# return-button coordinates are stale. Re-read the accessibility bounds after
+# the keyboard is gone instead of tapping the old screen position.
+if ! dump_hierarchy editor-text-panel-after-keyboard.xml emulator-screenshots/editor-text-panel-after-keyboard.xml; then
+  echo "Could not inspect the text panel after dismissing the keyboard."
+  collect_capture_diagnostics text-panel-after-keyboard-hierarchy-missing
+  exit 56
+fi
+text_panel_back="$(find_bottom_tool emulator-screenshots/editor-text-panel-after-keyboard.xml "Araçlara dön" || true)"
+if [ -z "$text_panel_back" ]; then
+  echo "The text-panel return control was not visible after the keyboard closed."
+  collect_capture_diagnostics text-panel-return-after-keyboard-missing
+  exit 56
+fi
+echo "Tapping the remeasured text-panel return control at $text_panel_back after text editing."
 timeout -k 2s 8s adb -s emulator-5554 logcat -c
 timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_panel_back
 sleep 1
