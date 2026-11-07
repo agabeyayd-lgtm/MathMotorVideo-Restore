@@ -106,11 +106,13 @@ jobs:
           command -v ffmpeg
           ffmpeg -version | head -n 1
           mkdir -p app/build/test-fixtures
+          # This fixture is video-only. Music and sound effects are imported
+          # through their own deterministic WAV fixtures later in the timeline
+          # smoke test. Omitting the synthetic AAC stream avoids emulator-only
+          # Codec2 AAC decoder failures during the separate MP4 export smoke.
           ffmpeg -hide_banner -loglevel error -y \
             -f lavfi -i "color=c=red:s=360x640:r=24" \
-            -f lavfi -i "sine=frequency=440:sample_rate=44100" \
-            -t 8 -vf "hue=h='t*90':s=1" -c:v mpeg4 -q:v 5 -pix_fmt yuv420p \
-            -c:a aac -b:a 64k -shortest \
+            -t 8 -vf "hue=h='t*90':s=1" -an -c:v mpeg4 -q:v 5 -pix_fmt yuv420p \
             app/build/test-fixtures/editor-test-video.mp4
           test -s app/build/test-fixtures/editor-test-video.mp4
           ffmpeg -hide_banner -loglevel error -y -f lavfi -i "color=c=magenta:s=256x128" -frames:v 1 app/build/test-fixtures/editor-test-overlay.png
