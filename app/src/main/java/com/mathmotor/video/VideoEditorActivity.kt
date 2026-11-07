@@ -2474,7 +2474,7 @@ class VideoEditorActivity : Activity() {
             }
             if (imeVisible != keyboardLayoutActive) {
                 applyKeyboardMode(imeVisible, viewportHeight)
-            } else if (!imeVisible && !previewFocusMode) {
+            } else if (!imeVisible && !previewFocusMode && activeEditorPanel == null) {
                 val params = previewFrame.layoutParams as? LinearLayout.LayoutParams
                 if (params != null && (params.height != 0 || params.weight != 1f)) {
                     applyingResponsiveLayout = true
