@@ -299,7 +299,24 @@ for backup_action in "Taslakları yedekle" "Yedekten geri yükle"; do
     exit 31
   fi
 done
-if grep -Eqi "TASLAKLAR|Kaldığın yerden devam et|Henüz kaydedilmiş taslak yok" emulator-screenshots/empty-drafts-home.xml; then
+if ! python3 - emulator-screenshots/empty-drafts-home.xml <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+forbidden = {
+    "taslaklar",
+    "kaldığın yerden devam et",
+    "henüz kaydedilmiş taslak yok",
+}
+for node in root.iter("node"):
+    for attribute in ("text", "content-desc"):
+        value = " ".join(node.attrib.get(attribute, "").casefold().split())
+        if value in forbidden:
+            print(f"Unexpected empty-draft label is visible: {attribute}={value!r}")
+            raise SystemExit(1)
+PY
+then
   echo "The empty draft heading or placeholder remained visible even though there are no saved drafts."
   collect_capture_diagnostics empty-draft-area-visible
   exit 32
