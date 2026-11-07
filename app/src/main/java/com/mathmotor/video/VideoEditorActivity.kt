@@ -238,10 +238,11 @@ class VideoEditorActivity : Activity() {
     private lateinit var previewCanvas: FrameLayout
     private lateinit var previewCanvasOutline: View
     private var lastPreviewCanvasMetrics: String? = null
-    // Preserve the normal preview scale so text/stickers shrink proportionally
-    // while detail panels or the keyboard compress the visible project canvas.
+    // Keep the actual project canvas at its normal measured size while tools
+    // and the IME are open. Only surrounding controls may collapse or scroll.
     private var referencePreviewCanvasWidth = 0
     private var referencePreviewCanvasHeight = 0
+    private var referencePreviewStageHeightPx = 0
     private lateinit var previewFrameOverlay: ImageView
     // Paused editing uses decoded stills for the base clip and each active overlay.
     // CompositionPlayer remains the playback/export renderer.
@@ -2296,11 +2297,21 @@ class VideoEditorActivity : Activity() {
             keyboardLayoutActive = imeVisible
             applyingResponsiveLayout = true
             try {
-                // Track rows determine the timeline card height. Keep the preview
-                // flexible so the tool dock remains visible when settings or the IME open.
+                // The project preview is a fixed-size work surface, not a flexible
+                // remainder. On IME open keep the exact stage height measured in the
+                // normal editor; collapse surrounding rows instead of shrinking video.
                 val previewParams = previewFrame.layoutParams as LinearLayout.LayoutParams
-                previewParams.height = 0
-                previewParams.weight = 1f
+                if (imeVisible) {
+                    val fixedStageHeight = referencePreviewStageHeightPx
+                        .takeIf { it > 0 }
+                        ?: referencePreviewCanvasHeight.takeIf { it > 0 }
+                        ?: dp(previewStageHeightDp)
+                    previewParams.height = fixedStageHeight
+                    previewParams.weight = 0f
+                } else {
+                    previewParams.height = 0
+                    previewParams.weight = 1f
+                }
                 previewFrame.layoutParams = previewParams
 
                 if (::editorPanelScroll.isInitialized &&
@@ -2487,11 +2498,14 @@ class VideoEditorActivity : Activity() {
         val canvasBounds = PreviewCanvasMath.fit(stageWidth, stageHeight, aspect) ?: return
         val canvasWidth = canvasBounds.width
         val canvasHeight = canvasBounds.height
-        if (activeEditorPanel == null && !keyboardLayoutActive && !previewFocusMode) {
-            // Use the latest settled normal layout, not the largest transient
-            // pre-inset measurement during Activity startup.
+        if (!keyboardLayoutActive && !previewFocusMode &&
+            activeEditorPanel == null
+        ) {
+            // Record the actual settled editor work surface before any panel or
+            // keyboard opens. This becomes the invariant preview size for IME mode.
             referencePreviewCanvasWidth = canvasWidth
             referencePreviewCanvasHeight = canvasHeight
+            referencePreviewStageHeightPx = stageHeight
         }
         val stageScreenLocation = IntArray(2)
         previewFrame.getLocationOnScreen(stageScreenLocation)
