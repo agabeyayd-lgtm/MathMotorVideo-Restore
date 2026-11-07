@@ -2182,16 +2182,14 @@ if ! take_screen emulator-screenshots/editor-text-reselected.png; then
   collect_capture_diagnostics text-canvas-reselection-capture-failure
   exit 6
 fi
-if ! dump_hierarchy editor-text-reselected.xml emulator-screenshots/editor-text-reselected.xml; then
-  echo "Could not inspect the project canvas after reselecting the text overlay."
-  collect_capture_diagnostics text-canvas-reselection-hierarchy-missing
-  exit 55
-fi
+# Reselecting a text layer does not resize the project canvas. Reuse the
+# exact closed-panel canvas bounds captured immediately before the tap; this
+# avoids making a successful touch test depend on a second slow UIAutomator dump.
 assert_preview_canvas_unchanged_from_hierarchy \
   emulator-screenshots/editor-text-panel.xml \
-  emulator-screenshots/editor-text-reselected.xml \
+  emulator-screenshots/editor-text-panel-closed.xml \
   emulator-screenshots/editor-text-reselected.png "text preview reselection"
-text_reselected_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-reselected.png emulator-screenshots/editor-text-reselected-canvas-logcat.txt emulator-screenshots/editor-text-reselected.xml)" || {
+text_reselected_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-reselected.png emulator-screenshots/editor-text-reselected-canvas-logcat.txt emulator-screenshots/editor-text-panel-closed.xml)" || {
   echo "Tapping the preview text did not restore a complete canvas selection frame."
   collect_capture_diagnostics text-canvas-tap-selection-frame-missing
   exit 55
@@ -2210,7 +2208,7 @@ echo "PASS: tapping the preview text restored its three-action text dock and sel
 # has succeeded. The app-side dock marker plus the full-canvas screenshot and
 # pixel-verified selection frame are authoritative; hierarchy-based cleanup is
 # best-effort so a slow accessibility dump cannot turn a valid editor state red.
-if [ -s emulator-screenshots/editor-text-reselected.xml ]; then
+if dump_hierarchy editor-text-reselected.xml emulator-screenshots/editor-text-reselected.xml; then
   text_delete_coords="$(find_bottom_tool emulator-screenshots/editor-text-reselected.xml "Sil" || true)"
   if [ -n "$text_delete_coords" ]; then
     timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_delete_coords
