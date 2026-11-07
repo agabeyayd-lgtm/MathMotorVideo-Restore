@@ -2613,7 +2613,9 @@ timeout -k 2s 8s adb -s emulator-5554 shell am force-stop com.mathmotor.video.ne
 timeout -k 2s 5s adb -s emulator-5554 logcat -c || true
 if ! timeout -k 2s 15s adb -s emulator-5554 shell am start \
   -n com.mathmotor.video.next/com.mathmotor.video.EditorTestEntryActivity \
+  --es video_uri "file://$app_internal_video" \
   --es initial_photo_uri "file://$app_internal_photo" \
+  --ez publish_initial_photo_to_media_store true \
   --ez timeline_sync_test true | tee emulator-screenshots/initial-photo-launch.txt; then
   echo "Could not launch the editor through the debug-only initial-photo entry point."
   collect_capture_diagnostics initial-photo-entry-launch-failure
@@ -2701,6 +2703,82 @@ timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTe
   > emulator-screenshots/initial-photo-canvas-logcat.txt 2>&1 || true
 echo "PASS: home-screen photo used the full-frame transform, rendered across the 9:16 canvas, and replaced the empty-video card."
 
+echo "Step 12c/13: verify content:// photo survives a complete app restart"
+if ! grep -Fq "EDITOR_SMOKE_MEDIASTORE_CONTENT_URI uri=content://" emulator-screenshots/initial-photo-logcat.txt; then
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorSmokeTest:I > emulator-screenshots/content-photo-import-logcat.txt 2>&1 || true
+fi
+if ! grep -Fq "OVERLAY_URI_COPIED_TO_PRIVATE_STORAGE source=content://" emulator-screenshots/content-photo-import-logcat.txt; then
+  echo "The content:// gallery fixture was not copied into durable app-private storage."
+  collect_capture_diagnostics content-photo-not-made-durable
+  exit 65
+fi
+if ! dump_hierarchy content-photo-editor.xml emulator-screenshots/content-photo-editor.xml; then
+  echo "Could not inspect editor before saving the content:// photo draft."
+  collect_capture_diagnostics content-photo-editor-hierarchy-missing
+  exit 66
+fi
+close_photo_editor="$(python3 - emulator-screenshots/content-photo-editor.xml <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+root=ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("content-desc") == "Düzenleyiciyi kapat" and node.attrib.get("clickable") == "true":
+        m=re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]",node.attrib.get("bounds",""))
+        if m:
+            x1,y1,x2,y2=map(int,m.groups()); print((x1+x2)//2,(y1+y2)//2); break
+PY
+)"
+if [ -z "$close_photo_editor" ]; then
+  echo "Could not locate the editor close action for the content:// photo draft."
+  collect_capture_diagnostics content-photo-close-control-missing
+  exit 67
+fi
+read -r close_photo_x close_photo_y <<< "$close_photo_editor"
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$close_photo_x" "$close_photo_y"
+content_photo_draft_id=""
+for attempt in $(seq 1 15); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s MathMotorDraft:I > emulator-screenshots/content-photo-draft-save-logcat.txt 2>&1 || true
+  content_photo_draft_id="$(sed -n 's/.*LOCAL_DRAFT_SAVED id=\\([^ ]*\\).*/\\1/p' emulator-screenshots/content-photo-draft-save-logcat.txt | tail -n 1)"
+  if [[ "$content_photo_draft_id" =~ ^[0-9a-fA-F-]{36}$ ]]; then break; fi
+  sleep 1
+done
+if ! [[ "$content_photo_draft_id" =~ ^[0-9a-fA-F-]{36}$ ]]; then
+  echo "The content:// photo project did not produce a saved local draft ID."
+  cat emulator-screenshots/content-photo-draft-save-logcat.txt || true
+  collect_capture_diagnostics content-photo-draft-save-failed
+  exit 68
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell am force-stop com.mathmotor.video.next
+timeout -k 2s 5s adb -s emulator-5554 logcat -c || true
+if ! timeout -k 2s 15s adb -s emulator-5554 shell am start \
+  -n com.mathmotor.video.next/com.mathmotor.video.EditorTestEntryActivity \
+  --es draft_id "$content_photo_draft_id" | tee emulator-screenshots/content-photo-draft-reopen.txt; then
+  echo "Could not relaunch the saved photo draft after force-stop."
+  collect_capture_diagnostics content-photo-draft-relaunch-failed
+  exit 69
+fi
+content_photo_restored=false
+for attempt in $(seq 1 20); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorSmokeTest:I > emulator-screenshots/content-photo-draft-restore-logcat.txt 2>&1 || true
+  if grep -Fq "EDITOR_SMOKE_DRAFT_RESTORED id=$content_photo_draft_id overlays=1" emulator-screenshots/content-photo-draft-restore-logcat.txt; then
+    content_photo_restored=true
+    break
+  fi
+  sleep 1
+done
+if [ "$content_photo_restored" != true ]; then
+  echo "The saved draft did not restore exactly one photo overlay after the app process was killed."
+  cat emulator-screenshots/content-photo-draft-restore-logcat.txt || true
+  collect_capture_diagnostics content-photo-draft-restore-failed
+  exit 70
+fi
+sleep 2
+if ! take_screen emulator-screenshots/content-photo-draft-restored.png; then
+  collect_capture_diagnostics content-photo-draft-restored-capture-failure
+  exit 6
+fi
+echo "PASS: content:// gallery photo was copied durably, saved in a draft, and restored after force-stop/relaunch."
+
+
 echo "Step 13/13: save diagnostics"
 timeout -k 2s 8s adb -s emulator-5554 logcat -d > emulator-screenshots/logcat.txt || true
 test -s emulator-screenshots/home.png
@@ -2719,4 +2797,6 @@ test -s emulator-screenshots/home-with-drafts.png
 test -s emulator-screenshots/editor-initial-photo-full-frame.png
 test -s emulator-screenshots/initial-photo-logcat.txt
 test -s emulator-screenshots/initial-photo-preview.xml
+test -s emulator-screenshots/content-photo-draft-restored.png
+test -s emulator-screenshots/content-photo-draft-restore-logcat.txt
 echo "Home, empty editor, initial/playing editor, two-stage clip tool strip/detail/return geometry, live timeline sync, and autosaved-draft screenshots captured."
