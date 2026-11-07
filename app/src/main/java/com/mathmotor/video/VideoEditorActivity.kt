@@ -7141,6 +7141,7 @@ class VideoEditorActivity : Activity() {
         clips.addAll(loadedClips)
         overlayClips.clear()
         overlayClips.addAll(loadedOverlays)
+        updatePreviewEmptyStateVisibility()
         selectedOverlayId = json.optLong("selectedOverlayId", maxOverlayId).takeIf { id ->
             overlayClips.any { it.id == id }
         } ?: overlayClips.lastOrNull()?.id
@@ -7482,6 +7483,7 @@ class VideoEditorActivity : Activity() {
                     aspectRatio = aspectRatio
                 )
                 overlayClips.add(overlay)
+                updatePreviewEmptyStateVisibility()
                 selectedOverlayId = overlay.id
                 selectedClipIndex = -1
                 clipHandlesVisible = false
@@ -7991,6 +7993,7 @@ class VideoEditorActivity : Activity() {
         }
         overlayClips.removeAll { it.id == selected.id }
         selectedOverlayId = overlayClips.lastOrNull()?.id
+        updatePreviewEmptyStateVisibility()
         loadOverlayControls()
         refreshTimelineTracks()
         rebuildTimelinePreviewForOverlayEdit()
@@ -8405,11 +8408,20 @@ class VideoEditorActivity : Activity() {
         }
     }
 
+    private fun updatePreviewEmptyStateVisibility() {
+        if (!::previewEmptyState.isInitialized) return
+        // A photo/video overlay or text layer is visual project content even when
+        // the main-video lane is empty. Do not leave the "Videonu ekle" empty card
+        // covering a photo that was opened directly from the home screen.
+        val hasVisualContent = clips.isNotEmpty() ||
+            overlayClips.isNotEmpty() ||
+            textLayers.any { it.text.isNotBlank() }
+        previewEmptyState.visibility = if (hasVisualContent) View.GONE else View.VISIBLE
+    }
+
     private fun refreshTimelineAfterClipChange() {
-        // Preview empty state and the single visible timeline are refreshed together.
-        if (::previewEmptyState.isInitialized) {
-            previewEmptyState.visibility = if (clips.isEmpty()) View.VISIBLE else View.GONE
-        }
+        // The empty-state card follows all visible project layers, not only video clips.
+        updatePreviewEmptyStateVisibility()
         refreshTimelineTracks()
     }
 
