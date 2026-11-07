@@ -2642,6 +2642,12 @@ if ! echo "$split_marker" | grep -Eq 'gapMs=0([[:space:]]|$)'; then
   collect_capture_diagnostics video-clip-split-seam
   exit 93
 fi
+split_boundary_ms="$(printf '%s\\n' "$split_marker" | sed -n 's/.*firstEndMs=\\([0-9][0-9]*\\).*/\\1/p')"
+if [ -z "$split_boundary_ms" ]; then
+  echo "The split log did not include the calculated first-segment boundary: $split_marker"
+  collect_capture_diagnostics video-clip-split-boundary-missing
+  exit 93
+fi
 if ! dump_hierarchy video-split-before-drag.xml emulator-screenshots/video-split-before-drag.xml; then
   echo "Could not inspect both split segments before the direct-drag test."
   collect_capture_diagnostics video-split-before-drag-hierarchy
@@ -2697,8 +2703,8 @@ if [ -z "$drag_marker" ]; then
   collect_capture_diagnostics video-direct-clip-drag-not-received
   exit 96
 fi
-if ! echo "$drag_marker" | grep -Eq 'ordered=1,0 .*starts=1:0,0:4000'; then
-  echo "The direct drag did not place the second half before the first without a gap: $drag_marker"
+if ! echo "$drag_marker" | grep -Eq "ordered=1,0 .*starts=1:0,0:${split_boundary_ms}([[:space:]]|$)"; then
+  echo "The direct drag did not place the second half before the first without a gap at ${split_boundary_ms}ms: $drag_marker"
   collect_capture_diagnostics video-direct-clip-drag-order
   exit 97
 fi
