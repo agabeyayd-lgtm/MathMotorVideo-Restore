@@ -88,6 +88,10 @@ jobs:
           test -s app/build/test-fixtures/editor-test-video.mp4
           ffmpeg -hide_banner -loglevel error -y -f lavfi -i "color=c=magenta:s=256x128" -frames:v 1 app/build/test-fixtures/editor-test-overlay.png
           test -s app/build/test-fixtures/editor-test-overlay.png
+          # Portrait sample matches the default 9:16 project canvas and is used
+          # to prove that the home-screen photo route fills the editable canvas.
+          ffmpeg -hide_banner -loglevel error -y -f lavfi -i "color=c=magenta:s=360x640" -frames:v 1 app/build/test-fixtures/editor-test-photo.png
+          test -s app/build/test-fixtures/editor-test-photo.png
           # Keep the replacement clip green enough to detect stale red frames,
           # while a monotonic 24-degree/sec hue shift makes sampled timestamps distinct.
           # Preflighted locally against the exact 8 frame-diversity sample times:
@@ -109,7 +113,7 @@ jobs:
             -f lavfi -i "sine=frequency=784:sample_rate=48000:duration=1.4" \
             -ac 2 -c:a pcm_s16le app/build/test-fixtures/editor-test-sound.wav
           test -s app/build/test-fixtures/editor-test-sound.wav
-          ls -lh app/build/test-fixtures/editor-test-video.mp4 app/build/test-fixtures/editor-test-overlay.png app/build/test-fixtures/editor-test-video-replacement.mp4 app/build/test-fixtures/editor-test-music.wav app/build/test-fixtures/editor-test-sound.wav
+          ls -lh app/build/test-fixtures/editor-test-video.mp4 app/build/test-fixtures/editor-test-overlay.png app/build/test-fixtures/editor-test-photo.png app/build/test-fixtures/editor-test-video-replacement.mp4 app/build/test-fixtures/editor-test-music.wav app/build/test-fixtures/editor-test-sound.wav
 
       - name: Enable KVM acceleration for the emulator
         run: |
