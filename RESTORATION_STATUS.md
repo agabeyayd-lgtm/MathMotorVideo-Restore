@@ -1127,3 +1127,11 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - The `ubuntu-24.04` runner's published software inventory does not list FFmpeg. The workflow therefore used its apt-get fallback before generating deterministic video/audio fixtures; that step remained in progress. The exact stalled subprocess was not available from the active-run logs.
 - Replaced that fallback with the FFmpeg setup action pinned to commit `37062fbf7149fc5578d6c57e08aed62458b375d6`; the existing fixture-generation commands and test assertions are unchanged. The action supplies a static FFmpeg binary without running apt repository updates.
 - A fresh run on the updated PR head is required. Do not mark preview, timeline, text panel, export, or phone acceptance green until the relevant emulator/device evidence is captured.
+
+
+## Empty-draft home layout correction — 2026-11-07
+
+- Static review found that the initial home screen still rendered the empty `TASLAKLAR` heading, helper text and “Henüz kaydedilmiş taslak yok” placeholder. This contradicted the compact-home requirement to hide the empty draft area.
+- Updated `refreshDraftProjects()` so the heading, helper copy, explanation and list appear only when at least one saved draft exists. The `Taslakları yedekle` action stays visible but disabled when there are no drafts; `Yedekten geri yükle` remains visible and usable, so an empty device can still restore a backup.
+- Added an API 35 emulator smoke assertion on the fresh home screen: both backup/restore actions must be present while the empty draft heading/placeholder must be absent. The existing saved-draft check still requires the heading and both actions after the test creates a draft.
+- Unit/build and the complete API 35 emulator run on this exact head are required before marking this correction green. The current screenshot run from the prior source does not cover this change.
