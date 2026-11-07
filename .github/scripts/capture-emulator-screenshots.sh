@@ -2286,7 +2286,7 @@ for node in root.iter("node"):
         continue
     if node.attrib.get("scrollable") != "true":
         continue
-    match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
     if not match:
         continue
     left, top, right, bottom = map(int, match.groups())
@@ -2569,7 +2569,7 @@ for node in root.iter("node"):
     desc = node.attrib.get("content-desc", "")
     if not desc.startswith("Klip 1:") or "editor-test-video-replacement.mp4" not in desc:
         continue
-    match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
     if not match:
         continue
     left, top, right, bottom = map(int, match.groups())
@@ -2606,7 +2606,7 @@ for node in root.iter("node"):
     desc = " ".join(node.attrib.get("content-desc", "").split())
     if text != "Böl" and desc != "Böl":
         continue
-    match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
     if not match:
         continue
     left, top, right, bottom = map(int, match.groups())
