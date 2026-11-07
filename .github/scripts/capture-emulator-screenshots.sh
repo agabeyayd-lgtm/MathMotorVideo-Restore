@@ -1803,21 +1803,33 @@ if width <= 0 or height <= 0 or abs(width / height - 9 / 16) > 0.002 or abs(aspe
         f"Keyboard changed the 9:16 project canvas geometry: canvas={width}x{height}, aspect={aspect}"
     )
 
-baseline_lines = [
-    line for line in open("emulator-screenshots/preview-canvas-logcat.txt", errors="replace")
-    if "PREVIEW_CANVAS_BOUNDS" in line
-]
-if not baseline_lines:
-    raise SystemExit("The normal keyboard-closed preview baseline is missing.")
-baseline_match = re.search(r"canvas=(\d+)x(\d+)", baseline_lines[-1])
-if not baseline_match:
-    raise SystemExit("Malformed normal preview-canvas baseline: " + baseline_lines[-1])
-baseline_width, baseline_height = map(int, baseline_match.groups())
+# The log captured at editor startup can contain transient pre-layout sizes
+# (500x889) before the workspace settles. Compare against the actual measured
+# project canvas from the text panel with the keyboard still closed.
+import xml.etree.ElementTree as ET
+baseline_root = ET.parse("emulator-screenshots/editor-text-panel.xml").getroot()
+baseline_bounds = []
+for node in baseline_root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != "Proje tuvali":
+        continue
+    baseline_match = re.fullmatch(
+        r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]",
+        node.attrib.get("bounds", ""),
+    )
+    if baseline_match:
+        baseline_bounds.append(tuple(map(int, baseline_match.groups())))
+if len(baseline_bounds) != 1:
+    raise SystemExit(
+        "The keyboard-closed text-panel hierarchy did not expose exactly one measured project canvas."
+    )
+baseline_width = baseline_bounds[0][2] - baseline_bounds[0][0]
+baseline_height = baseline_bounds[0][3] - baseline_bounds[0][1]
 if (width, height) != (baseline_width, baseline_height):
     raise SystemExit(
         "Keyboard changed the project preview size; the canvas must remain pixel-identical: "
         f"normal={baseline_width}x{baseline_height}, keyboard={width}x{height}."
     )
+
 print(
     "PASS: keyboard remained visible and the project preview kept its exact "
     f"normal dimensions ({width}x{height}); no shrinking or scaling is allowed."
