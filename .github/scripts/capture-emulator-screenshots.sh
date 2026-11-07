@@ -2294,10 +2294,11 @@ for node in root.iter("node"):
     left, top, right, bottom = map(int, match.groups())
     width, height = right - left, bottom - top
     if width > 500 and 20 <= height <= 100 and 0 < top < 1200:
-        candidates.append((bottom, (top + bottom) // 2, left, right, height))
+        candidates.append((top, bottom, (top + bottom) // 2, left, right, height))
 if not candidates:
     raise SystemExit("Could not locate the horizontally scrollable timeline ruler in the editor hierarchy.")
-_, y, left, right, height = max(candidates)
+# The ruler is the first/uppermost short scroll row; audio/text lanes follow below it.
+top, bottom, y, left, right, height = min(candidates, key=lambda item: (item[0], item[1]))
 print(y)
 PY
 )"
