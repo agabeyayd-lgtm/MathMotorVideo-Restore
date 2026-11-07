@@ -3644,7 +3644,8 @@ class VideoEditorActivity : Activity() {
                         else Color.rgb(61, 79, 99)
                     )
                 }
-                clipToOutline = true
+                // Edge hit targets straddle the block boundary into the spacer.
+                clipToOutline = false
                 contentDescription = "Yazı katmanı ${layerIndex + 1}: ortasından sürükleyerek taşı, kenarlarından sürükleyerek süresini değiştir"
             }
             val body = TextView(this).apply {
@@ -4336,12 +4337,15 @@ class VideoEditorActivity : Activity() {
             ).coerceAtLeast(1)
         )
         val frame = FrameLayout(this).apply {
+            clipChildren = false
+            clipToPadding = false
             background = android.graphics.drawable.GradientDrawable().apply {
                 setColor(Color.rgb(46, 125, 85))
                 cornerRadius = dp(5).toFloat()
                 setStroke(dp(1), Color.rgb(93, 190, 127))
             }
-            clipToOutline = true
+            // Keep the rounded background, but do not clip the extended edge hit zones.
+            clipToOutline = false
             contentDescription = "Müzik: ortasından taşı, kenarlarından süreyi ayarla"
         }
         val body = TextView(this).apply {
@@ -4560,12 +4564,15 @@ class VideoEditorActivity : Activity() {
             ).coerceAtLeast(1)
         )
         val frame = FrameLayout(this).apply {
+            clipChildren = false
+            clipToPadding = false
             background = android.graphics.drawable.GradientDrawable().apply {
                 setColor(Color.rgb(166, 102, 40))
                 cornerRadius = dp(5).toFloat()
                 setStroke(dp(1), Color.rgb(214, 157, 84))
             }
-            clipToOutline = true
+            // Keep the rounded background, but do not clip the extended edge hit zones.
+            clipToOutline = false
             contentDescription = "Ses efekti: ortasından taşı, kenarlarından kırp"
         }
         val body = TextView(this).apply {
