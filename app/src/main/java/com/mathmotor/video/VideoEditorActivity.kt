@@ -5082,9 +5082,11 @@ class VideoEditorActivity : Activity() {
                         val actual = android.graphics.Rect(
                             location[0], location[1], location[0] + view.width, location[1] + view.height
                         )
-                        // Exclude clipped edge cells: their full image bounds are needed
-                        // for accurate screenshot fingerprints and aspect-ratio sampling.
-                        if (visible == actual) {
+                        // getGlobalVisibleRect() and getLocationOnScreen() can use
+                        // different origins when the window has a top inset. Compare the
+                        // visible dimensions only; use on-screen coordinates for the
+                        // screenshot-space bounds written to the log.
+                        if (visible.width() == view.width && visible.height() == view.height) {
                             cellBounds.add(
                                 "$timestamp:${actual.left},${actual.top},${actual.right},${actual.bottom}"
                             )
