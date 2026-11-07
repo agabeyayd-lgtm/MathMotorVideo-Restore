@@ -1158,3 +1158,11 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - API 35 emulator run #1057 attempt 2 passed unit tests, debug APK compilation/packaging, FFmpeg setup, deterministic fixture generation, KVM/SDK installation, emulator boot, app install and home launch. The fresh-home test scrolled to the actual draft controls and confirmed both backup/restore buttons were present.
 - It then failed the empty-label check because the shell used substring matching: `TASLAKLAR` also matches the longer valid button label `Taslakları yedekle`. Artifact `empty-drafts-home.xml` contains only the two expected backup/restore controls; the heading, helper text and empty placeholder are absent. The screenshot likewise shows no empty draft section. This is a **test false positive**, not an app UI regression.
 - Replaced the grep substring check with XML parsing and exact normalized equality for the three forbidden labels. The valid `Taslakları yedekle` action no longer matches the heading assertion. The emulator run did not reach editor/export/preview checks in this attempt; rerun the complete smoke against the corrected script.
+
+
+## Photo-only preview empty-state correction — 2026-11-07
+
+- Follow-up source review found the editor's centered `Videonu ekle` empty-state card was controlled only by `clips.isEmpty()`. A photo opened directly from the home screen creates an image overlay without a main-video clip, so the empty card could remain above the selected image and cover the actual photo preview.
+- Added one shared `updatePreviewEmptyStateVisibility()` rule: the card appears only when the project has no video clips, no image/video overlays, and no non-empty text layers. It is refreshed when an overlay is added/removed, a project is restored, video lanes change, or text layers change.
+- The API 35 photo-only smoke now captures a portrait magenta image after opening through the actual debug-only equivalent of the home photo route. Its pixel-bounds/fill assertion will catch an empty-state card covering the canvas, as well as a non-full-frame placement.
+- Unit/build/emulator verification is pending for this follow-up source change. No app version, signing or release workflow was changed.
