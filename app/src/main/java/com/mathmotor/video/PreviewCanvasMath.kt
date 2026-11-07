@@ -47,6 +47,21 @@ internal object PreviewCanvasMath {
     }
 
     /**
+     * Maximum center translation that keeps a rotated layer inside the canvas,
+     * leaving an inset for selection strokes and anti-aliased canvas edges.
+     */
+    fun maxCenterTranslation(
+        canvasExtent: Float,
+        rotatedContentExtent: Float,
+        edgeInset: Float
+    ): Float {
+        val safeCanvas = canvasExtent.takeIf { it.isFinite() && it > 0f } ?: 0f
+        val safeContent = rotatedContentExtent.takeIf { it.isFinite() && it >= 0f } ?: 0f
+        val safeInset = edgeInset.takeIf { it.isFinite() && it >= 0f } ?: 0f
+        return ((safeCanvas - safeContent) / 2f - safeInset).coerceAtLeast(0f)
+    }
+
+    /**
      * Converts the same center position into Media3's normalized frame anchor.
      * Media3's Y axis points up, opposite to Android screen coordinates.
      */

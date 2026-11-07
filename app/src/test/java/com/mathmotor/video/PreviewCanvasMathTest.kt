@@ -70,6 +70,20 @@ class PreviewCanvasMathTest {
     }
 
     @Test
+    fun selectionChromeKeepsAnInsetFromEveryCanvasEdge() {
+        assertEquals(46f, PreviewCanvasMath.maxCenterTranslation(200f, 100f, 4f), 0f)
+        assertEquals(0f, PreviewCanvasMath.maxCenterTranslation(200f, 200f, 2f), 0f)
+        assertEquals(0f, PreviewCanvasMath.maxCenterTranslation(200f, 220f, 2f), 0f)
+    }
+
+    @Test
+    fun invalidSelectionGeometryCannotProduceAnUnsafeTranslation() {
+        assertEquals(0f, PreviewCanvasMath.maxCenterTranslation(Float.NaN, 100f, 2f), 0f)
+        assertEquals(0f, PreviewCanvasMath.maxCenterTranslation(200f, Float.NaN, 2f), 0f)
+        assertEquals(0f, PreviewCanvasMath.maxCenterTranslation(200f, 100f, Float.POSITIVE_INFINITY), 0f)
+    }
+
+    @Test
     fun rotationDeltaUsesShortestDirectionAcrossZeroDegrees() {
         assertEquals(20f, PreviewCanvasMath.rotationDeltaDegrees(170f, -170f), 0f)
         assertEquals(-20f, PreviewCanvasMath.rotationDeltaDegrees(-170f, 170f), 0f)

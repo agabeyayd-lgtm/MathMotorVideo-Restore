@@ -1173,3 +1173,12 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Extended the full-frame photo smoke so that, after verifying the portrait magenta pixel bounds and fill ratio, it also captures the photo-only preview accessibility hierarchy.
 - The test now explicitly rejects the empty-state content description `Galeriden video ekle` and label `Videonu ekle` while the initial photo layer is active. This distinguishes a genuinely photo-ready preview from one where the photo exists underneath a blocking empty-video card.
 - Latest script commit: `88235b6fb700828e5292e7bd571c9ef97267e063`. Full unit/build and API 35 emulator verification are running for this updated head; no success is claimed until those exact checks complete.
+
+
+## Text selection frame visibility and screenshot geometry — 2026-11-07
+
+- Investigated emulator run `42340561594` (`d5bcb29da4d26cd64190c39fc0a84ca3e5542581`). The text rendered and the keyboard/9:16 canvas assertion passed, but the selection-frame assertion could only see three sides: the preview-canvas outline was a higher-level sibling of the canvas and painted over the white selection chrome where they met.
+- Moved the non-interactive canvas outline into the project-canvas drawing stack, below text and selection chrome. Text/sticker transforms now retain a 2 dp inner safety inset so the selection stroke is not clipped when a layer reaches a canvas edge.
+- The emulator pixel assertion now reads root-window and `Proje tuvali` bounds from a fresh accessibility hierarchy captured after keyboard dismissal and again after the drag. It no longer pairs a screenshot with potentially stale IME-era canvas dimensions.
+- Added JVM coverage for the safe selection-frame translation bounds.
+- Unit/build/emulator verification is pending for this exact follow-up commit. No app version, release signing, or publish workflow was changed.

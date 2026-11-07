@@ -857,9 +857,12 @@ class VideoEditorActivity : Activity() {
             contentDescription = null
             elevation = dp(3).toFloat()
         }
-        previewFrame.addView(
+        // Keep the canvas edge in the canvas drawing stack. Its low elevation
+        // stays above the video surface but below text, gestures and selection
+        // chrome, so the boundary cannot paint over a selected layer's frame.
+        previewCanvas.addView(
             previewCanvasOutline,
-            FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER)
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         )
         // The preview must use the full editor width; a fixed 180dp player
         // makes the central canvas look like a narrow phone-within-a-phone.
@@ -2467,17 +2470,6 @@ class VideoEditorActivity : Activity() {
             canvasParams.height = canvasHeight
             canvasParams.gravity = Gravity.CENTER
             previewCanvas.layoutParams = canvasParams
-        }
-
-        val outlineParams = previewCanvasOutline.layoutParams as? FrameLayout.LayoutParams
-            ?: FrameLayout.LayoutParams(canvasWidth, canvasHeight, Gravity.CENTER)
-        if (outlineParams.width != canvasWidth || outlineParams.height != canvasHeight ||
-            outlineParams.gravity != Gravity.CENTER
-        ) {
-            outlineParams.width = canvasWidth
-            outlineParams.height = canvasHeight
-            outlineParams.gravity = Gravity.CENTER
-            previewCanvasOutline.layoutParams = outlineParams
         }
 
         val playerParams = playerView.layoutParams as? FrameLayout.LayoutParams ?: return
@@ -6359,8 +6351,15 @@ class VideoEditorActivity : Activity() {
             val sine = kotlin.math.abs(kotlin.math.sin(angle)).toFloat()
             val rotatedBoundsWidth = frameWidth * cosine + frameHeight * sine
             val rotatedBoundsHeight = frameHeight * cosine + frameWidth * sine
-            val maxTranslationX = ((videoWidth.toFloat() - rotatedBoundsWidth) / 2f).coerceAtLeast(0f)
-            val maxTranslationY = ((videoHeight.toFloat() - rotatedBoundsHeight) / 2f).coerceAtLeast(0f)
+            // Leave a tiny safety inset so the selection stroke is not clipped
+            // by the project's own edge when a layer is dragged to a canvas boundary.
+            val selectionEdgeInset = dp(2).toFloat()
+            val maxTranslationX = PreviewCanvasMath.maxCenterTranslation(
+                videoWidth.toFloat(), rotatedBoundsWidth, selectionEdgeInset
+            )
+            val maxTranslationY = PreviewCanvasMath.maxCenterTranslation(
+                videoHeight.toFloat(), rotatedBoundsHeight, selectionEdgeInset
+            )
             val requestedTranslationX =
                 PreviewCanvasMath.screenTranslationForFraction(layer.xFraction, videoWidth.toFloat()) +
                     animationState.offsetXFraction * videoWidth
