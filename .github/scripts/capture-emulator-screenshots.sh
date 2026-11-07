@@ -1813,7 +1813,7 @@ for node in baseline_root.iter("node"):
     if node.attrib.get("content-desc", "").strip() != "Proje tuvali":
         continue
     baseline_match = re.fullmatch(
-        r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]",
+        r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",
         node.attrib.get("bounds", ""),
     )
     if baseline_match:
