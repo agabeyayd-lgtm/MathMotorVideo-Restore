@@ -401,7 +401,7 @@ class TimelineVideoMathTest {
     }
 
     @Test
-    fun droppingInsideTheCurrentSlotDoesNotCollapseExistingTimelineGaps() {
+    fun droppingInsideTheCurrentSlotClosesTheGapOnTheSingleVideoLane() {
         val segments = listOf(
             TimelineVideoSegment(0L, 0L, 2_000L, 2_000L),
             TimelineVideoSegment(5_000L, 0L, 2_000L, 2_000L)
@@ -414,7 +414,7 @@ class TimelineVideoMathTest {
         )
 
         assertEquals(listOf(0, 1), plan?.orderedClipIndices)
-        assertEquals(5_000L, plan?.timelineStartByClipIndex?.get(1))
+        assertEquals(2_000L, plan?.timelineStartByClipIndex?.get(1))
     }
 
     @Test
