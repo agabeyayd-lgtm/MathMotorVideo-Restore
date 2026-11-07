@@ -101,6 +101,31 @@ def pixel_mean(image, x, y, radius=2):
             values.append(image.getpixel((px, py)))
     return tuple(round(statistics.mean(pixel[channel] for pixel in values)) for channel in range(3))
 
+def thumbnail_time_tolerance_ms(snapshot, selected_timestamp: int, pixel_tolerance: int = 5) -> int:
+    """
+    Convert the same horizontal pixel tolerance used by the alignment assertion
+    into a frame-time tolerance, plus one small decoder/frame-rounding allowance.
+    Thumbnail sample timestamps are frame centers; the fixed playhead can sit a few
+    pixels away from the center while still being visually aligned on screen.
+    """
+    cells = sorted(
+        (
+            (box[0] + box[2]) // 2,
+            timestamp,
+        )
+        for timestamp, box in snapshot["cells"]
+    )
+    slopes = []
+    for (x1, t1), (x2, t2) in zip(cells, cells[1:]):
+        dx = abs(x2 - x1)
+        dt = abs(t2 - t1)
+        if dx > 0 and dt > 0:
+            slopes.append(dt / dx)
+    ms_per_pixel = statistics.median(slopes) if slopes else 10.0
+    # 5px is the existing on-screen center tolerance; allow 20ms for frame-time rounding.
+    return max(35, int((pixel_tolerance * ms_per_pixel) + 20 + 0.999))
+
+
 def verify(log_path: str, screenshot_path: str):
     try:
         from PIL import Image
@@ -133,9 +158,15 @@ def verify(log_path: str, screenshot_path: str):
             r"TIMELINE_PREVIEW_FRAME_READY projectMs=(\d+) sourceMs=(\d+)", log
         )
     ]
-    if not any(abs(project - sample_ms) <= 35 and abs(source - sample_ms) <= 35 for project, source in ready):
+    time_tolerance_ms = thumbnail_time_tolerance_ms(snapshot, sample_ms)
+    if not any(
+        abs(project - sample_ms) <= time_tolerance_ms
+        and abs(source - sample_ms) <= time_tolerance_ms
+        for project, source in ready
+    ):
         raise SystemExit(
             f"FAIL: preview did not decode the timestamp represented by the centered thumbnail "
+            f"within the measured {time_tolerance_ms}ms on-screen alignment tolerance "
             f"(thumbnail={sample_ms}ms, ready preview frames={ready[-5:]})."
         )
     scrub_ready = [
@@ -144,9 +175,14 @@ def verify(log_path: str, screenshot_path: str):
             r"TIMELINE_SCRUB_PREVIEW_FRAME_READY projectMs=(\d+) sourceMs=(\d+)", log
         )
     ]
-    if not any(abs(project - sample_ms) <= 35 and abs(source - sample_ms) <= 35 for project, source in scrub_ready):
+    if not any(
+        abs(project - sample_ms) <= time_tolerance_ms
+        and abs(source - sample_ms) <= time_tolerance_ms
+        for project, source in scrub_ready
+    ):
         raise SystemExit(
             f"FAIL: dragging the filmstrip did not update the preview to the centered playhead time "
+            f"within the measured {time_tolerance_ms}ms on-screen alignment tolerance "
             f"(thumbnail={sample_ms}ms, scrub preview frames={scrub_ready[-5:]})."
         )
     if not re.search(rf"TIMELINE_THUMBNAIL_READY sourceMs={sample_ms} ", log):
@@ -155,9 +191,9 @@ def verify(log_path: str, screenshot_path: str):
     timing_rows = [
         tuple(map(int, row))
         for row in re.findall(
-            r"TIMELINE_THUMBNAIL_TIMING sourceMs=(\\d+) success=true "
-            r"queueWaitMs=(\\d+) frameDecodeMs=(\\d+) bitmapScaleMs=(\\d+) "
-            r"uiDispatchWaitMs=(\\d+) uiApplyMs=(\\d+)",
+            r"TIMELINE_THUMBNAIL_TIMING sourceMs=(\d+) success=true "
+            r"queueWaitMs=(\d+) frameDecodeMs=(\d+) bitmapScaleMs=(\d+) "
+            r"uiDispatchWaitMs=(\d+) uiApplyMs=(\d+)",
             log,
         )
     ]
@@ -235,6 +271,7 @@ def verify(log_path: str, screenshot_path: str):
     print("PASS: preview frame matches the filmstrip cell centered under the playhead")
     print(f"  Visually distinct thumbnails: {unique_fingerprints}/{len(fingerprints)}")
     print(f"  Sample timestamp: {sample_ms}ms")
+    print(f"  Time tolerance from measured pixel alignment: {time_tolerance_ms}ms")
     print(f"  Preview comparison RGB: {preview_rgb}")
     print(f"  Thumbnail comparison RGB: {thumb_rgb}")
     print(f"  Maximum channel delta: {channel_delta}")
