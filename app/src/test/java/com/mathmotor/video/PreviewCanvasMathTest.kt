@@ -81,6 +81,7 @@ class PreviewCanvasMathTest {
         assertEquals(0f, PreviewCanvasMath.maxCenterTranslation(Float.NaN, 100f, 2f), 0f)
         assertEquals(0f, PreviewCanvasMath.maxCenterTranslation(200f, Float.NaN, 2f), 0f)
         assertEquals(0f, PreviewCanvasMath.maxCenterTranslation(200f, 100f, Float.POSITIVE_INFINITY), 0f)
+        assertEquals(0f, PreviewCanvasMath.maxCenterTranslation(200f, 100f, -1f), 0f)
     }
 
     @Test

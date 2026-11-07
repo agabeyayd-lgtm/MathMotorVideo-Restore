@@ -1022,3 +1022,10 @@ The outer timeline workspace remains a stable height as video, text, music, and 
 - The emulator pixel assertion now reads root-window and `Proje tuvali` bounds from a fresh accessibility hierarchy for each relevant screenshot: after keyboard dismissal, after the direct drag, after closing the text panel, and after preview reselection. It no longer pairs pixels with IME-era or previous-panel canvas dimensions.
 - Added JVM coverage for the safe selection-frame translation bounds.
 - Unit/build/emulator verification is pending for this exact follow-up commit. No app version, release signing, or publish workflow was changed.
+
+
+## Selection geometry invalid-input guard — 2026-11-07
+
+- The first follow-up's added JVM test exposed a defensive-input edge case: an infinite/negative selection inset was normalized to zero, which allowed movement instead of failing closed.
+- `PreviewCanvasMath.maxCenterTranslation` now returns zero for non-finite or invalid canvas/content/inset inputs. The unit test also covers a negative inset.
+- The complete emulator run remains pending on the next head; no version, signing, or release workflow changed.

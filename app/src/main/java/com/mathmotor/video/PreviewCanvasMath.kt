@@ -55,10 +55,13 @@ internal object PreviewCanvasMath {
         rotatedContentExtent: Float,
         edgeInset: Float
     ): Float {
-        val safeCanvas = canvasExtent.takeIf { it.isFinite() && it > 0f } ?: 0f
-        val safeContent = rotatedContentExtent.takeIf { it.isFinite() && it >= 0f } ?: 0f
-        val safeInset = edgeInset.takeIf { it.isFinite() && it >= 0f } ?: 0f
-        return ((safeCanvas - safeContent) / 2f - safeInset).coerceAtLeast(0f)
+        if (!canvasExtent.isFinite() || canvasExtent <= 0f ||
+            !rotatedContentExtent.isFinite() || rotatedContentExtent < 0f ||
+            !edgeInset.isFinite() || edgeInset < 0f
+        ) {
+            return 0f
+        }
+        return ((canvasExtent - rotatedContentExtent) / 2f - edgeInset).coerceAtLeast(0f)
     }
 
     /**
