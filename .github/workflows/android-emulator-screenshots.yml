@@ -175,7 +175,7 @@ jobs:
             "platform-tools" "platforms;android-35" "emulator" "system-images;android-35;google_apis;x86_64"
           echo "Creating the API 35 virtual device..."
           timeout -k 10s 120s bash -o pipefail -c \
-            'printf "%s\\n" no | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd --force --name mathmotor-api35 --package "system-images;android-35;google_apis;x86_64" --device "pixel_2"'
+            'echo no | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd --force --name mathmotor-api35 --package "system-images;android-35;google_apis;x86_64" --device "pixel_2"'
           test -s "$ANDROID_AVD_HOME/mathmotor-api35.ini"
           "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" list avd
 
