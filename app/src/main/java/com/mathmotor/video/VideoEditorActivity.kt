@@ -6683,60 +6683,23 @@ class VideoEditorActivity : Activity() {
     private fun installPreviewTextTouch(overlay: TextView) {
         var downRawX = 0f
         var downRawY = 0f
-        var passiveTapDownX = 0f
-        var passiveTapDownY = 0f
-        var passiveTapCandidate = false
         var startX = 0.5f
-        var startY = 0.84f
+        var startY = 0.5f
         var startDistance = 0f
         var startAngle = 0f
         var startSize = 24
         var startRotationDegrees = 0f
+
         overlay.isClickable = true
         overlay.setOnTouchListener { view, event ->
             val layerId = view.tag as? Long ?: return@setOnTouchListener false
-            val layer = textLayers.firstOrNull { it.id == layerId } ?: return@setOnTouchListener false
-            val editingTextInPlace = textOverlayEditingEnabled && activeEditorPanel == "text"
-            if (!editingTextInPlace) {
-                // The preview text must remain directly selectable after its settings
-                // panel is closed. Handle the tap on the overlay itself instead of
-                // relying on a click callback that can be bypassed by canvas touch layers.
-                when (event.actionMasked) {
-                    android.view.MotionEvent.ACTION_DOWN -> {
-                        passiveTapDownX = event.rawX
-                        passiveTapDownY = event.rawY
-                        passiveTapCandidate = true
-                        true
-                    }
-                    android.view.MotionEvent.ACTION_MOVE -> {
-                        val slop = android.view.ViewConfiguration.get(this).scaledTouchSlop.toFloat()
-                        if (kotlin.math.abs(event.rawX - passiveTapDownX) > slop ||
-                            kotlin.math.abs(event.rawY - passiveTapDownY) > slop) {
-                            passiveTapCandidate = false
-                        }
-                        true
-                    }
-                    android.view.MotionEvent.ACTION_UP -> {
-                        val shouldSelect = passiveTapCandidate
-                        passiveTapCandidate = false
-                        if (shouldSelect) {
-                            if (timelineSyncTestEnabled) {
-                                android.util.Log.i("EditorTouchTest", "TEXT_CANVAS_TAP_SELECT layerId=$layerId")
-                            }
-                            selectTextLayer(layerId)
-                            view.performClick()
-                        }
-                        true
-                    }
-                    android.view.MotionEvent.ACTION_CANCEL -> {
-                        passiveTapCandidate = false
-                        true
-                    }
-                    else -> true
-                }
-            } else when (event.actionMasked) {
+            val layer = textLayers.firstOrNull { it.id == layerId }
+                ?: return@setOnTouchListener false
+
+            when (event.actionMasked) {
                 android.view.MotionEvent.ACTION_DOWN -> {
-                    // The parent editor ScrollView must not intercept vertical text drags.
+                    // Text is a directly-manipulable project layer even when its
+                    // properties panel is closed. Select it before beginning a drag.
                     view.parent?.requestDisallowInterceptTouchEvent(true)
                     if (selectedTextLayerId != layer.id) {
                         syncSelectedTextLayerFromControls()
@@ -6747,12 +6710,21 @@ class VideoEditorActivity : Activity() {
                     downRawY = event.rawY
                     val canvasWidth = previewCanvas.width.coerceAtLeast(1).toFloat()
                     val canvasHeight = previewCanvas.height.coerceAtLeast(1).toFloat()
-                    startX = PreviewCanvasMath.screenFractionForTranslation(view.translationX, canvasWidth)
-                    startY = PreviewCanvasMath.screenFractionForTranslation(view.translationY, canvasHeight)
+                    // Use the actually rendered (possibly edge-clamped) position as
+                    // the gesture origin, never the stale stored project fraction.
+                    startX = PreviewCanvasMath.screenFractionForTranslation(
+                        view.translationX, canvasWidth
+                    )
+                    startY = PreviewCanvasMath.screenFractionForTranslation(
+                        view.translationY, canvasHeight
+                    )
                     startSize = layer.sizeSp
                     startRotationDegrees = layer.rotationDegrees
                     startDistance = 0f
                     startAngle = 0f
+                    timelineCompositionPlayer?.pause()
+                    timelineCompositionPlayer?.playWhenReady = false
+                    player?.pause()
                     player?.playWhenReady = false
                     true
                 }
@@ -6779,10 +6751,12 @@ class VideoEditorActivity : Activity() {
                         )
                         layer.sizeSp = (startSize * distance / startDistance).toInt().coerceIn(12, 96)
                         textSizeSp = layer.sizeSp
-                        if (selectedTextLayerId == layer.id) {
+                        if (selectedTextLayerId == layer.id && ::textSizeLabel.isInitialized &&
+                            ::textSizeSeek.isInitialized
+                        ) {
                             loadingTextLayerControls = true
                             try {
-                                textSizeLabel.text = "Yazı boyutu: " + layer.sizeSp + " sp"
+                                textSizeLabel.text = "Yazı boyutu: ${layer.sizeSp} sp"
                                 textSizeSeek.progress = layer.sizeSp - 12
                             } finally {
                                 loadingTextLayerControls = false
@@ -6791,14 +6765,18 @@ class VideoEditorActivity : Activity() {
                     } else if (event.pointerCount == 1) {
                         val videoWidth = previewCanvas.width.coerceAtLeast(1).toFloat()
                         val videoHeight = previewCanvas.height.coerceAtLeast(1).toFloat()
-                        layer.xFraction = (startX + (event.rawX - downRawX) / videoWidth).coerceIn(0.03f, 0.97f)
-                        layer.yFraction = (startY + (event.rawY - downRawY) / videoHeight).coerceIn(0.04f, 0.96f)
+                        layer.xFraction = (
+                            startX + (event.rawX - downRawX) / videoWidth
+                        ).coerceIn(0.03f, 0.97f)
+                        layer.yFraction = (
+                            startY + (event.rawY - downRawY) / videoHeight
+                        ).coerceIn(0.04f, 0.96f)
                         layer.position = when {
                             layer.yFraction < 0.34f -> TextPosition.TOP
                             layer.yFraction > 0.66f -> TextPosition.BOTTOM
                             else -> TextPosition.CENTER
                         }
-                        if (selectedTextLayerId == layer.id) {
+                        if (selectedTextLayerId == layer.id && ::textPositionGroup.isInitialized) {
                             textPosition = layer.position
                             loadingTextLayerControls = true
                             try {
@@ -6816,8 +6794,8 @@ class VideoEditorActivity : Activity() {
                     true
                 }
                 android.view.MotionEvent.ACTION_POINTER_UP -> {
-                    // Re-anchor the one-finger drag to the finger that remains down.
-                    // Otherwise lifting pointer 0 can make the next move jump the overlay.
+                    // Re-anchor the remaining finger so a two-to-one-finger
+                    // transition cannot jump the text layer.
                     val remainingIndex = if (event.actionIndex == 0) 1 else 0
                     if (remainingIndex < event.pointerCount) {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -6832,8 +6810,12 @@ class VideoEditorActivity : Activity() {
                     }
                     val canvasWidth = previewCanvas.width.coerceAtLeast(1).toFloat()
                     val canvasHeight = previewCanvas.height.coerceAtLeast(1).toFloat()
-                    startX = PreviewCanvasMath.screenFractionForTranslation(view.translationX, canvasWidth)
-                    startY = PreviewCanvasMath.screenFractionForTranslation(view.translationY, canvasHeight)
+                    startX = PreviewCanvasMath.screenFractionForTranslation(
+                        view.translationX, canvasWidth
+                    )
+                    startY = PreviewCanvasMath.screenFractionForTranslation(
+                        view.translationY, canvasHeight
+                    )
                     startSize = layer.sizeSp
                     startRotationDegrees = layer.rotationDegrees
                     startDistance = 0f
@@ -6844,7 +6826,7 @@ class VideoEditorActivity : Activity() {
                     if (selectedTextLayerId == layer.id) syncSelectedTextLayerFromControls()
                     refreshTextLayerList()
                     refreshTimelineTracks()
-                    status.text = "Yazı konumu, boyutu veya açısı güncellendi."
+                    status.text = "Yazı katmanı taşındı veya dönüştürüldü."
                     view.performClick()
                     true
                 }
