@@ -68,12 +68,16 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Set up FFmpeg
+        uses: FedericoCarboni/setup-ffmpeg@37062fbf7149fc5578d6c57e08aed62458b375d6
+        with:
+          ffmpeg-version: release
+          linking-type: static
+
       - name: Generate a deterministic sample video for editor smoke tests
         run: |
-          if ! command -v ffmpeg >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install -y ffmpeg
-          fi
+          command -v ffmpeg
+          ffmpeg -version | head -n 1
           mkdir -p app/build/test-fixtures
           ffmpeg -hide_banner -loglevel error -y \
             -f lavfi -i "color=c=red:s=360x640:r=24" \
