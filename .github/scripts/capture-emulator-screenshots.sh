@@ -2740,7 +2740,7 @@ timeout -k 2s 8s adb -s emulator-5554 shell input tap "$close_photo_x" "$close_p
 content_photo_draft_id=""
 for attempt in $(seq 1 15); do
   timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s MathMotorDraft:I > emulator-screenshots/content-photo-draft-save-logcat.txt 2>&1 || true
-  content_photo_draft_id="$(sed -n 's/.*LOCAL_DRAFT_SAVED id=\\([^ ]*\\).*/\\1/p' emulator-screenshots/content-photo-draft-save-logcat.txt | tail -n 1)" emulator-screenshots/content-photo-draft-save-logcat.txt | tail -n 1)"
+  content_photo_draft_id="$(sed -n 's/.*LOCAL_DRAFT_SAVED id=\([^ ]*\).*/\1/p' emulator-screenshots/content-photo-draft-save-logcat.txt | tail -n 1)"
   if [[ "$content_photo_draft_id" =~ ^[0-9a-fA-F-]{36}$ ]]; then break; fi
   sleep 1
 done
