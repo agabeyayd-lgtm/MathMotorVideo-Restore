@@ -1217,3 +1217,10 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Root cause: `TextLayer.yFraction` could remain at its original 0.84 while the rendered view was clamped higher to keep its selection chrome inside the canvas. The gesture used the stale stored fraction as its start point, so a 28 px drag could be absorbed by the clamp.
 - Text drag and two-finger re-anchoring now derive their starting fractions from the view's actual rendered translation. Added JVM tests for this clamp-to-visible-position round trip and invalid values.
 - Emulator verification is pending for the new app + test commit. No version, signing, or release workflow was changed.
+
+## Content URI overlay durability — 2026-11-07
+
+- VideoEditorActivity.addOverlayAsset() now keeps persistable document-provider grants when available. If a provider returns a temporary content:// URI instead, the selected image/video is copied into app-private files/overlay-media/ before its durable URI is written into the project/draft. A failed copy stops the import with a visible error instead of silently saving an expiring URI.
+- The debug emulator entry can publish the existing deterministic photo fixture as a real MediaStore content:// item. The API 35 smoke now opens it alongside a video clip, requires the app-private durable-copy marker, closes the editor to autosave, force-stops the app, reopens the saved draft, and requires exactly one restored overlay.
+- Source/test commits: c313dbe (durable app-private copy), bef79e6 / eafd9f3 (MediaStore content URI fixture and draft reopen entry), ad864ca (restore marker), cb6d2e5 (smoke script).
+- The complete unit/build/API 35 emulator run is in progress. This is not yet verified green; inspect the content-URI copy, draft-save, process-restart, and overlay-restore artifacts before closing the issue.
