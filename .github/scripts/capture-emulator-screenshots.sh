@@ -2578,8 +2578,9 @@ if abs(target_ms - current_ms) <= 80:
     print("READY", current_ms)
 else:
     delta_px = max(-520, min(520, delta_px))
-    start_x = 900 if delta_px > 0 else 180
-    end_x = start_x - delta_px
+    # On this editor ruler, a rightward finger swipe advances project time.
+    start_x = 500 if delta_px > 0 else 900
+    end_x = start_x + delta_px
     if not (128 <= start_x <= 952 and 128 <= end_x <= 952):
         raise SystemExit(f"Midpoint scrub would leave the safe ruler range: {start_x}->{end_x}")
     print(start_x, end_x, current_ms)
