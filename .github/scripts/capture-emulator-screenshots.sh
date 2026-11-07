@@ -2034,7 +2034,7 @@ import sys
 
 for line in reversed(open(sys.argv[1], errors="replace").read().splitlines()):
     match = re.search(
-        r"TEXT_PANEL_RETURN_BOUNDS visible=true x=(\\d+) y=(\\d+) width=(\\d+) height=(\\d+)",
+        r"TEXT_PANEL_RETURN_BOUNDS visible=true x=(\d+) y=(\d+) width=(\d+) height=(\d+)",
         line,
     )
     if not match:
