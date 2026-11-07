@@ -2016,7 +2016,7 @@ class VideoEditorActivity : Activity() {
         // Focusing the EditText can scroll the settings list; a sticky header must
         // remain reachable after the IME opens, closes, or requests its text field.
         editorPanelReturnButton = miniButton("‹ Araçlara dön") {
-            activeEditorPanel?.let { toggleEditorPanel(it) }
+            activeEditorPanel?.let { closeVisualLayerPanel(it) }
         }.apply {
             contentDescription = "Araçlara dön"
             minHeight = dp(38)
