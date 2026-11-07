@@ -1,3 +1,12 @@
+## API 35 emulator verification hardening — 2026-11-08
+
+- The 2026-11-07 emulator run (`42417189845`) passed unit tests, debug APK compilation, thumbnail pixel comparison, ruler scrubbing and live playback synchronization. It stopped before split interaction because the accessibility XML pull exceeded the script's 8-second transfer timeout; the app did not report a split or drag assertion failure.
+- The hierarchy pull now has a bounded 30-second timeout (with kill grace and the existing two-attempt retry). No emulator checks were skipped.
+- Removed the derived 84 ms preview timestamp allowance. Preview and scrub frame timestamps are again checked against a fixed 35 ms limit, and the thumbnail center must be within 2 px of the playhead; the bounded alignment loop now allows up to eight measured correction gestures.
+- **Verification for these stricter checks is pending on the updated commit.** No production version code, release signing, publish workflow or main-branch APK was changed.
+
+---
+
 ## CapCut-style main video lane: split seam, overlap repair, direct drag — 2026-11-07
 
 - Main-video clips now use the clip surface for immediate one-finger horizontal movement; timeline scrubbing remains on the empty lane/ruler and two-finger pinch keeps its Activity-level cancellation path.
