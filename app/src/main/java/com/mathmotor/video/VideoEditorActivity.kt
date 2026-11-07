@@ -3853,6 +3853,7 @@ class VideoEditorActivity : Activity() {
                     handle,
                     timelineEdgeHandleLayoutParams(handleWidth, blockWidth, isStart)
                 )
+                applyTrailingTimelineGestureExclusion(handle, isStart)
             }
 
             addTextTrimHandle(isStart = true)
@@ -4536,6 +4537,7 @@ class VideoEditorActivity : Activity() {
                 handle,
                 timelineEdgeHandleLayoutParams(handleWidth, blockWidth, isStart)
             )
+            applyTrailingTimelineGestureExclusion(handle, isStart)
         }
 
         addMusicTrimHandle(isStart = true)
@@ -4774,6 +4776,7 @@ class VideoEditorActivity : Activity() {
                 handle,
                 timelineEdgeHandleLayoutParams(handleWidth, blockWidth, isStart)
             )
+            applyTrailingTimelineGestureExclusion(handle, isStart)
         }
 
         addTrimHandle(isStart = true)
@@ -5854,6 +5857,18 @@ class VideoEditorActivity : Activity() {
         Gravity.LEFT
     ).apply {
         leftMargin = if (isStart) -edgeWidth / 2 else blockWidth - edgeWidth / 2
+    }
+
+    /** Keep leftward drags on a trailing trim handle out of Android's back gesture. */
+    private fun applyTrailingTimelineGestureExclusion(handle: View, isStart: Boolean) {
+        if (isStart || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        handle.post {
+            if (handle.width > 0 && handle.height > 0) {
+                handle.systemGestureExclusionRects = listOf(
+                    android.graphics.Rect(0, 0, handle.width, handle.height)
+                )
+            }
+        }
     }
 
     private fun resetPlayerViewTransform() {
