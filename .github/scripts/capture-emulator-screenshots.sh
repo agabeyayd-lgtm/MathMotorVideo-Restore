@@ -1855,7 +1855,7 @@ import sys
 import xml.etree.ElementTree as ET
 from PIL import Image
 
-image_path, _log_path, hierarchy_path = sys.argv[1:4]
+image_path, log_path, hierarchy_path = sys.argv[1:4]
 root = ET.parse(hierarchy_path).getroot()
 root_node = root.find("node")
 root_bounds = re.fullmatch(
@@ -1869,27 +1869,39 @@ window_width, window_height = window_right - window_left, window_bottom - window
 if window_width <= 0 or window_height <= 0:
     raise SystemExit("Invalid Android root-window dimensions in hierarchy.")
 
-canvas_nodes = []
-for node in root.iter("node"):
-    if node.attrib.get("content-desc", "").strip() != "Proje tuvali":
-        continue
-    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+snapshot = None
+for line in open(log_path, errors="replace"):
+    match = re.search(
+        r"PREVIEW_CANVAS_SNAPSHOT reason=text-panel-close canvas=(\d+)x(\d+) origin=(-?\d+),(-?\d+)",
+        line,
+    )
     if match:
-        canvas_nodes.append(tuple(map(int, match.groups())))
-if len(canvas_nodes) != 1:
-    raise SystemExit(f"Expected exactly one measurable 'Proje tuvali' node, found {len(canvas_nodes)}")
-canvas_left, canvas_top, canvas_right, canvas_bottom = canvas_nodes[0]
-canvas_w, canvas_h = canvas_right - canvas_left, canvas_bottom - canvas_top
-if canvas_w <= 0 or canvas_h <= 0:
-    raise SystemExit("Invalid project-canvas bounds in accessibility hierarchy.")
+        snapshot = tuple(map(int, match.groups()))
+if snapshot is not None:
+    canvas_w, canvas_h, origin_x, origin_y = snapshot
+    canvas_left, canvas_top = origin_x, origin_y
+else:
+    canvas_nodes = []
+    for node in root.iter("node"):
+        if node.attrib.get("content-desc", "").strip() != "Proje tuvali":
+            continue
+        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+        if match:
+            canvas_nodes.append(tuple(map(int, match.groups())))
+    if len(canvas_nodes) != 1:
+        raise SystemExit(f"Expected exactly one measurable 'Proje tuvali' node, found {len(canvas_nodes)}")
+    canvas_left, canvas_top, canvas_right, canvas_bottom = canvas_nodes[0]
+    canvas_w, canvas_h = canvas_right - canvas_left, canvas_bottom - canvas_top
 
+if canvas_w <= 0 or canvas_h <= 0:
+    raise SystemExit("Invalid project-canvas dimensions.")
 image = Image.open(image_path).convert("RGB")
 scale_x = image.width / window_width
 scale_y = image.height / window_height
 left = round((canvas_left - window_left) * scale_x)
 top = round((canvas_top - window_top) * scale_y)
-right = round((canvas_right - window_left) * scale_x) - 1
-bottom = round((canvas_bottom - window_top) * scale_y) - 1
+right = round((canvas_left + canvas_w - window_left) * scale_x) - 1
+bottom = round((canvas_top + canvas_h - window_top) * scale_y) - 1
 if left < 0 or top < 0 or right >= image.width or bottom >= image.height:
     raise SystemExit(
         f"Project canvas bounds lie outside screenshot: "
@@ -1900,8 +1912,6 @@ def is_white(pixel):
     red, green, blue = pixel
     return min(red, green, blue) >= 220 and max(red, green, blue) - min(red, green, blue) <= 35
 
-# Search only inside the project-canvas rectangle measured from this exact
-# screenshot's accessibility hierarchy; no timing-sensitive log marker needed.
 rows = []
 minimum_width = max(80, int(canvas_w * 0.60 * scale_x))
 for y in range(top, bottom + 1):
@@ -1924,9 +1934,7 @@ matches = []
 for i, (top_y, x1, x2) in enumerate(rows):
     for bottom_y, bx1, bx2 in rows[i + 1:]:
         height = bottom_y - top_y + 1
-        if height < 35:
-            continue
-        if abs(x1 - bx1) > 8 or abs(x2 - bx2) > 8:
+        if height < 35 or abs(x1 - bx1) > 8 or abs(x2 - bx2) > 8:
             continue
         width = x2 - x1 + 1
         if abs(width - (bx2 - bx1 + 1)) > 10:
@@ -1954,8 +1962,7 @@ for i, (top_y, x1, x2) in enumerate(rows):
 if not matches:
     raise SystemExit("A complete white text-selection rectangle with visible text was not found inside the project canvas.")
 _, x1, y1, x2, y2 = max(matches)
-center_x, center_y = (x1 + x2) // 2, (y1 + y2) // 2
-print(x1, y1, x2, y2, center_x, center_y)
+print(x1, y1, x2, y2, (x1 + x2) // 2, (y1 + y2) // 2)
 PY
 }
 
@@ -2034,62 +2041,68 @@ if [ "$text_edit_toggle_changed" = true ]; then
   sleep 1
 fi
 
-assert_preview_canvas_unchanged_from_hierarchy() {
+assert_preview_canvas_unchanged_from_snapshot() {
   python3 - "$1" "$2" "$3" "$4" <<'PY'
 import re
 import sys
 import xml.etree.ElementTree as ET
 from PIL import Image
 
-baseline_path, current_path, image_path, label = sys.argv[1:5]
-
-def read_canvas(path):
-    root = ET.parse(path).getroot()
-    matches = []
-    for node in root.iter("node"):
-        if node.attrib.get("content-desc", "").strip() != "Proje tuvali":
-            continue
-        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
-        if match:
-            bounds = tuple(map(int, match.groups()))
-            if bounds[2] > bounds[0] and bounds[3] > bounds[1]:
-                matches.append(bounds)
-    if len(matches) != 1:
-        raise SystemExit(f"{path}: expected exactly one measurable 'Proje tuvali' node, found {len(matches)}")
-    return root, matches[0]
-
-baseline_root, baseline = read_canvas(baseline_path)
-current_root, current = read_canvas(current_path)
+baseline_path, snapshot_path, image_path, label = sys.argv[1:5]
+baseline_root = ET.parse(baseline_path).getroot()
+canvas_nodes = []
+for node in baseline_root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != "Proje tuvali":
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        canvas_nodes.append(tuple(map(int, match.groups())))
+if len(canvas_nodes) != 1:
+    raise SystemExit(
+        f"{baseline_path}: expected exactly one measured baseline project canvas; found {len(canvas_nodes)}"
+    )
+baseline = canvas_nodes[0]
 baseline_width, baseline_height = baseline[2] - baseline[0], baseline[3] - baseline[1]
-canvas_width, canvas_height = current[2] - current[0], current[3] - current[1]
+
+snapshots = []
+for line in open(snapshot_path, errors="replace"):
+    match = re.search(
+        r"PREVIEW_CANVAS_SNAPSHOT reason=text-panel-close canvas=(\d+)x(\d+) origin=(-?\d+),(-?\d+)",
+        line,
+    )
+    if match:
+        snapshots.append(tuple(map(int, match.groups())))
+if not snapshots:
+    raise SystemExit(f"{label}: app did not emit its post-layout project-canvas snapshot.")
+canvas_width, canvas_height, origin_x, origin_y = snapshots[-1]
 if (canvas_width, canvas_height) != (baseline_width, baseline_height):
     raise SystemExit(
-        f"{label}: the editable project canvas changed size: "
-        f"baseline={baseline_width}x{baseline_height}, current={canvas_width}x{canvas_height}"
+        f"{label}: project canvas changed size: baseline={baseline_width}x{baseline_height}, "
+        f"after close={canvas_width}x{canvas_height}"
     )
 
-root_node = current_root.find("node")
+root_node = baseline_root.find("node")
 root_match = re.fullmatch(
     r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",
     root_node.attrib.get("bounds", "") if root_node is not None else "",
 )
 if not root_match:
-    raise SystemExit(f"{current_path}: could not read Android root-window bounds")
+    raise SystemExit(f"{baseline_path}: could not read Android root-window bounds")
 window_left, window_top, window_right, window_bottom = map(int, root_match.groups())
 window_width, window_height = window_right - window_left, window_bottom - window_top
 if window_width <= 0 or window_height <= 0:
-    raise SystemExit(f"{current_path}: invalid Android root-window dimensions")
+    raise SystemExit(f"{baseline_path}: invalid Android root-window dimensions")
 
 image = Image.open(image_path).convert("RGB")
 scale_x, scale_y = image.width / window_width, image.height / window_height
-left = round((current[0] - window_left) * scale_x)
-top = round((current[1] - window_top) * scale_y)
-right = round((current[2] - window_left) * scale_x) - 1
-bottom = round((current[3] - window_top) * scale_y) - 1
+left = round((origin_x - window_left) * scale_x)
+top = round((origin_y - window_top) * scale_y)
+right = round((origin_x + canvas_width - window_left) * scale_x) - 1
+bottom = round((origin_y + canvas_height - window_top) * scale_y) - 1
 if left < 0 or top < 0 or right >= image.width or bottom >= image.height or right <= left or bottom <= top:
     raise SystemExit(
-        f"{label}: project canvas bounds ({left},{top})-({right},{bottom}) "
-        f"fall outside screenshot {image.width}x{image.height}"
+        f"{label}: snapshot canvas ({left},{top})-({right},{bottom}) "
+        f"falls outside screenshot {image.width}x{image.height}"
     )
 
 green_points = []
@@ -2100,22 +2113,20 @@ for y in range(top, bottom + 1):
             green_points.append((x, y))
 if len(green_points) < 10000:
     raise SystemExit(f"{label}: only {len(green_points)} fixture-green pixels remain inside the project canvas")
-
 xs = [point[0] for point in green_points]
 ys = [point[1] for point in green_points]
-visible_width = max(xs) - min(xs) + 1
-visible_height = max(ys) - min(ys) + 1
-ratio = visible_width / max(1, visible_height)
-if visible_width < canvas_width * scale_x * 0.90 or visible_height < canvas_height * scale_y * 0.90:
+visible_width, visible_height = max(xs) - min(xs) + 1, max(ys) - min(ys) + 1
+if visible_width < (right - left + 1) * 0.90 or visible_height < (bottom - top + 1) * 0.90:
     raise SystemExit(
-        f"{label}: fixture preview does not fill the measured project canvas: "
-        f"visible={visible_width}x{visible_height}, canvas={canvas_width}x{canvas_height}"
+        f"{label}: fixture preview does not fill the measured canvas; "
+        f"pixels={visible_width}x{visible_height}, view={(right-left+1)}x{(bottom-top+1)}"
     )
+ratio = visible_width / max(1, visible_height)
 if not 0.50 <= ratio <= 0.62:
-    raise SystemExit(f"{label}: preview pixels are not portrait-shaped ({visible_width}x{visible_height}, ratio={ratio:.3f})")
+    raise SystemExit(f"{label}: visible fixture is not portrait-shaped ({visible_width}x{visible_height})")
 print(
-    f"PASS: {label} kept the project canvas exactly {canvas_width}x{canvas_height} "
-    f"(baseline match); visible fixture pixels={visible_width}x{visible_height}."
+    f"PASS: {label} kept the project canvas exactly {canvas_width}x{canvas_height}; "
+    f"measured screenshot fixture={visible_width}x{visible_height}."
 )
 PY
 }
@@ -2162,18 +2173,29 @@ if ! take_screen emulator-screenshots/editor-text-panel-closed.png; then
   collect_capture_diagnostics text-canvas-panel-closed-capture-failure
   exit 6
 fi
-# The accessibility hierarchy measures the canvas after the panel closes.
-# Its width and height must exactly match the panel-open baseline; position may re-center.
-if ! dump_hierarchy editor-text-panel-closed.xml emulator-screenshots/editor-text-panel-closed.xml; then
-  echo "Could not inspect the project canvas after closing the text panel."
-  collect_capture_diagnostics text-canvas-panel-closed-hierarchy-missing
+# Read the actual post-animation FrameLayout bounds from the app. This is
+# independent of a second UIAutomator dump, which can time out on this screen.
+snapshot_ready=false
+for attempt in $(seq 1 10); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTest:I \
+    > emulator-screenshots/editor-text-panel-closed-canvas-logcat.txt 2>&1 || true
+  if grep -q "PREVIEW_CANVAS_SNAPSHOT reason=text-panel-close" \
+      emulator-screenshots/editor-text-panel-closed-canvas-logcat.txt; then
+    snapshot_ready=true
+    break
+  fi
+  sleep 1
+done
+if [ "$snapshot_ready" != true ]; then
+  echo "The app did not report the laid-out project canvas after closing the text panel."
+  collect_capture_diagnostics text-canvas-panel-closed-snapshot-missing
   exit 53
 fi
-assert_preview_canvas_unchanged_from_hierarchy \
+assert_preview_canvas_unchanged_from_snapshot \
   emulator-screenshots/editor-text-panel.xml \
-  emulator-screenshots/editor-text-panel-closed.xml \
+  emulator-screenshots/editor-text-panel-closed-canvas-logcat.txt \
   emulator-screenshots/editor-text-panel-closed.png "text panel close"
-text_preview_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-panel-closed.png emulator-screenshots/editor-text-panel-closed-canvas-logcat.txt emulator-screenshots/editor-text-panel-closed.xml)" || {
+text_preview_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-panel-closed.png emulator-screenshots/editor-text-panel-closed-canvas-logcat.txt emulator-screenshots/editor-text-panel.xml)" || {
   echo "The text layer did not retain a complete selection frame after the detail panel closed."
   collect_capture_diagnostics text-canvas-preview-hit-target-missing
   exit 53
@@ -2194,14 +2216,13 @@ if ! take_screen emulator-screenshots/editor-text-reselected.png; then
   collect_capture_diagnostics text-canvas-reselection-capture-failure
   exit 6
 fi
-# Reselecting a text layer does not resize the project canvas. Reuse the
-# exact closed-panel canvas bounds captured immediately before the tap; this
-# avoids making a successful touch test depend on a second slow UIAutomator dump.
-assert_preview_canvas_unchanged_from_hierarchy \
+# Canvas geometry and screen origin are already measured after the panel-close
+# animation; selecting the overlay must not resize or move the project canvas.
+assert_preview_canvas_unchanged_from_snapshot \
   emulator-screenshots/editor-text-panel.xml \
-  emulator-screenshots/editor-text-panel-closed.xml \
+  emulator-screenshots/editor-text-panel-closed-canvas-logcat.txt \
   emulator-screenshots/editor-text-reselected.png "text preview reselection"
-text_reselected_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-reselected.png emulator-screenshots/editor-text-reselected-canvas-logcat.txt emulator-screenshots/editor-text-panel-closed.xml)" || {
+text_reselected_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-reselected.png emulator-screenshots/editor-text-panel-closed-canvas-logcat.txt emulator-screenshots/editor-text-panel.xml)" || {
   echo "Tapping the preview text did not restore a complete canvas selection frame."
   collect_capture_diagnostics text-canvas-tap-selection-frame-missing
   exit 55
