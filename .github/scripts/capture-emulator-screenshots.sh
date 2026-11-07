@@ -1843,45 +1843,44 @@ import sys
 import xml.etree.ElementTree as ET
 from PIL import Image
 
-image_path, log_path, hierarchy_path = sys.argv[1:4]
-lines = [line for line in open(log_path, errors="replace") if "PREVIEW_CANVAS_BOUNDS" in line]
-if not lines:
-    raise SystemExit("No current preview-canvas bounds are available for the text selection check.")
-match = re.search(
-    r"canvas=(\d+)x(\d+) offset=(\d+),(\d+) origin=(-?\d+),(-?\d+)",
-    lines[-1],
-)
-if not match:
-    raise SystemExit(f"Malformed preview-canvas marker: {lines[-1]}")
-canvas_w, canvas_h, offset_x, offset_y, origin_x, origin_y = map(int, match.groups())
-
-# UIAutomator's existing editor hierarchy supplies stable root-window bounds.
-# The project canvas itself changes with keyboard/panel state, so use the
-# latest PreviewCanvasTest marker captured for this screenshot.
+image_path, _log_path, hierarchy_path = sys.argv[1:4]
 root = ET.parse(hierarchy_path).getroot()
 root_node = root.find("node")
 root_bounds = re.fullmatch(
-    r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",
+    r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]",
     root_node.attrib.get("bounds", "") if root_node is not None else "",
 )
 if not root_bounds:
     raise SystemExit("Could not read the Android root-window bounds for screenshot scaling.")
 window_left, window_top, window_right, window_bottom = map(int, root_bounds.groups())
-window_width = window_right - window_left
-window_height = window_bottom - window_top
+window_width, window_height = window_right - window_left, window_bottom - window_top
 if window_width <= 0 or window_height <= 0:
     raise SystemExit("Invalid Android root-window dimensions in hierarchy.")
+
+canvas_nodes = []
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != "Proje tuvali":
+        continue
+    match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+    if match:
+        canvas_nodes.append(tuple(map(int, match.groups())))
+if len(canvas_nodes) != 1:
+    raise SystemExit(f"Expected exactly one measurable 'Proje tuvali' node, found {len(canvas_nodes)}")
+canvas_left, canvas_top, canvas_right, canvas_bottom = canvas_nodes[0]
+canvas_w, canvas_h = canvas_right - canvas_left, canvas_bottom - canvas_top
+if canvas_w <= 0 or canvas_h <= 0:
+    raise SystemExit("Invalid project-canvas bounds in accessibility hierarchy.")
 
 image = Image.open(image_path).convert("RGB")
 scale_x = image.width / window_width
 scale_y = image.height / window_height
-left = round((origin_x + offset_x - window_left) * scale_x)
-top = round((origin_y + offset_y - window_top) * scale_y)
-right = round((origin_x + offset_x + canvas_w - window_left) * scale_x) - 1
-bottom = round((origin_y + offset_y + canvas_h - window_top) * scale_y) - 1
+left = round((canvas_left - window_left) * scale_x)
+top = round((canvas_top - window_top) * scale_y)
+right = round((canvas_right - window_left) * scale_x) - 1
+bottom = round((canvas_bottom - window_top) * scale_y) - 1
 if left < 0 or top < 0 or right >= image.width or bottom >= image.height:
     raise SystemExit(
-        f"Measured project canvas lies outside screenshot: "
+        f"Project canvas bounds lie outside screenshot: "
         f"({left},{top})-({right},{bottom}) in {image.width}x{image.height}"
     )
 
@@ -1889,7 +1888,8 @@ def is_white(pixel):
     red, green, blue = pixel
     return min(red, green, blue) >= 220 and max(red, green, blue) - min(red, green, blue) <= 35
 
-# Search only inside the exact project-canvas rectangle for this screenshot.
+# Search only inside the project-canvas rectangle measured from this exact
+# screenshot's accessibility hierarchy; no timing-sensitive log marker needed.
 rows = []
 minimum_width = max(80, int(canvas_w * 0.60 * scale_x))
 for y in range(top, bottom + 1):
@@ -2022,42 +2022,91 @@ if [ "$text_edit_toggle_changed" = true ]; then
   sleep 1
 fi
 
-assert_full_preview_canvas() {
-  python3 - "$1" "$2" "${3:-emulator-screenshots/preview-canvas-logcat.txt}" <<'PY'
+assert_preview_canvas_unchanged_from_hierarchy() {
+  python3 - "$1" "$2" "$3" "$4" <<'PY'
 import re
 import sys
+import xml.etree.ElementTree as ET
 from PIL import Image
-image_path, label, log_path = sys.argv[1:4]
-lines = [line for line in open(log_path, errors="replace") if "PREVIEW_CANVAS_BOUNDS" in line]
-if not lines:
-    raise SystemExit(f"{label}: preview-canvas measurement marker is missing")
-match = re.search(r"canvas=(\d+)x(\d+) offset=(\d+),(\d+) origin=(-?\d+),(-?\d+)", lines[-1])
-if not match:
-    raise SystemExit(f"{label}: malformed preview-canvas marker: {lines[-1]}")
-w, h, ox, oy, sx, sy = map(int, match.groups())
-left, top = sx + ox, sy + oy
-right, bottom = left + w, top + h
+
+baseline_path, current_path, image_path, label = sys.argv[1:5]
+
+def read_canvas(path):
+    root = ET.parse(path).getroot()
+    matches = []
+    for node in root.iter("node"):
+        if node.attrib.get("content-desc", "").strip() != "Proje tuvali":
+            continue
+        match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+        if match:
+            bounds = tuple(map(int, match.groups()))
+            if bounds[2] > bounds[0] and bounds[3] > bounds[1]:
+                matches.append(bounds)
+    if len(matches) != 1:
+        raise SystemExit(f"{path}: expected exactly one measurable 'Proje tuvali' node, found {len(matches)}")
+    return root, matches[0]
+
+baseline_root, baseline = read_canvas(baseline_path)
+current_root, current = read_canvas(current_path)
+baseline_width, baseline_height = baseline[2] - baseline[0], baseline[3] - baseline[1]
+canvas_width, canvas_height = current[2] - current[0], current[3] - current[1]
+if (canvas_width, canvas_height) != (baseline_width, baseline_height):
+    raise SystemExit(
+        f"{label}: the editable project canvas changed size: "
+        f"baseline={baseline_width}x{baseline_height}, current={canvas_width}x{canvas_height}"
+    )
+
+root_node = current_root.find("node")
+root_match = re.fullmatch(
+    r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]",
+    root_node.attrib.get("bounds", "") if root_node is not None else "",
+)
+if not root_match:
+    raise SystemExit(f"{current_path}: could not read Android root-window bounds")
+window_left, window_top, window_right, window_bottom = map(int, root_match.groups())
+window_width, window_height = window_right - window_left, window_bottom - window_top
+if window_width <= 0 or window_height <= 0:
+    raise SystemExit(f"{current_path}: invalid Android root-window dimensions")
+
 image = Image.open(image_path).convert("RGB")
-if left < 0 or top < 0 or right > image.width or bottom > image.height:
-    raise SystemExit(f"{label}: measured canvas [{left},{top}]-[{right},{bottom}] is outside screenshot {image.width}x{image.height}")
-green = []
-for y in range(top, bottom):
-    for x in range(left, right):
-        red, green_channel, blue = image.getpixel((x, y))
-        if green_channel > 150 and red < 120 and blue < 120:
-            green.append((x, y))
-if len(green) < 10000:
-    raise SystemExit(f"{label}: only {len(green)} green fixture pixels remain in the measured canvas; preview may still be keyboard-compressed")
-xs = [p[0] for p in green]
-ys = [p[1] for p in green]
-gw, gh = max(xs) - min(xs) + 1, max(ys) - min(ys) + 1
-ratio = gw / max(1, gh)
-if gw < 300 or gh < 500 or not 0.50 <= ratio <= 0.62:
-    raise SystemExit(f"{label}: project preview is not full portrait size ({gw}x{gh}, ratio={ratio:.3f})")
-print(f"PASS: {label} kept the full portrait preview visible ({gw}x{gh}, ratio={ratio:.3f}, greenPixels={len(green)}).")
+scale_x, scale_y = image.width / window_width, image.height / window_height
+left = round((current[0] - window_left) * scale_x)
+top = round((current[1] - window_top) * scale_y)
+right = round((current[2] - window_left) * scale_x) - 1
+bottom = round((current[3] - window_top) * scale_y) - 1
+if left < 0 or top < 0 or right >= image.width or bottom >= image.height or right <= left or bottom <= top:
+    raise SystemExit(
+        f"{label}: project canvas bounds ({left},{top})-({right},{bottom}) "
+        f"fall outside screenshot {image.width}x{image.height}"
+    )
+
+green_points = []
+for y in range(top, bottom + 1):
+    for x in range(left, right + 1):
+        red, green, blue = image.getpixel((x, y))
+        if green > 150 and red < 120 and blue < 120:
+            green_points.append((x, y))
+if len(green_points) < 10000:
+    raise SystemExit(f"{label}: only {len(green_points)} fixture-green pixels remain inside the project canvas")
+
+xs = [point[0] for point in green_points]
+ys = [point[1] for point in green_points]
+visible_width = max(xs) - min(xs) + 1
+visible_height = max(ys) - min(ys) + 1
+ratio = visible_width / max(1, visible_height)
+if visible_width < canvas_width * scale_x * 0.90 or visible_height < canvas_height * scale_y * 0.90:
+    raise SystemExit(
+        f"{label}: fixture preview does not fill the measured project canvas: "
+        f"visible={visible_width}x{visible_height}, canvas={canvas_width}x{canvas_height}"
+    )
+if not 0.50 <= ratio <= 0.62:
+    raise SystemExit(f"{label}: preview pixels are not portrait-shaped ({visible_width}x{visible_height}, ratio={ratio:.3f})")
+print(
+    f"PASS: {label} kept the project canvas exactly {canvas_width}x{canvas_height} "
+    f"(baseline match); visible fixture pixels={visible_width}x{visible_height}."
+)
 PY
 }
-
 # The keyboard changed the vertical layout. Use the application's
 # measured post-layout bounds for the sticky sibling return control; do not
 # traverse the large timeline accessibility hierarchy again.
@@ -2101,14 +2150,18 @@ if ! take_screen emulator-screenshots/editor-text-panel-closed.png; then
   collect_capture_diagnostics text-canvas-panel-closed-capture-failure
   exit 6
 fi
-# Closing the detail panel expands the project canvas and changes the screen
-# coordinate of the text layer. Measure both again instead of reusing the
-# compressed-panel coordinates from the preceding screenshot.
-timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTest:I \
-  > emulator-screenshots/editor-text-panel-closed-canvas-logcat.txt 2>&1 || true
-assert_full_preview_canvas emulator-screenshots/editor-text-panel-closed.png "text panel close" \
-  emulator-screenshots/editor-text-panel-closed-canvas-logcat.txt
-text_preview_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-panel-closed.png emulator-screenshots/editor-text-panel-closed-canvas-logcat.txt emulator-screenshots/editor-text-panel.xml)" || {
+# The accessibility hierarchy measures the canvas after the panel closes.
+# Its width and height must exactly match the panel-open baseline; position may re-center.
+if ! dump_hierarchy editor-text-panel-closed.xml emulator-screenshots/editor-text-panel-closed.xml; then
+  echo "Could not inspect the project canvas after closing the text panel."
+  collect_capture_diagnostics text-canvas-panel-closed-hierarchy-missing
+  exit 53
+fi
+assert_preview_canvas_unchanged_from_hierarchy \
+  emulator-screenshots/editor-text-panel.xml \
+  emulator-screenshots/editor-text-panel-closed.xml \
+  emulator-screenshots/editor-text-panel-closed.png "text panel close"
+text_preview_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-panel-closed.png emulator-screenshots/editor-text-panel-closed-canvas-logcat.txt emulator-screenshots/editor-text-panel-closed.xml)" || {
   echo "The text layer did not retain a complete selection frame after the detail panel closed."
   collect_capture_diagnostics text-canvas-preview-hit-target-missing
   exit 53
@@ -2129,9 +2182,16 @@ if ! take_screen emulator-screenshots/editor-text-reselected.png; then
   collect_capture_diagnostics text-canvas-reselection-capture-failure
   exit 6
 fi
-assert_full_preview_canvas emulator-screenshots/editor-text-reselected.png "text preview reselection" \
-  emulator-screenshots/editor-text-reselected-canvas-logcat.txt
-text_reselected_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-reselected.png emulator-screenshots/editor-text-reselected-canvas-logcat.txt emulator-screenshots/editor-text-panel.xml)" || {
+if ! dump_hierarchy editor-text-reselected.xml emulator-screenshots/editor-text-reselected.xml; then
+  echo "Could not inspect the project canvas after reselecting the text overlay."
+  collect_capture_diagnostics text-canvas-reselection-hierarchy-missing
+  exit 55
+fi
+assert_preview_canvas_unchanged_from_hierarchy \
+  emulator-screenshots/editor-text-panel.xml \
+  emulator-screenshots/editor-text-reselected.xml \
+  emulator-screenshots/editor-text-reselected.png "text preview reselection"
+text_reselected_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-reselected.png emulator-screenshots/editor-text-reselected-canvas-logcat.txt emulator-screenshots/editor-text-reselected.xml)" || {
   echo "Tapping the preview text did not restore a complete canvas selection frame."
   collect_capture_diagnostics text-canvas-tap-selection-frame-missing
   exit 55
@@ -2150,7 +2210,7 @@ echo "PASS: tapping the preview text restored its three-action text dock and sel
 # has succeeded. The app-side dock marker plus the full-canvas screenshot and
 # pixel-verified selection frame are authoritative; hierarchy-based cleanup is
 # best-effort so a slow accessibility dump cannot turn a valid editor state red.
-if dump_hierarchy editor-text-reselected.xml emulator-screenshots/editor-text-reselected.xml; then
+if [ -s emulator-screenshots/editor-text-reselected.xml ]; then
   text_delete_coords="$(find_bottom_tool emulator-screenshots/editor-text-reselected.xml "Sil" || true)"
   if [ -n "$text_delete_coords" ]; then
     timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_delete_coords
