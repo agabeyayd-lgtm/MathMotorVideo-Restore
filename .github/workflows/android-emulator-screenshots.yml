@@ -69,10 +69,29 @@ jobs:
           retention-days: 14
 
       - name: Set up FFmpeg
-        uses: FedericoCarboni/setup-ffmpeg@37062fbf7149fc5578d6c57e08aed62458b375d6
-        with:
-          ffmpeg-version: release
-          linking-type: static
+        shell: bash
+        run: |
+          set -euo pipefail
+          ffmpeg_archive="$RUNNER_TEMP/ffmpeg-release-amd64-static.tar.xz"
+          ffmpeg_dir="$RUNNER_TEMP/ffmpeg-static"
+          mkdir -p "$ffmpeg_dir"
+          # Download the stable static archive directly. The setup action's
+          # release discovery now depends on an upstream README version line
+          # that is no longer present; bypass that metadata parser entirely.
+          curl --fail --location --retry 3 --retry-delay 2 \
+            https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz \
+            --output "$ffmpeg_archive"
+          test -s "$ffmpeg_archive"
+          tar -xJf "$ffmpeg_archive" -C "$ffmpeg_dir"
+          ffmpeg_binary="$(find "$ffmpeg_dir" -maxdepth 3 -type f -name ffmpeg -print -quit)"
+          ffprobe_binary="$(find "$ffmpeg_dir" -maxdepth 3 -type f -name ffprobe -print -quit)"
+          test -x "$ffmpeg_binary"
+          test -x "$ffprobe_binary"
+          chmod +x "$ffmpeg_binary" "$ffprobe_binary"
+          ffmpeg_bin_dir="$(dirname "$ffmpeg_binary")"
+          echo "$ffmpeg_bin_dir" >> "$GITHUB_PATH"
+          "$ffmpeg_binary" -version | head -n 1
+          "$ffprobe_binary" -version | head -n 1
 
       - name: Generate a deterministic sample video for editor smoke tests
         run: |
