@@ -2553,6 +2553,68 @@ echo "Step 11b: split the selected video through its real clip menu, then direct
 # The main-video filmstrip is now a move surface. Use its existing stationary
 # long-press context menu to invoke the same production splitSelectedClipAtPlayhead()
 # handler after import/thumbnail readiness has already passed above.
+# Move the real playhead to 4s first, giving both halves enough length for a useful
+# reorder test (a 0.4s/7.6s split cannot be dragged back across its neighbour).
+midpoint_ready=false
+for attempt in $(seq 1 3); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineSyncTest:I \
+    > emulator-screenshots/video-midpoint-seek-logcat.txt 2>&1 || true
+  midpoint_action="$(python3 - emulator-screenshots/video-midpoint-seek-logcat.txt <<'PY'
+import re
+import sys
+
+pattern = re.compile(r"TIMELINE_SYNC_SAMPLE .*?playheadMs=(\d+).*?pxPerSecond=([0-9.]+)")
+latest = None
+for line in open(sys.argv[1], errors="replace"):
+    match = pattern.search(line)
+    if match:
+        latest = (int(match.group(1)), float(match.group(2)))
+if latest is None:
+    raise SystemExit("No measured timeline playhead sample before midpoint seek.")
+current_ms, pixels_per_second = latest
+target_ms = 4_000
+delta_px = round((target_ms - current_ms) * pixels_per_second / 1000.0)
+if abs(target_ms - current_ms) <= 80:
+    print("READY", current_ms)
+else:
+    delta_px = max(-520, min(520, delta_px))
+    start_x = 900 if delta_px > 0 else 180
+    end_x = start_x - delta_px
+    if not (128 <= start_x <= 952 and 128 <= end_x <= 952):
+        raise SystemExit(f"Midpoint scrub would leave the safe ruler range: {start_x}->{end_x}")
+    print(start_x, end_x, current_ms)
+PY
+)"
+  read -r midpoint_first midpoint_second midpoint_current <<< "$midpoint_action"
+  if [ "$midpoint_first" = "READY" ]; then
+    midpoint_ready=true
+    echo "Playhead already at fixture midpoint: ${midpoint_current}ms"
+    break
+  fi
+  echo "Moving ruler playhead from ${midpoint_current}ms toward 4000ms (attempt $attempt/3): ${midpoint_first}->${midpoint_second}"
+  timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$midpoint_first" "$ruler_y" "$midpoint_second" "$ruler_y" 600
+  sleep 1
+done
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineSyncTest:I \
+  > emulator-screenshots/video-midpoint-seek-logcat.txt 2>&1 || true
+if ! python3 - emulator-screenshots/video-midpoint-seek-logcat.txt <<'PY'
+import re
+import sys
+pattern = re.compile(r"TIMELINE_SYNC_SAMPLE .*?playheadMs=(\d+)")
+latest = None
+for line in open(sys.argv[1], errors="replace"):
+    match = pattern.search(line)
+    if match:
+        latest = int(match.group(1))
+if latest is None or abs(latest - 4_000) > 100:
+    raise SystemExit(f"Playhead did not reach the 4s split midpoint: {latest}")
+print(f"PASS: ruler scrub positioned the playhead at {latest}ms for an even split.")
+PY
+then
+  echo "Could not position the playhead at the fixture midpoint before split."
+  collect_capture_diagnostics video-midpoint-seek-failed
+  exit 90
+fi
 if ! dump_hierarchy video-before-split.xml emulator-screenshots/video-before-split.xml; then
   echo "Could not inspect the replacement clip before the split interaction."
   collect_capture_diagnostics video-before-split-hierarchy
@@ -2653,7 +2715,7 @@ if ! dump_hierarchy video-split-before-drag.xml emulator-screenshots/video-split
   collect_capture_diagnostics video-split-before-drag-hierarchy
   exit 94
 fi
-clip_drag_coords="$(python3 - emulator-screenshots/video-split-before-drag.xml <<'PY'
+clip_drag_coords="$(python3 - emulator-screenshots/video-split-before-drag.xml emulator-screenshots/video-split-drag-logcat.txt <<'PY'
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -2676,10 +2738,27 @@ first = bounds[1]
 second = bounds[2]
 start_x = (second[0] + second[2]) // 2
 start_y = (second[1] + second[3]) // 2
-# Keep the release point at least 48dp from the Android left-edge Back gesture zone.
-drop_x = first[0]
-if start_x <= drop_x or drop_x >= first[2] - 24 or drop_x < 128:
-    raise SystemExit(f"Second segment or safe drop point is not visible: first={first}, second={second}, drop={drop_x}")
+
+# With a 4s/4s split, the first and second segment centres are exactly 2s
+# either side of the fixed playhead. Use measured px/s to target the true first
+# centre even when Android clips the left edge of the first segment's View bounds.
+sample = None
+for line in open(sys.argv[2], errors="replace"):
+    match = re.search(
+        r"TIMELINE_SYNC_SAMPLE .*?playheadCenterPx=(\d+).*?pxPerSecond=([0-9.]+)",
+        line
+    )
+    if match:
+        sample = (int(match.group(1)), float(match.group(2)))
+if sample is None:
+    raise SystemExit("No measured fixed-playhead position/scale for the split reorder.")
+playhead_x, pixels_per_second = sample
+drop_x = round(playhead_x - 2_000 * pixels_per_second / 1000.0)
+if start_x <= drop_x or drop_x < 128:
+    raise SystemExit(
+        f"Second segment is not right of a safe first-centre target: "
+        f"first={first}, second={second}, drop={drop_x}, start={start_x}"
+    )
 print(start_x, start_y, drop_x)
 PY
 )"
