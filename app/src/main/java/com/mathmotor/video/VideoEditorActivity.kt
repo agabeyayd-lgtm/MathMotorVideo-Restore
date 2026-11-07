@@ -2397,8 +2397,10 @@ class VideoEditorActivity : Activity() {
                 // canvas almost in half on a short viewport.
                 timelineCard.visibility = if (imeVisible) View.GONE else View.VISIBLE
                 setTimelinePanelMode(panelOpen = activeEditorPanel != null)
+                // Keep the transport control available while editing a layer or
+                // using a contextual panel. Only the keyboard may temporarily hide it.
                 centeredPlaybackRow.visibility =
-                    if (imeVisible || activeEditorPanel != null) View.GONE else View.VISIBLE
+                    if (imeVisible) View.GONE else View.VISIBLE
                 if (::editorPanelReturnButton.isInitialized) {
                     editorPanelReturnButton.visibility =
                         if (!imeVisible && activeEditorPanel != null &&
