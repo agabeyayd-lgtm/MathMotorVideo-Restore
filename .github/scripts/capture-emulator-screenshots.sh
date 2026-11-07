@@ -1722,11 +1722,23 @@ if ! take_screen emulator-screenshots/editor-export-saved.png; then
   collect_capture_diagnostics mp4-export-saved-capture-failure
   exit 6
 fi
-# Close the Proje drawer so it cannot cover the timeline checks that follow.
-timeout -k 2s 8s adb -s emulator-5554 shell input tap $proje_coords
+# The detail panel hides the global dock. Return through its own visible,
+# sticky action instead of tapping the old dock coordinate underneath the panel.
+return_coords="$(find_bottom_tool emulator-screenshots/editor-export-panel.xml "Araçlara dön" || true)"
+if [ -z "$return_coords" ]; then
+  echo "The export panel did not expose its reachable Araçlara dön action."
+  collect_capture_diagnostics export-panel-return-action-missing
+  exit 41
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $return_coords
 sleep 1
 dump_hierarchy editor-export-closed.xml emulator-screenshots/editor-export-closed.xml || true
-echo "PASS: visible MP4 button tap reached the export handler, started Transformer, saved an MP4 output, and closed the drawer."
+if ! grep -q "Metin" emulator-screenshots/editor-export-closed.xml; then
+  echo "The export panel return action did not restore the global editor dock."
+  collect_capture_diagnostics export-panel-return-did-not-restore-dock
+  exit 42
+fi
+echo "PASS: visible MP4 button tap reached the export handler, started Transformer, saved an MP4 output, and the panel return action restored the global dock."
 
 echo "Step 8c/12: add text, verify its canvas selection frame, and reselect it by tapping the preview"
 text_tab_coords="$(find_bottom_tool emulator-screenshots/editor-export-closed.xml "Metin" || true)"
