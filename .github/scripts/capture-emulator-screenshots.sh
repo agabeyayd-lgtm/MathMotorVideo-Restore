@@ -2704,8 +2704,11 @@ timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTe
 echo "PASS: home-screen photo used the full-frame transform, rendered across the 9:16 canvas, and replaced the empty-video card."
 
 echo "Step 12c/13: verify content:// photo survives a complete app restart"
-if ! grep -Fq "EDITOR_SMOKE_MEDIASTORE_CONTENT_URI uri=content://" emulator-screenshots/initial-photo-logcat.txt; then
-  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorSmokeTest:I > emulator-screenshots/content-photo-import-logcat.txt 2>&1 || true
+cp emulator-screenshots/initial-photo-logcat.txt emulator-screenshots/content-photo-import-logcat.txt
+if ! grep -Fq "EDITOR_SMOKE_MEDIASTORE_CONTENT_URI uri=content://" emulator-screenshots/content-photo-import-logcat.txt; then
+  echo "Debug entry did not publish the gallery fixture as a content:// URI."
+  collect_capture_diagnostics content-photo-media-uri-missing
+  exit 65
 fi
 if ! grep -Fq "OVERLAY_URI_COPIED_TO_PRIVATE_STORAGE source=content://" emulator-screenshots/content-photo-import-logcat.txt; then
   echo "The content:// gallery fixture was not copied into durable app-private storage."
