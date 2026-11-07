@@ -72,19 +72,27 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ffmpeg_archive="$RUNNER_TEMP/ffmpeg-release-amd64-static.tar.xz"
+          ffmpeg_archive_name="ffmpeg-N-128406-g1fe6854fd9-linux64-gpl.tar.xz"
+          ffmpeg_release="https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-11-04-12-51"
+          ffmpeg_archive="$RUNNER_TEMP/$ffmpeg_archive_name"
+          ffmpeg_checksums="$RUNNER_TEMP/ffmpeg-checksums.sha256"
           ffmpeg_dir="$RUNNER_TEMP/ffmpeg-static"
           mkdir -p "$ffmpeg_dir"
-          # Download the stable static archive directly. The setup action's
-          # release discovery now depends on an upstream README version line
-          # that is no longer present; bypass that metadata parser entirely.
+          # Pin an immutable upstream release asset and validate it against the
+          # checksum manifest shipped in the same GitHub release. This avoids
+          # mutable "latest" aliases and intermittent non-archive HTML responses.
           curl --fail --location --retry 3 --retry-delay 2 \
-            https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz \
-            --output "$ffmpeg_archive"
+            "$ffmpeg_release/$ffmpeg_archive_name" --output "$ffmpeg_archive"
+          curl --fail --location --retry 3 --retry-delay 2 \
+            "$ffmpeg_release/checksums.sha256" --output "$ffmpeg_checksums"
           test -s "$ffmpeg_archive"
+          expected_sha="$(awk -v file="$ffmpeg_archive_name" '$2 == file || $2 == "*"file {print $1}' "$ffmpeg_checksums")"
+          test -n "$expected_sha"
+          echo "$expected_sha  $ffmpeg_archive" | sha256sum --check -
+          xz --test "$ffmpeg_archive"
           tar -xJf "$ffmpeg_archive" -C "$ffmpeg_dir"
-          ffmpeg_binary="$(find "$ffmpeg_dir" -maxdepth 3 -type f -name ffmpeg -print -quit)"
-          ffprobe_binary="$(find "$ffmpeg_dir" -maxdepth 3 -type f -name ffprobe -print -quit)"
+          ffmpeg_binary="$(find "$ffmpeg_dir" -maxdepth 4 -type f -name ffmpeg -print -quit)"
+          ffprobe_binary="$(find "$ffmpeg_dir" -maxdepth 4 -type f -name ffprobe -print -quit)"
           test -x "$ffmpeg_binary"
           test -x "$ffprobe_binary"
           chmod +x "$ffmpeg_binary" "$ffprobe_binary"
