@@ -1119,3 +1119,11 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - The detector compared these coordinate spaces without scaling, so it searched a shifted/larger region and falsely reported `text-canvas-selection-frame-missing`.
 - Commit `70b9a05b20dcf6fb855c9e247aaed2db32fa7216` scales the measured canvas rectangle using the hierarchy root bounds and actual screenshot dimensions before running the unchanged white-frame/text pixel checks. It does not weaken the frame, text, or drag assertions.
 - Fresh emulator verification is required for selected text, post-drag position, and reselection after closing the panel.
+
+
+## Emulator fixture dependency correction — 2026-11-07
+
+- On candidate commit `7015e26b6e8ff8276b5fd87619fe23938f3d2aae`, unit tests and Debug APK compilation passed in Verify Android build #882; the debug APK ZIP artifact was uploaded. Android emulator run #1050 remained in the fixture-generation step and had not reached emulator boot or interaction checks when inspected. This is **not** a green emulator result.
+- The `ubuntu-24.04` runner's published software inventory does not list FFmpeg. The workflow therefore used its apt-get fallback before generating deterministic video/audio fixtures; that step remained in progress. The exact stalled subprocess was not available from the active-run logs.
+- Replaced that fallback with the FFmpeg setup action pinned to commit `37062fbf7149fc5578d6c57e08aed62458b375d6`; the existing fixture-generation commands and test assertions are unchanged. The action supplies a static FFmpeg binary without running apt repository updates.
+- A fresh run on the updated PR head is required. Do not mark preview, timeline, text panel, export, or phone acceptance green until the relevant emulator/device evidence is captured.
