@@ -11,7 +11,8 @@ SNAPSHOT_RE = re.compile(
     r"TIMELINE_ALIGNMENT_SNAPSHOT "
     r"playheadCenterPx=(\d+) playheadCenterYpx=(\d+) lineCenterPx=(\d+) "
     r"previewBounds=(\d+,\d+,\d+,\d+) "
-    r"clipBounds=(?:none|\d+,\d+,\d+,\d+) cells=(.*)"
+    r"clipBounds=(?:none|\d+,\d+,\d+,\d+) "
+    r"cellCandidates=(\d+) visibleCells=(\d+) cells=(.*)"
 )
 
 def parse_bounds(value: str):
@@ -25,6 +26,7 @@ def parse_bounds(value: str):
 
 def latest_snapshot(log_path: str):
     latest = None
+    latest_with_cells = None
     for line in Path(log_path).read_text(encoding="utf-8", errors="replace").splitlines():
         match = SNAPSHOT_RE.search(line)
         if not match:
@@ -36,7 +38,7 @@ def latest_snapshot(log_path: str):
         clip_match = re.search(r"clipBounds=(none|\d+,\d+,\d+,\d+)", line)
         clip = None if not clip_match or clip_match.group(1) == "none" else parse_bounds(clip_match.group(1))
         cells = []
-        for item in match.group(5).split(";"):
+        for item in match.group(7).split(";"):
             if not item or ":" not in item:
                 continue
             timestamp_text, bounds_text = item.split(":", 1)
@@ -54,14 +56,24 @@ def latest_snapshot(log_path: str):
             "preview": preview,
             "clip": clip,
             "cells": cells,
+            "cell_candidates": int(match.group(5)),
+            "visible_cells": int(match.group(6)),
         }
+        if cells:
+            latest_with_cells = latest
+    if latest_with_cells is not None:
+        latest = latest_with_cells
     if latest is None:
         raise SystemExit(
             "FAIL: no app-measured timeline snapshot found; "
             "the debug editor did not report actual View bounds."
         )
     if not latest["cells"]:
-        raise SystemExit("FAIL: app snapshot contains no fully visible timestamped thumbnail cells.")
+        raise SystemExit(
+            "FAIL: app snapshot contains no visible timestamped thumbnail cells "
+            f"(candidates={latest['cell_candidates']}, "
+            f"visible intersections={latest['visible_cells']})."
+        )
     if abs(latest["line_x"] - latest["playhead_x"]) > 5:
         raise SystemExit(
             f"FAIL: fixed playhead line and Play button are misaligned: "
@@ -139,6 +151,31 @@ def verify(log_path: str, screenshot_path: str):
         )
     if not re.search(rf"TIMELINE_THUMBNAIL_READY sourceMs={sample_ms} ", log):
         raise SystemExit(f"FAIL: centered thumbnail sample {sample_ms}ms was not confirmed decoded.")
+
+    timing_rows = [
+        tuple(map(int, row))
+        for row in re.findall(
+            r"TIMELINE_THUMBNAIL_TIMING sourceMs=(\\d+) success=true "
+            r"queueWaitMs=(\\d+) frameDecodeMs=(\\d+) bitmapScaleMs=(\\d+) "
+            r"uiDispatchWaitMs=(\\d+) uiApplyMs=(\\d+)",
+            log,
+        )
+    ]
+    if timing_rows:
+        queue_waits = [row[1] for row in timing_rows]
+        decode_times = [row[2] for row in timing_rows]
+        total_times = [row[1] + row[2] + row[3] + row[4] + row[5] for row in timing_rows]
+        print(
+            "  Thumbnail timing (n={}) queue median/max={}ms/{}ms; "
+            "decode median/max={}ms/{}ms; enqueue-to-display median/max={}ms/{}ms".format(
+                len(timing_rows),
+                int(statistics.median(queue_waits)), max(queue_waits),
+                int(statistics.median(decode_times)), max(decode_times),
+                int(statistics.median(total_times)), max(total_times),
+            )
+        )
+    else:
+        print("  Thumbnail timing: no successful decode timing records in this log capture.")
 
     image = Image.open(screenshot_path).convert("RGB")
     thumbnail_nodes = [

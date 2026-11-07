@@ -5060,6 +5060,8 @@ class VideoEditorActivity : Activity() {
 
         var clipBounds = "none"
         val cellBounds = mutableListOf<String>()
+        var cellCandidates = 0
+        var visibleCellCandidates = 0
         fun visit(view: View) {
             val description = view.contentDescription?.toString().orEmpty()
             if (description.startsWith("Klip 1:") && clipBounds == "none") {
@@ -5069,28 +5071,26 @@ class VideoEditorActivity : Activity() {
                 }
             }
             if (view is ImageView && description.startsWith("Klip karesi @")) {
+                cellCandidates++
                 val timestampStart = description.indexOf("Klip karesi @") + "Klip karesi @".length
                 val timestampEnd = description.indexOf("ms", timestampStart)
                 val timestamp = if (timestampEnd > timestampStart) {
                     description.substring(timestampStart, timestampEnd).toLongOrNull()
                 } else null
-                if (timestamp != null && view.isShown && view.width > 0 && view.height > 0) {
+                if (timestamp != null && view.width > 0 && view.height > 0) {
                     val visible = android.graphics.Rect()
-                    if (view.getGlobalVisibleRect(visible)) {
+                    // Partially clipped edge cells are still valid filmstrip targets.
+                    // Require a real visible intersection, not full dimension equality.
+                    if (view.getGlobalVisibleRect(visible) && visible.width() > 0 && visible.height() > 0) {
+                        visibleCellCandidates++
                         val location = IntArray(2)
                         view.getLocationOnScreen(location)
                         val actual = android.graphics.Rect(
                             location[0], location[1], location[0] + view.width, location[1] + view.height
                         )
-                        // getGlobalVisibleRect() and getLocationOnScreen() can use
-                        // different origins when the window has a top inset. Compare the
-                        // visible dimensions only; use on-screen coordinates for the
-                        // screenshot-space bounds written to the log.
-                        if (visible.width() == view.width && visible.height() == view.height) {
-                            cellBounds.add(
-                                "$timestamp:${actual.left},${actual.top},${actual.right},${actual.bottom}"
-                            )
-                        }
+                        cellBounds.add(
+                            "$timestamp:${actual.left},${actual.top},${actual.right},${actual.bottom}"
+                        )
                     }
                 }
             }
@@ -5104,7 +5104,9 @@ class VideoEditorActivity : Activity() {
             "TimelineAlignmentTest",
             "TIMELINE_ALIGNMENT_SNAPSHOT playheadCenterPx=$playheadCenterPx " +
                 "playheadCenterYpx=$playheadCenterYpx lineCenterPx=$lineCenterPx " +
-                "previewBounds=$previewBounds clipBounds=$clipBounds cells=${cellBounds.joinToString(";")}"
+                "previewBounds=$previewBounds clipBounds=$clipBounds " +
+                "cellCandidates=$cellCandidates visibleCells=$visibleCellCandidates " +
+                "cells=${cellBounds.joinToString(";")}"
         )
     }
 

@@ -2264,7 +2264,7 @@ echo "Using startup-captured Android ViewConfiguration touch slop: \${touch_slop
 thumbnail_aligned=false
 for attempt in 1 2 3 4 5; do
   timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime \
-    -s TimelineAlignmentTest:I TimelineSyncTest:I TimelineFrameSyncTest:I \
+    -s TimelineAlignmentTest:I TimelineSyncTest:I TimelineFrameSyncTest:I TimelineThumbnail:I \
     > emulator-screenshots/thumbnail-alignment-measurements.txt 2>&1 || true
   alignment="$(python3 .github/scripts/assert-thumbnail-alignment.py prepare emulator-screenshots/thumbnail-alignment-measurements.txt)"
   read -r thumb_center_x thumb_center_y play_center_x thumb_sample_ms <<< "$alignment"
@@ -2291,7 +2291,7 @@ if ! take_screen emulator-screenshots/editor-frame-aligned.png; then
   exit 6
 fi
 timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime \
-  -s TimelineAlignmentTest:I TimelineSyncTest:I TimelineFrameSyncTest:I \
+  -s TimelineAlignmentTest:I TimelineSyncTest:I TimelineFrameSyncTest:I TimelineThumbnail:I \
   > emulator-screenshots/thumbnail-alignment-logcat.txt 2>&1
 python3 .github/scripts/assert-thumbnail-alignment.py verify \
   emulator-screenshots/thumbnail-alignment-logcat.txt \
