@@ -1596,12 +1596,23 @@ for state in required[1:]:
             f"Project preview changed size or position during {state}: "
             f"baseline={base_preview}, observed={preview}. The preview must remain fixed."
         )
-    if timeline != base_timeline:
+    if state in ("open:clip", "open:clipVolume"):
+        if timeline[0] != base_timeline[0] or timeline[2] != base_timeline[2]:
+            raise SystemExit(
+                f"Timeline width/position changed while opening {state}: "
+                f"baseline={base_timeline}, observed={timeline}."
+            )
+        if timeline[1] >= base_timeline[1] or timeline[3] >= base_timeline[3]:
+            raise SystemExit(
+                f"Detail tools did not compact the timeline/playback controls during {state}: "
+                f"baseline={base_timeline}, observed={timeline}."
+            )
+    elif timeline != base_timeline:
         raise SystemExit(
-            f"Timeline geometry changed while opening/switching/closing {state}: "
+            f"Timeline did not restore after closing/switching {state}: "
             f"baseline={base_timeline}, observed={timeline}."
         )
-print("PASS: the project preview and timeline keep identical measured geometry while tools open, switch, and close.")
+print("PASS: the project preview stays pixel-identical. Detail tools compact only the timeline/control area and restore it on exit.")
 PY
 
 echo "Step 8b/12: open the Proje panel and prove the MP4 button receives a real tap"
