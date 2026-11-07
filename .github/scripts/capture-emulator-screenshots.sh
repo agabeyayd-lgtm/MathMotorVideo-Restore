@@ -1847,7 +1847,7 @@ image_path, _log_path, hierarchy_path = sys.argv[1:4]
 root = ET.parse(hierarchy_path).getroot()
 root_node = root.find("node")
 root_bounds = re.fullmatch(
-    r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]",
+    r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",
     root_node.attrib.get("bounds", "") if root_node is not None else "",
 )
 if not root_bounds:
@@ -1861,7 +1861,7 @@ canvas_nodes = []
 for node in root.iter("node"):
     if node.attrib.get("content-desc", "").strip() != "Proje tuvali":
         continue
-    match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
     if match:
         canvas_nodes.append(tuple(map(int, match.groups())))
 if len(canvas_nodes) != 1:
@@ -2037,7 +2037,7 @@ def read_canvas(path):
     for node in root.iter("node"):
         if node.attrib.get("content-desc", "").strip() != "Proje tuvali":
             continue
-        match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
         if match:
             bounds = tuple(map(int, match.groups()))
             if bounds[2] > bounds[0] and bounds[3] > bounds[1]:
@@ -2058,7 +2058,7 @@ if (canvas_width, canvas_height) != (baseline_width, baseline_height):
 
 root_node = current_root.find("node")
 root_match = re.fullmatch(
-    r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]",
+    r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",
     root_node.attrib.get("bounds", "") if root_node is not None else "",
 )
 if not root_match:
