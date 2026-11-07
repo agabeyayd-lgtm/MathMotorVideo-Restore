@@ -496,7 +496,9 @@ timeout -k 2s 15s adb -s emulator-5554 shell am start \
   --es draft_id "11111111-1111-4111-8111-111111111111" \
   --ez timeline_sync_test true \
   --ez timeline_test_split_after_replacement true \
-  --ef timeline_test_px_per_sec_dp 120 | tee emulator-screenshots/editor-video-launch.txt
+  # Keep both four-second halves visible so a one-finger reorder can cross
+  # the complete segment width; this is test-only zoom, not an app default.
+  --ef timeline_test_px_per_sec_dp 30 | tee emulator-screenshots/editor-video-launch.txt
 
 # Capture the emulator touch-slop immediately after the test activity starts.
 # Later interaction checks clear logcat to isolate their own events, so reading
