@@ -456,9 +456,11 @@ class TimelineVideoMathTest {
         assertEquals(0L, plan.timelineStartByClipIndex[0])
         assertEquals(10_000L, plan.timelineStartByClipIndex[1])
         assertEquals(9_000L, plan.timelineStartByClipIndex[2])
-        // Existing overlaps are repaired first; only the dragged clip moves to empty space.
-        assertEquals(overlapping[1].sourceStartMs, overlapping[1].sourceStartMs)
-        assertEquals(overlapping[1].sourceEndMs, overlapping[1].sourceEndMs)
+        // Source trim and speed remain untouched when the project start changes.
+        assertEquals(
+            TimelineVideoSegment(10_000L, 500L, 4_000L, 4_000L),
+            overlapping[1].copy(timelineStartMs = plan.timelineStartByClipIndex[1]!!)
+        )
     }
 
     @Test

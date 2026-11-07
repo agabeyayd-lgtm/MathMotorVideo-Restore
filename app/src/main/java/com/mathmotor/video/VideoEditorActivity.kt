@@ -8853,10 +8853,9 @@ class VideoEditorActivity : Activity() {
     
 
     /**
-     * Reorders a split/main-track clip by the horizontal location where it was dropped.
-     * The pure timing plan rejects overlapping video layers rather than flattening their
-     * intentional z-order. A successful move reflows the sequential video track while
-     * leaving independently-timed text/audio lanes on their existing project timestamps.
+     * Moves a main-video clip to a free timeline position, or inserts/reorders it when
+     * the requested range collides with another video clip. Independent text/audio lanes
+     * retain their own project timestamps in either case.
      */
     private fun reorderTimelineClipFromDrop(index: Int, requestedStartMs: Long) {
         val plan = TimelineVideoMath.reorderForDrop(
@@ -8904,7 +8903,7 @@ class VideoEditorActivity : Activity() {
             "TimelineSyncTest",
             "VIDEO_CLIP_DROP movedIndex=$index ordered=${plan.orderedClipIndices.joinToString(",")} starts=${plan.orderedClipIndices.joinToString(","){ i -> "$i:${plan.timelineStartByClipIndex[i]}" }}"
         )
-        status.text = "Klip sırası değiştirildi; video parçaları art arda hizalandı."
+        status.text = "Klip yeni zaman konumuna taşındı; video klipleri çakışmayacak şekilde hizalandı."
     }
 
     private fun moveSelectedClip(delta:Int){
