@@ -17,6 +17,7 @@ import android.os.Bundle
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.media.MediaMetadataRetriever
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -25,6 +26,8 @@ import android.view.HapticFeedbackConstants
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.HorizontalScrollView
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -41,6 +44,11 @@ class MainActivity : Activity() {
     private lateinit var draftSection: LinearLayout
     private lateinit var draftList: LinearLayout
     private lateinit var draftSectionGap: View
+    private lateinit var draftHeader: LinearLayout
+    private lateinit var draftHeaderGap: View
+    private lateinit var draftActionsNoteGap: View
+    private lateinit var draftInfoNote: TextView
+    private lateinit var draftListGap: View
     private lateinit var draftBackupButton: Button
     private lateinit var updateStatus: TextView
     private var pendingDraftBackup: JSONObject? = null
@@ -48,6 +56,7 @@ class MainActivity : Activity() {
     private var updateReceiverRegistered = false
     private val mainHandler = Handler(Looper.getMainLooper())
     private val pickVideoRequest = 2002
+    private val pickPhotoRequest = 2003
     private val saveDraftBackupRequest = 5107
     private val openDraftBackupRequest = 5108
     private val latestApkUrl = "https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/releases/latest/download/MathMotorVideo.apk"
@@ -208,207 +217,191 @@ class MainActivity : Activity() {
     }
 
     private fun buildUi() {
-        val scroll = ScrollView(this).apply {
-            setBackgroundColor(bg)
-            clipToPadding = false
-            isFillViewport = true
-            overScrollMode = View.OVER_SCROLL_NEVER
-        }
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(12), dp(16), dp(22))
-        }
+        window.statusBarColor = Color.rgb(15, 76, 164)
+        window.navigationBarColor = Color.WHITE
+        window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+        val screen = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.WHITE) }
+        val scroll = ScrollView(this).apply { setBackgroundColor(Color.WHITE); clipToPadding = false; isFillViewport = false; overScrollMode = View.OVER_SCROLL_NEVER }
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), 0, dp(16), dp(18)) }
         scroll.addView(root)
 
-        // Compact brand row: the primary task now appears much higher on screen.
-        val topBar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
+        val hero = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(17), dp(18), dp(20))
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(15,70,174), Color.rgb(17,145,220), Color.rgb(34,190,231))).apply {
+                cornerRadii = floatArrayOf(0f,0f,0f,0f,dp(24).toFloat(),dp(24).toFloat(),dp(24).toFloat(),dp(24).toFloat())
+            }
         }
-        val mark = TextView(this).apply {
-            text = "MM"
-            textSize = 13f
-            setTextColor(Color.rgb(7, 25, 31))
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-            background = rounded(accent, 13)
-            layoutParams = LinearLayout.LayoutParams(dp(42), dp(42))
-        }
-        topBar.addView(mark)
+        val heroTop = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val brand = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(11), 0, 0, 0)
-            addView(label("MathMotor Video", 17f, white, true))
-            addView(label("VİDEO DÜZENLEYİCİ", 9f, muted, true))
+            addView(label("MathMotor", 21f, Color.WHITE, true))
+            addView(label("VIDEO STUDIO", 9f, Color.rgb(221,239,255), true))
         }
-        topBar.addView(brand, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        val localTag = label("TELEFONDA", 9f, accent, true).apply {
-            background = rounded(Color.rgb(15, 48, 48), 9)
-            setPadding(dp(10), dp(6), dp(10), dp(6))
-        }
-        topBar.addView(localTag)
-        root.addView(topBar)
-        root.addView(gap(16))
-
-        root.addView(label("VİDEO STÜDYOSU", 10f, accent, true))
-        root.addView(label("Videonu hazırla.", 26f, white, true))
-        root.addView(label("Kes, birleştir, yazı ve ses ekle.", 13f, muted, false).apply {
-            setLineSpacing(dp(2).toFloat(), 1f)
+        heroTop.addView(brand, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        heroTop.addView(TextView(this).apply {
+            text = "✦  Standart"; textSize = 12f; typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.rgb(21,45,72)); gravity = Gravity.CENTER
+            setPadding(dp(13),dp(10),dp(13),dp(10)); background = rounded(Color.WHITE,20)
         })
-        root.addView(gap(13))
-
-        // One clear primary action, with the empty-project option kept secondary.
-        val startCard = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(15), dp(15), dp(15), dp(15))
-            background = rounded(panelRaised, 18).apply { setStroke(dp(1), line) }
-        }
-        val cardHeader = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        val cardIcon = TextView(this).apply {
-            text = "✂"
-            textSize = 22f
-            setTextColor(accent)
-            gravity = Gravity.CENTER
-            background = rounded(Color.rgb(16, 57, 57), 12)
-            layoutParams = LinearLayout.LayoutParams(dp(46), dp(46))
-        }
-        cardHeader.addView(cardIcon)
-        val cardCopy = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(11), 0, 0, 0)
-            addView(label("Yeni düzenleme", 16f, white, true))
-            addView(label("Bir videoyla hemen başla.", 11f, muted, false))
-        }
-        cardHeader.addView(cardCopy, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        startCard.addView(cardHeader)
-        startCard.addView(gap(13))
-        startCard.addView(primaryButton("＋   Galeriden video seç") { chooseVideo() }.apply {
-            minHeight = dp(54)
-            textSize = 15f
-        }, matchWrap())
-        startCard.addView(gap(7))
-        startCard.addView(secondaryButton("Boş proje oluştur   ›") { openEditor(null) }.apply {
-            minHeight = dp(44)
-            textSize = 13f
-        }, matchWrap())
-        root.addView(startCard, matchWrap())
-
-        draftSectionGap = gap(14)
-        root.addView(draftSectionGap)
-        draftSection = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            visibility = View.GONE
-        }
-        val draftsHeader = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            addView(label("TASLAKLAR", 12f, white, true))
-            addView(label("Kaldığın yerden devam et", 10f, muted, false))
-        }
-        draftSection.addView(draftsHeader)
-        val backupActions = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        draftBackupButton = secondaryButton("Taslakları yedekle") { requestDraftBackup() }.apply {
-            minHeight = dp(40)
-            textSize = 10f
-            setPadding(dp(8), dp(5), dp(8), dp(5))
-        }
-        backupActions.addView(draftBackupButton, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        backupActions.addView(View(this), LinearLayout.LayoutParams(dp(6), 1))
-        backupActions.addView(secondaryButton("Yedekten geri yükle") { requestDraftRestore() }.apply {
-            minHeight = dp(40)
-            textSize = 10f
-            setPadding(dp(8), dp(5), dp(8), dp(5))
+        heroTop.addView(TextView(this).apply {
+            text = "⌕"; textSize = 27f; setTextColor(Color.WHITE); gravity = Gravity.CENTER
+            background = rounded(Color.rgb(35,92,175),50)
+            layoutParams = LinearLayout.LayoutParams(dp(42),dp(42)).apply { leftMargin = dp(9) }
+            contentDescription = "Ara"
+            setOnClickListener { Toast.makeText(this@MainActivity,"Arama için Son çalışmalar bölümünü kullanabilirsin.",Toast.LENGTH_SHORT).show() }
         })
-        draftSection.addView(gap(8))
-        draftSection.addView(backupActions, matchWrap())
-        draftSection.addView(gap(4))
-        draftSection.addView(label(
-            "Yedek proje ayarlarını ve zaman çizelgesini saklar; kaynak video ve ses dosyalarını içermez.",
-            9f, muted, false
-        ))
-        draftList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        draftSection.addView(gap(6))
-        draftSection.addView(draftList, matchWrap())
-        root.addView(draftSection, matchWrap())
-        refreshDraftProjects()
-
-        root.addView(gap(20))
-
-        // Compact gallery heading: refresh is an icon action instead of two crowded buttons.
-        val recentHeader = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
+        hero.addView(heroTop); hero.addView(gap(24))
+        hero.addView(label("Video oluştur",13f,Color.rgb(222,239,255),true))
+        hero.addView(label("Başlamaya hazır mısın?",25f,Color.WHITE,true)); hero.addView(gap(15))
+        val updateRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12),dp(9),dp(9),dp(9)); background = rounded(Color.WHITE,15)
         }
-        val recentTitle = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            addView(label("SON ÇALIŞMALAR", 12f, white, true))
-            addView(label("Dışa aktardığın videolar", 10f, muted, false))
-        }
-        recentHeader.addView(recentTitle, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        val refresh = secondaryButton("↻") {
-            syncGalleryRecords()
-            Toast.makeText(this, "Video galerisi yenileniyor.", Toast.LENGTH_SHORT).show()
-        }.apply {
-            contentDescription = "Galeriyi yenile"
-            minWidth = dp(38)
-            minHeight = dp(38)
-            textSize = 18f
-            setPadding(dp(4), 0, dp(4), 0)
-        }
-        recentHeader.addView(refresh)
-        recentHeader.addView(secondaryButton("Tümünü gör  ›") {
-            startActivity(Intent(this, VideoPlayerActivity::class.java))
-        }.apply {
-            minHeight = dp(38)
-            textSize = 10f
-            setPadding(dp(8), dp(5), dp(8), dp(5))
+        updateRow.addView(TextView(this).apply {
+            text = "↻"; textSize = 22f; setTextColor(Color.rgb(17,105,181)); gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(dp(34),dp(34))
         })
-        root.addView(recentHeader)
-        root.addView(gap(9))
-        recentList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        root.addView(recentList, matchWrap())
-        refreshRecentProjects()
-
-        // Updates remain available inside the app, but no longer dominate the home screen.
-        root.addView(gap(17))
-        val divider = View(this).apply {
-            setBackgroundColor(line)
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1))
-        }
-        root.addView(divider)
-        root.addView(gap(13))
-        val updateHeader = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
         val updateCopy = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            addView(label("UYGULAMA GÜNCELLEMESİ", 10f, accent, true))
-            addView(label("Yeni sürüm varsa buradan yükleyebilirsin.", 10f, muted, false))
+            orientation = LinearLayout.VERTICAL; setPadding(dp(8),0,dp(5),0)
+            addView(label("Uygulama güncellemesi",12f,Color.rgb(20,42,66),true))
+            addView(label("Yeni sürümü kontrol et",10f,Color.rgb(91,111,132),false))
         }
-        updateHeader.addView(updateCopy, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        updateHeader.addView(secondaryButton("Kontrol et") { checkForUpdates() }.apply {
-            minHeight = dp(38)
-            textSize = 11f
-            setPadding(dp(10), dp(5), dp(10), dp(5))
+        updateRow.addView(updateCopy,LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f))
+        updateRow.addView(primaryButton("Güncelle") { checkForUpdates() }.apply {
+            textSize=12f; minHeight=dp(40); setTextColor(Color.WHITE); background=rounded(Color.rgb(20,104,184),12)
         })
-        root.addView(updateHeader)
-        updateStatus = label("Son sürümü kontrol etmek için aşağıdaki düğmeye dokun.", 10f, muted, false).apply {
-            setPadding(0, dp(6), 0, dp(2))
-        }
-        root.addView(updateStatus)
+        hero.addView(updateRow)
+        updateStatus = label("Güncelleme durumunu görmek için kontrol et.",10f,Color.WHITE,false).apply { setPadding(dp(2),dp(7),0,0); maxLines=2 }
+        hero.addView(updateStatus); root.addView(hero,matchWrap()); root.addView(gap(14))
 
-        root.addView(gap(12))
-        root.addView(label("Videoların telefonunda kalır.", 10f, Color.rgb(130, 153, 174), false).apply {
-            gravity = Gravity.CENTER
-            setPadding(0, dp(5), 0, dp(4))
-        })
-        setContentView(scroll)
+        val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        actions.addView(homeActionCard("＋","Yeni video","Galeriden video seç") { chooseVideo() },LinearLayout.LayoutParams(0,dp(150),1f))
+        actions.addView(gapWidth(10))
+        actions.addView(homeActionCard("▧","Fotoğrafı\ndüzenle","Fotoğraf seç") { choosePhoto() },LinearLayout.LayoutParams(0,dp(150),0.78f))
+        root.addView(actions,matchWrap())
+        root.addView(secondaryButton("Boş proje oluştur  ›") { openEditor(null) }.apply {
+            minHeight=dp(38); textSize=11f; setTextColor(Color.rgb(35,93,147))
+            background=rounded(Color.rgb(244,249,253),14)
+            contentDescription="Boş proje oluştur"
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin=dp(8) })
+        root.addView(gap(22))
+
+        val recentHeader = LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL; gravity=Gravity.CENTER_VERTICAL }
+        recentHeader.addView(label("Son çalışmalar",17f,Color.rgb(28,34,43),true),LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f))
+        recentHeader.addView(secondaryButton("Tümünü gör  ›") {
+            startActivity(Intent(this,VideoPlayerActivity::class.java))
+        }.apply { minHeight=dp(34); textSize=10f; setTextColor(Color.rgb(35,93,147)); background=rounded(Color.rgb(235,246,253),18) })
+        root.addView(recentHeader); root.addView(gap(10))
+        val recentScroll = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled=false; overScrollMode=View.OVER_SCROLL_NEVER }
+        recentList = LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL }
+        recentScroll.addView(recentList); root.addView(recentScroll,LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(148)))
+        refreshRecentProjects(); root.addView(gap(22))
+
+        root.addView(label("Araçlar",18f,Color.rgb(28,34,43),true)); root.addView(gap(9))
+        val tools = listOf(
+            Triple("▣","AutoCut","Video düzenle"), Triple("✧","Rötuş yap","Fotoğraf araçları"), Triple("✦","Yapay zekâ\noluşturucu","Üretim araçları"),
+            Triple("▧","Fotoğraf araçları","Fotoğraf seç"), Triple("◉","Çekim ve kayıt","Kamera"), Triple("✥","Otomatik\niyileştir","Görüntü araçları"),
+            Triple("▱","Kapak oluşturma\naracı","Kapak tasarla"), Triple("▣","Otomatik alt\nyazı","Altyazı araçları"), Triple("✂","YZ klip aracı","Klip araçları"),
+            Triple("▧","Arka planı kaldır","Fotoğraf araçları"), Triple("▤","YZ fotoğraf","Fotoğraf üret"), Triple("◌","Alan","Alan araçları"),
+            Triple("◴","Hızı ayarla","Hız araçları"), Triple("▣","Pazarlama araçları","Şablonlar"), Triple("♩","Kayıt","Ses kaydı"),
+            Triple("♙","Avatar araçları","Avatar"), Triple("▧","Medya oluşturma","Medya araçları"), Triple("⠿","Tüm araçlar (32)","Araç kitaplığı")
+        )
+        tools.chunked(3).forEach { rowItems ->
+            val row = LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL }
+            rowItems.forEachIndexed { index,item ->
+                val action: () -> Unit = when(item.second) {
+                    "AutoCut" -> ({ chooseVideo() })
+                    "Fotoğraf araçları","Arka planı kaldır" -> ({ choosePhoto() })
+                    "Çekim ve kayıt","Kayıt" -> ({ launchCapture() })
+                    "Kapak oluşturma\naracı" -> ({ choosePhoto() })
+                    else -> ({ Toast.makeText(this, "${item.second.replace('\n',' ')} henüz etkin değil.",Toast.LENGTH_SHORT).show() })
+                }
+                row.addView(homeToolTile(item.first,item.second,action),LinearLayout.LayoutParams(0,dp(116),1f).apply { if(index>0) leftMargin=dp(7) })
+            }
+            repeat(3-rowItems.size) { row.addView(View(this),LinearLayout.LayoutParams(0,dp(116),1f)) }
+            root.addView(row,matchWrap()); root.addView(gap(7))
+        }
+
+        root.addView(gap(13))
+        draftSectionGap=gap(8)
+        draftSection=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; visibility=View.GONE }
+        draftHeader=LinearLayout(this).apply {
+            orientation=LinearLayout.VERTICAL
+            addView(label("TASLAKLAR",17f,Color.rgb(28,34,43),true))
+            addView(label("Kaldığın yerden devam et",10f,Color.rgb(110,122,137),false))
+        }
+        draftSection.addView(draftHeader)
+        val backupActions=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL; gravity=Gravity.CENTER_VERTICAL }
+        draftBackupButton=secondaryButton("Taslakları yedekle") { requestDraftBackup() }.apply { minHeight=dp(40); textSize=10f }
+        backupActions.addView(draftBackupButton,LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f))
+        backupActions.addView(gapWidth(6))
+        backupActions.addView(secondaryButton("Yedekten geri yükle") { requestDraftRestore() }.apply { minHeight=dp(40); textSize=10f })
+        draftHeaderGap=gap(8)
+        draftSection.addView(draftHeaderGap); draftSection.addView(backupActions,matchWrap())
+        draftActionsNoteGap=gap(4)
+        draftSection.addView(draftActionsNoteGap)
+        draftInfoNote=label("Yedek proje ayarlarını ve zaman çizelgesini saklar; kaynak medya dosyalarını içermez.",9f,Color.rgb(110,122,137),false)
+        draftSection.addView(draftInfoNote)
+        draftList=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL }
+        draftListGap=gap(6)
+        draftSection.addView(draftListGap); draftSection.addView(draftList,matchWrap())
+        root.addView(draftSection,matchWrap()); refreshDraftProjects(); root.addView(gap(10))
+
+        val footer=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL; gravity=Gravity.CENTER; setPadding(0,dp(8),0,dp(5)) }
+        listOf("✂" to "Düzenle","▥" to "Şablonlar","✥" to "YZ Lab","▱" to "Kütüphane","♙" to "Ben").forEachIndexed { index,pair ->
+            footer.addView(homeNavItem(pair.first,pair.second,index==0) {
+                when(index) {
+                    0 -> chooseVideo()
+                    3 -> startActivity(Intent(this,VideoPlayerActivity::class.java))
+                    else -> Toast.makeText(this,"${pair.second} bölümü henüz etkin değil.",Toast.LENGTH_SHORT).show()
+                }
+            },LinearLayout.LayoutParams(0,dp(58),1f))
+        }
+        screen.addView(scroll,LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,0,1f))
+        screen.addView(footer,matchWrap()); setContentView(screen)
+    }
+
+    private fun homeActionCard(icon:String,title:String,subtitle:String,action:()->Unit):View =
+        LinearLayout(this).apply {
+            orientation=LinearLayout.VERTICAL; gravity=Gravity.CENTER; setPadding(dp(10),dp(12),dp(10),dp(10))
+            background=ripple(Color.rgb(224,243,253),Color.rgb(211,235,249),18)
+            isClickable=true; isFocusable=true; setOnClickListener { action() }
+            addView(TextView(this@MainActivity).apply { text=icon; textSize=30f; typeface=Typeface.DEFAULT_BOLD; setTextColor(Color.rgb(9,28,47)); gravity=Gravity.CENTER })
+            addView(gap(5))
+            addView(label(title,16f,Color.rgb(15,25,38),true).apply { gravity=Gravity.CENTER; textAlignment=View.TEXT_ALIGNMENT_CENTER })
+            addView(label(subtitle,10f,Color.rgb(95,112,130),false).apply { gravity=Gravity.CENTER })
+        }
+
+    private fun homeToolTile(icon:String,title:String,action:()->Unit):View =
+        LinearLayout(this).apply {
+            orientation=LinearLayout.VERTICAL; gravity=Gravity.CENTER; setPadding(dp(5),dp(8),dp(5),dp(7))
+            background=ripple(Color.WHITE,Color.rgb(245,247,250),14); isClickable=true; isFocusable=true
+            contentDescription=title.replace('\n',' '); setOnClickListener { action() }
+            addView(TextView(this@MainActivity).apply { text=icon; textSize=25f; setTextColor(Color.rgb(44,49,58)); gravity=Gravity.CENTER })
+            addView(gap(7))
+            addView(label(title,12f,Color.rgb(36,40,48),true).apply { gravity=Gravity.CENTER; textAlignment=View.TEXT_ALIGNMENT_CENTER; maxLines=2 })
+        }
+
+    private fun homeNavItem(icon:String,title:String,selected:Boolean,action:()->Unit):View =
+        LinearLayout(this).apply {
+            orientation=LinearLayout.VERTICAL; gravity=Gravity.CENTER; isClickable=true; isFocusable=true; setOnClickListener { action() }
+            addView(TextView(this@MainActivity).apply { text=icon; textSize=22f; setTextColor(if(selected) Color.BLACK else Color.rgb(155,165,176)); gravity=Gravity.CENTER })
+            addView(label(title,10f,if(selected) Color.BLACK else Color.rgb(155,165,176),selected).apply { gravity=Gravity.CENTER })
+        }
+
+    private fun choosePhoto() {
+        val pick=Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE); type="image/*"
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+        try { startActivityForResult(pick,pickPhotoRequest) }
+        catch(error:Exception) { Toast.makeText(this,"Fotoğraf seçici açılamadı: ${error.message}",Toast.LENGTH_LONG).show() }
+    }
+
+    private fun launchCapture() {
+        try { startActivityForResult(Intent(android.provider.MediaStore.ACTION_VIDEO_CAPTURE),pickVideoRequest) }
+        catch(_:Exception) { Toast.makeText(this,"Kamera açılamadı.",Toast.LENGTH_SHORT).show() }
     }
 
     /**
@@ -437,17 +430,22 @@ class MainActivity : Activity() {
         if (!::draftSection.isInitialized || !::draftList.isInitialized) return
         val allDrafts = VideoProjectDraftStore.list(this)
         val drafts = allDrafts.take(5)
+        val hasDrafts = allDrafts.isNotEmpty()
         draftList.removeAllViews()
+        // Keep backup/restore reachable at all times, but do not show an empty
+        // draft heading, explanatory copy, or placeholder when there is nothing
+        // to continue. The backup action stays disabled until a draft exists.
         draftSection.visibility = View.VISIBLE
-        draftSectionGap.visibility = if (allDrafts.isEmpty()) View.GONE else View.VISIBLE
-        draftBackupButton.isEnabled = allDrafts.isNotEmpty()
-        draftBackupButton.alpha = if (allDrafts.isNotEmpty()) 1f else 0.45f
-        if (drafts.isEmpty()) {
-            draftList.addView(label("Henüz kaydedilmiş taslak yok.", 10f, muted, false).apply {
-                setPadding(0, dp(7), 0, dp(2))
-            })
-            return
-        }
+        draftSectionGap.visibility = if (hasDrafts) View.VISIBLE else View.GONE
+        draftHeader.visibility = if (hasDrafts) View.VISIBLE else View.GONE
+        draftHeaderGap.visibility = if (hasDrafts) View.VISIBLE else View.GONE
+        draftActionsNoteGap.visibility = if (hasDrafts) View.VISIBLE else View.GONE
+        draftInfoNote.visibility = if (hasDrafts) View.VISIBLE else View.GONE
+        draftListGap.visibility = if (hasDrafts) View.VISIBLE else View.GONE
+        draftList.visibility = if (hasDrafts) View.VISIBLE else View.GONE
+        draftBackupButton.isEnabled = hasDrafts
+        draftBackupButton.alpha = if (hasDrafts) 1f else 0.45f
+        if (drafts.isEmpty()) return
         drafts.forEachIndexed { index, draft ->
             val item = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -495,61 +493,44 @@ class MainActivity : Activity() {
 
     private fun refreshRecentProjects() {
         recentList.removeAllViews()
-        val records = VideoRecordStore.list(this).take(5)
-        if (records.isEmpty()) {
-            val empty = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(14), dp(15), dp(14), dp(15))
-                background = rounded(panel, 14).apply { setStroke(dp(1), line) }
+        val records=VideoRecordStore.list(this).take(12)
+        if(records.isEmpty()) {
+            val empty=LinearLayout(this).apply {
+                orientation=LinearLayout.VERTICAL; gravity=Gravity.CENTER; setPadding(dp(15),dp(12),dp(15),dp(12))
+                background=rounded(Color.rgb(244,248,251),15)
             }
-            val icon = label("▣", 23f, muted, true)
-            empty.addView(icon, LinearLayout.LayoutParams(dp(42), ViewGroup.LayoutParams.WRAP_CONTENT))
-            val copy = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                addView(label("Henüz video yok", 13f, white, true))
-                addView(label("Dışa aktardığın videolar burada görünecek.", 11f, muted, false))
-            }
-            empty.addView(copy, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            recentList.addView(empty, matchWrap())
-            return
+            empty.addView(label("▣",25f,Color.rgb(125,145,163),true).apply { gravity=Gravity.CENTER })
+            empty.addView(label("Henüz çalışma yok",12f,Color.rgb(62,76,91),true).apply { gravity=Gravity.CENTER })
+            empty.addView(label("Dışa aktardığın videolar burada görünür.",10f,Color.rgb(110,122,137),false).apply { gravity=Gravity.CENTER })
+            recentList.addView(empty,LinearLayout.LayoutParams(dp(230),dp(132))); return
         }
-
-        records.forEachIndexed { index, record ->
-            val item = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(12), dp(11), dp(12), dp(11))
-                background = ripple(panel, line, 14)
-                isClickable = true
-                isFocusable = true
-                contentDescription = "Videoyu aç: " + record.title
+        records.forEachIndexed { index,record ->
+            val card=LinearLayout(this).apply {
+                orientation=LinearLayout.VERTICAL; background=rounded(Color.rgb(241,246,250),13); clipToOutline=true
+                isClickable=true; isFocusable=true; contentDescription="Videoyu aç: ${record.title}"
                 setOnClickListener {
-                    startActivity(Intent(this@MainActivity, VideoPlayerActivity::class.java).apply {
-                        putExtra("video_uri", record.uri)
-                    })
+                    startActivity(Intent(this@MainActivity,VideoPlayerActivity::class.java).apply { putExtra("video_uri",record.uri) })
                 }
             }
-            val number = TextView(this).apply {
-                text = String.format("%02d", index + 1)
-                textSize = 13f
-                typeface = Typeface.DEFAULT_BOLD
-                setTextColor(accent)
-                gravity = Gravity.CENTER
-                background = rounded(Color.rgb(18, 49, 58), 10)
-                layoutParams = LinearLayout.LayoutParams(dp(42), dp(42))
-            }
-            item.addView(number)
-            val info = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(dp(11), 0, dp(6), 0)
-                addView(label(record.title.ifBlank { "Düzenlenmiş video" }, 13f, white, true))
-                addView(label(DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(record.createdAt)), 11f, muted, false))
-            }
-            item.addView(info, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            item.addView(label("›", 24f, muted, false))
-            recentList.addView(item, matchWrap())
-            if (index != records.lastIndex) recentList.addView(gap(7))
+            val preview=ImageView(this).apply { scaleType=ImageView.ScaleType.CENTER_CROP; setBackgroundColor(Color.rgb(199,216,229)); contentDescription=record.title }
+            card.addView(preview,LinearLayout.LayoutParams(dp(142),dp(91)))
+            card.addView(label(record.title.ifBlank { "Düzenlenmiş video" },10f,Color.rgb(35,43,52),true).apply {
+                maxLines=1; ellipsize=android.text.TextUtils.TruncateAt.END; setPadding(dp(7),dp(6),dp(7),dp(1))
+            })
+            card.addView(label(DateFormat.getDateInstance(DateFormat.SHORT).format(Date(record.createdAt)),9f,Color.rgb(105,117,130),false).apply {
+                setPadding(dp(7),0,dp(7),dp(5))
+            })
+            recentList.addView(card,LinearLayout.LayoutParams(dp(142),dp(132)).apply { if(index>0) leftMargin=dp(9) })
+            Thread {
+                val bitmap=runCatching {
+                    val retriever=MediaMetadataRetriever()
+                    try { retriever.setDataSource(this,Uri.parse(record.uri)); retriever.getFrameAtTime(500_000,MediaMetadataRetriever.OPTION_CLOSEST_SYNC) }
+                    finally { retriever.release() }
+                }.getOrNull()
+                if(bitmap!=null) mainHandler.post {
+                    if(!isFinishing && preview.isAttachedToWindow) preview.setImageBitmap(bitmap) else bitmap.recycle()
+                }
+            }.start()
         }
     }
 
@@ -650,9 +631,20 @@ class MainActivity : Activity() {
             }
             return
         }
-        if (requestCode != pickVideoRequest || resultCode != RESULT_OK) return
-        val uri = data?.data ?: run {
-            Toast.makeText(this, "Video seçilmedi.", Toast.LENGTH_SHORT).show()
+        if (resultCode != RESULT_OK) return
+        if (requestCode == pickPhotoRequest) {
+            val photoUri=data?.data ?: return
+            try { contentResolver.takePersistableUriPermission(photoUri,Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch(_:Exception) { }
+            startActivity(Intent(this,VideoEditorActivity::class.java).apply {
+                putExtra("draft_id",VideoProjectDraftStore.newId())
+                putExtra("initial_overlay_uri",photoUri.toString())
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            })
+            return
+        }
+        if (requestCode != pickVideoRequest) return
+        val uri=data?.data ?: run {
+            Toast.makeText(this,"Video seçilmedi.",Toast.LENGTH_SHORT).show()
             return
         }
         try {

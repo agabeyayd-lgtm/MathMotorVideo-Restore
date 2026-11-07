@@ -1,3 +1,15 @@
+## Fixed-size project preview across editor tools — 2026-11-07
+
+- The product requirement is now explicit: the actual project canvas must keep the **same measured width and height** as the normal editor preview. The previous 75% allowance is removed; any resize while opening a tool or the keyboard is a test failure.
+- The app records the settled preview-stage height before a tool opens. While a detail tool panel or the keyboard is active, that exact stage height is held; the 9:16 project canvas therefore stays pixel-identical.
+- Vertical room is recovered from surrounding controls: the playback row and global dock are hidden while a detail panel owns the controls, and the timeline lane area is compacted. The full timeline/dock return after leaving the panel. The keyboard hides the timeline and dock while retaining the fixed preview.
+- Emulator assertions now require identical canvas width/height with the keyboard open and identical preview-frame geometry while tools open, switch and close. Only the timeline/control area may compact.
+- A previous candidate measured **423×753 px** normally versus **216×385 px** with the keyboard. That failure is the regression baseline, not accepted behavior.
+- Source and emulator checks are on `feature/capcut-home-screen` (PR #28). Unit/build and emulator runs must be green on the exact latest commit before this fix is accepted. No version bump, release, signing, publication or merge is included.
+
+---
+
+
 ## Focused fix — first-video placement and export asset diagnostics — 2026-11-05
 
 - Working branch: `fix/export-asset-diagnostics-and-empty-video-start`, based on current `main` after the 398 release-trigger commit. No versionCode, release marker, signing or publish workflow changes.
@@ -781,3 +793,434 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Signing continuity: the publisher-selected `MMV_SIGNING_BUNDLE_B64` certificate SHA-256 matched the published 398 certificate exactly; [verification run 42093431357](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/42093431357) passed. The release workflow did not rotate or replace the signing key.
 - Runtime source includes the verified main-video insertion rule: a new main video starts at 00:00 when that lane is empty; independent image/text/audio layers do not push it later. Export failures expose nested Media3 cause details.
 - **Physical-phone acceptance still pending:** install this APK over the existing signed app, open the same gallery video that previously produced `Asset loader error`, export MP4, and report whether it succeeds. The emulator fixture export is not a substitute for this real-asset device check.
+
+---
+
+## CapCut-inspired home screen candidate — 2026-11-06
+
+- Rebuilt the Android home screen around the supplied two CapCut references: blue gradient masthead, Standart/search controls, prominent update card, paired New video/Edit photo cards, horizontal recent-project thumbnails, three-column tools, and fixed five-item bottom navigation.
+- The update card calls the existing GitHub version-check, APK download, and Android install flow; it is not a decorative placeholder.
+- Recent project thumbnails are loaded from the existing exported-video store. The draft backup/restore section remains available below the tool grid.
+- The photo picker opens the selected image in the editor as an independent image overlay; it does not claim unsupported standalone photo retouching tools.
+- First build and unit tests passed. The first emulator run reached the final draft check but the Android document picker remained in the foreground after export. CI now explicitly restarts MainActivity before checking the saved-draft section; the section heading is uppercase to match the accessibility assertion.
+- Candidate PR #28 is not merged or published. Awaiting the corrected full emulator run.
+
+
+## Shared project-canvas boundary — 2026-11-06
+
+- `VideoEditorActivity` now separates the dark preview work stage (`previewFrame`) from an inner, aspect-fitted project canvas (`previewCanvas`). The player, paused-frame image, paused overlay layers, text layers, overlay selection chrome, and clip/overlay touch surfaces are children of the inner canvas; the empty-state affordance and fullscreen controls remain on the outer stage.
+- The inner canvas is fitted to the active main-video source aspect ratio and clips children at its bounds. Text sizing/positioning and overlay gesture fractions now use those same inner dimensions instead of the entire preview stage. This addresses the shared canvas boundary, not just a text-only adjustment.
+- The export pipeline already stores overlay positions as normalized canvas fractions and uses normalized device coordinates for clip transforms; the new preview bounds are intended to align editing with that output coordinate space. Exact preview/export pixel parity, mixed-aspect clip behavior, touch transforms, and crop behavior still require emulator/device validation.
+- Source commit: `feb9733` (follow-up coordinate cleanup). **No Gradle build, unit test, emulator interaction test, MP4 export test, or APK is claimed yet.** Do not merge or publish from this branch until those checks pass.
+
+## Preview canvas export-framing alignment — 2026-11-06
+
+- Follow-up: the inner preview canvas now uses the selected `VideoCanvasPreset` aspect ratio; `SOURCE` uses the first main-video clip as the project reference. Changing the export framing refreshes the preview canvas immediately. This keeps the canvas fixed across clips instead of resizing whenever the playhead crosses a source with a different aspect ratio.
+- Latest source commit: `751ba224`. CI lookup for this commit returned no PR-triggered workflow runs and no combined status checks. The implementation is committed to `feature/capcut-home-screen`, but compilation and behavioral verification remain pending; do not treat this as a verified APK or merge-ready change.
+
+- Final aspect correction: the canvas ratio is now fixed to the chosen output preset, or the first main-video source when `SOURCE` is selected; it no longer changes with the active clip. Source commit: `aeb61a8`. Static source checks confirmed all preview/editable visual surfaces are parented to the inner canvas and the empty-state/fullscreen controls remain on the outer stage. Build and runtime checks are still pending.
+
+- Paused-frame parity follow-up: the decoded still-image fallback now uses center-crop inside the same fixed project canvas, matching the live composition's crop-to-fill behavior when a non-source output preset is selected. Source commit: `48ee2af`. This remains statically reviewed only; no compile/emulator/export validation is available yet.
+
+
+## Preview canvas geometry regression coverage — 2026-11-06
+
+- Added pure `PreviewCanvasMath.fit()` so the project-frame fit/centering rule is independently testable; `VideoEditorActivity.updatePreviewCanvasSize()` now uses the helper instead of duplicating the geometry calculation.
+- Added JVM tests for 9:16, 16:9 and square frames, invalid aspect fallback, zero-size stages, and bounds containment. These tests are included in the new PR-triggered unit/build run.
+- Added a debug-only `PREVIEW_CANVAS_BOUNDS` marker and emulator assertion. The screenshot workflow checks that the actual measured canvas bounds are centered, remain inside the outer work stage, and preserve the 9:16 deterministic source ratio.
+- Source commits: `7386c23` (math helper), `59339e3` (unit tests), `e61d6ad` (Activity integration/log marker), `0ce6919` (emulator assertion). Verification awaits the PR-triggered run for this latest branch head; no new green result or APK is claimed for these follow-up changes yet.
+
+- Layout reflow follow-up: a `previewCanvas` size-change listener now recomputes editable text geometry and overlay selection/paused layers after the inner canvas has actually completed layout. This avoids calculating touch/selection bounds against the previous dimensions immediately after changing the output aspect preset. Source commit: `2218a22`; CI for this final follow-up commit is pending.
+
+
+## Unified preview/export layer anchors — 2026-11-06
+
+- Added shared normalized-center conversions to `PreviewCanvasMath`: normalized x/y fractions become Android preview translations and Media3 normalized frame anchors using one rule, including Media3's inverted Y axis.
+- Text preview no longer maps its center only across the remaining safe width/height of the text box. Text and image/video overlays now position their centers from the same project-canvas fractions used by export; content that crosses the canvas edge is clipped by the canvas rather than silently repositioned inward.
+- Removed the old text export anchor clamps so edge positions and text animation offsets are not pulled back inside the frame differently from the preview.
+- Added unit cases for left/center/right anchors, top/center/bottom Y mapping and non-finite fallback. Extended emulator coverage to confirm the visible magenta overlay pixels do not escape the actual green video canvas after direct dragging.
+- Source commits: `19cd81b` (coordinate mapping), `8a215fd` (unit coverage), `49a9281` (Activity wiring), `102c5c1` (animation anchor parity), `4b772a8` (visual clipping assertion). **Latest follow-up commits await their own build and emulator result.**
+
+
+## Coordinate compile correction and pixel-boundary test — 2026-11-06
+
+- The first shared-anchor integration build exposed two Kotlin type errors: text preview passed integer canvas width/height into a float coordinate helper. Both call sites now explicitly convert the dimensions to `Float` (source commit `245ed7a`). The red run was a compile-time type mismatch, not a runtime preview/export failure.
+- The emulator clipping assertion now reads the Activity's absolute `previewFrame` screen origin and the inner-canvas offset from `PREVIEW_CANVAS_BOUNDS`, then checks all magenta overlay pixels against that exact screen-space rectangle. This replaces the earlier color-inferred green-video bounding box, which could have included unrelated green timeline UI.
+- Source commits: `9d7d36b` (absolute stage origin marker), `0605686` (pixel test uses measured canvas rectangle). These fixes are committed; their new CI run is required before marking the build and emulator checks green.
+
+- Added a direct parity regression: for fractions from 0 to 1 (including safe inset-like positions), the normalized Media3 export anchor must equal the corresponding Android preview translation scaled by `2 / canvasExtent`, with the Y-axis inversion explicitly accounted for. Source commit: `ee52e27`; its PR-triggered test run is pending.
+
+- SOURCE-aspect timing follow-up: the source ratio is first learned from the decoded thumbnail. If the PlayerView size callback happened before that decode, the inner project frame could stay on the 9:16 fallback for a landscape/square source. The first non-default aspect discovery now also refreshes the SOURCE canvas (custom 9:16/4:5/1:1/16:9 presets remain fixed). Source commit: `b9efe23`; build and emulator checks are pending.
+
+
+## Direct preview tap selection — 2026-11-06
+
+- Text overlay views now select their matching text track when tapped, even when direct text dragging is not currently enabled. Selecting a text item opens its contextual text tools; when text editing is enabled, the existing touch handler continues to support direct drag/pinch.
+- Paused image/video overlay views are clickable. Tapping one selects its timeline layer and restores its overlay tool dock and gesture surface. A tap on the already-selected layer also reopens the overlay tools after the user has returned to the main dock.
+- Extended the emulator smoke sequence to exit the overlay dock, tap the unselected visible magenta layer, and assert that the overlay tool dock plus direct-canvas gesture surface return before drag/clipping checks.
+- Source commits: `c4cedb0` (canvas tap handlers), `f71e376` (reopen tool strip for a repeated tap), `167e67e` (emulator tap-to-select check). CI for this branch head is pending.
+
+
+## Text selection outline — 2026-11-06
+
+- Added a dedicated white selection frame around the selected text/sticker preview view. Its width/height are derived from the measured TextView bounds, and it follows the same normalized canvas translation and text-animation scale. It is clipped by the inner project canvas.
+- Text selection now clears the previous image/video overlay and clip gesture targets; selecting an image/video overlay clears the text outline; selecting an audio track clears the text selection outline. This prevents a stale transform target from remaining active after changing layer type.
+- Source commits: `59b4dc8` (text outline and selection-state clearing), `0e3676b` (gesture-target cleanup and initialization guard). CI for these source commits is still running.
+
+- Layer-type switch follow-up: entering the audio tool strip now clears stale text and image/video selection IDs before refreshing preview chrome. This keeps a previous visual selection outline/gesture target from remaining active while audio is selected. Source commit: `ec516ec`; its CI run is pending.
+
+
+## Text/sticker two-finger rotation — 2026-11-06
+
+- Added a per-layer `rotationDegrees` field to text/sticker layers. It is written to project JSON and restored on load; older project files without the field remain at 0°.
+- In preview edit mode, the two-finger gesture now updates font size and rotation together. Rotation uses the shortest signed angular delta so crossing the ±180° boundary does not spin the text the long way around.
+- The TextView and its white selection outline render the same rotation; `buildTimedTextOverlay()` passes that saved angle into Media3's export overlay settings.
+- Updated the text panel and gesture status copy to mention rotate support. Added pure math tests for wrap-around and canonical angle normalization.
+- Source commits: `bc97359` (rotation math), `5b7d7b7` (unit cases), `b1cf8c6` (text model/gesture/preview/export/persistence), `a837f6f` (UI guidance). Build and emulator verification pending.
+
+
+## Text canvas interaction smoke and visual-panel return — 2026-11-06
+
+- Text and image/video overlay detail panels now use one contextual return helper: from the global editor tab it closes the panel back to the global dock; from a selected visual layer's tool strip it returns to that layer's one-row tools.
+- The emulator workflow now taps the global Metin tab, creates a text layer, enters `CanvasSmoke`, and requires both the visible preview TextView and `Seçili metin katmanı sınırı` accessibility bounds. It closes the panel, taps the text itself in the preview, requires the `Düzenle`/`Sil` text tool strip and selection frame to return, then deletes the smoke layer before timeline alignment/scrubbing tests.
+- Source commits: `dbe3460` (return flow), `af66df5` (text selection UI smoke). Latest CI pending.
+
+- Direct-text-gesture click guard: `performClick()` is still fired after a drag/pinch/rotation for accessibility, but the TextView click listener now ignores it while direct text editing is enabled. This prevents the end of a gesture from being misinterpreted as a fresh selection tap and collapsing the open text settings panel. Repeated preview taps still reselect/reopen tools when direct editing is disabled. Source commit: `8041f71`; CI pending.
+
+- Text smoke target refinement: the hierarchy assertion now distinguishes the rendered preview `TextView` from the similarly named `EditText` field in the settings drawer, so the tap coordinate is taken from the on-canvas layer itself. Source commit: `1787a84`; pending CI.
+
+- Visible canvas boundary: added a thin turquoise outline as a workspace-only sibling of the inner project canvas. It tracks the exact measured/fitted canvas rectangle but is outside the inner canvas and is never part of MP4 composition/export; it is non-clickable and does not intercept gestures. Source commit: `ac36120`; CI pending.
+
+- The emulator screenshot pixel check now verifies that the turquoise workspace-only outline is visibly drawn on all four measured project-canvas edges, while still asserting that no magenta overlay pixels escape the inner canvas. Source commit: `a738908`; the new assertion is awaiting its emulator run.
+
+- Cross-mode selection cleanup: entering video tools or image/video overlay tools now clears a stale selected text layer and refreshes its selection outline before enabling the new transform surface. Audio, video, text and visual-overlay modes no longer leave an unrelated text selection frame active. Source commit: `c485854`; CI pending.
+
+
+## Main-video selection frame — 2026-11-06
+
+- Added a non-interactive white selection rectangle for the selected main-video clip. Its bounds follow the clip's stored scale, rotation and normalized translation in the inner project canvas, so the selection box visibly tracks the same transform as the preview image.
+- The frame is visible while a video clip is selected on the timeline (not only while its detail panel is open). It hides when selection moves to text, an image/video overlay or an audio track. The touch surface remains separately gated by the explicit video-edit tool panel.
+- Source commits: `a3b64cd` (clip frame geometry and update hooks), `d9901f8` (clear clip selection when switching to overlay/audio tools). CI pending.
+
+
+## Shared editor touch priority — 2026-11-06
+
+- Added a shared TouchPriority contract for preview hit layers: passive text at 4dp, active canvas gesture surfaces at 16dp, and non-interactive selection chrome at 20dp. Main-video and image/video-overlay transform surfaces now use the same active priority; visible text layers remain above paused media and rise to active priority only while direct text editing is enabled.
+- Standardized text/music/sound trim hit widths to a preferred 32dp (bounded by the track block) and brought all timeline trim handles to the same 12dp elevation. Main-video trim handles keep their existing wider 40dp target while sharing that elevation.
+- This is deliberate mode arbitration, not one global transparent overlay: only the active canvas tool receives canvas gestures, while timeline scrubbing/pinch and per-track body/edge gestures remain owned by their own interaction zones.
+- Source commit: 71d11c8.
+- Emulator run #952 passed canvas sizing, replacement filmstrip, main-video selection frame, overlay reselection and direct overlay drag/clipping. It then failed in the later text test because uiautomator dump timed out and did not create editor-text-selected.xml; this was a test-harness hierarchy-capture failure, not an overlay-drag failure.
+- Test harness follow-up commit eed391b retries compressed hierarchy dumps with a longer timeout, emits a dedicated diagnostic if XML is still missing, and adds a direct text-drag assertion that compares the preview TextView bounds before/after the gesture.
+- Runs #953 (source-policy verification) and #954 (updated emulator interaction smoke) plus build/verify runs #742 and #786 were pending at the time of this update. Do not mark cross-tool touch handling complete until the updated emulator run passes.
+
+
+## Touch target sizing and gesture consistency — 2026-11-06
+
+- Text preview views now have a minimum 48×44dp touch box; their selection outline still follows the measured view bounds.
+- Text, music and sound-effect trim handles now use transparent FrameLayout hit areas with narrow 5dp visual grips. Their preferred hit width is up to 32dp, constrained to half the clip block to prevent start/end overlap. Video trim retains a wider 40dp target with the same narrow visual grip.
+- Video, text, music and sound-effect trim movement now uses Android scaledTouchSlop consistently. The text-edit toggle accessibility description now reports the active direct-manipulation mode so automated tests can preserve its initial state.
+- Additional test-harness commits: 833ac16 (activity touch-slop context fix), f0dace1 (transparent trim hit regions), 41fa43c (text minimum hit box), 9ff9e7e (text gesture accessibility state), 2d20595 (reselect clip before video-transform smoke), 2de525d (preserve initial text-edit toggle state in smoke).
+- Emulator run #960 reached the video-transform check after passing canvas geometry, replacement filmstrip, main-video selection frame, overlay reselection and direct overlay drag/clipping. It failed because the test had switched selection to the overlay and then opened clip tools without reselecting the video; the screenshot confirmed the clip was not selected, so the absent frame was expected. The test now taps the video track to reselect it before opening Kırp.
+- Run #952 had separately failed at a missing UIAutomator XML after the overlay drag had passed. The hierarchy capture now retries with compressed XML and explicit diagnostics.
+- Latest cross-tool emulator runs #963–#965 are pending; do not close this work until the video, text and overlay direct-drag assertions pass on the latest run. Build/verify runs for commits through 41fa43c passed; later commits are under CI.
+
+## Shared trim targets — overlay inclusion — 2026-11-06
+
+- Image/video overlay timeline trim edges now use the same transparent hit-region helper as text, music and sound-effect trims: preferred width up to 32dp, capped at half the block width so the two edge targets cannot overlap. The visible teal grip remains 5dp wide and 24dp high; the interactive target uses the shared 12dp edge-handle priority.
+- The drag handler still uses the device's scaled touch slop, clamps against the source/timeline range, preserves/rebases overlay keyframes on start trim, and returns to the selected overlay's contextual tool strip.
+- Added `OVERLAY_EDGE_TRIM` diagnostics for image/video overlay start and end edges. The API 35 emulator smoke now drags each edge independently and checks the saved start/duration values actually change; target bounds must also be at least 40x20 screen pixels.
+- The text selection smoke no longer depends on dumping the selected-text drawer's rapidly changing UIAutomator tree. It measures the white selection frame against the app-reported project-canvas bounds, then takes a second screenshot after direct drag and verifies the rendered frame moved.
+- Current source head: `7935e0eb8771545b867f9ceab41d6cad3483a59c`. APK build #769 and Android unit/build verification #813 are green. Android 35 emulator run #981 is still in progress; do not mark the interaction suite green until it concludes.
+- A prior compile failure on `49749f44` was caused by escaped Kotlin string-template markers in test diagnostics. The markers were corrected on `7935e0eb`; both subsequent compile/build checks passed.
+- No version bump, signed APK publication, release-trigger change or physical-phone acceptance is included. The app remains at versionCode 399 / 8.32-capcut-editor until the current emulator gate and the separate physical-device checks pass.
+
+
+### Overlay end-edge visibility diagnosis — 2026-11-06
+
+- Emulator run #983 confirmed the overlay end hit view is created and measured at 84×84 emulator pixels, but its screen bounds were outside the horizontally scrolled overlay-row viewport (the end edge was at x=2982 while the viewport ended at x=1039). The prior “missing handle” failure was therefore a test navigation/visibility issue, not evidence that the app failed to create the end hit target.
+- Updated `.github/scripts/capture-emulator-screenshots.sh` to identify the overlay's own HorizontalScrollView and scroll that row toward its end, re-dumping accessibility until the end handle is visible before asserting its bounds and dragging it. The app touch/trim implementation is unchanged by this test-harness correction.
+- Follow-up emulator verification is required before marking shared overlay trim complete. No APK release or version bump.
+
+
+- Follow-up run #985 showed why the first test-harness correction did not work: swiping directly on the overlay row is intercepted by the selected clip's drag gesture, so the row never scrolls. The end handle remains correctly laid out offscreen (84×84px at x=2982), and no app crash was found. The harness now scrolls the shared timeline ruler instead; the timeline rows follow the ruler's horizontal position. This avoids sending navigation gestures through the clip's own touch target. Re-run the emulator gate before considering the fix verified.
+
+
+### Emulator run #988 — overlay end-edge scroll harness follow-up — 2026-11-06
+
+- Run #988 (source `96b72f31986601f239c85c8aa48217251bbbd237`) passed unit tests and debug APK assembly, as well as all earlier emulator checks through overlay start trim and music/sound start/end trims. It stopped at overlay end-handle discovery with exit code 82.
+- The saved `EditorTouchTest` diagnostics confirm the overlay end hit target is created at 84×84px inside a 2,527px-wide clip block (`left=2443 right=2527)); the selected row's viewport exposes only the first part of that content. Overlay start trim passed and changed timing from 0/8,023ms to 133/7,890ms.
+- The harness attempted to reveal the far edge by starting a 708px swipe at x=1004, close to the API 35 emulator's right-side system-navigation region. The post-gesture hierarchy ended up on the Android launcher, so #988 does not establish an app crash or a missing end-handle implementation; the harness gesture is the likely failure point.
+- Corrected the ruler-scroll gesture to start/end within the inner 50% of the ruler viewport and added a foreground-package assertion after every scroll. This guards against silently leaving the editor and gives a specific diagnostic if navigation wins the gesture.
+- The app's trim implementation and version are unchanged. This harness correction still needs a fresh emulator run; do not mark overlay end trim verified, publish an APK, or bump the app version until that run passes.
+
+
+### Emulator run #989 — partial overlay end-hitbox visibility — 2026-11-06
+
+- Run #989 on source `077c33f58a28ed23d6ceae94113839ef7b809160` passed unit tests/debug APK assembly and all emulator checks up to the overlay end-edge assertion. The previous system-back navigation issue was avoided; every scroll hierarchy still reported the MathMotor package.
+- The inner-ruler swipe exposed the overlay end hitbox, but only 22×84px were inside the ruler viewport: `[1017,1227][1039,1311]`. The check correctly stopped with exit 83 because it requires at least 40×20px to avoid a gesture being clipped. This is not a missing view or undersized app-side hitbox; the view itself is clipped by the horizontal lane viewport.
+- The captured paused-editor screenshot shows the magenta still-image overlay rendered visibly on the project canvas; image preview is present at this stage. The selected overlay's end handle remains the outstanding interaction assertion.
+- Updated the harness so a partially exposed edge does not count as success: it performs a short 40px nudge from the ruler centre and rechecks the actual accessible bounds, while retaining the app-foreground guard. The first large swipe remains reserved for a handle that is not visible at all.
+- No change to the production overlay target width/trim handler, app version, or release state. A fresh emulator pass must still prove at least 40×20px is visible and that dragging the end handle changes its saved duration.
+
+
+### Emulator run #990 — overlay trim passed; text drag assertion clipped at canvas edge — 2026-11-06
+
+- Run #990 (source `a369bbe1a013d1227fbbe2b46bc69f77f17f909f`) passed unit tests/debug build and the full checks through: project-canvas 9:16 geometry, replacement filmstrip, video selection/direct manipulation, paused image overlay visibility/drag, all four audio edge trims, both image-overlay trims, contextual dock restoration, stable panel geometry, and actual MP4 export.
+- The overlay-end harness correction is verified: the end handle became fully visible at 84×84px and a real end-edge drag shortened the image layer from 7,890ms to 7,757ms (−133ms).
+- The run then stopped with exit 62 in the text direct-drag smoke. The initial text frame was detected at `[365,661]-[713,868]` inside the measured canvas `[352,203]-[727,871]`. The harness dragged the centre by (+28,+18), producing an expected moved frame around `[393,679]-[741,886]`; this moved the right and bottom edges outside the canvas. The screenshot shows the text moved, with its top/left selection strokes still visible, while the canvas clipped the right/bottom strokes. The detector intentionally required a complete rectangle inside the canvas, so it reported a false negative rather than a failed text gesture.
+- Updated the harness to drag diagonally right/up by (+12,−28) instead. This keeps the full selection box inside the measured canvas while exceeding the emulator's measured 21px touch slop and retaining a measurable movement assertion. No production text interaction code was changed.
+- The remaining emulator checks after text manipulation (preview reselection, timeline thumbnail alignment/playback, and draft list) still need to run; no release or version change.
+
+
+### Emulator run #991 — text selection frame clipped by +12px horizontal test drag — 2026-11-06
+
+- Run #991 (source `ba2f4eb234e4b879a510758a8e3cbd93f247ba99`) again passed unit tests/debug build, canvas/video/overlay interaction, all audio trims, both overlay trims (including the 84×84px end hitbox and 133ms duration reduction), contextual editor panel geometry, and actual MP4 export. It failed at the text drag detector with exit 62.
+- Inspecting both full-resolution screenshots and the detector's exact pixel logic identified the remaining issue: before the drag, the selection frame occupied x=362..716 inside the canvas x=352..727. The test then dragged (+12,−28), placing the right selection edge at x≈728; the canvas clipped that right vertical stroke. The screenshot visibly shows the text and the moved top/bottom/left selection edges, but the detector correctly refused to accept a frame whose right edge was clipped.
+- Updated the test-only gesture to be strictly vertical (0,−28px), which remains above the emulator's measured 21px touch slop while keeping the full horizontal frame inside the canvas. The assertion now verifies y movement of at least 12px and horizontal drift within ±6px. No production text manipulation behavior was changed.
+- Re-run the emulator gate before treating text direct manipulation or the full interaction suite as verified. No APK release/version bump.
+
+
+### Emulator run #992 — text movement passed; IME focus hid the preview before text reselection — 2026-11-06
+
+- Run #992 (source `3ff509d722829dc35917e2183560930a892b73ab`) passed unit/build, 9:16 canvas geometry, replacement filmstrip, video/overlay direct manipulation, all audio and image-overlay trims (including image end trim 7,890ms → 7,757ms), stable contextual panel geometry, MP4 export, and the full in-canvas text drag.
+- The text drag is now conclusively verified: the visible white selection frame moved from center `(539,764)` to `(539,736)`, with its full border inside the project canvas.
+- Run #992 then failed the preview text-reselection assertion. The captured `editor-text-reselected.png` showed Android's soft keyboard open (top action changed to `Bitti ✓`) and the project preview compressed to roughly 70×109px. The test tapped the old canvas coordinate while the IME layout was active, so the tap no longer landed on the text. This was an IME focus/layout state defect during entry to the text contextual dock, not a failed vertical drag.
+- Production `enterTextTools()` now dismisses the IME and clears the text EditText focus before rebuilding the contextual dock. Added diagnostic markers for text-panel return/close and the rebuilt three-action dock.
+- The emulator harness now checks both post-close and post-reselection screenshots against the measured project-canvas bounds and green video-fixture pixels, and uses the app-side `TEXT_TOOLS_DOCK_VISIBLE` marker plus a pixel-verified selection border as proof. UIAutomator cleanup is best-effort to avoid turning an accessibility timeout into a false negative after direct interaction already passed.
+- Source keyboard-focus fix: `92d2f1d85b368d5dcef63a11601bfd0ca4b8c422`. Harness follow-up is committed separately and must pass a fresh emulator run. No release/version bump.
+
+
+### Emulator run #994 — photo overlay end-trim gesture intercepted at Android's right system edge — 2026-11-06
+
+- Run #994 on `765e6df070a9eef51628118c42c304d0bbe5c107` built and passed unit/build and Android verification, but the emulator smoke test failed at `overlay-end-gesture-not-received` (exit 85).
+- The photo overlay start trim was verified: `OVERLAY_EDGE_TRIM kind=image edge=start beforeStartMs=0 beforeDurationMs=8023 afterStartMs=133 afterDurationMs=7890 deltaMs=133`.
+- The end trim hit target was found at screen bounds `[965,1227]-[1039,1311]` (74×84px visible) and the harness swiped left from its center `(1002,1269)`. No `OVERLAY_EDGE_TRIM kind=image edge=end` callback arrived. Music/sound start+end trims and photo start trim passed earlier in the same run.
+- Diagnosis: the trailing handle is at the physical right display edge. On Android gesture navigation, the system back gesture can intercept a leftward drag beginning there before the app's touch listener receives it. The test was not merely a flaky selector: it exposed a real touch-priority conflict at the right edge.
+- Production fix: the narrow trailing trim handle now registers only its own bounds in `systemGestureExclusionRects` on Android Q+ so its leftward drag reaches the app while the rest of the screen retains normal system navigation. Diagnostic log now records `gestureExclusion=true`.
+- Emulator harness now asserts the trailing handle's gesture exclusion was registered before dragging and still requires the actual `OVERLAY_EDGE_TRIM kind=image edge=end` callback plus changed duration. This is not considered fixed until a fresh emulator run passes.
+- Commits: `efb31a91e63d7cd4ba9cc922c526673b1fe41ba1` (app), `e7923312644070e1fa2740bef503e452aba180fb` (harness). No release/version bump.
+
+
+### Text panel return control — production layout correction — 2026-11-06
+
+- Emulator run #1003 remained red at `text-canvas-panel-back-missing`. The app process stayed RESUMED, no fatal exception or ANR was found, and the text layer/editor controls were still visible.
+- Source inspection found the root cause: text entry focuses the `EditText`, whose `requestRectangleOnScreen()` scrolls the shared settings `ScrollView`. The “Araçlara dön” button was its first child, so it scrolled out of view. The earlier test-only swipe workaround did not reliably restore it.
+- Production correction: moved the text-panel return action into a fixed sibling header above the settings ScrollView. The text settings viewport now reserves the header height in both normal and IME-visible layouts. Closing the text panel, switching panels, and entering text-track tools hide the header.
+- Emulator smoke coverage now checks the pinned return action directly after the text manipulation, without a compensating swipe. This verifies the production control remains visible rather than masking the layout defect.
+- Build, unit tests and emulator verification for this correction are pending. No version bump, APK release, signing or publishing was performed.
+
+
+### Text-panel return smoke-test — UiAutomator timeout correction — 2026-11-06
+
+- Emulator run #1004 failed at the post-edit hierarchy inspection (exit 52), not at the return-button interaction. The app was still foregrounded; ANR files were empty. The captured `editor-text-after-drag.png` visibly shows the pinned “Araçlara dön” button fully on screen.
+- The second `uiautomator dump --compressed` after text editing did not produce XML in two attempts. The timeline accessibility tree contains many off-screen thumbnail nodes; the dump timed out despite the app remaining responsive. The earlier hierarchy dump, before text editing, successfully measured the pinned button bounds `[0,1166][1080,1265]`.
+- Test harness correction: capture the return-button coordinates from the initial text-panel hierarchy, reuse the pinned sibling-header target after text editing, clear logcat, tap it, and require both `TEXT_PANEL_RETURN_TAPPED` and `TEXT_PANEL_CLOSED` events. No post-edit full hierarchy dump is required.
+- Production UI code is unchanged in this follow-up. Build/unit tests and the emulator interaction must be rerun before this flow is considered verified. No version bump or APK release.
+
+
+### Emulator run #1005 — text panel closes, but preview tap did not reopen contextual tools — 2026-11-06
+
+- Run #1005 on `5f281ec3f1f7ea9ab35333f4d909d37639c1d08e` passed Gradle/unit tests and debug APK packaging, but failed in the emulator smoke at `text-canvas-tap-did-not-reopen-tools` (exit 54).
+- The pinned text-panel return button was tapped successfully: logcat contains both `TEXT_PANEL_RETURN_TAPPED` and `TEXT_PANEL_CLOSED activePanel=none`. The preview remained full portrait size, and the text selection frame stayed visible after the panel closed.
+- The next tap on the text did not emit `TEXT_TOOLS_DOCK_VISIBLE childCount=3`. This is a real interaction failure, distinct from the previous hierarchy-dump timeout.
+- Production correction: the preview text overlay now explicitly recognizes a passive tap while its detail panel is closed and calls `selectTextLayer`, which rebuilds the contextual text dock. Movement outside the active detail-edit mode is consumed without moving the text. Direct drag/pinch/rotate remains restricted to the active text-edit panel.
+- Fix commit: `4c572d430b5bacdafc9bd8abaf5431c58241e7f0`. A fresh emulator run is required; this correction is not yet verified. No version bump or release.
+
+
+### Editor panel / keyboard layout correction
+- Contextual editor panels now participate in the root vertical workspace layout instead of floating as a bottom overlay. Opening text tools reserves measured space above the dock, so the timeline and its touch targets are not covered.
+- The dock remains in the same layout flow; fullscreen preview hides/restores it through the root child visibility cycle.
+- Responsive keyboard handling continues to resize the preview workspace and fit the project canvas to the available stage; emulator verification is pending.
+- Panel geometry assertion was corrected: opening a detail panel is expected to move the unchanged-size timeline upward by the exact height removed from the preview; closing the panel must restore both. A fixed timeline Y-coordinate was an invalid test expectation, not an app regression.
+
+
+### Text-entry keyboard preview sizing — production layout correction — 2026-11-06
+
+- Emulator run #1016 on `f96b088ff0a0d82dc3f905780c8aecf53b1260fc` passed build and verification workflows but failed the real keyboard/canvas check. The keyboard remained visible; the measured 9:16 project canvas collapsed to only `90x161` pixels because the full multi-track timeline, contextual text panel and IME competed for the available vertical space.
+- This is a production layout issue, not an emulator startup failure. The keyboard mode now temporarily hides the timeline card while text entry is active, allowing the preview stage and project canvas to remain large enough for text positioning. The timeline is restored when the keyboard closes.
+- Removed obsolete bottom-sheet inset handling that attempted to cast the now-root-child `LinearLayout` to `FrameLayout.LayoutParams`; root padding is the single inset source.
+- Fix commit: `3d4758aacf726a02295287163fb72a389e40aa17`. Fresh build and emulator verification are pending; do not mark this correction complete until the keyboard-open canvas measurement passes. No version bump or APK release.
+
+
+### Text-panel preview starvation after keyboard dismissal — production layout correction — 2026-11-06
+
+- Emulator run #1018 verified the keyboard-open project canvas at 216x385 (9:16), but after dismissing the keyboard the still-open text panel left the preview stage at 1038x161 (project canvas 90x161). The selected text layer's preview selection frame was consequently not measurable in the screenshot.
+- This exposed a second real layout issue: the fixed 220dp timeline card and expanded tool panel competed with the preview after IME dismissal. The timeline is now compacted to 132dp while any second-level editor panel is open, and restored to 220dp when that panel closes. Timeline rows remain present and vertically scrollable; the preview receives the released height.
+- The keyboard-open mode continues to temporarily hide the timeline while the IME is visible, restoring the compact timeline when the keyboard closes.
+- Fix commit: `d754573096ce9e6a57963115fc85ed0cd2caec29`. Fresh build and emulator verification are pending. Do not mark text editing layout complete until the post-keyboard preview and text-selection frame checks pass. No version bump or APK release.
+
+
+### Main video canvas drag coordinate consistency — 2026-11-06
+
+- Emulator run #1021 reached the main-video transform gesture but measured only 27.8x16.7 project-canvas pixels from a requested 40x24 px drag. Build and code verification passed; the emulator interaction remained red.
+- The main-video handler mixed raw screen coordinates for one-finger movement with local view coordinates for pinch movement and pointer handoff. Overlay transforms already use the gesture surface's local coordinates. The video handler now follows the same single local coordinate space for down, move and finger handoff, normalized against the project canvas dimensions. Diagnostics record both local and raw coordinates.
+- Fix commit: `edad968a8a0056611dc49c7faeac2770d10e5154`. A fresh build and emulator run must verify the requested 40x24 px drag and reverse restoration before this item is complete. No version bump or APK release.
+
+
+## 2026-11-06 — Emulator #1006 follow-up
+
+- Verified in emulator logs: closing the text panel succeeds, tapping the preview text restores the three-action text dock, and the full portrait preview remains visible.
+- Emulator run #1006 still ended red later in timeline alignment setup because the test script attempted to read `TIMELINE_TOUCH_SLOP_PX` after clearing logcat during text-panel isolation.
+- Fixed the harness ordering in commit `5c2bc6f`: capture and validate the device touch-slop marker immediately after launching the editor, then reuse the stored value during timeline alignment.
+- Build and unit tests passed on the prior source revision; emulator verification of this harness change is pending. Do not mark #1006 as green.
+
+
+
+### Stable timeline viewport after adding independent tracks — 2026-11-06
+
+- Emulator run #1026 verified the corrected main-video drag exactly: saved transform changed by (39.9, 24.0) project-canvas pixels and the reverse gesture restored the preview. This closes the prior 40x24 drag discrepancy.
+- The same run then exposed a separate real layout regression: after audio and overlay rows were added, the timeline card expanded from 577px to 661px and moved its top from y=1076 to y=992. The dynamic content-sized card calculation (up to 280dp) was overriding the editor's intended 220dp/132dp workspace heights, pushing the preview and destabilizing panel geometry.
+- Replaced content-driven outer-card expansion with a stable viewport height: 220dp normally, 132dp while a detail panel is open, and 88dp while the keyboard is active. Track rows remain independent inside the viewport rather than changing the editor shell geometry.
+- Fix commit: `046539e295bef2383de59eeb9db1326499001727`. Fresh build and emulator verification are pending; do not mark the layout correction complete until all panel geometry and track interaction checks pass. No version bump or APK release.
+
+
+## Timeline viewport height regression — 2026-11-06
+
+- **Root cause from emulator #1027–#1029:** two independent height controllers collapsed the timeline card from 220dp to 132dp whenever a detail panel opened: `setTimelinePanelMode()` and the outer-card sizing in `refreshTimelineTracks()`. The measured geometry changed from `(x=21,y=1076,w=1038,h=577)` to `(x=21,y=793,w=1038,h=346)`, violating the intended layout contract.
+- **Source fix:** commit `212db75d4130cc5bf253edf9fde8845c64b4b50e` keeps the timeline card at 220dp during detail panels in both code paths; only keyboard mode retains the compact 88dp height. Track rows remain in the scrollable viewport instead of resizing the editor shell.
+- **Verification pending:** build, unit tests and fresh API 35 emulator geometry validation must pass on this commit. Required proof: timeline width/height remain unchanged while the preview shrinks by the detail panel height; close/switch restores the original preview and timeline geometry. No APK/release is being prepared.
+
+
+## Text overlay clipping regression — 2026-11-06
+
+- Historical emulator #1017/#1018 failure: `text-canvas-selection-frame-missing`. Screenshot review showed the text panel reduced the project canvas to about 90×161px, while `updatePreviewTextOverlay()` forced dimensions to at least 100dp and the text view to at least 80dp width. The text/selection frame could therefore be larger than the real project canvas and clip out of view.
+- **Source correction:** commit `7d7c3f80377ee84da074770fc6736c78c5d798d7` uses actual `previewCanvas.width/height`, dynamically constrains the text view to available canvas width/height, and clamps the rotated selection frame within the real canvas. The test was not weakened.
+- **Verification pending:** require the actual white selection frame, text drag, panel/keyboard geometry and timeline layout to pass in a fresh API 35 emulator run. No release/APK is being prepared.
+
+
+## Text selection smoke-test measurement correction — 2026-11-06
+
+- Additional review of the #1018 screenshot artifact found the pixel detector reused `preview-canvas-logcat.txt` captured before the text panel/keyboard resized the workspace. The detector therefore searched the old 376×669 canvas region although the live text-panel canvas was much smaller. The image assertion was using stale geometry, independently of the text overlay sizing defect.
+- Script commit `9efb587741ad6aa12b5e608a42fdf9cf05fe485e` snapshots the latest `PREVIEW_CANVAS_BOUNDS` immediately before both the selected-text and post-drag screenshots, and supplies those fresh bounds to the unchanged pixel/drag assertions. This updates measurement, not success thresholds.
+- Await fresh API 35 emulator evidence for text selection, in-canvas drag and stable timeline geometry.
+
+
+## Follow-up compile correction — 2026-11-06
+
+- The first text-bounds implementation did not compile because the rotated bounding-box math mixed `Float` and `Double`. The failing compiler locations were `VideoEditorActivity.kt:6331–6340`.
+- Commit `798f7288a626d34345b5ac1966e239932e4a04d8` normalizes the trigonometric bounds to `Float` before calculating the canvas clamp. The previous red runs are not treated as successful; a fresh build and emulator run on this correction is required.
+
+
+## Compact text-panel layout — 2026-11-06
+
+- The text detail panel occupied 156dp after its sticky header, leaving the 9:16 preview too narrow for a useful text transform/selection affordance on the API 35 emulator.
+- Source commit `b530525c7ebacf9d9ff7a054c728071635a52905` reduces the normal text-panel viewport to 128dp while retaining its scrollable controls and leaving keyboard-mode sizing unchanged. This reserves more screen area for the project preview instead of hiding controls or covering the timeline.
+- Confirm with a fresh screenshot that the preview canvas is larger, the white selection frame is fully visible, text dragging works, and panel close restores the full preview.
+
+
+## Responsive text preview scale — 2026-11-06
+
+- Screenshot evidence from emulator #1032 showed the preview project canvas shrinking from 423×753px to 137×245px when the text detail panel opened, while the overlay remained at 24sp with 10dp side padding. "CanvasSmoke" wrapped beyond its available width and the selected frame was clipped at the canvas edges.
+- **Source fix:** commit `54de4fe0e4cf1346669e4fb6cb8e12e5c62d4882` remembers the largest normal, keyboard-free project-canvas dimensions and scales preview text size and its visual insets/corner/shadow by the current canvas ratio. The saved text layer size and export dimensions are not changed.
+- **Validation pending:** require a visible complete selection rectangle inside the measured canvas, successful in-canvas text movement, preview restoration after closing the panel, and the three-action text dock on tap. Do not mark complete until the latest emulator run passes.
+
+
+- Follow-up commit `abfb2b1894fcd2a8da88dbe0e0d655441a32325a` refreshes the reference dimensions from the latest settled keyboard-free, panel-free layout instead of retaining a transient oversized startup canvas. Validation remains pending on this exact revision.
+
+
+## Text target after closing detail panel — 2026-11-06
+
+- The full-preview canvas expands when the text panel closes, so the text layer's on-screen coordinate changes with the project canvas. The previous smoke script reused the compressed-panel center for the later reselect tap.
+- Script commit `f03f1a12e9510b6310fa8490eed10af81bf7d59f` now captures fresh canvas bounds after panel close, verifies the full-size selection frame, and taps its newly measured center. It also uses fresh bounds for the reselected screenshot. This preserves the pixel/gesture assertions rather than weakening them.
+- Validate on the next complete API 35 run together with responsive text preview scaling.
+
+
+## Screenshot-coordinate scale correction — 2026-11-07
+
+- Emulator #1048 source screenshot shows the text itself and its white selection rectangle are visibly present and fully inside the project canvas. The smoke test nevertheless failed because `PREVIEW_CANVAS_BOUNDS` is logged in Android view coordinates (root window 1080×1920), while the pulled PNG is rasterized at 928×1640.
+- The detector compared these coordinate spaces without scaling, so it searched a shifted/larger region and falsely reported `text-canvas-selection-frame-missing`.
+- Commit `70b9a05b20dcf6fb855c9e247aaed2db32fa7216` scales the measured canvas rectangle using the hierarchy root bounds and actual screenshot dimensions before running the unchanged white-frame/text pixel checks. It does not weaken the frame, text, or drag assertions.
+- Fresh emulator verification is required for selected text, post-drag position, and reselection after closing the panel.
+
+
+## Emulator fixture dependency correction — 2026-11-07
+
+- On candidate commit `7015e26b6e8ff8276b5fd87619fe23938f3d2aae`, unit tests and Debug APK compilation passed in Verify Android build #882; the debug APK ZIP artifact was uploaded. Android emulator run #1050 remained in the fixture-generation step and had not reached emulator boot or interaction checks when inspected. This is **not** a green emulator result.
+- The `ubuntu-24.04` runner's published software inventory does not list FFmpeg. The workflow therefore used its apt-get fallback before generating deterministic video/audio fixtures; that step remained in progress. The exact stalled subprocess was not available from the active-run logs.
+- Replaced that fallback with the FFmpeg setup action pinned to commit `37062fbf7149fc5578d6c57e08aed62458b375d6`; the existing fixture-generation commands and test assertions are unchanged. The action supplies a static FFmpeg binary without running apt repository updates.
+- A fresh run on the updated PR head is required. Do not mark preview, timeline, text panel, export, or phone acceptance green until the relevant emulator/device evidence is captured.
+
+
+## Empty-draft home layout correction — 2026-11-07
+
+- Static review found that the initial home screen still rendered the empty `TASLAKLAR` heading, helper text and “Henüz kaydedilmiş taslak yok” placeholder. This contradicted the compact-home requirement to hide the empty draft area.
+- Updated `refreshDraftProjects()` so the heading, helper copy, explanation and list appear only when at least one saved draft exists. The `Taslakları yedekle` action stays visible but disabled when there are no drafts; `Yedekten geri yükle` remains visible and usable, so an empty device can still restore a backup.
+- Added an API 35 emulator smoke assertion on the fresh home screen: both backup/restore actions must be present while the empty draft heading/placeholder must be absent. The existing saved-draft check still requires the heading and both actions after the test creates a draft.
+- Unit/build and the complete API 35 emulator run on this exact head are required before marking this correction green. The current screenshot run from the prior source does not cover this change.
+
+
+## Empty-draft smoke assertion coordinate correction — 2026-11-07
+
+- API 35 emulator run #1055 on commit `61f974a1f71fb82cf87fa01d29e560f1f2485233` passed unit tests, Debug APK packaging, FFmpeg setup/fixture generation, KVM, SDK installation, emulator boot and the two `VideoProjectDraftBackupTest` instrumentation tests.
+- The screenshot script then failed at its fresh-home empty-draft assertion (exit 31). The captured UI hierarchy shows the home screen at scroll position zero: the hero, primary cards, recent-project placeholder and fixed footer are visible, while the backup/restore section is farther down the ScrollView after the tool grid. The buttons were therefore off-screen and absent from that hierarchy; this is not evidence that the app failed to create them.
+- Corrected the test ordering: capture the top-of-home screenshot first, scroll the home content down to the draft section, assert both backup/restore actions are present and empty draft heading/helper/placeholder are absent, then scroll back to the top and refresh the hierarchy before opening the empty editor.
+- This is a test-coordinate/scroll-state correction. It does not weaken the empty-state assertions or alter app behavior. Run #1055 did not reach the editor/export/timeline/text smoke tests; API 35 full smoke verification remains pending on the corrected script.
+
+
+## Full-frame initial photo correction — 2026-11-07
+
+- Static review found that the home-screen `Fotoğrafı düzenle` route passed its image into the same helper used by the logo picker. That helper applies the 18% upper-right logo preset, so the first selected photo did not open as a full-frame editable layer.
+- Split still-image defaults into two explicit entry modes: `imageLogo()` retains the small upper-right 18% / 88%-opacity logo behavior; `fullFramePhoto()` uses scale 1.0, centered 0.5/0.5 placement, full opacity and the project duration. The home-screen `initial_overlay_uri` path now explicitly selects the full-frame preset; normal logo/overlay imports keep their prior defaults.
+- Added unit cases for full-frame photo placement and zero-duration fallback. Added a debug-only standalone photo launch path plus a portrait 9:16 magenta fixture in the API 35 smoke test. The smoke now requires the runtime transform marker and checks screenshot pixel bounds, portrait aspect and fill ratio; this verifies the rendered project canvas rather than only the stored scale value.
+- The new Kotlin changes, helper tests and full-frame screenshot assertion require fresh unit/build/emulator checks on the current PR head. The production version and signed release path are unchanged.
+
+
+## Empty-draft exact-label assertion correction — 2026-11-07
+
+- API 35 emulator run #1057 attempt 2 passed unit tests, debug APK compilation/packaging, FFmpeg setup, deterministic fixture generation, KVM/SDK installation, emulator boot, app install and home launch. The fresh-home test scrolled to the actual draft controls and confirmed both backup/restore buttons were present.
+- It then failed the empty-label check because the shell used substring matching: `TASLAKLAR` also matches the longer valid button label `Taslakları yedekle`. Artifact `empty-drafts-home.xml` contains only the two expected backup/restore controls; the heading, helper text and empty placeholder are absent. The screenshot likewise shows no empty draft section. This is a **test false positive**, not an app UI regression.
+- Replaced the grep substring check with XML parsing and exact normalized equality for the three forbidden labels. The valid `Taslakları yedekle` action no longer matches the heading assertion. The emulator run did not reach editor/export/preview checks in this attempt; rerun the complete smoke against the corrected script.
+
+
+## Photo-only preview empty-state correction — 2026-11-07
+
+- Follow-up source review found the editor's centered `Videonu ekle` empty-state card was controlled only by `clips.isEmpty()`. A photo opened directly from the home screen creates an image overlay without a main-video clip, so the empty card could remain above the selected image and cover the actual photo preview.
+- Added one shared `updatePreviewEmptyStateVisibility()` rule: the card appears only when the project has no video clips, no image/video overlays, and no non-empty text layers. It is refreshed when an overlay is added/removed, a project is restored, video lanes change, or text layers change.
+- The API 35 photo-only smoke now captures a portrait magenta image after opening through the actual debug-only equivalent of the home photo route. Its pixel-bounds/fill assertion will catch an empty-state card covering the canvas, as well as a non-full-frame placement.
+- Unit/build/emulator verification is pending for this follow-up source change. No app version, signing or release workflow was changed.
+
+
+## Photo-only empty-card smoke assertion — 2026-11-07
+
+- Extended the full-frame photo smoke so that, after verifying the portrait magenta pixel bounds and fill ratio, it also captures the photo-only preview accessibility hierarchy.
+- The test now explicitly rejects the empty-state content description `Galeriden video ekle` and label `Videonu ekle` while the initial photo layer is active. This distinguishes a genuinely photo-ready preview from one where the photo exists underneath a blocking empty-video card.
+- Latest script commit: `88235b6fb700828e5292e7bd571c9ef97267e063`. Full unit/build and API 35 emulator verification are running for this updated head; no success is claimed until those exact checks complete.
+
+
+## Text selection frame visibility and screenshot geometry — 2026-11-07
+
+- Investigated emulator run `42340561594` (`d5bcb29da4d26cd64190c39fc0a84ca3e5542581`). The text rendered and the keyboard/9:16 canvas assertion passed, but the selection-frame assertion could only see three sides: the preview-canvas outline was a higher-level sibling of the canvas and painted over the white selection chrome where they met.
+- Moved the non-interactive canvas outline into the project-canvas drawing stack, below text and selection chrome. Text/sticker transforms now retain a 2 dp inner safety inset so the selection stroke is not clipped when a layer reaches a canvas edge.
+- The emulator pixel assertion now reads root-window and `Proje tuvali` bounds from a fresh accessibility hierarchy for each relevant screenshot: after keyboard dismissal, after the direct drag, after closing the text panel, and after preview reselection. It no longer pairs pixels with IME-era or previous-panel canvas dimensions.
+- Added JVM coverage for the safe selection-frame translation bounds.
+- Unit/build/emulator verification is pending for this exact follow-up commit. No app version, release signing, or publish workflow was changed.
+
+
+## Selection geometry invalid-input guard — 2026-11-07
+
+- The first follow-up's added JVM test exposed a defensive-input edge case: an infinite/negative selection inset was normalized to zero, which allowed movement instead of failing closed.
+- `PreviewCanvasMath.maxCenterTranslation` now returns zero for non-finite or invalid canvas/content/inset inputs. The unit test also covers a negative inset.
+- The complete emulator run remains pending on the next head; no version, signing, or release workflow changed.
+
+
+## Text selection smoke: use fresh canvas metrics without redundant UIAutomator dumps — 2026-11-07
+
+- Emulator run `42346679053` (#1076) passed installation, video replacement, preview, overlay/audio touch checks, MP4 export, and the keyboard-open 9:16 canvas check.
+- It stopped because UIAutomator could not dump a second copy of the text/track accessibility tree after keyboard dismissal. The timeline tree is large and this repeated dump timed out; it was a test-harness failure.
+- The selection pixel check now uses the latest `PREVIEW_CANVAS_BOUNDS` marker captured after each keyboard/panel/gesture transition, together with stable root-window bounds from the already captured editor hierarchy. Redundant UIAutomator dumps are removed.
+- The application correction (canvas outline below text/selection chrome and a 2 dp layer-edge inset) remains intact. Full emulator verification is pending on the next head.
+
+
+## Text direct-drag baseline — 2026-11-07
+
+- Emulator run `42347714269` (#1077) confirmed the white text-selection frame was fully visible, but the first short vertical drag did not move it.
+- Root cause: `TextLayer.yFraction` could remain at its original 0.84 while the rendered view was clamped higher to keep its selection chrome inside the canvas. The gesture used the stale stored fraction as its start point, so a 28 px drag could be absorbed by the clamp.
+- Text drag and two-finger re-anchoring now derive their starting fractions from the view's actual rendered translation. Added JVM tests for this clamp-to-visible-position round trip and invalid values.
+- Emulator verification is pending for the new app + test commit. No version, signing, or release workflow was changed.
+
+## Content URI overlay durability — 2026-11-07
+
+- VideoEditorActivity.addOverlayAsset() now keeps persistable document-provider grants when available. If a provider returns a temporary content:// URI instead, the selected image/video is copied into app-private files/overlay-media/ before its durable URI is written into the project/draft. A failed copy stops the import with a visible error instead of silently saving an expiring URI.
+- The debug emulator entry can publish the existing deterministic photo fixture as a real MediaStore content:// item. The API 35 smoke now opens it alongside a video clip, requires the app-private durable-copy marker, closes the editor to autosave, force-stops the app, reopens the saved draft, and requires exactly one restored overlay.
+- Source/test commits: c313dbe (durable app-private copy), bef79e6 / eafd9f3 (MediaStore content URI fixture and draft reopen entry), ad864ca (restore marker), cb6d2e5 (smoke script).
+- The complete unit/build/API 35 emulator run is in progress. This is not yet verified green; inspect the content-URI copy, draft-save, process-restart, and overlay-restore artifacts before closing the issue.

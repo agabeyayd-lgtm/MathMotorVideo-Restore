@@ -136,17 +136,57 @@ collect_capture_diagnostics() {
 }
 dump_hierarchy() {
   local remote="$1" local_file="$2"
-  rm -f "$local_file"
-  timeout -k 2s 10s adb -s emulator-5554 shell uiautomator dump "/sdcard/$remote" >/dev/null 2>&1 || true
-  timeout -k 2s 6s adb -s emulator-5554 pull "/sdcard/$remote" "$local_file" >/dev/null 2>&1 || true
-  [ -s "$local_file" ]
+  local attempt
+  for attempt in 1 2; do
+    rm -f "$local_file"
+    timeout -k 2s 5s adb -s emulator-5554 shell rm -f "/sdcard/$remote" >/dev/null 2>&1 || true
+    # UIAutomator can take longer than a screenshot after the keyboard closes
+    # or while Media3 is finalizing a preview. Retry rather than parsing a file
+    # that was never produced; --compressed also reduces hierarchy transfer time.
+    if timeout -k 2s 20s adb -s emulator-5554 shell uiautomator dump --compressed "/sdcard/$remote" >/dev/null 2>&1; then
+      if timeout -k 2s 8s adb -s emulator-5554 pull "/sdcard/$remote" "$local_file" >/dev/null 2>&1 \
+          && [ -s "$local_file" ]; then
+        return 0
+      fi
+    fi
+    echo "UI hierarchy dump attempt $attempt/2 did not produce $local_file."
+    sleep 1
+  done
+  return 1
+}
+
+find_content_description_bounds() {
+  local hierarchy="$1" description="$2"
+  python3 - "$hierarchy" "$description" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+try:
+    root = ET.parse(sys.argv[1]).getroot()
+except (OSError, ET.ParseError) as error:
+    raise SystemExit(f"Cannot parse accessibility hierarchy: {error}")
+for node in root.iter("node"):
+    if node.attrib.get("content-desc") != sys.argv[2]:
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if not match:
+        continue
+    x1, y1, x2, y2 = map(int, match.groups())
+    if x2 > x1 and y2 > y1:
+        print((x1 + x2) // 2, (y1 + y2) // 2, x2 - x1, y2 - y1, x1, y1, x2, y2)
+        break
+PY
 }
 
 echo "Step 5/7: inspect the home screen and capture it"
 # Inspect accessibility before screencap so an Android ANR dialog cannot make
 # the screenshot call the first point of failure without any diagnostics.
 dump_hierarchy window.xml emulator-screenshots/window.xml || true
-
+if ! grep -q "Güncelle" emulator-screenshots/window.xml; then
+  echo "The redesigned home screen did not expose the prominent update action."
+  collect_capture_diagnostics home-update-action-missing
+  exit 30
+fi
 # Emulator system dialogs can appear between a hierarchy dump and a screenshot.
 # Parse XML attributes instead of relying on grep's attribute order.
 SYSTEM_ANR_RECOVERED=false
@@ -240,6 +280,60 @@ if [ "$SYSTEM_ANR_RECOVERED" = true ]; then
   fi
 fi
 
+# The draft controls are intentionally below the tools grid. The first home
+# hierarchy is at scroll position zero, so it cannot prove these lower controls
+# exist. Scroll the content to the bottom before checking the empty-draft state.
+for _ in 1 2 3; do
+  timeout -k 2s 8s adb -s emulator-5554 shell input swipe 540 1650 540 700 450
+  sleep 1
+done
+if ! dump_hierarchy empty-drafts-home.xml emulator-screenshots/empty-drafts-home.xml; then
+  echo "Could not inspect the lower home section after scrolling to the draft area."
+  collect_capture_diagnostics empty-draft-home-hierarchy-missing
+  exit 31
+fi
+for backup_action in "Taslakları yedekle" "Yedekten geri yükle"; do
+  if ! grep -q "$backup_action" emulator-screenshots/empty-drafts-home.xml; then
+    echo "The scrolled home screen did not expose '$backup_action' when no drafts exist."
+    collect_capture_diagnostics "empty-draft-$backup_action-missing"
+    exit 31
+  fi
+done
+if ! python3 - emulator-screenshots/empty-drafts-home.xml <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+forbidden = {
+    "taslaklar",
+    "kaldığın yerden devam et",
+    "henüz kaydedilmiş taslak yok",
+}
+for node in root.iter("node"):
+    for attribute in ("text", "content-desc"):
+        value = " ".join(node.attrib.get(attribute, "").casefold().split())
+        if value in forbidden:
+            print(f"Unexpected empty-draft label is visible: {attribute}={value!r}")
+            raise SystemExit(1)
+PY
+then
+  echo "The empty draft heading or placeholder remained visible even though there are no saved drafts."
+  collect_capture_diagnostics empty-draft-area-visible
+  exit 32
+fi
+echo "PASS: the scrolled empty-draft area hides its heading/placeholder and keeps backup/restore reachable."
+
+# Restore the home scroll position before locating and tapping the empty-project
+# card below. The fixed footer remains outside the ScrollView.
+for _ in 1 2 3; do
+  timeout -k 2s 8s adb -s emulator-5554 shell input swipe 540 700 540 1650 450
+  sleep 1
+done
+if ! dump_hierarchy window.xml emulator-screenshots/window.xml; then
+  echo "Could not restore the home hierarchy after the empty-draft check."
+  collect_capture_diagnostics home-hierarchy-after-draft-check-missing
+  exit 33
+fi
 echo "Step 6/8: capture the empty editor for layout comparison"
 node=""
 if [ -s emulator-screenshots/window.xml ]; then
@@ -348,6 +442,45 @@ if ! timeout -k 2s 30s adb -s emulator-5554 shell -T \
 fi
 timeout -k 2s 8s adb -s emulator-5554 shell run-as com.mathmotor.video.next ls -l files/editor-test-overlay.png 2>&1 | tee -a emulator-screenshots/video-fixture-private-copy.txt
 
+photo_fixture="app/build/test-fixtures/editor-test-photo.png"
+app_internal_photo="/data/user/0/com.mathmotor.video.next/files/editor-test-photo.png"
+if [ ! -s "$photo_fixture" ]; then
+  echo "Missing full-frame home-photo fixture: $photo_fixture"
+  exit 3
+fi
+if ! timeout -k 2s 30s adb -s emulator-5554 shell -T \
+  "run-as com.mathmotor.video.next sh -c 'cat > files/editor-test-photo.png'" \
+  < "$photo_fixture" 2>&1 | tee -a emulator-screenshots/video-fixture-private-copy.txt; then
+  echo "Streaming the full-frame photo fixture into the app sandbox failed."
+  exit 10
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell run-as com.mathmotor.video.next ls -l files/editor-test-photo.png \
+  2>&1 | tee -a emulator-screenshots/video-fixture-private-copy.txt
+
+music_fixture="app/build/test-fixtures/editor-test-music.wav"
+sound_fixture="app/build/test-fixtures/editor-test-sound.wav"
+app_internal_music="/data/user/0/com.mathmotor.video.next/files/editor-test-music.wav"
+app_internal_sound="/data/user/0/com.mathmotor.video.next/files/editor-test-sound.wav"
+for audio_fixture in "$music_fixture" "$sound_fixture"; do
+  if [ ! -s "$audio_fixture" ]; then
+    echo "Missing generated audio fixture: $audio_fixture"
+    exit 3
+  fi
+done
+if ! timeout -k 2s 30s adb -s emulator-5554 shell -T \
+  "run-as com.mathmotor.video.next sh -c 'cat > files/editor-test-music.wav'" \
+  < "$music_fixture" 2>&1 | tee -a emulator-screenshots/video-fixture-private-copy.txt; then
+  echo "Streaming the music test fixture into the app sandbox failed."
+  exit 10
+fi
+if ! timeout -k 2s 30s adb -s emulator-5554 shell -T \
+  "run-as com.mathmotor.video.next sh -c 'cat > files/editor-test-sound.wav'" \
+  < "$sound_fixture" 2>&1 | tee -a emulator-screenshots/video-fixture-private-copy.txt; then
+  echo "Streaming the sound-effect test fixture into the app sandbox failed."
+  exit 10
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell run-as com.mathmotor.video.next ls -l files/editor-test-music.wav files/editor-test-sound.wav \
+  2>&1 | tee -a emulator-screenshots/video-fixture-private-copy.txt
 
 timeout -k 2s 8s adb -s emulator-5554 shell am force-stop com.mathmotor.video.next || true
 # Avoid -W for the same slow-emulator first-frame wait that affected the home launch.
@@ -358,9 +491,38 @@ timeout -k 2s 15s adb -s emulator-5554 shell am start \
   --es video_uri "file://$app_internal_video" \
   --es overlay_uri "file://$app_internal_overlay" \
   --es replacement_video_uri "file://$app_internal_replacement_video" \
+  --es test_music_uri "file://$app_internal_music" \
+  --es test_sound_uri "file://$app_internal_sound" \
   --es draft_id "11111111-1111-4111-8111-111111111111" \
   --ez timeline_sync_test true \
   --ef timeline_test_px_per_sec_dp 120 | tee emulator-screenshots/editor-video-launch.txt
+
+# Capture the emulator touch-slop immediately after the test activity starts.
+# Later interaction checks clear logcat to isolate their own events, so reading
+# this startup marker at the end loses it from the bounded ring buffer.
+touch_slop_px=""
+for attempt in $(seq 1 8); do
+  touch_slop_px="$(timeout -k 2s 8s adb -s emulator-5554 logcat -d -v brief -s TimelineSyncTest:I \
+    | sed -n 's/.*TIMELINE_TOUCH_SLOP_PX=\([0-9][0-9]*\).*/\1/p' | tail -n 1)"
+  if [[ "$touch_slop_px" =~ ^[0-9]+$ ]] && [ "$touch_slop_px" -gt 0 ]; then break; fi
+  sleep 1
+done
+if ! [[ "$touch_slop_px" =~ ^[0-9]+$ ]] || [ "$touch_slop_px" -le 0 ]; then
+  echo "Could not capture Android touch-slop at editor startup."
+  collect_capture_diagnostics timeline-touch-slop-startup-missing
+  exit 29
+fi
+echo "Captured Android ViewConfiguration touch slop at startup: ${touch_slop_px}px"
+# Preserve the startup enable marker before later UI interaction checks clear logcat.
+# The editor remains test-enabled, but the live-playback validator needs proof
+# that this exact editor instance received the requested launch extra.
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineSyncTest:I \
+  > emulator-screenshots/timeline-sync-startup-logcat.txt 2>&1 || true
+if ! grep -q "TIMELINE_SYNC_TEST_ENABLED" emulator-screenshots/timeline-sync-startup-logcat.txt; then
+  echo "Editor launch did not confirm timeline sync test mode."
+  collect_capture_diagnostics timeline-sync-test-mode-not-enabled
+  exit 30
+fi
 
 # Do not assert that a filename appears in uiautomator XML: on these images
 # uiautomator frequently fails, and the editor is free to display a friendly
@@ -386,6 +548,53 @@ if [ "$video_clip_loaded" != true ]; then
   collect_capture_diagnostics video-editor-clip-import-timeout
   exit 4
 fi
+
+# Verify the editor's real inner project canvas is fitted and centered inside
+# the dark work stage. The deterministic fixture is 360x640 (9:16).
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTest:I \
+  > emulator-screenshots/preview-canvas-logcat.txt 2>&1 || true
+python3 - emulator-screenshots/preview-canvas-logcat.txt <<'PY'
+import math
+import re
+import sys
+
+lines = open(sys.argv[1], errors="replace").read().splitlines()
+matches = [line for line in lines if "PREVIEW_CANVAS_BOUNDS" in line]
+if not matches:
+    raise SystemExit("Editor did not log the measured preview project-canvas bounds.")
+line = matches[-1]
+match = re.search(
+    r"stage=(\d+)x(\d+) canvas=(\d+)x(\d+) offset=(\d+),(\d+)(?: origin=-?\d+,-?\d+)? aspect=([0-9.]+)",
+    line,
+)
+if not match:
+    raise SystemExit(f"Malformed preview canvas bounds marker: {line}")
+stage_w, stage_h, canvas_w, canvas_h, left, top = map(int, match.groups()[:6])
+aspect = float(match.group(7))
+expected_w = max(1, min(stage_w, int(stage_h * aspect)))
+expected_h = max(1, min(stage_h, int(stage_w / aspect)))
+expected_left = (stage_w - expected_w) // 2
+expected_top = (stage_h - expected_h) // 2
+if stage_w <= 0 or stage_h <= 0:
+    raise SystemExit(f"Invalid preview work-stage size: {stage_w}x{stage_h}")
+if (canvas_w, canvas_h, left, top) != (
+    expected_w, expected_h, expected_left, expected_top
+):
+    raise SystemExit(
+        "Project canvas is not aspect-fitted and centered: "
+        f"stage={stage_w}x{stage_h}, observed={canvas_w}x{canvas_h}@{left},{top}, "
+        f"expected={expected_w}x{expected_h}@{expected_left},{expected_top}"
+    )
+if abs(canvas_w / canvas_h - 9 / 16) > 0.002:
+    raise SystemExit(
+        f"Project canvas does not match the 9:16 source fixture: {canvas_w}x{canvas_h}"
+    )
+print(
+    "PASS: project canvas is centered, clipped to the stage and preserves 9:16: "
+    f"{canvas_w}x{canvas_h} inside {stage_w}x{stage_h} at {left},{top}"
+)
+PY
+
 overlay_loaded=false
 for attempt in $(seq 1 20); do
   timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime > emulator-screenshots/overlay-load-logcat.txt 2>&1 || true
@@ -504,6 +713,118 @@ if [ "$replacement_visual_ready" != true ]; then
   exit 45
 fi
 echo "PASS: the visible replacement filmstrip is populated with the new green source frames (ratio >= 0.75)."
+
+# Select the main-video timeline clip and verify that its white transform
+# selection frame appears around the transformed source canvas.
+video_clip_center="$(python3 - emulator-screenshots/editor-after-video-replacement.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+candidates = []
+for node in root.iter("node"):
+    desc = node.attrib.get("content-desc", "")
+    text = node.attrib.get("text", "")
+    if "editor-test-video-replacement.mp4" not in desc + " " + text:
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        x1, y1, x2, y2 = map(int, match.groups())
+        if x2 > x1 and y2 > y1:
+            candidates.append((node.attrib.get("clickable") == "true", (x1 + x2) // 2, (y1 + y2) // 2))
+if not candidates:
+    raise SystemExit("Could not locate the replacement video timeline clip hit target.")
+candidates.sort(reverse=True)
+print(candidates[0][1], candidates[0][2])
+PY
+)"
+if [ -z "$video_clip_center" ]; then
+  echo "Could not find the replacement video clip to test selection chrome."
+  collect_capture_diagnostics video-clip-selection-target-missing
+  exit 56
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $video_clip_center
+sleep 1
+if ! take_screen emulator-screenshots/editor-video-clip-selected.png; then
+  collect_capture_diagnostics video-clip-selection-capture-failure
+  exit 6
+fi
+dump_hierarchy editor-video-clip-selected.xml emulator-screenshots/editor-video-clip-selected.xml || true
+if ! grep -q "Seçili video klibi sınırı" emulator-screenshots/editor-video-clip-selected.xml; then
+  echo "Selecting the main-video timeline clip did not show its white preview selection frame."
+  collect_capture_diagnostics video-clip-selection-frame-missing
+  exit 57
+fi
+echo "PASS: selecting the main video clip shows its own white transform selection frame."
+
+# Return to the global dock, then tap the visible overlay to restore its own
+# selection and tools before the visual-overlay direct-manipulation checks.
+video_tools_back="$(python3 - emulator-screenshots/editor-video-clip-selected.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+matches = []
+for node in root.iter("node"):
+    label = node.attrib.get("text", "") + " " + node.attrib.get("content-desc", "")
+    if "Ana araçlara dön" not in label:
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        x1, y1, x2, y2 = map(int, match.groups())
+        if x2 > x1 and y2 > y1:
+            matches.append(((x1 + x2) // 2, (y1 + y2) // 2))
+if not matches:
+    raise SystemExit("Video contextual tool strip return button was not found.")
+print(*matches[-1])
+PY
+)"
+if [ -z "$video_tools_back" ]; then
+  collect_capture_diagnostics video-clip-tools-return-missing
+  exit 58
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $video_tools_back
+sleep 1
+if ! take_screen emulator-screenshots/editor-video-clip-deselected.png; then
+  collect_capture_diagnostics video-clip-return-capture-failure
+  exit 6
+fi
+overlay_reselect_center="$(python3 - emulator-screenshots/editor-video-clip-deselected.png <<'PY'
+from PIL import Image
+import sys
+
+image = Image.open(sys.argv[1]).convert("RGB")
+# Measure only the editor preview region. The timeline below it contains
+# thumbnails from the same fixture color; including those disconnected pixels
+# in the bounding box falsely changes the measured aspect ratio and fill.
+preview = image.crop((0, 0, image.width, int(image.height * 0.55)))
+points = []
+for y in range(preview.height):
+    for x in range(preview.width):
+        red, green, blue = preview.getpixel((x, y))
+        if red > 180 and blue > 180 and green < 110:
+            points.append((x, y))
+if len(points) < 30:
+    raise SystemExit("Magenta overlay fixture is not visible after returning from video selection.")
+xs = [x for x, _ in points]
+ys = [y for _, y in points]
+print((min(xs) + max(xs)) // 2, (min(ys) + max(ys)) // 2)
+PY
+)"
+if [ -z "$overlay_reselect_center" ]; then
+  collect_capture_diagnostics overlay-reselect-after-video-selection-missing
+  exit 59
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $overlay_reselect_center
+sleep 1
+if ! take_screen emulator-screenshots/editor.png; then
+  collect_capture_diagnostics editor-recapture-after-video-selection-failure
+  exit 6
+fi
+dump_hierarchy editor-window.xml emulator-screenshots/editor-window.xml || true
+
 sleep 1
 if ! take_screen emulator-screenshots/editor.png; then
   collect_capture_diagnostics video-editor-capture-failure
@@ -542,20 +863,30 @@ try:
 except (OSError, ET.ParseError):
     raise SystemExit(1)
 
-target = sys.argv[2].casefold()
+target = " ".join(sys.argv[2].casefold().split())
 matches = []
 for node in root.iter("node"):
-    # Match the visible button text first. Only accept an exact content-desc
-    # fallback: substring matching would confuse "Araçlara dön" with the
-    # Geri button's description, "Ana araçlara dön".
-    visible_text = node.attrib.get("text", "").casefold()
-    content_desc = node.attrib.get("content-desc", "").casefold()
-    match_kind = 2 if target in visible_text else (1 if target == content_desc else 0)
+    # Prefer exact visible labels and real dock buttons. A substring-only
+    # search for "Metin" previously selected the timeline row "Metin ekle"
+    # instead of the bottom-dock Metin button, producing a false emulator
+    # failure after the export drawer closed.
+    visible_text = " ".join(node.attrib.get("text", "").casefold().split())
+    content_desc = " ".join(node.attrib.get("content-desc", "").casefold().split())
+    exact_text = visible_text == target
+    exact_desc = content_desc == target
+    partial_text = bool(target) and target in visible_text
+    if not (exact_text or exact_desc or partial_text):
+        continue
     bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
-    if match_kind and bounds:
-        x1, y1, x2, y2 = map(int, bounds.groups())
-        if x2 > x1 and y2 > y1:
-            matches.append((match_kind, y1, (x1 + x2) // 2, (y1 + y2) // 2))
+    if not bounds:
+        continue
+    x1, y1, x2, y2 = map(int, bounds.groups())
+    if x2 <= x1 or y2 <= y1:
+        continue
+    is_button = node.attrib.get("class") == "android.widget.Button"
+    is_clickable = node.attrib.get("clickable") == "true" and node.attrib.get("enabled") == "true"
+    score = (8 if exact_desc else 0) + (6 if exact_text else 0) + (3 if is_button else 0) + (1 if is_clickable else 0)
+    matches.append((score, y1, (x1 + x2) // 2, (y1 + y2) // 2))
 if not matches:
     raise SystemExit(1)
 _, _, x, y = max(matches)
@@ -596,6 +927,45 @@ ys = [point[1] for point in points]
 print((min(xs) + max(xs)) // 2, (min(ys) + max(ys)) // 2, len(points))
 PY
 }
+
+# Leave the selected overlay tools, tap the visible layer itself, and require
+# the overlay-specific dock and gesture surface to reopen from that canvas tap.
+overlay_back_coords="$(find_bottom_tool emulator-screenshots/editor-window.xml "Ana araçlara dön" || true)"
+if [ -z "$overlay_back_coords" ]; then
+  echo "Could not find the overlay tools' return control before preview tap selection."
+  collect_capture_diagnostics overlay-tap-select-back-missing
+  exit 47
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $overlay_back_coords
+sleep 1
+dump_hierarchy editor-overlay-tools-closed.xml emulator-screenshots/editor-overlay-tools-closed.xml || true
+if ! take_screen emulator-screenshots/editor-overlay-unselected.png; then
+  collect_capture_diagnostics overlay-tap-select-target-capture-failure
+  exit 6
+fi
+overlay_target="$(magenta_center emulator-screenshots/editor-overlay-unselected.png)"
+read -r overlay_target_x overlay_target_y overlay_target_pixels <<< "$overlay_target"
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$overlay_target_x" "$overlay_target_y"
+sleep 2
+if ! take_screen emulator-screenshots/editor-overlay-reselected.png; then
+  collect_capture_diagnostics overlay-tap-select-result-capture-failure
+  exit 6
+fi
+dump_hierarchy editor-overlay-reselected.xml emulator-screenshots/editor-overlay-reselected.xml || true
+for overlay_tool in "Bindirme ekle" "Böl" "Birleştir" "Animasyonlar" "Sil"; do
+  if [ -z "$(find_bottom_tool emulator-screenshots/editor-overlay-reselected.xml "$overlay_tool" || true)" ]; then
+    echo "Tapping a visual layer did not reopen its contextual dock ('$overlay_tool' missing)."
+    collect_capture_diagnostics overlay-tap-select-did-not-reopen-tools
+    exit 48
+  fi
+done
+if ! grep -q "Bindirmeyi önizlemede tek parmakla taşı" emulator-screenshots/editor-overlay-reselected.xml; then
+  echo "Tapping the visual layer did not reactivate its direct-canvas gesture surface."
+  collect_capture_diagnostics overlay-tap-select-gesture-surface-missing
+  exit 49
+fi
+echo "PASS: tapping an unselected visual layer on the preview reopens its layer tools and gesture surface."
+cp emulator-screenshots/editor-overlay-reselected.png emulator-screenshots/editor-overlay-paused.png
 before_overlay="$(magenta_center emulator-screenshots/editor-overlay-paused.png)"
 read -r before_x before_y before_pixels <<< "$before_overlay"
 echo "Paused overlay rendered at ($before_x,$before_y) with $before_pixels magenta pixels."
@@ -609,6 +979,89 @@ if ! take_screen emulator-screenshots/editor-overlay-after-drag.png; then
 fi
 after_overlay="$(magenta_center emulator-screenshots/editor-overlay-after-drag.png)"
 read -r after_x after_y after_pixels <<< "$after_overlay"
+# The selected visual layer must be clipped to the actual project-canvas
+# rectangle measured in the Activity, not inferred from unrelated green UI pixels.
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTest:I \
+  > emulator-screenshots/preview-canvas-logcat-after-drag.txt 2>&1 || true
+python3 - emulator-screenshots/preview-canvas-logcat-after-drag.txt emulator-screenshots/editor-overlay-after-drag.png <<'PY'
+from PIL import Image
+import re
+import sys
+
+log_path, screenshot_path = sys.argv[1:]
+matches = [
+    line for line in open(log_path, errors="replace")
+    if "PREVIEW_CANVAS_BOUNDS" in line
+]
+if not matches:
+    raise SystemExit("Measured preview canvas bounds were not logged after the overlay drag.")
+match = re.search(
+    r"stage=(\d+)x(\d+) canvas=(\d+)x(\d+) "
+    r"offset=(\d+),(\d+) origin=(-?\d+),(-?\d+) aspect=([0-9.]+)",
+    matches[-1],
+)
+if not match:
+    raise SystemExit(f"Malformed measured canvas bounds: {matches[-1]}")
+(
+    stage_w, stage_h, canvas_w, canvas_h,
+    offset_x, offset_y, origin_x, origin_y
+) = map(int, match.groups()[:8])
+canvas_left = origin_x + offset_x
+canvas_top = origin_y + offset_y
+canvas_right = canvas_left + canvas_w - 1
+canvas_bottom = canvas_top + canvas_h - 1
+
+image = Image.open(screenshot_path).convert("RGB")
+magenta = []
+for y in range(image.height):
+    for x in range(image.width):
+        red, green, blue = image.getpixel((x, y))
+        if red > 180 and blue > 180 and green < 110:
+            magenta.append((x, y))
+if len(magenta) < 30:
+    raise SystemExit("Paused overlay pixels were not visible after direct drag.")
+outside = [
+    (x, y) for x, y in magenta
+    if x < canvas_left or x > canvas_right or y < canvas_top or y > canvas_bottom
+]
+if outside:
+    raise SystemExit(
+        "Overlay pixels escaped the actual project canvas: "
+        f"canvas=({canvas_left},{canvas_top})-({canvas_right},{canvas_bottom}), "
+        f"outside_count={len(outside)}"
+    )
+
+# The turquoise canvas border is a workspace guide, outside the inner canvas
+# content and therefore outside the exported frame. Verify all four edges.
+def turquoise(pixel):
+    red, green, blue = pixel
+    return red < 130 and green > 145 and blue > 120
+
+edge_hits = {"left": 0, "right": 0, "top": 0, "bottom": 0}
+for y in range(max(0, canvas_top - 3), min(image.height, canvas_bottom + 4)):
+    for x in range(max(0, canvas_left - 3), min(image.width, canvas_right + 4)):
+        if not turquoise(image.getpixel((x, y))):
+            continue
+        if abs(x - canvas_left) <= 3:
+            edge_hits["left"] += 1
+        if abs(x - canvas_right) <= 3:
+            edge_hits["right"] += 1
+        if abs(y - canvas_top) <= 3:
+            edge_hits["top"] += 1
+        if abs(y - canvas_bottom) <= 3:
+            edge_hits["bottom"] += 1
+missing_edges = [name for name, count in edge_hits.items() if count < 3]
+if missing_edges:
+    raise SystemExit(
+        "Turquoise project-canvas outline is not visible on all four edges: "
+        + ", ".join(missing_edges)
+        + f"; edge hits={edge_hits}"
+    )
+print(
+    "PASS: overlay pixels are clipped to the canvas and the separate turquoise "
+    f"workspace border is visible on all four edges ({edge_hits})"
+)
+PY
 if [ "$((after_x - before_x))" -lt 12 ] || [ "$((after_x - before_x))" -gt 34 ] ||
    [ "$((after_y - before_y))" -lt 4 ] || [ "$((after_y - before_y))" -gt 26 ]; then
   echo "Direct canvas drag did not move the paused overlay by the expected amount: before=($before_x,$before_y), after=($after_x,$after_y)."
@@ -626,20 +1079,44 @@ timeout -k 2s 8s adb -s emulator-5554 shell input tap $overlay_back_coords
 sleep 1
 dump_hierarchy editor-main-dock.xml emulator-screenshots/editor-main-dock.xml || true
 
-clip_tool_coords="$(find_bottom_tool emulator-screenshots/editor-main-dock.xml "Düzenle" || true)"
-if [ -z "$clip_tool_coords" ]; then
-  echo "Could not locate the bottom Düzenle tool; refusing to guess its tap coordinates."
-  collect_capture_diagnostics editor-panel-edit-tool-missing
+video_clip_coords="$(python3 - emulator-screenshots/editor-main-dock.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if not node.attrib.get("content-desc", "").startswith("Klip 1:"):
+        continue
+    if node.attrib.get("clickable") != "true":
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        x1, y1, x2, y2 = map(int, match.groups())
+        print((x1 + x2) // 2, (y1 + y2) // 2)
+        break
+PY
+)"
+if [ -z "$video_clip_coords" ]; then
+  echo "Could not locate the video clip block after returning from overlay tools."
+  collect_capture_diagnostics editor-video-reselect-target-missing
   exit 25
 fi
-echo "Opening the one-row clip tool strip at $clip_tool_coords"
-timeout -k 2s 8s adb -s emulator-5554 shell input tap $clip_tool_coords
+echo "Reselecting the main video clip before testing its canvas transform at $video_clip_coords"
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $video_clip_coords
 sleep 1
 if ! take_screen emulator-screenshots/editor-panel-clip-open.png; then
   collect_capture_diagnostics editor-panel-open-capture-failure
   exit 6
 fi
-dump_hierarchy editor-panel-clip-open.xml emulator-screenshots/editor-panel-clip-open.xml || true
+if ! dump_hierarchy editor-panel-clip-open.xml emulator-screenshots/editor-panel-clip-open.xml; then
+  collect_capture_diagnostics editor-panel-clip-open-hierarchy-unavailable
+  exit 25
+fi
+if ! grep -q "Seçili video klibi sınırı" emulator-screenshots/editor-panel-clip-open.xml; then
+  echo "Tapping the main video track did not restore its selected preview frame."
+  collect_capture_diagnostics editor-video-reselect-frame-missing
+  exit 25
+fi
 
 trim_tool_coords="$(find_bottom_tool emulator-screenshots/editor-panel-clip-open.xml "Kırp" || true)"
 if [ -z "$trim_tool_coords" ]; then
@@ -654,7 +1131,107 @@ if ! take_screen emulator-screenshots/editor-panel-trim.png; then
   collect_capture_diagnostics editor-panel-trim-capture-failure
   exit 6
 fi
-dump_hierarchy editor-panel-trim.xml emulator-screenshots/editor-panel-trim.xml || true
+if ! dump_hierarchy editor-panel-trim.xml emulator-screenshots/editor-panel-trim.xml; then
+  echo "Could not capture the selected video transform surface before the drag test."
+  collect_capture_diagnostics video-canvas-transform-hierarchy-unavailable
+  exit 63
+fi
+
+# With the clip detail tool active, the main-video gesture surface must receive
+# the canvas drag above paused media and text/overlay content. Verify its frame
+# moves, then reverse the gesture so later export checks use the original transform.
+clip_canvas_center="$(python3 - emulator-screenshots/editor-panel-trim.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("content-desc") != "Seçili video klibi sınırı":
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        x1, y1, x2, y2 = map(int, match.groups())
+        print((x1 + x2) // 2, (y1 + y2) // 2)
+        break
+PY
+)"
+if [ -z "$clip_canvas_center" ]; then
+  echo "Selected video clip did not expose its preview transform bounds."
+  collect_capture_diagnostics video-canvas-transform-target-missing
+  exit 64
+fi
+read -r clip_before_x clip_before_y <<< "$clip_canvas_center"
+timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$clip_before_x" "$clip_before_y" "$((clip_before_x + 40))" "$((clip_before_y + 24))" 500
+sleep 1
+if ! dump_hierarchy editor-panel-trim-after-drag.xml emulator-screenshots/editor-panel-trim-after-drag.xml; then
+  echo "Could not capture the video selection frame after its direct canvas drag."
+  collect_capture_diagnostics video-canvas-transform-after-hierarchy-unavailable
+  exit 65
+fi
+if ! grep -q "Seçili video klibi sınırı" emulator-screenshots/editor-panel-trim-after-drag.xml; then
+  echo "Video selection frame disappeared after the direct canvas drag."
+  collect_capture_diagnostics video-canvas-transform-after-target-missing
+  exit 65
+fi
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I \
+  > emulator-screenshots/video-canvas-touch-logcat.txt 2>&1 || true
+python3 - emulator-screenshots/video-canvas-touch-logcat.txt <<'PY'
+import re
+import sys
+
+lines = open(sys.argv[1], errors="replace").read().splitlines()
+down_lines = [line for line in lines if "VIDEO_CANVAS_TOUCH_DOWN" in line]
+up_lines = [line for line in lines if "VIDEO_CANVAS_TOUCH_UP" in line]
+if not down_lines or not up_lines:
+    raise SystemExit("The video canvas gesture surface did not report both ACTION_DOWN and ACTION_UP.")
+down, up = down_lines[-1], up_lines[-1]
+canvas = re.search(r"canvas=(\d+)x(\d+)", down)
+start = re.search(r"startTransform=([-+0-9.eE]+),([-+0-9.eE]+)", down)
+end = re.search(r"transform=([-+0-9.eE]+),([-+0-9.eE]+)", up)
+if not canvas or not start or not end:
+    raise SystemExit(f"Incomplete video transform diagnostics. DOWN={down} UP={up}")
+width, height = map(float, canvas.groups())
+sx, sy = map(float, start.groups())
+ex, ey = map(float, end.groups())
+moved_x = (ex - sx) * width / 2
+moved_y = (ey - sy) * height / 2
+if not (28 <= moved_x <= 52 and 14 <= moved_y <= 34):
+    raise SystemExit(
+        "Video transform model did not retain the expected canvas movement: "
+        f"observed=({moved_x:.1f},{moved_y:.1f})px expected=(40,24)px; DOWN={down} UP={up}"
+    )
+print(
+    "PASS: direct video drag changed the saved transform by "
+    f"({moved_x:.1f},{moved_y:.1f}) project-canvas px, independent of the clipped selection-frame bounds."
+)
+PY
+timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$((clip_before_x + 40))" "$((clip_before_y + 24))" "$clip_before_x" "$clip_before_y" 500
+sleep 1
+if ! dump_hierarchy editor-panel-trim-restored.xml emulator-screenshots/editor-panel-trim-restored.xml; then
+  echo "Could not verify restoration of the video transform after the reverse gesture."
+  collect_capture_diagnostics video-canvas-transform-restore-hierarchy-unavailable
+  exit 67
+fi
+python3 - emulator-screenshots/editor-panel-trim-restored.xml "$clip_before_x" "$clip_before_y" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+expected_x, expected_y = map(int, sys.argv[2:4])
+for node in root.iter("node"):
+    if node.attrib.get("content-desc") != "Seçili video klibi sınırı":
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        x1, y1, x2, y2 = map(int, match.groups())
+        actual_x, actual_y = (x1 + x2) // 2, (y1 + y2) // 2
+        if abs(actual_x - expected_x) > 6 or abs(actual_y - expected_y) > 6:
+            raise SystemExit(f"Reverse gesture did not restore the video transform: expected=({expected_x},{expected_y}), actual=({actual_x},{actual_y})")
+        print(f"PASS: direct video drag moved the preview frame and the reverse gesture restored it at ({actual_x},{actual_y})")
+        break
+else:
+    raise SystemExit("Selected video frame disappeared after the reverse transform gesture.")
+PY
 
 trim_back_coords="$(find_bottom_tool emulator-screenshots/editor-panel-trim.xml "Araçlara dön" || true)"
 if [ -z "$trim_back_coords" ]; then
@@ -710,6 +1287,281 @@ if ! take_screen emulator-screenshots/editor-panel-closed.png; then
   exit 6
 fi
 dump_hierarchy editor-panel-closed.xml emulator-screenshots/editor-panel-closed.xml || true
+
+# Both audio fixture imports run on background metadata threads. Do not start
+# hit-target interaction until the exact production importer confirms both.
+audio_fixtures_ready=false
+for attempt in $(seq 1 25); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I \
+    > emulator-screenshots/audio-fixture-import-logcat.txt 2>&1 || true
+  if grep -Fq "EDITOR_SMOKE_AUDIO_REJECTED" emulator-screenshots/audio-fixture-import-logcat.txt; then
+    echo "At least one deterministic audio fixture was rejected by the production importer."
+    collect_capture_diagnostics audio-fixture-import-rejected
+    exit 75
+  fi
+  if grep -Fq "EDITOR_SMOKE_AUDIO_ADDED kind=music" emulator-screenshots/audio-fixture-import-logcat.txt \
+      && grep -Fq "EDITOR_SMOKE_AUDIO_ADDED kind=sound" emulator-screenshots/audio-fixture-import-logcat.txt; then
+    audio_fixtures_ready=true
+    break
+  fi
+  echo "Waiting for production audio import to finish (attempt $attempt/25)"
+  sleep 1
+done
+if [ "$audio_fixtures_ready" != true ]; then
+  echo "Music and sound-effect fixtures were not both added before timeline touch tests."
+  collect_capture_diagnostics audio-fixture-import-timeout
+  exit 76
+fi
+echo "PASS: both music and sound-effect fixtures reached the production timeline importer."
+
+echo "Step 8c/12: drag the music and sound-effect edge targets independently"
+run_audio_edge_smoke() {
+  local kind="$1" edge="$2" description="$3" direction="$4"
+  local before_xml="editor-audio-${kind}-${edge}-before.xml"
+  local after_xml="editor-audio-${kind}-${edge}-after.xml"
+  local coords cx cy target_w target_h x1 y1 x2 y2 delta marker
+  if ! dump_hierarchy "$before_xml" "emulator-screenshots/$before_xml"; then
+    echo "Could not inspect the $kind $edge trim target."
+    collect_capture_diagnostics "audio-$kind-$edge-before-hierarchy-failed"
+    exit 70
+  fi
+  coords="$(find_content_description_bounds "emulator-screenshots/$before_xml" "$description")"
+  if [ -z "$coords" ]; then
+    echo "The $kind $edge trim handle ('$description') is missing from the timeline."
+    collect_capture_diagnostics "audio-$kind-$edge-target-missing"
+    exit 71
+  fi
+  read -r cx cy target_w target_h x1 y1 x2 y2 <<< "$coords"
+  if [ "$target_w" -lt 40 ] || [ "$target_h" -lt 20 ]; then
+    echo "The $kind $edge touch target is undersized: ${target_w}x${target_h}px bounds=[$x1,$y1][$x2,$y2]."
+    collect_capture_diagnostics "audio-$kind-$edge-target-undersized"
+    exit 72
+  fi
+  delta=42
+  if [ "$direction" = "left" ]; then
+    delta=-42
+  fi
+  echo "Dragging $description from ($cx,$cy) by ${delta}px; hit area=${target_w}x${target_h}px."
+  timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$cx" "$cy" "$((cx + delta))" "$cy" 500
+  sleep 1
+  if ! dump_hierarchy "$after_xml" "emulator-screenshots/$after_xml"; then
+    echo "Could not inspect the timeline after dragging $kind $edge."
+    collect_capture_diagnostics "audio-$kind-$edge-after-hierarchy-failed"
+    exit 73
+  fi
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I \
+    > "emulator-screenshots/audio-$kind-$edge-touch-logcat.txt" 2>&1 || true
+  marker="$(grep -F "AUDIO_EDGE_TRIM kind=$kind edge=$edge " "emulator-screenshots/audio-$kind-$edge-touch-logcat.txt" | tail -n 1 || true)"
+  if [ -z "$marker" ]; then
+    echo "The $kind $edge gesture did not reach its edge-trim handler."
+    collect_capture_diagnostics "audio-$kind-$edge-gesture-not-received"
+    exit 74
+  fi
+  python3 - "$marker" "$kind" "$edge" <<'PY'
+import re
+import sys
+line, kind, edge = sys.argv[1:]
+fields = dict(re.findall(r"([A-Za-z]+)=([^ ]+)", line))
+required = ["beforeStartMs", "beforeDurationMs", "afterStartMs", "afterDurationMs"]
+missing = [key for key in required if key not in fields]
+if missing:
+    raise SystemExit("Trim event was incomplete: " + ", ".join(missing) + " :: " + line)
+before_start = int(fields["beforeStartMs"])
+before_duration = int(fields["beforeDurationMs"])
+after_start = int(fields["afterStartMs"])
+after_duration = int(fields["afterDurationMs"])
+if edge == "start" and not (after_start > before_start and after_duration < before_duration):
+    raise SystemExit(f"{kind} start edge did not trim the start: {line}")
+if edge == "end" and not after_duration < before_duration:
+    raise SystemExit(f"{kind} end edge did not shorten duration: {line}")
+print(f"PASS: {kind} {edge} edge changed its saved timing independently ({before_start}ms/{before_duration}ms -> {after_start}ms/{after_duration}ms)")
+PY
+}
+
+run_audio_edge_smoke music start "Müzik başlangıç tutamacı" right
+run_audio_edge_smoke music end "Müzik bitiş tutamacı" left
+run_audio_edge_smoke sound start "Efekt başlangıç tutamacı" right
+run_audio_edge_smoke sound end "Efekt bitiş tutamacı" left
+
+run_overlay_edge_smoke() {
+  local edge="$1" description="$2" direction="$3"
+  local before_xml="editor-overlay-${edge}-before.xml"
+  local after_xml="editor-overlay-${edge}-after.xml"
+  local coords cx cy target_w target_h x1 y1 x2 y2 delta marker
+  if ! dump_hierarchy "$before_xml" "emulator-screenshots/$before_xml"; then
+    echo "Could not inspect overlay trim target."
+    collect_capture_diagnostics "overlay-$edge-before-hierarchy-failed"
+    exit 81
+  fi
+  # The clip itself owns horizontal drags for trim/move, so swiping on the
+  # overlay row is consumed by the clip gesture instead of its parent scroller.
+  # All timeline rows share the ruler's horizontal scroll position; swipe the
+  # ruler viewport to reveal the far edge without touching the selected clip.
+  if [ "$edge" = "end" ] && [ -z "$(find_content_description_bounds "emulator-screenshots/$before_xml" "$description")" ]; then
+    ruler_bounds="$(python3 - "emulator-screenshots/$before_xml" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+def walk(node):
+    if node.attrib.get("class") == "android.widget.HorizontalScrollView" and node.attrib.get("scrollable") == "true":
+        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+        if match:
+            left, top, right, bottom = map(int, match.groups())
+            if right - left > 500 and 0 < bottom - top <= 100 and top < 1150:
+                print(left, top, right, bottom)
+                return True
+    for child in node:
+        if walk(child):
+            return True
+    return False
+walk(root)
+PY
+)"
+    if [ -z "$ruler_bounds" ]; then
+      echo "Could not locate the horizontally scrollable timeline ruler."
+      collect_capture_diagnostics overlay-end-ruler-not-found
+      exit 82
+    fi
+    read -r ruler_left ruler_top ruler_right ruler_bottom <<< "$ruler_bounds"
+    ruler_y=$(((ruler_top + ruler_bottom) / 2))
+    ruler_width=$((ruler_right - ruler_left))
+    # Start well inside the ruler viewport. The previous gesture began only
+    # 35px from its right edge, close enough to Android's system-back region
+    # on API 35 to dismiss the editor instead of reliably scrolling the lane.
+    # A centered swipe still covers enough content to reveal the offscreen end.
+    scroll_start=$((ruler_left + ruler_width * 3 / 4))
+    scroll_end=$((ruler_left + ruler_width / 4))
+    echo "Timeline ruler bounds=[$ruler_left,$ruler_top][$ruler_right,$ruler_bottom]; safe scroll=($scroll_start,$ruler_y)->($scroll_end,$ruler_y)."
+    for scroll_attempt in $(seq 1 8); do
+      visible_bounds="$(find_content_description_bounds "emulator-screenshots/$before_xml" "$description")"
+      if [ -n "$visible_bounds" ]; then
+        read -r _ _ visible_width visible_height _ <<< "$visible_bounds"
+        if [ "$visible_width" -ge 40 ] && [ "$visible_height" -ge 20 ]; then
+          echo "Overlay end hit target is fully reachable: ${visible_width}x${visible_height}px."
+          break
+        fi
+        echo "Overlay end hit target is only partially visible (${visible_width}x${visible_height}px); applying a short inner-ruler nudge."
+        # A large initial swipe can move the far edge to the extreme viewport
+        # boundary, where only a sliver of its transparent hit box is exposed.
+        # Nudge by 40 screen pixels from the ruler centre so the full 84px
+        # target is inside the viewport without approaching system navigation.
+        ruler_center=$(((ruler_left + ruler_right) / 2))
+        scroll_start=$((ruler_center + 20))
+        scroll_end=$((ruler_center - 20))
+      else
+        echo "Revealing overlay end handle through the inner timeline ruler (scroll $scroll_attempt/8)."
+      fi
+      timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$scroll_start" "$ruler_y" "$scroll_end" "$ruler_y" 450
+      sleep 0.4
+      dump_hierarchy "$before_xml" "emulator-screenshots/$before_xml" || true
+      root_package="$(python3 - "emulator-screenshots/$before_xml" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+try:
+    root = ET.parse(sys.argv[1]).getroot()
+except (OSError, ET.ParseError):
+    raise SystemExit(0)
+node = root.find("node")
+print(node.attrib.get("package", "") if node is not None else "")
+PY
+)"
+      if [ "$root_package" != "com.mathmotor.video.next" ]; then
+        echo "Ruler scrolling unexpectedly left MathMotor (foreground hierarchy package='$root_package')."
+        collect_capture_diagnostics overlay-end-scroll-left-app
+        exit 86
+      fi
+    done
+  fi
+  coords="$(find_content_description_bounds "emulator-screenshots/$before_xml" "$description")"
+  if [ -z "$coords" ]; then
+    echo "The overlay end trim handle is not visible after scrolling the timeline ruler: $description"
+    collect_capture_diagnostics "overlay-$edge-target-missing"
+    exit 82
+  fi
+  read -r cx cy target_w target_h x1 y1 x2 y2 <<< "$coords"
+  if [ "$target_w" -lt 40 ] || [ "$target_h" -lt 20 ]; then
+    echo "Overlay hit target is undersized: ${target_w}x${target_h}px bounds=[$x1,$y1][$x2,$y2]."
+    collect_capture_diagnostics "overlay-$edge-target-undersized"
+    exit 83
+  fi
+  if [ "$edge" = "end" ]; then
+    timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I > emulator-screenshots/overlay-end-target-logcat.txt 2>&1 || true
+    if ! grep -Fq "OVERLAY_EDGE_TARGET edge=end" emulator-screenshots/overlay-end-target-logcat.txt ||
+       ! grep -F "OVERLAY_EDGE_TARGET edge=end" emulator-screenshots/overlay-end-target-logcat.txt | tail -n 1 | grep -Fq "gestureExclusion=true"; then
+      echo "The trailing trim handle did not register its Android gesture-navigation exclusion."
+      collect_capture_diagnostics overlay-end-gesture-exclusion-missing
+      exit 87
+    fi
+  fi
+  delta=42
+  if [ "$direction" = "left" ]; then delta=-42; fi
+  echo "Dragging $description from ($cx,$cy) by ${delta}px; hit area=${target_w}x${target_h}px."
+  timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$cx" "$cy" "$((cx + delta))" "$cy" 500
+  sleep 1
+  if ! dump_hierarchy "$after_xml" "emulator-screenshots/$after_xml"; then
+    echo "Could not inspect the timeline after overlay trim."
+    collect_capture_diagnostics "overlay-$edge-after-hierarchy-failed"
+    exit 84
+  fi
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I > "emulator-screenshots/overlay-$edge-touch-logcat.txt" 2>&1 || true
+  marker="$(grep -F "OVERLAY_EDGE_TRIM kind=image edge=$edge " "emulator-screenshots/overlay-$edge-touch-logcat.txt" | tail -n 1 || true)"
+  if [ -z "$marker" ]; then
+    echo "The overlay trim gesture did not reach its handler."
+    collect_capture_diagnostics "overlay-$edge-gesture-not-received"
+    exit 85
+  fi
+  python3 - "$marker" "$edge" <<PY
+import re
+import sys
+line, edge = sys.argv[1:]
+fields = dict(re.findall(r"([A-Za-z]+)=([^ ]+)", line))
+required = ["beforeStartMs", "beforeDurationMs", "afterStartMs", "afterDurationMs"]
+missing = [key for key in required if key not in fields]
+if missing:
+    raise SystemExit("Overlay trim event was incomplete: " + ", ".join(missing) + " :: " + line)
+before_start = int(fields["beforeStartMs"])
+before_duration = int(fields["beforeDurationMs"])
+after_start = int(fields["afterStartMs"])
+after_duration = int(fields["afterDurationMs"])
+if edge == "start" and not (after_start > before_start and after_duration < before_duration):
+    raise SystemExit("Overlay start edge did not trim the start: " + line)
+if edge == "end" and not after_duration < before_duration:
+    raise SystemExit("Overlay end edge did not shorten duration: " + line)
+print(f"PASS: overlay {edge} edge changed timing independently ({before_start}ms/{before_duration}ms -> {after_start}ms/{after_duration}ms)")
+PY
+}
+
+run_overlay_edge_smoke start "Katman başlangıcını kırp" right
+run_overlay_edge_smoke end "Katman bitişini kırp" left
+
+# Each direct trim gesture opens its selected track's contextual tools.
+# Return to the global dock after audio and overlay trimming using a fresh hierarchy.
+if ! dump_hierarchy editor-layer-tools-final.xml emulator-screenshots/editor-layer-tools-final.xml; then
+  echo "Could not inspect the final audio contextual dock before returning to the main dock."
+  collect_capture_diagnostics layer-tools-final-hierarchy-unavailable
+  exit 77
+fi
+layer_main_back_coords="$(find_bottom_tool emulator-screenshots/editor-layer-tools-final.xml "Ana araçlara dön" || true)"
+if [ -z "$layer_main_back_coords" ]; then
+  echo "The final audio tool strip did not expose its return-to-main-dock control."
+  collect_capture_diagnostics layer-tools-main-back-missing
+  exit 78
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $layer_main_back_coords
+sleep 1
+if ! dump_hierarchy editor-main-dock-after-audio.xml emulator-screenshots/editor-main-dock-after-audio.xml; then
+  echo "Could not verify that the global editor dock returned after the audio trim tests."
+  collect_capture_diagnostics audio-tools-main-dock-restore-failed
+  exit 79
+fi
+if ! grep -q "Proje" emulator-screenshots/editor-main-dock-after-audio.xml; then
+  echo "The global Proje tab did not return after closing the audio contextual tools."
+  collect_capture_diagnostics audio-tools-main-dock-proje-missing
+  exit 80
+fi
+echo "PASS: returned from the audio contextual strip to the global editor dock."
+
 timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime -s EditorPanelLayoutTest:I > emulator-screenshots/editor-panel-layout-logcat.txt 2>&1 || true
 
 python3 - emulator-screenshots/editor-panel-layout-logcat.txt <<'PY'
@@ -719,13 +1571,17 @@ import sys
 states = {}
 pattern = re.compile(
     r"EDITOR_PANEL_GEOMETRY state=([^ ]+) "
-    r"preview=(\d+x\d+@\d+,\d+) "
-    r"timeline=(\d+x\d+@\d+,\d+)"
+    r"canvas=(\d+x\d+@\d+,\d+) "
+    r"timeline=(\d+x\d+@\d+,\d+) "
+    r"panel=(\d+x\d+@\d+,\d+) "
+    r"root=(\d+x\d+@\d+,\d+)"
 )
 for line in open(sys.argv[1], errors="replace"):
     match = pattern.search(line)
     if match:
-        states[match.group(1)] = (match.group(2), match.group(3))
+        states[match.group(1)] = (
+            match.group(2), match.group(3), match.group(4), match.group(5)
+        )
 
 required = [
     "before-open:clip-tools",
@@ -740,17 +1596,64 @@ required = [
 missing = [state for state in required if state not in states]
 if missing:
     raise SystemExit("Missing two-stage editor geometry markers: " + ", ".join(missing))
-baseline = states["before-open:clip-tools"]
+baseline_preview, baseline_timeline, _, baseline_root = states["before-open:clip-tools"]
+def rect(value):
+    size, origin = value.split("@")
+    width, height = map(int, size.split("x"))
+    left, top = map(int, origin.split(","))
+    return left, top, width, height
+
+base_preview = rect(baseline_preview)
+base_timeline = rect(baseline_timeline)
 for state in required[1:]:
-    if states[state] != baseline:
+    preview_value, timeline_value, panel_value, root_value = states[state]
+    preview = rect(preview_value)
+    timeline = rect(timeline_value)
+    panel = rect(panel_value)
+    root = rect(root_value)
+    if preview[2:] != base_preview[2:]:
         raise SystemExit(
-            f"Editor layout moved during {state}: baseline={baseline}, observed={states[state]}"
+            f"Project canvas dimensions changed during {state}: "
+            f"baseline={base_preview[2:]}, observed={preview[2:]}. "
+            "The project canvas width and height must remain identical."
         )
-print("PASS: preview and timeline stayed fixed while the one-row tool strip opened, detail rose above it, the strip returned, and the main dock was restored.")
+    if state in ("open:clip", "open:clipVolume"):
+        if timeline[0] != base_timeline[0] or timeline[2] != base_timeline[2]:
+            raise SystemExit(
+                f"Timeline width/position changed while opening {state}: "
+                f"baseline={base_timeline}, observed={timeline}."
+            )
+        # Vertical re-centering is permitted: the preview canvas dimensions are
+        # invariant, while its surrounding stage can shift the timeline on screen.
+        # What matters is that the timeline is compacted, does not overlap the
+        # detail controls, and both remain inside the editor's measured root.
+        if timeline[3] >= base_timeline[3]:
+            raise SystemExit(
+                f"Detail tools did not reduce the timeline viewport height during {state}: "
+                f"baseline={base_timeline}, observed={timeline}."
+            )
+        if panel[2] != timeline[2] or panel[3] <= 0:
+            raise SystemExit(
+                f"Detail panel is not fully measured/visible during {state}: panel={panel}."
+            )
+        timeline_bottom = timeline[1] + timeline[3]
+        panel_bottom = panel[1] + panel[3]
+        root_bottom = root[1] + root[3]
+        if timeline_bottom > panel[1] or panel_bottom > root_bottom:
+            raise SystemExit(
+                f"Timeline/detail panel overlap or extend beyond editor viewport during {state}: "
+                f"timeline={timeline}, panel={panel}, root={root}."
+            )
+    elif timeline != base_timeline:
+        raise SystemExit(
+            f"Timeline did not restore after closing/switching {state}: "
+            f"baseline={base_timeline}, observed={timeline}."
+        )
+print("PASS: project canvas dimensions remain pixel-identical; detail tools reduce the timeline viewport, remain below it, and fit inside the editor root. Vertical stage re-centering is allowed.")
 PY
 
 echo "Step 8b/12: open the Proje panel and prove the MP4 button receives a real tap"
-proje_coords="$(find_bottom_tool emulator-screenshots/editor-panel-closed.xml "Proje" || true)"
+proje_coords="$(find_bottom_tool emulator-screenshots/editor-main-dock-after-audio.xml "Proje" || true)"
 if [ -z "$proje_coords" ]; then
   echo "Could not locate the Proje tab before testing MP4 export."
   collect_capture_diagnostics mp4-export-project-tab-missing
@@ -833,33 +1736,555 @@ if ! take_screen emulator-screenshots/editor-export-saved.png; then
   collect_capture_diagnostics mp4-export-saved-capture-failure
   exit 6
 fi
-# Close the Proje drawer so it cannot cover the timeline checks that follow.
-timeout -k 2s 8s adb -s emulator-5554 shell input tap $proje_coords
+# The detail panel hides the global dock. Return through its own visible,
+# sticky action instead of tapping the old dock coordinate underneath the panel.
+return_coords="$(find_bottom_tool emulator-screenshots/editor-export-panel.xml "Araçlara dön" || true)"
+if [ -z "$return_coords" ]; then
+  echo "The export panel did not expose its reachable Araçlara dön action."
+  collect_capture_diagnostics export-panel-return-action-missing
+  exit 41
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $return_coords
 sleep 1
 dump_hierarchy editor-export-closed.xml emulator-screenshots/editor-export-closed.xml || true
-echo "PASS: visible MP4 button tap reached the export handler, started Transformer, saved an MP4 output, and closed the drawer."
-echo "Step 9/12: align a thumbnail cell with the playhead and compare the rendered pixels"
-# HorizontalScrollView consumes ViewConfiguration.scaledTouchSlop before it
-# scrolls. Android reports integer-pixel view bounds and ADB gesture coordinates;
-# accept a 5px center residual (under 3dp on this emulator) rather than treating
-# coordinate rounding as a timeline synchronization failure.
-touch_slop_px="$(timeout -k 2s 8s adb -s emulator-5554 logcat -d -v brief -s TimelineSyncTest:I \
-  | sed -n 's/.*TIMELINE_TOUCH_SLOP_PX=\([0-9][0-9]*\).*/\1/p' | tail -n 1)"
-if ! [[ "$touch_slop_px" =~ ^[0-9]+$ ]] || [ "$touch_slop_px" -le 0 ]; then
-  echo "Could not read the emulator's actual Android touch-slop value."
-  collect_capture_diagnostics timeline-touch-slop-missing
-  exit 29
+if ! grep -q "Metin" emulator-screenshots/editor-export-closed.xml; then
+  echo "The export panel return action did not restore the global editor dock."
+  collect_capture_diagnostics export-panel-return-did-not-restore-dock
+  exit 42
 fi
-echo "Using Android ViewConfiguration touch slop: ${touch_slop_px}px"
+echo "PASS: visible MP4 button tap reached the export handler, started Transformer, saved an MP4 output, and the panel return action restored the global dock."
+
+echo "Step 8c/12: add text, verify its canvas selection frame, and reselect it by tapping the preview"
+text_tab_coords="$(find_bottom_tool emulator-screenshots/editor-export-closed.xml "Metin" || true)"
+if [ -z "$text_tab_coords" ]; then
+  echo "Could not locate the Metin tab to verify direct text selection."
+  collect_capture_diagnostics text-canvas-tab-missing
+  exit 50
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_tab_coords
+sleep 1
+dump_hierarchy editor-text-panel.xml emulator-screenshots/editor-text-panel.xml || true
+# Measure the pinned return button while the text panel is first opened. Its
+# sibling-header position is independent of the scrolling settings/IME.
+text_panel_back="$(find_bottom_tool emulator-screenshots/editor-text-panel.xml "Araçlara dön" || true)"
+if [ -z "$text_panel_back" ]; then
+  echo "The text panel did not expose its pinned return control when opened."
+  collect_capture_diagnostics text-canvas-panel-return-missing-on-open
+  exit 52
+fi
+new_text_coords="$(find_bottom_tool emulator-screenshots/editor-text-panel.xml "＋ Yeni" || true)"
+if [ -z "$new_text_coords" ]; then
+  echo "The Metin panel did not expose its Yeni text-layer action."
+  collect_capture_diagnostics text-canvas-add-action-missing
+  exit 51
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $new_text_coords
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 shell input text "CanvasSmoke"
+sleep 1
+
+# Keep the IME open long enough to verify the real keyboard layout. The old
+# smoke path dismissed it immediately, so keyboard-induced preview/timeline
+# compression could never be observed.
+if ! take_screen emulator-screenshots/editor-text-keyboard-open.png; then
+  collect_capture_diagnostics text-keyboard-open-capture-failure
+  exit 6
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell dumpsys input_method \
+  > emulator-screenshots/text-keyboard-input-method.txt 2>&1 || true
+if ! grep -Eiq "mInputShown=true|isInputViewShown=true|mShowRequested=true" \
+    emulator-screenshots/text-keyboard-input-method.txt; then
+  echo "Text input did not keep the Android keyboard visibly open for layout verification."
+  collect_capture_diagnostics text-keyboard-not-visible
+  exit 90
+fi
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTest:I \
+  > emulator-screenshots/text-keyboard-preview-canvas-logcat.txt 2>&1 || true
+python3 - emulator-screenshots/text-keyboard-preview-canvas-logcat.txt <<'PY'
+import re
+import sys
+lines = open(sys.argv[1], errors="replace").read().splitlines()
+matches = [line for line in lines if "PREVIEW_CANVAS_BOUNDS" in line]
+if not matches:
+    raise SystemExit("No measured project-canvas bounds were logged while the keyboard was open.")
+match = re.search(r"canvas=(\d+)x(\d+).*aspect=([0-9.]+)", matches[-1])
+if not match:
+    raise SystemExit("Malformed project-canvas measurement while the keyboard was open: " + matches[-1])
+width, height = map(int, match.groups()[:2])
+aspect = float(match.group(3))
+if width <= 0 or height <= 0 or abs(width / height - 9 / 16) > 0.002 or abs(aspect - 9 / 16) > 0.002:
+    raise SystemExit(
+        f"Keyboard changed the 9:16 project canvas geometry: canvas={width}x{height}, aspect={aspect}"
+    )
+
+# The log captured at editor startup can contain transient pre-layout sizes
+# (500x889) before the workspace settles. Compare against the actual measured
+# project canvas from the text panel with the keyboard still closed.
+import xml.etree.ElementTree as ET
+baseline_root = ET.parse("emulator-screenshots/editor-text-panel.xml").getroot()
+baseline_bounds = []
+for node in baseline_root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != "Proje tuvali":
+        continue
+    baseline_match = re.fullmatch(
+        r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",
+        node.attrib.get("bounds", ""),
+    )
+    if baseline_match:
+        baseline_bounds.append(tuple(map(int, baseline_match.groups())))
+if len(baseline_bounds) != 1:
+    raise SystemExit(
+        "The keyboard-closed text-panel hierarchy did not expose exactly one measured project canvas."
+    )
+baseline_width = baseline_bounds[0][2] - baseline_bounds[0][0]
+baseline_height = baseline_bounds[0][3] - baseline_bounds[0][1]
+if (width, height) != (baseline_width, baseline_height):
+    raise SystemExit(
+        "Keyboard changed the project preview size; the canvas must remain pixel-identical: "
+        f"normal={baseline_width}x{baseline_height}, keyboard={width}x{height}."
+    )
+
+print(
+    "PASS: keyboard remained visible and the project preview kept its exact "
+    f"normal dimensions ({width}x{height}); no shrinking or scaling is allowed."
+)
+PY
+echo "Captured the text editor with the IME open; now dismissing it for the remaining touch tests."
+timeout -k 2s 8s adb -s emulator-5554 shell input keyevent 4
+sleep 1
+# Keep the canvas metrics for diagnosis, but the pixel assertion reads the
+# exact project-canvas rectangle from this fresh hierarchy snapshot.
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTest:I \
+  > emulator-screenshots/editor-text-selected-canvas-logcat.txt 2>&1 || true
+if ! take_screen emulator-screenshots/editor-text-selected.png; then
+  collect_capture_diagnostics text-canvas-selection-capture-failure
+  exit 6
+fi
+# Snapshot the current project-canvas bounds alongside each selection screenshot.
+# The IME and editor-panel transitions change the canvas rectangle independently.
+detect_text_selection_bounds() {
+  python3 - "$1" "$2" "$3" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+from PIL import Image
+
+image_path, log_path, hierarchy_path = sys.argv[1:4]
+root = ET.parse(hierarchy_path).getroot()
+root_node = root.find("node")
+root_bounds = re.fullmatch(
+    r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",
+    root_node.attrib.get("bounds", "") if root_node is not None else "",
+)
+if not root_bounds:
+    raise SystemExit("Could not read the Android root-window bounds for screenshot scaling.")
+window_left, window_top, window_right, window_bottom = map(int, root_bounds.groups())
+window_width, window_height = window_right - window_left, window_bottom - window_top
+if window_width <= 0 or window_height <= 0:
+    raise SystemExit("Invalid Android root-window dimensions in hierarchy.")
+
+snapshot = None
+for line in open(log_path, errors="replace"):
+    match = re.search(
+        r"PREVIEW_CANVAS_SNAPSHOT reason=text-panel-close canvas=(\d+)x(\d+) origin=(-?\d+),(-?\d+)",
+        line,
+    )
+    if match:
+        snapshot = tuple(map(int, match.groups()))
+if snapshot is not None:
+    canvas_w, canvas_h, origin_x, origin_y = snapshot
+    canvas_left, canvas_top = origin_x, origin_y
+else:
+    canvas_nodes = []
+    for node in root.iter("node"):
+        if node.attrib.get("content-desc", "").strip() != "Proje tuvali":
+            continue
+        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+        if match:
+            canvas_nodes.append(tuple(map(int, match.groups())))
+    if len(canvas_nodes) != 1:
+        raise SystemExit(f"Expected exactly one measurable 'Proje tuvali' node, found {len(canvas_nodes)}")
+    canvas_left, canvas_top, canvas_right, canvas_bottom = canvas_nodes[0]
+    canvas_w, canvas_h = canvas_right - canvas_left, canvas_bottom - canvas_top
+
+if canvas_w <= 0 or canvas_h <= 0:
+    raise SystemExit("Invalid project-canvas dimensions.")
+image = Image.open(image_path).convert("RGB")
+scale_x = image.width / window_width
+scale_y = image.height / window_height
+left = round((canvas_left - window_left) * scale_x)
+top = round((canvas_top - window_top) * scale_y)
+right = round((canvas_left + canvas_w - window_left) * scale_x) - 1
+bottom = round((canvas_top + canvas_h - window_top) * scale_y) - 1
+if left < 0 or top < 0 or right >= image.width or bottom >= image.height:
+    raise SystemExit(
+        f"Project canvas bounds lie outside screenshot: "
+        f"({left},{top})-({right},{bottom}) in {image.width}x{image.height}"
+    )
+
+def is_white(pixel):
+    red, green, blue = pixel
+    return min(red, green, blue) >= 220 and max(red, green, blue) - min(red, green, blue) <= 35
+
+rows = []
+minimum_width = max(80, int(canvas_w * 0.60 * scale_x))
+for y in range(top, bottom + 1):
+    xs = [x for x in range(left, right + 1) if is_white(image.getpixel((x, y)))]
+    if not xs:
+        continue
+    runs = []
+    run_start = previous = xs[0]
+    for x in xs[1:]:
+        if x > previous + 2:
+            runs.append((run_start, previous))
+            run_start = x
+        previous = x
+    runs.append((run_start, previous))
+    for x1, x2 in runs:
+        if x2 - x1 + 1 >= minimum_width:
+            rows.append((y, x1, x2))
+
+matches = []
+for i, (top_y, x1, x2) in enumerate(rows):
+    for bottom_y, bx1, bx2 in rows[i + 1:]:
+        height = bottom_y - top_y + 1
+        if height < 35 or abs(x1 - bx1) > 8 or abs(x2 - bx2) > 8:
+            continue
+        width = x2 - x1 + 1
+        if abs(width - (bx2 - bx1 + 1)) > 10:
+            continue
+        left_strength = max(
+            sum(is_white(image.getpixel((x, y))) for y in range(top_y + 2, bottom_y - 1))
+            for x in range(max(left, x1 - 5), min(right, x1 + 5) + 1)
+        )
+        right_strength = max(
+            sum(is_white(image.getpixel((x, y))) for y in range(top_y + 2, bottom_y - 1))
+            for x in range(max(left, x2 - 5), min(right, x2 + 5) + 1)
+        )
+        if left_strength < height * 0.70 or right_strength < height * 0.70:
+            continue
+        interior_white = sum(
+            1
+            for y in range(top_y + 4, bottom_y - 3)
+            for x in range(x1 + 4, x2 - 3)
+            if is_white(image.getpixel((x, y)))
+        )
+        if interior_white < 40:
+            continue
+        matches.append((width * height, x1, top_y, x2, bottom_y))
+
+if not matches:
+    raise SystemExit("A complete white text-selection rectangle with visible text was not found inside the project canvas.")
+_, x1, y1, x2, y2 = max(matches)
+print(x1, y1, x2, y2, (x1 + x2) // 2, (y1 + y2) // 2)
+PY
+}
+
+if ! text_selection_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-selected.png emulator-screenshots/editor-text-selected-canvas-logcat.txt emulator-screenshots/editor-text-panel.xml)"; then
+  echo "The selected text did not render a measurable white selection frame inside the project canvas."
+  collect_capture_diagnostics text-canvas-selection-frame-missing
+  exit 60
+fi
+read -r text_frame_left text_frame_top text_frame_right text_frame_bottom text_before_x text_before_y <<< "$text_selection_bounds"
+echo "PASS: new text and its white selection frame are visible inside the measured project canvas at ($text_before_x,$text_before_y)."
+
+# The text detail panel normally opens with direct editing already enabled.
+# Only toggle it on if the accessibility state says it is currently closed.
+text_edit_toggle_info="$(python3 - emulator-screenshots/editor-text-panel.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    label = node.attrib.get("content-desc", "")
+    if "Önizleme üzerindeki yazıyı sürükleme" not in label:
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        x1, y1, x2, y2 = map(int, match.groups())
+        state = "kapalı" if "kapalı" in label.casefold() else "açık"
+        print((x1 + x2) // 2, (y1 + y2) // 2, state)
+        break
+PY
+)"
+if [ -z "$text_edit_toggle_info" ]; then
+  echo "The text panel did not expose its shared preview-gesture toggle."
+  collect_capture_diagnostics text-canvas-edit-toggle-missing
+  exit 61
+fi
+read -r text_toggle_x text_toggle_y text_toggle_state <<< "$text_edit_toggle_info"
+text_edit_toggle_changed=false
+if [ "$text_toggle_state" = "kapalı" ]; then
+  timeout -k 2s 8s adb -s emulator-5554 shell input tap "$text_toggle_x" "$text_toggle_y"
+  sleep 1
+  text_edit_toggle_changed=true
+fi
+
+# The default text fixture is bottom-centred and nearly fills the canvas
+# width. Drag right/up so the full selection outline remains inside the project
+# canvas; a right/down swipe moves the box beyond the canvas edge and clips the
+# white outline, which made the pixel assertion mistake a clipped frame for a
+# disappeared selection. The diagonal remains above Android's measured slop.
+text_drag_to_x="$text_before_x"
+text_drag_to_y=$((text_before_y - 28))
+timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$text_before_x" "$text_before_y" "$text_drag_to_x" "$text_drag_to_y" 500
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTest:I \
+  > emulator-screenshots/editor-text-after-drag-canvas-logcat.txt 2>&1 || true
+if ! take_screen emulator-screenshots/editor-text-after-drag.png; then
+  collect_capture_diagnostics text-canvas-drag-capture-failure
+  exit 6
+fi
+if ! text_after_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-after-drag.png emulator-screenshots/editor-text-after-drag-canvas-logcat.txt emulator-screenshots/editor-text-panel.xml)"; then
+  echo "The selected text frame was not fully visible after the in-canvas direct drag."
+  collect_capture_diagnostics text-canvas-drag-selection-frame-missing
+  exit 62
+fi
+read -r text_after_left text_after_top text_after_right text_after_bottom text_after_x text_after_y <<< "$text_after_bounds"
+text_drag_dx=$((text_after_x - text_before_x))
+text_drag_dy=$((text_after_y - text_before_y))
+if [ "$text_drag_dx" -lt -6 ] || [ "$text_drag_dx" -gt 6 ] || [ "$text_drag_dy" -gt -12 ]; then
+  echo "Direct vertical text drag did not move the rendered selection frame as expected: before=($text_before_x,$text_before_y), after=($text_after_x,$text_after_y), delta=($text_drag_dx,$text_drag_dy)."
+  collect_capture_diagnostics text-canvas-drag-did-not-move
+  exit 62
+fi
+echo "PASS: vertical in-canvas text drag moved the rendered selection frame from ($text_before_x,$text_before_y) to ($text_after_x,$text_after_y) without shifting it beyond the canvas edges."
+
+if [ "$text_edit_toggle_changed" = true ]; then
+  timeout -k 2s 8s adb -s emulator-5554 shell input tap "$text_toggle_x" "$text_toggle_y"
+  sleep 1
+fi
+
+assert_preview_canvas_unchanged_from_snapshot() {
+  python3 - "$1" "$2" "$3" "$4" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+from PIL import Image
+
+baseline_path, snapshot_path, image_path, label = sys.argv[1:5]
+baseline_root = ET.parse(baseline_path).getroot()
+canvas_nodes = []
+for node in baseline_root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != "Proje tuvali":
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        canvas_nodes.append(tuple(map(int, match.groups())))
+if len(canvas_nodes) != 1:
+    raise SystemExit(
+        f"{baseline_path}: expected exactly one measured baseline project canvas; found {len(canvas_nodes)}"
+    )
+baseline = canvas_nodes[0]
+baseline_width, baseline_height = baseline[2] - baseline[0], baseline[3] - baseline[1]
+
+snapshots = []
+for line in open(snapshot_path, errors="replace"):
+    match = re.search(
+        r"PREVIEW_CANVAS_SNAPSHOT reason=text-panel-close canvas=(\d+)x(\d+) origin=(-?\d+),(-?\d+)",
+        line,
+    )
+    if match:
+        snapshots.append(tuple(map(int, match.groups())))
+if not snapshots:
+    raise SystemExit(f"{label}: app did not emit its post-layout project-canvas snapshot.")
+canvas_width, canvas_height, origin_x, origin_y = snapshots[-1]
+if (canvas_width, canvas_height) != (baseline_width, baseline_height):
+    raise SystemExit(
+        f"{label}: project canvas changed size: baseline={baseline_width}x{baseline_height}, "
+        f"after close={canvas_width}x{canvas_height}"
+    )
+
+root_node = baseline_root.find("node")
+root_match = re.fullmatch(
+    r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",
+    root_node.attrib.get("bounds", "") if root_node is not None else "",
+)
+if not root_match:
+    raise SystemExit(f"{baseline_path}: could not read Android root-window bounds")
+window_left, window_top, window_right, window_bottom = map(int, root_match.groups())
+window_width, window_height = window_right - window_left, window_bottom - window_top
+if window_width <= 0 or window_height <= 0:
+    raise SystemExit(f"{baseline_path}: invalid Android root-window dimensions")
+
+image = Image.open(image_path).convert("RGB")
+scale_x, scale_y = image.width / window_width, image.height / window_height
+left = round((origin_x - window_left) * scale_x)
+top = round((origin_y - window_top) * scale_y)
+right = round((origin_x + canvas_width - window_left) * scale_x) - 1
+bottom = round((origin_y + canvas_height - window_top) * scale_y) - 1
+if left < 0 or top < 0 or right >= image.width or bottom >= image.height or right <= left or bottom <= top:
+    raise SystemExit(
+        f"{label}: snapshot canvas ({left},{top})-({right},{bottom}) "
+        f"falls outside screenshot {image.width}x{image.height}"
+    )
+
+green_points = []
+for y in range(top, bottom + 1):
+    for x in range(left, right + 1):
+        red, green, blue = image.getpixel((x, y))
+        if green > 150 and red < 120 and blue < 120:
+            green_points.append((x, y))
+if len(green_points) < 10000:
+    raise SystemExit(f"{label}: only {len(green_points)} fixture-green pixels remain inside the project canvas")
+xs = [point[0] for point in green_points]
+ys = [point[1] for point in green_points]
+visible_width, visible_height = max(xs) - min(xs) + 1, max(ys) - min(ys) + 1
+if visible_width < (right - left + 1) * 0.90 or visible_height < (bottom - top + 1) * 0.90:
+    raise SystemExit(
+        f"{label}: fixture preview does not fill the measured canvas; "
+        f"pixels={visible_width}x{visible_height}, view={(right-left+1)}x{(bottom-top+1)}"
+    )
+ratio = visible_width / max(1, visible_height)
+if not 0.50 <= ratio <= 0.62:
+    raise SystemExit(f"{label}: visible fixture is not portrait-shaped ({visible_width}x{visible_height})")
+print(
+    f"PASS: {label} kept the project canvas exactly {canvas_width}x{canvas_height}; "
+    f"measured screenshot fixture={visible_width}x{visible_height}."
+)
+PY
+}
+# The keyboard changed the vertical layout. Use the application's
+# measured post-layout bounds for the sticky sibling return control; do not
+# traverse the large timeline accessibility hierarchy again.
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I \
+  > emulator-screenshots/text-panel-return-bounds-logcat.txt 2>&1 || true
+text_panel_back="$(python3 - emulator-screenshots/text-panel-return-bounds-logcat.txt <<'PY'
+import re
+import sys
+
+for line in reversed(open(sys.argv[1], errors="replace").read().splitlines()):
+    match = re.search(
+        r"TEXT_PANEL_RETURN_BOUNDS visible=true x=(\d+) y=(\d+) width=(\d+) height=(\d+)",
+        line,
+    )
+    if not match:
+        continue
+    x, y, width, height = map(int, match.groups())
+    if width > 0 and height > 0:
+        print(x + width // 2, y + height // 2)
+        raise SystemExit(0)
+raise SystemExit("No visible measured text-panel return bounds were logged after keyboard dismissal.")
+PY
+)"
+if [ -z "$text_panel_back" ]; then
+  echo "The text-panel return control did not report visible post-keyboard bounds."
+  collect_capture_diagnostics text-panel-return-after-keyboard-missing
+  exit 56
+fi
+echo "Tapping the measured text-panel return control at $text_panel_back after text editing."
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_panel_back
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I > emulator-screenshots/text-panel-return-logcat.txt 2>&1 || true
+if ! grep -Fq "TEXT_PANEL_RETURN_TAPPED" emulator-screenshots/text-panel-return-logcat.txt ||
+   ! grep -Fq "TEXT_PANEL_CLOSED activePanel=none" emulator-screenshots/text-panel-return-logcat.txt; then
+  echo "The text detail panel did not confirm its return-to-tools action."
+  collect_capture_diagnostics text-canvas-panel-return-not-confirmed
+  exit 56
+fi
+if ! take_screen emulator-screenshots/editor-text-panel-closed.png; then
+  collect_capture_diagnostics text-canvas-panel-closed-capture-failure
+  exit 6
+fi
+# Read the actual post-animation FrameLayout bounds from the app. This is
+# independent of a second UIAutomator dump, which can time out on this screen.
+snapshot_ready=false
+for attempt in $(seq 1 10); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTest:I \
+    > emulator-screenshots/editor-text-panel-closed-canvas-logcat.txt 2>&1 || true
+  if grep -q "PREVIEW_CANVAS_SNAPSHOT reason=text-panel-close" \
+      emulator-screenshots/editor-text-panel-closed-canvas-logcat.txt; then
+    snapshot_ready=true
+    break
+  fi
+  sleep 1
+done
+if [ "$snapshot_ready" != true ]; then
+  echo "The app did not report the laid-out project canvas after closing the text panel."
+  collect_capture_diagnostics text-canvas-panel-closed-snapshot-missing
+  exit 53
+fi
+assert_preview_canvas_unchanged_from_snapshot \
+  emulator-screenshots/editor-text-panel.xml \
+  emulator-screenshots/editor-text-panel-closed-canvas-logcat.txt \
+  emulator-screenshots/editor-text-panel-closed.png "text panel close"
+text_preview_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-panel-closed.png emulator-screenshots/editor-text-panel-closed-canvas-logcat.txt emulator-screenshots/editor-text-panel.xml)" || {
+  echo "The text layer did not retain a complete selection frame after the detail panel closed."
+  collect_capture_diagnostics text-canvas-preview-hit-target-missing
+  exit 53
+}
+read -r text_preview_left text_preview_top text_preview_right text_preview_bottom text_preview_x text_preview_y <<< "$text_preview_bounds"
+text_preview_center="$text_preview_x $text_preview_y"
+if [ -z "$text_preview_center" ]; then
+  echo "Could not locate the visible text layer after closing its settings panel."
+  collect_capture_diagnostics text-canvas-preview-hit-target-missing
+  exit 53
+fi
+echo "Tapping the remeasured in-canvas text centre at $text_preview_center after confirming the keyboard-free full preview."
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_preview_center
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTest:I \
+  > emulator-screenshots/editor-text-reselected-canvas-logcat.txt 2>&1 || true
+if ! take_screen emulator-screenshots/editor-text-reselected.png; then
+  collect_capture_diagnostics text-canvas-reselection-capture-failure
+  exit 6
+fi
+# Canvas geometry and screen origin are already measured after the panel-close
+# animation; selecting the overlay must not resize or move the project canvas.
+assert_preview_canvas_unchanged_from_snapshot \
+  emulator-screenshots/editor-text-panel.xml \
+  emulator-screenshots/editor-text-panel-closed-canvas-logcat.txt \
+  emulator-screenshots/editor-text-reselected.png "text preview reselection"
+text_reselected_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-reselected.png emulator-screenshots/editor-text-panel-closed-canvas-logcat.txt emulator-screenshots/editor-text-panel.xml)" || {
+  echo "Tapping the preview text did not restore a complete canvas selection frame."
+  collect_capture_diagnostics text-canvas-tap-selection-frame-missing
+  exit 55
+}
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I > emulator-screenshots/text-preview-reselection-logcat.txt 2>&1 || true
+if ! grep -Fq "TEXT_TOOLS_DOCK_VISIBLE childCount=3" emulator-screenshots/text-preview-reselection-logcat.txt ||
+   ! grep -Fq "Düzenle" emulator-screenshots/text-preview-reselection-logcat.txt ||
+   ! grep -Fq "Sil" emulator-screenshots/text-preview-reselection-logcat.txt; then
+  echo "Tapping the text did not emit proof that the three-action contextual text dock was rebuilt."
+  collect_capture_diagnostics text-canvas-tap-did-not-reopen-tools
+  exit 54
+fi
+echo "PASS: tapping the preview text restored its three-action text dock and selection frame at $text_reselected_bounds."
+
+# UIAutomator can time out on this large panel even after the direct interaction
+# has succeeded. The app-side dock marker plus the full-canvas screenshot and
+# pixel-verified selection frame are authoritative; hierarchy-based cleanup is
+# best-effort so a slow accessibility dump cannot turn a valid editor state red.
+if dump_hierarchy editor-text-reselected.xml emulator-screenshots/editor-text-reselected.xml; then
+  text_delete_coords="$(find_bottom_tool emulator-screenshots/editor-text-reselected.xml "Sil" || true)"
+  if [ -n "$text_delete_coords" ]; then
+    timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_delete_coords
+    sleep 1
+    text_main_back="$(find_bottom_tool emulator-screenshots/editor-text-reselected.xml "Ana araçlara dön" || true)"
+    if [ -n "$text_main_back" ]; then
+      timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_main_back
+      sleep 1
+    fi
+  fi
+else
+  echo "UIAutomator cleanup hierarchy unavailable; retaining the verified text layer for the remaining timeline checks."
+fi
+dump_hierarchy editor-text-cleanup.xml emulator-screenshots/editor-text-cleanup.xml || true
+
+echo "Step 9/12: align a thumbnail cell with the playhead and compare the rendered pixels"
+# Use app-measured Android View bounds. UIAutomator's full accessibility-tree
+# dump becomes unreliable after repeated panel/keyboard operations.
+echo "Using startup-captured Android ViewConfiguration touch slop: \${touch_slop_px}px"
 thumbnail_aligned=false
 for attempt in 1 2 3 4 5; do
-  hierarchy="emulator-screenshots/editor-frame-align-${attempt}.xml"
-  dump_hierarchy "editor-frame-align-${attempt}.xml" "$hierarchy" || true
-  alignment="$(python3 .github/scripts/assert-thumbnail-alignment.py prepare "$hierarchy")"
+  timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime \
+    -s TimelineAlignmentTest:I TimelineSyncTest:I TimelineFrameSyncTest:I TimelineThumbnail:I \
+    > emulator-screenshots/thumbnail-alignment-measurements.txt 2>&1 || true
+  alignment="$(python3 .github/scripts/assert-thumbnail-alignment.py prepare emulator-screenshots/thumbnail-alignment-measurements.txt)"
   read -r thumb_center_x thumb_center_y play_center_x thumb_sample_ms <<< "$alignment"
   delta_x="$((play_center_x - thumb_center_x))"
   absolute_delta="$((delta_x < 0 ? -delta_x : delta_x))"
-  echo "Alignment attempt $attempt: sample=${thumb_sample_ms}ms center=${thumb_center_x}px playhead=${play_center_x}px delta=${delta_x}px"
+  echo "Alignment attempt $attempt: sample=\${thumb_sample_ms}ms center=\${thumb_center_x}px playhead=\${play_center_x}px delta=\${delta_x}px"
   if [ "$absolute_delta" -le 5 ]; then
     thumbnail_aligned=true
     break
@@ -879,30 +2304,24 @@ if ! take_screen emulator-screenshots/editor-frame-aligned.png; then
   collect_capture_diagnostics thumbnail-alignment-capture-failure
   exit 6
 fi
-dump_hierarchy editor-frame-aligned.xml emulator-screenshots/editor-frame-aligned.xml || true
-timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime > emulator-screenshots/thumbnail-alignment-logcat.txt 2>&1
+timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime \
+  -s TimelineAlignmentTest:I TimelineSyncTest:I TimelineFrameSyncTest:I TimelineThumbnail:I \
+  > emulator-screenshots/thumbnail-alignment-logcat.txt 2>&1
 python3 .github/scripts/assert-thumbnail-alignment.py verify \
-  emulator-screenshots/editor-frame-aligned.xml \
-  emulator-screenshots/editor-frame-aligned.png \
-  emulator-screenshots/thumbnail-alignment-logcat.txt
+  emulator-screenshots/thumbnail-alignment-logcat.txt \
+  emulator-screenshots/editor-frame-aligned.png
 
 echo "Step 10/12: exercise filmstrip scrubbing in both directions"
-clip_bounds="$(python3 - emulator-screenshots/editor-window.xml <<'PY'
+clip_bounds="$(python3 - emulator-screenshots/thumbnail-alignment-logcat.txt <<'PY'
 import re
 import sys
-import xml.etree.ElementTree as ET
-try:
-    root = ET.parse(sys.argv[1]).getroot()
-except (OSError, ET.ParseError):
-    raise SystemExit(0)
-for node in root.iter("node"):
-    desc = node.attrib.get("content-desc", "")
-    bounds = node.attrib.get("bounds", "")
-    if desc.startswith("Klip 1:"):
-        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", bounds)
-        if match:
-            print(*map(int, match.groups()))
-            break
+latest = None
+for line in open(sys.argv[1], errors="replace"):
+    match = re.search(r"TIMELINE_ALIGNMENT_SNAPSHOT .*?clipBounds=(none|\d+,\d+,\d+,\d+)", line)
+    if match and match.group(1) != "none":
+        latest = match.group(1).replace(",", " ")
+if latest:
+    print(latest)
 PY
 )"
 if [ -z "$clip_bounds" ]; then
@@ -979,21 +2398,20 @@ if [ "$forward_ms" -le 0 ] || [ "$forward_scroll" -le 0 ]; then
   collect_capture_diagnostics filmstrip-scrub-forward-not-advanced
   exit 20
 fi
-dump_hierarchy editor-after-forward-scrub.xml emulator-screenshots/editor-after-forward-scrub.xml || true
-reverse_bounds="$(python3 - emulator-screenshots/editor-after-forward-scrub.xml <<'PY'
+
+timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime \
+  -s TimelineAlignmentTest:I TimelineSyncTest:I \
+  > emulator-screenshots/filmstrip-scrub-forward-logcat.txt 2>&1
+reverse_bounds="$(python3 - emulator-screenshots/filmstrip-scrub-forward-logcat.txt <<'PY'
 import re
 import sys
-import xml.etree.ElementTree as ET
-try:
-    root = ET.parse(sys.argv[1]).getroot()
-except (OSError, ET.ParseError):
-    raise SystemExit(0)
-for node in root.iter("node"):
-    if node.attrib.get("content-desc", "").startswith("Klip 1:"):
-        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
-        if match:
-            print(*map(int, match.groups()))
-            break
+latest = None
+for line in open(sys.argv[1], errors="replace"):
+    match = re.search(r"TIMELINE_ALIGNMENT_SNAPSHOT .*?clipBounds=(none|\d+,\d+,\d+,\d+)", line)
+    if match and match.group(1) != "none":
+        latest = match.group(1).replace(",", " ")
+if latest:
+    print(latest)
 PY
 )"
 if [ -z "$reverse_bounds" ]; then
@@ -1048,26 +2466,22 @@ fi
 echo "PASS: filmstrip left advanced to \${forward_ms}ms; right returned to \${reverse_ms}ms"
 
 echo "Step 11/12: exercise live playback and validate ruler/filmstrip synchronization"
-dump_hierarchy timeline-play-button.xml emulator-screenshots/timeline-play-button.xml || true
-play_coords="$(python3 - emulator-screenshots/timeline-play-button.xml <<'PY'
+
+timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime -s TimelineAlignmentTest:I \
+  > emulator-screenshots/timeline-play-button-measurement.txt 2>&1
+play_coords="$(python3 - emulator-screenshots/timeline-play-button-measurement.txt <<'PY'
 import re
 import sys
-import xml.etree.ElementTree as ET
-
-try:
-    root = ET.parse(sys.argv[1]).getroot()
-except (OSError, ET.ParseError):
-    raise SystemExit(0)
-
-for node in root.iter("node"):
-    description = node.attrib.get("content-desc", "")
-    bounds = node.attrib.get("bounds", "")
-    if "Önizlemeyi oynat" in description:
-        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", bounds)
-        if match:
-            x1, y1, x2, y2 = map(int, match.groups())
-            print((x1 + x2) // 2, (y1 + y2) // 2)
-            break
+latest = None
+for line in open(sys.argv[1], errors="replace"):
+    match = re.search(
+        r"TIMELINE_ALIGNMENT_SNAPSHOT playheadCenterPx=(\d+) playheadCenterYpx=(\d+)",
+        line
+    )
+    if match:
+        latest = f"{match.group(1)} {match.group(2)}"
+if latest:
+    print(latest)
 PY
 )"
 if [ -z "$play_coords" ]; then
@@ -1092,6 +2506,7 @@ fi
 # file truncated before the editor's playback samples. Keep only the dedicated
 # debug sync tag so the validator receives the startup marker and all samples.
 timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime -s TimelineSyncTest:I > emulator-screenshots/timeline-sync-logcat.txt 2>&1 || true
+cat emulator-screenshots/timeline-sync-startup-logcat.txt >> emulator-screenshots/timeline-sync-logcat.txt
 if ! python3 .github/scripts/assert-timeline-sync.py emulator-screenshots/timeline-sync-logcat.txt 2>&1 | tee emulator-screenshots/timeline-sync-validation.txt; then
   echo "Live playback/timeline synchronization assertions failed."
   collect_capture_diagnostics timeline-sync-assertion-failure
@@ -1099,24 +2514,86 @@ if ! python3 .github/scripts/assert-timeline-sync.py emulator-screenshots/timeli
 fi
 
 echo "Step 12/12: validate automatic draft save and resume list"
-timeout -k 2s 8s adb -s emulator-5554 shell input keyevent 4 || true
-sleep 3
-timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime > emulator-screenshots/draft-autosave-logcat.txt 2>&1 || true
-if ! grep -q "LOCAL_DRAFT_SAVED id=11111111-1111-4111-8111-111111111111 clips=1" emulator-screenshots/draft-autosave-logcat.txt; then
-  echo "Editor did not confirm automatic draft save after leaving the editor."
+# Android Back is context-sensitive: with a text/overlay layer selected it only
+# exits that tool mode, leaving VideoEditorActivity in the foreground. Use the
+# editor's explicit close control so onStop() runs and the draft is actually saved.
+close_editor_center="$(python3 - emulator-screenshots/editor-window.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if (
+        node.attrib.get("content-desc") == "Düzenleyiciyi kapat"
+        and node.attrib.get("clickable") == "true"
+        and node.attrib.get("enabled") == "true"
+    ):
+        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+        if match:
+            left, top, right, bottom = map(int, match.groups())
+            print((left + right) // 2, (top + bottom) // 2)
+            break
+PY
+)"
+if [ -z "$close_editor_center" ]; then
+  echo "Could not locate the editor's accessible close control in the captured hierarchy."
+  collect_capture_diagnostics draft-close-control-missing
+  exit 11
+fi
+read -r close_editor_x close_editor_y <<< "$close_editor_center"
+echo "Closing the editor through its real close control at ${close_editor_x},${close_editor_y}."
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$close_editor_x" "$close_editor_y"
+draft_saved=false
+for attempt in $(seq 1 12); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s MathMotorDraft:I > emulator-screenshots/draft-autosave-logcat.txt 2>&1 || true
+  if grep -Fq "LOCAL_DRAFT_SAVED id=11111111-1111-4111-8111-111111111111 clips=1" emulator-screenshots/draft-autosave-logcat.txt; then
+    draft_saved=true
+    break
+  fi
+  sleep 1
+done
+if [ "$draft_saved" != true ]; then
+  echo "Editor closed, but did not confirm automatic draft save."
+  cat emulator-screenshots/draft-autosave-logcat.txt || true
   collect_capture_diagnostics draft-autosave-failure
   exit 11
 fi
+echo "PASS: editor close triggered automatic local draft save."
 
-if ! timeout -k 2s 15s adb -s emulator-5554 shell am start \
+# The editor's MP4 save picker can remain the foreground system activity after
+# returning from export. Restart the app's home activity explicitly so the
+# draft assertion inspects MathMotor rather than DocumentsUI.
+if ! timeout -k 2s 15s adb -s emulator-5554 shell am start -S \
   -n com.mathmotor.video.next/com.mathmotor.video.MainActivity; then
   echo "Could not return to the home screen to verify the saved draft."
   collect_capture_diagnostics draft-home-launch-failure
   exit 12
 fi
 sleep 3
+# Confirm MathMotor is still foregrounded. A swipe beginning at y=1850 lands
+# in Android's bottom gesture-navigation area on this 1920px emulator and
+# launches the system home screen instead of scrolling the app.
+focused_home="$(timeout -k 2s 5s adb -s emulator-5554 shell dumpsys window 2>/dev/null | grep -E 'mCurrentFocus|mFocusedApp' | tail -n 2 || true)"
+if ! echo "$focused_home" | grep -q "com.mathmotor.video.next"; then
+  echo "MathMotor home activity is not foregrounded before draft-list inspection: $focused_home"
+  collect_capture_diagnostics draft-home-not-focused
+  exit 12
+fi
+# Keep the gesture inside the app content, above its fixed bottom navigation
+# and safely away from Android's system navigation gesture region.
+for _ in 1 2 3; do
+  timeout -k 2s 8s adb -s emulator-5554 shell input swipe 540 1650 540 700 450 || true
+  sleep 1
+done
+focused_home="$(timeout -k 2s 5s adb -s emulator-5554 shell dumpsys window 2>/dev/null | grep -E 'mCurrentFocus|mFocusedApp' | tail -n 2 || true)"
+if ! echo "$focused_home" | grep -q "com.mathmotor.video.next"; then
+  echo "Draft-list scroll unexpectedly left MathMotor: $focused_home"
+  collect_capture_diagnostics draft-home-scroll-left-app
+  exit 12
+fi
 dump_hierarchy drafts-home.xml emulator-screenshots/drafts-home-window.xml || true
-if [ -s emulator-screenshots/drafts-home-window.xml ] && ! grep -q "TASLAKLAR" emulator-screenshots/drafts-home-window.xml; then
+if [ -s emulator-screenshots/drafts-home-window.xml ] && ! grep -Eqi "TASLAKLAR|Taslaklar" emulator-screenshots/drafts-home-window.xml; then
   echo "Local draft was saved, but the home screen did not expose the draft section."
   collect_capture_diagnostics draft-home-section-missing
   exit 13
@@ -1135,7 +2612,181 @@ if ! take_screen emulator-screenshots/home-with-drafts.png; then
   exit 6
 fi
 
-echo "Step 12/12: save diagnostics"
+echo "Step 12b/12: verify home-screen photo opens as a full-frame editable layer"
+timeout -k 2s 8s adb -s emulator-5554 shell am force-stop com.mathmotor.video.next || true
+timeout -k 2s 5s adb -s emulator-5554 logcat -c || true
+if ! timeout -k 2s 15s adb -s emulator-5554 shell am start \
+  -n com.mathmotor.video.next/com.mathmotor.video.EditorTestEntryActivity \
+  --es video_uri "file://$app_internal_video" \
+  --es initial_photo_uri "file://$app_internal_photo" \
+  --ez publish_initial_photo_to_media_store true \
+  --ez timeline_sync_test true | tee emulator-screenshots/initial-photo-launch.txt; then
+  echo "Could not launch the editor through the debug-only initial-photo entry point."
+  collect_capture_diagnostics initial-photo-entry-launch-failure
+  exit 60
+fi
+initial_photo_ready=false
+for attempt in $(seq 1 20); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorSmokeTest:I \
+    > emulator-screenshots/initial-photo-logcat.txt 2>&1 || true
+  if grep -Fq "EDITOR_SMOKE_INITIAL_PHOTO_FULL_FRAME scale=1.0 xFraction=0.5 yFraction=0.5 opacity=1.0" \
+      emulator-screenshots/initial-photo-logcat.txt; then
+    initial_photo_ready=true
+    break
+  fi
+  sleep 1
+done
+if [ "$initial_photo_ready" != true ]; then
+  echo "Initial home photo did not produce the expected full-frame transform marker."
+  collect_capture_diagnostics initial-photo-full-frame-transform-missing
+  exit 61
+fi
+
+photo_visual_ready=false
+for attempt in $(seq 1 15); do
+  if ! take_screen emulator-screenshots/editor-initial-photo-full-frame.png; then
+    collect_capture_diagnostics initial-photo-preview-capture-failure
+    exit 6
+  fi
+  photo_metrics="$(python3 - emulator-screenshots/editor-initial-photo-full-frame.png <<'PY'
+from PIL import Image
+import sys
+
+image = Image.open(sys.argv[1]).convert("RGB")
+points = []
+for y in range(image.height):
+    for x in range(image.width):
+        red, green, blue = image.getpixel((x, y))
+        if red > 180 and blue > 180 and green < 110:
+            points.append((x, y))
+if len(points) < 100:
+    raise SystemExit(1)
+xs = [x for x, _ in points]
+ys = [y for _, y in points]
+left, right = min(xs), max(xs)
+top, bottom = min(ys), max(ys)
+width, height = right - left + 1, bottom - top + 1
+area = width * height
+fill = len(points) / area if area else 0
+ratio = width / height if height else 0
+print(width, height, len(points), fill, ratio)
+if height < image.height * 0.30:
+    raise SystemExit(2)
+if width < image.width * 0.30:
+    raise SystemExit(3)
+if abs(ratio - 9 / 16) > 0.03:
+    raise SystemExit(4)
+if fill < 0.88:
+    raise SystemExit(5)
+PY
+)" && {
+    photo_visual_ready=true
+    echo "Full-frame photo pixels: $photo_metrics"
+    break
+  }
+  sleep 1
+done
+if [ "$photo_visual_ready" != true ]; then
+  echo "The initial photo did not fill the portrait project canvas; pixel bounds/fill check failed."
+  collect_capture_diagnostics initial-photo-not-full-frame
+  exit 62
+fi
+dump_hierarchy initial-photo-preview.xml emulator-screenshots/initial-photo-preview.xml || true
+if [ ! -s emulator-screenshots/initial-photo-preview.xml ]; then
+  echo "Could not inspect the photo-only editor preview accessibility hierarchy."
+  collect_capture_diagnostics initial-photo-preview-hierarchy-missing
+  exit 63
+fi
+if grep -Fq 'content-desc="Galeriden video ekle"' emulator-screenshots/initial-photo-preview.xml || \
+   grep -Fq 'text="Videonu ekle"' emulator-screenshots/initial-photo-preview.xml; then
+  echo "The video-empty-state card remained visible over the photo-only project preview."
+  collect_capture_diagnostics initial-photo-empty-card-still-visible
+  exit 64
+fi
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTest:I \
+  > emulator-screenshots/initial-photo-canvas-logcat.txt 2>&1 || true
+echo "PASS: home-screen photo used the full-frame transform, rendered across the 9:16 canvas, and replaced the empty-video card."
+
+echo "Step 12c/13: verify content:// photo survives a complete app restart"
+cp emulator-screenshots/initial-photo-logcat.txt emulator-screenshots/content-photo-import-logcat.txt
+if ! grep -Fq "EDITOR_SMOKE_MEDIASTORE_CONTENT_URI uri=content://" emulator-screenshots/content-photo-import-logcat.txt; then
+  echo "Debug entry did not publish the gallery fixture as a content:// URI."
+  collect_capture_diagnostics content-photo-media-uri-missing
+  exit 65
+fi
+if ! grep -Fq "OVERLAY_URI_COPIED_TO_PRIVATE_STORAGE source=content://" emulator-screenshots/content-photo-import-logcat.txt; then
+  echo "The content:// gallery fixture was not copied into durable app-private storage."
+  collect_capture_diagnostics content-photo-not-made-durable
+  exit 65
+fi
+if ! dump_hierarchy content-photo-editor.xml emulator-screenshots/content-photo-editor.xml; then
+  echo "Could not inspect editor before saving the content:// photo draft."
+  collect_capture_diagnostics content-photo-editor-hierarchy-missing
+  exit 66
+fi
+close_photo_editor="$(python3 - emulator-screenshots/content-photo-editor.xml <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+root=ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("content-desc") == "Düzenleyiciyi kapat" and node.attrib.get("clickable") == "true":
+        m=re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",node.attrib.get("bounds",""))
+        if m:
+            x1,y1,x2,y2=map(int,m.groups()); print((x1+x2)//2,(y1+y2)//2); break
+PY
+)"
+if [ -z "$close_photo_editor" ]; then
+  echo "Could not locate the editor close action for the content:// photo draft."
+  collect_capture_diagnostics content-photo-close-control-missing
+  exit 67
+fi
+read -r close_photo_x close_photo_y <<< "$close_photo_editor"
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$close_photo_x" "$close_photo_y"
+content_photo_draft_id=""
+for attempt in $(seq 1 15); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s MathMotorDraft:I > emulator-screenshots/content-photo-draft-save-logcat.txt 2>&1 || true
+  content_photo_draft_id="$(sed -n 's/.*LOCAL_DRAFT_SAVED id=\([^ ]*\).*/\1/p' emulator-screenshots/content-photo-draft-save-logcat.txt | tail -n 1)"
+  if [[ "$content_photo_draft_id" =~ ^[0-9a-fA-F-]{36}$ ]]; then break; fi
+  sleep 1
+done
+if ! [[ "$content_photo_draft_id" =~ ^[0-9a-fA-F-]{36}$ ]]; then
+  echo "The content:// photo project did not produce a saved local draft ID."
+  cat emulator-screenshots/content-photo-draft-save-logcat.txt || true
+  collect_capture_diagnostics content-photo-draft-save-failed
+  exit 68
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell am force-stop com.mathmotor.video.next
+timeout -k 2s 5s adb -s emulator-5554 logcat -c || true
+if ! timeout -k 2s 15s adb -s emulator-5554 shell am start \
+  -n com.mathmotor.video.next/com.mathmotor.video.EditorTestEntryActivity \
+  --es draft_id "$content_photo_draft_id" | tee emulator-screenshots/content-photo-draft-reopen.txt; then
+  echo "Could not relaunch the saved photo draft after force-stop."
+  collect_capture_diagnostics content-photo-draft-relaunch-failed
+  exit 69
+fi
+content_photo_restored=false
+for attempt in $(seq 1 20); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorSmokeTest:I > emulator-screenshots/content-photo-draft-restore-logcat.txt 2>&1 || true
+  if grep -Fq "EDITOR_SMOKE_DRAFT_RESTORED id=$content_photo_draft_id overlays=1" emulator-screenshots/content-photo-draft-restore-logcat.txt; then
+    content_photo_restored=true
+    break
+  fi
+  sleep 1
+done
+if [ "$content_photo_restored" != true ]; then
+  echo "The saved draft did not restore exactly one photo overlay after the app process was killed."
+  cat emulator-screenshots/content-photo-draft-restore-logcat.txt || true
+  collect_capture_diagnostics content-photo-draft-restore-failed
+  exit 70
+fi
+sleep 2
+if ! take_screen emulator-screenshots/content-photo-draft-restored.png; then
+  collect_capture_diagnostics content-photo-draft-restored-capture-failure
+  exit 6
+fi
+echo "PASS: content:// gallery photo was copied durably, saved in a draft, and restored after force-stop/relaunch."
+
+
+echo "Step 13/13: save diagnostics"
 timeout -k 2s 8s adb -s emulator-5554 logcat -d > emulator-screenshots/logcat.txt || true
 test -s emulator-screenshots/home.png
 test -s emulator-screenshots/editor-empty.png
@@ -1150,4 +2801,9 @@ test -s emulator-screenshots/editor-panel-closed.png
 test -s emulator-screenshots/editor-panel-layout-logcat.txt
 test -s emulator-screenshots/timeline-sync-validation.txt
 test -s emulator-screenshots/home-with-drafts.png
+test -s emulator-screenshots/editor-initial-photo-full-frame.png
+test -s emulator-screenshots/initial-photo-logcat.txt
+test -s emulator-screenshots/initial-photo-preview.xml
+test -s emulator-screenshots/content-photo-draft-restored.png
+test -s emulator-screenshots/content-photo-draft-restore-logcat.txt
 echo "Home, empty editor, initial/playing editor, two-stage clip tool strip/detail/return geometry, live timeline sync, and autosaved-draft screenshots captured."
