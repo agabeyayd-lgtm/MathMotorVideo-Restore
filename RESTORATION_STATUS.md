@@ -1166,3 +1166,10 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Added one shared `updatePreviewEmptyStateVisibility()` rule: the card appears only when the project has no video clips, no image/video overlays, and no non-empty text layers. It is refreshed when an overlay is added/removed, a project is restored, video lanes change, or text layers change.
 - The API 35 photo-only smoke now captures a portrait magenta image after opening through the actual debug-only equivalent of the home photo route. Its pixel-bounds/fill assertion will catch an empty-state card covering the canvas, as well as a non-full-frame placement.
 - Unit/build/emulator verification is pending for this follow-up source change. No app version, signing or release workflow was changed.
+
+
+## Photo-only empty-card smoke assertion — 2026-11-07
+
+- Extended the full-frame photo smoke so that, after verifying the portrait magenta pixel bounds and fill ratio, it also captures the photo-only preview accessibility hierarchy.
+- The test now explicitly rejects the empty-state content description `Galeriden video ekle` and label `Videonu ekle` while the initial photo layer is active. This distinguishes a genuinely photo-ready preview from one where the photo exists underneath a blocking empty-video card.
+- Latest script commit: `88235b6fb700828e5292e7bd571c9ef97267e063`. Full unit/build and API 35 emulator verification are running for this updated head; no success is claimed until those exact checks complete.
