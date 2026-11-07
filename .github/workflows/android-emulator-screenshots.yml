@@ -157,21 +157,25 @@ jobs:
           fi
 
       - name: Install Android SDK emulator packages
+        timeout-minutes: 18
         env:
           ANDROID_HOME: /usr/local/lib/android/sdk
         run: |
-          set -e
+          set -euo pipefail
           export ANDROID_AVD_HOME="$HOME/.android/avd"
           mkdir -p "$ANDROID_AVD_HOME"
           echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
           echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
           echo "$ANDROID_HOME/emulator" >> "$GITHUB_PATH"
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install \
+          echo "Accepting Android SDK licences (180s limit)..."
+          timeout -k 10s 180s bash -o pipefail -c \
+            'yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses'
+          echo "Installing API 35 emulator/system image packages (780s limit)..."
+          timeout -k 10s 780s "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --verbose --install \
             "platform-tools" "platforms;android-35" "emulator" "system-images;android-35;google_apis;x86_64"
-          printf 'no\n' | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd \
-            --force --name mathmotor-api35 \
-            --package "system-images;android-35;google_apis;x86_64" --device "pixel_2"
+          echo "Creating the API 35 virtual device..."
+          timeout -k 10s 120s bash -o pipefail -c \
+            'printf "no\\n" | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd --force --name mathmotor-api35 --package "system-images;android-35;google_apis;x86_64" --device "pixel_2"'
           test -s "$ANDROID_AVD_HOME/mathmotor-api35.ini"
           "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" list avd
 
