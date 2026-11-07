@@ -425,6 +425,21 @@ if ! timeout -k 2s 30s adb -s emulator-5554 shell -T \
 fi
 timeout -k 2s 8s adb -s emulator-5554 shell run-as com.mathmotor.video.next ls -l files/editor-test-overlay.png 2>&1 | tee -a emulator-screenshots/video-fixture-private-copy.txt
 
+photo_fixture="app/build/test-fixtures/editor-test-photo.png"
+app_internal_photo="/data/user/0/com.mathmotor.video.next/files/editor-test-photo.png"
+if [ ! -s "$photo_fixture" ]; then
+  echo "Missing full-frame home-photo fixture: $photo_fixture"
+  exit 3
+fi
+if ! timeout -k 2s 30s adb -s emulator-5554 shell -T \
+  "run-as com.mathmotor.video.next sh -c 'cat > files/editor-test-photo.png'" \
+  < "$photo_fixture" 2>&1 | tee -a emulator-screenshots/video-fixture-private-copy.txt; then
+  echo "Streaming the full-frame photo fixture into the app sandbox failed."
+  exit 10
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell run-as com.mathmotor.video.next ls -l files/editor-test-photo.png \
+  2>&1 | tee -a emulator-screenshots/video-fixture-private-copy.txt
+
 music_fixture="app/build/test-fixtures/editor-test-music.wav"
 sound_fixture="app/build/test-fixtures/editor-test-sound.wav"
 app_internal_music="/data/user/0/com.mathmotor.video.next/files/editor-test-music.wav"
@@ -2371,7 +2386,88 @@ if ! take_screen emulator-screenshots/home-with-drafts.png; then
   exit 6
 fi
 
-echo "Step 12/12: save diagnostics"
+echo "Step 12b/12: verify home-screen photo opens as a full-frame editable layer"
+timeout -k 2s 8s adb -s emulator-5554 shell am force-stop com.mathmotor.video.next || true
+timeout -k 2s 5s adb -s emulator-5554 logcat -c || true
+if ! timeout -k 2s 15s adb -s emulator-5554 shell am start \
+  -n com.mathmotor.video.next/com.mathmotor.video.EditorTestEntryActivity \
+  --es initial_photo_uri "file://$app_internal_photo" \
+  --ez timeline_sync_test true | tee emulator-screenshots/initial-photo-launch.txt; then
+  echo "Could not launch the editor through the debug-only initial-photo entry point."
+  collect_capture_diagnostics initial-photo-entry-launch-failure
+  exit 60
+fi
+initial_photo_ready=false
+for attempt in $(seq 1 20); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorSmokeTest:I \
+    > emulator-screenshots/initial-photo-logcat.txt 2>&1 || true
+  if grep -Fq "EDITOR_SMOKE_INITIAL_PHOTO_FULL_FRAME scale=1.0 xFraction=0.5 yFraction=0.5 opacity=1.0" \
+      emulator-screenshots/initial-photo-logcat.txt; then
+    initial_photo_ready=true
+    break
+  fi
+  sleep 1
+done
+if [ "$initial_photo_ready" != true ]; then
+  echo "Initial home photo did not produce the expected full-frame transform marker."
+  collect_capture_diagnostics initial-photo-full-frame-transform-missing
+  exit 61
+fi
+
+photo_visual_ready=false
+for attempt in $(seq 1 15); do
+  if ! take_screen emulator-screenshots/editor-initial-photo-full-frame.png; then
+    collect_capture_diagnostics initial-photo-preview-capture-failure
+    exit 6
+  fi
+  photo_metrics="$(python3 - emulator-screenshots/editor-initial-photo-full-frame.png <<'PY'
+from PIL import Image
+import sys
+
+image = Image.open(sys.argv[1]).convert("RGB")
+points = []
+for y in range(image.height):
+    for x in range(image.width):
+        red, green, blue = image.getpixel((x, y))
+        if red > 180 and blue > 180 and green < 110:
+            points.append((x, y))
+if len(points) < 100:
+    raise SystemExit(1)
+xs = [x for x, _ in points]
+ys = [y for _, y in points]
+left, right = min(xs), max(xs)
+top, bottom = min(ys), max(ys)
+width, height = right - left + 1, bottom - top + 1
+area = width * height
+fill = len(points) / area if area else 0
+ratio = width / height if height else 0
+print(width, height, len(points), fill, ratio)
+if height < image.height * 0.30:
+    raise SystemExit(2)
+if width < image.width * 0.30:
+    raise SystemExit(3)
+if abs(ratio - 9 / 16) > 0.03:
+    raise SystemExit(4)
+if fill < 0.88:
+    raise SystemExit(5)
+PY
+)" && {
+    photo_visual_ready=true
+    echo "Full-frame photo pixels: $photo_metrics"
+    break
+  }
+  sleep 1
+done
+if [ "$photo_visual_ready" != true ]; then
+  echo "The initial photo did not fill the portrait project canvas; pixel bounds/fill check failed."
+  collect_capture_diagnostics initial-photo-not-full-frame
+  exit 62
+fi
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTest:I \
+  > emulator-screenshots/initial-photo-canvas-logcat.txt 2>&1 || true
+echo "PASS: home-screen photo used the full-frame transform and rendered across the 9:16 project canvas."
+
+echo "Step 13/13: save diagnostics"
 timeout -k 2s 8s adb -s emulator-5554 logcat -d > emulator-screenshots/logcat.txt || true
 test -s emulator-screenshots/home.png
 test -s emulator-screenshots/editor-empty.png
@@ -2386,4 +2482,6 @@ test -s emulator-screenshots/editor-panel-closed.png
 test -s emulator-screenshots/editor-panel-layout-logcat.txt
 test -s emulator-screenshots/timeline-sync-validation.txt
 test -s emulator-screenshots/home-with-drafts.png
+test -s emulator-screenshots/editor-initial-photo-full-frame.png
+test -s emulator-screenshots/initial-photo-logcat.txt
 echo "Home, empty editor, initial/playing editor, two-stage clip tool strip/detail/return geometry, live timeline sync, and autosaved-draft screenshots captured."
