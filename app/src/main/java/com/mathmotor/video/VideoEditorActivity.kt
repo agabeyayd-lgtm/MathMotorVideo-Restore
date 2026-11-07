@@ -2229,6 +2229,31 @@ class VideoEditorActivity : Activity() {
         (previewFrame.parent as? View)?.requestLayout()
     }
 
+    /** Log the actual post-IME location of the sticky text-panel return button for emulator taps. */
+    private fun logTextPanelReturnBoundsAfterLayout() {
+        if (!timelineSyncTestEnabled || !::editorPanelReturnButton.isInitialized) return
+        val target = editorPanelReturnButton
+        val observer = target.viewTreeObserver
+        val listener = object : android.view.ViewTreeObserver.OnPreDrawListener {
+            override fun onPreDraw(): Boolean {
+                if (target.viewTreeObserver.isAlive) {
+                    target.viewTreeObserver.removeOnPreDrawListener(this)
+                }
+                val location = IntArray(2)
+                target.getLocationOnScreen(location)
+                val visible = target.isShown && target.width > 0 && target.height > 0
+                android.util.Log.i(
+                    "EditorTouchTest",
+                    "TEXT_PANEL_RETURN_BOUNDS visible=$visible x=${location[0]} y=${location[1]} " +
+                        "width=${target.width} height=${target.height}"
+                )
+                return true
+            }
+        }
+        observer.addOnPreDrawListener(listener)
+        target.requestLayout()
+    }
+
     private fun installResponsiveEditorLayout(
         root: LinearLayout,
         previewFrame: FrameLayout,
@@ -2349,6 +2374,14 @@ class VideoEditorActivity : Activity() {
                 rulerAwareTimelineRefresh()
                 panelScroll.requestLayout()
                 root.requestLayout()
+                if (!imeVisible && activeEditorPanel == "text" &&
+                    editorPanelScroll.visibility == View.VISIBLE
+                ) {
+                    // Keyboard dismissal moves this sibling control. Capture its
+                    // measured post-layout bounds for the smoke test without dumping
+                    // the large timeline accessibility hierarchy a second time.
+                    logTextPanelReturnBoundsAfterLayout()
+                }
             } finally {
                 applyingResponsiveLayout = false
             }
