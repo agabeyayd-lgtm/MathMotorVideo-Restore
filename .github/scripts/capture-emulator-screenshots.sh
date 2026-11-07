@@ -2733,40 +2733,75 @@ for attempt in $(seq 1 15); do
     collect_capture_diagnostics initial-photo-preview-capture-failure
     exit 6
   fi
-  photo_metrics="$(python3 - emulator-screenshots/editor-initial-photo-full-frame.png <<'PY'
+  # Measure against the actual project canvas, not the wider dark preview stage.
+  # A 9:16 image correctly occupies only the centered portrait canvas on a landscape stage.
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTest:I \
+    > emulator-screenshots/initial-photo-canvas-logcat.txt 2>&1 || true
+  photo_metrics="$(python3 - emulator-screenshots/editor-initial-photo-full-frame.png emulator-screenshots/initial-photo-canvas-logcat.txt <<'PY'
 from PIL import Image
+import re
 import sys
 
 image = Image.open(sys.argv[1]).convert("RGB")
+log_lines = open(sys.argv[2], errors="replace").read().splitlines()
+matches = [line for line in log_lines if "PREVIEW_CANVAS_BOUNDS" in line]
+if not matches:
+    raise SystemExit("No measured project-canvas bounds were logged for the photo-only editor.")
+match = re.search(
+    r"stage=(\d+)x(\d+) canvas=(\d+)x(\d+) "
+    r"offset=(\d+),(\d+) origin=(-?\d+),(-?\d+) aspect=([0-9.]+)",
+    matches[-1],
+)
+if not match:
+    raise SystemExit("Malformed project-canvas bounds: " + matches[-1])
+stage_w, stage_h, canvas_w, canvas_h, offset_x, offset_y, origin_x, origin_y = map(
+    int, match.groups()[:8]
+)
+aspect = float(match.group(9))
+left = origin_x + offset_x
+top = origin_y + offset_y
+right = left + canvas_w
+bottom = top + canvas_h
+if left < 0 or top < 0 or right > image.width or bottom > image.height:
+    raise SystemExit(
+        f"Measured canvas is outside the screenshot: {left},{top}..{right},{bottom} in {image.size}"
+    )
+if canvas_w <= 0 or canvas_h <= 0 or abs(canvas_w / canvas_h - aspect) > 0.01:
+    raise SystemExit(f"Invalid measured project-canvas aspect: {canvas_w}x{canvas_h}, aspect={aspect}")
+canvas = image.crop((left, top, right, bottom))
 points = []
-for y in range(image.height):
-    for x in range(image.width):
-        red, green, blue = image.getpixel((x, y))
+for y in range(canvas.height):
+    for x in range(canvas.width):
+        red, green, blue = canvas.getpixel((x, y))
         if red > 180 and blue > 180 and green < 110:
             points.append((x, y))
 if len(points) < 100:
-    raise SystemExit(1)
+    raise SystemExit("No meaningful magenta photo pixels were found inside the project canvas.")
 xs = [x for x, _ in points]
 ys = [y for _, y in points]
-left, right = min(xs), max(xs)
-top, bottom = min(ys), max(ys)
-width, height = right - left + 1, bottom - top + 1
+pixel_left, pixel_right = min(xs), max(xs)
+pixel_top, pixel_bottom = min(ys), max(ys)
+width = pixel_right - pixel_left + 1
+height = pixel_bottom - pixel_top + 1
 area = width * height
 fill = len(points) / area if area else 0
 ratio = width / height if height else 0
-print(width, height, len(points), fill, ratio)
-if height < image.height * 0.30:
+print(
+    width, height, len(points), fill, ratio,
+    f"canvas={canvas_w}x{canvas_h}@{left},{top}"
+)
+if height < canvas.height * 0.95:
     raise SystemExit(2)
-if width < image.width * 0.30:
+if width < canvas.width * 0.95:
     raise SystemExit(3)
-if abs(ratio - 9 / 16) > 0.03:
+if abs(ratio - aspect) > 0.03:
     raise SystemExit(4)
 if fill < 0.88:
     raise SystemExit(5)
 PY
 )" && {
     photo_visual_ready=true
-    echo "Full-frame photo pixels: $photo_metrics"
+    echo "Full-frame photo pixels inside measured project canvas: $photo_metrics"
     break
   }
   sleep 1
