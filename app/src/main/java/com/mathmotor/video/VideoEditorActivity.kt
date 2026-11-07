@@ -2218,15 +2218,15 @@ class VideoEditorActivity : Activity() {
             !::previewFrame.isInitialized ||
             !::editorTimelineCard.isInitialized
         ) return
-        val previewLocation = IntArray(2)
+        val canvasLocation = IntArray(2)
         val timelineLocation = IntArray(2)
-        previewFrame.getLocationOnScreen(previewLocation)
+        previewCanvas.getLocationOnScreen(canvasLocation)
         editorTimelineCard.getLocationOnScreen(timelineLocation)
         android.util.Log.i(
             "EditorPanelLayoutTest",
             "EDITOR_PANEL_GEOMETRY state=" + state +
-                " preview=" + previewFrame.width + "x" + previewFrame.height + "@" +
-                previewLocation[0] + "," + previewLocation[1] +
+                " canvas=" + previewCanvas.width + "x" + previewCanvas.height + "@" +
+                canvasLocation[0] + "," + canvasLocation[1] +
                 " timeline=" + editorTimelineCard.width + "x" + editorTimelineCard.height + "@" +
                 timelineLocation[0] + "," + timelineLocation[1]
         )
