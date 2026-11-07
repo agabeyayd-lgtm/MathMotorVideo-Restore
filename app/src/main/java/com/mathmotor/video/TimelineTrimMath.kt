@@ -448,7 +448,7 @@ internal object TimelineVideoMath {
         val requestedCenterMs = requestedStartMs.coerceAtLeast(0L) + moving.durationMs / 2L
         val insertionIndex = others.indexOfFirst { otherIndex ->
             val other = safe[otherIndex]
-            requestedCenterMs < other.timelineStartMs + other.durationMs / 2L
+            requestedCenterMs <= other.timelineStartMs + other.durationMs / 2L
         }.let { if (it < 0) others.size else it }
         val reorderedIndices = others.toMutableList().apply {
             add(insertionIndex, movingIndex)

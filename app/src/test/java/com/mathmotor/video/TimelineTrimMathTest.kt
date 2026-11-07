@@ -373,6 +373,24 @@ class TimelineVideoMathTest {
     }
 
     @Test
+    fun droppingAtTheExactFirstClipCenterInsertsBeforeIt() {
+        val segments = listOf(
+            TimelineVideoSegment(0L, 0L, 4_000L, 4_000L),
+            TimelineVideoSegment(4_000L, 0L, 4_000L, 4_000L)
+        )
+
+        val plan = TimelineVideoMath.reorderForDrop(
+            segments = segments,
+            movingIndex = 1,
+            requestedStartMs = 0L
+        )
+
+        assertEquals(listOf(1, 0), plan?.orderedClipIndices)
+        assertEquals(0L, plan?.timelineStartByClipIndex?.get(1))
+        assertEquals(4_000L, plan?.timelineStartByClipIndex?.get(0))
+    }
+
+    @Test
     fun droppingTheFirstClipAfterTheLastClipMovesItToTheEnd() {
         val segments = listOf(
             TimelineVideoSegment(0L, 0L, 2_000L, 2_000L),

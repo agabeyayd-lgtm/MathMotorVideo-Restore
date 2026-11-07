@@ -495,6 +495,7 @@ timeout -k 2s 15s adb -s emulator-5554 shell am start \
   --es test_sound_uri "file://$app_internal_sound" \
   --es draft_id "11111111-1111-4111-8111-111111111111" \
   --ez timeline_sync_test true \
+  --ez timeline_test_split_after_replacement true \
   --ef timeline_test_px_per_sec_dp 120 | tee emulator-screenshots/editor-video-launch.txt
 
 # Capture the emulator touch-slop immediately after the test activity starts.
@@ -2512,6 +2513,90 @@ if ! python3 .github/scripts/assert-timeline-sync.py emulator-screenshots/timeli
   collect_capture_diagnostics timeline-sync-assertion-failure
   exit 16
 fi
+
+echo "Step 11b: verify split has no seam, then move a clip with one direct finger drag"
+split_marker=""
+for attempt in $(seq 1 12); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineSyncTest:I \
+    > emulator-screenshots/video-split-drag-logcat.txt 2>&1 || true
+  split_marker="$(grep "VIDEO_CLIP_SPLIT" emulator-screenshots/video-split-drag-logcat.txt | tail -n 1 || true)"
+  if [ -n "$split_marker" ]; then break; fi
+  sleep 1
+done
+if [ -z "$split_marker" ]; then
+  echo "The production split handler did not run for the deterministic video fixture."
+  collect_capture_diagnostics video-clip-split-marker-missing
+  exit 92
+fi
+if ! echo "$split_marker" | grep -Eq 'gapMs=0([[:space:]]|$)'; then
+  echo "Split left a non-zero timeline seam: $split_marker"
+  collect_capture_diagnostics video-clip-split-seam
+  exit 93
+fi
+if ! dump_hierarchy video-split-before-drag.xml emulator-screenshots/video-split-before-drag.xml; then
+  echo "Could not inspect both split segments before the direct-drag test."
+  collect_capture_diagnostics video-split-before-drag-hierarchy
+  exit 94
+fi
+clip_drag_coords="$(python3 - emulator-screenshots/video-split-before-drag.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+bounds = {}
+for node in root.iter("node"):
+    desc = node.attrib.get("content-desc", "")
+    if not (desc.startswith("Klip 1:") or desc.startswith("Klip 2:")):
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if not match:
+        continue
+    key = 1 if desc.startswith("Klip 1:") else 2
+    if key not in bounds or node.attrib.get("clickable") == "true":
+        bounds[key] = tuple(map(int, match.groups()))
+if set(bounds) != {1, 2}:
+    raise SystemExit(f"Expected two split clip hit targets; found {bounds}")
+first = bounds[1]
+second = bounds[2]
+start_x = (second[0] + second[2]) // 2
+start_y = (second[1] + second[3]) // 2
+drop_x = first[0] + 10
+if start_x <= drop_x:
+    raise SystemExit(f"Second segment is not to the right of the first: first={first}, second={second}")
+print(start_x, start_y, drop_x)
+PY
+)"
+if [ -z "$clip_drag_coords" ]; then
+  echo "Could not resolve the second split clip's direct-drag hit target."
+  collect_capture_diagnostics video-split-drag-target-missing
+  exit 95
+fi
+read -r drag_start_x drag_y drag_drop_x <<< "$clip_drag_coords"
+timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$drag_start_x" "$drag_y" "$drag_drop_x" "$drag_y" 700
+drag_marker=""
+for attempt in $(seq 1 12); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineSyncTest:I \
+    > emulator-screenshots/video-split-drag-logcat.txt 2>&1 || true
+  drag_marker="$(grep "VIDEO_CLIP_DROP" emulator-screenshots/video-split-drag-logcat.txt | tail -n 1 || true)"
+  if [ -n "$drag_marker" ]; then break; fi
+  sleep 1
+done
+if [ -z "$drag_marker" ]; then
+  echo "A direct one-finger horizontal clip drag did not reach the production drop handler."
+  collect_capture_diagnostics video-direct-clip-drag-not-received
+  exit 96
+fi
+if ! echo "$drag_marker" | grep -Eq 'ordered=1,0 .*starts=1:0,0:4000'; then
+  echo "The direct drag did not place the second half before the first without a gap: $drag_marker"
+  collect_capture_diagnostics video-direct-clip-drag-order
+  exit 97
+fi
+if ! take_screen emulator-screenshots/video-split-after-drag.png; then
+  collect_capture_diagnostics video-split-after-drag-capture
+  exit 6
+fi
+echo "PASS: split seam is 0ms and one-finger direct drag reordered the two segments without overlap."
 
 echo "Step 12/12: validate automatic draft save and resume list"
 # Android Back is context-sensitive: with a text/overlay layer selected it only

@@ -467,6 +467,7 @@ class VideoEditorActivity : Activity() {
     private var timelinePlayheadMs = 0L
     // Enabled only by the debug emulator test bridge; no telemetry is emitted in normal app use.
     private var timelineSyncTestEnabled = false
+    private var timelineTestSplitAfterReplacement = false
     private var lastTimelineAlignmentSnapshotUptimeMs = 0L
     private var timelineTestReplacementAfterOverlayUri: Uri? = null
     private var timelineTestExpectedReplacementUri: Uri? = null
@@ -628,6 +629,8 @@ class VideoEditorActivity : Activity() {
         if (timelineSyncTestEnabled) {
             timelineTestReplacementAfterOverlayUri =
                 intent.getStringExtra("replacement_video_uri")?.takeIf { it.isNotBlank() }?.let(Uri::parse)
+            timelineTestSplitAfterReplacement =
+                intent.getBooleanExtra("timeline_test_split_after_replacement", false)
         }
         timelineLifecycleState = "created"
         logTimelineLifecycle(
@@ -8695,6 +8698,21 @@ class VideoEditorActivity : Activity() {
                     previewSingleClip = false
                     ensureTimelinePreviewLoaded()
                     seekTimelinePreview(timelinePlayheadMs)
+                }
+                val replacementIndex = timelineTestExpectedReplacementUri?.let { expected ->
+                    clips.indexOfFirst { it.uri == expected }
+                } ?: -1
+                if (timelineSyncTestEnabled && timelineTestSplitAfterReplacement &&
+                    replacementIndex in clips.indices
+                ) {
+                    timelineTestSplitAfterReplacement = false
+                    val replacement = clips[replacementIndex]
+                    val replacementDuration = ClipSpeedMath.timelineDurationMs(
+                        replacement.endMs - replacement.startMs, replacement.speed
+                    )
+                    timelinePlayheadMs = replacement.timelineStartMs + replacementDuration / 2L
+                    selectedClipIndex = replacementIndex
+                    splitSelectedClipAtPlayhead(expectedClipIndex = replacementIndex)
                 }
                 val skipped = uris.size - ready.size
                 status.text = buildString {
