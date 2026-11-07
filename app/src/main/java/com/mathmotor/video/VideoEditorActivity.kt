@@ -5934,6 +5934,7 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun refreshTextLayerList() {
+        updatePreviewEmptyStateVisibility()
         if (!::textLayerList.isInitialized) return
         textLayerList.removeAllViews()
         if (textLayers.isEmpty()) {
