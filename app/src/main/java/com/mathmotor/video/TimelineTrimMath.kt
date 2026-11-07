@@ -426,41 +426,60 @@ internal object TimelineVideoMath {
     }
 
     /**
-     * Builds a CapCut-style insertion/reorder plan for the single main-video lane.
-     * The dragged clip's left edge is compared with neighbouring clip centers, then
-     * all clips are packed sequentially from the original first timestamp. Old overlapping
-     * positions are repaired by the same operation instead of blocking clip movement.
+     * Moves one item independently when it lands in free timeline space. If the
+     * requested range collides with another main-video clip, the drop is interpreted
+     * as an insertion/reorder and the single video lane is packed without overlap.
+     * Legacy overlaps are repaired before either path; independent gaps are preserved.
      */
     fun reorderForDrop(
         segments: List<TimelineVideoSegment>,
         movingIndex: Int,
         requestedStartMs: Long
     ): TimelineVideoReorderPlan? {
-        if (movingIndex !in segments.indices || segments.size < 2) return null
+        if (movingIndex !in segments.indices) return null
         val safe = segments.map(::normalize)
         if (safe.any { it.durationMs <= 0L }) return null
 
-        val timeOrder = segments.indices.sortedWith(
-            compareBy<Int> { safe[it].timelineStartMs }.thenBy { it }
-        )
-        val others = timeOrder.filterNot { it == movingIndex }
-        // requestedStartMs is the dragged block's left edge after applying the
-        // pointer delta. Compare that drop edge with neighbouring clip centers:
-        // using the moving clip center can make a long clip impossible to place
-        // before a shorter first clip, even when its left edge is dropped at zero.
+        val repaired = resolveOverlaps(safe) ?: return null
+        val repairedStarts = repaired.timelineStartByClipIndex
+        val moving = safe[movingIndex]
         val requestedDropStartMs = requestedStartMs.coerceAtLeast(0L)
-        val insertionIndex = others.indexOfFirst { otherIndex ->
-            val other = safe[otherIndex]
-            requestedDropStartMs < other.timelineStartMs + other.durationMs / 2L
-        }.let { if (it < 0) others.size else it }
-        val reorderedIndices = others.toMutableList().apply {
-            add(insertionIndex, movingIndex)
+        val requestedDropEndMs = if (Long.MAX_VALUE - requestedDropStartMs < moving.durationMs) {
+            Long.MAX_VALUE
+        } else {
+            requestedDropStartMs + moving.durationMs
+        }
+        val otherIndices = segments.indices.filterNot { it == movingIndex }
+        val collisionFree = otherIndices.all { index ->
+            val otherStartMs = repairedStarts[index] ?: safe[index].timelineStartMs
+            val otherEndMs = otherStartMs + safe[index].durationMs
+            requestedDropEndMs <= otherStartMs || requestedDropStartMs >= otherEndMs
         }
 
-        // A completed drag on the single CapCut-style video lane closes timeline
-        // gaps even when the clip remains in the same relative order. This prevents
-        // a moved clip from leaving a dead grey hole behind it.
-        var cursorMs = safe[timeOrder.first()].timelineStartMs
+        if (collisionFree) {
+            // Empty-space movement is independent: no neighbouring clip is shifted,
+            // and no artificial snapping removes the gap the user just created.
+            val starts = linkedMapOf<Int, Long>()
+            segments.indices.forEach { index ->
+                starts[index] = if (index == movingIndex) requestedDropStartMs
+                    else repairedStarts[index] ?: safe[index].timelineStartMs
+            }
+            return TimelineVideoReorderPlan(segments.indices.toList(), starts)
+        }
+
+        // Dropping onto an occupied clip means insertion/reorder. Compare the dragged
+        // block's left edge with neighbouring clip centers, then repack the lane.
+        val orderedOthers = repaired.orderedClipIndices.filterNot { it == movingIndex }
+        val insertionIndex = orderedOthers.indexOfFirst { otherIndex ->
+            val otherStartMs = repairedStarts[otherIndex] ?: safe[otherIndex].timelineStartMs
+            requestedDropStartMs < otherStartMs + safe[otherIndex].durationMs / 2L
+        }.let { if (it < 0) orderedOthers.size else it }
+        val reorderedIndices = orderedOthers.toMutableList().apply {
+            add(insertionIndex, movingIndex)
+        }
+        var cursorMs = repaired.orderedClipIndices.firstOrNull()?.let {
+            repairedStarts[it] ?: safe[it].timelineStartMs
+        } ?: 0L
         val starts = linkedMapOf<Int, Long>()
         reorderedIndices.forEach { clipIndex ->
             starts[clipIndex] = cursorMs
