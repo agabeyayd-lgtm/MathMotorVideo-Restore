@@ -468,7 +468,8 @@ internal object TimelineVideoMath {
         }
 
         // Dropping onto an occupied clip means insertion/reorder. Compare the dragged
-        // block's left edge with neighbouring clip centers, then repack the lane.
+        // block's left edge with neighbouring clip centers. Keep every earlier clip in
+        // place, then push only following clips that collide; later intentional gaps stay.
         val orderedOthers = repaired.orderedClipIndices.filterNot { it == movingIndex }
         val insertionIndex = orderedOthers.indexOfFirst { otherIndex ->
             val otherStartMs = repairedStarts[otherIndex] ?: safe[otherIndex].timelineStartMs
@@ -477,13 +478,22 @@ internal object TimelineVideoMath {
         val reorderedIndices = orderedOthers.toMutableList().apply {
             add(insertionIndex, movingIndex)
         }
-        var cursorMs = repaired.orderedClipIndices.firstOrNull()?.let {
-            repairedStarts[it] ?: safe[it].timelineStartMs
-        } ?: 0L
         val starts = linkedMapOf<Int, Long>()
-        reorderedIndices.forEach { clipIndex ->
-            starts[clipIndex] = cursorMs
-            cursorMs += safe[clipIndex].durationMs
+        segments.indices.forEach { index ->
+            starts[index] = repairedStarts[index] ?: safe[index].timelineStartMs
+        }
+        val previousIndex = orderedOthers.getOrNull(insertionIndex - 1)
+        val previousEndMs = previousIndex?.let { index ->
+            (starts[index] ?: safe[index].timelineStartMs) + safe[index].durationMs
+        } ?: 0L
+        val movingStartMs = maxOf(requestedDropStartMs, previousEndMs)
+        starts[movingIndex] = movingStartMs
+        var cursorMs = movingStartMs + moving.durationMs
+        orderedOthers.drop(insertionIndex).forEach { clipIndex ->
+            val originalStartMs = starts[clipIndex] ?: safe[clipIndex].timelineStartMs
+            val adjustedStartMs = maxOf(originalStartMs, cursorMs)
+            starts[clipIndex] = adjustedStartMs
+            cursorMs = adjustedStartMs + safe[clipIndex].durationMs
         }
         return TimelineVideoReorderPlan(reorderedIndices, starts)
     }

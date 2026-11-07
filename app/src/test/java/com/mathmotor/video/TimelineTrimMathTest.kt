@@ -393,6 +393,29 @@ class TimelineVideoMathTest {
     }
 
     @Test
+    fun insertingIntoAnOccupiedClipPushesOnlyCollidingFollowersAndPreservesLaterGaps() {
+        val segments = listOf(
+            TimelineVideoSegment(0L, 0L, 2_000L, 2_000L),
+            TimelineVideoSegment(2_000L, 0L, 2_000L, 2_000L),
+            TimelineVideoSegment(8_000L, 0L, 2_000L, 2_000L),
+            TimelineVideoSegment(12_000L, 0L, 2_000L, 2_000L)
+        )
+
+        val plan = TimelineVideoMath.reorderForDrop(
+            segments = segments,
+            movingIndex = 2,
+            requestedStartMs = 2_000L
+        )!!
+
+        assertEquals(listOf(0, 2, 1, 3), plan.orderedClipIndices)
+        assertEquals(0L, plan.timelineStartByClipIndex[0])
+        assertEquals(2_000L, plan.timelineStartByClipIndex[2])
+        assertEquals(4_000L, plan.timelineStartByClipIndex[1])
+        // The later clip retains its original gap instead of being pulled left.
+        assertEquals(12_000L, plan.timelineStartByClipIndex[3])
+    }
+
+    @Test
     fun aSingleVideoClipCanMoveIntoAnEmptyTimelinePosition() {
         val plan = TimelineVideoMath.reorderForDrop(
             listOf(TimelineVideoSegment(0L, 0L, 4_000L, 4_000L)),
