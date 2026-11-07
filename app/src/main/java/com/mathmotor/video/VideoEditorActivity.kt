@@ -7673,25 +7673,43 @@ class VideoEditorActivity : Activity() {
             status.text = "Bindirme için yalnızca fotoğraf veya video dosyası seçebilirsin."
             return
         }
-        // ACTION_OPEN_DOCUMENT grants a temporary read token unless it is persisted.
-        // Overlay URIs are saved in project JSON and decoded again for the canvas cover;
-        // without this grant the image can disappear after returning to the editor/reopening
-        // a project even though the timeline still contains its clip.
+        // Prefer persistable ACTION_OPEN_DOCUMENT grants. Providers that return a
+        // temporary content:// grant (including photo pickers) are copied into the
+        // app's private files so drafts never depend on an expiring external token.
         val persistedReadGrant = runCatching {
             contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             true
         }.getOrDefault(false)
-        if (!persistedReadGrant && (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
-            android.util.Log.w("EditorSmokeTest", "OVERLAY_URI_PERSIST_FAILED uri=$uri")
-        }
         val title = queryDisplayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Bindirme"
         status.text = "Bindirme dosyası hazırlanıyor…"
         Thread {
-            val aspectRatio = readOverlayAssetAspectRatio(uri, isImage)
+            val durableUri = if (persistedReadGrant || uri.scheme == "file") uri else {
+                runCatching {
+                    val directory = java.io.File(filesDir, "overlay-media")
+                    if (!directory.exists() && !directory.mkdirs()) error("Bindirme klasörü oluşturulamadı.")
+                    val safeExtension = extension.takeIf { it.matches(Regex("[a-z0-9]{1,8}")) }
+                        ?: if (isImage) "img" else "video"
+                    val destination = java.io.File(directory, "overlay-${java.util.UUID.randomUUID()}.$safeExtension")
+                    contentResolver.openInputStream(uri)?.use { input ->
+                        destination.outputStream().use { output -> input.copyTo(output) }
+                    } ?: error("Seçilen dosya okunamadı.")
+                    require(destination.isFile && destination.length() > 0L) { "Seçilen dosya boş." }
+                    Uri.fromFile(destination)
+                }.getOrElse {
+                    runOnUiThread { status.text = "Bindirme dosyası kalıcı olarak saklanamadı: ${it.message}" }
+                    return@Thread
+                }
+            }
+            if (!persistedReadGrant && uri.scheme != "file" &&
+                (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+            ) {
+                android.util.Log.i("EditorSmokeTest", "OVERLAY_URI_COPIED_TO_PRIVATE_STORAGE source=$uri durable=$durableUri")
+            }
+            val aspectRatio = readOverlayAssetAspectRatio(durableUri, isImage)
             val sourceDuration = if (isImage) 60_000L else runCatching {
                 val retriever = MediaMetadataRetriever()
                 try {
-                    retriever.setDataSource(this, uri)
+                    retriever.setDataSource(this, durableUri)
                     retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
                 } finally {
                     retriever.release()
@@ -7717,7 +7735,7 @@ class VideoEditorActivity : Activity() {
                     ?: minOf(sourceDuration, (projectDuration - startMs).coerceAtLeast(1_000L))
                 val overlay = OverlayClip(
                     id = nextOverlayId++,
-                    uri = uri,
+                    uri = durableUri,
                     title = title,
                     isImage = isImage,
                     sourceDurationMs = effectiveSourceDuration,
