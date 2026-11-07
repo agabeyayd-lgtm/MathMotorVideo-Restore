@@ -1557,7 +1557,7 @@ import sys
 states = {}
 pattern = re.compile(
     r"EDITOR_PANEL_GEOMETRY state=([^ ]+) "
-    r"preview=(\d+x\d+@\d+,\d+) "
+    r"canvas=(\d+x\d+@\d+,\d+) "
     r"timeline=(\d+x\d+@\d+,\d+)"
 )
 for line in open(sys.argv[1], errors="replace"):
