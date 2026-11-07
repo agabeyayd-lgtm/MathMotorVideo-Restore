@@ -15,6 +15,7 @@ class EditorTestEntryActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val videoUri = intent.getStringExtra("video_uri")
+        val initialPhotoUri = intent.getStringExtra("initial_photo_uri")
         val overlayUri = intent.getStringExtra("overlay_uri")
         val replacementVideoUri = intent.getStringExtra("replacement_video_uri")
         val testMusicUri = intent.getStringExtra("test_music_uri")
@@ -22,15 +23,20 @@ class EditorTestEntryActivity : Activity() {
         val draftId = intent.getStringExtra("draft_id")
         val timelineSyncTest = intent.getBooleanExtra("timeline_sync_test", false)
         val timelineTestScaleDp = intent.getFloatExtra("timeline_test_px_per_sec_dp", 0f)
-        android.util.Log.i("EditorSmokeTest", "EDITOR_SMOKE_ENTRY_STARTED uri=$videoUri")
-        if (videoUri.isNullOrBlank()) {
+        android.util.Log.i(
+            "EditorSmokeTest",
+            "EDITOR_SMOKE_ENTRY_STARTED uri=" + videoUri +
+                " initialPhoto=" + !initialPhotoUri.isNullOrBlank()
+        )
+        if (videoUri.isNullOrBlank() && initialPhotoUri.isNullOrBlank()) {
             finish()
             return
         }
 
         android.util.Log.i("EditorSmokeTest", "EDITOR_SMOKE_STARTING_EDITOR")
         startActivity(Intent(this, VideoEditorActivity::class.java).apply {
-            putExtra("video_uri", videoUri)
+            if (!videoUri.isNullOrBlank()) putExtra("video_uri", videoUri)
+            if (!initialPhotoUri.isNullOrBlank()) putExtra("initial_overlay_uri", initialPhotoUri)
             if (!overlayUri.isNullOrBlank()) putExtra("overlay_uri", overlayUri)
             if (!replacementVideoUri.isNullOrBlank()) {
                 putExtra("replacement_video_uri", replacementVideoUri)
