@@ -496,7 +496,6 @@ timeout -k 2s 15s adb -s emulator-5554 shell am start \
   --es test_sound_uri "file://$app_internal_sound" \
   --es draft_id "11111111-1111-4111-8111-111111111111" \
   --ez timeline_sync_test true \
-  --ez timeline_test_split_after_replacement true \
   --ef timeline_test_px_per_sec_dp 30 | tee emulator-screenshots/editor-video-launch.txt
 
 # Capture the emulator touch-slop immediately after the test activity starts.
@@ -2550,7 +2549,81 @@ if ! python3 .github/scripts/assert-timeline-sync.py emulator-screenshots/timeli
   exit 16
 fi
 
-echo "Step 11b: verify split has no seam, then move a clip with one direct finger drag"
+echo "Step 11b: split the selected video through its real clip menu, then direct-drag it"
+# The main-video filmstrip is now a move surface. Use its existing stationary
+# long-press context menu to invoke the same production splitSelectedClipAtPlayhead()
+# handler after import/thumbnail readiness has already passed above.
+if ! dump_hierarchy video-before-split.xml emulator-screenshots/video-before-split.xml; then
+  echo "Could not inspect the replacement clip before the split interaction."
+  collect_capture_diagnostics video-before-split-hierarchy
+  exit 91
+fi
+split_clip_coords="$(python3 - emulator-screenshots/video-before-split.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+candidates = []
+for node in root.iter("node"):
+    desc = node.attrib.get("content-desc", "")
+    if not desc.startswith("Klip 1:") or "editor-test-video-replacement.mp4" not in desc:
+        continue
+    match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+    if not match:
+        continue
+    left, top, right, bottom = map(int, match.groups())
+    if right - left >= 40 and bottom - top >= 20:
+        candidates.append((node.attrib.get("clickable") == "true", left, top, right, bottom))
+if not candidates:
+    raise SystemExit("Could not find the replacement VIDEO clip's accessible bounds.")
+_, left, top, right, bottom = max(candidates)
+print((left + right) // 2, (top + bottom) // 2)
+PY
+)"
+if [ -z "$split_clip_coords" ]; then
+  echo "Could not resolve the replacement clip's long-press hit target."
+  collect_capture_diagnostics video-split-long-press-target-missing
+  exit 91
+fi
+read -r split_clip_x split_clip_y <<< "$split_clip_coords"
+timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$split_clip_x" "$split_clip_y" "$split_clip_x" "$split_clip_y" 1100
+sleep 1
+if ! dump_hierarchy video-split-context-menu.xml emulator-screenshots/video-split-context-menu.xml; then
+  echo "The replacement clip's long-press did not expose its context menu."
+  collect_capture_diagnostics video-split-context-menu-missing
+  exit 91
+fi
+split_menu_coords="$(python3 - emulator-screenshots/video-split-context-menu.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+candidates = []
+for node in root.iter("node"):
+    text = " ".join(node.attrib.get("text", "").split())
+    desc = " ".join(node.attrib.get("content-desc", "").split())
+    if text != "Böl" and desc != "Böl":
+        continue
+    match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+    if not match:
+        continue
+    left, top, right, bottom = map(int, match.groups())
+    candidates.append((node.attrib.get("clickable") == "true", left, top, right, bottom))
+if not candidates:
+    raise SystemExit("The clip context menu did not expose the Böl action.")
+_, left, top, right, bottom = max(candidates)
+print((left + right) // 2, (top + bottom) // 2)
+PY
+)"
+if [ -z "$split_menu_coords" ]; then
+  echo "Could not resolve the Böl context-menu action."
+  collect_capture_diagnostics video-split-context-action-missing
+  exit 91
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $split_menu_coords
+
 split_marker=""
 for attempt in $(seq 1 12); do
   timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineSyncTest:I \
@@ -2598,8 +2671,8 @@ second = bounds[2]
 start_x = (second[0] + second[2]) // 2
 start_y = (second[1] + second[3]) // 2
 # Keep the release point at least 48dp from the Android left-edge Back gesture zone.
-drop_x = max(first[0] + 128, 128)
-if start_x <= drop_x or drop_x >= first[2] - 24:
+drop_x = first[0]
+if start_x <= drop_x or drop_x >= first[2] - 24 or drop_x < 128:
     raise SystemExit(f"Second segment or safe drop point is not visible: first={first}, second={second}, drop={drop_x}")
 print(start_x, start_y, drop_x)
 PY

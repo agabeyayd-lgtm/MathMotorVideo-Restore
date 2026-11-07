@@ -51,8 +51,6 @@ class EditorTestEntryActivity : Activity() {
         val draftId = intent.getStringExtra("draft_id")
         val timelineSyncTest = intent.getBooleanExtra("timeline_sync_test", false)
         val timelineTestScaleDp = intent.getFloatExtra("timeline_test_px_per_sec_dp", 0f)
-        val timelineTestSplitAfterReplacement =
-            intent.getBooleanExtra("timeline_test_split_after_replacement", false)
         android.util.Log.i(
             "EditorSmokeTest",
             "EDITOR_SMOKE_ENTRY_STARTED uri=" + videoUri +
@@ -76,9 +74,6 @@ class EditorTestEntryActivity : Activity() {
             if (!draftId.isNullOrBlank()) putExtra("draft_id", draftId)
             if (timelineSyncTest) putExtra("timeline_sync_test", true)
             if (timelineTestScaleDp > 0f) putExtra("timeline_test_px_per_sec_dp", timelineTestScaleDp)
-            if (timelineTestSplitAfterReplacement) {
-                putExtra("timeline_test_split_after_replacement", true)
-            }
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         })
         finish()
