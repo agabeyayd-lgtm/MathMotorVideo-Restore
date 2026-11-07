@@ -2767,6 +2767,7 @@ class VideoEditorActivity : Activity() {
         if (::editorPanelReturnButton.isInitialized) editorPanelReturnButton.visibility = View.GONE
         activeEditorPanel = null
         activeClipTool = null
+        applyPreviewStageSizing()
         setTimelinePanelMode(panelOpen = false)
         updateClipTransformTouchAvailability()
         updateOverlayTransformTouchAvailability()
@@ -2811,6 +2812,7 @@ class VideoEditorActivity : Activity() {
         clipToolsMode = false
         activeClipTool = null
         activeEditorPanel = null
+        applyPreviewStageSizing()
         setTimelinePanelMode(panelOpen = false)
         updateClipTransformTouchAvailability()
         updateOverlayTransformTouchAvailability()
