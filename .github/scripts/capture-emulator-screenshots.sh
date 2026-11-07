@@ -485,6 +485,7 @@ timeout -k 2s 8s adb -s emulator-5554 shell run-as com.mathmotor.video.next ls -
 timeout -k 2s 8s adb -s emulator-5554 shell am force-stop com.mathmotor.video.next || true
 # Avoid -W for the same slow-emulator first-frame wait that affected the home launch.
 # Clear stale markers so only this launch can satisfy the smoke assertion.
+# Test-only zoom keeps both four-second halves visible for the direct drag check.
 timeout -k 2s 5s adb -s emulator-5554 logcat -c || true
 timeout -k 2s 15s adb -s emulator-5554 shell am start \
   -n com.mathmotor.video.next/com.mathmotor.video.EditorTestEntryActivity \
@@ -496,8 +497,6 @@ timeout -k 2s 15s adb -s emulator-5554 shell am start \
   --es draft_id "11111111-1111-4111-8111-111111111111" \
   --ez timeline_sync_test true \
   --ez timeline_test_split_after_replacement true \
-  # Keep both four-second halves visible so a one-finger reorder can cross
-  # the complete segment width; this is test-only zoom, not an app default.
   --ef timeline_test_px_per_sec_dp 30 | tee emulator-screenshots/editor-video-launch.txt
 
 # Capture the emulator touch-slop immediately after the test activity starts.
