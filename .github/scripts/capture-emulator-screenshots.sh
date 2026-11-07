@@ -1591,26 +1591,17 @@ for state in required[1:]:
     preview_value, timeline_value = states[state]
     preview = rect(preview_value)
     timeline = rect(timeline_value)
-    if timeline[0] != base_timeline[0] or timeline[2:] != base_timeline[2:]:
+    if preview != base_preview:
         raise SystemExit(
-            f"Timeline width/height or horizontal position changed during {state}: baseline={base_timeline}, observed={timeline}"
+            f"Project preview changed size or position during {state}: "
+            f"baseline={base_preview}, observed={preview}. The preview must remain fixed."
         )
-    if preview[:2] != base_preview[:2] or preview[2] != base_preview[2] or preview[3] > base_preview[3]:
+    if timeline != base_timeline:
         raise SystemExit(
-            f"Preview did not resize safely inside the workspace during {state}: baseline={base_preview}, observed={preview}"
+            f"Timeline geometry changed while opening/switching/closing {state}: "
+            f"baseline={base_timeline}, observed={timeline}."
         )
-    if state in ("open:clip", "open:clipVolume"):
-        expected_timeline_top = base_timeline[1] - (base_preview[3] - preview[3])
-        if abs(timeline[1] - expected_timeline_top) > 3:
-            raise SystemExit(
-                f"Detail panel did not reserve exactly its preview-space height during {state}: expected timeline top={expected_timeline_top}, observed={timeline[1]}"
-            )
-    else:
-        if timeline[1] != base_timeline[1] or preview != base_preview:
-            raise SystemExit(
-                f"Editor geometry did not restore after closing/switching tools ({state}): baseline preview={base_preview}, observed={preview}, baseline timeline={base_timeline}, observed timeline={timeline}"
-            )
-print("PASS: opening a detail panel moved the unchanged-size timeline upward by exactly the height removed from the preview; closing restored both. Timeline touch bounds never shrank or became covered.")
+print("PASS: the project preview and timeline keep identical measured geometry while tools open, switch, and close.")
 PY
 
 echo "Step 8b/12: open the Proje panel and prove the MP4 button receives a real tap"
