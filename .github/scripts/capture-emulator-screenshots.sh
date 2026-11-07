@@ -2754,7 +2754,7 @@ for line in open(sys.argv[2], errors="replace"):
 if sample is None:
     raise SystemExit("No measured fixed-playhead position/scale for the split reorder.")
 playhead_x, pixels_per_second = sample
-drop_x = round(playhead_x - 2_000 * pixels_per_second / 1000.0)
+drop_x = round(playhead_x - 2_000 * pixels_per_second / 1000.0 - 16)
 if start_x <= drop_x or drop_x < 128:
     raise SystemExit(
         f"Second segment is not right of a safe first-centre target: "
