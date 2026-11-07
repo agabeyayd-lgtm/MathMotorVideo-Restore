@@ -144,7 +144,10 @@ dump_hierarchy() {
     # or while Media3 is finalizing a preview. Retry rather than parsing a file
     # that was never produced; --compressed also reduces hierarchy transfer time.
     if timeout -k 2s 20s adb -s emulator-5554 shell uiautomator dump --compressed "/sdcard/$remote" >/dev/null 2>&1; then
-      if timeout -k 2s 8s adb -s emulator-5554 pull "/sdcard/$remote" "$local_file" >/dev/null 2>&1 \
+      # Large thumbnail-heavy editor trees can take more than 8 seconds to
+      # transfer from API 35 even after the dump itself has completed. Keep a
+      # hard bound, but do not fail a healthy emulator solely on a short pull timeout.
+      if timeout -k 3s 30s adb -s emulator-5554 pull "/sdcard/$remote" "$local_file" >/dev/null 2>&1 \
           && [ -s "$local_file" ]; then
         return 0
       fi
