@@ -796,10 +796,14 @@ from PIL import Image
 import sys
 
 image = Image.open(sys.argv[1]).convert("RGB")
+# Measure only the editor preview region. The timeline below it contains
+# thumbnails from the same fixture color; including those disconnected pixels
+# in the bounding box falsely changes the measured aspect ratio and fill.
+preview = image.crop((0, 0, image.width, int(image.height * 0.55)))
 points = []
-for y in range(image.height):
-    for x in range(image.width):
-        red, green, blue = image.getpixel((x, y))
+for y in range(preview.height):
+    for x in range(preview.width):
+        red, green, blue = preview.getpixel((x, y))
         if red > 180 and blue > 180 and green < 110:
             points.append((x, y))
 if len(points) < 30:
