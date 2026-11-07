@@ -1806,7 +1806,7 @@ canvas_w, canvas_h, offset_x, offset_y, origin_x, origin_y = map(int, match.grou
 # space to the screenshot pixel space before sampling the project canvas.
 root = ET.parse(hierarchy_path).getroot()
 root_node = root.find("node")
-root_bounds = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]",
+root_bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",
                            root_node.attrib.get("bounds", "") if root_node is not None else "")
 if not root_bounds:
     raise SystemExit("Could not read the Android root-window bounds for screenshot scaling.")
