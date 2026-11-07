@@ -187,21 +187,6 @@ if ! grep -q "Güncelle" emulator-screenshots/window.xml; then
   collect_capture_diagnostics home-update-action-missing
   exit 30
 fi
-# A fresh emulator has no saved drafts. Keep restore available, but hide the
-# empty draft heading, helper copy and empty-state placeholder.
-for backup_action in "Taslakları yedekle" "Yedekten geri yükle"; do
-  if ! grep -q "$backup_action" emulator-screenshots/window.xml; then
-    echo "The home screen did not expose '$backup_action' when no drafts exist."
-    collect_capture_diagnostics "empty-draft-$backup_action-missing"
-    exit 31
-  fi
-done
-if grep -Eqi "TASLAKLAR|Kaldığın yerden devam et|Henüz kaydedilmiş taslak yok" emulator-screenshots/window.xml; then
-  echo "The home screen exposed an empty draft section instead of only backup/restore actions."
-  collect_capture_diagnostics empty-draft-area-visible
-  exit 32
-fi
-
 # Emulator system dialogs can appear between a hierarchy dump and a screenshot.
 # Parse XML attributes instead of relying on grep's attribute order.
 SYSTEM_ANR_RECOVERED=false
@@ -295,6 +280,43 @@ if [ "$SYSTEM_ANR_RECOVERED" = true ]; then
   fi
 fi
 
+# The draft controls are intentionally below the tools grid. The first home
+# hierarchy is at scroll position zero, so it cannot prove these lower controls
+# exist. Scroll the content to the bottom before checking the empty-draft state.
+for _ in 1 2 3; do
+  timeout -k 2s 8s adb -s emulator-5554 shell input swipe 540 1650 540 700 450
+  sleep 1
+done
+if ! dump_hierarchy empty-drafts-home.xml emulator-screenshots/empty-drafts-home.xml; then
+  echo "Could not inspect the lower home section after scrolling to the draft area."
+  collect_capture_diagnostics empty-draft-home-hierarchy-missing
+  exit 31
+fi
+for backup_action in "Taslakları yedekle" "Yedekten geri yükle"; do
+  if ! grep -q "$backup_action" emulator-screenshots/empty-drafts-home.xml; then
+    echo "The scrolled home screen did not expose '$backup_action' when no drafts exist."
+    collect_capture_diagnostics "empty-draft-$backup_action-missing"
+    exit 31
+  fi
+done
+if grep -Eqi "TASLAKLAR|Kaldığın yerden devam et|Henüz kaydedilmiş taslak yok" emulator-screenshots/empty-drafts-home.xml; then
+  echo "The empty draft heading or placeholder remained visible even though there are no saved drafts."
+  collect_capture_diagnostics empty-draft-area-visible
+  exit 32
+fi
+echo "PASS: the scrolled empty-draft area hides its heading/placeholder and keeps backup/restore reachable."
+
+# Restore the home scroll position before locating and tapping the empty-project
+# card below. The fixed footer remains outside the ScrollView.
+for _ in 1 2 3; do
+  timeout -k 2s 8s adb -s emulator-5554 shell input swipe 540 700 540 1650 450
+  sleep 1
+done
+if ! dump_hierarchy window.xml emulator-screenshots/window.xml; then
+  echo "Could not restore the home hierarchy after the empty-draft check."
+  collect_capture_diagnostics home-hierarchy-after-draft-check-missing
+  exit 33
+fi
 echo "Step 6/8: capture the empty editor for layout comparison"
 node=""
 if [ -s emulator-screenshots/window.xml ]; then
