@@ -2595,9 +2595,9 @@ first = bounds[1]
 second = bounds[2]
 start_x = (second[0] + second[2]) // 2
 start_y = (second[1] + second[3]) // 2
-drop_x = first[0] + 10
-if start_x <= drop_x:
-    raise SystemExit(f"Second segment is not to the right of the first: first={first}, second={second}")
+drop_x = max(first[0] + 64, 64)
+if start_x <= drop_x or drop_x >= first[2] - 24:
+    raise SystemExit(f"Second segment or safe drop point is not visible: first={first}, second={second}, drop={drop_x}")
 print(start_x, start_y, drop_x)
 PY
 )"

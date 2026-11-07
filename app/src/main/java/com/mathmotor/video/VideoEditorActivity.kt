@@ -6104,7 +6104,7 @@ class VideoEditorActivity : Activity() {
         // leaving the selected strip unobstructed for immediate long-press dragging.
         enterClipTools()
         updateClipTransformTouchAvailability()
-        status.text="Seçili klip: ${clip.title}. Alt araç satırından bir işlem seçebilir veya şeridi basılı tutup sürükleyebilirsin."
+        status.text="Seçili klip: ${clip.title}. Alt araç satırından bir işlem seçebilir veya şeridi sürükleyerek taşıyabilirsin."
         updateTimelinePlayheadLabel()
     }
 
@@ -8716,7 +8716,7 @@ class VideoEditorActivity : Activity() {
                 }
                 val skipped = uris.size - ready.size
                 status.text = buildString {
-                    append("${ready.size} video zaman çizelgesine eklendi. Klibe dokun: seç; basılı tutup sürükle: zaman konumunu değiştir.")
+                    append("${ready.size} video zaman çizelgesine eklendi. Klibe dokun: seç; tutup sürükle: zaman konumunu değiştir.")
                     if (skipped > 0) append(" $skipped dosya okunamadığı için atlandı.")
                     append(" İstediğin sırada tek MP4 olarak dışa aktarabilirsin.")
                 }
@@ -8854,6 +8854,12 @@ class VideoEditorActivity : Activity() {
         timelinePreviewLoaded=false
         previewSingleClip=false
         timelinePlayheadMs=split.splitTimelineMs
+        // The centered playhead and every lane share one scroll/time mapping.
+        // Keep the split boundary under the fixed playhead after rebuilding the strip.
+        pendingTimelineScrollX = TimelineScaleMath.pixelsForTime(
+            timelinePlayheadMs, timelinePixelsPerSecond()
+        ).coerceAtLeast(0)
+        timelineHorizontalScrollX = pendingTimelineScrollX ?: 0
         if(timelineSyncTestEnabled) android.util.Log.i(
             "TimelineSyncTest",
             "VIDEO_CLIP_SPLIT firstEndMs=${split.first.timelineEndMs} secondStartMs=${split.second.timelineStartMs} gapMs=${split.second.timelineStartMs-split.first.timelineEndMs} sourceCutMs=${split.second.sourceStartMs} speed=${clip.speed}"
