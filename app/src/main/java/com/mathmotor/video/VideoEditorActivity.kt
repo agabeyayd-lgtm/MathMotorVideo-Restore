@@ -673,7 +673,12 @@ class VideoEditorActivity : Activity() {
         val savedDraft = requestedDraftId?.let { VideoProjectDraftStore.load(this, it) }
         if (savedDraft != null) {
             runCatching { applyProjectJson(savedDraft) }
-                .onSuccess { /* Opening a saved draft is silent; no persistent status message. */ }
+                .onSuccess {
+                    if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+                        val restoredOverlayCount = savedDraft.optJSONArray("overlays")?.length() ?: 0
+                        android.util.Log.i("EditorSmokeTest", "EDITOR_SMOKE_DRAFT_RESTORED id=$draftId overlays=$restoredOverlayCount")
+                    }
+                }
                 .onFailure {
                     status.text = "Taslak açılamadı: ${it.message ?: "proje verisi okunamadı"}"
                     if (!incoming.isNullOrBlank()) addClip(Uri.parse(incoming), false)
