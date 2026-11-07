@@ -1772,7 +1772,7 @@ baseline_lines = [
 ]
 if not baseline_lines:
     raise SystemExit("The normal keyboard-closed preview baseline is missing.")
-baseline_match = re.search(r"canvas=(\\d+)x(\\d+)", baseline_lines[-1])
+baseline_match = re.search(r"canvas=(\d+)x(\d+)", baseline_lines[-1])
 if not baseline_match:
     raise SystemExit("Malformed normal preview-canvas baseline: " + baseline_lines[-1])
 baseline_height = int(baseline_match.group(2))
