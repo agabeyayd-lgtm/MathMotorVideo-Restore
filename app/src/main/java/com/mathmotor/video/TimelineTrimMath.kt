@@ -388,15 +388,9 @@ internal object TimelineVideoMath {
             add(insertionIndex, movingIndex)
         }
 
-        // A drag that remains inside the clip's existing slot is not a move. Keep
-        // intentional gaps intact instead of compacting the timeline on a no-op.
-        if (reorderedIndices == timeOrder) {
-            return TimelineVideoReorderPlan(
-                orderedClipIndices = reorderedIndices,
-                timelineStartByClipIndex = timeOrder.associateWith { safe[it].timelineStartMs }
-            )
-        }
-
+        // A completed drag on the single CapCut-style video lane closes timeline
+        // gaps even when the clip remains in the same relative order. This prevents
+        // a moved clip from leaving a dead grey hole behind it.
         var cursorMs = safe[timeOrder.first()].timelineStartMs
         val starts = linkedMapOf<Int, Long>()
         reorderedIndices.forEach { clipIndex ->
