@@ -1775,17 +1775,15 @@ if not baseline_lines:
 baseline_match = re.search(r"canvas=(\d+)x(\d+)", baseline_lines[-1])
 if not baseline_match:
     raise SystemExit("Malformed normal preview-canvas baseline: " + baseline_lines[-1])
-baseline_height = int(baseline_match.group(2))
-minimum_height = int(baseline_height * 0.75)
-if height < minimum_height:
+baseline_width, baseline_height = map(int, baseline_match.groups())
+if (width, height) != (baseline_width, baseline_height):
     raise SystemExit(
-        "Keyboard-open project canvas is still too small: "
-        f"{width}x{height}, normal height={baseline_height}, "
-        f"required at least {minimum_height}px (75%)."
+        "Keyboard changed the project preview size; the canvas must remain pixel-identical: "
+        f"normal={baseline_width}x{baseline_height}, keyboard={width}x{height}."
     )
 print(
-    "PASS: keyboard stayed visible, the project remained 9:16, and preview height "
-    f"retained at least 75% of normal size ({height}px / {baseline_height}px)."
+    "PASS: keyboard remained visible and the project preview kept its exact "
+    f"normal dimensions ({width}x{height}); no shrinking or scaling is allowed."
 )
 PY
 echo "Captured the text editor with the IME open; now dismissing it for the remaining touch tests."
