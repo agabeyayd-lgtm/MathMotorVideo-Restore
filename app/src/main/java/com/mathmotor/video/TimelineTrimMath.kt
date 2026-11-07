@@ -445,10 +445,14 @@ internal object TimelineVideoMath {
         )
         val others = timeOrder.filterNot { it == movingIndex }
         val moving = safe[movingIndex]
-        val requestedCenterMs = requestedStartMs.coerceAtLeast(0L) + moving.durationMs / 2L
+        // requestedStartMs is the dragged block's left edge after applying the
+        // pointer delta. Compare that drop edge with neighbouring clip centers:
+        // using the moving clip center can make a long clip impossible to place
+        // before a shorter first clip, even when its left edge is dropped at zero.
+        val requestedDropStartMs = requestedStartMs.coerceAtLeast(0L)
         val insertionIndex = others.indexOfFirst { otherIndex ->
             val other = safe[otherIndex]
-            requestedCenterMs <= other.timelineStartMs + other.durationMs / 2L
+            requestedDropStartMs < other.timelineStartMs + other.durationMs / 2L
         }.let { if (it < 0) others.size else it }
         val reorderedIndices = others.toMutableList().apply {
             add(insertionIndex, movingIndex)

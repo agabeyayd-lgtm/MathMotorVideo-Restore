@@ -360,7 +360,7 @@ class TimelineVideoMathTest {
         val plan = TimelineVideoMath.reorderForDrop(
             segments = segments,
             movingIndex = 2,
-            requestedStartMs = 1_000L
+            requestedStartMs = 3_000L
         )
 
         assertEquals(listOf(0, 2, 1), plan?.orderedClipIndices)
@@ -373,10 +373,10 @@ class TimelineVideoMathTest {
     }
 
     @Test
-    fun droppingAtTheExactFirstClipCenterInsertsBeforeIt() {
+    fun droppingAtTheFirstClipStartInsertsALongerMovedClipBeforeIt() {
         val segments = listOf(
-            TimelineVideoSegment(0L, 0L, 4_000L, 4_000L),
-            TimelineVideoSegment(4_000L, 0L, 4_000L, 4_000L)
+            TimelineVideoSegment(0L, 0L, 1_500L, 1_500L),
+            TimelineVideoSegment(1_500L, 0L, 6_000L, 6_000L)
         )
 
         val plan = TimelineVideoMath.reorderForDrop(
@@ -387,7 +387,7 @@ class TimelineVideoMathTest {
 
         assertEquals(listOf(1, 0), plan?.orderedClipIndices)
         assertEquals(0L, plan?.timelineStartByClipIndex?.get(1))
-        assertEquals(4_000L, plan?.timelineStartByClipIndex?.get(0))
+        assertEquals(6_000L, plan?.timelineStartByClipIndex?.get(0))
     }
 
     @Test
@@ -416,7 +416,7 @@ class TimelineVideoMathTest {
             TimelineVideoSegment(9_000L, 0L, 1_000L, 1_000L)
         )
 
-        val plan = TimelineVideoMath.reorderForDrop(overlapping, 1, 8_000L)
+        val plan = TimelineVideoMath.reorderForDrop(overlapping, 1, 10_000L)
 
         assertTrue(plan != null)
         val resolved = plan!!.orderedClipIndices.map { index ->
