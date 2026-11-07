@@ -1558,12 +1558,16 @@ states = {}
 pattern = re.compile(
     r"EDITOR_PANEL_GEOMETRY state=([^ ]+) "
     r"canvas=(\d+x\d+@\d+,\d+) "
-    r"timeline=(\d+x\d+@\d+,\d+)"
+    r"timeline=(\d+x\d+@\d+,\d+) "
+    r"panel=(\d+x\d+@\d+,\d+) "
+    r"root=(\d+x\d+@\d+,\d+)"
 )
 for line in open(sys.argv[1], errors="replace"):
     match = pattern.search(line)
     if match:
-        states[match.group(1)] = (match.group(2), match.group(3))
+        states[match.group(1)] = (
+            match.group(2), match.group(3), match.group(4), match.group(5)
+        )
 
 required = [
     "before-open:clip-tools",
@@ -1578,7 +1582,7 @@ required = [
 missing = [state for state in required if state not in states]
 if missing:
     raise SystemExit("Missing two-stage editor geometry markers: " + ", ".join(missing))
-baseline_preview, baseline_timeline = states["before-open:clip-tools"]
+baseline_preview, baseline_timeline, _, baseline_root = states["before-open:clip-tools"]
 def rect(value):
     size, origin = value.split("@")
     width, height = map(int, size.split("x"))
@@ -1588,9 +1592,11 @@ def rect(value):
 base_preview = rect(baseline_preview)
 base_timeline = rect(baseline_timeline)
 for state in required[1:]:
-    preview_value, timeline_value = states[state]
+    preview_value, timeline_value, panel_value, root_value = states[state]
     preview = rect(preview_value)
     timeline = rect(timeline_value)
+    panel = rect(panel_value)
+    root = rect(root_value)
     if preview[2:] != base_preview[2:]:
         raise SystemExit(
             f"Project canvas dimensions changed during {state}: "
@@ -1603,17 +1609,33 @@ for state in required[1:]:
                 f"Timeline width/position changed while opening {state}: "
                 f"baseline={base_timeline}, observed={timeline}."
             )
-        if timeline[1] >= base_timeline[1] or timeline[3] >= base_timeline[3]:
+        # Vertical re-centering is permitted: the preview canvas dimensions are
+        # invariant, while its surrounding stage can shift the timeline on screen.
+        # What matters is that the timeline is compacted, does not overlap the
+        # detail controls, and both remain inside the editor's measured root.
+        if timeline[3] >= base_timeline[3]:
             raise SystemExit(
-                f"Detail tools did not compact the timeline/playback controls during {state}: "
+                f"Detail tools did not reduce the timeline viewport height during {state}: "
                 f"baseline={base_timeline}, observed={timeline}."
+            )
+        if panel[2] != timeline[2] or panel[3] <= 0:
+            raise SystemExit(
+                f"Detail panel is not fully measured/visible during {state}: panel={panel}."
+            )
+        timeline_bottom = timeline[1] + timeline[3]
+        panel_bottom = panel[1] + panel[3]
+        root_bottom = root[1] + root[3]
+        if timeline_bottom > panel[1] or panel_bottom > root_bottom:
+            raise SystemExit(
+                f"Timeline/detail panel overlap or extend beyond editor viewport during {state}: "
+                f"timeline={timeline}, panel={panel}, root={root}."
             )
     elif timeline != base_timeline:
         raise SystemExit(
             f"Timeline did not restore after closing/switching {state}: "
             f"baseline={base_timeline}, observed={timeline}."
         )
-print("PASS: the project canvas dimensions stay pixel-identical. Its surrounding stage may re-center vertically; detail tools compact only the timeline/control area and restore it on exit.")
+print("PASS: project canvas dimensions remain pixel-identical; detail tools reduce the timeline viewport, remain below it, and fit inside the editor root. Vertical stage re-centering is allowed.")
 PY
 
 echo "Step 8b/12: open the Proje panel and prove the MP4 button receives a real tap"
