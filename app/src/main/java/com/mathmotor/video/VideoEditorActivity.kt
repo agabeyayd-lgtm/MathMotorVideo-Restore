@@ -2016,7 +2016,7 @@ class VideoEditorActivity : Activity() {
         // Focusing the EditText can scroll the settings list; a sticky header must
         // remain reachable after the IME opens, closes, or requests its text field.
         editorPanelReturnButton = miniButton("‹ Araçlara dön") {
-            closeVisualLayerPanel("text")
+            activeEditorPanel?.let { toggleEditorPanel(it) }
         }.apply {
             contentDescription = "Araçlara dön"
             minHeight = dp(38)
@@ -2354,7 +2354,7 @@ class VideoEditorActivity : Activity() {
                             activeEditorPanel == "text" && imeVisible -> 68
                             else -> if (imeVisible) 124 else 196
                         }
-                        val stickyHeaderHeight = if (!imeVisible && activeEditorPanel == "text" &&
+                        val stickyHeaderHeight = if (!imeVisible && activeEditorPanel != null &&
                             ::editorPanelReturnButton.isInitialized &&
                             editorPanelReturnButton.visibility == View.VISIBLE
                         ) 40 else 0
@@ -2373,7 +2373,7 @@ class VideoEditorActivity : Activity() {
                     if (imeVisible || activeEditorPanel != null) View.GONE else View.VISIBLE
                 if (::editorPanelReturnButton.isInitialized) {
                     editorPanelReturnButton.visibility =
-                        if (!imeVisible && activeEditorPanel == "text" &&
+                        if (!imeVisible && activeEditorPanel != null &&
                             editorPanelScroll.visibility == View.VISIBLE
                         ) View.VISIBLE else View.GONE
                 }
@@ -2905,7 +2905,11 @@ class VideoEditorActivity : Activity() {
         if (::centeredPlaybackRow.isInitialized) centeredPlaybackRow.visibility = View.GONE
         if (::editorDockScroll.isInitialized) editorDockScroll.visibility = View.GONE
         if (::editorPanelReturnButton.isInitialized) {
-            editorPanelReturnButton.visibility = if (name == "text") View.VISIBLE else View.GONE
+            // Every contextual panel needs a visible, reachable way back to
+            // the editor dock. The global dock is intentionally hidden while a
+            // panel owns the workspace, so export and audio must not trap users.
+            editorPanelReturnButton.visibility =
+                if (!keyboardLayoutActive) View.VISIBLE else View.GONE
         }
         if (name == "overlay") loadOverlayControls()
         updateClipTransformTouchAvailability()
@@ -2921,7 +2925,7 @@ class VideoEditorActivity : Activity() {
                     "text" -> if (keyboardLayoutActive) 124 else 168
                     else -> if (keyboardLayoutActive) 124 else 196
                 }
-                val stickyHeaderHeight = if (name == "text") 40 else 0
+                val stickyHeaderHeight = 40
                 params.height = dp((basePanelHeight - stickyHeaderHeight).coerceAtLeast(72))
                 editorPanelScroll.layoutParams = params
             }
