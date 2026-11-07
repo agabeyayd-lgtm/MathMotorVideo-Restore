@@ -2174,6 +2174,28 @@ class VideoEditorActivity : Activity() {
      * The timeline remains present and vertically scrollable, but gives back
      * enough height for the project canvas instead of starving it to a sliver.
      */
+    /**
+     * Emits the actual laid-out project-canvas bounds after a contextual panel
+     * finishes closing. The emulator test must not depend on UIAutomator dumps,
+     * which intermittently time out on the editor's large accessibility tree.
+     */
+    private fun logPreviewCanvasTestSnapshot(reason: String) {
+        if (!timelineSyncTestEnabled || !::previewCanvas.isInitialized) return
+        previewCanvas.post {
+            if (!::previewCanvas.isInitialized || previewCanvas.width <= 0 || previewCanvas.height <= 0) {
+                android.util.Log.w("PreviewCanvasTest", "PREVIEW_CANVAS_SNAPSHOT_MISSING reason=$reason")
+                return@post
+            }
+            val location = IntArray(2)
+            previewCanvas.getLocationOnScreen(location)
+            android.util.Log.i(
+                "PreviewCanvasTest",
+                "PREVIEW_CANVAS_SNAPSHOT reason=$reason canvas=${previewCanvas.width}x${previewCanvas.height} " +
+                    "origin=${location[0]},${location[1]}"
+            )
+        }
+    }
+
     private fun applyPreviewStageSizing() {
         if (!::previewFrame.isInitialized) return
         val params = previewFrame.layoutParams as? LinearLayout.LayoutParams ?: return
@@ -3032,7 +3054,12 @@ class VideoEditorActivity : Activity() {
                         editorPanelScroll.visibility = View.GONE
                         editorPanelScroll.translationY = 0f
                         editorPanelScroll.alpha = 1f
-                        editorPanelScroll.post { logEditorPanelGeometry("closed") }
+                        editorPanelScroll.post {
+                            logEditorPanelGeometry("closed")
+                            if (timelineSyncTestEnabled && name == "text") {
+                                logPreviewCanvasTestSnapshot("text-panel-close")
+                            }
+                        }
                     }
                 }
                 .start()
