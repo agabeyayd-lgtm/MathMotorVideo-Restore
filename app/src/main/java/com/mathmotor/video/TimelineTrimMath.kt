@@ -426,9 +426,9 @@ internal object TimelineVideoMath {
     }
 
     /**
-     * Builds a CapCut-style insertion/reorder plan for the single, non-overlapping main-video lane.
-     * Drop position is interpreted by the moved clip's center against the other clip centers.
-     * The result is packed sequentially from the original first timestamp. Old overlapping
+     * Builds a CapCut-style insertion/reorder plan for the single main-video lane.
+     * The dragged clip's left edge is compared with neighbouring clip centers, then
+     * all clips are packed sequentially from the original first timestamp. Old overlapping
      * positions are repaired by the same operation instead of blocking clip movement.
      */
     fun reorderForDrop(
@@ -444,7 +444,6 @@ internal object TimelineVideoMath {
             compareBy<Int> { safe[it].timelineStartMs }.thenBy { it }
         )
         val others = timeOrder.filterNot { it == movingIndex }
-        val moving = safe[movingIndex]
         // requestedStartMs is the dragged block's left edge after applying the
         // pointer delta. Compare that drop edge with neighbouring clip centers:
         // using the moving clip center can make a long clip impossible to place
