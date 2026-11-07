@@ -467,6 +467,7 @@ class VideoEditorActivity : Activity() {
     private var timelinePlayheadMs = 0L
     // Enabled only by the debug emulator test bridge; no telemetry is emitted in normal app use.
     private var timelineSyncTestEnabled = false
+    private var lastTimelineAlignmentSnapshotUptimeMs = 0L
     private var timelineTestReplacementAfterOverlayUri: Uri? = null
     private var timelineTestExpectedReplacementUri: Uri? = null
     // Local diagnostics are enabled only in debuggable builds; nothing is uploaded.
@@ -5028,11 +5029,89 @@ class VideoEditorActivity : Activity() {
         }
     }
 
+    /**
+     * Reports actual visible timeline View bounds for emulator assertions.
+     * This is debug-test-only and avoids UIAutomator's expensive full hierarchy
+     * serialization when many thumbnail ImageViews are attached.
+     */
+    private fun logTimelineAlignmentTestSnapshotIfNeeded() {
+        if (!timelineSyncTestEnabled ||
+            !::timelineTracksFrame.isInitialized ||
+            !::timelinePlayButton.isInitialized ||
+            !::timelinePlayheadLine.isInitialized ||
+            !::previewCanvas.isInitialized
+        ) return
+
+        val now = SystemClock.uptimeMillis()
+        if (now - lastTimelineAlignmentSnapshotUptimeMs < 500L) return
+        lastTimelineAlignmentSnapshotUptimeMs = now
+
+        val playButtonLocation = IntArray(2)
+        val playheadLocation = IntArray(2)
+        timelinePlayButton.getLocationOnScreen(playButtonLocation)
+        timelinePlayheadLine.getLocationOnScreen(playheadLocation)
+        val playheadCenterPx = playButtonLocation[0] + timelinePlayButton.width / 2
+        val playheadCenterYpx = playButtonLocation[1] + timelinePlayButton.height / 2
+        val lineCenterPx = playheadLocation[0] + timelinePlayheadLine.width / 2
+
+        val previewRect = android.graphics.Rect()
+        if (!previewCanvas.getGlobalVisibleRect(previewRect)) return
+        val previewBounds = "${previewRect.left},${previewRect.top},${previewRect.right},${previewRect.bottom}"
+
+        var clipBounds = "none"
+        val cellBounds = mutableListOf<String>()
+        fun visit(view: View) {
+            val description = view.contentDescription?.toString().orEmpty()
+            if (description.startsWith("Klip 1:") && clipBounds == "none") {
+                val visible = android.graphics.Rect()
+                if (view.getGlobalVisibleRect(visible) && visible.width() > 0 && visible.height() > 0) {
+                    clipBounds = "${visible.left},${visible.top},${visible.right},${visible.bottom}"
+                }
+            }
+            if (view is ImageView && description.startsWith("Klip karesi @")) {
+                val timestampStart = description.indexOf("Klip karesi @") + "Klip karesi @".length
+                val timestampEnd = description.indexOf("ms", timestampStart)
+                val timestamp = if (timestampEnd > timestampStart) {
+                    description.substring(timestampStart, timestampEnd).toLongOrNull()
+                } else null
+                if (timestamp != null && view.isShown && view.width > 0 && view.height > 0) {
+                    val visible = android.graphics.Rect()
+                    if (view.getGlobalVisibleRect(visible)) {
+                        val location = IntArray(2)
+                        view.getLocationOnScreen(location)
+                        val actual = android.graphics.Rect(
+                            location[0], location[1], location[0] + view.width, location[1] + view.height
+                        )
+                        // Exclude clipped edge cells: their full image bounds are needed
+                        // for accurate screenshot fingerprints and aspect-ratio sampling.
+                        if (visible == actual) {
+                            cellBounds.add(
+                                "$timestamp:${actual.left},${actual.top},${actual.right},${actual.bottom}"
+                            )
+                        }
+                    }
+                }
+            }
+            if (view is ViewGroup) {
+                for (index in 0 until view.childCount) visit(view.getChildAt(index))
+            }
+        }
+        visit(timelineTracksFrame)
+
+        android.util.Log.i(
+            "TimelineAlignmentTest",
+            "TIMELINE_ALIGNMENT_SNAPSHOT playheadCenterPx=$playheadCenterPx " +
+                "playheadCenterYpx=$playheadCenterYpx lineCenterPx=$lineCenterPx " +
+                "previewBounds=$previewBounds clipBounds=$clipBounds cells=${cellBounds.joinToString(";")}"
+        )
+    }
+
     /** Emits real playback/timeline geometry only when the debug CI test opts in. */
     private fun logTimelineSyncTestSample() {
         val composition = timelineCompositionPlayer
         val firstLane = timelineScrollViews.firstOrNull() ?: return
         if (!::timelinePlayheadLine.isInitialized || firstLane.width <= 0) return
+        logTimelineAlignmentTestSnapshotIfNeeded()
 
         val playingComposition = composition?.isPlaying == true
         val singleClip = clips.getOrNull(selectedClipIndex)

@@ -2258,20 +2258,19 @@ fi
 dump_hierarchy editor-text-cleanup.xml emulator-screenshots/editor-text-cleanup.xml || true
 
 echo "Step 9/12: align a thumbnail cell with the playhead and compare the rendered pixels"
-# HorizontalScrollView consumes ViewConfiguration.scaledTouchSlop before it
-# scrolls. Android reports integer-pixel view bounds and ADB gesture coordinates;
-# accept a 5px center residual (under 3dp on this emulator) rather than treating
-# coordinate rounding as a timeline synchronization failure.
-echo "Using startup-captured Android ViewConfiguration touch slop: ${touch_slop_px}px"
+# Use app-measured Android View bounds. UIAutomator's full accessibility-tree
+# dump becomes unreliable after repeated panel/keyboard operations.
+echo "Using startup-captured Android ViewConfiguration touch slop: \${touch_slop_px}px"
 thumbnail_aligned=false
 for attempt in 1 2 3 4 5; do
-  hierarchy="emulator-screenshots/editor-frame-align-${attempt}.xml"
-  dump_hierarchy "editor-frame-align-${attempt}.xml" "$hierarchy" || true
-  alignment="$(python3 .github/scripts/assert-thumbnail-alignment.py prepare "$hierarchy")"
+  timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime \
+    -s TimelineAlignmentTest:I TimelineSyncTest:I TimelineFrameSyncTest:I \
+    > emulator-screenshots/thumbnail-alignment-measurements.txt 2>&1 || true
+  alignment="$(python3 .github/scripts/assert-thumbnail-alignment.py prepare emulator-screenshots/thumbnail-alignment-measurements.txt)"
   read -r thumb_center_x thumb_center_y play_center_x thumb_sample_ms <<< "$alignment"
   delta_x="$((play_center_x - thumb_center_x))"
   absolute_delta="$((delta_x < 0 ? -delta_x : delta_x))"
-  echo "Alignment attempt $attempt: sample=${thumb_sample_ms}ms center=${thumb_center_x}px playhead=${play_center_x}px delta=${delta_x}px"
+  echo "Alignment attempt $attempt: sample=\${thumb_sample_ms}ms center=\${thumb_center_x}px playhead=\${play_center_x}px delta=\${delta_x}px"
   if [ "$absolute_delta" -le 5 ]; then
     thumbnail_aligned=true
     break
@@ -2291,30 +2290,24 @@ if ! take_screen emulator-screenshots/editor-frame-aligned.png; then
   collect_capture_diagnostics thumbnail-alignment-capture-failure
   exit 6
 fi
-dump_hierarchy editor-frame-aligned.xml emulator-screenshots/editor-frame-aligned.xml || true
-timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime > emulator-screenshots/thumbnail-alignment-logcat.txt 2>&1
+timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime \
+  -s TimelineAlignmentTest:I TimelineSyncTest:I TimelineFrameSyncTest:I \
+  > emulator-screenshots/thumbnail-alignment-logcat.txt 2>&1
 python3 .github/scripts/assert-thumbnail-alignment.py verify \
-  emulator-screenshots/editor-frame-aligned.xml \
-  emulator-screenshots/editor-frame-aligned.png \
-  emulator-screenshots/thumbnail-alignment-logcat.txt
+  emulator-screenshots/thumbnail-alignment-logcat.txt \
+  emulator-screenshots/editor-frame-aligned.png
 
 echo "Step 10/12: exercise filmstrip scrubbing in both directions"
-clip_bounds="$(python3 - emulator-screenshots/editor-window.xml <<'PY'
+clip_bounds="$(python3 - emulator-screenshots/thumbnail-alignment-logcat.txt <<'PY'
 import re
 import sys
-import xml.etree.ElementTree as ET
-try:
-    root = ET.parse(sys.argv[1]).getroot()
-except (OSError, ET.ParseError):
-    raise SystemExit(0)
-for node in root.iter("node"):
-    desc = node.attrib.get("content-desc", "")
-    bounds = node.attrib.get("bounds", "")
-    if desc.startswith("Klip 1:"):
-        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", bounds)
-        if match:
-            print(*map(int, match.groups()))
-            break
+latest = None
+for line in open(sys.argv[1], errors="replace"):
+    match = re.search(r"TIMELINE_ALIGNMENT_SNAPSHOT .*?clipBounds=(none|\d+,\d+,\d+,\d+)", line)
+    if match and match.group(1) != "none":
+        latest = match.group(1).replace(",", " ")
+if latest:
+    print(latest)
 PY
 )"
 if [ -z "$clip_bounds" ]; then
@@ -2391,21 +2384,20 @@ if [ "$forward_ms" -le 0 ] || [ "$forward_scroll" -le 0 ]; then
   collect_capture_diagnostics filmstrip-scrub-forward-not-advanced
   exit 20
 fi
-dump_hierarchy editor-after-forward-scrub.xml emulator-screenshots/editor-after-forward-scrub.xml || true
-reverse_bounds="$(python3 - emulator-screenshots/editor-after-forward-scrub.xml <<'PY'
+
+timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime \
+  -s TimelineAlignmentTest:I TimelineSyncTest:I \
+  > emulator-screenshots/filmstrip-scrub-forward-logcat.txt 2>&1
+reverse_bounds="$(python3 - emulator-screenshots/filmstrip-scrub-forward-logcat.txt <<'PY'
 import re
 import sys
-import xml.etree.ElementTree as ET
-try:
-    root = ET.parse(sys.argv[1]).getroot()
-except (OSError, ET.ParseError):
-    raise SystemExit(0)
-for node in root.iter("node"):
-    if node.attrib.get("content-desc", "").startswith("Klip 1:"):
-        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
-        if match:
-            print(*map(int, match.groups()))
-            break
+latest = None
+for line in open(sys.argv[1], errors="replace"):
+    match = re.search(r"TIMELINE_ALIGNMENT_SNAPSHOT .*?clipBounds=(none|\d+,\d+,\d+,\d+)", line)
+    if match and match.group(1) != "none":
+        latest = match.group(1).replace(",", " ")
+if latest:
+    print(latest)
 PY
 )"
 if [ -z "$reverse_bounds" ]; then
@@ -2460,26 +2452,22 @@ fi
 echo "PASS: filmstrip left advanced to \${forward_ms}ms; right returned to \${reverse_ms}ms"
 
 echo "Step 11/12: exercise live playback and validate ruler/filmstrip synchronization"
-dump_hierarchy timeline-play-button.xml emulator-screenshots/timeline-play-button.xml || true
-play_coords="$(python3 - emulator-screenshots/timeline-play-button.xml <<'PY'
+
+timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime -s TimelineAlignmentTest:I \
+  > emulator-screenshots/timeline-play-button-measurement.txt 2>&1
+play_coords="$(python3 - emulator-screenshots/timeline-play-button-measurement.txt <<'PY'
 import re
 import sys
-import xml.etree.ElementTree as ET
-
-try:
-    root = ET.parse(sys.argv[1]).getroot()
-except (OSError, ET.ParseError):
-    raise SystemExit(0)
-
-for node in root.iter("node"):
-    description = node.attrib.get("content-desc", "")
-    bounds = node.attrib.get("bounds", "")
-    if "Önizlemeyi oynat" in description:
-        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", bounds)
-        if match:
-            x1, y1, x2, y2 = map(int, match.groups())
-            print((x1 + x2) // 2, (y1 + y2) // 2)
-            break
+latest = None
+for line in open(sys.argv[1], errors="replace"):
+    match = re.search(
+        r"TIMELINE_ALIGNMENT_SNAPSHOT playheadCenterPx=(\d+) playheadCenterYpx=(\d+)",
+        line
+    )
+    if match:
+        latest = f"{match.group(1)} {match.group(2)}"
+if latest:
+    print(latest)
 PY
 )"
 if [ -z "$play_coords" ]; then
