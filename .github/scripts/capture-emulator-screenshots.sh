@@ -2553,8 +2553,9 @@ echo "Step 11b: split the selected video through its real clip menu, then direct
 # The main-video filmstrip is now a move surface. Use its existing stationary
 # long-press context menu to invoke the same production splitSelectedClipAtPlayhead()
 # handler after import/thumbnail readiness has already passed above.
-# Move the real playhead to 4s first, giving both halves enough length for a useful
-# reorder test (a 0.4s/7.6s split cannot be dragged back across its neighbour).
+# Move the real playhead close to the fixture midpoint. Frame snapping may settle
+# a few hundred milliseconds away from exactly 4000ms; that is still balanced.
+# The drag target and expected reflow below use the measured split boundary.
 midpoint_ready=false
 for attempt in $(seq 1 3); do
   timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineSyncTest:I \
@@ -2574,7 +2575,7 @@ if latest is None:
 current_ms, pixels_per_second = latest
 target_ms = 4_000
 delta_px = round((target_ms - current_ms) * pixels_per_second / 1000.0)
-if abs(target_ms - current_ms) <= 80:
+if abs(target_ms - current_ms) <= 750:
     print("READY", current_ms)
 else:
     delta_px = max(-520, min(520, delta_px))
@@ -2607,9 +2608,9 @@ for line in open(sys.argv[1], errors="replace"):
     match = pattern.search(line)
     if match:
         latest = int(match.group(1))
-if latest is None or abs(latest - 4_000) > 100:
-    raise SystemExit(f"Playhead did not reach the 4s split midpoint: {latest}")
-print(f"PASS: ruler scrub positioned the playhead at {latest}ms for an even split.")
+if latest is None or abs(latest - 4_000) > 750:
+    raise SystemExit(f"Playhead did not reach the balanced split range near 4s: {latest}")
+print(f"PASS: ruler scrub positioned the playhead at {latest}ms for a balanced split.")
 PY
 then
   echo "Could not position the playhead at the fixture midpoint before split."
@@ -2716,7 +2717,7 @@ if ! dump_hierarchy video-split-before-drag.xml emulator-screenshots/video-split
   collect_capture_diagnostics video-split-before-drag-hierarchy
   exit 94
 fi
-clip_drag_coords="$(python3 - emulator-screenshots/video-split-before-drag.xml emulator-screenshots/video-split-drag-logcat.txt <<'PY'
+clip_drag_coords="$(python3 - emulator-screenshots/video-split-before-drag.xml emulator-screenshots/video-split-drag-logcat.txt "$split_boundary_ms" <<'PY'
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -2735,14 +2736,14 @@ for node in root.iter("node"):
         bounds[key] = tuple(map(int, match.groups()))
 if set(bounds) != {1, 2}:
     raise SystemExit(f"Expected two split clip hit targets; found {bounds}")
-first = bounds[1]
 second = bounds[2]
 start_x = (second[0] + second[2]) // 2
 start_y = (second[1] + second[3]) // 2
 
-# With a 4s/4s split, the first and second segment centres are exactly 2s
-# either side of the fixed playhead. Use measured px/s to target the true first
-# centre even when Android clips the left edge of the first segment's View bounds.
+# The second segment currently starts at split_boundary_ms. Drag its centre
+# backwards by that exact time so its new start clamps to project time zero.
+# Use live px/s; a 16px bias ensures the requested start is strictly before zero.
+split_boundary_ms = int(sys.argv[3])
 sample = None
 for line in open(sys.argv[2], errors="replace"):
     match = re.search(
@@ -2753,12 +2754,12 @@ for line in open(sys.argv[2], errors="replace"):
         sample = (int(match.group(1)), float(match.group(2)))
 if sample is None:
     raise SystemExit("No measured fixed-playhead position/scale for the split reorder.")
-playhead_x, pixels_per_second = sample
-drop_x = round(playhead_x - 2_000 * pixels_per_second / 1000.0 - 16)
+_, pixels_per_second = sample
+drop_x = round(start_x - split_boundary_ms * pixels_per_second / 1000.0 - 16)
 if start_x <= drop_x or drop_x < 128:
     raise SystemExit(
-        f"Second segment is not right of a safe first-centre target: "
-        f"first={first}, second={second}, drop={drop_x}, start={start_x}"
+        f"Second segment cannot reach project zero from a safe coordinate: "
+        f"second={second}, drop={drop_x}, start={start_x}, split={split_boundary_ms}"
     )
 print(start_x, start_y, drop_x)
 PY
@@ -2783,8 +2784,9 @@ if [ -z "$drag_marker" ]; then
   collect_capture_diagnostics video-direct-clip-drag-not-received
   exit 96
 fi
-if ! echo "$drag_marker" | grep -Eq "ordered=1,0 .*starts=1:0,0:${split_boundary_ms}([[:space:]]|$)"; then
-  echo "The direct drag did not place the second half before the first without a gap at ${split_boundary_ms}ms: $drag_marker"
+expected_first_start_ms=$((8000 - split_boundary_ms))
+if ! echo "$drag_marker" | grep -Eq "ordered=1,0 .*starts=1:0,0:${expected_first_start_ms}([[:space:]]|$)"; then
+  echo "The direct drag did not place the second half at 00:00 and push the first by its own duration (${expected_first_start_ms}ms): $drag_marker"
   collect_capture_diagnostics video-direct-clip-drag-order
   exit 97
 fi
@@ -2792,7 +2794,7 @@ if ! take_screen emulator-screenshots/video-split-after-drag.png; then
   collect_capture_diagnostics video-split-after-drag-capture
   exit 6
 fi
-echo "PASS: split seam is 0ms and one-finger direct drag reordered the two segments without overlap."
+echo "PASS: split seam is 0ms; one-finger drag moved segment 2 to 00:00 and reflowed segment 1 to ${expected_first_start_ms}ms with no overlap."
 
 echo "Step 12/12: validate automatic draft save and resume list"
 # Android Back is context-sensitive: with a text/overlay layer selected it only
