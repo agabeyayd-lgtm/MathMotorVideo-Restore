@@ -2480,9 +2480,21 @@ if [ "$photo_visual_ready" != true ]; then
   collect_capture_diagnostics initial-photo-not-full-frame
   exit 62
 fi
+dump_hierarchy initial-photo-preview.xml emulator-screenshots/initial-photo-preview.xml || true
+if [ ! -s emulator-screenshots/initial-photo-preview.xml ]; then
+  echo "Could not inspect the photo-only editor preview accessibility hierarchy."
+  collect_capture_diagnostics initial-photo-preview-hierarchy-missing
+  exit 63
+fi
+if grep -Fq 'content-desc="Galeriden video ekle"' emulator-screenshots/initial-photo-preview.xml || \
+   grep -Fq 'text="Videonu ekle"' emulator-screenshots/initial-photo-preview.xml; then
+  echo "The video-empty-state card remained visible over the photo-only project preview."
+  collect_capture_diagnostics initial-photo-empty-card-still-visible
+  exit 64
+fi
 timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTest:I \
   > emulator-screenshots/initial-photo-canvas-logcat.txt 2>&1 || true
-echo "PASS: home-screen photo used the full-frame transform and rendered across the 9:16 project canvas."
+echo "PASS: home-screen photo used the full-frame transform, rendered across the 9:16 canvas, and replaced the empty-video card."
 
 echo "Step 13/13: save diagnostics"
 timeout -k 2s 8s adb -s emulator-5554 logcat -d > emulator-screenshots/logcat.txt || true
@@ -2501,4 +2513,5 @@ test -s emulator-screenshots/timeline-sync-validation.txt
 test -s emulator-screenshots/home-with-drafts.png
 test -s emulator-screenshots/editor-initial-photo-full-frame.png
 test -s emulator-screenshots/initial-photo-logcat.txt
+test -s emulator-screenshots/initial-photo-preview.xml
 echo "Home, empty editor, initial/playing editor, two-stage clip tool strip/detail/return geometry, live timeline sync, and autosaved-draft screenshots captured."
