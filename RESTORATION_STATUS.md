@@ -2,7 +2,7 @@
 
 - The 2026-11-07 emulator run (`42417189845`) passed unit tests, debug APK compilation, thumbnail pixel comparison, ruler scrubbing and live playback synchronization. It stopped before split interaction because the accessibility XML pull exceeded the script's 8-second transfer timeout; the app did not report a split or drag assertion failure.
 - The hierarchy pull now has a bounded 30-second timeout (with kill grace and the existing two-attempt retry). No emulator checks were skipped.
-- Removed the derived 84 ms preview timestamp allowance. Preview and scrub frame timestamps are again checked against a fixed 35 ms limit, and the thumbnail center must be within 2 px of the playhead; the bounded alignment loop now allows up to eight measured correction gestures.
+- Removed the derived 84 ms preview timestamp allowance. Preview and scrub frame timestamps are checked against a fixed 35 ms limit; thumbnail centering must be within 2 px. The alignment loop allows up to eight measured correction gestures. The 4-second split midpoint is again limited to 100 ms (80 ms early-accept), not 750 ms.
 - **Verification for these stricter checks is pending on the updated commit.** No production version code, release signing, publish workflow or main-branch APK was changed.
 
 ---
