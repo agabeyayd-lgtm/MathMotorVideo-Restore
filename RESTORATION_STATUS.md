@@ -1224,3 +1224,17 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - The debug emulator entry can publish the existing deterministic photo fixture as a real MediaStore content:// item. The API 35 smoke now opens it alongside a video clip, requires the app-private durable-copy marker, closes the editor to autosave, force-stops the app, reopens the saved draft, and requires exactly one restored overlay.
 - Source/test commits: c313dbe (durable app-private copy), bef79e6 / eafd9f3 (MediaStore content URI fixture and draft reopen entry), ad864ca (restore marker), cb6d2e5 (smoke script).
 - The complete unit/build/API 35 emulator run is in progress. This is not yet verified green; inspect the content-URI copy, draft-save, process-restart, and overlay-restore artifacts before closing the issue.
+
+
+## CapCut-style preview interaction and trim handles — 2026-11-07
+
+- Preview text layers can now be dragged with one finger and resized/rotated with two fingers even after the text properties panel is closed. Gesture origins are based on the rendered, edge-clamped preview position; reselecting a layer restores the contextual text tools.
+- The centered playback control remains available while contextual tools are open (the keyboard-only compact mode may still hide it). The API 35 smoke completed the live-playback and ruler/filmstrip synchronization step.
+- Video-lane reorder now closes gaps after a completed drop even when the relative clip order is unchanged. The matching unit test expects the second clip to ripple from 5000 ms to 2000 ms.
+- Timeline trim hit areas use a minimum 48 dp target and are centered on each clip boundary, extending into adjacent spacer space without changing clip duration. Parent tracks and clip frames do not clip those extended hit targets.
+- Root cause of a remaining red emulator test: Android's right-edge back gesture intercepted leftward drags on the trailing music/sound/text trim handles. Added gesture-exclusion rectangles to trailing audio and text handles; the overlay handle already had this protection.
+- Final verification for source commit `0d38b108707f7d0d09bbee94f7db377a89239973`:
+  - Verify Android build + unit tests: run `42399166628` — **success**.
+  - API 35 Android emulator screenshots/smoke: run `42399166651` — **success**.
+  - Emulator logs confirm independent music start/end trims, sound-effect start/end trims, image-overlay start/end trims, a 27 px in-canvas text drag, live playback/timeline synchronization, draft save/resume, full-frame photo preview, and durable `content://` photo restoration after force-stop/relaunch.
+- No app version, release signing, or publish workflow was changed. This verification covers these targeted interactions; it does not claim complete parity with CapCut or independently re-test every editor tool.
