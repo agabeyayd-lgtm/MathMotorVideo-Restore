@@ -2578,7 +2578,7 @@ if latest is None:
 current_ms, pixels_per_second = latest
 target_ms = 4_000
 delta_px = round((target_ms - current_ms) * pixels_per_second / 1000.0)
-if abs(target_ms - current_ms) <= 750:
+if abs(target_ms - current_ms) <= 80:
     print("READY", current_ms)
 else:
     delta_px = max(-520, min(520, delta_px))
@@ -2611,9 +2611,9 @@ for line in open(sys.argv[1], errors="replace"):
     match = pattern.search(line)
     if match:
         latest = int(match.group(1))
-if latest is None or abs(latest - 4_000) > 750:
-    raise SystemExit(f"Playhead did not reach the balanced split range near 4s: {latest}")
-print(f"PASS: ruler scrub positioned the playhead at {latest}ms for a balanced split.")
+if latest is None or abs(latest - 4_000) > 100:
+    raise SystemExit(f"Playhead did not reach the 4s frame-snapped split target within 100ms: {latest}")
+print(f"PASS: ruler scrub positioned the playhead at {latest}ms for a frame-snapped split.")
 PY
 then
   echo "Could not position the playhead at the fixture midpoint before split."
