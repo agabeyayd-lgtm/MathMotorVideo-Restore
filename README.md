@@ -1037,3 +1037,11 @@ The outer timeline workspace remains a stable height as video, text, music, and 
 - It stopped because UIAutomator could not dump a second copy of the text/track accessibility tree after keyboard dismissal. The timeline tree is large and this repeated dump timed out; it was a test-harness failure.
 - The selection pixel check now uses the latest `PREVIEW_CANVAS_BOUNDS` marker captured after each keyboard/panel/gesture transition, together with stable root-window bounds from the already captured editor hierarchy. Redundant UIAutomator dumps are removed.
 - The application correction (canvas outline below text/selection chrome and a 2 dp layer-edge inset) remains intact. Full emulator verification is pending on the next head.
+
+
+## Text direct-drag baseline — 2026-11-07
+
+- Emulator run `42347714269` (#1077) confirmed the white text-selection frame was fully visible, but the first short vertical drag did not move it.
+- Root cause: `TextLayer.yFraction` could remain at its original 0.84 while the rendered view was clamped higher to keep its selection chrome inside the canvas. The gesture used the stale stored fraction as its start point, so a 28 px drag could be absorbed by the clamp.
+- Text drag and two-finger re-anchoring now derive their starting fractions from the view's actual rendered translation. Added JVM tests for this clamp-to-visible-position round trip and invalid values.
+- Emulator verification is pending for the new app + test commit. No version, signing, or release workflow was changed.

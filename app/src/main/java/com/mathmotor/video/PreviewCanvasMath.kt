@@ -47,6 +47,15 @@ internal object PreviewCanvasMath {
     }
 
     /**
+     * Converts the actual rendered center translation back to a normalized
+     * position. Use this as a gesture baseline after visual edge clamping.
+     */
+    fun screenFractionForTranslation(translation: Float, extent: Float): Float {
+        if (!translation.isFinite() || !extent.isFinite() || extent <= 0f) return 0.5f
+        return (0.5f + translation / extent).coerceIn(0f, 1f)
+    }
+
+    /**
      * Maximum center translation that keeps a rotated layer inside the canvas,
      * leaving an inset for selection strokes and anti-aliased canvas edges.
      */

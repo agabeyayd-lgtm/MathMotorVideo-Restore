@@ -70,6 +70,34 @@ class PreviewCanvasMathTest {
     }
 
     @Test
+    fun renderedClampedPositionIsTheStartingPointForTextDragging() {
+        val canvasHeight = 245f
+        val maximumTranslation = PreviewCanvasMath.maxCenterTranslation(245f, 134f, 2f)
+        assertEquals(53.5f, maximumTranslation, 0f)
+
+        // The stored 0.84 fraction is rendered at the clamped boundary instead.
+        val visibleStartFraction = PreviewCanvasMath.screenFractionForTranslation(
+            maximumTranslation, canvasHeight
+        )
+        assertEquals(0.7183673f, visibleStartFraction, 0.000001f)
+
+        // A 28 px upward gesture now moves from the actual visible position,
+        // instead of remaining stuck until it crosses the old stored fraction.
+        val draggedFraction = visibleStartFraction - 28f / canvasHeight
+        val draggedTranslation = PreviewCanvasMath.screenTranslationForFraction(
+            draggedFraction, canvasHeight
+        )
+        assertEquals(-28f, draggedTranslation - maximumTranslation, 0.0001f)
+    }
+
+    @Test
+    fun invalidRenderedPositionUsesCanvasCenterAsGestureBaseline() {
+        assertEquals(0.5f, PreviewCanvasMath.screenFractionForTranslation(Float.NaN, 245f), 0f)
+        assertEquals(0.5f, PreviewCanvasMath.screenFractionForTranslation(20f, Float.NaN), 0f)
+        assertEquals(0.5f, PreviewCanvasMath.screenFractionForTranslation(20f, 0f), 0f)
+    }
+
+    @Test
     fun selectionChromeKeepsAnInsetFromEveryCanvasEdge() {
         assertEquals(46f, PreviewCanvasMath.maxCenterTranslation(200f, 100f, 4f), 0f)
         assertEquals(0f, PreviewCanvasMath.maxCenterTranslation(200f, 200f, 2f), 0f)

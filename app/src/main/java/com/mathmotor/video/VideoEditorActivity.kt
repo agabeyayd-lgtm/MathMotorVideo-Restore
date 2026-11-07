@@ -6496,8 +6496,10 @@ class VideoEditorActivity : Activity() {
                     }
                     downRawX = event.rawX
                     downRawY = event.rawY
-                    startX = layer.xFraction
-                    startY = layer.yFraction
+                    val canvasWidth = previewCanvas.width.coerceAtLeast(1).toFloat()
+                    val canvasHeight = previewCanvas.height.coerceAtLeast(1).toFloat()
+                    startX = PreviewCanvasMath.screenFractionForTranslation(view.translationX, canvasWidth)
+                    startY = PreviewCanvasMath.screenFractionForTranslation(view.translationY, canvasHeight)
                     startSize = layer.sizeSp
                     startRotationDegrees = layer.rotationDegrees
                     startDistance = 0f
@@ -6579,8 +6581,10 @@ class VideoEditorActivity : Activity() {
                             downRawY = location[1] + event.getY(remainingIndex)
                         }
                     }
-                    startX = layer.xFraction
-                    startY = layer.yFraction
+                    val canvasWidth = previewCanvas.width.coerceAtLeast(1).toFloat()
+                    val canvasHeight = previewCanvas.height.coerceAtLeast(1).toFloat()
+                    startX = PreviewCanvasMath.screenFractionForTranslation(view.translationX, canvasWidth)
+                    startY = PreviewCanvasMath.screenFractionForTranslation(view.translationY, canvasHeight)
                     startSize = layer.sizeSp
                     startRotationDegrees = layer.rotationDegrees
                     startDistance = 0f
