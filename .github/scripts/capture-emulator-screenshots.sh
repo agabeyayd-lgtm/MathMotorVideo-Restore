@@ -2642,7 +2642,7 @@ if ! echo "$split_marker" | grep -Eq 'gapMs=0([[:space:]]|$)'; then
   collect_capture_diagnostics video-clip-split-seam
   exit 93
 fi
-split_boundary_ms="$(printf '%s\\n' "$split_marker" | sed -n 's/.*firstEndMs=\\([0-9][0-9]*\\).*/\\1/p')"
+split_boundary_ms="$(printf '%s\n' "$split_marker" | sed -n 's/.*firstEndMs=\([0-9][0-9]*\).*/\1/p')"
 if [ -z "$split_boundary_ms" ]; then
   echo "The split log did not include the calculated first-segment boundary: $split_marker"
   collect_capture_diagnostics video-clip-split-boundary-missing
