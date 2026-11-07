@@ -7495,7 +7495,8 @@ class VideoEditorActivity : Activity() {
                 if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
                     android.util.Log.i("EditorSmokeTest",
                         "EDITOR_SMOKE_OVERLAY_ADDED id=" + overlay.id + " aspect=" + overlay.aspectRatio)
-                }                if (initialPhoto && isImage &&
+                }
+                if (initialPhoto && isImage &&
                     (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
                 ) {
                     android.util.Log.i(
