@@ -187,6 +187,20 @@ if ! grep -q "Güncelle" emulator-screenshots/window.xml; then
   collect_capture_diagnostics home-update-action-missing
   exit 30
 fi
+# A fresh emulator has no saved drafts. Keep restore available, but hide the
+# empty draft heading, helper copy and empty-state placeholder.
+for backup_action in "Taslakları yedekle" "Yedekten geri yükle"; do
+  if ! grep -q "$backup_action" emulator-screenshots/window.xml; then
+    echo "The home screen did not expose '$backup_action' when no drafts exist."
+    collect_capture_diagnostics "empty-draft-$backup_action-missing"
+    exit 31
+  fi
+done
+if grep -Eqi "TASLAKLAR|Kaldığın yerden devam et|Henüz kaydedilmiş taslak yok" emulator-screenshots/window.xml; then
+  echo "The home screen exposed an empty draft section instead of only backup/restore actions."
+  collect_capture_diagnostics empty-draft-area-visible
+  exit 32
+fi
 
 # Emulator system dialogs can appear between a hierarchy dump and a screenshot.
 # Parse XML attributes instead of relying on grep's attribute order.
