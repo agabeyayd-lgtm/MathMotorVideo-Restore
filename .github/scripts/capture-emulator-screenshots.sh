@@ -2725,7 +2725,7 @@ import re, sys, xml.etree.ElementTree as ET
 root=ET.parse(sys.argv[1]).getroot()
 for node in root.iter("node"):
     if node.attrib.get("content-desc") == "Düzenleyiciyi kapat" and node.attrib.get("clickable") == "true":
-        m=re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]",node.attrib.get("bounds",""))
+        m=re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",node.attrib.get("bounds",""))
         if m:
             x1,y1,x2,y2=map(int,m.groups()); print((x1+x2)//2,(y1+y2)//2); break
 PY
