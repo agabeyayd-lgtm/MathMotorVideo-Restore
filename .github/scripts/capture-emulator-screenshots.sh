@@ -2510,14 +2510,52 @@ if ! python3 .github/scripts/assert-timeline-sync.py emulator-screenshots/timeli
 fi
 
 echo "Step 12/12: validate automatic draft save and resume list"
-timeout -k 2s 8s adb -s emulator-5554 shell input keyevent 4 || true
-sleep 3
-timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime > emulator-screenshots/draft-autosave-logcat.txt 2>&1 || true
-if ! grep -q "LOCAL_DRAFT_SAVED id=11111111-1111-4111-8111-111111111111 clips=1" emulator-screenshots/draft-autosave-logcat.txt; then
-  echo "Editor did not confirm automatic draft save after leaving the editor."
+# Android Back is context-sensitive: with a text/overlay layer selected it only
+# exits that tool mode, leaving VideoEditorActivity in the foreground. Use the
+# editor's explicit close control so onStop() runs and the draft is actually saved.
+close_editor_center="$(python3 - emulator-screenshots/editor-window.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if (
+        node.attrib.get("content-desc") == "Düzenleyiciyi kapat"
+        and node.attrib.get("clickable") == "true"
+        and node.attrib.get("enabled") == "true"
+    ):
+        match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+        if match:
+            left, top, right, bottom = map(int, match.groups())
+            print((left + right) // 2, (top + bottom) // 2)
+            break
+PY
+)"
+if [ -z "$close_editor_center" ]; then
+  echo "Could not locate the editor's accessible close control in the captured hierarchy."
+  collect_capture_diagnostics draft-close-control-missing
+  exit 11
+fi
+read -r close_editor_x close_editor_y <<< "$close_editor_center"
+echo "Closing the editor through its real close control at ${close_editor_x},${close_editor_y}."
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$close_editor_x" "$close_editor_y"
+draft_saved=false
+for attempt in $(seq 1 12); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s MathMotorDraft:I > emulator-screenshots/draft-autosave-logcat.txt 2>&1 || true
+  if grep -Fq "LOCAL_DRAFT_SAVED id=11111111-1111-4111-8111-111111111111 clips=1" emulator-screenshots/draft-autosave-logcat.txt; then
+    draft_saved=true
+    break
+  fi
+  sleep 1
+done
+if [ "$draft_saved" != true ]; then
+  echo "Editor closed, but did not confirm automatic draft save."
+  cat emulator-screenshots/draft-autosave-logcat.txt || true
   collect_capture_diagnostics draft-autosave-failure
   exit 11
 fi
+echo "PASS: editor close triggered automatic local draft save."
 
 # The editor's MP4 save picker can remain the foreground system activity after
 # returning from export. Restart the app's home activity explicitly so the
