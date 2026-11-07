@@ -119,16 +119,15 @@ jobs:
           # to prove that the home-screen photo route fills the editable canvas.
           ffmpeg -hide_banner -loglevel error -y -f lavfi -i "color=c=magenta:s=360x640" -frames:v 1 app/build/test-fixtures/editor-test-photo.png
           test -s app/build/test-fixtures/editor-test-photo.png
-          # Keep every sampled frame green enough for the filmstrip replacement check.
-          # A narrow moving red stripe changes frame fingerprints without lowering
-          # the green-pixel ratio below the 75% smoke-test threshold at any timestamp.
-          # The overlay filter evaluates its x expression against the media timestamp.
+          # Keep every sampled frame >99% green while making each of the eight
+          # expected thumbnail timestamps visibly distinct to the 3x3 fingerprint
+          # sampler. Each tiny red square moves to a different 3x3 sample location;
+          # it occupies <1% of the frame, so the green-pixel replacement check remains valid.
           ffmpeg -hide_banner -loglevel error -y \
             -f lavfi -i "color=c=lime:s=360x640:r=24" \
-            -f lavfi -i "color=c=red:s=8x640:r=24" \
             -f lavfi -i "sine=frequency=660:sample_rate=44100" \
-            -filter_complex "[0:v][1:v]overlay=x='mod(t*37,352)':y=0:eval=frame:shortest=1[replacement]" \
-            -map "[replacement]" -map 2:a -t 8 \
+            -t 8 \
+            -vf "drawbox=x=52:y=108:w=40:h=40:color=red:t=fill:enable='between(t,0.25,0.65)',drawbox=x=160:y=108:w=40:h=40:color=red:t=fill:enable='between(t,1.14,1.54)',drawbox=x=268:y=108:w=40:h=40:color=red:t=fill:enable='between(t,2.03,2.43)',drawbox=x=52:y=300:w=40:h=40:color=red:t=fill:enable='between(t,2.92,3.32)',drawbox=x=160:y=300:w=40:h=40:color=red:t=fill:enable='between(t,3.82,4.22)',drawbox=x=268:y=300:w=40:h=40:color=red:t=fill:enable='between(t,4.71,5.11)',drawbox=x=52:y=492:w=40:h=40:color=red:t=fill:enable='between(t,5.60,6.00)',drawbox=x=160:y=492:w=40:h=40:color=red:t=fill:enable='between(t,6.49,6.89)' " \
             -c:v mpeg4 -q:v 5 -pix_fmt yuv420p \
             -c:a aac -b:a 64k -shortest \
             app/build/test-fixtures/editor-test-video-replacement.mp4
