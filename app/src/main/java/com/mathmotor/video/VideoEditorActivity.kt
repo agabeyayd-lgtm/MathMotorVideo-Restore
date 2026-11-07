@@ -2198,7 +2198,13 @@ class VideoEditorActivity : Activity() {
     private fun setTimelinePanelMode(panelOpen: Boolean) {
         if (!::editorTimelineCard.isInitialized) return
         val params = editorTimelineCard.layoutParams as? LinearLayout.LayoutParams ?: return
-        val targetHeight = dp(if (keyboardLayoutActive) 88 else 220)
+        val targetHeight = dp(
+            when {
+                keyboardLayoutActive -> 88
+                panelOpen -> 112
+                else -> 220
+            }
+        )
         if (params.height != targetHeight) {
             params.height = targetHeight
             editorTimelineCard.layoutParams = params
@@ -2347,7 +2353,9 @@ class VideoEditorActivity : Activity() {
                 // controls and sticky panel header visible here cuts the actual 9:16
                 // canvas almost in half on a short viewport.
                 timelineCard.visibility = if (imeVisible) View.GONE else View.VISIBLE
-                centeredPlaybackRow.visibility = if (imeVisible) View.GONE else View.VISIBLE
+                setTimelinePanelMode(panelOpen = activeEditorPanel != null)
+                centeredPlaybackRow.visibility =
+                    if (imeVisible || activeEditorPanel != null) View.GONE else View.VISIBLE
                 if (::editorPanelReturnButton.isInitialized) {
                     editorPanelReturnButton.visibility =
                         if (!imeVisible && activeEditorPanel == "text" &&
@@ -2359,9 +2367,9 @@ class VideoEditorActivity : Activity() {
                         if (imeVisible && activeEditorPanel == "text") View.GONE else View.VISIBLE
                 }
 
-                // Hide decorative strips and fixed docks so the active tool gets
-                // the visible space left by the keyboard.
-                bottomDock.visibility = if (imeVisible) View.GONE else View.VISIBLE
+                // Hide the global dock while a detail panel owns the controls.
+                bottomDock.visibility =
+                    if (imeVisible || activeEditorPanel != null) View.GONE else View.VISIBLE
                 statusView.visibility = if (imeVisible) View.GONE else View.VISIBLE
                 if (topBar.childCount > 4) {
                     val topAction = topBar.getChildAt(4) as? Button
@@ -2769,6 +2777,12 @@ class VideoEditorActivity : Activity() {
         activeClipTool = null
         applyPreviewStageSizing()
         setTimelinePanelMode(panelOpen = false)
+        if (::centeredPlaybackRow.isInitialized) {
+            centeredPlaybackRow.visibility = if (keyboardLayoutActive) View.GONE else View.VISIBLE
+        }
+        if (::editorDockScroll.isInitialized) {
+            editorDockScroll.visibility = if (keyboardLayoutActive) View.GONE else View.VISIBLE
+        }
         updateClipTransformTouchAvailability()
         updateOverlayTransformTouchAvailability()
         textOverlayEditingEnabled = false
@@ -2814,6 +2828,12 @@ class VideoEditorActivity : Activity() {
         activeEditorPanel = null
         applyPreviewStageSizing()
         setTimelinePanelMode(panelOpen = false)
+        if (::centeredPlaybackRow.isInitialized) {
+            centeredPlaybackRow.visibility = if (keyboardLayoutActive) View.GONE else View.VISIBLE
+        }
+        if (::editorDockScroll.isInitialized) {
+            editorDockScroll.visibility = if (keyboardLayoutActive) View.GONE else View.VISIBLE
+        }
         updateClipTransformTouchAvailability()
         updateOverlayTransformTouchAvailability()
         textOverlayEditingEnabled = false
@@ -2849,6 +2869,11 @@ class VideoEditorActivity : Activity() {
         activeEditorPanel = name
         applyPreviewStageSizing()
         setTimelinePanelMode(panelOpen = true)
+        // Detail controls replace the global dock while the project preview
+        // stays fixed. Recover vertical room from the playback row and dock,
+        // not from the preview canvas.
+        if (::centeredPlaybackRow.isInitialized) centeredPlaybackRow.visibility = View.GONE
+        if (::editorDockScroll.isInitialized) editorDockScroll.visibility = View.GONE
         if (::editorPanelReturnButton.isInitialized) {
             editorPanelReturnButton.visibility = if (name == "text") View.VISIBLE else View.GONE
         }
@@ -2949,6 +2974,12 @@ class VideoEditorActivity : Activity() {
         activeEditorPanel = null
         applyPreviewStageSizing()
         setTimelinePanelMode(panelOpen = false)
+        if (::centeredPlaybackRow.isInitialized) {
+            centeredPlaybackRow.visibility = if (keyboardLayoutActive) View.GONE else View.VISIBLE
+        }
+        if (::editorDockScroll.isInitialized) {
+            editorDockScroll.visibility = if (keyboardLayoutActive) View.GONE else View.VISIBLE
+        }
         updateClipTransformTouchAvailability()
         updateOverlayTransformTouchAvailability()
         textOverlayEditingEnabled = false
