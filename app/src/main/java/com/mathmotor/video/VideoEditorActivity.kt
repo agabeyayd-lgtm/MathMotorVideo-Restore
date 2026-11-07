@@ -3360,6 +3360,9 @@ class VideoEditorActivity : Activity() {
             val track = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
+                // Trim targets can straddle a clip edge into adjacent spacer pixels.
+                clipChildren = false
+                clipToPadding = false
                 setPadding(0, dp(1), 0, dp(1))
                 // Empty portions of a lane are valid tap targets for clearing
                 // clip selection; non-clickable spacers naturally bubble here.
@@ -3415,7 +3418,10 @@ class VideoEditorActivity : Activity() {
             val safeDuration = durationMs.coerceAtLeast(1L)
             val width = maxOf(dp(minimumWidthDp), widthBetween(safeStart, safeStart + safeDuration).coerceAtLeast(1))
             val blockHeight = dp(if (keyboardLayoutActive) 26 else 32)
-            val frame = FrameLayout(this)
+            val frame = FrameLayout(this).apply {
+                clipChildren = false
+                clipToPadding = false
+            }
             val body = TextView(this).apply {
                 text = title
                 textSize = 9f
@@ -3538,8 +3544,7 @@ class VideoEditorActivity : Activity() {
                         isClickable = false
                         isFocusable = false
                     }, FrameLayout.LayoutParams(
-                        dp(5), dp(24),
-                        Gravity.CENTER_VERTICAL or (if (isStart) Gravity.LEFT else Gravity.RIGHT)
+                        dp(5), dp(24), Gravity.CENTER
                     ))
                     setOnClickListener { /* The transparent edge target is primarily a drag control. */ }
                 }
@@ -3581,10 +3586,10 @@ class VideoEditorActivity : Activity() {
                         else -> true
                     }
                 }
-                frame.addView(edge, FrameLayout.LayoutParams(
-                    edgeWidth, ViewGroup.LayoutParams.MATCH_PARENT,
-                    if (isStart) Gravity.LEFT else Gravity.RIGHT
-                ))
+                frame.addView(
+                    edge,
+                    timelineEdgeHandleLayoutParams(edgeWidth, width, isStart)
+                )
                 edge.post {
                     // The trailing trim handle can sit against the physical right
                     // edge of the display when the clip end is scrolled into view.
@@ -3628,6 +3633,8 @@ class VideoEditorActivity : Activity() {
                 else -> 32
             })
             val frame = FrameLayout(this).apply {
+                clipChildren = false
+                clipToPadding = false
                 background = android.graphics.drawable.GradientDrawable().apply {
                     setColor(Color.rgb(110, 74, 154))
                     cornerRadius = dp(5).toFloat()
@@ -3841,11 +3848,10 @@ class VideoEditorActivity : Activity() {
                         else -> true
                     }
                 }
-                frame.addView(handle, FrameLayout.LayoutParams(
-                    handleWidth,
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    if (isStart) Gravity.START else Gravity.END
-                ))
+                frame.addView(
+                    handle,
+                    timelineEdgeHandleLayoutParams(handleWidth, blockWidth, isStart)
+                )
             }
 
             addTextTrimHandle(isStart = true)
@@ -4522,11 +4528,10 @@ class VideoEditorActivity : Activity() {
                     else -> true
                 }
             }
-            frame.addView(handle, FrameLayout.LayoutParams(
-                handleWidth,
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                if (isStart) Gravity.START else Gravity.END
-            ))
+            frame.addView(
+                handle,
+                timelineEdgeHandleLayoutParams(handleWidth, blockWidth, isStart)
+            )
         }
 
         addMusicTrimHandle(isStart = true)
@@ -4758,11 +4763,10 @@ class VideoEditorActivity : Activity() {
                     else -> true
                 }
             }
-            frame.addView(handle, FrameLayout.LayoutParams(
-                handleWidth,
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                if (isStart) Gravity.START else Gravity.END
-            ))
+            frame.addView(
+                handle,
+                timelineEdgeHandleLayoutParams(handleWidth, blockWidth, isStart)
+            )
         }
 
         addTrimHandle(isStart = true)
@@ -5822,11 +5826,28 @@ class VideoEditorActivity : Activity() {
         }
     }
 
-    /** Shared width for timeline trim hit targets; the visible grip remains narrow. */
+    /** Shared touch width for timeline trim targets. Even short clips need a usable touch area. */
     private fun timelineEdgeTouchWidth(blockWidth: Int): Int = minOf(
         dp(TouchPriority.TIMELINE_EDGE_TARGET_DP),
-        (blockWidth / 2).coerceAtLeast(1)
+        maxOf(dp(48), (blockWidth / 2).coerceAtLeast(1))
     )
+
+    /**
+     * Centre each edge hit target on the clip boundary. Half of the target may
+     * extend into the adjacent empty timeline area, so short clips still have
+     * independent start/end hit regions without widening their visual duration.
+     */
+    private fun timelineEdgeHandleLayoutParams(
+        edgeWidth: Int,
+        blockWidth: Int,
+        isStart: Boolean
+    ): FrameLayout.LayoutParams = FrameLayout.LayoutParams(
+        edgeWidth,
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        Gravity.LEFT
+    ).apply {
+        leftMargin = if (isStart) -edgeWidth / 2 else blockWidth - edgeWidth / 2
+    }
 
     private fun resetPlayerViewTransform() {
         if (!::playerView.isInitialized) return
