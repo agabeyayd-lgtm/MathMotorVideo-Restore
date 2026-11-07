@@ -2511,18 +2511,33 @@ class VideoEditorActivity : Activity() {
             ?: clips.firstOrNull()?.let { timelineVideoAspectRatio(it.uri) }
                 ?.takeIf { it.isFinite() && it > 0f }
             ?: TimelineThumbnailMath.DEFAULT_SOURCE_ASPECT_RATIO
-        val canvasBounds = PreviewCanvasMath.fit(stageWidth, stageHeight, aspect) ?: return
-        val canvasWidth = canvasBounds.width
-        val canvasHeight = canvasBounds.height
-        if (!keyboardLayoutActive && !previewFocusMode &&
+        val fittedCanvasBounds = PreviewCanvasMath.fit(stageWidth, stageHeight, aspect) ?: return
+        val captureReferenceCanvas = !keyboardLayoutActive && !previewFocusMode &&
             activeEditorPanel == null
-        ) {
-            // Record the actual settled editor work surface before any panel or
-            // keyboard opens. This becomes the invariant preview size for IME mode.
-            referencePreviewCanvasWidth = canvasWidth
-            referencePreviewCanvasHeight = canvasHeight
+        if (captureReferenceCanvas) {
+            // Record the actual settled project canvas before any panel or keyboard opens.
+            referencePreviewCanvasWidth = fittedCanvasBounds.width
+            referencePreviewCanvasHeight = fittedCanvasBounds.height
             referencePreviewStageHeightPx = stageHeight
         }
+        // Keep the project itself pixel-identical while tools are open. The dark
+        // surrounding work stage may reflow, but the editable/exportable canvas may not.
+        val preserveProjectCanvas = !captureReferenceCanvas &&
+            !previewFocusMode &&
+            (keyboardLayoutActive || activeEditorPanel != null) &&
+            referencePreviewCanvasWidth > 0 &&
+            referencePreviewCanvasHeight > 0
+        val canvasWidth = if (preserveProjectCanvas) {
+            referencePreviewCanvasWidth
+        } else {
+            fittedCanvasBounds.width
+        }
+        val canvasHeight = if (preserveProjectCanvas) {
+            referencePreviewCanvasHeight
+        } else {
+            fittedCanvasBounds.height
+        }
+        val canvasBounds = PreviewCanvasMath.fit(stageWidth, stageHeight, aspect) ?: return
         val stageScreenLocation = IntArray(2)
         previewFrame.getLocationOnScreen(stageScreenLocation)
         val metrics = "stage=${stageWidth}x${stageHeight} canvas=${canvasWidth}x${canvasHeight} " +
