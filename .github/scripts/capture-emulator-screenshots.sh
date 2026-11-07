@@ -2314,7 +2314,7 @@ echo "Step 9/12: align a thumbnail cell with the playhead and compare the render
 # dump becomes unreliable after repeated panel/keyboard operations.
 echo "Using startup-captured Android ViewConfiguration touch slop: \${touch_slop_px}px"
 thumbnail_aligned=false
-for attempt in 1 2 3 4 5; do
+for attempt in 1 2 3 4 5 6 7 8; do
   timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime \
     -s TimelineAlignmentTest:I TimelineSyncTest:I TimelineFrameSyncTest:I TimelineThumbnail:I \
     > emulator-screenshots/thumbnail-alignment-measurements.txt 2>&1 || true
@@ -2323,7 +2323,7 @@ for attempt in 1 2 3 4 5; do
   delta_x="$((play_center_x - thumb_center_x))"
   absolute_delta="$((delta_x < 0 ? -delta_x : delta_x))"
   echo "Alignment attempt $attempt: sample=\${thumb_sample_ms}ms center=\${thumb_center_x}px playhead=\${play_center_x}px delta=\${delta_x}px"
-  if [ "$absolute_delta" -le 5 ]; then
+  if [ "$absolute_delta" -le 2 ]; then
     thumbnail_aligned=true
     break
   fi
@@ -2333,7 +2333,7 @@ for attempt in 1 2 3 4 5; do
   sleep 1
 done
 if [ "$thumbnail_aligned" != true ]; then
-  echo "Could not center any filmstrip thumbnail under the fixed playhead after 5 measured drags."
+  echo "Could not center any filmstrip thumbnail under the fixed playhead after 8 measured drags."
   collect_capture_diagnostics thumbnail-alignment-not-centered
   exit 24
 fi
