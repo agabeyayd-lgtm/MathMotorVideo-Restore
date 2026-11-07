@@ -1189,3 +1189,11 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - The first follow-up's added JVM test exposed a defensive-input edge case: an infinite/negative selection inset was normalized to zero, which allowed movement instead of failing closed.
 - `PreviewCanvasMath.maxCenterTranslation` now returns zero for non-finite or invalid canvas/content/inset inputs. The unit test also covers a negative inset.
 - The complete emulator run remains pending on the next head; no version, signing, or release workflow changed.
+
+
+## Text selection smoke: use fresh canvas metrics without redundant UIAutomator dumps — 2026-11-07
+
+- Emulator run `42346679053` (#1076) passed installation, video replacement, preview, overlay/audio touch checks, MP4 export, and the keyboard-open 9:16 canvas check.
+- It stopped because UIAutomator could not dump a second copy of the text/track accessibility tree after keyboard dismissal. The timeline tree is large and this repeated dump timed out; it was a test-harness failure.
+- The selection pixel check now uses the latest `PREVIEW_CANVAS_BOUNDS` marker captured after each keyboard/panel/gesture transition, together with stable root-window bounds from the already captured editor hierarchy. Redundant UIAutomator dumps are removed.
+- The application correction (canvas outline below text/selection chrome and a 2 dp layer-edge inset) remains intact. Full emulator verification is pending on the next head.
