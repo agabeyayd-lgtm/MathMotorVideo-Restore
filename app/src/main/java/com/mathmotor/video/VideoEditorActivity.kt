@@ -683,7 +683,8 @@ class VideoEditorActivity : Activity() {
         }
         val initialOverlay=intent.getStringExtra("initial_overlay_uri")
         if(!initialOverlay.isNullOrBlank()) {
-            runCatching { addOverlayAsset(Uri.parse(initialOverlay)) }
+            // Home-screen photo editing starts with a full-frame editable image layer.
+            runCatching { addOverlayAsset(Uri.parse(initialOverlay), initialPhoto = true) }
                 .onFailure { status.text="Fotoğraf açılamadı: ${it.message}" }
             intent.removeExtra("initial_overlay_uri")
         }
@@ -7412,7 +7413,7 @@ class VideoEditorActivity : Activity() {
         return ratio.takeIf { it.isFinite() && it > 0f }?.coerceIn(0.10f, 10f) ?: 1f
     }
 
-    private fun addOverlayAsset(uri: Uri) {
+    private fun addOverlayAsset(uri: Uri, initialPhoto: Boolean = false) {
         val mimeType = contentResolver.getType(uri).orEmpty().lowercase(Locale.US)
         val extension = (uri.lastPathSegment ?: "").substringAfterLast('.', "").lowercase(Locale.US)
         val isImage = mimeType.startsWith("image/") ||
@@ -7453,13 +7454,17 @@ class VideoEditorActivity : Activity() {
                     return@runOnUiThread
                 }
                 val projectDuration = TimelineVideoMath.totalDuration(videoTimelineSegments()).coerceAtLeast(1_000L)
-                val logoDefaults = if (isImage) OverlayAssetDefaultsMath.imageLogo(projectDuration) else null
-                // A logo begins at project time zero and spans the entire main video,
-                // regardless of the current playhead. Video overlays still start at the playhead.
-                val startMs = if (logoDefaults != null) 0L
+                val imageDefaults = if (isImage) {
+                    if (initialPhoto) OverlayAssetDefaultsMath.fullFramePhoto(projectDuration)
+                    else OverlayAssetDefaultsMath.imageLogo(projectDuration)
+                } else null
+                // Still images begin at project time zero. A photo opened from the
+                // home screen starts full-frame; an explicitly added logo keeps its
+                // small upper-right preset. Video overlays still start at the playhead.
+                val startMs = if (imageDefaults != null) 0L
                     else timelinePlayheadMs.coerceIn(0L, projectDuration - 1L)
-                val effectiveSourceDuration = logoDefaults?.sourceDurationMs ?: sourceDuration
-                val defaultDuration = logoDefaults?.durationMs
+                val effectiveSourceDuration = imageDefaults?.sourceDurationMs ?: sourceDuration
+                val defaultDuration = imageDefaults?.durationMs
                     ?: minOf(sourceDuration, (projectDuration - startMs).coerceAtLeast(1_000L))
                 val overlay = OverlayClip(
                     id = nextOverlayId++,
@@ -7470,10 +7475,10 @@ class VideoEditorActivity : Activity() {
                     sourceStartMs = 0L,
                     timelineStartMs = startMs,
                     durationMs = defaultDuration.coerceIn(1L, effectiveSourceDuration),
-                    scale = logoDefaults?.scale ?: 0.35f,
-                    xFraction = logoDefaults?.xFraction ?: 0.78f,
-                    yFraction = logoDefaults?.yFraction ?: 0.22f,
-                    opacity = logoDefaults?.opacity ?: 1f,
+                    scale = imageDefaults?.scale ?: 0.35f,
+                    xFraction = imageDefaults?.xFraction ?: 0.78f,
+                    yFraction = imageDefaults?.yFraction ?: 0.22f,
+                    opacity = imageDefaults?.opacity ?: 1f,
                     aspectRatio = aspectRatio
                 )
                 overlayClips.add(overlay)
@@ -7490,6 +7495,16 @@ class VideoEditorActivity : Activity() {
                 if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
                     android.util.Log.i("EditorSmokeTest",
                         "EDITOR_SMOKE_OVERLAY_ADDED id=" + overlay.id + " aspect=" + overlay.aspectRatio)
+                }                if (initialPhoto && isImage &&
+                    (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+                ) {
+                    android.util.Log.i(
+                        "EditorSmokeTest",
+                        "EDITOR_SMOKE_INITIAL_PHOTO_FULL_FRAME scale=" + overlay.scale +
+                            " xFraction=" + overlay.xFraction +
+                            " yFraction=" + overlay.yFraction +
+                            " opacity=" + overlay.opacity
+                    )
                 }
                 // Test-only replacement path mirrors the user's exact sequence: remove
                 // the current video through the production removal handler, then import
