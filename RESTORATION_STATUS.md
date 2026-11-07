@@ -1111,3 +1111,11 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - The full-preview canvas expands when the text panel closes, so the text layer's on-screen coordinate changes with the project canvas. The previous smoke script reused the compressed-panel center for the later reselect tap.
 - Script commit `f03f1a12e9510b6310fa8490eed10af81bf7d59f` now captures fresh canvas bounds after panel close, verifies the full-size selection frame, and taps its newly measured center. It also uses fresh bounds for the reselected screenshot. This preserves the pixel/gesture assertions rather than weakening them.
 - Validate on the next complete API 35 run together with responsive text preview scaling.
+
+
+## Screenshot-coordinate scale correction — 2026-11-07
+
+- Emulator #1048 source screenshot shows the text itself and its white selection rectangle are visibly present and fully inside the project canvas. The smoke test nevertheless failed because `PREVIEW_CANVAS_BOUNDS` is logged in Android view coordinates (root window 1080×1920), while the pulled PNG is rasterized at 928×1640.
+- The detector compared these coordinate spaces without scaling, so it searched a shifted/larger region and falsely reported `text-canvas-selection-frame-missing`.
+- Commit `70b9a05b20dcf6fb855c9e247aaed2db32fa7216` scales the measured canvas rectangle using the hierarchy root bounds and actual screenshot dimensions before running the unchanged white-frame/text pixel checks. It does not weaken the frame, text, or drag assertions.
+- Fresh emulator verification is required for selected text, post-drag position, and reselection after closing the panel.
