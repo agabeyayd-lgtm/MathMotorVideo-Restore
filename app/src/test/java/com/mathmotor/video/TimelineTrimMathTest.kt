@@ -416,6 +416,47 @@ class TimelineVideoMathTest {
     }
 
     @Test
+    fun splitFragmentsCanMoveToStartMiddleAndEndWithoutCollapsingFreeSpace() {
+        val original = listOf(
+            TimelineVideoSegment(0L, 0L, 3_000L, 3_000L),
+            TimelineVideoSegment(3_000L, 0L, 5_000L, 5_000L)
+        )
+
+        // Put the right-hand split fragment in a free middle position. The
+        // neighbouring fragment must stay where it is and the new gap remains.
+        val middle = TimelineVideoMath.reorderForDrop(
+            original, movingIndex = 1, requestedStartMs = 6_000L
+        )!!
+        assertEquals(0L, middle.timelineStartByClipIndex[0])
+        assertEquals(6_000L, middle.timelineStartByClipIndex[1])
+
+        val movedToMiddle = original.mapIndexed { index, segment ->
+            segment.copy(timelineStartMs = middle.timelineStartByClipIndex[index]!!)
+        }
+        // Move that same fragment all the way back to the beginning. Dropping
+        // over the first clip is an insertion, so only the colliding follower moves.
+        val beginning = TimelineVideoMath.reorderForDrop(
+            movedToMiddle, movingIndex = 1, requestedStartMs = 0L
+        )!!
+        assertEquals(listOf(1, 0), beginning.orderedClipIndices)
+        assertEquals(0L, beginning.timelineStartByClipIndex[1])
+        assertEquals(5_000L, beginning.timelineStartByClipIndex[0])
+
+        val movedToBeginning = beginning.orderedClipIndices.map { index ->
+            movedToMiddle[index].copy(timelineStartMs = beginning.timelineStartByClipIndex[index]!!)
+        }
+        // Move the front fragment beyond the current last clip. The drop into
+        // empty tail space is independent and does not pull the other clip along.
+        val end = TimelineVideoMath.reorderForDrop(
+            movedToBeginning,
+            movingIndex = 0,
+            requestedStartMs = 11_000L
+        )!!
+        assertEquals(11_000L, end.timelineStartByClipIndex[0])
+        assertEquals(0L, end.timelineStartByClipIndex[1])
+    }
+
+    @Test
     fun aSingleVideoClipCanMoveIntoAnEmptyTimelinePosition() {
         val plan = TimelineVideoMath.reorderForDrop(
             listOf(TimelineVideoSegment(0L, 0L, 4_000L, 4_000L)),
