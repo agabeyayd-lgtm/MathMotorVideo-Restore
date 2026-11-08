@@ -1,3 +1,14 @@
+## Project-wide Undo/Redo — 2026-11-09 (PR #34; verification in progress)
+
+- Replaced the editor's clip-only history with a shared project snapshot covering main video clips and their transforms/speed/trim, image/video overlays and keyframes, text contents/style/timing/animation/placement, music and sound-effect sources/timing/volume, original-source audio enable/volume, and the global video filter/color controls.
+- Undo and Redo share one chronological stack with a 50-step cap. Text typing is grouped with a debounce/focus boundary; seek-bar and touch gestures are intended to commit as one edit at gesture end.
+- Restoring a history entry also rebuilds the timeline lanes, selected layer controls, playhead position, audio preview and composite video preview. Project-wide button accessibility descriptions replace the old clip-only wording.
+- Added an API 35 emulator regression that physically drags a selected text layer, taps the real Undo control, checks that its selection frame returns to the measured pre-drag position, then taps Redo and checks the post-drag position. Test-only transition logs are enabled only by the debug timeline test intent.
+- **Verification boundary:** unit tests, Android compile and debug packaging passed on the original feature commit `6a5c9b612d99ea6b3dfe51ea7345f77bc29b57cb`. The added text Undo/Redo interaction changed the source and emulator harness afterward; the newest runs must finish successfully before this work is considered verified. Audio/filter/overlay-specific Undo/Redo flows and physical-device behavior remain to be exercised.
+- PR #34 remains a draft and is not merged. No signed release APK or version-code change was made. The CI debug ZIP is not a production update.
+
+---
+
 ## CapCut-style editor: parallel filmstrip decoding and verified timeline alignment — 2026-11-08
 
 - The rejected one-worker/Media3-first experiment caused **2,965–5,064 ms** queue waits. The verified path uses three isolated workers with Android `MediaMetadataRetriever` as the primary decoder and reusable Media3 `FrameExtractor` as a fallback.
