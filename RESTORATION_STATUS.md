@@ -1,11 +1,11 @@
 ## Project-wide Undo/Redo — 2026-11-09 (PR #34; verification in progress)
 
-- The clip-only edit stack has been replaced on the feature branch with project snapshots for video clips/transforms, overlay media/keyframes, text content/style/timing/animation/placement, music and sound effects, original-audio settings, and filter/color controls.
+- The clip-only edit stack has been replaced on the feature branch with project snapshots for video clips/transforms, overlay media/keyframes, text content/style/timing/animation/placement, music and sound effects, original-audio settings, filter/color controls, and project canvas aspect preset.
 - One user action is intended to equal one history entry. Text input is grouped; seek-bar and touch interactions capture a starting snapshot and commit after the gesture. The history retains at most 50 entries.
-- Undo/Redo restores the model and rebinds the timeline, control panels, selection, playhead, audio preview and composite video preview.
-- The API 35 smoke script now adds a real text-canvas drag assertion: Undo must return the selected text frame to its measured original position; Redo must restore the moved position. Test-only state-transition logs are gated behind the debug timeline test intent.
-- Unit tests, Android compile and debug APK packaging passed on commit `6a5c9b612d99ea6b3dfe51ea7345f77bc29b57cb`; subsequent commits added diagnostics and the interaction test, so the latest workflows are still pending. Do not mark PR #34 verified until those latest checks complete.
-- Still required: exercise Undo/Redo independently for audio import/removal/volume/timing, overlay add/remove/transform/keyframes, text add/delete/style/timing, filters, and video trim/split/reorder; verify that each restore matches both timeline and preview. Then merge only after all required CI checks are green. No production APK/version-code update is authorized by this implementation work.
+- Undo/Redo restores the model and rebinds the timeline, control panels, selection, playhead, audio preview, canvas framing and composite video preview.
+- The API 35 smoke script includes a real text-canvas drag assertion: Undo must return the selected text frame to its measured original position; Redo must restore the moved position. Test-only state-transition logs are gated behind the debug timeline test intent.
+- Earlier unit/build and debug packaging runs passed, but the canvas-history addition and text Undo/Redo emulator interaction are later code changes. The newest build and emulator checks must complete successfully before PR #34 is verified.
+- Still required: exercise Undo/Redo independently for audio import/removal/volume/timing, overlay add/remove/transform/keyframes, text add/delete/style/timing, filters, canvas framing, and video trim/split/reorder; verify that each restore matches both timeline and preview. Then merge only after all required CI checks are green. No production APK/version-code update is authorized by this implementation work.
 
 ---
 
