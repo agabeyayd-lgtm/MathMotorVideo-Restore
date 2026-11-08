@@ -1278,3 +1278,9 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - The split math and the single-lane drawing both use absolute project-time boundaries. The JVM suite covers split seam continuity at 0.5×, 1×, 1.75× and 2×, gap preservation, overlap repair, and insertion/reorder. This is not yet proof of the visible emulator result: keep PR #29 open until the current-head API 35 test demonstrates actual playback, a 0–1 px post-split seam, successful direct drag/reorder, and saving/restoring both segments.
 - Commit `6c779c917ec1d6652eea66e85eefd18e6cb2e465` adds a force-stop/reopen check for the split-video draft and verifies the two restored project ranges still meet at a 0 ms seam. Commit `1f26db04218293d080977a0c1c05000ae874ac6c` moves the clip-bound diagnostic to stderr so the shell receives only numeric tap coordinates. The current-head rerun must validate these changes before the PR is considered green.
 - No versionCode, release signing, main-branch APK, or release workflow changes.
+
+## 2026-11-08 — fresh timeline geometry in emulator sync diagnostics
+
+- Emulator run `42480441974` built successfully and passed unit tests, but the final preview/thumbnail alignment assertion failed at a 35 ms tolerance: the captured thumbnail timestamp was 445 ms while the latest decoded preview samples were 83, 375, and 625 ms.
+- Artifact inspection showed the alignment snapshot could be rate-limited for 500 ms while scroll/fling updates continued; the final sync samples could therefore describe a newer playhead/scroll position than the most recent thumbnail View-bounds snapshot. This made the assertion compare different moments in time.
+- Commit `7a4adbbb1830e6f05f52348de5315eb5aaa51ea4` changes the debug-only diagnostic path to force a fresh View-bounds snapshot alongside each timeline sync sample. The 35 ms assertion is unchanged. Re-run emulator verification before treating preview/thumbnail alignment as passed.
