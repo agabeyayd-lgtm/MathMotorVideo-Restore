@@ -707,6 +707,16 @@ class VideoEditorActivity : Activity() {
                     if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
                         val restoredOverlayCount = savedDraft.optJSONArray("overlays")?.length() ?: 0
                         android.util.Log.i("EditorSmokeTest", "EDITOR_SMOKE_DRAFT_RESTORED id=$draftId overlays=$restoredOverlayCount")
+                        val restoredClipRanges = clips.joinToString(",") { clip ->
+                            val timelineDuration = ClipSpeedMath.timelineDurationMs(
+                                (clip.endMs - clip.startMs).coerceAtLeast(0L), clip.speed
+                            )
+                            "${clip.timelineStartMs}:${clip.timelineStartMs + timelineDuration}"
+                        }
+                        android.util.Log.i(
+                            "EditorSmokeTest",
+                            "EDITOR_SMOKE_DRAFT_VIDEO_RESTORED id=$draftId clips=${clips.size} ranges=$restoredClipRanges"
+                        )
                     }
                 }
                 .onFailure {
