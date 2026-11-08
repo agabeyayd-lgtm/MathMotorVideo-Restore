@@ -10780,14 +10780,12 @@ class VideoEditorActivity : Activity() {
         val chronological = segments.indices.sortedWith(
             compareBy<Int> { segments[it].timelineStartMs }.thenBy { it }
         )
-        var expectedStartMs = 0L
-        val needsPacking = chronological.any { index ->
-            val segment = TimelineVideoMath.normalize(segments[index])
-            val misplaced = segment.timelineStartMs != expectedStartMs
-            expectedStartMs = segment.timelineEndMs
-            misplaced
+        val hasOverlap = chronological.zipWithNext().any { (left, right) ->
+            segments[left].timelineEndMs > segments[right].timelineStartMs
         }
-        if (!needsPacking) return
+        // Do not close intentional empty-space moves here. This runs on every
+        // timeline rebuild; only real overlaps are repaired during normal editing.
+        if (!hasOverlap) return
 
         val oldSelectedIndex = selectedClipIndex
         val oldPlayheadMs = timelinePlayheadMs
@@ -10795,7 +10793,7 @@ class VideoEditorActivity : Activity() {
         val oldLocalMs = oldActiveIndex?.let { index ->
             (oldPlayheadMs - segments[index].timelineStartMs).coerceAtLeast(0L)
         } ?: 0L
-        val plan = TimelineVideoMath.packSequentially(segments) ?: return
+        val plan = TimelineVideoMath.resolveOverlaps(segments) ?: return
         val previous = clips.toList()
         val repaired = plan.orderedClipIndices.map { originalIndex ->
             previous[originalIndex].copy(
@@ -10814,9 +10812,7 @@ class VideoEditorActivity : Activity() {
                 0L, (duration - 1L).coerceAtLeast(0L)
             )
         } else {
-            val selected = clips.getOrNull(selectedClipIndex)
-            timelinePlayheadMs = selected?.timelineStartMs
-                ?: oldPlayheadMs.coerceIn(0L, totalOutputDurationMs())
+            timelinePlayheadMs = oldPlayheadMs.coerceIn(0L, totalOutputDurationMs())
         }
         pendingTimelineScrollX = TimelineScaleMath.pixelsForTime(
             timelinePlayheadMs, timelinePixelsPerSecond()
@@ -10824,7 +10820,7 @@ class VideoEditorActivity : Activity() {
         timelineHorizontalScrollX = pendingTimelineScrollX ?: 0
         if (timelineSyncTestEnabled) android.util.Log.w(
             "TimelineSyncTest",
-            "VIDEO_LANE_PACKED clipCount=${clips.size} starts=${clips.indices.joinToString(","){ "$it:${clips[it].timelineStartMs}" }}"
+            "VIDEO_LANE_OVERLAP_REPAIRED clipCount=${clips.size} starts=${clips.indices.joinToString(","){ "$it:${clips[it].timelineStartMs}" }}"
         )
     }
 
