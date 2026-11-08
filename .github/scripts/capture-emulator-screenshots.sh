@@ -2882,9 +2882,9 @@ fi
 # adjacent clip frames after they were reordered.
 post_drop_seam_ready=false
 for attempt in $(seq 1 10); do
-  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineAlignmentTest:I \\
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineAlignmentTest:I \
     > emulator-screenshots/video-split-after-drag-measurements.txt 2>&1 || true
-  if grep -q "TIMELINE_ALIGNMENT_SNAPSHOT.*clipBoundsByIndex=" \\
+  if grep -q "TIMELINE_ALIGNMENT_SNAPSHOT.*clipBoundsByIndex=" \
       emulator-screenshots/video-split-after-drag-measurements.txt; then
     post_drop_seam_ready=true
     break
