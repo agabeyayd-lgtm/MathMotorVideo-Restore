@@ -2939,6 +2939,68 @@ if ! take_screen emulator-screenshots/home-with-drafts.png; then
   exit 6
 fi
 
+echo "Step 12c/12: force-stop/reopen the split-video draft and verify both segments"
+timeout -k 2s 8s adb -s emulator-5554 shell am force-stop com.mathmotor.video.next || true
+timeout -k 2s 5s adb -s emulator-5554 logcat -c || true
+if ! timeout -k 2s 15s adb -s emulator-5554 shell am start \
+  -n com.mathmotor.video.next/com.mathmotor.video.EditorTestEntryActivity \
+  --es draft_id "11111111-1111-4111-8111-111111111111" | tee emulator-screenshots/video-split-draft-reopen.txt; then
+  echo "Could not reopen the saved split-video draft after force-stop."
+  collect_capture_diagnostics video-split-draft-reopen-launch-failure
+  exit 14
+fi
+split_draft_restored=false
+for attempt in $(seq 1 20); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorSmokeTest:I \
+    > emulator-screenshots/video-split-draft-restore-logcat.txt 2>&1 || true
+  if grep -Fq "EDITOR_SMOKE_DRAFT_VIDEO_RESTORED id=11111111-1111-4111-8111-111111111111 clips=2" \
+      emulator-screenshots/video-split-draft-restore-logcat.txt; then
+    split_draft_restored=true
+    break
+  fi
+  sleep 1
+done
+if [ "$split_draft_restored" != true ]; then
+  echo "The force-stopped video draft did not restore both split segments."
+  cat emulator-screenshots/video-split-draft-restore-logcat.txt || true
+  collect_capture_diagnostics video-split-draft-restore-failure
+  exit 14
+fi
+if ! python3 - emulator-screenshots/video-split-draft-restore-logcat.txt <<'PY'
+import re
+import sys
+
+pattern = re.compile(
+    r"EDITOR_SMOKE_DRAFT_VIDEO_RESTORED "
+    r"id=11111111-1111-4111-8111-111111111111 "
+    r"clips=(\d+) ranges=([0-9:,]+)"
+)
+matches = [pattern.search(line) for line in open(sys.argv[1], errors="replace")]
+matches = [match for match in matches if match]
+if not matches:
+    raise SystemExit("Restored video clip ranges were not logged.")
+count = int(matches[-1].group(1))
+ranges = [tuple(map(int, part.split(":"))) for part in matches[-1].group(2).split(",")]
+if count != 2 or len(ranges) != 2:
+    raise SystemExit(f"Expected exactly two restored split segments; count={count}, ranges={ranges}")
+if ranges[0][1] != ranges[1][0]:
+    raise SystemExit(
+        f"Restored split segments no longer meet edge-to-edge: ranges={ranges}, "
+        f"seam={ranges[1][0] - ranges[0][1]}ms"
+    )
+if ranges[0][0] != 0 or ranges[1][1] <= ranges[1][0]:
+    raise SystemExit(f"Restored split segments have invalid project ranges: {ranges}")
+print(f"PASS: force-stop/reopen restored both split segments with a 0ms seam: {ranges}")
+PY
+then
+  collect_capture_diagnostics video-split-draft-restore-seam
+  exit 14
+fi
+if ! take_screen emulator-screenshots/video-split-draft-restored.png; then
+  collect_capture_diagnostics video-split-draft-restore-capture-failure
+  exit 6
+fi
+
 echo "Step 12b/12: verify home-screen photo opens as a full-frame editable layer"
 timeout -k 2s 8s adb -s emulator-5554 shell am force-stop com.mathmotor.video.next || true
 timeout -k 2s 5s adb -s emulator-5554 logcat -c || true
