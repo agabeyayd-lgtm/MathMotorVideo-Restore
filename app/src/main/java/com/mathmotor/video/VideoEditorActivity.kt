@@ -3599,6 +3599,7 @@ class VideoEditorActivity : Activity() {
                     when (event.actionMasked) {
                         MotionEvent.ACTION_DOWN -> {
                             downX = event.rawX
+                            activeProjectHistorySnapshot = captureProjectEditSnapshot()
                             active = true
                             moved = false
                             longPressed = false
@@ -3630,14 +3631,19 @@ class VideoEditorActivity : Activity() {
                             view.parent?.requestDisallowInterceptTouchEvent(false)
                             if (longPressed && moved) {
                                 onMove(TimelineScaleMath.millisecondsForPixels(event.rawX - downX, timelinePixelsPerSecond()))
+                                finishProjectHistoryGesture()
                                 refreshTimelineTracks()
-                            } else if (!moved) onClick?.invoke()
+                            } else {
+                                activeProjectHistorySnapshot = null
+                                if (!moved) onClick?.invoke()
+                            }
                             view.performClick()
                             true
                         }
                         MotionEvent.ACTION_CANCEL -> {
                             timelineHandler.removeCallbacks(hold)
                             active = false
+                            activeProjectHistorySnapshot = null
                             frame.translationX = 0f
                             view.parent?.requestDisallowInterceptTouchEvent(false)
                             true
@@ -3679,6 +3685,7 @@ class VideoEditorActivity : Activity() {
                         MotionEvent.ACTION_DOWN -> {
                             downX = event.rawX
                             moved = false
+                            activeProjectHistorySnapshot = captureProjectEditSnapshot()
                             pauseActivePreview()
                             view.parent?.requestDisallowInterceptTouchEvent(true)
                             true
@@ -3698,11 +3705,13 @@ class VideoEditorActivity : Activity() {
                             view.translationX = 0f
                             view.parent?.requestDisallowInterceptTouchEvent(false)
                             callback(if (moved) delta else 0L)
+                            if (moved) finishProjectHistoryGesture() else activeProjectHistorySnapshot = null
                             view.performClick()
                             refreshTimelineTracks()
                             true
                         }
                         MotionEvent.ACTION_CANCEL -> {
+                            activeProjectHistorySnapshot = null
                             view.translationX = 0f
                             view.parent?.requestDisallowInterceptTouchEvent(false)
                             true
@@ -3809,6 +3818,7 @@ class VideoEditorActivity : Activity() {
                         bodyDownRawX = event.rawX
                         bodyInitialStartMs = layer.startMs
                         bodyInitialEndMs = layer.endMs
+                        activeProjectHistorySnapshot = captureProjectEditSnapshot()
                         bodyMoved = false
                         bodyTouchActive = true
                         bodyLongPressed = false
@@ -3858,19 +3868,24 @@ class VideoEditorActivity : Activity() {
                             layer.endMs = newStart + spanMs
                             layer.timingCustomized = true
                             selectedTextLayerId = layer.id
+                            finishProjectHistoryGesture()
                             loadTextLayerIntoControls(layer)
                             status.text = "Yazı katmanı zaman çizelgesinde taşındı."
                             refreshTimelineTracks()
                             enterTextTools()
                         } else if (!bodyMoved) {
+                            activeProjectHistorySnapshot = null
                             view.performClick()
                             refreshTimelineTracks()
+                        } else {
+                            activeProjectHistorySnapshot = null
                         }
                         true
                     }
                     android.view.MotionEvent.ACTION_CANCEL -> {
                         timelineHandler.removeCallbacks(bodyLongPressAction)
                         bodyTouchActive = false
+                        activeProjectHistorySnapshot = null
                         frame.translationX = 0f
                         frame.animate().scaleX(1f).scaleY(1f).setDuration(100L).start()
                         view.parent?.requestDisallowInterceptTouchEvent(false)
@@ -3909,6 +3924,7 @@ class VideoEditorActivity : Activity() {
                             downRawX = event.rawX
                             initialStartMs = layer.startMs
                             initialEndMs = layer.endMs
+                            activeProjectHistorySnapshot = captureProjectEditSnapshot()
                             moved = false
                             player?.playWhenReady = false
                             view.parent?.requestDisallowInterceptTouchEvent(true)
@@ -3951,6 +3967,7 @@ class VideoEditorActivity : Activity() {
                                 }
                                 layer.timingCustomized = true
                                 selectedTextLayerId = layer.id
+                                finishProjectHistoryGesture()
                                 loadTextLayerIntoControls(layer)
                                 status.text = if (isStart) {
                                     "Yazı başlangıcı: ${formatTimelineMs(layer.startMs)}"
@@ -3959,6 +3976,7 @@ class VideoEditorActivity : Activity() {
                                 }
                                 enterTextTools()
                             } else {
+                                activeProjectHistorySnapshot = null
                                 selectTextLayer(layer.id)
                             }
                             refreshTimelineTracks()
@@ -3966,6 +3984,7 @@ class VideoEditorActivity : Activity() {
                             true
                         }
                         android.view.MotionEvent.ACTION_CANCEL -> {
+                            activeProjectHistorySnapshot = null
                             view.translationX = 0f
                             view.parent?.requestDisallowInterceptTouchEvent(false)
                             true
