@@ -2877,7 +2877,79 @@ if ! take_screen emulator-screenshots/video-split-after-drag.png; then
   collect_capture_diagnostics video-split-after-drag-capture
   exit 6
 fi
-echo "PASS: split seam is 0ms; one-finger drag moved segment 2 to 00:00 and reflowed segment 1 to ${expected_first_start_ms}ms with no overlap."
+# Validate the ACTUAL post-drop Views and pixels. The earlier split check only
+# measured the pre-drag geometry; it could not catch a divider drawn by the two
+# adjacent clip frames after they were reordered.
+post_drop_seam_ready=false
+for attempt in $(seq 1 10); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineAlignmentTest:I \\
+    > emulator-screenshots/video-split-after-drag-measurements.txt 2>&1 || true
+  if grep -q "TIMELINE_ALIGNMENT_SNAPSHOT.*clipBoundsByIndex=" \\
+      emulator-screenshots/video-split-after-drag-measurements.txt; then
+    post_drop_seam_ready=true
+    break
+  fi
+  sleep 1
+done
+if [ "$post_drop_seam_ready" != true ]; then
+  echo "No fresh post-drop clip geometry was captured."
+  collect_capture_diagnostics video-split-after-drag-geometry-missing
+  exit 98
+fi
+if ! python3 - emulator-screenshots/video-split-after-drag.png emulator-screenshots/video-split-after-drag-measurements.txt <<'PY'
+from PIL import Image
+import re
+import sys
+
+image = Image.open(sys.argv[1]).convert("RGB")
+pattern = re.compile(r"TIMELINE_ALIGNMENT_SNAPSHOT .*?clipBoundsByIndex=([0-9:,;]+)")
+snapshots = []
+for line in open(sys.argv[2], errors="replace"):
+    match = pattern.search(line)
+    if not match:
+        continue
+    bounds = {}
+    for item in match.group(1).split(";"):
+        index, raw = item.split(":", 1)
+        bounds[int(index)] = tuple(map(int, raw.split(",")))
+    if len(bounds) >= 2:
+        snapshots.append(bounds)
+if not snapshots:
+    raise SystemExit("The post-drop snapshot did not include both split clip Views.")
+bounds = sorted(snapshots[-1].values(), key=lambda rect: rect[0])
+left, right = bounds[0], bounds[1]
+seam = left[2] - right[0]
+if abs(seam) > 1:
+    raise SystemExit(
+        f"Post-drop clip Views are not edge-to-edge: left={left}, right={right}, seam={seam}px"
+    )
+sample_x = (left[2] + right[0]) // 2
+sample_y = (max(left[1], right[1]) + min(left[3], right[3])) // 2
+if not (0 <= sample_y < image.height):
+    raise SystemExit(f"Post-drop seam sample is outside screenshot: y={sample_y}, size={image.size}")
+pixels = [
+    image.getpixel((x, sample_y))
+    for x in range(max(0, sample_x - 4), min(image.width, sample_x + 5))
+]
+def fixture_frame_pixel(rgb):
+    red, green, blue = rgb
+    return green > 120 and green > red * 1.5 and green > blue * 1.5
+continuous = sum(fixture_frame_pixel(pixel) for pixel in pixels)
+if continuous < 7:
+    raise SystemExit(
+        f"Visible dark divider remains after reorder: seam={sample_x}px y={sample_y}, "
+        f"fixture-frame pixels={continuous}/9, sampled={pixels}"
+    )
+print(
+    f"PASS: post-drop clip Views meet within 1px and filmstrip pixels remain continuous "
+    f"({continuous}/9 fixture pixels at seam={sample_x}px)"
+)
+PY
+then
+  collect_capture_diagnostics video-split-after-drag-visible-seam
+  exit 99
+fi
+echo "PASS: split seam is 0ms; direct drag, visible filmstrip seam and reorder geometry verified; draft save/reopen follows."
 
 echo "Step 12/12: validate automatic draft save and resume list"
 # Android Back is context-sensitive: with a text/overlay layer selected it only
