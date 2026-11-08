@@ -2399,7 +2399,7 @@ python3 .github/scripts/assert-thumbnail-alignment.py verify \
   emulator-screenshots/thumbnail-alignment-logcat.txt \
   emulator-screenshots/editor-frame-aligned.png
 
-echo "Step 10/12: exercise timeline ruler scrubbing in both directions"
+echo "Step 10/12: swipe directly on the filmstrip and verify every timeline lane stays synchronized"
 clip_bounds="$(python3 - emulator-screenshots/thumbnail-alignment-logcat.txt <<'PY'
 import re
 import sys
@@ -2418,7 +2418,7 @@ if [ -z "$clip_bounds" ]; then
   exit 17
 fi
 read -r clip_x1 clip_y1 clip_x2 clip_y2 <<< "$clip_bounds"
-scrub_y="$ruler_y"
+scrub_y="$(((clip_y1 + clip_y2) / 2))"
 clip_width="$((clip_x2 - clip_x1))"
 # UIAutomator reports the visible intersection of a long clip with the lane
 # viewport, not the clip's full off-screen width. Scale the regular inset to
@@ -2441,8 +2441,8 @@ if ! [[ "$density_dpi" =~ ^[0-9]+$ ]] || [ "$density_dpi" -le 0 ]; then
   exit 31
 fi
 # Start at least 48dp from the right edge, safely outside the system Back
-# gesture area on density-scaled emulator configurations. Gesture vertically
-# through the ruler, never through a video clip (which now means move/reorder).
+# gesture area on density-scaled emulator configurations. Gesture directly on
+# the thumbnails to verify ordinary filmstrip swipes pan the shared time axis.
 right_edge_safe_margin_px="$(((48 * density_dpi + 159) / 160))"
 right_edge_safe_x="$((screen_width - right_edge_safe_margin_px))"
 forward_start="$((clip_x2 - swipe_inset))"
@@ -2482,10 +2482,18 @@ if [ -z "$forward_values" ]; then
 fi
 read -r forward_ms forward_scroll playhead_center <<< "$forward_values"
 if [ "$forward_ms" -le 0 ] || [ "$forward_scroll" -le 0 ]; then
-  echo "Dragging the filmstrip left did not advance the shared playhead."
+  echo "Swiping left on the filmstrip did not advance the shared playhead."
   echo "Observed playheadMs=$forward_ms scrollX=$forward_scroll"
   collect_capture_diagnostics filmstrip-scrub-forward-not-advanced
   exit 20
+fi
+# Every lane must retain exactly the same horizontal offset; a different clamp
+# would make the ruler and gray origin area drift away from the filmstrip.
+forward_scrolls="$(grep "TIMELINE_SYNC_SAMPLE" emulator-screenshots/filmstrip-scrub-forward-logcat.txt | tail -n 1 | sed -n 's/.*scrollXs=\([0-9,]*\).*/\1/p')"
+if [ -z "$forward_scrolls" ] || [ "$(echo "$forward_scrolls" | tr ',' '\n' | sort -u | wc -l)" -ne 1 ]; then
+  echo "Timeline lanes diverged after a filmstrip swipe: scrollXs=$forward_scrolls"
+  collect_capture_diagnostics filmstrip-scrub-lane-scroll-diverged
+  exit 24
 fi
 
 timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime \
@@ -2509,7 +2517,7 @@ if [ -z "$reverse_bounds" ]; then
   exit 21
 fi
 read -r reverse_x1 reverse_y1 reverse_x2 reverse_y2 <<< "$reverse_bounds"
-reverse_y="$ruler_y"
+reverse_y="$(((reverse_y1 + reverse_y2) / 2))"
 reverse_width="$((reverse_x2 - reverse_x1))"
 reverse_inset="$((reverse_width / 10))"
 if [ "$reverse_inset" -lt 10 ]; then reverse_inset=10; fi
@@ -2851,7 +2859,7 @@ if [ -z "$clip_drag_coords" ]; then
   exit 95
 fi
 read -r drag_start_x drag_y drag_drop_x <<< "$clip_drag_coords"
-timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$drag_start_x" "$drag_y" "$drag_drop_x" "$drag_y" 700
+timeout -k 2s 8s adb -s emulator-5554 shell input draganddrop "$drag_start_x" "$drag_y" "$drag_drop_x" "$drag_y" 900
 drag_marker=""
 for attempt in $(seq 1 12); do
   timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineSyncTest:I \
