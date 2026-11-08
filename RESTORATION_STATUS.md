@@ -1,3 +1,15 @@
+## CapCut-style editor: fast filmstrip decoding and verified zero-time alignment — 2026-11-08
+
+- Rejected the one-worker/Media3-first experiment: on API 35 it produced **2,965–5,064 ms** queue waits. Restored three isolated thumbnail workers and made Android's native `MediaMetadataRetriever` the primary frame path; the reusable Media3 `FrameExtractor` remains the fallback for sources the platform decoder cannot read.
+- Each worker owns its own retriever/extractor. The shared priority queue still prioritizes samples nearest the playhead; source timestamps, deduplication, cache invalidation and the fixed **35 ms** preview/scrub comparison rule remain in place.
+- The emulator validator now combines the import/replacement decode log with the alignment log, so it checks the actual thumbnail-generation path rather than only the later cache-hit/alignment capture. It requires at least three visible-cell timing records and enforces queue wait <=1,000 ms, decode <=1,500 ms, and visible-strip fill <=2,500 ms.
+- **Verified on the exact application/test source commit `cf14efbb9ab94753356d49903dc566bf86cfed03`:** unit/build run `42522454646`, debug APK packaging run `42522454666`, and API 35 emulator run `42522454771` all succeeded.
+- Measured on six visible thumbnails after video replacement: queue wait median **253 ms**, max **858 ms**; decode median **553 ms**, max **612 ms**; measured visible-strip fill **1,467 ms**. The filmstrip/preview timestamp check remained within 35 ms and the pixel comparison passed. Live playback passed **44** synchronization samples (4,083 -> 8,025 ms); all six lane offsets stayed synchronized and the zero-time ruler edge remained aligned with the first video frame.
+- The captured editor screen shows no separate gray/blue origin rectangle: the zero-time start remains aligned with the first thumbnail, while the leading origin spacer stays transparent geometry and is not clip duration. It was not deleted or recolored.
+- No versionCode, release signing, release marker or signed APK was changed. The debug ZIP is a CI artifact, not a release APK. Remaining CapCut-parity checks are tracked separately; this PR addresses thumbnail throughput and confirms the current zero-time geometry.
+
+---
+
 ## Updater version-code correction — 2026-11-08
 
 - The signed release published as build 69 still contained `versionCode=401`, identical to the installed 401 build. Android's in-app updater therefore correctly reported that the app was already up to date; the GitHub Actions run number (69) is not the Android app version.

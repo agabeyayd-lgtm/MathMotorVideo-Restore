@@ -433,8 +433,8 @@ class VideoEditorActivity : Activity() {
         override fun run() = work()
     }
     private val timelineThumbnailTaskSequence = java.util.concurrent.atomic.AtomicLong()
-    // Three isolated decoder workers reduce filmstrip queue latency. Each worker
-    // owns its own retriever/extractor; priority still favours frames nearest playhead.
+    // Three isolated workers keep source-frame extraction concurrent. Each worker
+    // owns its MediaMetadataRetriever and only creates a Media3 extractor as a fallback.
     private val timelineThumbnailWorkerSequence = java.util.concurrent.atomic.AtomicLong()
     private val timelineThumbnailRetrievers =
         java.util.concurrent.ConcurrentHashMap<Long, Pair<Uri, MediaMetadataRetriever>>()
@@ -9718,6 +9718,7 @@ class VideoEditorActivity : Activity() {
         }
         return try {
             FrameExtractor.Builder(this, MediaItem.fromUri(uri))
+                .setSeekParameters(androidx.media3.exoplayer.SeekParameters.EXACT)
                 .setEffects(listOf(Presentation.createForHeight(288)))
                 .build()
                 .also { timelineThumbnailExtractors[threadId] = uri to it }
@@ -10167,9 +10168,12 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun decodeTimelineFrame(uri: Uri, timeMs: Long): Bitmap? {
+        // Use Android's native retriever first: the three per-thread retrievers
+        // provide fast parallel extraction for a filmstrip. Media3 is retained as
+        // a compatibility fallback for sources the platform retriever cannot decode.
         val frameTimeUs = timeMs.coerceAtLeast(0L) * 1000L
+        val platformStartedAt = SystemClock.uptimeMillis()
         val retriever = timelineThumbnailRetrieverFor(uri, "TimelineThumbnail")
-
         val platformFrame = retriever?.let { activeRetriever ->
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                 runCatching {
@@ -10186,19 +10190,36 @@ class VideoEditorActivity : Activity() {
                 activeRetriever.getFrameAtTime(frameTimeUs, MediaMetadataRetriever.OPTION_CLOSEST)
             }.getOrNull()
         }
-        if (platformFrame != null) return platformFrame
+        if (platformFrame != null) {
+            if (timelineSyncTestEnabled) android.util.Log.i(
+                "TimelineFrameSyncTest",
+                "TIMELINE_THUMBNAIL_DECODED requestedMs=$timeMs decoder=platform-mmr-primary " +
+                    "worker=${Thread.currentThread().id} decodeMs=${SystemClock.uptimeMillis() - platformStartedAt}"
+            )
+            return platformFrame
+        }
 
-        // Reuse one Media3 extractor per decoder worker and source URI. Building
-        // and closing an extractor for every cell made fallback decoding needlessly slow.
         val extractor = timelineThumbnailExtractorFor(uri) ?: return null
         var frameFuture: java.util.concurrent.Future<FrameExtractor.Frame>? = null
         return try {
+            val startedAt = SystemClock.uptimeMillis()
             val future = extractor.getFrame(timeMs.coerceAtLeast(0L))
             frameFuture = future
-            future.get(2500L, TimeUnit.MILLISECONDS).bitmap
+            val frame = future.get(2_500L, TimeUnit.MILLISECONDS)
+            if (timelineSyncTestEnabled) android.util.Log.i(
+                "TimelineFrameSyncTest",
+                "TIMELINE_THUMBNAIL_DECODED requestedMs=$timeMs actualFrameMs=${frame.presentationTimeMs} " +
+                    "decoder=media3-fallback worker=${Thread.currentThread().id} " +
+                    "decodeMs=${SystemClock.uptimeMillis() - startedAt}"
+            )
+            frame.bitmap
         } catch (error: Exception) {
             frameFuture?.cancel(true)
-            android.util.Log.w("TimelineThumbnail", "No frame decoded for $uri at ${timeMs}ms", error)
+            android.util.Log.w(
+                "TimelineThumbnail",
+                "Media3 fallback frame extraction failed for $uri at ${timeMs}ms",
+                error
+            )
             null
         }
     }
@@ -10505,6 +10526,7 @@ class VideoEditorActivity : Activity() {
                             "queueWaitMs=$queueWaitMs frameDecodeMs=$frameDecodeDurationMs " +
                             "bitmapScaleMs=$bitmapScaleDurationMs uiDispatchWaitMs=$uiDispatchWaitMs " +
                             "uiApplyMs=${SystemClock.uptimeMillis() - uiCallbackStartedAtUptimeMs} " +
+                            "enqueuedUptimeMs=$enqueuedAtUptimeMs uiAppliedUptimeMs=${SystemClock.uptimeMillis()} " +
                             "targets=${targets.size} applied=$appliedTargets " +
                             "cacheBytes=${timelineThumbnailCache.size()} queueDepth=${timelineThumbnailExecutor.queue.size}"
                     )

@@ -1,3 +1,13 @@
+## CapCut-style editor: progressive thumbnail decoding — 2026-11-08
+
+- On top of the current mainline editor, the timeline thumbnail path now uses one ordered decoder worker instead of three competing workers. The shared Media3 `FrameExtractor` is the primary decoder with `SeekParameters.EXACT`; `MediaMetadataRetriever` remains a compatibility fallback.
+- The fixed playhead, source timestamps, cell sampling, current cache, pending-request deduplication, and the 35 ms preview/filmstrip acceptance rule are unchanged. No gray-origin spacer or timeline geometry was removed as part of this performance change.
+- The API 35 alignment assertion now requires an observed shared-Media3 decode record and reports Media3/fallback timing alongside queue/decode/display timings.
+- **Validation pending on this exact branch head:** unit tests, debug build, and the full API 35 emulator flow must pass. Re-measure first exact-frame latency and full visible-strip fill time; the historical ~4.06 s / 19-frame result from PR #17 is a comparison point, not a result claimed for this new mainline-based build.
+- No app version, release signing, release marker, or signed APK was changed. The visible origin spacer treatment and the wider editor parity checklist remain separate open work.
+
+---
+
 ## Updater version-code correction — 2026-11-08
 
 - The signed release published as build 69 still contained `versionCode=401`, identical to the installed 401 build. Android's in-app updater therefore correctly reported that the app was already up to date; the GitHub Actions run number (69) is not the Android app version.
@@ -1112,3 +1122,13 @@ The selected main-video clip exposes independent left/right edge grips: drag the
 - The emulator swiped directly on the filmstrip: left advanced the playhead to 5375 ms, right returned it to 3625 ms, and all six lane offsets remained equal (`418,418,418,418,418,418`) after the forward swipe. Live playback passed 53 synchronization samples (3625→8054 ms); ruler and first-frame zero edges stayed aligned.
 - The centered preview/thumbnail pixel comparison passed at the fixed 35 ms limit with RGB channel delta 0. Real clip-menu split had a 0 ms seam; long-press drag reordered the segment and post-drop geometry/pixels passed. All four video trim/extend directions and force-stop draft save/reopen also passed.
 - No versionCode bump, release signing, or signed release APK was made. The CI debug ZIP is not a release artifact.
+
+
+## 2026-11-08 — Fast parallel timeline thumbnails
+
+- Reverted the single-worker/Media3-first thumbnail experiment after API 35 measurements showed multi-second queue delays. Three isolated workers now decode through the native Android retriever first; Media3 remains a fallback.
+- The API 35 screenshot workflow reads the import/replacement decode logs and checks visible thumbnail queue, decode and strip-fill latency, not merely a later cache hit.
+- Verified commit `cf14efbb9ab94753356d49903dc566bf86cfed03`: unit/build `42522454646`, debug APK packaging `42522454666`, emulator `42522454771` — all **success**.
+- Six visible thumbnail samples: queue median/max **253/858 ms**; decode median/max **553/612 ms**; visible-strip fill **1,467 ms**. Preview/filmstrip timestamp comparison passed the fixed 35 ms limit; live playback passed 44 sync samples across six lanes.
+- Captured UI confirms the first video frame begins at ruler zero/playhead alignment without a separate gray/blue spacer block. The origin spacer remains transparent layout geometry; removing it would break the centered-playhead zero-time mapping.
+- No version bump, signed release or production APK was created. The workflow's debug ZIP is not a release artifact.
