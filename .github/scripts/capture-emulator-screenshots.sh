@@ -1399,6 +1399,91 @@ run_audio_edge_smoke music end "Müzik bitiş tutamacı" left
 run_audio_edge_smoke sound start "Efekt başlangıç tutamacı" right
 run_audio_edge_smoke sound end "Efekt bitiş tutamacı" left
 
+echo "Step 8c-Undo: verify project Undo/Redo restores an actual sound-effect end trim"
+sound_trim_values="$(python3 - emulator-screenshots/audio-sound-end-touch-logcat.txt <<'PY'
+import re
+import sys
+lines = open(sys.argv[1], errors="replace").read().splitlines()
+matches = [line for line in lines if "AUDIO_EDGE_TRIM kind=sound edge=end " in line]
+if not matches:
+    raise SystemExit("The latest sound-effect end-trim measurement is missing.")
+fields = dict(re.findall(r"([A-Za-z]+)=([^ ]+)", matches[-1]))
+for key in ("beforeDurationMs", "afterDurationMs"):
+    if key not in fields:
+        raise SystemExit("Missing " + key + " in audio trim marker: " + matches[-1])
+before, after = int(fields["beforeDurationMs"]), int(fields["afterDurationMs"])
+if after >= before:
+    raise SystemExit(f"The sound end trim did not shorten the effect: {before} -> {after}")
+print(before, after)
+PY
+)" || {
+  collect_capture_diagnostics project-history-sound-trim-marker-missing
+  exit 88
+}
+read -r sound_before_duration sound_after_duration <<< "$sound_trim_values"
+dump_hierarchy editor-history-audio-before-undo.xml emulator-screenshots/editor-history-audio-before-undo.xml || {
+  collect_capture_diagnostics project-history-audio-controls-missing
+  exit 88
+}
+history_audio_undo="$(python3 - emulator-screenshots/editor-history-audio-before-undo.xml <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != "Proje işlemini geri al" or node.attrib.get("enabled","false").lower() != "true":
+        continue
+    m = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds",""))
+    if m:
+        x1,y1,x2,y2 = map(int,m.groups())
+        print((x1+x2)//2,(y1+y2)//2); raise SystemExit(0)
+raise SystemExit("Enabled project Undo control is unavailable.")
+PY
+)" || {
+  collect_capture_diagnostics project-history-audio-undo-disabled
+  exit 88
+}
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $history_audio_undo
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-sound-trim-undo.txt 2>&1 || true
+if ! grep -Eq "PROJECT_HISTORY_APPLIED action=undo .*beforeSoundDurationMs=$sound_after_duration afterSoundDurationMs=$sound_before_duration" emulator-screenshots/project-history-sound-trim-undo.txt; then
+  echo "Undo did not restore the sound-effect duration from $sound_after_duration to $sound_before_duration."
+  cat emulator-screenshots/project-history-sound-trim-undo.txt || true
+  collect_capture_diagnostics project-history-sound-trim-undo-failed
+  exit 89
+fi
+echo "PASS: one project Undo restored sound-effect duration $sound_after_duration -> $sound_before_duration ms."
+dump_hierarchy editor-history-audio-before-redo.xml emulator-screenshots/editor-history-audio-before-redo.xml || {
+  collect_capture_diagnostics project-history-audio-redo-controls-missing
+  exit 89
+}
+history_audio_redo="$(python3 - emulator-screenshots/editor-history-audio-before-redo.xml <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != "Proje işlemini yinele" or node.attrib.get("enabled","false").lower() != "true":
+        continue
+    m = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds",""))
+    if m:
+        x1,y1,x2,y2 = map(int,m.groups())
+        print((x1+x2)//2,(y1+y2)//2); raise SystemExit(0)
+raise SystemExit("Enabled project Redo control is unavailable.")
+PY
+)" || {
+  collect_capture_diagnostics project-history-audio-redo-disabled
+  exit 89
+}
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $history_audio_redo
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-sound-trim-redo.txt 2>&1 || true
+if ! grep -Eq "PROJECT_HISTORY_APPLIED action=redo .*beforeSoundDurationMs=$sound_before_duration afterSoundDurationMs=$sound_after_duration" emulator-screenshots/project-history-sound-trim-redo.txt; then
+  echo "Redo did not reapply the sound-effect trim from $sound_before_duration to $sound_after_duration."
+  cat emulator-screenshots/project-history-sound-trim-redo.txt || true
+  collect_capture_diagnostics project-history-sound-trim-redo-failed
+  exit 90
+fi
+echo "PASS: one project Redo reapplied sound-effect duration $sound_before_duration -> $sound_after_duration ms."
+
 run_overlay_edge_smoke() {
   local edge="$1" description="$2" direction="$3"
   local before_xml="editor-overlay-${edge}-before.xml"
