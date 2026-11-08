@@ -2773,6 +2773,13 @@ if [ -z "$split_boundary_ms" ]; then
   collect_capture_diagnostics video-clip-split-boundary-missing
   exit 93
 fi
+split_second_duration_ms="$(printf '%s\\n' "$split_marker" | sed -n 's/.*secondDurationMs=\\([0-9][0-9]*\\).*/\\1/p')"
+if [ -z "$split_second_duration_ms" ]; then
+  echo "The split log did not include the measured second-segment duration: $split_marker"
+  collect_capture_diagnostics video-clip-split-duration-missing
+  exit 93
+fi
+
 # Read both clip surfaces from the app's measured View geometry. UIAutomator
 # can fail to obtain an idle accessibility snapshot while many thumbnail cells
 # are attached; the debug snapshot records every visible clip by index instead.
@@ -2858,7 +2865,9 @@ if [ -z "$drag_marker" ]; then
   collect_capture_diagnostics video-direct-clip-drag-not-received
   exit 96
 fi
-expected_first_start_ms=$((8000 - split_boundary_ms))
+# Use the measured duration of the moved segment, not a nominal 8,000ms fixture duration.
+# Container/decoder duration metadata can differ slightly from the nominal FFmpeg input.
+expected_first_start_ms="$split_second_duration_ms"
 if ! echo "$drag_marker" | grep -Eq "ordered=1,0 .*starts=1:0,0:${expected_first_start_ms}([[:space:]]|$)"; then
   echo "The direct drag did not place the second half at 00:00 and push the first by its own duration (${expected_first_start_ms}ms): $drag_marker"
   collect_capture_diagnostics video-direct-clip-drag-order
