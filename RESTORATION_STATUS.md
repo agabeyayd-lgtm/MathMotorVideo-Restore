@@ -1350,3 +1350,12 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Verified examples: left trim changed source start 4042→4555 ms while source end stayed 8023 ms; left extend restored 4555→4042 ms. Right trim changed source end 8023→7510 ms while source start stayed 4042 ms; right extend restored 7510→8023 ms. Duration changed 3981↔3468 ms and the next clip start matched exactly.
 - The same emulator run also passed split continuity, direct clip drag/reorder, post-drop seam geometry/pixels, and the remaining draft save/reopen smoke. Android unit/build, debug APK packaging, and API 35 emulator workflows all completed successfully for this tested head: verify run 42506500040, APK run 42506500012, emulator run 42506500354.
 - No versionCode bump, release signing, or release build was made. Do not treat the generated debug APK ZIP as a release artifact.
+
+
+## 2026-11-08 — CapCut filmstrip pan versus clip move
+
+- Reproduced the gesture conflict in `VideoEditorActivity.buildVideoClipFilmstrip()`: every one-finger horizontal movement on a video clip was consumed as an immediate clip translation/reorder, while the ruler and other lanes remained in their independent synchronized scroll views. This made the blank time-zero origin spacer appear to move separately from the filmstrip and caused the ruler/clip interaction to feel disconnected.
+- Changed the gesture contract to match CapCut: an ordinary horizontal swipe directly on the video thumbnails scrolls the shared timeline, and the existing lane scroll listener keeps ruler, video, text/audio lanes, playhead time and preview synchronized. A stationary long-press followed by a drag is now the explicit clip-move/reorder gesture; a stationary long-press still opens the clip menu.
+- Kept the leading `timeline-origin-spacer`: it is required to put project time zero beneath the fixed centre playhead. It is not video content and must not be deleted or included in clip duration. The fix is to prevent ordinary scrubbing from translating the clip independently.
+- Added API 35 emulator coverage that swipes on the actual filmstrip in both directions and asserts all lane `scrollX` values remain identical. Updated the direct reorder smoke gesture to use long-press-and-drag.
+- **Verification pending** on this branch: unit/build and API 35 emulator workflows must pass, including the new on-filmstrip pan test and existing split/reorder/trim/save-reopen checks. No versionCode, signing, or release APK change is included.
