@@ -2749,30 +2749,30 @@ if [ -z "$split_boundary_ms" ]; then
   collect_capture_diagnostics video-clip-split-boundary-missing
   exit 93
 fi
-if ! dump_hierarchy video-split-before-drag.xml emulator-screenshots/video-split-before-drag.xml; then
-  echo "Could not inspect both split segments before the direct-drag test."
-  collect_capture_diagnostics video-split-before-drag-hierarchy
-  exit 94
-fi
-clip_drag_coords="$(python3 - emulator-screenshots/video-split-before-drag.xml emulator-screenshots/video-split-drag-logcat.txt "$split_boundary_ms" <<'PY'
+# Read both clip surfaces from the app's measured View geometry. UIAutomator
+# can fail to obtain an idle accessibility snapshot while many thumbnail cells
+# are attached; the debug snapshot records every visible clip by index instead.
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineAlignmentTest:I \
+  > emulator-screenshots/video-split-before-drag-measurements.txt 2>&1
+clip_drag_coords="$(python3 - emulator-screenshots/video-split-before-drag-measurements.txt emulator-screenshots/video-split-drag-logcat.txt "$split_boundary_ms" <<'PY'
 import re
 import sys
-import xml.etree.ElementTree as ET
 
-root = ET.parse(sys.argv[1]).getroot()
 bounds = {}
-for node in root.iter("node"):
-    desc = node.attrib.get("content-desc", "")
-    if not (desc.startswith("Klip 1:") or desc.startswith("Klip 2:")):
-        continue
-    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+pattern = re.compile(r"TIMELINE_ALIGNMENT_SNAPSHOT .*?clipBoundsByIndex=([0-9:,;]+)")
+for line in open(sys.argv[1], errors="replace"):
+    match = pattern.search(line)
     if not match:
         continue
-    key = 1 if desc.startswith("Klip 1:") else 2
-    if key not in bounds or node.attrib.get("clickable") == "true":
-        bounds[key] = tuple(map(int, match.groups()))
-if set(bounds) != {1, 2}:
-    raise SystemExit(f"Expected two split clip hit targets; found {bounds}")
+    measured = {}
+    for entry in match.group(1).split(";"):
+        key, raw = entry.split(":", 1)
+        measured[int(key)] = tuple(map(int, raw.split(",")))
+    if set(measured) >= {1, 2}:
+        bounds = measured
+if set(bounds) < {1, 2}:
+    raise SystemExit(f"Expected two app-measured split clip surfaces; found {bounds}")
 pixel_seam_px = bounds[2][0] - bounds[1][2]
 if abs(pixel_seam_px) > 1:
     raise SystemExit(
