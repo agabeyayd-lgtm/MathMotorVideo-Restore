@@ -2742,6 +2742,13 @@ for node in root.iter("node"):
         bounds[key] = tuple(map(int, match.groups()))
 if set(bounds) != {1, 2}:
     raise SystemExit(f"Expected two split clip hit targets; found {bounds}")
+pixel_seam_px = bounds[2][0] - bounds[1][2]
+if abs(pixel_seam_px) > 1:
+    raise SystemExit(
+        f"Split clips are not visually edge-to-edge: first={bounds[1]}, "
+        f"second={bounds[2]}, seam={pixel_seam_px}px (maximum ±1px)"
+    )
+print(f"PASS: split clip screen edges meet within 1px (measured seam={pixel_seam_px}px)", file=sys.stderr)
 second = bounds[2]
 start_x = (second[0] + second[2]) // 2
 start_y = (second[1] + second[3]) // 2
