@@ -138,6 +138,7 @@ class VideoEditorActivity : Activity() {
         val timelinePlayheadMs: Long,
         val timelinePxPerSec: Float,
         val previewSingleClip: Boolean,
+        val canvasPreset: VideoCanvasPreset,
         val nextOverlayId: Long,
         val nextTextLayerId: Long,
         val musicUri: Uri?,
@@ -599,6 +600,7 @@ class VideoEditorActivity : Activity() {
     private var filterSaturation = 0
     private var filterHue = 0
     private var updatingVideoFilterControls = false
+    private var restoringProjectHistory = false
     private val videoFilterButtons = linkedMapOf<VideoFilterPreset, Button>()
     private lateinit var videoFilterSummary: TextView
     private lateinit var filterBrightnessLabel: TextView
@@ -2105,8 +2107,15 @@ class VideoEditorActivity : Activity() {
             }
             check(340)
             setOnCheckedChangeListener { _, checkedId ->
-                exportCanvasPreset = VideoCanvasPreset.values().getOrNull(checkedId - 340)
+                val nextPreset = VideoCanvasPreset.values().getOrNull(checkedId - 340)
                     ?: VideoCanvasPreset.SOURCE
+                if (restoringProjectHistory) {
+                    exportCanvasPreset = nextPreset
+                    return@setOnCheckedChangeListener
+                }
+                if (nextPreset == exportCanvasPreset) return@setOnCheckedChangeListener
+                recordProjectEdit()
+                exportCanvasPreset = nextPreset
                 refreshColorGradePreview()
                 updatePreviewCanvasSize()
                 status.text = when (exportCanvasPreset) {
@@ -6451,6 +6460,7 @@ class VideoEditorActivity : Activity() {
             timelinePlayheadMs = timelinePlayheadMs,
             timelinePxPerSec = timelinePxPerSec,
             previewSingleClip = previewSingleClip,
+            canvasPreset = exportCanvasPreset,
             nextOverlayId = nextOverlayId,
             nextTextLayerId = nextTextLayerId,
             musicUri = musicUri,
@@ -6502,6 +6512,7 @@ class VideoEditorActivity : Activity() {
             before.musicVolume != after.musicVolume ||
             before.soundVolume != after.soundVolume ||
             before.keepSourceAudio != after.keepSourceAudio ||
+            before.canvasPreset != after.canvasPreset ||
             before.videoFilterPreset != after.videoFilterPreset ||
             before.filterBrightness != after.filterBrightness ||
             before.filterContrast != after.filterContrast ||
@@ -6651,6 +6662,10 @@ class VideoEditorActivity : Activity() {
         filterHue = snapshot.filterHue
 
         timelinePxPerSec = snapshot.timelinePxPerSec
+        restoringProjectHistory = true
+        exportCanvasPreset = snapshot.canvasPreset
+        exportCanvasGroup.check(340 + VideoCanvasPreset.values().indexOf(snapshot.canvasPreset))
+        restoringProjectHistory = false
         timelinePreviewLoaded = false
         previewSingleClip = false
         timelinePlayheadMs = snapshot.timelinePlayheadMs.coerceIn(0L, totalOutputDurationMs())
@@ -6678,6 +6693,7 @@ class VideoEditorActivity : Activity() {
         refreshTimelineAfterClipChange()
         syncPreviewAudio()
         updateTimelinePlayheadDisplay()
+        updatePreviewCanvasSize()
 
         if (clips.isNotEmpty()) {
             // Restore every media layer through the shared composition so the
@@ -8146,8 +8162,10 @@ class VideoEditorActivity : Activity() {
             1080 -> 303
             else -> 301
         })
+        restoringProjectHistory = true
         exportCanvasPreset = VideoCanvasPreset.fromKey(json.optString("exportCanvasPreset", "source"))
         exportCanvasGroup.check(340 + VideoCanvasPreset.values().indexOf(exportCanvasPreset))
+        restoringProjectHistory = false
         updateMusicTimingLabel()
         soundLabel.text = soundTitle?.let { "Ses/efekt: $it • ${formatMs(soundDurationMs)}" } ?: "Ses veya efekt seçilmedi."
         updateMusicTimingLabel()
