@@ -1,2 +1,4 @@
 Build and publish signed APK for versionCode 400 (8.33-capcut-editor). Includes the merged CapCut-style home screen, initial photo overlay, verified content:// photo persistence through draft save and app restart, and the corrected preview-canvas pixel validation. Unit tests, Android build, and Android emulator smoke tests passed on the merged source.
 Signed editor update 8.34 / versionCode 401
+
+CapCut timeline update: PR #29 merged after all unit/build/emulator checks passed. Signed installable editor update 8.34 / versionCode 401.
