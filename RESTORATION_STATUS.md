@@ -1284,3 +1284,9 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Emulator run `42480441974` built successfully and passed unit tests, but the final preview/thumbnail alignment assertion failed at a 35 ms tolerance: the captured thumbnail timestamp was 445 ms while the latest decoded preview samples were 83, 375, and 625 ms.
 - Artifact inspection showed the alignment snapshot could be rate-limited for 500 ms while scroll/fling updates continued; the final sync samples could therefore describe a newer playhead/scroll position than the most recent thumbnail View-bounds snapshot. This made the assertion compare different moments in time.
 - Commit `7a4adbbb1830e6f05f52348de5315eb5aaa51ea4` changes the debug-only diagnostic path to force a fresh View-bounds snapshot alongside each timeline sync sample. The 35 ms assertion is unchanged. Re-run emulator verification before treating preview/thumbnail alignment as passed.
+
+## 2026-11-08 — split-reorder emulator test measurement source
+
+- Emulator run `42481691607` on `428e99f5527cdfe48f0d60b3fc727e8c20a6edd9` confirmed split continuity: `firstEndMs=4042`, `secondStartMs=4042`, `gapMs=0`; measured screen seam was 0px.
+- The next drag test failed before sending the drag because it searched `video-split-drag-logcat.txt` for `TIMELINE_SYNC_SAMPLE`. That file is collected after the split while playback is paused, so it may contain the split event but no new playback/sync sample.
+- Commit `265cab249bf6bc84ed5920893affceb8beecd7b5` now uses the live playhead centre and scale measured during the immediately preceding midpoint seek (`video-midpoint-seek-logcat.txt`). No production gesture behavior or acceptance threshold was changed. Emulator verification is still required to prove the actual reorder/drop and remaining persistence checks.
