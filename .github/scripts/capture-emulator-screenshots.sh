@@ -2324,9 +2324,14 @@ fi
 echo "Step 9/12: align a thumbnail cell with the playhead and compare the rendered pixels"
 # Use app-measured Android View bounds. UIAutomator's full accessibility-tree
 # dump becomes unreliable after repeated panel/keyboard operations.
-echo "Using startup-captured Android ViewConfiguration touch slop: \${touch_slop_px}px"
+echo "Using startup-captured Android ViewConfiguration touch slop: ${touch_slop_px}px"
+# ADB-injected HorizontalScrollView gestures on API 35 showed a 3px dead zone
+# beyond ViewConfiguration’s measured touch slop (21px): 24px swipes could
+# leave scrollX unchanged, while 27px moved it by 3px. Include that measured
+# input-dispatch margin so the final 2–4px alignment correction is not a no-op.
+alignment_gesture_slop_px="$((touch_slop_px + 3))"
 thumbnail_aligned=false
-for attempt in 1 2 3 4 5 6 7 8; do
+for attempt in $(seq 1 12); do
   timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime \
     -s TimelineAlignmentTest:I TimelineSyncTest:I TimelineFrameSyncTest:I TimelineThumbnail:I \
     > emulator-screenshots/thumbnail-alignment-measurements.txt 2>&1 || true
@@ -2339,7 +2344,7 @@ for attempt in 1 2 3 4 5 6 7 8; do
     thumbnail_aligned=true
     break
   fi
-  gesture_delta="$((delta_x + (delta_x < 0 ? -touch_slop_px : touch_slop_px)))"
+  gesture_delta="$((delta_x + (delta_x < 0 ? -alignment_gesture_slop_px : alignment_gesture_slop_px)))"
   # Start outside the fixed playhead overlay hit region. The centre guide is
   # intentionally visual-only, but keeping the gesture origin clear of it also
   # ensures the HorizontalScrollView receives the horizontal correction drag.
