@@ -11014,7 +11014,7 @@ class VideoEditorActivity : Activity() {
             status.text = "Hız ayarı için önce bir klip seç."
             return
         }
-        val before = captureProjectEditSnapshot()
+        val before = beginProjectHistoryGesture()
         clip.speed = ClipSpeedMath.normalize(speed)
         finishClipSpeedEdit(before)
     }
