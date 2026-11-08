@@ -5165,15 +5165,20 @@ class VideoEditorActivity : Activity() {
         val previewBounds = "${previewRect.left},${previewRect.top},${previewRect.right},${previewRect.bottom}"
 
         var clipBounds = "none"
+        val clipBoundsByIndex = linkedMapOf<Int, String>()
         val cellBounds = mutableListOf<String>()
         var cellCandidates = 0
         var visibleCellCandidates = 0
         fun visit(view: View) {
             val description = view.contentDescription?.toString().orEmpty()
-            if (description.startsWith("Klip 1:") && clipBounds == "none") {
+            val clipIndex = Regex("^Klip (\\d+):").find(description)
+                ?.groupValues?.getOrNull(1)?.toIntOrNull()
+            if (clipIndex != null && !clipBoundsByIndex.containsKey(clipIndex)) {
                 val visible = android.graphics.Rect()
                 if (view.getGlobalVisibleRect(visible) && visible.width() > 0 && visible.height() > 0) {
-                    clipBounds = "${visible.left},${visible.top},${visible.right},${visible.bottom}"
+                    val bounds = "${visible.left},${visible.top},${visible.right},${visible.bottom}"
+                    clipBoundsByIndex[clipIndex] = bounds
+                    if (clipIndex == 1 && clipBounds == "none") clipBounds = bounds
                 }
             }
             if (view is ImageView && description.startsWith("Klip karesi @")) {
@@ -5211,6 +5216,7 @@ class VideoEditorActivity : Activity() {
             "TIMELINE_ALIGNMENT_SNAPSHOT playheadCenterPx=$playheadCenterPx " +
                 "playheadCenterYpx=$playheadCenterYpx lineCenterPx=$lineCenterPx " +
                 "previewBounds=$previewBounds clipBounds=$clipBounds " +
+                "clipBoundsByIndex=${clipBoundsByIndex.toSortedMap().entries.joinToString(";") { "${it.key}:${it.value}" }} " +
                 "cellCandidates=$cellCandidates visibleCells=$visibleCellCandidates " +
                 "cells=${cellBounds.joinToString(";")}"
         )
