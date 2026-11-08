@@ -9107,16 +9107,85 @@ class VideoEditorActivity : Activity() {
     ): FrameLayout {
         val sourceDurationMs = (clip.endMs - clip.startMs).coerceAtLeast(0L)
         val durationMs = ClipSpeedMath.timelineDurationMs(sourceDurationMs, clip.speed)
+        val clipTimelineEndMs = clip.timelineStartMs + durationMs
+        // A split or reordered pair is still one continuous filmstrip. Rounded
+        // corners and per-view strokes on both touching clips were painting a
+        // dark divider even when their measured timeline bounds met exactly.
+        // Square only the two inner corners and omit strokes on shared edges.
+        val hasPreviousAdjacentClip = clips.indices.any { otherIndex ->
+            if (otherIndex == index) false else {
+                val other = clips[otherIndex]
+                val otherDuration = ClipSpeedMath.timelineDurationMs(
+                    (other.endMs - other.startMs).coerceAtLeast(0L), other.speed
+                )
+                other.timelineStartMs + otherDuration == clip.timelineStartMs
+            }
+        }
+        val hasNextAdjacentClip = clips.indices.any { otherIndex ->
+            if (otherIndex == index) false else {
+                clips[otherIndex].timelineStartMs == clipTimelineEndMs
+            }
+        }
+        val clipRadius = dp(4).toFloat()
+        val leftRadius = if (hasPreviousAdjacentClip) 0f else clipRadius
+        val rightRadius = if (hasNextAdjacentClip) 0f else clipRadius
+        val clipCornerRadii = floatArrayOf(
+            leftRadius, leftRadius,
+            rightRadius, rightRadius,
+            rightRadius, rightRadius,
+            leftRadius, leftRadius
+        )
         val container = FrameLayout(this).apply {
             background = android.graphics.drawable.GradientDrawable().apply {
                 setColor(Color.rgb(27, 39, 54))
-                cornerRadius = dp(4).toFloat()
+                cornerRadii = clipCornerRadii
             }
-            foreground = android.graphics.drawable.GradientDrawable().apply {
-                setColor(Color.TRANSPARENT)
-                cornerRadius = dp(4).toFloat()
-                setStroke(dp(if (selected) 2 else 1),
-                    if (selected) Color.WHITE else Color.rgb(61, 79, 99))
+            foreground = if (!selected) null else object : android.graphics.drawable.Drawable() {
+                private val borderPaint = android.graphics.Paint(
+                    android.graphics.Paint.ANTI_ALIAS_FLAG
+                ).apply {
+                    color = Color.WHITE
+                    style = android.graphics.Paint.Style.STROKE
+                    strokeWidth = dp(2).toFloat()
+                }
+
+                override fun draw(canvas: android.graphics.Canvas) {
+                    val area = bounds
+                    if (area.isEmpty) return
+                    val half = borderPaint.strokeWidth / 2f
+                    // Top and bottom remain highlighted, while touching clip sides
+                    // stay open so the neighbouring frame reaches the seam.
+                    canvas.drawLine(
+                        area.left + half, area.top + half,
+                        area.right - half, area.top + half, borderPaint
+                    )
+                    canvas.drawLine(
+                        area.left + half, area.bottom - half,
+                        area.right - half, area.bottom - half, borderPaint
+                    )
+                    if (!hasPreviousAdjacentClip) {
+                        canvas.drawLine(
+                            area.left + half, area.top + half,
+                            area.left + half, area.bottom - half, borderPaint
+                        )
+                    }
+                    if (!hasNextAdjacentClip) {
+                        canvas.drawLine(
+                            area.right - half, area.top + half,
+                            area.right - half, area.bottom - half, borderPaint
+                        )
+                    }
+                }
+
+                override fun setAlpha(alpha: Int) {
+                    borderPaint.alpha = alpha
+                }
+
+                override fun setColorFilter(colorFilter: android.graphics.ColorFilter?) {
+                    borderPaint.colorFilter = colorFilter
+                }
+
+                override fun getOpacity(): Int = android.graphics.PixelFormat.TRANSLUCENT
             }
             clipToOutline = true
             // Keep the selected clip reachable even when it overlaps another clip.
