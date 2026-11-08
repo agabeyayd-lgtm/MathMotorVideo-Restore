@@ -1325,3 +1325,11 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - `VideoEditorActivity.buildVideoClipFilmstrip()` now squares the two corners that touch adjacent clips and draws the selected outline without a vertical stroke on shared edges. This removes the artificial separator without altering clip times or reordering behavior.
 - The emulator smoke now captures fresh View bounds after the actual drop, checks the post-drop seam is within ±1 px, and samples the deterministic green fixture pixels across the seam to reject a visible dark divider. No timing tolerance, split math, reorder acceptance, or app version was changed.
 - Source/script commits: `17a3307`, `b251866`, `2af8de4`, `e260a21`. Unit/build/API 35 emulator verification is pending for the final script head. Keep PR #29 open until all three latest-head workflows pass.
+
+## 2026-11-08 — CapCut primary-lane continuity and selection frame
+
+- User's device screenshot showed two main-video clips separated by an unintended empty timeline interval. The prior overlap repair only packed collisions and intentionally retained all non-overlapping gaps; consequently an old saved `timelineStartMs` offset could survive project restore and display a gray/black blank interval between ordinary clips.
+- Added `TimelineVideoMath.packSequentially()` and wired the main-video lane refresh normalization to use it. Clips are ordered by their current timeline positions and packed from 0 with exact end-to-start adjacency; source in/out points and speed are unchanged. This repairs stale gaps in restored drafts as well as gaps left by main-video drag/reorder before the next lane render.
+- Added unit coverage for legacy gap repair, out-of-order clip positions, and source-range/speed preservation.
+- Updated selected main-video clip outline to a rounded white CapCut-style frame. Existing white edge grips remain the independent trim touch targets; the outline is purely visual and does not change clip bounds.
+- Build and API 35 emulator validation for this change are pending. Do not deliver an updated APK until the latest-head build, unit tests and emulator checks pass.
