@@ -1796,7 +1796,11 @@ if [ -z "$new_text_coords" ]; then
 fi
 timeout -k 2s 8s adb -s emulator-5554 shell input tap $new_text_coords
 sleep 1
-timeout -k 2s 8s adb -s emulator-5554 shell input text "CanvasSmoke"
+timeout -k 2s 8s adb -s emulator-5554 shell input text "Canvas"
+# A deliberate pause longer than the former 650 ms debounce must not split
+# one focused text-edit session into two history entries.
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 shell input text "Smoke"
 sleep 1
 
 # Keep the IME open long enough to verify the real keyboard layout. The old
@@ -2176,6 +2180,69 @@ if [ "$((text_redo_y - text_after_y))" -lt -8 ] || [ "$((text_redo_y - text_afte
   exit 64
 fi
 echo "PASS: project Redo restored the selected text to its measured post-drag position ($text_redo_x,$text_redo_y)."
+
+echo "Step 8c: verify a sentence with a long typing pause is one Undo/Redo step"
+# First undo the restored drag. The text remains complete.
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $history_undo_coords
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-undo-drag-before-text.txt 2>&1 || true
+if ! grep -Eq "PROJECT_HISTORY_APPLIED action=undo .*beforeTextChars=10 afterTextChars=10" emulator-screenshots/project-history-undo-drag-before-text.txt; then
+  echo "Undoing the text drag unexpectedly changed the text contents."
+  cat emulator-screenshots/project-history-undo-drag-before-text.txt || true
+  collect_capture_diagnostics project-history-text-before-typing-undo-wrong
+  exit 65
+fi
+# The next Undo must remove both halves of CanvasSmoke, despite the one-second pause.
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $history_undo_coords
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-undo-whole-text.txt 2>&1 || true
+if ! grep -Eq "PROJECT_HISTORY_APPLIED action=undo .*beforeTextChars=10 afterTextChars=0" emulator-screenshots/project-history-undo-whole-text.txt; then
+  echo "One Undo did not remove the entire CanvasSmoke text session; typing may have split across pause."
+  cat emulator-screenshots/project-history-undo-whole-text.txt || true
+  collect_capture_diagnostics project-history-text-was-split
+  exit 65
+fi
+echo "PASS: one Undo removed all 10 characters across a one-second typing pause."
+# One Redo must restore the complete sentence in a single step.
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $history_redo_coords
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-redo-whole-text.txt 2>&1 || true
+if ! grep -Eq "PROJECT_HISTORY_APPLIED action=redo .*beforeTextChars=0 afterTextChars=10" emulator-screenshots/project-history-redo-whole-text.txt; then
+  echo "One Redo did not restore the complete text session."
+  cat emulator-screenshots/project-history-redo-whole-text.txt || true
+  collect_capture_diagnostics project-history-text-redo-incomplete
+  exit 65
+fi
+# The second Redo restores the separate canvas-drag action.
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $history_redo_coords
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-redo-drag-after-text.txt 2>&1 || true
+if ! grep -Eq "PROJECT_HISTORY_APPLIED action=redo .*beforeTextChars=10 afterTextChars=10" emulator-screenshots/project-history-redo-drag-after-text.txt; then
+  echo "Redoing the text drag changed the text content unexpectedly."
+  cat emulator-screenshots/project-history-redo-drag-after-text.txt || true
+  collect_capture_diagnostics project-history-text-after-redo-wrong
+  exit 65
+fi
+if ! take_screen emulator-screenshots/editor-text-after-grouped-redo.png; then
+  collect_capture_diagnostics project-history-grouped-redo-capture-failure
+  exit 6
+fi
+text_group_redo_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-after-grouped-redo.png emulator-screenshots/editor-text-after-drag-canvas-logcat.txt emulator-screenshots/editor-text-panel.xml)" || {
+  echo "The selected text frame disappeared after grouped text Undo/Redo."
+  collect_capture_diagnostics project-history-grouped-redo-selection-missing
+  exit 65
+}
+read -r _ _ _ _ text_group_redo_x text_group_redo_y <<< "$text_group_redo_bounds"
+if [ "$((text_group_redo_y - text_after_y))" -lt -8 ] || [ "$((text_group_redo_y - text_after_y))" -gt 8 ]; then
+  echo "Grouped Undo/Redo did not return the text to its post-drag position."
+  collect_capture_diagnostics project-history-grouped-redo-position-wrong
+  exit 65
+fi
+echo "PASS: one Redo restored the complete text session and the next Redo restored its separate drag."
 
 if [ "$text_edit_toggle_changed" = true ]; then
   timeout -k 2s 8s adb -s emulator-5554 shell input tap "$text_toggle_x" "$text_toggle_y"
