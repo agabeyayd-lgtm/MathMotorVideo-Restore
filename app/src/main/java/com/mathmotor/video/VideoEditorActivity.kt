@@ -6603,7 +6603,16 @@ class VideoEditorActivity : Activity() {
                 "beforeTexts=${current.textLayers.size} afterTexts=${restored.textLayers.size} " +
                 "beforeTextChars=$beforeTextChars afterTextChars=$afterTextChars " +
                 "beforeMusic=${current.musicUri != null} afterMusic=${restored.musicUri != null} " +
+                "beforeMusicStartMs=${current.musicStartMs} afterMusicStartMs=${restored.musicStartMs} " +
+                "beforeMusicDurationMs=${current.musicDurationMs} afterMusicDurationMs=${restored.musicDurationMs} " +
+                "beforeMusicSourceStartMs=${current.musicSourceStartMs} afterMusicSourceStartMs=${restored.musicSourceStartMs} " +
+                "beforeMusicSourceEndMs=${current.musicSourceEndMs} afterMusicSourceEndMs=${restored.musicSourceEndMs} " +
+                "beforeMusicVolume=${current.musicVolume} afterMusicVolume=${restored.musicVolume} " +
                 "beforeSound=${current.soundUri != null} afterSound=${restored.soundUri != null} " +
+                "beforeSoundStartMs=${current.soundStartMs} afterSoundStartMs=${restored.soundStartMs} " +
+                "beforeSoundDurationMs=${current.soundDurationMs} afterSoundDurationMs=${restored.soundDurationMs} " +
+                "beforeSoundSourceStartMs=${current.soundSourceStartMs} afterSoundSourceStartMs=${restored.soundSourceStartMs} " +
+                "beforeSoundVolume=${current.soundVolume} afterSoundVolume=${restored.soundVolume} " +
                 "beforeFilter=${current.videoFilterPreset} afterFilter=${restored.videoFilterPreset}"
         )
     }
