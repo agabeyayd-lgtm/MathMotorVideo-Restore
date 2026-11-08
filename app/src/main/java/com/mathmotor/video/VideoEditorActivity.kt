@@ -9217,6 +9217,33 @@ class VideoEditorActivity : Activity() {
                         dp(4).toFloat(),
                         borderPaint
                     )
+                    // CapCut-style trim grips are painted into the same selection
+                    // frame. Their transparent hit areas below only handle gestures.
+                    val gripWidth = dp(6).toFloat()
+                    val gripHeight = dp(28).toFloat().coerceAtMost(outline.height())
+                    val gripRadius = gripWidth / 2f
+                    val gripTop = outline.centerY() - gripHeight / 2f
+                    val gripsPaint = android.graphics.Paint(
+                        android.graphics.Paint.ANTI_ALIAS_FLAG
+                    ).apply { color = Color.WHITE }
+                    canvas.drawRoundRect(
+                        android.graphics.RectF(
+                            outline.left,
+                            gripTop,
+                            outline.left + gripWidth,
+                            gripTop + gripHeight
+                        ),
+                        gripRadius, gripRadius, gripsPaint
+                    )
+                    canvas.drawRoundRect(
+                        android.graphics.RectF(
+                            outline.right - gripWidth,
+                            gripTop,
+                            outline.right,
+                            gripTop + gripHeight
+                        ),
+                        gripRadius, gripRadius, gripsPaint
+                    )
                 }
 
                 override fun setAlpha(alpha: Int) {
@@ -9452,16 +9479,8 @@ class VideoEditorActivity : Activity() {
                 setBackgroundColor(Color.TRANSPARENT)
                 elevation = dp(TouchPriority.TIMELINE_EDGE_HANDLE_DP).toFloat()
                 contentDescription = if (isStart) "Sol beyaz tutamaç: klibin başlangıcını sürükleyerek kısalt veya uzat" else "Sağ beyaz tutamaç: klibin bitişini sürükleyerek kısalt veya uzat"
-                val grip = View(this@VideoEditorActivity).apply {
-                    background = android.graphics.drawable.GradientDrawable().apply {
-                        setColor(Color.WHITE)
-                        cornerRadius = dp(3).toFloat()
-                    }
-                    isClickable = false
-                }
-                addView(grip, FrameLayout.LayoutParams(
-                    dp(5), dp(30), Gravity.CENTER
-                ))
+                // The visible white grip is part of the selected outline. This
+                // view stays transparent and exists only as its larger touch target.
                 var downRawX = 0f
                 var initialStartMs = clip.startMs
                 var initialEndMs = clip.endMs
