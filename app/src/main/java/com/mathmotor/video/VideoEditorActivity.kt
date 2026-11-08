@@ -312,7 +312,7 @@ class VideoEditorActivity : Activity() {
                 timelineScaleAnchorTimeMs = TimelineScaleMath.timeAtViewportX(
                     lane.scrollX,
                     timelineScaleAnchorViewportX,
-                    timelineOriginSpacerWidth(lane.width).toFloat(),
+                    timelineOriginSpacerWidth(lane).toFloat(),
                     timelinePixelsPerSecond()
                 ).coerceIn(0L, totalOutputDurationMs())
                 timelinePinchStartViewportX = timelineScaleAnchorViewportX
@@ -3329,7 +3329,7 @@ class VideoEditorActivity : Activity() {
                     if (!autoScrollingTimeline && view.width > 0) {
                         // The fixed center playhead stays still while the filmstrip moves
                         // underneath it. Update the visible time immediately on every drag.
-                        val originPx = timelineOriginSpacerWidth(view.width).toFloat()
+                        val originPx = timelineOriginSpacerWidth(view).toFloat()
                         val rawPlayheadMs = TimelineScaleMath.timeAtViewportX(
                             scrollX, originPx, originPx, timelinePixelsPerSecond()
                         ).coerceIn(0L, totalOutputDurationMs())
@@ -4179,12 +4179,12 @@ class VideoEditorActivity : Activity() {
             }
             fun updateLaneOriginSpacer(viewportWidth: Int) {
                 if (viewportWidth <= 0 || laneTrack.childCount == 0) return
-                // The scroll viewport can be measured after the timeline is first built,
-                // and can change again when the keyboard or phone width changes. Keep
-                // both spacers tied to the full track frame, not just the scroll
-                // viewport (which starts to the right of the 57dp label/grip gutter).
-                val originWidth = timelineOriginSpacerWidth(viewportWidth)
-                val endWidth = timelineEndSpacerWidth(viewportWidth)
+                // Measure the actual viewport-to-playhead distance instead of deriving
+                // it from a hard-coded header gutter. The ruler and media rows have
+                // different child layouts, and their measured left edges are the
+                // authoritative geometry after responsive padding/insets are applied.
+                val originWidth = timelineOriginSpacerWidth(laneScroll)
+                val endWidth = (viewportWidth - originWidth).coerceAtLeast(1)
                 val first = laneTrack.getChildAt(0)
                 if (first?.tag == "timeline-origin-spacer") {
                     val params = first.layoutParams as? LinearLayout.LayoutParams
@@ -4200,7 +4200,7 @@ class VideoEditorActivity : Activity() {
                     }
                 }
             }
-            val originWidth = timelineOriginSpacerWidth(laneScroll.width)
+            val originWidth = timelineOriginSpacerWidthFallback(laneScroll.width)
             val endWidth = timelineEndSpacerWidth(laneScroll.width)
             if (laneTrack.getChildAt(0)?.tag != "timeline-origin-spacer") {
                 val originSpacer = View(this).apply { tag = "timeline-origin-spacer" }
@@ -4856,7 +4856,7 @@ class VideoEditorActivity : Activity() {
         val anchoredScrollX = TimelineScaleMath.scrollForAnchoredZoom(
             timelineScaleAnchorTimeMs,
             timelineScaleAnchorViewportX,
-            timelineOriginSpacerWidth(lane.width).toFloat(),
+            timelineOriginSpacerWidth(lane).toFloat(),
             timelinePixelsPerSecond()
         ).coerceAtLeast(0)
         val scrollChanged = anchoredScrollX != lane.scrollX
@@ -4864,7 +4864,7 @@ class VideoEditorActivity : Activity() {
             // If the pinch midpoint is not at the fixed centre playhead, moving the
             // timeline changes the time now beneath that playhead. Keep the readout,
             // seek control and preview synchronized with the visible centre frame.
-            val centreX = timelineOriginSpacerWidth(lane.width).toFloat()
+            val centreX = timelineOriginSpacerWidth(lane).toFloat()
             val playheadAfterPinch = TimelineScaleMath.timeAtViewportX(
                 anchoredScrollX,
                 centreX,
@@ -4977,7 +4977,19 @@ class VideoEditorActivity : Activity() {
             else resources.displayMetrics.widthPixels
     }
 
-    private fun timelineOriginSpacerWidth(viewportWidth: Int = 0): Int =
+    private fun timelineOriginSpacerWidth(lane: View): Int {
+        if (lane.width > 0 && timelineTracksFrame.width > 0) {
+            val laneLocation = IntArray(2)
+            val frameLocation = IntArray(2)
+            lane.getLocationOnScreen(laneLocation)
+            timelineTracksFrame.getLocationOnScreen(frameLocation)
+            val playheadCenterOnScreen = frameLocation[0] + timelineTracksFrame.width / 2
+            return (playheadCenterOnScreen - laneLocation[0]).coerceIn(1, lane.width)
+        }
+        return timelineOriginSpacerWidthFallback(lane.width)
+    }
+
+    private fun timelineOriginSpacerWidthFallback(viewportWidth: Int = 0): Int =
         TimelineScaleMath.originSpacerWidthForCenteredPlayhead(
             timelineFrameWidth(viewportWidth),
             timelineHeaderGutterWidthPx()
