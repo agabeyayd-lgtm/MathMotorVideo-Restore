@@ -71,14 +71,24 @@ jobs:
           retention-days: 14
 
       - name: Set up FFmpeg
-        # Pin the Node 24-compatible installer. Linux static builds come from
-        # John Van Sickle rather than the BtbN GitHub release asset that
-        # returned repeated HTTP 504 responses on the latest emulator job.
+        id: setup_ffmpeg
+        # Prefer the pinned Node 24-compatible static installer. If its
+        # external binary host is temporarily unreachable, use Ubuntu's
+        # packaged ffmpeg/ffprobe instead of aborting the editor smoke test.
         uses: FedericoCarboni/setup-ffmpeg@8073ccb51e517ed576e6871c7f2360c6de4ebb7c
+        continue-on-error: true
         with:
           ffmpeg-version: release
           architecture: x64
           linking-type: static
+
+      - name: Install FFmpeg from Ubuntu packages when static download fails
+        if: steps.setup_ffmpeg.outcome != 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
 
       - name: Verify FFmpeg installation
         shell: bash
