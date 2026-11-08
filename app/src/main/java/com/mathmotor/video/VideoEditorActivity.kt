@@ -4291,12 +4291,20 @@ class VideoEditorActivity : Activity() {
                 ?.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
             timelineScrollViews.forEach { lane ->
                 val content = lane.getChildAt(0) as? LinearLayout ?: return@forEach
+                val runway = View(this).apply {
+                    tag = "timeline-drag-tail-runway"
+                    isClickable = false
+                    isFocusable = false
+                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                }
+                // Keep timeline-end-spacer as the final child; its measured width
+                // is recalculated when the viewport changes.
+                val endSpacerIndex = (0 until content.childCount).lastOrNull { index ->
+                    content.getChildAt(index)?.tag == "timeline-end-spacer"
+                } ?: content.childCount
                 content.addView(
-                    View(this).apply {
-                        isClickable = false
-                        isFocusable = false
-                        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-                    },
+                    runway,
+                    endSpacerIndex,
                     LinearLayout.LayoutParams(dragTailBufferPx.coerceAtLeast(dp(160)), 1)
                 )
             }
