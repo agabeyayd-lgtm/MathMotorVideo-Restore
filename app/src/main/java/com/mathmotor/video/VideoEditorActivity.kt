@@ -6593,12 +6593,15 @@ class VideoEditorActivity : Activity() {
         restored: ProjectEditSnapshot
     ) {
         if (!timelineSyncTestEnabled) return
+        val beforeTextChars = current.textLayers.sumOf { it.text.length }
+        val afterTextChars = restored.textLayers.sumOf { it.text.length }
         android.util.Log.i(
             "ProjectHistoryTest",
             "PROJECT_HISTORY_APPLIED action=$action " +
                 "beforeClips=${current.clips.size} afterClips=${restored.clips.size} " +
                 "beforeOverlays=${current.overlays.size} afterOverlays=${restored.overlays.size} " +
                 "beforeTexts=${current.textLayers.size} afterTexts=${restored.textLayers.size} " +
+                "beforeTextChars=$beforeTextChars afterTextChars=$afterTextChars " +
                 "beforeMusic=${current.musicUri != null} afterMusic=${restored.musicUri != null} " +
                 "beforeSound=${current.soundUri != null} afterSound=${restored.soundUri != null} " +
                 "beforeFilter=${current.videoFilterPreset} afterFilter=${restored.videoFilterPreset}"
