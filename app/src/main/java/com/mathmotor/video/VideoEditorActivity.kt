@@ -3416,6 +3416,7 @@ class VideoEditorActivity : Activity() {
                         }
                     }
                     updateTimelinePlayheadLine()
+                    if (timelineSyncTestEnabled) scheduleTimelineAlignmentSnapshot()
                 }
             }
             val track = LinearLayout(this).apply {
@@ -4317,8 +4318,14 @@ class VideoEditorActivity : Activity() {
         }
 
         val restoreScrollX = timelineHorizontalScrollX
-        timelineScrollViews.firstOrNull()?.post {
-            scrollTimelineProgrammatically(restoreScrollX)
+        val firstLane = timelineScrollViews.firstOrNull()
+        if (firstLane != null) {
+            firstLane.post {
+                scrollTimelineProgrammatically(restoreScrollX)
+                if (timelineSyncTestEnabled) scheduleTimelineAlignmentSnapshot()
+            }
+        } else if (timelineSyncTestEnabled) {
+            scheduleTimelineAlignmentSnapshot()
         }
         updateTimelinePlayheadLine()
     }
@@ -5132,6 +5139,42 @@ class VideoEditorActivity : Activity() {
         }
         if (timelinePlayButton.contentDescription?.toString() != nextDescription) {
             timelinePlayButton.contentDescription = nextDescription
+        }
+    }
+
+    /**
+     * Waits for the rebuilt timeline and preview to have real screen geometry before
+     * emitting the debug-only alignment sample. The initial editor sync can run
+     * before Android's first layout pass, so relying on that one callback loses the
+     * snapshot and leaves the emulator test with no measurements.
+     */
+    private fun scheduleTimelineAlignmentSnapshot(attempt: Int = 0) {
+        if (!timelineSyncTestEnabled || !::timelineTracksFrame.isInitialized) return
+        timelineTracksFrame.post {
+            val lane = timelineScrollViews.firstOrNull()
+            val geometryReady = lane != null &&
+                lane.width > 0 &&
+                timelineTracksFrame.width > 0 &&
+                ::timelinePlayButton.isInitialized && timelinePlayButton.width > 0 &&
+                ::timelinePlayheadLine.isInitialized && timelinePlayheadLine.width > 0 &&
+                ::previewCanvas.isInitialized && previewCanvas.width > 0 && previewCanvas.height > 0
+            if (!geometryReady) {
+                if (attempt < 12) {
+                    timelineHandler.postDelayed(
+                        { scheduleTimelineAlignmentSnapshot(attempt + 1) },
+                        80L
+                    )
+                } else {
+                    android.util.Log.w(
+                        "TimelineAlignmentTest",
+                        "TIMELINE_ALIGNMENT_SNAPSHOT_NOT_READY laneWidth=${lane?.width ?: 0} " +
+                            "tracksWidth=${timelineTracksFrame.width} preview=" +
+                            "${if (::previewCanvas.isInitialized) "${previewCanvas.width}x${previewCanvas.height}" else "uninitialized"}"
+                    )
+                }
+                return@post
+            }
+            logTimelineAlignmentTestSnapshotIfNeeded()
         }
     }
 
