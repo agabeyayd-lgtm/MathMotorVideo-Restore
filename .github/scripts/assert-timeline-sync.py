@@ -95,13 +95,22 @@ for index, sample in enumerate(samples):
     # the origin view could not be found.
     if any(value == -2147483648 for value in origins):
         raise SystemExit(f"FAIL: a lane's time-zero origin view could not be found: {origins}.")
-    if len(set(origins)) != 1:
-        raise SystemExit(f"FAIL: ruler/video time-zero edges do not align: {origins}.")
-    if abs(int(origins[0]) + int(scrolls[0]) - center) > 1:
+    # Screen coordinates are integer-rounded independently for each lane.
+    # Permit at most one physical pixel of spread, but verify every lane's
+    # own origin + shared scroll still maps to the fixed playhead within 1px.
+    origin_spread = max(origins) - min(origins)
+    if origin_spread > 1:
         raise SystemExit(
-            f"FAIL: shared time-zero edge does not map to the fixed playhead: "
-            f"originRightX={origins[0]}px + scroll={scrolls[0]}px, playhead={center}px."
+            f"FAIL: ruler/video time-zero edges differ by {origin_spread}px "
+            f"(maximum 1px rounding allowance): {origins}."
         )
+    for lane_index, (origin_x, lane_scroll) in enumerate(zip(origins, scrolls)):
+        if abs(origin_x + lane_scroll - center) > 1:
+            raise SystemExit(
+                f"FAIL: timeline lane {lane_index} time-zero edge does not map to "
+                f"the fixed playhead: originRightX={origin_x}px + scroll={lane_scroll}px, "
+                f"playhead={center}px."
+            )
     if any(value < 0 for value in scrolls):
         raise SystemExit(f"FAIL: negative lane scroll at sample {index}: {scrolls}.")
     if len(set(scrolls)) != 1:
