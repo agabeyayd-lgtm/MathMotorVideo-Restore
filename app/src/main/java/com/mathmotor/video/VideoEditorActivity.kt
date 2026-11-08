@@ -10901,15 +10901,18 @@ class VideoEditorActivity : Activity() {
     private fun normalizeMainVideoLaneOverlaps() {
         if (clips.size < 2) return
         val segments = videoTimelineSegments()
-        val chronological = segments.indices.sortedWith(
-            compareBy<Int> { segments[it].timelineStartMs }.thenBy { it }
-        )
-        val hasOverlap = chronological.zipWithNext().any { (left, right) ->
-            segments[left].timelineEndMs > segments[right].timelineStartMs
+        val plan = TimelineVideoMath.packSequentially(segments) ?: return
+        val previous = clips.toList()
+        val reordered = plan.orderedClipIndices.map { originalIndex ->
+            previous[originalIndex].copy(
+                timelineStartMs = plan.timelineStartByClipIndex[originalIndex]
+                    ?: previous[originalIndex].timelineStartMs
+            )
         }
-        // Do not close intentional empty-space moves here. This runs on every
-        // timeline rebuild; only real overlaps are repaired during normal editing.
-        if (!hasOverlap) return
+        val changed = reordered.indices.any { position ->
+            reordered[position] != previous.getOrNull(position)
+        }
+        if (!changed) return
 
         val oldSelectedIndex = selectedClipIndex
         val oldPlayheadMs = timelinePlayheadMs
@@ -10917,16 +10920,9 @@ class VideoEditorActivity : Activity() {
         val oldLocalMs = oldActiveIndex?.let { index ->
             (oldPlayheadMs - segments[index].timelineStartMs).coerceAtLeast(0L)
         } ?: 0L
-        val plan = TimelineVideoMath.resolveOverlaps(segments) ?: return
-        val previous = clips.toList()
-        val repaired = plan.orderedClipIndices.map { originalIndex ->
-            previous[originalIndex].copy(
-                timelineStartMs = plan.timelineStartByClipIndex[originalIndex]
-                    ?: previous[originalIndex].timelineStartMs
-            )
-        }
+
         clips.clear()
-        clips.addAll(repaired)
+        clips.addAll(reordered)
         selectedClipIndex = plan.orderedClipIndices.indexOf(oldSelectedIndex).takeIf { it >= 0 } ?: -1
         val newActiveIndex = oldActiveIndex?.let(plan.orderedClipIndices::indexOf) ?: -1
         if (newActiveIndex >= 0) {
@@ -10942,9 +10938,9 @@ class VideoEditorActivity : Activity() {
             timelinePlayheadMs, timelinePixelsPerSecond()
         ).coerceAtLeast(0)
         timelineHorizontalScrollX = pendingTimelineScrollX ?: 0
-        if (timelineSyncTestEnabled) android.util.Log.w(
+        if (timelineSyncTestEnabled) android.util.Log.i(
             "TimelineSyncTest",
-            "VIDEO_LANE_OVERLAP_REPAIRED clipCount=${clips.size} starts=${clips.indices.joinToString(","){ "$it:${clips[it].timelineStartMs}" }}"
+            "VIDEO_LANE_GAPLESS_REFLOW clipCount=${clips.size} starts=${clips.indices.joinToString(","){ "$it:${clips[it].timelineStartMs}" }}"
         )
     }
 
