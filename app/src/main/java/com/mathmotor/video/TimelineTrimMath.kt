@@ -448,10 +448,10 @@ internal object TimelineVideoMath {
     }
 
     /**
-     * Moves one item independently when it lands in free timeline space. If the
-     * requested range collides with another main-video clip, the drop is interpreted
-     * as an insertion/reorder and the single video lane is packed without overlap.
-     * Legacy overlaps are repaired before either path; independent gaps are preserved.
+     * CapCut-style main-video reorder. A drop chooses a new position in the
+     * clip sequence; the complete primary lane is then reflowed from time zero.
+     * No main-video clip can leave a gap or overlap. Source trims and speeds
+     * are preserved. Non-video tracks use their own independent timing math.
      */
     fun reorderForDrop(
         segments: List<TimelineVideoSegment>,
@@ -462,62 +462,25 @@ internal object TimelineVideoMath {
         val safe = segments.map(::normalize)
         if (safe.any { it.durationMs <= 0L }) return null
 
-        val repaired = resolveOverlaps(safe) ?: return null
-        val repairedStarts = repaired.timelineStartByClipIndex
-        val moving = safe[movingIndex]
-        val requestedDropStartMs = requestedStartMs.coerceAtLeast(0L)
-        val requestedDropEndMs = if (Long.MAX_VALUE - requestedDropStartMs < moving.durationMs) {
-            Long.MAX_VALUE
-        } else {
-            requestedDropStartMs + moving.durationMs
-        }
-        val otherIndices = segments.indices.filterNot { it == movingIndex }
-        val collisionFree = otherIndices.all { index ->
-            val otherStartMs = repairedStarts[index] ?: safe[index].timelineStartMs
-            val otherEndMs = otherStartMs + safe[index].durationMs
-            requestedDropEndMs <= otherStartMs || requestedDropStartMs >= otherEndMs
-        }
-
-        if (collisionFree) {
-            // Empty-space movement is independent: no neighbouring clip is shifted,
-            // and no artificial snapping removes the gap the user just created.
-            val starts = linkedMapOf<Int, Long>()
-            segments.indices.forEach { index ->
-                starts[index] = if (index == movingIndex) requestedDropStartMs
-                    else repairedStarts[index] ?: safe[index].timelineStartMs
-            }
-            return TimelineVideoReorderPlan(segments.indices.toList(), starts)
-        }
-
-        // Dropping onto an occupied clip means insertion/reorder. Compare the dragged
-        // block's left edge with neighbouring clip centers. Keep every earlier clip in
-        // place, then push only following clips that collide; later intentional gaps stay.
-        val orderedOthers = repaired.orderedClipIndices.filterNot { it == movingIndex }
-        val insertionIndex = orderedOthers.indexOfFirst { otherIndex ->
-            val otherStartMs = repairedStarts[otherIndex] ?: safe[otherIndex].timelineStartMs
-            requestedDropStartMs < otherStartMs + safe[otherIndex].durationMs / 2L
+        val orderedOthers = segments.indices
+            .filterNot { it == movingIndex }
+            .sortedWith(compareBy<Int> { safe[it].timelineStartMs }.thenBy { it })
+        val requested = requestedStartMs.coerceAtLeast(0L)
+        val insertionIndex = orderedOthers.indexOfFirst { index ->
+            val clip = safe[index]
+            requested < clip.timelineStartMs + clip.durationMs / 2L
         }.let { if (it < 0) orderedOthers.size else it }
-        val reorderedIndices = orderedOthers.toMutableList().apply {
+
+        val reordered = orderedOthers.toMutableList().apply {
             add(insertionIndex, movingIndex)
         }
+        var cursorMs = 0L
         val starts = linkedMapOf<Int, Long>()
-        segments.indices.forEach { index ->
-            starts[index] = repairedStarts[index] ?: safe[index].timelineStartMs
+        reordered.forEach { index ->
+            starts[index] = cursorMs
+            cursorMs += safe[index].durationMs
         }
-        val previousIndex = orderedOthers.getOrNull(insertionIndex - 1)
-        val previousEndMs = previousIndex?.let { index ->
-            (starts[index] ?: safe[index].timelineStartMs) + safe[index].durationMs
-        } ?: 0L
-        val movingStartMs = maxOf(requestedDropStartMs, previousEndMs)
-        starts[movingIndex] = movingStartMs
-        var cursorMs = movingStartMs + moving.durationMs
-        orderedOthers.drop(insertionIndex).forEach { clipIndex ->
-            val originalStartMs = starts[clipIndex] ?: safe[clipIndex].timelineStartMs
-            val adjustedStartMs = maxOf(originalStartMs, cursorMs)
-            starts[clipIndex] = adjustedStartMs
-            cursorMs = adjustedStartMs + safe[clipIndex].durationMs
-        }
-        return TimelineVideoReorderPlan(reorderedIndices, starts)
+        return TimelineVideoReorderPlan(reordered, starts)
     }
 
     fun move(segment: TimelineVideoSegment, requestedStartMs: Long): TimelineVideoSegment =
