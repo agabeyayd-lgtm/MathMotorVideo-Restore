@@ -9297,7 +9297,12 @@ class VideoEditorActivity : Activity() {
             val longPressAction = Runnable {
                 if (filmstripTouchActive && !filmstripMoved) {
                     filmstripLongPressed = true
-                    animate().scaleX(0.88f).scaleY(0.88f).setDuration(120L).start()
+                    // Match CapCut's gesture split: an ordinary one-finger swipe
+                    // belongs to the shared HorizontalScrollView; only a held clip
+                    // becomes a movable object. Claim the gesture after long-press,
+                    // not on ACTION_DOWN, so the parent can pan all timeline lanes.
+                    parent?.requestDisallowInterceptTouchEvent(true)
+                    animate().scaleX(0.94f).scaleY(0.94f).setDuration(100L).start()
                 }
             }
             setOnTouchListener { view, event ->
@@ -9310,10 +9315,9 @@ class VideoEditorActivity : Activity() {
                         initialStartMs = clip.timelineStartMs
                         initialTimelineScrollX = timelineScrollViews.firstOrNull()?.scrollX ?: 0
                         pauseActivePreview()
-                        // A finger-down on a clip owns its one-finger horizontal gesture.
-                        // Scrubbing remains available from the empty lane/ruler; a second
-                        // finger still cancels this child gesture in Activity.dispatchTouchEvent.
-                        view.parent?.requestDisallowInterceptTouchEvent(true)
+                        // Do not block the HorizontalScrollView here. Until the
+                        // long-press timeout expires, this surface is a timeline-pan
+                        // surface just like the ruler and the other lanes.
                         timelineHandler.postDelayed(
                             longPressAction,
                             android.view.ViewConfiguration.getLongPressTimeout().toLong()
@@ -9322,16 +9326,19 @@ class VideoEditorActivity : Activity() {
                     }
                     android.view.MotionEvent.ACTION_MOVE -> {
                         val dx = event.rawX - downRawX
-                        if (kotlin.math.abs(dx) >
-                            android.view.ViewConfiguration.get(this@VideoEditorActivity).scaledTouchSlop
-                        ) {
-                            filmstripMoved = true
+                        val touchSlop = android.view.ViewConfiguration.get(this@VideoEditorActivity).scaledTouchSlop
+                        if (!filmstripLongPressed && kotlin.math.abs(dx) > touchSlop) {
+                            // An ordinary horizontal swipe is being handled by the
+                            // parent HorizontalScrollView. Cancel the pending move
+                            // affordance; the parent's ACTION_CANCEL will finish this
+                            // child gesture after it takes ownership.
                             timelineHandler.removeCallbacks(longPressAction)
+                        } else if (filmstripLongPressed && kotlin.math.abs(dx) > touchSlop) {
+                            filmstripMoved = true
                             view.parent?.requestDisallowInterceptTouchEvent(true)
-                            // Auto-scroll all synchronized timeline rows when the finger
-                            // reaches a viewport edge. The shared content-scroll delta is
-                            // included in the drop calculation, so long projects remain
-                            // reachable without lifting the finger.
+                            // Long-press drag may auto-scroll at a viewport edge.
+                            // Every lane receives the same scroll delta, and that
+                            // delta is included in the final project-time drop point.
                             val lane = timelineScrollViews.firstOrNull()
                             if (lane != null) {
                                 val laneLocation = IntArray(2)
@@ -9360,9 +9367,7 @@ class VideoEditorActivity : Activity() {
                             val minimumPx = -TimelineScaleMath.pixelsForTime(
                                 initialStartMs, timelinePixelsPerSecond()
                             )
-                            // Move immediately with the finger. On release the drop point
-                            // is converted into project time using both finger movement and
-                            // any synchronized viewport auto-scroll.
+                            // The clip moves only after the hold gesture has armed it.
                             view.translationX = maxOf(minimumPx.toFloat(), gestureDeltaPx)
                         }
                         true
@@ -9373,7 +9378,7 @@ class VideoEditorActivity : Activity() {
                         view.parent?.requestDisallowInterceptTouchEvent(false)
                         view.translationX = 0f
                         view.animate().scaleX(1f).scaleY(1f).setDuration(100L).start()
-                        if (filmstripMoved) {
+                        if (filmstripLongPressed && filmstripMoved) {
                             val rawDeltaPx = event.rawX - downRawX
                             val scrollDeltaPx = (
                                 (timelineScrollViews.firstOrNull()?.scrollX ?: initialTimelineScrollX) -
