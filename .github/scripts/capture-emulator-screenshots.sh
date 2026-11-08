@@ -2817,12 +2817,15 @@ start_y = (second[1] + second[3]) // 2
 split_boundary_ms = int(sys.argv[3])
 sample = None
 for line in open(sys.argv[2], errors="replace"):
+    # The production log writes pxPerSecond before playheadCenterPx.
+    # Match the emitted field order; the old expression expected the reverse
+    # order and silently rejected every valid live sync sample.
     match = re.search(
-        r"TIMELINE_SYNC_SAMPLE .*?playheadCenterPx=(\d+).*?pxPerSecond=([0-9.]+)",
+        r"TIMELINE_SYNC_SAMPLE .*?pxPerSecond=([0-9.]+).*?playheadCenterPx=(\d+)",
         line
     )
     if match:
-        sample = (int(match.group(1)), float(match.group(2)))
+        sample = (int(match.group(2)), float(match.group(1)))
 if sample is None:
     raise SystemExit("No measured fixed-playhead position/scale for the split reorder.")
 _, pixels_per_second = sample
