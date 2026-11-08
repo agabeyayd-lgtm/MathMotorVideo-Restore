@@ -1155,7 +1155,25 @@ class VideoEditorActivity : Activity() {
                     timelinePlaybackState = TimelinePlaybackState.ERROR
                     timelinePreviewError = "Önizleme oynatıcısı hazırlanamadı."
                     status.text = timelinePreviewError
-                } else if (currentPlayer.isPlaying || currentPlayer.playWhenReady) {
+                } else {
+                    // A composition can be rebuilt by editing an overlay or changing
+                    // the source audio. If the replacement player is still IDLE when
+                    // the user presses Play, a playWhenReady request alone does not
+                    // prepare Media3; it can leave the pause glyph visible forever
+                    // while its decoder clock never advances. Re-prepare this exact
+                    // composition before toggling playback, and discard a stale
+                    // playWhenReady bit left on an IDLE player.
+                    if (currentPlayer.playbackState == androidx.media3.common.Player.STATE_IDLE) {
+                        if (timelineSyncTestEnabled) android.util.Log.w(
+                            "TimelineSyncTest",
+                            "TIMELINE_PLAY_RECOVER_IDLE positionMs=\${timelinePlayheadMs} " +
+                                "timelineEmpty=\${currentPlayer.currentTimeline.isEmpty} " +
+                                "windowCount=\${currentPlayer.currentTimeline.windowCount}"
+                        )
+                        currentPlayer.playWhenReady = false
+                        currentPlayer.prepare()
+                    }
+                    if (currentPlayer.isPlaying || currentPlayer.playWhenReady) {
                     // Freeze the decoder first, then copy its actual clock into the
                     // timeline. The periodic UI sync is intentionally not the source
                     // of truth for a pause tap (it can be up to one tick behind).
@@ -1181,6 +1199,7 @@ class VideoEditorActivity : Activity() {
                     hidePreviewFrameOverlay()
                     currentPlayer.playWhenReady = true
                     status.text = "Proje önizlemesi oynatılıyor."
+                    }
                 }
                 if (timelineSyncTestEnabled) android.util.Log.i(
                     "TimelineSyncTest",
@@ -5080,7 +5099,10 @@ class VideoEditorActivity : Activity() {
     private fun updateTimelinePlayButtonState() {
         if (!::timelinePlayButton.isInitialized) return
         val current = timelineCompositionPlayer
-        val playing = current?.isPlaying == true || current?.playWhenReady == true
+        val playbackState = current?.playbackState
+        val playing = current?.isPlaying == true ||
+            (current?.playWhenReady == true &&
+                playbackState == androidx.media3.common.Player.STATE_BUFFERING)
         if (playing) timelinePlaybackState = TimelinePlaybackState.PLAYING
         else if (timelinePlaybackState != TimelinePlaybackState.ERROR) {
             timelinePlaybackState = TimelinePlaybackState.PAUSED
@@ -5675,6 +5697,13 @@ class VideoEditorActivity : Activity() {
                 }
                 override fun onPlaybackStateChanged(playbackState: Int) {
                     if (timelineCompositionPlayer !== comp) return
+                    if (timelineSyncTestEnabled) android.util.Log.i(
+                        "TimelineSyncTest",
+                        "TIMELINE_PLAYER_PLAYBACK_STATE state=\$playbackState " +
+                            "playWhenReady=\${comp.playWhenReady} isPlaying=\${comp.isPlaying} " +
+                            "windowCount=\${comp.currentTimeline.windowCount} " +
+                            "durationMs=\${comp.duration} positionMs=\${comp.currentPosition}"
+                    )
                     if (playbackState == androidx.media3.common.Player.STATE_READY) {
                         // CompositionPlayer.prepare() is asynchronous. Seeking before its
                         // concatenated timeline exposes a period can crash Media3 with
