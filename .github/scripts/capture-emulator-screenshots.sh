@@ -2678,7 +2678,7 @@ center_x = (left + right) // 2
 center_y = (top + bottom) // 2
 if not (0 <= center_x < 1080 and 0 <= center_y < 1920):
     raise SystemExit(f"The measured main-video clip centre is outside the emulator screen: {latest}")
-print(f"PASS: using app-measured main-video clip bounds {left},{top},{right},{bottom}")
+print(f"PASS: using app-measured main-video clip bounds {left},{top},{right},{bottom}", file=sys.stderr)
 print(center_x, center_y)
 PY
 )"
