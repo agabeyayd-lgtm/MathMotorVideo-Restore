@@ -1570,6 +1570,8 @@ class VideoEditorActivity : Activity() {
             addView(android.widget.RadioButton(this@VideoEditorActivity).apply { id = 3; text = "Alt"; setTextColor(Color.WHITE) })
             check(3)
             setOnCheckedChangeListener { _, checkedId ->
+                if (loadingTextLayerControls) return@setOnCheckedChangeListener
+                recordProjectEdit()
                 textPosition = when (checkedId) {
                     1 -> TextPosition.TOP
                     2 -> TextPosition.CENTER
@@ -1601,6 +1603,7 @@ class VideoEditorActivity : Activity() {
             check(31)
             setOnCheckedChangeListener { _, checkedId ->
                 if (loadingTextLayerControls) return@setOnCheckedChangeListener
+                recordProjectEdit()
                 textAnimationPreset = TextAnimationPreset.values().getOrNull(checkedId - 31)
                     ?: TextAnimationPreset.NONE
                 selectedTextLayer()?.animationPreset = textAnimationPreset
@@ -1629,8 +1632,11 @@ class VideoEditorActivity : Activity() {
                     selectedTextLayer()?.animationDurationMs = textAnimationDurationMs
                     updatePreviewTextOverlay()
                 }
-                override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                    activeProjectHistorySnapshot = captureProjectEditSnapshot()
+                }
                 override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                    finishProjectHistoryGesture()
                     refreshTimelineTracks()
                 }
             })
@@ -1659,6 +1665,7 @@ class VideoEditorActivity : Activity() {
             check(11)
             setOnCheckedChangeListener { _, checkedId ->
                 if (loadingTextLayerControls) return@setOnCheckedChangeListener
+                recordProjectEdit()
                 textColorPreset = TextColorPreset.values().getOrNull(checkedId - 11)
                     ?: TextColorPreset.WHITE
                 syncSelectedTextLayerFromControls()
@@ -1683,6 +1690,7 @@ class VideoEditorActivity : Activity() {
             isChecked = true
             setOnCheckedChangeListener { _, checked ->
                 if (loadingTextLayerControls) return@setOnCheckedChangeListener
+                recordProjectEdit()
                 textBold = checked
                 syncSelectedTextLayerFromControls()
                 updatePreviewTextOverlay()
@@ -1716,12 +1724,18 @@ class VideoEditorActivity : Activity() {
                 previewTextOverlays.forEach { it.requestLayout() }
                 refreshTextLayerList()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                if (!loadingTextLayerControls) activeProjectHistorySnapshot = captureProjectEditSnapshot()
+            }
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                finishProjectHistoryGesture()
+            }
         })
         textPanel.addView(textSizeSeek, matchWrap())
         textInput.addTextChangedListener(object : android.text.TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {
+                if (!loadingTextLayerControls) beginTextHistoryEdit()
+            }
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                 if (loadingTextLayerControls) return
                 if (selectedTextLayer() == null && !s.isNullOrBlank()) {
@@ -1747,6 +1761,8 @@ class VideoEditorActivity : Activity() {
                 updatePreviewTextOverlay()
                 timelineHandler.removeCallbacks(textTimelineRefreshTask)
                 timelineHandler.postDelayed(textTimelineRefreshTask, 120L)
+                timelineHandler.removeCallbacks(textHistoryCommitTask)
+                timelineHandler.postDelayed(textHistoryCommitTask, 650L)
             }
             override fun afterTextChanged(s: android.text.Editable?) {}
         })
@@ -2140,6 +2156,8 @@ class VideoEditorActivity : Activity() {
                         android.graphics.Rect(0, 0, textInput.width, textInput.height), true
                     )
                 }
+            } else {
+                finishTextHistoryEdit()
             }
         }
         editorPanelScroll.visibility = View.GONE
@@ -6417,6 +6435,8 @@ class VideoEditorActivity : Activity() {
             before.filterHue != after.filterHue
 
     private fun recordProjectEdit() {
+        finishTextHistoryEdit()
+        finishProjectHistoryGesture()
         pushProjectUndoSnapshot(captureProjectEditSnapshot())
     }
 
@@ -6631,6 +6651,7 @@ class VideoEditorActivity : Activity() {
             status.text = "En fazla 12 metin katmanı ekleyebilirsin."
             return
         }
+        recordProjectEdit()
         syncSelectedTextLayerFromControls()
         val total = totalOutputDurationMs()
         if (total > 0L && timelinePlayheadMs >= total) {
@@ -6670,6 +6691,7 @@ class VideoEditorActivity : Activity() {
             status.text = "En fazla 12 metin ve çıkartma katmanı ekleyebilirsin."
             return
         }
+        recordProjectEdit()
         syncSelectedTextLayerFromControls()
         val total = totalOutputDurationMs()
         val start = timelinePlayheadMs.coerceIn(0L, (total - 1L).coerceAtLeast(0L))
@@ -6714,6 +6736,8 @@ class VideoEditorActivity : Activity() {
         }
         syncSelectedTextLayerFromControls()
         val next = (layer.sizeSp + delta).coerceIn(12, 96)
+        if (next == layer.sizeSp) return
+        recordProjectEdit()
         layer.sizeSp = next
         textSizeSp = next
         textSizeLabel.text = "Yazı boyutu: " + next + " sp"
@@ -6733,6 +6757,7 @@ class VideoEditorActivity : Activity() {
             status.text = "Kopyalamak için önce bir yazı katmanı seç."
             return
         }
+        recordProjectEdit()
         val copy = source.copy(id = nextTextLayerId++, text = source.text)
         textLayers.add(textLayers.indexOf(source) + 1, copy)
         selectedTextLayerId = copy.id
@@ -6750,6 +6775,7 @@ class VideoEditorActivity : Activity() {
             status.text = "Silmek için önce bir yazı katmanı seç."
             return
         }
+        recordProjectEdit()
         textLayers.removeAt(index)
         val next = textLayers.getOrNull(index.coerceAtMost(textLayers.lastIndex))
         selectedTextLayerId = next?.id
@@ -7125,6 +7151,7 @@ class VideoEditorActivity : Activity() {
                         selectedTextLayerId = layer.id
                         loadTextLayerIntoControls(layer)
                     }
+                    beginTextHistoryEdit()
                     downRawX = event.rawX
                     downRawY = event.rawY
                     val canvasWidth = previewCanvas.width.coerceAtLeast(1).toFloat()
@@ -7257,6 +7284,7 @@ class VideoEditorActivity : Activity() {
                             selectTextLayer(layer.id)
                         }
                     }
+                    finishTextHistoryEdit()
                     view.sendAccessibilityEvent(
                         android.view.accessibility.AccessibilityEvent.TYPE_VIEW_CLICKED
                     )
@@ -7264,6 +7292,7 @@ class VideoEditorActivity : Activity() {
                 }
                 android.view.MotionEvent.ACTION_CANCEL -> {
                     view.parent?.requestDisallowInterceptTouchEvent(false)
+                    finishTextHistoryEdit()
                     startDistance = 0f
                     true
                 }
@@ -7295,9 +7324,13 @@ class VideoEditorActivity : Activity() {
                 textEndMs = interval.endMs
                 updateTextControls()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) { deferTimelineRefresh = true }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                deferTimelineRefresh = true
+                activeProjectHistorySnapshot = captureProjectEditSnapshot()
+            }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
                 deferTimelineRefresh = false
+                finishProjectHistoryGesture()
                 refreshTimelineTracks()
             }
         })
@@ -7314,9 +7347,13 @@ class VideoEditorActivity : Activity() {
                 textEndMs = interval.endMs
                 updateTextControls()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) { deferTimelineRefresh = true }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                deferTimelineRefresh = true
+                activeProjectHistorySnapshot = captureProjectEditSnapshot()
+            }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
                 deferTimelineRefresh = false
+                finishProjectHistoryGesture()
                 refreshTimelineTracks()
             }
         })
