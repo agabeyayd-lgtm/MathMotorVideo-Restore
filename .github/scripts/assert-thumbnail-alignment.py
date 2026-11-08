@@ -173,6 +173,26 @@ def verify(log_path: str, screenshot_path: str):
             log,
         )
     ]
+    decoder_rows = re.findall(
+        r"TIMELINE_THUMBNAIL_DECODED requestedMs=(\\d+)(?: actualFrameMs=(\\d+))? "
+        r"decoder=([a-z0-9-]+) worker=(\\d+) decodeMs=(\\d+)",
+        log,
+    )
+    media3_rows = [row for row in decoder_rows if row[2] == "media3-shared"]
+    fallback_rows = [row for row in decoder_rows if row[2] == "platform-mmr-fallback"]
+    if not media3_rows:
+        raise SystemExit(
+            "FAIL: the emulator did not exercise the shared Media3 filmstrip decoder; "
+            f"decoder records={decoder_rows[-8:]}"
+        )
+    media3_times = [int(row[4]) for row in media3_rows]
+    print(
+        "  Decoder path: Media3 exact frames={} (median={}ms); "
+        "MMR compatibility fallbacks={}".format(
+            len(media3_rows), int(statistics.median(media3_times)), len(fallback_rows)
+        )
+    )
+
     if timing_rows:
         queue_waits = [row[1] for row in timing_rows]
         decode_times = [row[2] for row in timing_rows]
