@@ -5731,6 +5731,12 @@ class VideoEditorActivity : Activity() {
         try{
             val comp = CompositionPlayer.Builder(this).build()
             if (timelineSyncTestEnabled) android.util.Log.i("TimelineSyncTest", "TIMELINE_PREVIEW_BUILDER_OK")
+            // The initial paused-frame bootstrap must run once per CompositionPlayer.
+            // Scheduling it on every READY event creates an endless seek(+frame)/seek(back)
+            // loop while overlays are present. Media3's frame queue can then be torn down
+            // while frames are still in flight, causing ExternalTextureManager's queue
+            // removal to throw NoSuchElementException and forcing the player to IDLE.
+            var initialPausedOverlayFrameRefreshScheduled = false
             comp.addListener(object:androidx.media3.common.Player.Listener{
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
                     if (timelineCompositionPlayer !== comp) return
@@ -5753,6 +5759,12 @@ class VideoEditorActivity : Activity() {
                         return
                     }
                     android.util.Log.e("MathMotorTimeline","Composition player failed",error)
+                    if (timelineSyncTestEnabled) android.util.Log.e(
+                        "TimelineSyncTest",
+                        "TIMELINE_PLAYER_ERROR message=${error.message} " +
+                            "cause=${error.cause?.javaClass?.name}:${error.cause?.message}",
+                        error
+                    )
                     timelinePreviewError = error.message ?: "Media3 oynatma hatası"
                     timelinePlaybackState = TimelinePlaybackState.ERROR
                     updateTimelinePlayButtonState()
@@ -5783,17 +5795,28 @@ class VideoEditorActivity : Activity() {
                         }
                     }
                     if (playbackState == androidx.media3.common.Player.STATE_READY &&
-                        overlayClips.isNotEmpty()
+                        overlayClips.isNotEmpty() &&
+                        !initialPausedOverlayFrameRefreshScheduled
                     ) {
                         // READY means the paused composition is prepared, but a
                         // SurfaceView may not have emitted its first composed frame
-                        // yet. Nudge the paused clock off the initial timestamp and
-                        // back so both the background clip and image inputs are
-                        // actually rendered before we uncover the preview surface.
+                        // yet. Perform this bootstrap once for this player only.
+                        // Repeating it for every READY caused a self-sustaining seek
+                        // loop (+84ms, then back) and raced Media3's external texture
+                        // frame queue while playback was starting.
+                        initialPausedOverlayFrameRefreshScheduled = true
+                        if (timelineSyncTestEnabled) android.util.Log.i(
+                            "TimelineSyncTest",
+                            "TIMELINE_INITIAL_OVERLAY_FRAME_REFRESH scheduled=true"
+                        )
                         playerView.postDelayed({
                             if (timelineCompositionPlayer === comp &&
                                 !comp.isPlaying && !comp.playWhenReady
                             ) {
+                                if (timelineSyncTestEnabled) android.util.Log.i(
+                                    "TimelineSyncTest",
+                                    "TIMELINE_INITIAL_OVERLAY_FRAME_REFRESH executed=true"
+                                )
                                 refreshPausedOverlayCompositionFrame(force = true)
                             }
                         }, 140L)
