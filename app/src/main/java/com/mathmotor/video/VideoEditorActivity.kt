@@ -9595,6 +9595,26 @@ class VideoEditorActivity : Activity() {
                                     // Trimming source footage must not move a clip already anchored at project time zero.
                                     clip.timelineStartMs=if(initial.timelineStartMs==0L) 0L else updated.timelineStartMs
                                     selectedClipIndex=index;finishTrimControlGesture()
+                                    val after = selectedClip()
+                                    if (timelineSyncTestEnabled && after != null) {
+                                        val afterDurationMs = ClipSpeedMath.timelineDurationMs(
+                                            after.endMs - after.startMs, after.speed
+                                        )
+                                        val laneStarts = clips.indices.joinToString(",") { clipIndex ->
+                                            "$clipIndex:${clips[clipIndex].timelineStartMs}"
+                                        }
+                                        android.util.Log.i(
+                                            "TimelineSyncTest",
+                                            "VIDEO_CLIP_EDGE_TRIM edge=${if (isStart) "start" else "end"} " +
+                                                "beforeTimelineStartMs=${initial.timelineStartMs} " +
+                                                "beforeSourceStartMs=${initial.sourceStartMs} " +
+                                                "beforeSourceEndMs=${initial.sourceEndMs} " +
+                                                "beforeDurationMs=${initial.durationMs} " +
+                                                "afterTimelineStartMs=${after.timelineStartMs} " +
+                                                "afterSourceStartMs=${after.startMs} afterSourceEndMs=${after.endMs} " +
+                                                "afterDurationMs=$afterDurationMs laneStarts=$laneStarts deltaPx=$deltaPx"
+                                        )
+                                    }
                                     status.text="Klip kesimi güncellendi."
                                 }else activeTrimHistorySnapshot=null
                             } else {

@@ -2958,6 +2958,147 @@ then
   collect_capture_diagnostics video-split-after-drag-visible-seam
   exit 99
 fi
+# Exercise the real video trim grips with Android touch events. The app's
+# measured View bounds are the source of truth; do not hard-code device geometry.
+resolve_video_edge_point() {
+  local edge="$1"
+  local direction="$2"
+  local bounds_file="emulator-screenshots/video-edge-trim-measurements.txt"
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineAlignmentTest:I \
+    > "$bounds_file" 2>&1 || true
+  python3 - "$bounds_file" "$edge" "$direction" <<'PY'
+import re
+import sys
+
+path, edge, direction = sys.argv[1:]
+pattern = re.compile(r"TIMELINE_ALIGNMENT_SNAPSHOT .*?clipBoundsByIndex=([0-9:,;]+)")
+latest = None
+for line in open(path, errors="replace"):
+    match = pattern.search(line)
+    if not match:
+        continue
+    measured = {}
+    for item in match.group(1).split(";"):
+        index, raw = item.split(":", 1)
+        measured[int(index)] = tuple(map(int, raw.split(",")))
+    if 0 in measured:
+        latest = measured[0]
+if latest is None:
+    raise SystemExit("No measured bounds for the selected first video clip.")
+left, top, right, bottom = latest
+width, height = right - left, bottom - top
+if width < 70 or height < 20:
+    raise SystemExit(f"Selected clip is too small for reliable edge gesture: {latest}")
+inset = min(8, max(3, width // 24))
+travel = min(20, max(14, width // 8))
+if edge == "start":
+    x1, x2 = (left + inset, left + inset + travel) if direction == "trim" else (left + inset + travel, left + inset)
+else:
+    x1, x2 = (right - inset, right - inset - travel) if direction == "trim" else (right - inset - travel, right - inset)
+y = (top + bottom) // 2
+if not (left <= x1 < right and left <= x2 < right and top <= y < bottom):
+    raise SystemExit(f"Resolved touch is outside the measured clip: bounds={latest}, points={x1},{x2},{y}")
+print(f"PASS: {edge} {direction} touch uses measured clip bounds {latest}", file=sys.stderr)
+print(x1, y, x2)
+PY
+}
+
+assert_video_edge_trim() {
+  local edge="$1"
+  local direction="$2"
+  local marker_file="emulator-screenshots/video-edge-trim-logcat.txt"
+  local marker=""
+  for attempt in $(seq 1 15); do
+    timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineSyncTest:I TimelineAlignmentTest:I \
+      > "$marker_file" 2>&1 || true
+    marker="$(grep "VIDEO_CLIP_EDGE_TRIM edge=$edge " "$marker_file" | tail -n 1 || true)"
+    if [ -n "$marker" ]; then
+      local actual_delta
+      actual_delta="$(printf '%s\n' "$marker" | sed -n 's/.*deltaPx=\(-\{0,1\}[0-9.]*\).*/\1/p')"
+      if [ "$direction" = "trim" ]; then
+        if [ "$edge" = "start" ] && awk "BEGIN {exit !($actual_delta > 5)}"; then break; fi
+        if [ "$edge" = "end" ] && awk "BEGIN {exit !($actual_delta < -5)}"; then break; fi
+      else
+        if [ "$edge" = "start" ] && awk "BEGIN {exit !($actual_delta < -5)}"; then break; fi
+        if [ "$edge" = "end" ] && awk "BEGIN {exit !($actual_delta > 5)}"; then break; fi
+      fi
+      marker=""
+    fi
+    sleep 1
+  done
+  if [ -z "$marker" ]; then
+    echo "The real video $edge trim grip did not emit a fresh $direction gesture marker."
+    collect_capture_diagnostics "video-$edge-$direction-trim-marker-missing"
+    exit 100
+  fi
+  if ! python3 - "$marker" "$edge" "$direction" <<'PY'
+import re
+import sys
+
+line, edge, direction = sys.argv[1:]
+fields = dict(re.findall(r"([A-Za-z][A-Za-z0-9]*)=([^ ]+)", line))
+required = [
+    "beforeTimelineStartMs", "beforeSourceStartMs", "beforeSourceEndMs",
+    "beforeDurationMs", "afterTimelineStartMs", "afterSourceStartMs",
+    "afterSourceEndMs", "afterDurationMs", "laneStarts", "deltaPx"
+]
+missing = [key for key in required if key not in fields]
+if missing:
+    raise SystemExit(f"Trim marker is missing fields {missing}: {line}")
+before_start = int(fields["beforeSourceStartMs"])
+before_end = int(fields["beforeSourceEndMs"])
+before_duration = int(fields["beforeDurationMs"])
+after_start = int(fields["afterSourceStartMs"])
+after_end = int(fields["afterSourceEndMs"])
+after_duration = int(fields["afterDurationMs"])
+if int(fields["afterTimelineStartMs"]) != 0:
+    raise SystemExit(f"First video clip moved away from project zero: {line}")
+if before_duration <= 0 or after_duration <= 0:
+    raise SystemExit(f"Video trim produced a non-positive duration: {line}")
+if edge == "start":
+    if after_end != before_end:
+        raise SystemExit(f"Left grip changed the source OUT point: {line}")
+    valid = after_start > before_start if direction == "trim" else after_start < before_start
+else:
+    if after_start != before_start:
+        raise SystemExit(f"Right grip changed the source IN point: {line}")
+    valid = after_end < before_end if direction == "trim" else after_end > before_end
+if not valid:
+    raise SystemExit(f"{edge} grip did not change only its own source edge in {direction} direction: {line}")
+duration_valid = after_duration < before_duration if direction == "trim" else after_duration > before_duration
+if not duration_valid:
+    raise SystemExit(f"{edge} grip did not update clip duration as expected: {line}")
+starts = dict((int(index), int(start)) for index, start in re.findall(r"(\d+):(\d+)", fields["laneStarts"]))
+if starts.get(0) != 0 or starts.get(1) != after_duration:
+    raise SystemExit(
+        f"Main video lane did not reflow gaplessly after {edge} {direction}: "
+        f"duration={after_duration}, starts={starts}, marker={line}"
+    )
+print(
+    f"PASS: video {edge} grip {direction}; only the intended source edge changed, "
+    f"duration={before_duration}->{after_duration}ms, next clip starts at {starts[1]}ms"
+)
+PY
+  then
+    collect_capture_diagnostics "video-$edge-$direction-trim-invalid"
+    exit 101
+  fi
+}
+
+for edge_direction in "start trim" "start extend" "end trim" "end extend"; do
+  read -r edge direction <<< "$edge_direction"
+  edge_coords="$(resolve_video_edge_point "$edge" "$direction")"
+  if [ -z "$edge_coords" ]; then
+    echo "Could not resolve the measured $edge video trim grip."
+    collect_capture_diagnostics "video-$edge-$direction-trim-target-missing"
+    exit 102
+  fi
+  read -r edge_x1 edge_y edge_x2 <<< "$edge_coords"
+  timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$edge_x1" "$edge_y" "$edge_x2" "$edge_y" 700
+  assert_video_edge_trim "$edge" "$direction"
+done
+
+echo "PASS: both video trim grips were physically dragged inward and outward; source edges stayed independent and the main-video lane remained gapless."
 echo "PASS: split seam is 0ms; direct drag, visible filmstrip seam and reorder geometry verified; draft save/reopen follows."
 
 echo "Step 12/12: validate automatic draft save and resume list"
