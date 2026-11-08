@@ -2779,7 +2779,10 @@ fi
 sleep 1
 timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineAlignmentTest:I \
   > emulator-screenshots/video-split-before-drag-measurements.txt 2>&1
-clip_drag_coords="$(python3 - emulator-screenshots/video-split-before-drag-measurements.txt emulator-screenshots/video-split-drag-logcat.txt "$split_boundary_ms" <<'PY'
+# The split is performed while playback is paused, so its event log is not
+# guaranteed to contain a fresh TIMELINE_SYNC_SAMPLE. Reuse the live measured
+# playhead centre/scale captured during the immediately preceding midpoint seek.
+clip_drag_coords="$(python3 - emulator-screenshots/video-split-before-drag-measurements.txt emulator-screenshots/video-midpoint-seek-logcat.txt "$split_boundary_ms" <<'PY'
 import re
 import sys
 
