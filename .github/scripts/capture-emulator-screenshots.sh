@@ -2066,6 +2066,117 @@ if [ "$text_drag_dx" -lt -6 ] || [ "$text_drag_dx" -gt 6 ] || [ "$text_drag_dy" 
 fi
 echo "PASS: vertical in-canvas text drag moved the rendered selection frame from ($text_before_x,$text_before_y) to ($text_after_x,$text_after_y) without shifting it beyond the canvas edges."
 
+echo "Step 8b: verify project-wide Undo/Redo restores a real text-canvas drag"
+dump_hierarchy editor-text-history-before-undo.xml emulator-screenshots/editor-text-history-before-undo.xml || {
+  echo "Could not inspect the editor controls before the project-history test."
+  collect_capture_diagnostics project-history-undo-controls-missing
+  exit 63
+}
+history_undo_coords="$(python3 - emulator-screenshots/editor-text-history-before-undo.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != "Proje işlemini geri al":
+        continue
+    if node.attrib.get("enabled", "false").lower() != "true":
+        continue
+    match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+    if match:
+        x1, y1, x2, y2 = map(int, match.groups())
+        print((x1 + x2) // 2, (y1 + y2) // 2)
+        raise SystemExit(0)
+raise SystemExit("Enabled project Undo button was not found.")
+PY
+)"
+if [ -z "$history_undo_coords" ]; then
+  echo "Project Undo was not enabled after the text drag."
+  collect_capture_diagnostics project-history-undo-not-enabled
+  exit 63
+fi
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $history_undo_coords
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-undo-logcat.txt 2>&1 || true
+if ! grep -Eq "PROJECT_HISTORY_APPLIED action=undo .*beforeTexts=1 afterTexts=1" emulator-screenshots/project-history-undo-logcat.txt; then
+  echo "Project Undo did not restore the previous text-layer state."
+  cat emulator-screenshots/project-history-undo-logcat.txt || true
+  collect_capture_diagnostics project-history-undo-not-applied
+  exit 63
+fi
+if ! take_screen emulator-screenshots/editor-text-after-undo.png; then
+  collect_capture_diagnostics project-history-undo-capture-failure
+  exit 6
+fi
+text_undo_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-after-undo.png emulator-screenshots/editor-text-after-drag-canvas-logcat.txt emulator-screenshots/editor-text-panel.xml)" || {
+  echo "The text selection frame disappeared after Undo."
+  collect_capture_diagnostics project-history-undo-selection-missing
+  exit 63
+}
+read -r _ _ _ _ text_undo_x text_undo_y <<< "$text_undo_bounds"
+if [ "$((text_undo_y - text_before_y))" -lt -8 ] || [ "$((text_undo_y - text_before_y))" -gt 8 ]; then
+  echo "Undo did not restore the text's pre-drag vertical position: before=$text_before_y afterUndo=$text_undo_y."
+  collect_capture_diagnostics project-history-undo-position-wrong
+  exit 63
+fi
+echo "PASS: project Undo restored the selected text to its measured pre-drag position ($text_undo_x,$text_undo_y)."
+
+dump_hierarchy editor-text-history-before-redo.xml emulator-screenshots/editor-text-history-before-redo.xml || {
+  echo "Could not inspect the editor controls before the project Redo test."
+  collect_capture_diagnostics project-history-redo-controls-missing
+  exit 64
+}
+history_redo_coords="$(python3 - emulator-screenshots/editor-text-history-before-redo.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != "Proje işlemini yinele":
+        continue
+    if node.attrib.get("enabled", "false").lower() != "true":
+        continue
+    match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+    if match:
+        x1, y1, x2, y2 = map(int, match.groups())
+        print((x1 + x2) // 2, (y1 + y2) // 2)
+        raise SystemExit(0)
+raise SystemExit("Enabled project Redo button was not found.")
+PY
+)"
+if [ -z "$history_redo_coords" ]; then
+  echo "Project Redo was not enabled after Undo."
+  collect_capture_diagnostics project-history-redo-not-enabled
+  exit 64
+fi
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $history_redo_coords
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-redo-logcat.txt 2>&1 || true
+if ! grep -Eq "PROJECT_HISTORY_APPLIED action=redo .*beforeTexts=1 afterTexts=1" emulator-screenshots/project-history-redo-logcat.txt; then
+  echo "Project Redo did not reapply the text-layer state."
+  cat emulator-screenshots/project-history-redo-logcat.txt || true
+  collect_capture_diagnostics project-history-redo-not-applied
+  exit 64
+fi
+if ! take_screen emulator-screenshots/editor-text-after-redo.png; then
+  collect_capture_diagnostics project-history-redo-capture-failure
+  exit 6
+fi
+text_redo_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-after-redo.png emulator-screenshots/editor-text-after-drag-canvas-logcat.txt emulator-screenshots/editor-text-panel.xml)" || {
+  echo "The text selection frame disappeared after Redo."
+  collect_capture_diagnostics project-history-redo-selection-missing
+  exit 64
+}
+read -r _ _ _ _ text_redo_x text_redo_y <<< "$text_redo_bounds"
+if [ "$((text_redo_y - text_after_y))" -lt -8 ] || [ "$((text_redo_y - text_after_y))" -gt 8 ]; then
+  echo "Redo did not restore the text's post-drag vertical position: afterDrag=$text_after_y afterRedo=$text_redo_y."
+  collect_capture_diagnostics project-history-redo-position-wrong
+  exit 64
+fi
+echo "PASS: project Redo restored the selected text to its measured post-drag position ($text_redo_x,$text_redo_y)."
+
 if [ "$text_edit_toggle_changed" = true ]; then
   timeout -k 2s 8s adb -s emulator-5554 shell input tap "$text_toggle_x" "$text_toggle_y"
   sleep 1
