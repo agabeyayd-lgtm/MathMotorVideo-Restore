@@ -3214,6 +3214,9 @@ class VideoEditorActivity : Activity() {
             updateTextControls(refreshTimeline = false)
         }
         val pxPerSecond = timelinePixelsPerSecond()
+        // The zero-time lead-in is needed to place project time 0 under the fixed
+        // centre playhead. Keep it visually continuous with the video thumbnails.
+        val videoLaneSurfaceColor = Color.rgb(16, 25, 36)
 
         fun widthBetween(startMs: Long, endMs: Long): Int =
             TimelineScaleMath.widthBetween(startMs, endMs, pxPerSecond)
@@ -3427,6 +3430,11 @@ class VideoEditorActivity : Activity() {
                 clipChildren = false
                 clipToPadding = false
                 setPadding(0, dp(1), 0, dp(1))
+                // The time-zero lead-in is timeline geometry, not a separate gray
+                // block. Give the whole video lane the same surface as its thumbnails.
+                if (reorderable && tag == "Video") {
+                    setBackgroundColor(videoLaneSurfaceColor)
+                }
                 // Empty portions of a lane are valid tap targets for clearing
                 // clip selection; non-clickable spacers naturally bubble here.
                 isClickable = true
@@ -4048,7 +4056,7 @@ class VideoEditorActivity : Activity() {
             val stripWidth = maxOf(widthBetween(0L, totalMs), furthestClipEndPx, addButtonRight)
                 .coerceAtLeast(dp(115))
             val strip = FrameLayout(this).apply {
-                setBackgroundColor(Color.rgb(16, 25, 36))
+                setBackgroundColor(videoLaneSurfaceColor)
                 layoutDirection = View.LAYOUT_DIRECTION_LTR
                 clipChildren = true
                 clipToPadding = true
