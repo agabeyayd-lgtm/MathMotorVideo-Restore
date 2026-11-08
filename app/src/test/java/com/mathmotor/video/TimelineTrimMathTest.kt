@@ -453,7 +453,7 @@ class TimelineVideoMathTest {
             requestedStartMs = 11_000L
         )!!
         assertEquals(11_000L, end.timelineStartByClipIndex[0])
-        assertEquals(0L, end.timelineStartByClipIndex[1])
+        assertEquals(5_000L, end.timelineStartByClipIndex[1])
     }
 
     @Test
