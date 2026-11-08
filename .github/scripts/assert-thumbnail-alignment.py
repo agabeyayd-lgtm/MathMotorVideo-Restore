@@ -12,6 +12,7 @@ SNAPSHOT_RE = re.compile(
     r"playheadCenterPx=(\d+) playheadCenterYpx=(\d+) lineCenterPx=(\d+) "
     r"previewBounds=(\d+,\d+,\d+,\d+) "
     r"clipBounds=(?:none|\d+,\d+,\d+,\d+) "
+    r"(?:clipBoundsByIndex=\S+ )?"
     r"cellCandidates=(\d+) visibleCells=(\d+) cells=(.*)"
 )
 
@@ -203,20 +204,18 @@ def verify(log_path: str, screenshot_path: str):
         )
 
     fingerprints = []
+    resampling = getattr(Image, "Resampling", Image).BICUBIC
     for timestamp, box in thumbnail_nodes:
-        fingerprint = []
-        for fy in (0.2, 0.5, 0.8):
-            for fx in (0.2, 0.5, 0.8):
-                x = round(box[0] + (box[2] - box[0]) * fx)
-                y = round(box[1] + (box[3] - box[1]) * fy)
-                # Each marker in the deterministic video fixture occupies only ~8x8
-                # screen pixels after FIT_CENTER scaling. A 3x3 point probe can miss
-                # it when Android's sub-pixel ImageView matrix rounds the draw edge.
-                # Average a 9x9 patch around the same 3x3 spatial grid instead; this
-                # preserves frame-position sensitivity without requiring an exact
-                # single-pixel hit on a tiny decoded thumbnail feature.
-                fingerprint.extend(pixel_mean(image, x, y, radius=4))
-        fingerprints.append((timestamp, tuple(fingerprint)))
+        # Compare the whole rendered cell rather than a sparse 3x3 probe grid.
+        # Small moving details can fall between probe points even when the frames
+        # are visibly different. Normalizing every full tile to the same grid
+        # keeps the comparison independent of device density and cell dimensions.
+        crop = image.crop(box)
+        normalized = crop.resize((24, 44), resampling).convert("RGB")
+        # Quantize low-order compression/interpolation noise, but retain spatial
+        # changes such as a moving object or a changing scene.
+        fingerprint = bytes(channel // 8 for channel in normalized.tobytes())
+        fingerprints.append((timestamp, fingerprint))
     unique_fingerprints = len({fingerprint for _, fingerprint in fingerprints})
     required_unique = max(3, (len(fingerprints) * 3 + 3) // 4)
     if unique_fingerprints < required_unique:
