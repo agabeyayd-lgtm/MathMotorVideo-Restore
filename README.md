@@ -1122,3 +1122,13 @@ The selected main-video clip exposes independent left/right edge grips: drag the
 - The emulator swiped directly on the filmstrip: left advanced the playhead to 5375 ms, right returned it to 3625 ms, and all six lane offsets remained equal (`418,418,418,418,418,418`) after the forward swipe. Live playback passed 53 synchronization samples (3625→8054 ms); ruler and first-frame zero edges stayed aligned.
 - The centered preview/thumbnail pixel comparison passed at the fixed 35 ms limit with RGB channel delta 0. Real clip-menu split had a 0 ms seam; long-press drag reordered the segment and post-drop geometry/pixels passed. All four video trim/extend directions and force-stop draft save/reopen also passed.
 - No versionCode bump, release signing, or signed release APK was made. The CI debug ZIP is not a release artifact.
+
+
+## 2026-11-08 — Fast parallel timeline thumbnails
+
+- Reverted the single-worker/Media3-first thumbnail experiment after API 35 measurements showed multi-second queue delays. Three isolated workers now decode through the native Android retriever first; Media3 remains a fallback.
+- The API 35 screenshot workflow reads the import/replacement decode logs and checks visible thumbnail queue, decode and strip-fill latency, not merely a later cache hit.
+- Verified commit `cf14efbb9ab94753356d49903dc566bf86cfed03`: unit/build `42522454646`, debug APK packaging `42522454666`, emulator `42522454771` — all **success**.
+- Six visible thumbnail samples: queue median/max **253/858 ms**; decode median/max **553/612 ms**; visible-strip fill **1,467 ms**. Preview/filmstrip timestamp comparison passed the fixed 35 ms limit; live playback passed 44 sync samples across six lanes.
+- Captured UI confirms the first video frame begins at ruler zero/playhead alignment without a separate gray/blue spacer block. The origin spacer remains transparent layout geometry; removing it would break the centered-playhead zero-time mapping.
+- No version bump, signed release or production APK was created. The workflow's debug ZIP is not a release artifact.
