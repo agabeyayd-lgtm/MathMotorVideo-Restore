@@ -23,7 +23,7 @@
 - The 2026-11-07 emulator run (`42417189845`) passed unit tests, debug APK compilation, thumbnail pixel comparison, ruler scrubbing and live playback synchronization. It stopped before split interaction because the accessibility XML pull exceeded the script's 8-second transfer timeout; the app did not report a split or drag assertion failure.
 - The hierarchy pull now has a bounded 30-second timeout (with kill grace and the existing two-attempt retry). No emulator checks were skipped.
 - Removed the derived 84 ms preview timestamp allowance. Preview and scrub frame timestamps are checked against a fixed 35 ms limit; thumbnail centering must be within 2 px. The alignment loop allows up to eight measured correction gestures. The 4-second split midpoint is again limited to 100 ms (80 ms early-accept), not 750 ms.
-- **Verification for these stricter checks is pending on the updated commit.** No production version code, release signing, publish workflow or main-branch APK was changed.
+- **Verified on source commit `cf14efbb9ab94753356d49903dc566bf86cfed03`** by API 35 emulator run `42522454771`: preview/scrub remained within 35 ms, thumbnail centering within 2 px, ruler scrub reached 4,042 ms for the split, split seam measured 0 ms, direct drag/reorder and all four trim/extend directions passed, and project draft restored after force-stop. Post-merge main run `42523879240` is the final confirmation. No production version code or release flow changed.
 
 ---
 
@@ -33,7 +33,7 @@
 - Split timing is derived from one source-time cut. The right segment starts at the calculated end of the left segment, avoiding a millisecond-rounding seam at non-1× speed.
 - Legacy overlaps in the single main-video lane are shifted forward only as needed; source in/out points and intentional gaps are preserved. A clip dropped into empty timeline space moves independently without shifting neighbours; a drop onto an occupied clip inserts/reorders it and pushes only colliding followers, preserving later gaps.
 - Added JVM coverage for split continuity at 0.5×, 1×, 1.75× and 2×, invalid split locations, overlap repair and drag reflow.
-- **Verification is pending on this branch.** Do not call this complete until unit tests, Debug APK compilation and the API 35 emulator smoke pass on the same commit, including a real one-finger clip drag. No versionCode, release signing, publish workflow or production APK was changed.
+- **Verified on source commit `cf14efbb9ab94753356d49903dc566bf86cfed03`:** unit/build `42522454646`, debug APK `42522454666`, and API 35 emulator `42522454771` all succeeded. Real split seam was 0 ms; long-press move/reorder and all four trim/extend directions passed; force-stop draft restore retained both split segments. Post-merge main run `42523879240` is the final confirmation. No versionCode or signed release changed.
 
 ---
 
@@ -44,7 +44,7 @@
 - Vertical room is recovered from surrounding controls: the playback row and global dock are hidden while a detail panel owns the controls, and the timeline lane area is compacted. The full timeline/dock return after leaving the panel. The keyboard hides the timeline and dock while retaining the fixed preview.
 - Emulator assertions now require identical canvas width/height with the keyboard open and identical preview-frame geometry while tools open, switch and close. Only the timeline/control area may compact.
 - A previous candidate measured **423×753 px** normally versus **216×385 px** with the keyboard. That failure is the regression baseline, not accepted behavior.
-- Source and emulator checks are on `feature/capcut-home-screen` (PR #28). Unit/build and emulator runs must be green on the exact latest commit before this fix is accepted. No version bump, release, signing, publication or merge is included.
+- **Verified on source commit `cf14efbb9ab94753356d49903dc566bf86cfed03`** in API 35 run `42522454771`: preview stage/canvas remained exactly 423×753 px with the keyboard open, direct text drag stayed within the canvas, and closing/reselecting the text panel preserved the same canvas bounds. Post-merge main run `42523879240` is the final confirmation. No release signing or publishing was performed.
 
 ---
 
