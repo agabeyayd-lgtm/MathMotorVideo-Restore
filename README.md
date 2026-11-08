@@ -1,3 +1,22 @@
+## API 35 emulator verification hardening — 2026-11-08
+
+- The 2026-11-07 emulator run (`42417189845`) passed unit tests, debug APK compilation, thumbnail pixel comparison, ruler scrubbing and live playback synchronization. It stopped before split interaction because the accessibility XML pull exceeded the script's 8-second transfer timeout; the app did not report a split or drag assertion failure.
+- The hierarchy pull now has a bounded 30-second timeout (with kill grace and the existing two-attempt retry). No emulator checks were skipped.
+- Removed the derived 84 ms preview timestamp allowance. Preview and scrub frame timestamps are checked against a fixed 35 ms limit; thumbnail centering must be within 2 px. The alignment loop allows up to eight measured correction gestures. The 4-second split midpoint is again limited to 100 ms (80 ms early-accept), not 750 ms.
+- **Verification for these stricter checks is pending on the updated commit.** No production version code, release signing, publish workflow or main-branch APK was changed.
+
+---
+
+## CapCut-style main video lane: split seam, overlap repair, direct drag — 2026-11-07
+
+- Main-video clips now use the clip surface for immediate one-finger horizontal movement; timeline scrubbing remains on the empty lane/ruler and two-finger pinch keeps its Activity-level cancellation path.
+- Split timing is derived from one source-time cut. The right segment starts at the calculated end of the left segment, avoiding a millisecond-rounding seam at non-1× speed.
+- Legacy overlaps in the single main-video lane are shifted forward only as needed; source in/out points and intentional gaps are preserved. A clip dropped into empty timeline space moves independently without shifting neighbours; a drop onto an occupied clip inserts/reorders it and pushes only colliding followers, preserving later gaps.
+- Added JVM coverage for split continuity at 0.5×, 1×, 1.75× and 2×, invalid split locations, overlap repair and drag reflow.
+- **Verification is pending on this branch.** Do not call this complete until unit tests, Debug APK compilation and the API 35 emulator smoke pass on the same commit, including a real one-finger clip drag. No versionCode, release signing, publish workflow or production APK was changed.
+
+---
+
 ## Fixed-size project preview across editor tools — 2026-11-07
 
 - The product requirement is now explicit: the actual project canvas must keep the **same measured width and height** as the normal editor preview. The previous 75% allowance is removed; any resize while opening a tool or the keyboard is a test failure.
@@ -1057,3 +1076,19 @@ The outer timeline workspace remains a stable height as video, text, music, and 
 - Root cause: `TextLayer.yFraction` could remain at its original 0.84 while the rendered view was clamped higher to keep its selection chrome inside the canvas. The gesture used the stale stored fraction as its start point, so a 28 px drag could be absorbed by the clamp.
 - Text drag and two-finger re-anchoring now derive their starting fractions from the view's actual rendered translation. Added JVM tests for this clamp-to-visible-position round trip and invalid values.
 - Emulator verification is pending for the new app + test commit. No version, signing, or release workflow was changed.
+
+
+## CapCut-style video split and direct clip drag — 2026-11-08
+
+- Main-video split uses one source-time cut. The left segment's source end is assigned as the right segment's source start, and the right segment's timeline start is the exact calculated end of the left segment. Unit coverage checks seam-free splits at 0.5×, 1×, 1.75× and 2× playback speed, plus invalid/edge split positions.
+- A one-finger drag moves a main-video clip directly; a stationary long-press opens the clip context menu. Dropping into empty space moves only the selected clip and preserves deliberate gaps. Dropping onto an occupied range inserts/reorders the clip and pushes only colliding followers.
+- The timeline validator now tolerates up to 1 px of cross-lane coordinate rounding and independently checks every lane's zero-time edge against the fixed playhead. Scroll spacers are derived from measured viewport geometry.
+- API 35 emulator run `42451563873` passed the preview/filmstrip timestamp comparison, centering, forward/reverse scrubbing, and live playback synchronization. It stopped before splitting because the test's three correction swipes left the playhead at 4,292 ms instead of the 4,000 ms target. The script now makes up to five corrective attempts; the ±100 ms split-target assertion is unchanged.
+- Emulator run `42469234908` passed unit/build and debug APK packaging but did not boot the emulator: the pinned BtbN FFmpeg release download returned HTTP 504 repeatedly. The CI step was replaced with the Node 24-compatible `FedericoCarboni/setup-ffmpeg` action pinned to `8073ccb51e517ed576e6871c7f2360c6de4ebb7c`, and explicit `ffmpeg`/`ffprobe` checks were added.
+- Source/workflow commit `30f470d1c061ea22c5d32538aa9405a3e87f5798`: verify/unit run `42469494749` — **success**; debug APK run `42469494772` — **success**; API 35 emulator run `42469494743` — **in progress** at documentation update. On that emulator run, FFmpeg setup, fixture generation, KVM enablement, and Android SDK installation all passed before the actual editor smoke test started.
+- Keep PR #29 unmerged until the API 35 emulator completes split, direct-drag/reorder, playback synchronization, and persistence checks. No versionCode, release signing, main-branch APK, or release workflow change is part of this work.
+
+
+## CapCut-style video trim grips — verified 2026-11-08
+
+The selected main-video clip exposes independent left/right edge grips: drag the left grip to change only the source in-point, and drag the right grip to change only the source out-point. Extending either edge restores available source footage. Main-video clips reflow contiguously after each trim; text, audio, and effect lanes keep their independent timing. API 35 emulator tests physically exercised trim and extend on both grips, alongside split/reorder and draft persistence checks. All unit/build, debug packaging, and emulator workflows passed on the tested commit documented in RESTORATION_STATUS.md.

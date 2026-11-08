@@ -12,6 +12,7 @@ on:
       - ".github/workflows/android-emulator-screenshots.yml"
       - ".github/scripts/capture-emulator-screenshots.sh"
       - ".github/scripts/assert-thumbnail-alignment.py"
+      - ".github/scripts/assert-timeline-sync.py"
   push:
     branches:
       - main
@@ -21,6 +22,7 @@ on:
       - ".github/workflows/android-emulator-screenshots.yml"
       - ".github/scripts/capture-emulator-screenshots.sh"
       - ".github/scripts/assert-thumbnail-alignment.py"
+      - ".github/scripts/assert-timeline-sync.py"
 
 permissions:
   contents: read
@@ -69,21 +71,46 @@ jobs:
           retention-days: 14
 
       - name: Set up FFmpeg
-        uses: FedericoCarboni/setup-ffmpeg@37062fbf7149fc5578d6c57e08aed62458b375d6
+        id: setup_ffmpeg
+        # Prefer the pinned Node 24-compatible static installer. If its
+        # external binary host is temporarily unreachable, use Ubuntu's
+        # packaged ffmpeg/ffprobe instead of aborting the editor smoke test.
+        uses: FedericoCarboni/setup-ffmpeg@8073ccb51e517ed576e6871c7f2360c6de4ebb7c
+        continue-on-error: true
         with:
           ffmpeg-version: release
+          architecture: x64
           linking-type: static
+
+      - name: Install FFmpeg from Ubuntu packages when static download fails
+        if: steps.setup_ffmpeg.outcome != 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Verify FFmpeg installation
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v ffmpeg
+          command -v ffprobe
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
 
       - name: Generate a deterministic sample video for editor smoke tests
         run: |
           command -v ffmpeg
           ffmpeg -version | head -n 1
           mkdir -p app/build/test-fixtures
+          # This fixture is video-only. Music and sound effects are imported
+          # through their own deterministic WAV fixtures later in the timeline
+          # smoke test. Omitting the synthetic AAC stream avoids emulator-only
+          # Codec2 AAC decoder failures during the separate MP4 export smoke.
           ffmpeg -hide_banner -loglevel error -y \
             -f lavfi -i "color=c=red:s=360x640:r=24" \
-            -f lavfi -i "sine=frequency=440:sample_rate=44100" \
-            -t 8 -vf "hue=h='t*90':s=1" -c:v mpeg4 -q:v 5 -pix_fmt yuv420p \
-            -c:a aac -b:a 64k -shortest \
+            -t 8 -vf "hue=h='t*90':s=1" -an -c:v mpeg4 -q:v 5 -pix_fmt yuv420p \
             app/build/test-fixtures/editor-test-video.mp4
           test -s app/build/test-fixtures/editor-test-video.mp4
           ffmpeg -hide_banner -loglevel error -y -f lavfi -i "color=c=magenta:s=256x128" -frames:v 1 app/build/test-fixtures/editor-test-overlay.png
@@ -92,14 +119,16 @@ jobs:
           # to prove that the home-screen photo route fills the editable canvas.
           ffmpeg -hide_banner -loglevel error -y -f lavfi -i "color=c=magenta:s=360x640" -frames:v 1 app/build/test-fixtures/editor-test-photo.png
           test -s app/build/test-fixtures/editor-test-photo.png
-          # Keep the replacement clip green enough to detect stale red frames,
-          # while a monotonic 24-degree/sec hue shift makes sampled timestamps distinct.
-          # Preflighted locally against the exact 8 frame-diversity sample times:
-          # 8/8 unique fingerprints and 100% green pixels (test minimum is 75%).
+          # Keep every sampled frame >99% green while making each of the eight
+          # expected thumbnail timestamps visibly distinct to the 3x3 fingerprint
+          # sampler. Each tiny red square moves to a different 3x3 sample location;
+          # it occupies <1% of the frame, so the green-pixel replacement check remains valid.
           ffmpeg -hide_banner -loglevel error -y \
             -f lavfi -i "color=c=lime:s=360x640:r=24" \
             -f lavfi -i "sine=frequency=660:sample_rate=44100" \
-            -t 8 -vf "hue=h='t*24'" -c:v mpeg4 -q:v 5 -pix_fmt yuv420p \
+            -t 8 \
+            -vf "drawbox=x=52:y=108:w=40:h=40:color=red:t=fill:enable='between(t,0.25,0.65)',drawbox=x=160:y=108:w=40:h=40:color=red:t=fill:enable='between(t,1.14,1.54)',drawbox=x=268:y=108:w=40:h=40:color=red:t=fill:enable='between(t,2.03,2.43)',drawbox=x=52:y=300:w=40:h=40:color=red:t=fill:enable='between(t,2.92,3.32)',drawbox=x=160:y=300:w=40:h=40:color=red:t=fill:enable='between(t,3.82,4.22)',drawbox=x=268:y=300:w=40:h=40:color=red:t=fill:enable='between(t,4.71,5.11)',drawbox=x=52:y=492:w=40:h=40:color=red:t=fill:enable='between(t,5.60,6.00)',drawbox=x=160:y=492:w=40:h=40:color=red:t=fill:enable='between(t,6.49,6.89)' " \
+            -c:v mpeg4 -q:v 5 -pix_fmt yuv420p \
             -c:a aac -b:a 64k -shortest \
             app/build/test-fixtures/editor-test-video-replacement.mp4
           test -s app/build/test-fixtures/editor-test-video-replacement.mp4
@@ -128,21 +157,25 @@ jobs:
           fi
 
       - name: Install Android SDK emulator packages
+        timeout-minutes: 18
         env:
           ANDROID_HOME: /usr/local/lib/android/sdk
         run: |
-          set -e
+          set -euo pipefail
           export ANDROID_AVD_HOME="$HOME/.android/avd"
           mkdir -p "$ANDROID_AVD_HOME"
           echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
           echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
           echo "$ANDROID_HOME/emulator" >> "$GITHUB_PATH"
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install \
+          echo "Accepting Android SDK licences (180s limit)..."
+          timeout -k 10s 180s bash -c \
+            'yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses'
+          echo "Installing API 35 emulator/system image packages (780s limit)..."
+          timeout -k 10s 780s "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --verbose --install \
             "platform-tools" "platforms;android-35" "emulator" "system-images;android-35;google_apis;x86_64"
-          printf 'no\n' | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd \
-            --force --name mathmotor-api35 \
-            --package "system-images;android-35;google_apis;x86_64" --device "pixel_2"
+          echo "Creating the API 35 virtual device..."
+          timeout -k 10s 120s bash -o pipefail -c \
+            'echo no | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd --force --name mathmotor-api35 --package "system-images;android-35;google_apis;x86_64" --device "pixel_2"'
           test -s "$ANDROID_AVD_HOME/mathmotor-api35.ini"
           "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" list avd
 

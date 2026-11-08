@@ -12,6 +12,7 @@ SNAPSHOT_RE = re.compile(
     r"playheadCenterPx=(\d+) playheadCenterYpx=(\d+) lineCenterPx=(\d+) "
     r"previewBounds=(\d+,\d+,\d+,\d+) "
     r"clipBounds=(?:none|\d+,\d+,\d+,\d+) "
+    r"(?:clipBoundsByIndex=\S+ )?"
     r"cellCandidates=(\d+) visibleCells=(\d+) cells=(.*)"
 )
 
@@ -113,7 +114,7 @@ def verify(log_path: str, screenshot_path: str):
     sample_ms = None
     for timestamp, box in snapshot["cells"]:
         x = (box[0] + box[2]) // 2
-        if abs(x - snapshot["playhead_x"]) <= 5:
+        if abs(x - snapshot["playhead_x"]) <= 2:
             cell = box
             sample_ms = timestamp
             break
@@ -133,9 +134,15 @@ def verify(log_path: str, screenshot_path: str):
             r"TIMELINE_PREVIEW_FRAME_READY projectMs=(\d+) sourceMs=(\d+)", log
         )
     ]
-    if not any(abs(project - sample_ms) <= 35 and abs(source - sample_ms) <= 35 for project, source in ready):
+    time_tolerance_ms = 35
+    if not any(
+        abs(project - sample_ms) <= time_tolerance_ms
+        and abs(source - sample_ms) <= time_tolerance_ms
+        for project, source in ready
+    ):
         raise SystemExit(
             f"FAIL: preview did not decode the timestamp represented by the centered thumbnail "
+            f"within the fixed {time_tolerance_ms}ms limit "
             f"(thumbnail={sample_ms}ms, ready preview frames={ready[-5:]})."
         )
     scrub_ready = [
@@ -144,9 +151,14 @@ def verify(log_path: str, screenshot_path: str):
             r"TIMELINE_SCRUB_PREVIEW_FRAME_READY projectMs=(\d+) sourceMs=(\d+)", log
         )
     ]
-    if not any(abs(project - sample_ms) <= 35 and abs(source - sample_ms) <= 35 for project, source in scrub_ready):
+    if not any(
+        abs(project - sample_ms) <= time_tolerance_ms
+        and abs(source - sample_ms) <= time_tolerance_ms
+        for project, source in scrub_ready
+    ):
         raise SystemExit(
             f"FAIL: dragging the filmstrip did not update the preview to the centered playhead time "
+            f"within the fixed {time_tolerance_ms}ms limit "
             f"(thumbnail={sample_ms}ms, scrub preview frames={scrub_ready[-5:]})."
         )
     if not re.search(rf"TIMELINE_THUMBNAIL_READY sourceMs={sample_ms} ", log):
@@ -155,9 +167,9 @@ def verify(log_path: str, screenshot_path: str):
     timing_rows = [
         tuple(map(int, row))
         for row in re.findall(
-            r"TIMELINE_THUMBNAIL_TIMING sourceMs=(\\d+) success=true "
-            r"queueWaitMs=(\\d+) frameDecodeMs=(\\d+) bitmapScaleMs=(\\d+) "
-            r"uiDispatchWaitMs=(\\d+) uiApplyMs=(\\d+)",
+            r"TIMELINE_THUMBNAIL_TIMING sourceMs=(\d+) success=true "
+            r"queueWaitMs=(\d+) frameDecodeMs=(\d+) bitmapScaleMs=(\d+) "
+            r"uiDispatchWaitMs=(\d+) uiApplyMs=(\d+)",
             log,
         )
     ]
@@ -192,14 +204,18 @@ def verify(log_path: str, screenshot_path: str):
         )
 
     fingerprints = []
+    resampling = getattr(Image, "Resampling", Image).BICUBIC
     for timestamp, box in thumbnail_nodes:
-        fingerprint = []
-        for fy in (0.2, 0.5, 0.8):
-            for fx in (0.2, 0.5, 0.8):
-                x = round(box[0] + (box[2] - box[0]) * fx)
-                y = round(box[1] + (box[3] - box[1]) * fy)
-                fingerprint.extend(pixel_mean(image, x, y, radius=1))
-        fingerprints.append((timestamp, tuple(fingerprint)))
+        # Compare the whole rendered cell rather than a sparse 3x3 probe grid.
+        # Small moving details can fall between probe points even when the frames
+        # are visibly different. Normalizing every full tile to the same grid
+        # keeps the comparison independent of device density and cell dimensions.
+        crop = image.crop(box)
+        normalized = crop.resize((24, 44), resampling).convert("RGB")
+        # Quantize low-order compression/interpolation noise, but retain spatial
+        # changes such as a moving object or a changing scene.
+        fingerprint = bytes(channel // 8 for channel in normalized.tobytes())
+        fingerprints.append((timestamp, fingerprint))
     unique_fingerprints = len({fingerprint for _, fingerprint in fingerprints})
     required_unique = max(3, (len(fingerprints) * 3 + 3) // 4)
     if unique_fingerprints < required_unique:
@@ -235,6 +251,7 @@ def verify(log_path: str, screenshot_path: str):
     print("PASS: preview frame matches the filmstrip cell centered under the playhead")
     print(f"  Visually distinct thumbnails: {unique_fingerprints}/{len(fingerprints)}")
     print(f"  Sample timestamp: {sample_ms}ms")
+    print(f"  Fixed time tolerance: {time_tolerance_ms}ms")
     print(f"  Preview comparison RGB: {preview_rgb}")
     print(f"  Thumbnail comparison RGB: {thumb_rgb}")
     print(f"  Maximum channel delta: {channel_delta}")

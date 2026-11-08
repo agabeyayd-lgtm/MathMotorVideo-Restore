@@ -350,7 +350,7 @@ class TimelineVideoMathTest {
 
 
     @Test
-    fun droppingASplitSegmentBetweenClipsReordersAndReflowsTheVideoTrack() {
+    fun droppingASplitSegmentOnAnOccupiedClipReordersTheMainVideoLane() {
         val segments = listOf(
             TimelineVideoSegment(0L, 0L, 3_000L, 3_000L),
             TimelineVideoSegment(3_000L, 0L, 5_000L, 5_000L),
@@ -360,7 +360,7 @@ class TimelineVideoMathTest {
         val plan = TimelineVideoMath.reorderForDrop(
             segments = segments,
             movingIndex = 2,
-            requestedStartMs = 1_000L
+            requestedStartMs = 3_000L
         )
 
         assertEquals(listOf(0, 2, 1), plan?.orderedClipIndices)
@@ -373,50 +373,205 @@ class TimelineVideoMathTest {
     }
 
     @Test
-    fun droppingTheFirstClipAfterTheLastClipMovesItToTheEnd() {
+    fun movingAClipIntoAnEmptyGapPreservesEveryOtherClipPosition() {
         val segments = listOf(
             TimelineVideoSegment(0L, 0L, 2_000L, 2_000L),
-            TimelineVideoSegment(2_000L, 500L, 4_000L, 5_000L),
-            TimelineVideoSegment(5_500L, 0L, 1_000L, 1_000L)
+            TimelineVideoSegment(4_000L, 0L, 2_000L, 2_000L),
+            TimelineVideoSegment(7_000L, 0L, 1_000L, 1_000L)
         )
-
+        val plan = TimelineVideoMath.reorderForDrop(segments, 0, 9_000L)!!
+        assertEquals(listOf(1, 2, 0), plan.orderedClipIndices)
+        assertEquals(0L, plan.timelineStartByClipIndex[1])
+        assertEquals(2_000L, plan.timelineStartByClipIndex[2])
+        assertEquals(3_000L, plan.timelineStartByClipIndex[0])
+    }
+    @Test
+    fun insertingIntoAnOccupiedClipPushesOnlyCollidingFollowersAndPreservesLaterGaps() {
+        val segments = listOf(
+            TimelineVideoSegment(0L, 0L, 2_000L, 2_000L),
+            TimelineVideoSegment(2_000L, 0L, 2_000L, 2_000L),
+            TimelineVideoSegment(8_000L, 0L, 2_000L, 2_000L),
+            TimelineVideoSegment(12_000L, 0L, 2_000L, 2_000L)
+        )
+        val plan = TimelineVideoMath.reorderForDrop(segments, 2, 2_000L)!!
+        assertEquals(listOf(0, 2, 1, 3), plan.orderedClipIndices)
+        assertEquals(listOf(0L, 4_000L, 2_000L, 6_000L),
+            segments.indices.map { plan.timelineStartByClipIndex[it] })
+    }
+    @Test
+    fun splitFragmentsCanMoveToStartMiddleAndEndWithoutCollapsingFreeSpace() {
+        val original = listOf(
+            TimelineVideoSegment(0L, 0L, 3_000L, 3_000L),
+            TimelineVideoSegment(3_000L, 0L, 5_000L, 5_000L)
+        )
+        val middle = TimelineVideoMath.reorderForDrop(original, 1, 6_000L)!!
+        assertEquals(0L, middle.timelineStartByClipIndex[0])
+        assertEquals(3_000L, middle.timelineStartByClipIndex[1])
+        val movedToMiddle = original.mapIndexed { index, segment ->
+            segment.copy(timelineStartMs = middle.timelineStartByClipIndex[index]!!)
+        }
+        val beginning = TimelineVideoMath.reorderForDrop(movedToMiddle, 1, 0L)!!
+        assertEquals(listOf(1, 0), beginning.orderedClipIndices)
+        assertEquals(0L, beginning.timelineStartByClipIndex[1])
+        assertEquals(5_000L, beginning.timelineStartByClipIndex[0])
+        val movedToBeginning = beginning.orderedClipIndices.map { index ->
+            movedToMiddle[index].copy(timelineStartMs = beginning.timelineStartByClipIndex[index]!!)
+        }
+        val end = TimelineVideoMath.reorderForDrop(movedToBeginning, 0, 11_000L)!!
+        assertEquals(3_000L, end.timelineStartByClipIndex[0])
+        assertEquals(0L, end.timelineStartByClipIndex[1])
+    }
+    @Test
+    fun aSingleVideoClipCanMoveIntoAnEmptyTimelinePosition() {
         val plan = TimelineVideoMath.reorderForDrop(
-            segments = segments,
+            listOf(TimelineVideoSegment(0L, 0L, 4_000L, 4_000L)),
             movingIndex = 0,
-            requestedStartMs = 8_000L
-        )
-
-        assertEquals(listOf(1, 2, 0), plan?.orderedClipIndices)
-        assertEquals(4_500L, plan?.timelineStartByClipIndex?.get(0))
+            requestedStartMs = 6_500L
+        )!!
+        assertEquals(listOf(0), plan.orderedClipIndices)
+        assertEquals(0L, plan.timelineStartByClipIndex[0])
     }
-
     @Test
-    fun reorderRejectsOverlappingLayersInsteadOfDestroyingTheirPositions() {
-        val overlapping = listOf(
-            TimelineVideoSegment(0L, 0L, 5_000L, 5_000L),
-            TimelineVideoSegment(2_000L, 0L, 4_000L, 4_000L)
-        )
-
-        assertEquals(null, TimelineVideoMath.reorderForDrop(overlapping, 0, 4_000L))
-    }
-
-    @Test
-    fun droppingInsideTheCurrentSlotClosesTheGapOnTheSingleVideoLane() {
+    fun droppingAtTheFirstClipStartInsertsALongerMovedClipBeforeIt() {
         val segments = listOf(
-            TimelineVideoSegment(0L, 0L, 2_000L, 2_000L),
-            TimelineVideoSegment(5_000L, 0L, 2_000L, 2_000L)
+            TimelineVideoSegment(0L, 0L, 1_500L, 1_500L),
+            TimelineVideoSegment(1_500L, 0L, 6_000L, 6_000L)
         )
 
         val plan = TimelineVideoMath.reorderForDrop(
             segments = segments,
             movingIndex = 1,
-            requestedStartMs = 5_100L
+            requestedStartMs = 0L
         )
 
-        assertEquals(listOf(0, 1), plan?.orderedClipIndices)
-        assertEquals(2_000L, plan?.timelineStartByClipIndex?.get(1))
+        assertEquals(listOf(1, 0), plan?.orderedClipIndices)
+        assertEquals(0L, plan?.timelineStartByClipIndex?.get(1))
+        assertEquals(6_000L, plan?.timelineStartByClipIndex?.get(0))
     }
 
+    @Test
+    fun movingTheFirstClipIntoAnEmptyTailGapDoesNotShiftNeighbours() {
+        val segments = listOf(
+            TimelineVideoSegment(0L, 0L, 2_000L, 2_000L),
+            TimelineVideoSegment(2_000L, 500L, 4_000L, 5_000L),
+            TimelineVideoSegment(5_500L, 0L, 1_000L, 1_000L)
+        )
+        val plan = TimelineVideoMath.reorderForDrop(segments, 0, 8_000L)!!
+        assertEquals(listOf(1, 2, 0), plan.orderedClipIndices)
+        assertEquals(0L, plan.timelineStartByClipIndex[1])
+        assertEquals(3_500L, plan.timelineStartByClipIndex[2])
+        assertEquals(4_500L, plan.timelineStartByClipIndex[0])
+    }
+    @Test
+    fun reorderRepairsOverlappingMainVideoClipsAndNeverReturnsAnOverlap() {
+        val overlapping = listOf(
+            TimelineVideoSegment(0L, 0L, 5_000L, 5_000L),
+            TimelineVideoSegment(2_000L, 500L, 4_000L, 4_000L),
+            TimelineVideoSegment(9_000L, 0L, 1_000L, 1_000L)
+        )
+        val plan = TimelineVideoMath.reorderForDrop(overlapping, 1, 10_000L)!!
+        assertEquals(listOf(0, 2, 1), plan.orderedClipIndices)
+        assertEquals(0L, plan.timelineStartByClipIndex[0])
+        assertEquals(5_000L, plan.timelineStartByClipIndex[2])
+        assertEquals(6_000L, plan.timelineStartByClipIndex[1])
+        assertEquals(500L, overlapping[1].sourceStartMs)
+        assertEquals(4_000L, overlapping[1].sourceEndMs)
+    }
+    @Test
+    fun capcutPrimaryLanePackingClosesEveryGapAndPreservesSourceRanges() {
+        val segments = listOf(
+            TimelineVideoSegment(0L, 500L, 4_910L, 8_000L, 1f),
+            TimelineVideoSegment(8_000L, 1_000L, 5_770L, 9_000L, 1.25f),
+            TimelineVideoSegment(15_000L, 0L, 2_000L, 2_000L, 1f)
+        )
+
+        val plan = TimelineVideoMath.packSequentially(segments)!!
+
+        assertEquals(listOf(0, 1, 2), plan.orderedClipIndices)
+        assertEquals(0L, plan.timelineStartByClipIndex[0])
+        assertEquals(4_410L, plan.timelineStartByClipIndex[1])
+        assertEquals(
+            4_410L + segments[1].durationMs,
+            plan.timelineStartByClipIndex[2]
+        )
+        // Packing changes only project positions, never source trims or speed.
+        assertEquals(500L, segments[0].sourceStartMs)
+        assertEquals(4_910L, segments[0].sourceEndMs)
+        assertEquals(1.25f, segments[1].speed)
+    }
+
+    @Test
+    fun capcutPrimaryLanePackingSortsDroppedClipsAndStartsAtZero() {
+        val segments = listOf(
+            TimelineVideoSegment(8_000L, 0L, 2_000L, 2_000L),
+            TimelineVideoSegment(0L, 0L, 4_000L, 4_000L)
+        )
+
+        val plan = TimelineVideoMath.packSequentially(segments)!!
+
+        assertEquals(listOf(1, 0), plan.orderedClipIndices)
+        assertEquals(0L, plan.timelineStartByClipIndex[1])
+        assertEquals(4_000L, plan.timelineStartByClipIndex[0])
+    }
+
+    @Test
+    fun overlapRepairPreservesExistingGapsButPushesOnlyTheCollidingClip() {
+        val segments = listOf(
+            TimelineVideoSegment(0L, 0L, 2_000L, 2_000L),
+            TimelineVideoSegment(1_500L, 300L, 3_000L, 3_000L),
+            TimelineVideoSegment(7_000L, 0L, 1_000L, 1_000L)
+        )
+
+        val plan = TimelineVideoMath.resolveOverlaps(segments)!!
+
+        assertEquals(listOf(0, 1, 2), plan.orderedClipIndices)
+        assertEquals(0L, plan.timelineStartByClipIndex[0])
+        assertEquals(2_000L, plan.timelineStartByClipIndex[1])
+        assertEquals(7_000L, plan.timelineStartByClipIndex[2])
+    }
+
+    @Test
+    fun splitUsesTheLeftSegmentEndAsTheRightSegmentStartForEveryPlaybackSpeed() {
+        listOf(0.5f, 1f, 1.75f, 2f).forEach { speed ->
+            val segment = TimelineVideoSegment(
+                timelineStartMs = 1_250L,
+                sourceStartMs = 1_000L,
+                sourceEndMs = 9_000L,
+                sourceDurationMs = 10_000L,
+                speed = speed
+            )
+            val requested = segment.timelineStartMs + segment.durationMs / 2L + 7L
+            val split = TimelineVideoMath.splitAtProjectTime(segment, requested)!!
+
+            assertEquals(split.first.timelineEndMs, split.second.timelineStartMs)
+            assertEquals(split.first.sourceEndMs, split.second.sourceStartMs)
+            assertTrue(split.first.durationMs >= 350L)
+            assertTrue(split.second.durationMs >= 350L)
+            assertEquals(segment.timelineStartMs, split.first.timelineStartMs)
+        }
+    }
+
+    @Test
+    fun splitRejectsAPlayheadOutsideTheClipOrTooCloseToEitherEdge() {
+        val segment = TimelineVideoSegment(1_000L, 0L, 2_000L, 2_000L)
+
+        assertEquals(null, TimelineVideoMath.splitAtProjectTime(segment, 999L))
+        assertEquals(null, TimelineVideoMath.splitAtProjectTime(segment, 1_100L))
+        assertEquals(null, TimelineVideoMath.splitAtProjectTime(segment, 2_900L))
+        assertEquals(null, TimelineVideoMath.splitAtProjectTime(segment, 3_000L))
+    }
+
+    @Test
+    fun droppingInsideAnEmptyVideoLaneGapPreservesTheGap() {
+        val segments = listOf(
+            TimelineVideoSegment(0L, 0L, 2_000L, 2_000L),
+            TimelineVideoSegment(5_000L, 0L, 2_000L, 2_000L)
+        )
+        val plan = TimelineVideoMath.reorderForDrop(segments, 1, 5_100L)!!
+        assertEquals(listOf(0, 1), plan.orderedClipIndices)
+        assertEquals(0L, plan.timelineStartByClipIndex[0])
+        assertEquals(2_000L, plan.timelineStartByClipIndex[1])
+    }
     @Test
     fun leftTrimCannotCrossProjectOrSourceZero() {
         val source = TimelineVideoSegment(500L, 2_000L, 5_000L, 8_000L)

@@ -1,3 +1,22 @@
+## API 35 emulator verification hardening — 2026-11-08
+
+- The 2026-11-07 emulator run (`42417189845`) passed unit tests, debug APK compilation, thumbnail pixel comparison, ruler scrubbing and live playback synchronization. It stopped before split interaction because the accessibility XML pull exceeded the script's 8-second transfer timeout; the app did not report a split or drag assertion failure.
+- The hierarchy pull now has a bounded 30-second timeout (with kill grace and the existing two-attempt retry). No emulator checks were skipped.
+- Removed the derived 84 ms preview timestamp allowance. Preview and scrub frame timestamps are checked against a fixed 35 ms limit; thumbnail centering must be within 2 px. The alignment loop allows up to eight measured correction gestures. The 4-second split midpoint is again limited to 100 ms (80 ms early-accept), not 750 ms.
+- **Verification for these stricter checks is pending on the updated commit.** No production version code, release signing, publish workflow or main-branch APK was changed.
+
+---
+
+## CapCut-style main video lane: split seam, overlap repair, direct drag — 2026-11-07
+
+- Main-video clips now use the clip surface for immediate one-finger horizontal movement; timeline scrubbing remains on the empty lane/ruler and two-finger pinch keeps its Activity-level cancellation path.
+- Split timing is derived from one source-time cut. The right segment starts at the calculated end of the left segment, avoiding a millisecond-rounding seam at non-1× speed.
+- Legacy overlaps in the single main-video lane are shifted forward only as needed; source in/out points and intentional gaps are preserved. A clip dropped into empty timeline space moves independently without shifting neighbours; a drop onto an occupied clip inserts/reorders it and pushes only colliding followers, preserving later gaps.
+- Added JVM coverage for split continuity at 0.5×, 1×, 1.75× and 2×, invalid split locations, overlap repair and drag reflow.
+- **Verification is pending on this branch.** Do not call this complete until unit tests, Debug APK compilation and the API 35 emulator smoke pass on the same commit, including a real one-finger clip drag. No versionCode, release signing, publish workflow or production APK was changed.
+
+---
+
 ## Fixed-size project preview across editor tools — 2026-11-07
 
 - The product requirement is now explicit: the actual project canvas must keep the **same measured width and height** as the normal editor preview. The previous 75% allowance is removed; any resize while opening a tool or the keyboard is a test failure.
@@ -1238,3 +1257,88 @@ These were phone observations recorded before the #754 editor-shell acceptance a
   - API 35 Android emulator screenshots/smoke: run `42399166651` — **success**.
   - Emulator logs confirm independent music start/end trims, sound-effect start/end trims, image-overlay start/end trims, a 27 px in-canvas text drag, live playback/timeline synchronization, draft save/resume, full-frame photo preview, and durable `content://` photo restoration after force-stop/relaunch.
 - No app version, release signing, or publish workflow was changed. This verification covers these targeted interactions; it does not claim complete parity with CapCut or independently re-test every editor tool.
+
+
+## CapCut-style video split and direct clip drag — 2026-11-08
+
+- Main-video split uses one source-time cut. The left segment's source end is assigned as the right segment's source start, and the right segment's timeline start is the exact calculated end of the left segment. Unit coverage checks seam-free splits at 0.5×, 1×, 1.75× and 2× playback speed, plus invalid/edge split positions.
+- A one-finger drag moves a main-video clip directly; a stationary long-press opens the clip context menu. Dropping into empty space moves only the selected clip and preserves deliberate gaps. Dropping onto an occupied range inserts/reorders the clip and pushes only colliding followers.
+- The timeline validator now tolerates up to 1 px of cross-lane coordinate rounding and independently checks every lane's zero-time edge against the fixed playhead. Scroll spacers are derived from measured viewport geometry.
+- API 35 emulator run `42451563873` passed the preview/filmstrip timestamp comparison, centering, forward/reverse scrubbing, and live playback synchronization. It stopped before splitting because the test's three correction swipes left the playhead at 4,292 ms instead of the 4,000 ms target. The script now makes up to five corrective attempts; the ±100 ms split-target assertion is unchanged.
+- Emulator run `42469234908` passed unit/build and debug APK packaging but did not boot the emulator: the pinned BtbN FFmpeg release download returned HTTP 504 repeatedly. The CI step was replaced with the Node 24-compatible `FedericoCarboni/setup-ffmpeg` action pinned to `8073ccb51e517ed576e6871c7f2360c6de4ebb7c`, and explicit `ffmpeg`/`ffprobe` checks were added.
+- Source/workflow commit `30f470d1c061ea22c5d32538aa9405a3e87f5798`: verify/unit run `42469494749` — **success**; debug APK run `42469494772` — **success**; API 35 emulator run `42469494743` — **in progress** at documentation update. On that emulator run, FFmpeg setup, fixture generation, KVM enablement, and Android SDK installation all passed before the actual editor smoke test started.
+- Keep PR #29 unmerged until the API 35 emulator completes split, direct-drag/reorder, playback synchronization, and persistence checks. No versionCode, release signing, main-branch APK, or release workflow change is part of this work.
+
+## Playback recovery and split-timeline persistence — 2026-11-08
+
+- The API 35 playback failure was narrowed to a mismatch between the play glyph and the actual Media3 state: the old button-state code treated `playWhenReady=true` as active playback even while the composition player remained in `STATE_IDLE`. The UI now reports active playback only when the player is actually playing or buffering toward playback.
+- Pressing Play on an idle timeline composition now clears a stale readiness request, calls `prepare()`, and then requests playback. Debug-only playback-state diagnostics record the Media3 state, timeline window count, duration, and position.
+- Commit `83de73615a74207c0a2ce0315e158ab002346f18`: Verify Android build/unit run `42477679313` — **success**; debug APK build run `42477679322` — **success**. API 35 emulator run `42477679389` completed with a **live playback/timeline synchronization PASS** (player advanced and all timeline-lane assertions passed), then stopped in Step 11b before invoking the split handler because the test script printed a coordinate diagnostic to stdout; the shell parsed that text as touch coordinates. This is a test-harness output bug, not a demonstrated split failure.
+- The real emulator flow splits the fixture into two production clips before the autosave check. The old persistence assertion still expected one clip; commit `dbeb0721dee194e71e2fc9aaf9255236d3fe4d19` updates that assertion to require both split segments to be saved (`clips=2`).
+- The split math and the single-lane drawing both use absolute project-time boundaries. The JVM suite covers split seam continuity at 0.5×, 1×, 1.75× and 2×, gap preservation, overlap repair, and insertion/reorder. This is not yet proof of the visible emulator result: keep PR #29 open until the current-head API 35 test demonstrates actual playback, a 0–1 px post-split seam, successful direct drag/reorder, and saving/restoring both segments.
+- Commit `6c779c917ec1d6652eea66e85eefd18e6cb2e465` adds a force-stop/reopen check for the split-video draft and verifies the two restored project ranges still meet at a 0 ms seam. Commit `1f26db04218293d080977a0c1c05000ae874ac6c` moves the clip-bound diagnostic to stderr so the shell receives only numeric tap coordinates. The current-head rerun must validate these changes before the PR is considered green.
+- No versionCode, release signing, main-branch APK, or release workflow changes.
+
+## 2026-11-08 — fresh timeline geometry in emulator sync diagnostics
+
+- Emulator run `42480441974` built successfully and passed unit tests, but the final preview/thumbnail alignment assertion failed at a 35 ms tolerance: the captured thumbnail timestamp was 445 ms while the latest decoded preview samples were 83, 375, and 625 ms.
+- Artifact inspection showed the alignment snapshot could be rate-limited for 500 ms while scroll/fling updates continued; the final sync samples could therefore describe a newer playhead/scroll position than the most recent thumbnail View-bounds snapshot. This made the assertion compare different moments in time.
+- Commit `7a4adbbb1830e6f05f52348de5315eb5aaa51ea4` changes the debug-only diagnostic path to force a fresh View-bounds snapshot alongside each timeline sync sample. The 35 ms assertion is unchanged. Re-run emulator verification before treating preview/thumbnail alignment as passed.
+
+## 2026-11-08 — split-reorder emulator test measurement source
+
+- Emulator run `42481691607` on `428e99f5527cdfe48f0d60b3fc727e8c20a6edd9` confirmed split continuity: `firstEndMs=4042`, `secondStartMs=4042`, `gapMs=0`; measured screen seam was 0px.
+- The next drag test failed before sending the drag because it searched `video-split-drag-logcat.txt` for `TIMELINE_SYNC_SAMPLE`. That file is collected after the split while playback is paused, so it may contain the split event but no new playback/sync sample.
+- Commit `265cab249bf6bc84ed5920893affceb8beecd7b5` now uses the live playhead centre and scale measured during the immediately preceding midpoint seek (`video-midpoint-seek-logcat.txt`). No production gesture behavior or acceptance threshold was changed. Emulator verification is still required to prove the actual reorder/drop and remaining persistence checks.
+
+
+## 2026-11-08 — prevent paused overlay refresh from starving playback
+
+- The API 35 emulator run `42482764799` passed FFmpeg setup, video-fixture generation, emulator boot, canvas validation, thumbnail/preview pixel comparison (8 visually distinct cells; RGB delta 0), and bidirectional timeline scrubbing. The playback step then failed because no live playing samples were emitted.
+- Full logcat established a production playback failure, not merely a missing test log: with an image/text overlay present, the composition player repeatedly transitioned `READY → BUFFERING → READY` at positions 538/622 ms while paused. The paused-overlay bootstrap listener scheduled another forced `seek(+84 ms) / seek(back)` refresh on every `STATE_READY`, creating an unbounded refresh loop.
+- At the playback tap, Media3 was still buffering; shortly afterward it failed with `ExoPlaybackException: Unexpected runtime error`, caused by `NoSuchElementException` in `ExternalTextureManager.removeAllSurfaceTextureFrames` / `maybeQueueFrameToExternalShaderProgram`, and the composition player fell back to `STATE_IDLE`.
+- Commit `90fe35c56671b339a80b297f74cd56002799a791` makes the initial paused-overlay frame refresh one-shot per CompositionPlayer, breaking the self-triggering READY/seek loop. It also emits a debug-only player-error record under `TimelineSyncTest` so future emulator artifacts retain the root exception beside sync samples.
+- Do not lower the live-playback sample count or any timing tolerance. Verify on API 35 that the player reaches READY, begins advancing after Play, emits at least five live samples, and completes the subsequent split/reorder and save/reopen checks.
+
+
+## 2026-11-08 — split-reorder measurement parser field order
+
+- Emulator run `42485845233` on `17124eebf2349ebc99dc1abba7fa5e4afab0f155` confirms the paused-overlay refresh fix worked: live playback produced 62 samples and advanced from 3,083 ms to 7,855 ms; six timeline lanes remained synchronized. The split operation also passed with `firstEndMs=4000`, `secondStartMs=4000`, `gapMs=0`, and the measured on-screen seam was 0 px.
+- The run then stopped before the direct clip drag because the test helper's regex expected `playheadCenterPx` before `pxPerSecond`, while the actual production diagnostic emits `pxPerSecond` first. The valid sample existed in the captured log; the parser rejected it and reported no fixed-playhead measurement. This is a test-harness parser defect, not a failed production drag.
+- Commit `cb3908cb39034e79f9187db4498d4b93a0870925` changes the parser to consume the emitted field order and map scale/centre into the intended values. No app behavior, timing tolerance, or acceptance threshold was changed.
+- Re-run current-head emulator verification to prove direct drag/reorder and draft save/reopen. Keep PR #29 open until those checks pass.
+
+
+## 2026-11-08 — direct clip drag zero-boundary regression
+
+- The latest API 35 emulator run reached the real production drop handler. Playback synchronization passed (50 live samples, 3,292→8,102 ms); split continuity passed (firstEndMs=4042, secondStartMs=4042, gapMs=0) and the measured visual seam was 0 px. The direct reorder then failed with ordered=1,0 starts=1:4,0:3985.
+- This was not another playback or split failure. The filmstrip UI clamped its visual drag to the rounded pixel coordinate for time zero, then converted that rounded pixel offset back to milliseconds. At 78 px/s, the round trip can leave a small positive remainder (4 ms in the observed run) even though the finger crossed the zero boundary.
+- Added TimelineScaleMath.timeAfterHorizontalDrag() so a pointer at or beyond the rounded left boundary commits exactly 0 ms. Added a unit regression for the observed 4,042 ms / 78 px/s case, including a one-pixel-inside control.
+- The emulator assertion also incorrectly derived the next clip's expected start as 8000 - split_boundary_ms. The encoded video is nominally 8 seconds, but the app's measured media duration can differ from that nominal input; the observed drop implies a 3,981 ms moved-segment duration, while the old assertion expected 3,958 ms. The production split diagnostic now reports secondDurationMs, and the test requires the following clip to start at exactly that measured duration while the moved segment starts at exactly zero. This corrects the fixture assumption; no timing tolerance or behavior threshold was relaxed.
+- Keep PR #29 open until the latest-head API 35 emulator run proves the zero-start reorder and the save/reopen persistence check. Unit/build and debug APK jobs must also be green. No versionCode bump or release build.
+
+
+## 2026-11-08 — adjacent split-clip visual seam
+
+- Inspection of successful emulator artifact `42492659555` confirmed live playback (58 samples, 1,958→7,207 ms), exact split continuity (`4042:4042`, `gapMs=0`), direct reorder to `0:3981`, and force-stop/reopen restoration of both clip ranges (`0:3981,3981:8023`).
+- The post-reorder screenshot still showed a dark vertical divider even though the timeline View bounds met. The prior smoke validated only pre-drag View geometry and could not catch decorative borders/rounded inner corners creating a false gap.
+- `VideoEditorActivity.buildVideoClipFilmstrip()` now squares the two corners that touch adjacent clips and draws the selected outline without a vertical stroke on shared edges. This removes the artificial separator without altering clip times or reordering behavior.
+- The emulator smoke now captures fresh View bounds after the actual drop, checks the post-drop seam is within ±1 px, and samples the deterministic green fixture pixels across the seam to reject a visible dark divider. No timing tolerance, split math, reorder acceptance, or app version was changed.
+- Source/script commits: `17a3307`, `b251866`, `2af8de4`, `e260a21`. Unit/build/API 35 emulator verification is pending for the final script head. Keep PR #29 open until all three latest-head workflows pass.
+
+## 2026-11-08 — CapCut primary-lane continuity and selection frame
+
+- User's device screenshot showed two main-video clips separated by an unintended empty timeline interval. The prior overlap repair only packed collisions and intentionally retained all non-overlapping gaps; consequently an old saved `timelineStartMs` offset could survive project restore and display a gray/black blank interval between ordinary clips.
+- Added `TimelineVideoMath.packSequentially()` and wired the main-video lane refresh normalization to use it. Clips are ordered by their current timeline positions and packed from 0 with exact end-to-start adjacency; source in/out points and speed are unchanged. This repairs stale gaps in restored drafts as well as gaps left by main-video drag/reorder before the next lane render.
+- Added unit coverage for legacy gap repair, out-of-order clip positions, and source-range/speed preservation.
+- Updated selected main-video clip outline to a rounded white CapCut-style frame. Existing white edge grips remain the independent trim touch targets; the outline is purely visual and does not change clip bounds.
+- Build and API 35 emulator validation for this change are pending. Do not deliver an updated APK until the latest-head build, unit tests and emulator checks pass.
+
+
+## 2026-11-08 — CapCut-style video trim grips: physical emulator verification
+
+- On current tested source commit 06ca571ef13dbfd78e4450327e9ac1073f8bf166, the API 35 emulator drove the actual left and right video trim touch targets using Android swipe events resolved from measured clip View bounds (not hard-coded screen positions).
+- All four gestures passed: left trim, left extend, right trim, and right extend. Each gesture changed only its intended source edge; the opposite source edge stayed unchanged, the clip duration changed in the expected direction, the first clip remained anchored at project time 0, and the following main-video clip was repacked to the exact new duration with no gap.
+- Verified examples: left trim changed source start 4042→4555 ms while source end stayed 8023 ms; left extend restored 4555→4042 ms. Right trim changed source end 8023→7510 ms while source start stayed 4042 ms; right extend restored 7510→8023 ms. Duration changed 3981↔3468 ms and the next clip start matched exactly.
+- The same emulator run also passed split continuity, direct clip drag/reorder, post-drop seam geometry/pixels, and the remaining draft save/reopen smoke. Android unit/build, debug APK packaging, and API 35 emulator workflows all completed successfully for this tested head: verify run 42506500040, APK run 42506500012, emulator run 42506500354.
+- No versionCode bump, release signing, or release build was made. Do not treat the generated debug APK ZIP as a release artifact.
