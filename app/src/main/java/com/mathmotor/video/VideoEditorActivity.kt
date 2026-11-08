@@ -139,6 +139,7 @@ class VideoEditorActivity : Activity() {
         val timelinePxPerSec: Float,
         val previewSingleClip: Boolean,
         val canvasPreset: VideoCanvasPreset,
+        val timelineLaneOrder: List<String>,
         val nextOverlayId: Long,
         val nextTextLayerId: Long,
         val musicUri: Uri?,
@@ -1466,7 +1467,7 @@ class VideoEditorActivity : Activity() {
                 }
                 override fun onStartTrackingTouch(seekBar: SeekBar?) {
                     pauseActivePreview()
-                    projectSpeedHistorySnapshot = captureProjectEditSnapshot()
+                    projectSpeedHistorySnapshot = beginProjectHistoryGesture()
                 }
                 override fun onStopTrackingTouch(seekBar: SeekBar?) {
                     finishClipSpeedEdit()
@@ -1637,7 +1638,7 @@ class VideoEditorActivity : Activity() {
                     updatePreviewTextOverlay()
                 }
                 override fun onStartTrackingTouch(seekBar: SeekBar?) {
-                    activeProjectHistorySnapshot = captureProjectEditSnapshot()
+                    activeProjectHistorySnapshot = beginProjectHistoryGesture()
                 }
                 override fun onStopTrackingTouch(seekBar: SeekBar?) {
                     finishProjectHistoryGesture()
@@ -1729,7 +1730,7 @@ class VideoEditorActivity : Activity() {
                 refreshTextLayerList()
             }
             override fun onStartTrackingTouch(seekBar: SeekBar?) {
-                if (!loadingTextLayerControls) activeProjectHistorySnapshot = captureProjectEditSnapshot()
+                if (!loadingTextLayerControls) activeProjectHistorySnapshot = beginProjectHistoryGesture()
             }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
                 finishProjectHistoryGesture()
@@ -1765,8 +1766,8 @@ class VideoEditorActivity : Activity() {
                 updatePreviewTextOverlay()
                 timelineHandler.removeCallbacks(textTimelineRefreshTask)
                 timelineHandler.postDelayed(textTimelineRefreshTask, 120L)
-                timelineHandler.removeCallbacks(textHistoryCommitTask)
-                timelineHandler.postDelayed(textHistoryCommitTask, 650L)
+                // Keep a complete text-edit session as one Undo step across
+                // pauses; focus loss or the next editor action commits it.
             }
             override fun afterTextChanged(s: android.text.Editable?) {}
         })
@@ -1841,7 +1842,7 @@ class VideoEditorActivity : Activity() {
             }
             override fun onStartTrackingTouch(seekBar: SeekBar?) {
                 player?.playWhenReady = false
-                activeProjectHistorySnapshot = captureProjectEditSnapshot()
+                activeProjectHistorySnapshot = beginProjectHistoryGesture()
             }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
                 finishProjectHistoryGesture()
@@ -1887,7 +1888,7 @@ class VideoEditorActivity : Activity() {
             }
             override fun onStartTrackingTouch(seekBar: SeekBar?) {
                 deferTimelineRefresh = true
-                activeProjectHistorySnapshot = captureProjectEditSnapshot()
+                activeProjectHistorySnapshot = beginProjectHistoryGesture()
             }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
                 deferTimelineRefresh = false
@@ -2896,6 +2897,7 @@ class VideoEditorActivity : Activity() {
     /** Stage one: replace the global dock with one compact horizontal clip-tool strip. */
     private fun enterClipTools() {
         if (!::editorDock.isInitialized || !::editorPanelScroll.isInitialized) return
+        finishTextHistoryEdit()
         logEditorPanelGeometry("before-open:clip-tools")
         clipToolsMode = true
         activeClipTool = null
@@ -3059,6 +3061,7 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun showEditorPanel(name: String) {
+        if (activeEditorPanel != name) finishTextHistoryEdit()
         // Capture the real pre-panel geometry before panel mode changes timeline
         // sizing. Logging after setTimelinePanelMode(true) records the resized
         // layout as the baseline and makes the emulator compare the wrong state.
@@ -3397,6 +3400,7 @@ class VideoEditorActivity : Activity() {
                 grip.setOnTouchListener { view, event ->
                     when (event.actionMasked) {
                         MotionEvent.ACTION_DOWN -> {
+                            activeProjectHistorySnapshot = beginProjectHistoryGesture()
                             downRawY = event.rawY
                             moved = false
                             view.parent?.requestDisallowInterceptTouchEvent(true)
@@ -3440,10 +3444,13 @@ class VideoEditorActivity : Activity() {
                             } else {
                                 view.performClick()
                             }
+                            finishProjectHistoryGesture()
                             true
                         }
                         MotionEvent.ACTION_CANCEL -> {
                             view.parent?.requestDisallowInterceptTouchEvent(false)
+                            activeProjectHistorySnapshot = null
+                            if (moved) refreshTimelineTracks()
                             true
                         }
                         else -> false
@@ -3620,7 +3627,7 @@ class VideoEditorActivity : Activity() {
                     when (event.actionMasked) {
                         MotionEvent.ACTION_DOWN -> {
                             downX = event.rawX
-                            activeProjectHistorySnapshot = captureProjectEditSnapshot()
+                            activeProjectHistorySnapshot = beginProjectHistoryGesture()
                             active = true
                             moved = false
                             longPressed = false
@@ -3706,7 +3713,7 @@ class VideoEditorActivity : Activity() {
                         MotionEvent.ACTION_DOWN -> {
                             downX = event.rawX
                             moved = false
-                            activeProjectHistorySnapshot = captureProjectEditSnapshot()
+                            activeProjectHistorySnapshot = beginProjectHistoryGesture()
                             pauseActivePreview()
                             view.parent?.requestDisallowInterceptTouchEvent(true)
                             true
@@ -3839,7 +3846,7 @@ class VideoEditorActivity : Activity() {
                         bodyDownRawX = event.rawX
                         bodyInitialStartMs = layer.startMs
                         bodyInitialEndMs = layer.endMs
-                        activeProjectHistorySnapshot = captureProjectEditSnapshot()
+                        activeProjectHistorySnapshot = beginProjectHistoryGesture()
                         bodyMoved = false
                         bodyTouchActive = true
                         bodyLongPressed = false
@@ -3945,7 +3952,7 @@ class VideoEditorActivity : Activity() {
                             downRawX = event.rawX
                             initialStartMs = layer.startMs
                             initialEndMs = layer.endMs
-                            activeProjectHistorySnapshot = captureProjectEditSnapshot()
+                            activeProjectHistorySnapshot = beginProjectHistoryGesture()
                             moved = false
                             player?.playWhenReady = false
                             view.parent?.requestDisallowInterceptTouchEvent(true)
@@ -4587,7 +4594,7 @@ class VideoEditorActivity : Activity() {
                 android.view.MotionEvent.ACTION_DOWN -> {
                     bodyDownX = event.rawX
                     bodyInitial = TimelineRange(musicStartMs, musicDurationMs)
-                    activeProjectHistorySnapshot = captureProjectEditSnapshot()
+                    activeProjectHistorySnapshot = beginProjectHistoryGesture()
                     bodyMoved = false
                     bodyTouchActive = true
                     bodyLongPressed = false
@@ -4683,7 +4690,7 @@ class VideoEditorActivity : Activity() {
                     android.view.MotionEvent.ACTION_DOWN -> {
                         downRawX = event.rawX
                         initial = TimelineRange(musicStartMs, musicDurationMs)
-                        activeProjectHistorySnapshot = captureProjectEditSnapshot()
+                        activeProjectHistorySnapshot = beginProjectHistoryGesture()
                         moved = false
                         player?.playWhenReady = false
                         view.parent?.requestDisallowInterceptTouchEvent(true)
@@ -4823,7 +4830,7 @@ class VideoEditorActivity : Activity() {
                 android.view.MotionEvent.ACTION_DOWN -> {
                     bodyDownX = event.rawX
                     bodyInitial = TimelineAudioSegment(soundStartMs, soundSourceStartMs, soundDurationMs)
-                    activeProjectHistorySnapshot = captureProjectEditSnapshot()
+                    activeProjectHistorySnapshot = beginProjectHistoryGesture()
                     bodyMoved = false
                     bodyTouchActive = true
                     bodyLongPressed = false
@@ -4921,7 +4928,7 @@ class VideoEditorActivity : Activity() {
                     android.view.MotionEvent.ACTION_DOWN -> {
                         downRawX = event.rawX
                         initial = TimelineAudioSegment(soundStartMs, soundSourceStartMs, soundDurationMs)
-                        activeProjectHistorySnapshot = captureProjectEditSnapshot()
+                        activeProjectHistorySnapshot = beginProjectHistoryGesture()
                         moved = false
                         player?.playWhenReady = false
                         view.parent?.requestDisallowInterceptTouchEvent(true)
@@ -5686,7 +5693,7 @@ class VideoEditorActivity : Activity() {
                 }
                 override fun onStartTrackingTouch(seekBar: SeekBar?) {
                     pauseActivePreview()
-                    activeProjectHistorySnapshot = captureProjectEditSnapshot()
+                    activeProjectHistorySnapshot = beginProjectHistoryGesture()
                 }
                 override fun onStopTrackingTouch(seekBar: SeekBar?) {
                     finishProjectHistoryGesture()
@@ -6288,7 +6295,7 @@ class VideoEditorActivity : Activity() {
 
                     activeIndex = selectedClipIndex
                     val selected = clips[activeIndex]
-                    beforeSnapshot = captureProjectEditSnapshot().copy(previewSingleClip = false)
+                    beforeSnapshot = beginProjectHistoryGesture().copy(previewSingleClip = false)
                     if (!timelinePreviewLoaded || timelineCompositionPlayer == null ||
                         playerView.player !== timelineCompositionPlayer
                     ) {
@@ -6413,6 +6420,7 @@ class VideoEditorActivity : Activity() {
     // the timeline touch surface unobstructed until the user chooses a tool.
     private fun selectTimelineClip(index:Int){
         if(index !in clips.indices)return
+        finishTextHistoryEdit()
         selectedTextLayerId = null
         selectedOverlayId = null
         updatePreviewTextOverlay()
@@ -6434,6 +6442,7 @@ class VideoEditorActivity : Activity() {
 
     private fun clearTimelineClipSelection() {
         if (!clipHandlesVisible && selectedClipIndex < 0) return
+        finishTextHistoryEdit()
         clipHandlesVisible = false
         selectedClipIndex = -1
         if (activeEditorPanel == "clip") toggleEditorPanel("clip")
@@ -6461,6 +6470,7 @@ class VideoEditorActivity : Activity() {
             timelinePxPerSec = timelinePxPerSec,
             previewSingleClip = previewSingleClip,
             canvasPreset = exportCanvasPreset,
+            timelineLaneOrder = timelineLaneOrder.toList(),
             nextOverlayId = nextOverlayId,
             nextTextLayerId = nextTextLayerId,
             musicUri = musicUri,
@@ -6513,11 +6523,21 @@ class VideoEditorActivity : Activity() {
             before.soundVolume != after.soundVolume ||
             before.keepSourceAudio != after.keepSourceAudio ||
             before.canvasPreset != after.canvasPreset ||
+            before.timelineLaneOrder != after.timelineLaneOrder ||
             before.videoFilterPreset != after.videoFilterPreset ||
             before.filterBrightness != after.filterBrightness ||
             before.filterContrast != after.filterContrast ||
             before.filterSaturation != after.filterSaturation ||
             before.filterHue != after.filterHue
+
+    private fun beginProjectHistoryGesture(): ProjectEditSnapshot {
+        // Text stays one undoable entry for the whole editing session, even if
+        // the user pauses mid-sentence. Any new gesture closes that text entry
+        // before taking the gesture's own starting snapshot.
+        finishTextHistoryEdit()
+        finishProjectHistoryGesture()
+        return captureProjectEditSnapshot()
+    }
 
     private fun recordProjectEdit() {
         finishTextHistoryEdit()
@@ -6547,7 +6567,6 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun finishTextHistoryEdit() {
-        timelineHandler.removeCallbacks(textHistoryCommitTask)
         val before = activeTextHistorySnapshot ?: return
         activeTextHistorySnapshot = null
         if (hasProjectContentChanged(before, captureProjectEditSnapshot())) {
@@ -6555,16 +6574,11 @@ class VideoEditorActivity : Activity() {
         }
     }
 
-    private val textHistoryCommitTask = object : Runnable {
-        override fun run() { finishTextHistoryEdit() }
-    }
-
     private fun clearProjectHistory() {
         undoProjectHistory.clear()
         redoProjectHistory.clear()
         activeProjectHistorySnapshot = null
         activeTextHistorySnapshot = null
-        timelineHandler.removeCallbacks(textHistoryCommitTask)
         updateProjectHistoryButtons()
     }
 
@@ -6666,6 +6680,8 @@ class VideoEditorActivity : Activity() {
         exportCanvasPreset = snapshot.canvasPreset
         exportCanvasGroup.check(340 + VideoCanvasPreset.values().indexOf(snapshot.canvasPreset))
         restoringProjectHistory = false
+        timelineLaneOrder.clear()
+        timelineLaneOrder.addAll(snapshot.timelineLaneOrder)
         timelinePreviewLoaded = false
         previewSingleClip = false
         timelinePlayheadMs = snapshot.timelinePlayheadMs.coerceIn(0L, totalOutputDurationMs())
@@ -6959,6 +6975,7 @@ class VideoEditorActivity : Activity() {
     /** Audio-track selection mirrors every other timeline track. */
     private fun enterAudioTools() {
         if (!::editorDock.isInitialized || !::editorPanelScroll.isInitialized) return
+        finishTextHistoryEdit()
         selectedTextLayerId = null
         selectedOverlayId = null
         clipHandlesVisible = false
@@ -6997,6 +7014,7 @@ class VideoEditorActivity : Activity() {
 
     private fun selectTextLayer(id: Long) {
         if (textLayers.none { it.id == id }) return
+        finishTextHistoryEdit()
         syncSelectedTextLayerFromControls()
         selectedOverlayId = null
         selectedClipIndex = -1
@@ -7261,6 +7279,7 @@ class VideoEditorActivity : Activity() {
                     // Text is a directly-manipulable project layer even when its
                     // properties panel is closed. Select it before beginning a drag.
                     view.parent?.requestDisallowInterceptTouchEvent(true)
+                    finishTextHistoryEdit()
                     if (selectedTextLayerId != layer.id) {
                         syncSelectedTextLayerFromControls()
                         selectedTextLayerId = layer.id
@@ -7422,7 +7441,7 @@ class VideoEditorActivity : Activity() {
                 if (fromUser) onValue(progress.coerceIn(0, 100))
             }
             override fun onStartTrackingTouch(seekBar: SeekBar?) {
-                activeProjectHistorySnapshot = captureProjectEditSnapshot()
+                activeProjectHistorySnapshot = beginProjectHistoryGesture()
             }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
                 finishProjectHistoryGesture()
@@ -7445,7 +7464,7 @@ class VideoEditorActivity : Activity() {
             }
             override fun onStartTrackingTouch(seekBar: SeekBar?) {
                 deferTimelineRefresh = true
-                activeProjectHistorySnapshot = captureProjectEditSnapshot()
+                activeProjectHistorySnapshot = beginProjectHistoryGesture()
             }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
                 deferTimelineRefresh = false
@@ -7468,7 +7487,7 @@ class VideoEditorActivity : Activity() {
             }
             override fun onStartTrackingTouch(seekBar: SeekBar?) {
                 deferTimelineRefresh = true
-                activeProjectHistorySnapshot = captureProjectEditSnapshot()
+                activeProjectHistorySnapshot = beginProjectHistoryGesture()
             }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
                 deferTimelineRefresh = false
@@ -8330,7 +8349,7 @@ class VideoEditorActivity : Activity() {
                     status.text = "Bindirme dosyasının süresi okunamadı. Başka bir görsel veya video seç."
                     return@runOnUiThread
                 }
-                val beforeProjectEdit = captureProjectEditSnapshot()
+                val beforeProjectEdit = beginProjectHistoryGesture()
                 val projectDuration = TimelineVideoMath.totalDuration(videoTimelineSegments()).coerceAtLeast(1_000L)
                 val imageDefaults = if (isImage) {
                     if (initialPhoto) OverlayAssetDefaultsMath.fullFramePhoto(projectDuration)
@@ -8427,6 +8446,7 @@ class VideoEditorActivity : Activity() {
     /** Select an overlay track without opening its settings sheet over the timeline. */
     private fun enterOverlayTools() {
         if (!::editorDock.isInitialized || !::editorPanelScroll.isInitialized) return
+        finishTextHistoryEdit()
         selectedTextLayerId = null
         updatePreviewTextOverlay()
         clipToolsMode = true
@@ -8474,6 +8494,7 @@ class VideoEditorActivity : Activity() {
 
     private fun selectOverlay(id: Long) {
         val overlay = overlayClips.firstOrNull { it.id == id } ?: return
+        finishTextHistoryEdit()
         selectedTextLayerId = null
         selectedOverlayId = id
         selectedClipIndex = -1
@@ -8673,7 +8694,7 @@ class VideoEditorActivity : Activity() {
                     downRotation = currentState.rotationDegrees
                     downDistance = 0f
                     downAngle = 0f
-                    activeProjectHistorySnapshot = captureProjectEditSnapshot()
+                    activeProjectHistorySnapshot = beginProjectHistoryGesture()
                     view.parent?.requestDisallowInterceptTouchEvent(true)
                     true
                 }
@@ -8894,7 +8915,7 @@ class VideoEditorActivity : Activity() {
                 }
                 override fun onStartTrackingTouch(seekBar: SeekBar?) {
                     pauseActivePreview()
-                    activeProjectHistorySnapshot = captureProjectEditSnapshot()
+                    activeProjectHistorySnapshot = beginProjectHistoryGesture()
                 }
                 override fun onStopTrackingTouch(seekBar: SeekBar?) {
                     finishProjectHistoryGesture()
@@ -9074,7 +9095,7 @@ class VideoEditorActivity : Activity() {
                     return@runOnUiThread
                 }
 
-                val beforeProjectEdit = captureProjectEditSnapshot()
+                val beforeProjectEdit = beginProjectHistoryGesture()
                 if (forMusic) {
                     musicUri = uri
                     musicTitle = title
@@ -9921,7 +9942,7 @@ class VideoEditorActivity : Activity() {
                             initialStartMs = clip.startMs
                             initialEndMs = clip.endMs
                             moved = false
-                            activeProjectHistorySnapshot = captureProjectEditSnapshot()
+                            activeProjectHistorySnapshot = beginProjectHistoryGesture()
                             player?.playWhenReady = false
                             view.parent?.requestDisallowInterceptTouchEvent(true)
                             true
@@ -10925,7 +10946,7 @@ class VideoEditorActivity : Activity() {
             override fun onStartTrackingTouch(seekBar: SeekBar?) {
                 player?.playWhenReady = false
                 deferTimelineRefresh = true
-                activeProjectHistorySnapshot = captureProjectEditSnapshot()
+                activeProjectHistorySnapshot = beginProjectHistoryGesture()
             }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
                 finishTrimControlGesture()
@@ -10947,7 +10968,7 @@ class VideoEditorActivity : Activity() {
             override fun onStartTrackingTouch(seekBar: SeekBar?) {
                 player?.playWhenReady = false
                 deferTimelineRefresh = true
-                activeProjectHistorySnapshot = captureProjectEditSnapshot()
+                activeProjectHistorySnapshot = beginProjectHistoryGesture()
             }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
                 finishTrimControlGesture()
