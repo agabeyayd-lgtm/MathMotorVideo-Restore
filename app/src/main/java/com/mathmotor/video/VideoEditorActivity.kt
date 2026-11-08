@@ -5184,7 +5184,7 @@ class VideoEditorActivity : Activity() {
      * This is debug-test-only and avoids UIAutomator's expensive full hierarchy
      * serialization when many thumbnail ImageViews are attached.
      */
-    private fun logTimelineAlignmentTestSnapshotIfNeeded() {
+    private fun logTimelineAlignmentTestSnapshotIfNeeded(force: Boolean = false) {
         if (!timelineSyncTestEnabled ||
             !::timelineTracksFrame.isInitialized ||
             !::timelinePlayButton.isInitialized ||
@@ -5193,7 +5193,10 @@ class VideoEditorActivity : Activity() {
         ) return
 
         val now = SystemClock.uptimeMillis()
-        if (now - lastTimelineAlignmentSnapshotUptimeMs < 500L) return
+        // Keep routine snapshots rate-limited, but force a fresh geometry sample
+        // alongside each sync sample so CI never pairs a settled preview frame
+        // with stale pre-fling thumbnail bounds.
+        if (!force && now - lastTimelineAlignmentSnapshotUptimeMs < 500L) return
         lastTimelineAlignmentSnapshotUptimeMs = now
 
         val playButtonLocation = IntArray(2)
@@ -5271,7 +5274,7 @@ class VideoEditorActivity : Activity() {
         val composition = timelineCompositionPlayer
         val firstLane = timelineScrollViews.firstOrNull() ?: return
         if (!::timelinePlayheadLine.isInitialized || firstLane.width <= 0) return
-        logTimelineAlignmentTestSnapshotIfNeeded()
+        logTimelineAlignmentTestSnapshotIfNeeded(force = true)
 
         val playingComposition = composition?.isPlaying == true
         val singleClip = clips.getOrNull(selectedClipIndex)
