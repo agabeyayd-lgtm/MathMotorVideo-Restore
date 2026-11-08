@@ -69,6 +69,21 @@ internal object TimelineScaleMath {
             .coerceAtLeast(0L)
     }
 
+    /**
+     * Give split fragments more room to manipulate by zooming the shared timeline
+     * out one step. This changes only pixels-per-second, never clip durations.
+     */
+    fun zoomOutAfterSplit(
+        currentPixelsPerSecond: Float,
+        minimumPixelsPerSecond: Float,
+        factor: Float = 0.85f
+    ): Float {
+        val minimum = minimumPixelsPerSecond.takeIf { it.isFinite() }?.coerceAtLeast(1f) ?: 1f
+        val current = currentPixelsPerSecond.takeIf { it.isFinite() && it > 0f } ?: minimum
+        val safeFactor = factor.takeIf { it.isFinite() }?.coerceIn(0.5f, 0.99f) ?: 0.85f
+        return maxOf(minimum, current * safeFactor)
+    }
+
     /** Deterministic fit scale for a project duration and measured timeline width. */
     fun fitPixelsPerSecond(
         durationMs: Long,
