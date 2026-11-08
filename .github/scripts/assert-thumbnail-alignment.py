@@ -209,7 +209,13 @@ def verify(log_path: str, screenshot_path: str):
             for fx in (0.2, 0.5, 0.8):
                 x = round(box[0] + (box[2] - box[0]) * fx)
                 y = round(box[1] + (box[3] - box[1]) * fy)
-                fingerprint.extend(pixel_mean(image, x, y, radius=1))
+                # Each marker in the deterministic video fixture occupies only ~8x8
+                # screen pixels after FIT_CENTER scaling. A 3x3 point probe can miss
+                # it when Android's sub-pixel ImageView matrix rounds the draw edge.
+                # Average a 9x9 patch around the same 3x3 spatial grid instead; this
+                # preserves frame-position sensitivity without requiring an exact
+                # single-pixel hit on a tiny decoded thumbnail feature.
+                fingerprint.extend(pixel_mean(image, x, y, radius=4))
         fingerprints.append((timestamp, tuple(fingerprint)))
     unique_fingerprints = len({fingerprint for _, fingerprint in fingerprints})
     required_unique = max(3, (len(fingerprints) * 3 + 3) // 4)
