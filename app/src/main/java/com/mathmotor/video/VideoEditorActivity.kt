@@ -433,16 +433,16 @@ class VideoEditorActivity : Activity() {
         override fun run() = work()
     }
     private val timelineThumbnailTaskSequence = java.util.concurrent.atomic.AtomicLong()
-    // Two isolated decoder workers overlap independent frame extraction. Each worker
-    // owns its own MediaMetadataRetriever; priority still favours frames nearest playhead.
+    // Three isolated decoder workers reduce filmstrip queue latency. Each worker
+    // owns its own retriever/extractor; priority still favours frames nearest playhead.
     private val timelineThumbnailWorkerSequence = java.util.concurrent.atomic.AtomicLong()
     private val timelineThumbnailRetrievers =
         java.util.concurrent.ConcurrentHashMap<Long, Pair<Uri, MediaMetadataRetriever>>()
     private val timelineThumbnailExtractors =
         java.util.concurrent.ConcurrentHashMap<Long, Pair<Uri, FrameExtractor>>()
     private val timelineThumbnailExecutor = java.util.concurrent.ThreadPoolExecutor(
-        2,
-        2,
+        3,
+        3,
         0L,
         java.util.concurrent.TimeUnit.MILLISECONDS,
         java.util.concurrent.PriorityBlockingQueue<Runnable>(
