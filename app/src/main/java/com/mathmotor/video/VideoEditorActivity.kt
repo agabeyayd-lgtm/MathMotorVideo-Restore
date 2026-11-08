@@ -4213,7 +4213,9 @@ class VideoEditorActivity : Activity() {
             // Recalculate after measurement and on responsive viewport changes.
             laneScroll.addOnLayoutChangeListener { view, left, top, right, bottom,
                                                    oldLeft, oldTop, oldRight, oldBottom ->
-                if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) {
+                if (left != oldLeft || right - left != oldRight - oldLeft ||
+                    bottom - top != oldBottom - oldTop
+                ) {
                     updateLaneOriginSpacer(view.width)
                 }
             }
