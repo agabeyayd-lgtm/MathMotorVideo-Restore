@@ -487,6 +487,43 @@ class TimelineVideoMathTest {
     }
 
     @Test
+    fun capcutPrimaryLanePackingClosesEveryGapAndPreservesSourceRanges() {
+        val segments = listOf(
+            TimelineVideoSegment(0L, 500L, 4_910L, 8_000L, 1f),
+            TimelineVideoSegment(8_000L, 1_000L, 5_770L, 9_000L, 1.25f),
+            TimelineVideoSegment(15_000L, 0L, 2_000L, 2_000L, 1f)
+        )
+
+        val plan = TimelineVideoMath.packSequentially(segments)!!
+
+        assertEquals(listOf(0, 1, 2), plan.orderedClipIndices)
+        assertEquals(0L, plan.timelineStartByClipIndex[0])
+        assertEquals(4_410L, plan.timelineStartByClipIndex[1])
+        assertEquals(
+            4_410L + segments[1].durationMs,
+            plan.timelineStartByClipIndex[2]
+        )
+        // Packing changes only project positions, never source trims or speed.
+        assertEquals(500L, segments[0].sourceStartMs)
+        assertEquals(4_910L, segments[0].sourceEndMs)
+        assertEquals(1.25f, segments[1].speed)
+    }
+
+    @Test
+    fun capcutPrimaryLanePackingSortsDroppedClipsAndStartsAtZero() {
+        val segments = listOf(
+            TimelineVideoSegment(8_000L, 0L, 2_000L, 2_000L),
+            TimelineVideoSegment(0L, 0L, 4_000L, 4_000L)
+        )
+
+        val plan = TimelineVideoMath.packSequentially(segments)!!
+
+        assertEquals(listOf(1, 0), plan.orderedClipIndices)
+        assertEquals(0L, plan.timelineStartByClipIndex[1])
+        assertEquals(4_000L, plan.timelineStartByClipIndex[0])
+    }
+
+    @Test
     fun overlapRepairPreservesExistingGapsButPushesOnlyTheCollidingClip() {
         val segments = listOf(
             TimelineVideoSegment(0L, 0L, 2_000L, 2_000L),
