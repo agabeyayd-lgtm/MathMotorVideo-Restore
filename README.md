@@ -1,3 +1,11 @@
+## Updater version-code correction — 2026-11-08
+
+- The signed release published as build 69 still contained `versionCode=401`, identical to the installed 401 build. Android's in-app updater therefore correctly reported that the app was already up to date; the GitHub Actions run number (69) is not the Android app version.
+- Bumped the next installable editor build to `versionCode=402` / `versionName=8.35-capcut-editor`. This is a release metadata correction; no editor behavior or timeline code is changed.
+- Required before publication: unit tests, Android build and API 35 emulator smoke on the exact merged source, followed by a signed release. Confirm the published APK body reports `versionCode=402` before sharing it as an update.
+
+---
+
 ## API 35 emulator verification hardening — 2026-11-08
 
 - The 2026-11-07 emulator run (`42417189845`) passed unit tests, debug APK compilation, thumbnail pixel comparison, ruler scrubbing and live playback synchronization. It stopped before split interaction because the accessibility XML pull exceeded the script's 8-second transfer timeout; the app did not report a split or drag assertion failure.
