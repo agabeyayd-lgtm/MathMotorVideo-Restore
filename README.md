@@ -1100,3 +1100,12 @@ The outer timeline workspace remains a stable height as video, text, music, and 
 ## CapCut-style video trim grips — verified 2026-11-08
 
 The selected main-video clip exposes independent left/right edge grips: drag the left grip to change only the source in-point, and drag the right grip to change only the source out-point. Extending either edge restores available source footage. Main-video clips reflow contiguously after each trim; text, audio, and effect lanes keep their independent timing. API 35 emulator tests physically exercised trim and extend on both grips, alongside split/reorder and draft persistence checks. All unit/build, debug packaging, and emulator workflows passed on the tested commit documented in RESTORATION_STATUS.md.
+
+
+## 2026-11-08 — CapCut filmstrip pan versus clip move
+
+- Reproduced the gesture conflict in `VideoEditorActivity.buildVideoClipFilmstrip()`: every one-finger horizontal movement on a video clip was consumed as an immediate clip translation/reorder, while the ruler and other lanes remained in their independent synchronized scroll views. This made the blank time-zero origin spacer appear to move separately from the filmstrip and caused the ruler/clip interaction to feel disconnected.
+- Changed the gesture contract to match CapCut: an ordinary horizontal swipe directly on the video thumbnails scrolls the shared timeline, and the existing lane scroll listener keeps ruler, video, text/audio lanes, playhead time and preview synchronized. A stationary long-press followed by a drag is now the explicit clip-move/reorder gesture; a stationary long-press still opens the clip menu.
+- Kept the leading `timeline-origin-spacer`: it is required to put project time zero beneath the fixed centre playhead. It is not video content and must not be deleted or included in clip duration. The fix is to prevent ordinary scrubbing from translating the clip independently.
+- Added API 35 emulator coverage that swipes on the actual filmstrip in both directions and asserts all lane `scrollX` values remain identical. Updated the direct reorder smoke gesture to use long-press-and-drag.
+- **Verification pending** on this branch: unit/build and API 35 emulator workflows must pass, including the new on-filmstrip pan test and existing split/reorder/trim/save-reopen checks. No versionCode, signing, or release APK change is included.
