@@ -1362,3 +1362,10 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - The emulator swiped directly on the filmstrip: left advanced the playhead to 5375 ms, right returned it to 3625 ms, and all six lane offsets remained equal (`418,418,418,418,418,418`) after the forward swipe. Live playback passed 53 synchronization samples (3625→8054 ms); ruler and first-frame zero edges stayed aligned.
 - The centered preview/thumbnail pixel comparison passed at the fixed 35 ms limit with RGB channel delta 0. Real clip-menu split had a 0 ms seam; long-press drag reordered the segment and post-drop geometry/pixels passed. All four video trim/extend directions and force-stop draft save/reopen also passed.
 - No versionCode bump, release signing, or signed release APK was made. The CI debug ZIP is not a release artifact.
+
+
+## 2026-11-08 — Remove the gray-looking video-lane lead-in without breaking time zero
+
+- Confirmed that the leading `timeline-origin-spacer` is required by the current fixed-centre-playhead architecture. At horizontal scroll offset 0, it places project time 0 under the centre playhead. Deleting its width would put the clip start at the lane's left edge while the playhead remains centred; the preview/ruler time mapping would then be offset and the first frame would not be under the playhead.
+- The spacer is not clip content and does not add duration. The visible color contrast came from the empty lead-in exposing the timeline card surface (`#080C12`) while the video strip used `#101924`. The complete video-lane content surface now uses the same `#101924` color as the thumbnails, so the lead-in no longer appears as a separate gray block.
+- The underlying time-zero geometry, shared scroll offsets, clip positions, trim math and preview seek mapping are intentionally unchanged. Unit/build and API 35 emulator verification are pending for this visual-only adjustment; no APK or version bump is authorized before those checks pass.
