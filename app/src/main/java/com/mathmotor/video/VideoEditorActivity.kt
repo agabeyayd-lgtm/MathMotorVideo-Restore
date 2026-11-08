@@ -9196,7 +9196,7 @@ class VideoEditorActivity : Activity() {
             }
             clipToOutline = true
             // Keep the selected clip reachable even when it overlaps another clip.
-            elevation = if (selected) dp(12).toFloat() else 0f
+            elevation = if (selected && !hasPreviousAdjacentClip && !hasNextAdjacentClip) dp(12).toFloat() else 0f
             isClickable = true
             isFocusable = true
             setOnClickListener { selectTimelineClip(index) }
