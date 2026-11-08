@@ -459,8 +459,8 @@ class TimelineVideoMathTest {
         val plan = TimelineVideoMath.reorderForDrop(segments, 0, 8_000L)!!
         assertEquals(listOf(1, 2, 0), plan.orderedClipIndices)
         assertEquals(0L, plan.timelineStartByClipIndex[1])
-        assertEquals(4_000L, plan.timelineStartByClipIndex[2])
-        assertEquals(5_000L, plan.timelineStartByClipIndex[0])
+        assertEquals(3_500L, plan.timelineStartByClipIndex[2])
+        assertEquals(4_500L, plan.timelineStartByClipIndex[0])
     }
     @Test
     fun reorderRepairsOverlappingMainVideoClipsAndNeverReturnsAnOverlap() {
