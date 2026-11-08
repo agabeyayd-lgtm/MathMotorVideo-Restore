@@ -2989,12 +2989,14 @@ left, top, right, bottom = latest
 width, height = right - left, bottom - top
 if width < 70 or height < 20:
     raise SystemExit(f"Selected clip is too small for reliable edge gesture: {latest}")
-inset = min(8, max(3, width // 24))
-travel = min(20, max(14, width // 8))
+# Android's gesture slop is 21px on this emulator. Begin inside the
+# transparent edge target, but outside the stationary playhead overlay, and
+# travel far enough to make the production handler classify this as a drag.
+travel = min(42, max(34, width // 8))
 if edge == "start":
-    x1, x2 = (left + inset, left + inset + travel) if direction == "trim" else (left + inset + travel, left + inset)
+    x1, x2 = (left + 26, left + 26 + travel) if direction == "trim" else (left + 36, left + 36 - travel)
 else:
-    x1, x2 = (right - inset, right - inset - travel) if direction == "trim" else (right - inset - travel, right - inset)
+    x1, x2 = (right - 8, right - 8 - travel) if direction == "trim" else (right - 36, right - 36 + travel)
 y = (top + bottom) // 2
 if not (left <= x1 < right and left <= x2 < right and top <= y < bottom):
     raise SystemExit(f"Resolved touch is outside the measured clip: bounds={latest}, points={x1},{x2},{y}")
