@@ -42,6 +42,23 @@ class TimelineScaleMathTest {
 
 
     @Test
+    fun draggingPastTheRoundedZeroPixelBoundaryClampsToExactTimelineZero() {
+        val initialTimeMs = 4_042L
+        val pixelsPerSecond = 78f
+        val minimumDeltaPx = -TimelineScaleMath.pixelsForTime(initialTimeMs, pixelsPerSecond).toFloat()
+
+        assertEquals(0L, TimelineScaleMath.timeAfterHorizontalDrag(
+            initialTimeMs, minimumDeltaPx, pixelsPerSecond
+        ))
+        assertEquals(0L, TimelineScaleMath.timeAfterHorizontalDrag(
+            initialTimeMs, minimumDeltaPx - 16f, pixelsPerSecond
+        ))
+        assertEquals(16L, TimelineScaleMath.timeAfterHorizontalDrag(
+            initialTimeMs, minimumDeltaPx + 1f, pixelsPerSecond
+        ))
+    }
+
+    @Test
     fun zoomAnchorKeepsTheSameTimestampUnderTheSameFingerMidpoint() {
         val oldScale = 22f
         val newScale = 44f
