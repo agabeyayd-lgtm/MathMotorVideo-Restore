@@ -9013,7 +9013,7 @@ class VideoEditorActivity : Activity() {
         timelineHorizontalScrollX = pendingTimelineScrollX ?: 0
         if(timelineSyncTestEnabled) android.util.Log.i(
             "TimelineSyncTest",
-            "VIDEO_CLIP_SPLIT firstEndMs=${split.first.timelineEndMs} secondStartMs=${split.second.timelineStartMs} gapMs=${split.second.timelineStartMs-split.first.timelineEndMs} sourceCutMs=${split.second.sourceStartMs} speed=${clip.speed}"
+            "VIDEO_CLIP_SPLIT firstEndMs=${split.first.timelineEndMs} secondStartMs=${split.second.timelineStartMs} secondEndMs=${split.second.timelineEndMs} secondDurationMs=${split.second.durationMs} gapMs=${split.second.timelineStartMs-split.first.timelineEndMs} sourceCutMs=${split.second.sourceStartMs} speed=${clip.speed}"
         )
         refreshTimelineAfterClipChange();loadTrimControls();ensureTimelinePreviewLoaded();seekTimelinePreview(timelinePlayheadMs);updateTimelinePlayheadLabel()
         status.text="Klip bölündü; iki parça aynı kesim noktasında birleşiyor."
@@ -9180,14 +9180,11 @@ class VideoEditorActivity : Activity() {
                         view.animate().scaleX(1f).scaleY(1f).setDuration(100L).start()
                         if (filmstripMoved) {
                             val rawDeltaPx = event.rawX - downRawX
-                            val minimumDeltaPx = -TimelineScaleMath.pixelsForTime(
-                                initialStartMs, timelinePixelsPerSecond()
+                            val requestedStartMs = TimelineScaleMath.timeAfterHorizontalDrag(
+                                initialStartMs,
+                                rawDeltaPx,
+                                timelinePixelsPerSecond()
                             )
-                            val boundedDeltaPx = maxOf(minimumDeltaPx.toFloat(), rawDeltaPx)
-                            val deltaMs = TimelineScaleMath.millisecondsForPixels(
-                                boundedDeltaPx, timelinePixelsPerSecond()
-                            )
-                            val requestedStartMs = (initialStartMs + deltaMs).coerceAtLeast(0L)
                             if (requestedStartMs != initialStartMs) {
                                 reorderTimelineClipFromDrop(index, requestedStartMs)
                             }
