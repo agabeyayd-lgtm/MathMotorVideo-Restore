@@ -9285,6 +9285,7 @@ class VideoEditorActivity : Activity() {
             var filmstripLongPressed = false
             var downRawX = 0f
             var initialStartMs = clip.timelineStartMs
+            var initialTimelineScrollX = 0
             val longPressAction = Runnable {
                 if (filmstripTouchActive && !filmstripMoved) {
                     filmstripLongPressed = true
@@ -9299,6 +9300,7 @@ class VideoEditorActivity : Activity() {
                         filmstripLongPressed = false
                         downRawX = event.rawX
                         initialStartMs = clip.timelineStartMs
+                        initialTimelineScrollX = timelineScrollViews.firstOrNull()?.scrollX ?: 0
                         pauseActivePreview()
                         // A finger-down on a clip owns its one-finger horizontal gesture.
                         // Scrubbing remains available from the empty lane/ruler; a second
@@ -9318,13 +9320,42 @@ class VideoEditorActivity : Activity() {
                             filmstripMoved = true
                             timelineHandler.removeCallbacks(longPressAction)
                             view.parent?.requestDisallowInterceptTouchEvent(true)
+                            // Auto-scroll all synchronized timeline rows when the finger
+                            // reaches a viewport edge. The shared content-scroll delta is
+                            // included in the drop calculation, so long projects remain
+                            // reachable without lifting the finger.
+                            val lane = timelineScrollViews.firstOrNull()
+                            if (lane != null) {
+                                val laneLocation = IntArray(2)
+                                lane.getLocationOnScreen(laneLocation)
+                                val fingerInLane = event.rawX - laneLocation[0]
+                                val edgeZone = dp(48).toFloat()
+                                val scrollStep = when {
+                                    fingerInLane > lane.width - edgeZone -> dp(10)
+                                    fingerInLane < edgeZone -> -dp(10)
+                                    else -> 0
+                                }
+                                if (scrollStep != 0) {
+                                    autoScrollingTimeline = true
+                                    try {
+                                        lane.scrollBy(scrollStep, 0)
+                                    } finally {
+                                        autoScrollingTimeline = false
+                                    }
+                                }
+                            }
+                            val scrollDeltaPx = (
+                                (timelineScrollViews.firstOrNull()?.scrollX ?: initialTimelineScrollX) -
+                                    initialTimelineScrollX
+                                ).toFloat()
+                            val gestureDeltaPx = dx + scrollDeltaPx
                             val minimumPx = -TimelineScaleMath.pixelsForTime(
                                 initialStartMs, timelinePixelsPerSecond()
                             )
                             // Move immediately with the finger. On release the drop point
-                            // is converted into a new sequence slot and neighbouring clips
-                            // are reflowed without leaving overlaps or split seams.
-                            view.translationX = maxOf(minimumPx.toFloat(), dx)
+                            // is converted into project time using both finger movement and
+                            // any synchronized viewport auto-scroll.
+                            view.translationX = maxOf(minimumPx.toFloat(), gestureDeltaPx)
                         }
                         true
                     }
@@ -9336,9 +9367,13 @@ class VideoEditorActivity : Activity() {
                         view.animate().scaleX(1f).scaleY(1f).setDuration(100L).start()
                         if (filmstripMoved) {
                             val rawDeltaPx = event.rawX - downRawX
+                            val scrollDeltaPx = (
+                                (timelineScrollViews.firstOrNull()?.scrollX ?: initialTimelineScrollX) -
+                                    initialTimelineScrollX
+                                ).toFloat()
                             val requestedStartMs = TimelineScaleMath.timeAfterHorizontalDrag(
                                 initialStartMs,
-                                rawDeltaPx,
+                                rawDeltaPx + scrollDeltaPx,
                                 timelinePixelsPerSecond()
                             )
                             if (requestedStartMs != initialStartMs) {
