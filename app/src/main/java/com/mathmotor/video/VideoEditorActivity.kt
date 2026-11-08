@@ -433,16 +433,16 @@ class VideoEditorActivity : Activity() {
         override fun run() = work()
     }
     private val timelineThumbnailTaskSequence = java.util.concurrent.atomic.AtomicLong()
-    // One ordered decoder session avoids contention between simultaneous
-    // MediaMetadataRetriever instances. Preview requests retain higher queue priority.
+    // Three isolated workers keep source-frame extraction concurrent. Each worker
+    // owns its MediaMetadataRetriever and only creates a Media3 extractor as a fallback.
     private val timelineThumbnailWorkerSequence = java.util.concurrent.atomic.AtomicLong()
     private val timelineThumbnailRetrievers =
         java.util.concurrent.ConcurrentHashMap<Long, Pair<Uri, MediaMetadataRetriever>>()
     private val timelineThumbnailExtractors =
         java.util.concurrent.ConcurrentHashMap<Long, Pair<Uri, FrameExtractor>>()
     private val timelineThumbnailExecutor = java.util.concurrent.ThreadPoolExecutor(
-        1,
-        1,
+        3,
+        3,
         0L,
         java.util.concurrent.TimeUnit.MILLISECONDS,
         java.util.concurrent.PriorityBlockingQueue<Runnable>(
@@ -10168,57 +10168,60 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun decodeTimelineFrame(uri: Uri, timeMs: Long): Bitmap? {
-        // A single persistent Media3 FrameExtractor is faster than parallel
-        // platform retrievers on the tested Android emulator. Exact seeking keeps
-        // the filmstrip timestamp authoritative; MMR remains a compatibility fallback.
-        val extractor = timelineThumbnailExtractorFor(uri)
-        if (extractor != null) {
-            var frameFuture: java.util.concurrent.Future<FrameExtractor.Frame>? = null
-            try {
-                val startedAt = SystemClock.uptimeMillis()
-                val future = extractor.getFrame(timeMs.coerceAtLeast(0L))
-                frameFuture = future
-                val frame = future.get(5_000L, TimeUnit.MILLISECONDS)
-                if (timelineSyncTestEnabled) android.util.Log.i(
-                    "TimelineFrameSyncTest",
-                    "TIMELINE_THUMBNAIL_DECODED requestedMs=$timeMs actualFrameMs=${frame.presentationTimeMs} " +
-                        "decoder=media3-shared worker=${Thread.currentThread().id} " +
-                        "decodeMs=${SystemClock.uptimeMillis() - startedAt}"
-                )
-                return frame.bitmap
-            } catch (error: Exception) {
-                frameFuture?.cancel(true)
-                android.util.Log.w(
-                    "TimelineThumbnail",
-                    "Shared Media3 frame extraction failed for $uri at ${timeMs}ms; trying platform fallback",
-                    error
-                )
-            }
+        // Use Android's native retriever first: the three per-thread retrievers
+        // provide fast parallel extraction for a filmstrip. Media3 is retained as
+        // a compatibility fallback for sources the platform retriever cannot decode.
+        val frameTimeUs = timeMs.coerceAtLeast(0L) * 1000L
+        val platformStartedAt = SystemClock.uptimeMillis()
+        val retriever = timelineThumbnailRetrieverFor(uri, "TimelineThumbnail")
+        val platformFrame = retriever?.let { activeRetriever ->
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                runCatching {
+                    activeRetriever.getScaledFrameAtTime(
+                        frameTimeUs,
+                        MediaMetadataRetriever.OPTION_CLOSEST,
+                        162,
+                        288
+                    )
+                }.getOrNull()
+            } else {
+                null
+            } ?: runCatching {
+                activeRetriever.getFrameAtTime(frameTimeUs, MediaMetadataRetriever.OPTION_CLOSEST)
+            }.getOrNull()
+        }
+        if (platformFrame != null) {
+            if (timelineSyncTestEnabled) android.util.Log.i(
+                "TimelineFrameSyncTest",
+                "TIMELINE_THUMBNAIL_DECODED requestedMs=$timeMs decoder=platform-mmr-primary " +
+                    "worker=${Thread.currentThread().id} decodeMs=${SystemClock.uptimeMillis() - platformStartedAt}"
+            )
+            return platformFrame
         }
 
-        val frameTimeUs = timeMs.coerceAtLeast(0L) * 1000L
-        val retriever = timelineThumbnailRetrieverFor(uri, "TimelineThumbnail") ?: return null
-        val startedAt = SystemClock.uptimeMillis()
-        val platformFrame = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            runCatching {
-                retriever.getScaledFrameAtTime(
-                    frameTimeUs,
-                    MediaMetadataRetriever.OPTION_CLOSEST,
-                    162,
-                    288
-                )
-            }.getOrNull()
-        } else {
-            runCatching {
-                retriever.getFrameAtTime(frameTimeUs, MediaMetadataRetriever.OPTION_CLOSEST)
-            }.getOrNull()
+        val extractor = timelineThumbnailExtractorFor(uri) ?: return null
+        var frameFuture: java.util.concurrent.Future<FrameExtractor.Frame>? = null
+        return try {
+            val startedAt = SystemClock.uptimeMillis()
+            val future = extractor.getFrame(timeMs.coerceAtLeast(0L))
+            frameFuture = future
+            val frame = future.get(2_500L, TimeUnit.MILLISECONDS)
+            if (timelineSyncTestEnabled) android.util.Log.i(
+                "TimelineFrameSyncTest",
+                "TIMELINE_THUMBNAIL_DECODED requestedMs=$timeMs actualFrameMs=${frame.presentationTimeMs} " +
+                    "decoder=media3-fallback worker=${Thread.currentThread().id} " +
+                    "decodeMs=${SystemClock.uptimeMillis() - startedAt}"
+            )
+            frame.bitmap
+        } catch (error: Exception) {
+            frameFuture?.cancel(true)
+            android.util.Log.w(
+                "TimelineThumbnail",
+                "Media3 fallback frame extraction failed for $uri at ${timeMs}ms",
+                error
+            )
+            null
         }
-        if (timelineSyncTestEnabled && platformFrame != null) android.util.Log.i(
-            "TimelineFrameSyncTest",
-            "TIMELINE_THUMBNAIL_DECODED requestedMs=$timeMs decoder=platform-mmr-fallback " +
-                "worker=${Thread.currentThread().id} decodeMs=${SystemClock.uptimeMillis() - startedAt}"
-        )
-        return platformFrame
     }
 
     private fun requestTimelinePoster(uri: Uri) {
@@ -10523,6 +10526,7 @@ class VideoEditorActivity : Activity() {
                             "queueWaitMs=$queueWaitMs frameDecodeMs=$frameDecodeDurationMs " +
                             "bitmapScaleMs=$bitmapScaleDurationMs uiDispatchWaitMs=$uiDispatchWaitMs " +
                             "uiApplyMs=${SystemClock.uptimeMillis() - uiCallbackStartedAtUptimeMs} " +
+                            "enqueuedUptimeMs=$enqueuedAtUptimeMs uiAppliedUptimeMs=${SystemClock.uptimeMillis()} " +
                             "targets=${targets.size} applied=$appliedTargets " +
                             "cacheBytes=${timelineThumbnailCache.size()} queueDepth=${timelineThumbnailExecutor.queue.size}"
                     )
