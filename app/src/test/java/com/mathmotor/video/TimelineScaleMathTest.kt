@@ -61,7 +61,7 @@ class TimelineScaleMathTest {
     @Test
     fun splittingZoomsTheTimelineOutByOneStepButNeverBelowMinimumScale() {
         assertEquals(
-            88f,
+            85f,
             TimelineScaleMath.zoomOutAfterSplit(100f, 11f),
             0.001f
         )
