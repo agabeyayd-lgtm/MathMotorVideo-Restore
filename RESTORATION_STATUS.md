@@ -1,11 +1,11 @@
 ## Project-wide Undo/Redo — 2026-11-09 (PR #34; verification in progress)
 
-- The clip-only edit stack has been replaced on the feature branch with project snapshots for video clips/transforms, overlay media/keyframes, text content/style/timing/animation/placement, music and sound effects, original-audio settings, filter/color controls, and project canvas aspect preset.
-- One user action is intended to equal one history entry. Text input is grouped; seek-bar and touch interactions capture a starting snapshot and commit after the gesture. The history retains at most 50 entries.
-- Undo/Redo restores the model and rebinds the timeline, control panels, selection, playhead, audio preview, canvas framing and composite video preview.
-- The API 35 smoke script includes a real text-canvas drag assertion: Undo must return the selected text frame to its measured original position; Redo must restore the moved position. Test-only state-transition logs are gated behind the debug timeline test intent.
-- Earlier unit/build and debug packaging runs passed, but the canvas-history addition and text Undo/Redo emulator interaction are later code changes. The newest build and emulator checks must complete successfully before PR #34 is verified.
-- Still required: exercise Undo/Redo independently for audio import/removal/volume/timing, overlay add/remove/transform/keyframes, text add/delete/style/timing, filters, canvas framing, and video trim/split/reorder; verify that each restore matches both timeline and preview. Then merge only after all required CI checks are green. No production APK/version-code update is authorized by this implementation work.
+- Project snapshots now cover video clip state/transforms/speed/trim, overlay media/keyframes, text contents/style/timing/animation/placement, music/effects and source-audio settings, filters/color controls, project canvas aspect preset, and timeline track order.
+- One user action is intended to equal one history entry. Text is no longer committed by an idle timer: the complete focused edit is kept together across pauses and commits on focus loss or the next editor action. Seek-bar, preview-transform and lane-reorder gestures capture one start snapshot and commit at gesture end.
+- Undo/Redo restores the model, lane order, timeline, controls, selection, playhead, audio preview, canvas framing and composite video preview. History retains at most 50 entries.
+- API 35 smoke coverage now tests an actual text-canvas drag and its Undo/Redo positions. It additionally enters CanvasSmoke in two chunks separated by one second, checks that one Undo removes all 10 characters, and that one Redo restores them all in one step.
+- Unit/build and debug packaging passed on the canvas-history code, but the subsequent text-session and lane-order change requires a fresh successful build and emulator run. Do not mark PR #34 verified until the latest source checks complete.
+- Still required: direct Undo/Redo assertions for music/effect import-removal/volume/timing, overlay add/remove/transform/keyframes, text add/delete/style/timing, filters/canvas framing, and video trim/split/reorder; confirm preview and timeline restore together. Merge only after all required CI checks are green. No production APK/version-code update has been made.
 
 ---
 
