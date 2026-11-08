@@ -2996,7 +2996,7 @@ travel = min(42, max(34, width // 8))
 if edge == "start":
     # 420dpi emulator: keep the DOWN point beyond the 28dp playhead overlay
     # while staying inside the edge target (clipWidth/3 is the limiting width).
-    x1, x2 = (left + 45, left + 45 + travel) if direction == "trim" else (left + 79, left + 79 - travel)
+    x1, x2 = (left + 45, left + 45 + travel) if direction == "trim" else (left + 45, left + 45 - travel)
 else:
     x1, x2 = (right - 8, right - 8 - travel) if direction == "trim" else (right - 36, right - 36 + travel)
 y = (top + bottom) // 2
