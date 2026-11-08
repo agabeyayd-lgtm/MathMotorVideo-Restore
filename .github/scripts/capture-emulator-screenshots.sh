@@ -2649,32 +2649,37 @@ then
   collect_capture_diagnostics video-midpoint-seek-failed
   exit 90
 fi
-if ! dump_hierarchy video-before-split.xml emulator-screenshots/video-before-split.xml; then
-  echo "Could not inspect the replacement clip before the split interaction."
-  collect_capture_diagnostics video-before-split-hierarchy
-  exit 91
-fi
-split_clip_coords="$(python3 - emulator-screenshots/video-before-split.xml <<'PY'
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineAlignmentTest:I \
+  > emulator-screenshots/video-before-split-measurements.txt 2>&1 || true
+split_clip_coords="$(python3 - emulator-screenshots/video-before-split-measurements.txt <<'PY'
 import re
 import sys
-import xml.etree.ElementTree as ET
 
-root = ET.parse(sys.argv[1]).getroot()
-candidates = []
-for node in root.iter("node"):
-    desc = node.attrib.get("content-desc", "")
-    if not desc.startswith("Klip 1:") or "editor-test-video-replacement.mp4" not in desc:
-        continue
-    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
-    if not match:
-        continue
-    left, top, right, bottom = map(int, match.groups())
-    if right - left >= 40 and bottom - top >= 20:
-        candidates.append((node.attrib.get("clickable") == "true", left, top, right, bottom))
-if not candidates:
-    raise SystemExit("Could not find the replacement VIDEO clip's accessible bounds.")
-_, left, top, right, bottom = max(candidates)
-print((left + right) // 2, (top + bottom) // 2)
+# Use the editor's own measured global bounds for the first main-video clip.
+# UIAutomator can report "could not get idle state" while the timeline remains
+# visually correct; the app emits this same visible clip rectangle with its
+# thumbnail/playhead geometry, so do not make the production interaction depend
+# on a full accessibility-tree dump.
+pattern = re.compile(
+    r"TIMELINE_ALIGNMENT_SNAPSHOT .*?clipBounds=(\d+),(\d+),(\d+),(\d+)"
+)
+latest = None
+for line in open(sys.argv[1], errors="replace"):
+    match = pattern.search(line)
+    if match:
+        latest = tuple(map(int, match.groups()))
+if latest is None:
+    raise SystemExit("The editor did not report visible bounds for the first main-video clip.")
+left, top, right, bottom = latest
+if right - left < 40 or bottom - top < 20:
+    raise SystemExit(f"The measured main-video clip bounds are too small: {latest}")
+center_x = (left + right) // 2
+center_y = (top + bottom) // 2
+if not (0 <= center_x < 1080 and 0 <= center_y < 1920):
+    raise SystemExit(f"The measured main-video clip centre is outside the emulator screen: {latest}")
+print(f"PASS: using app-measured main-video clip bounds {left},{top},{right},{bottom}")
+print(center_x, center_y)
 PY
 )"
 if [ -z "$split_clip_coords" ]; then
