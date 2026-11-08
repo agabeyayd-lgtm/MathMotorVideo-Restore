@@ -1316,3 +1316,12 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Added TimelineScaleMath.timeAfterHorizontalDrag() so a pointer at or beyond the rounded left boundary commits exactly 0 ms. Added a unit regression for the observed 4,042 ms / 78 px/s case, including a one-pixel-inside control.
 - The emulator assertion also incorrectly derived the next clip's expected start as 8000 - split_boundary_ms. The encoded video is nominally 8 seconds, but the app's measured media duration can differ from that nominal input; the observed drop implies a 3,981 ms moved-segment duration, while the old assertion expected 3,958 ms. The production split diagnostic now reports secondDurationMs, and the test requires the following clip to start at exactly that measured duration while the moved segment starts at exactly zero. This corrects the fixture assumption; no timing tolerance or behavior threshold was relaxed.
 - Keep PR #29 open until the latest-head API 35 emulator run proves the zero-start reorder and the save/reopen persistence check. Unit/build and debug APK jobs must also be green. No versionCode bump or release build.
+
+
+## 2026-11-08 — adjacent split-clip visual seam
+
+- Inspection of successful emulator artifact `42492659555` confirmed live playback (58 samples, 1,958→7,207 ms), exact split continuity (`4042:4042`, `gapMs=0`), direct reorder to `0:3981`, and force-stop/reopen restoration of both clip ranges (`0:3981,3981:8023`).
+- The post-reorder screenshot still showed a dark vertical divider even though the timeline View bounds met. The prior smoke validated only pre-drag View geometry and could not catch decorative borders/rounded inner corners creating a false gap.
+- `VideoEditorActivity.buildVideoClipFilmstrip()` now squares the two corners that touch adjacent clips and draws the selected outline without a vertical stroke on shared edges. This removes the artificial separator without altering clip times or reordering behavior.
+- The emulator smoke now captures fresh View bounds after the actual drop, checks the post-drop seam is within ±1 px, and samples the deterministic green fixture pixels across the seam to reject a visible dark divider. No timing tolerance, split math, reorder acceptance, or app version was changed.
+- Source/script commits: `17a3307`, `b251866`, `2af8de4`, `e260a21`. Unit/build/API 35 emulator verification is pending for the final script head. Keep PR #29 open until all three latest-head workflows pass.
