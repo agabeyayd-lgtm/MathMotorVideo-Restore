@@ -2773,7 +2773,7 @@ if [ -z "$split_boundary_ms" ]; then
   collect_capture_diagnostics video-clip-split-boundary-missing
   exit 93
 fi
-split_second_duration_ms="$(printf '%s\\n' "$split_marker" | sed -n 's/.*secondDurationMs=\\([0-9][0-9]*\\).*/\\1/p')"
+split_second_duration_ms="$(echo "$split_marker" | grep -oE 'secondDurationMs=[0-9]+' | cut -d= -f2)"
 if [ -z "$split_second_duration_ms" ]; then
   echo "The split log did not include the measured second-segment duration: $split_marker"
   collect_capture_diagnostics video-clip-split-duration-missing
