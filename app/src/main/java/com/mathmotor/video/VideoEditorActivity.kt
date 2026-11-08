@@ -499,24 +499,54 @@ class VideoEditorActivity : Activity() {
             // A paused preview must not overwrite the position currently being scrubbed.
             // While playing, the composition player remains the source of truth.
             val composition = timelineCompositionPlayer
-            if (timelinePreviewLoaded &&
-                (composition?.isPlaying == true || composition?.playWhenReady == true)
-            ) {
+            val compositionActive = composition?.isPlaying == true ||
+                composition?.playWhenReady == true
+            val singleClipActive = previewSingleClip && player?.isPlaying == true
+            if (timelinePreviewLoaded && compositionActive) {
                 syncTimelinePlayheadFromPlayer()
                 // Paused overlay assets are independent preview layers. Keep their
                 // transforms and moving-video frames synchronized to the playback clock.
                 updatePausedOverlayPreviewLayers(timelinePlayheadMs)
-            } else if (previewSingleClip && player?.isPlaying == true) {
+            } else if (singleClipActive) {
                 syncSingleClipPlayheadFromPlayer()
                 updatePausedOverlayPreviewLayers(timelinePlayheadMs)
             }
+            // Audio is reconciled once on entry/exit as well as during active playback.
+            // Do not keep a 50ms idle loop running while the editor is paused: repeatedly
+            // assigning the same TextView values causes requestLayout churn and prevents
+            // Android 15/API 35 UIAutomator from reaching a stable accessibility snapshot.
             syncPreviewAudio()
             updateTimelinePlayButtonState()
             if (timelineSyncTestEnabled) logTimelineSyncTestSample()
-            // Keep the visible playhead close to the decoder clock while playing.
-            // The previous 250ms polling made the ruler visibly trail the preview.
-            timelineHandler.postDelayed(this, 50L)
+            if (compositionActive || singleClipActive) {
+                // Keep the visible playhead close to the decoder clock while playing.
+                timelineHandler.postDelayed(this, 50L)
+            }
         }
+    }
+    private val pausedTimelineSyncSampleTask = Runnable {
+        if (timelineSyncTestEnabled &&
+            timelineCompositionPlayer?.isPlaying != true &&
+            timelineCompositionPlayer?.playWhenReady != true &&
+            player?.isPlaying != true
+        ) {
+            logTimelineSyncTestSample()
+        }
+    }
+
+    private fun requestTimelineSync() {
+        timelineHandler.removeCallbacks(timelineSyncTask)
+        timelineHandler.post(timelineSyncTask)
+    }
+
+    private fun schedulePausedTimelineSyncSample() {
+        if (!timelineSyncTestEnabled ||
+            timelineCompositionPlayer?.isPlaying == true ||
+            timelineCompositionPlayer?.playWhenReady == true ||
+            player?.isPlaying == true
+        ) return
+        timelineHandler.removeCallbacks(pausedTimelineSyncSampleTask)
+        timelineHandler.postDelayed(pausedTimelineSyncSampleTask, 160L)
     }
     private val editorPanels = linkedMapOf<String, LinearLayout>()
     private lateinit var editorPanelScroll: ScrollView
@@ -1157,6 +1187,7 @@ class VideoEditorActivity : Activity() {
                     "TIMELINE_PLAY_STATE isPlaying=${currentPlayer?.isPlaying} playWhenReady=${currentPlayer?.playWhenReady} state=${currentPlayer?.playbackState} previewLoaded=$timelinePreviewLoaded"
                 )
                 updateTimelinePlayButtonState()
+                requestTimelineSync()
             }
         }.apply {
             minWidth = dp(46)
@@ -5043,6 +5074,7 @@ class VideoEditorActivity : Activity() {
             "${formatMs(projectPositionMs)} / ${formatMs(totalMs)}"
         updateTimelinePlayheadLine()
         updatePreviewTextOverlay()
+        schedulePausedTimelineSyncSample()
     }
 
     private fun updateTimelinePlayButtonState() {
@@ -5053,15 +5085,21 @@ class VideoEditorActivity : Activity() {
         else if (timelinePlaybackState != TimelinePlaybackState.ERROR) {
             timelinePlaybackState = TimelinePlaybackState.PAUSED
         }
-        timelinePlayButton.text = when (timelinePlaybackState) {
+        val nextText = when (timelinePlaybackState) {
             TimelinePlaybackState.PLAYING -> "Ⅱ"
             TimelinePlaybackState.PAUSED -> "▶"
             TimelinePlaybackState.ERROR -> "!"
         }
-        timelinePlayButton.contentDescription = when (timelinePlaybackState) {
+        if (timelinePlayButton.text.toString() != nextText) {
+            timelinePlayButton.text = nextText
+        }
+        val nextDescription = when (timelinePlaybackState) {
             TimelinePlaybackState.PLAYING -> "Önizlemeyi duraklat"
             TimelinePlaybackState.PAUSED -> "Önizlemeyi oynat"
             TimelinePlaybackState.ERROR -> "Oynatıcı hatası: " + timelinePreviewError.orEmpty()
+        }
+        if (timelinePlayButton.contentDescription?.toString() != nextDescription) {
+            timelinePlayButton.contentDescription = nextDescription
         }
     }
 
@@ -5613,6 +5651,7 @@ class VideoEditorActivity : Activity() {
                     if (timelineCompositionPlayer !== comp) return
                     if (isPlaying) hidePreviewFrameOverlay()
                     updateOverlaySelectionChrome()
+                    requestTimelineSync()
                 }
                 override fun onVideoSizeChanged(videoSize:androidx.media3.common.VideoSize){
                     if (timelineCompositionPlayer !== comp) return
@@ -5675,6 +5714,7 @@ class VideoEditorActivity : Activity() {
                         scrollTimelineToPlayhead()
                         updateTimelinePlayheadLabel()
                         updateTimelinePlayButtonState()
+                        requestTimelineSync()
                     }
                 }
             })
@@ -10723,6 +10763,7 @@ class VideoEditorActivity : Activity() {
         updateTimelinePlayheadLabel();ensureTimelinePreviewLoaded();seekTimelinePreview(timelinePlayheadMs)
         hidePreviewFrameOverlay()
         timelineCompositionPlayer?.playWhenReady=true
+        requestTimelineSync()
         status.text="Seçili klibin dönüşüm ve kesme ayarlarıyla önizlemesi başladı."
     }
 
@@ -11208,6 +11249,7 @@ class VideoEditorActivity : Activity() {
         timelineLifecycleState = "destroyed"
         logTimelineLifecycle("onDestroy")
         timelineHandler.removeCallbacks(timelineSyncTask)
+        timelineHandler.removeCallbacks(pausedTimelineSyncSampleTask)
         timelineHandler.removeCallbacks(textTimelineRefreshTask)
         timelineHandler.removeCallbacks(timelineScrubPreviewSeekTask)
         pendingTimelineScrubPreviewTargetMs = null
