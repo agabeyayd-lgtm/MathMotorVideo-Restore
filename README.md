@@ -1,3 +1,13 @@
+## CapCut-style editor: progressive thumbnail decoding — 2026-11-08
+
+- On top of the current mainline editor, the timeline thumbnail path now uses one ordered decoder worker instead of three competing workers. The shared Media3 `FrameExtractor` is the primary decoder with `SeekParameters.EXACT`; `MediaMetadataRetriever` remains a compatibility fallback.
+- The fixed playhead, source timestamps, cell sampling, current cache, pending-request deduplication, and the 35 ms preview/filmstrip acceptance rule are unchanged. No gray-origin spacer or timeline geometry was removed as part of this performance change.
+- The API 35 alignment assertion now requires an observed shared-Media3 decode record and reports Media3/fallback timing alongside queue/decode/display timings.
+- **Validation pending on this exact branch head:** unit tests, debug build, and the full API 35 emulator flow must pass. Re-measure first exact-frame latency and full visible-strip fill time; the historical ~4.06 s / 19-frame result from PR #17 is a comparison point, not a result claimed for this new mainline-based build.
+- No app version, release signing, release marker, or signed APK was changed. The visible origin spacer treatment and the wider editor parity checklist remain separate open work.
+
+---
+
 ## Updater version-code correction — 2026-11-08
 
 - The signed release published as build 69 still contained `versionCode=401`, identical to the installed 401 build. Android's in-app updater therefore correctly reported that the app was already up to date; the GitHub Actions run number (69) is not the Android app version.
