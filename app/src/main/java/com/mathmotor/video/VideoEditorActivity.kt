@@ -1166,9 +1166,9 @@ class VideoEditorActivity : Activity() {
                     if (currentPlayer.playbackState == androidx.media3.common.Player.STATE_IDLE) {
                         if (timelineSyncTestEnabled) android.util.Log.w(
                             "TimelineSyncTest",
-                            "TIMELINE_PLAY_RECOVER_IDLE positionMs=\${timelinePlayheadMs} " +
-                                "timelineEmpty=\${currentPlayer.currentTimeline.isEmpty} " +
-                                "windowCount=\${currentPlayer.currentTimeline.windowCount}"
+                            "TIMELINE_PLAY_RECOVER_IDLE positionMs=${timelinePlayheadMs} " +
+                                "timelineEmpty=${currentPlayer.currentTimeline.isEmpty} " +
+                                "windowCount=${currentPlayer.currentTimeline.windowCount}"
                         )
                         currentPlayer.playWhenReady = false
                         currentPlayer.prepare()
@@ -5699,10 +5699,10 @@ class VideoEditorActivity : Activity() {
                     if (timelineCompositionPlayer !== comp) return
                     if (timelineSyncTestEnabled) android.util.Log.i(
                         "TimelineSyncTest",
-                        "TIMELINE_PLAYER_PLAYBACK_STATE state=\$playbackState " +
-                            "playWhenReady=\${comp.playWhenReady} isPlaying=\${comp.isPlaying} " +
-                            "windowCount=\${comp.currentTimeline.windowCount} " +
-                            "durationMs=\${comp.duration} positionMs=\${comp.currentPosition}"
+                        "TIMELINE_PLAYER_PLAYBACK_STATE state=$playbackState " +
+                            "playWhenReady=${comp.playWhenReady} isPlaying=${comp.isPlaying} " +
+                            "windowCount=${comp.currentTimeline.windowCount} " +
+                            "durationMs=${comp.duration} positionMs=${comp.currentPosition}"
                     )
                     if (playbackState == androidx.media3.common.Player.STATE_READY) {
                         // CompositionPlayer.prepare() is asynchronous. Seeking before its
