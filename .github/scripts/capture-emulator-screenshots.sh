@@ -2330,6 +2330,30 @@ echo "Using startup-captured Android ViewConfiguration touch slop: ${touch_slop_
 # leave scrollX unchanged, while 27px moved it by 3px. Include that measured
 # input-dispatch margin so the final 2–4px alignment correction is not a no-op.
 alignment_gesture_slop_px="$((touch_slop_px + 3))"
+
+# Timeline geometry can settle after the first activity sync callback on slower
+# API 35 emulators. Wait briefly for a real app-measured snapshot; do not turn a
+# transient log timing race into an immediate red run.
+measurement_ready=false
+for snapshot_attempt in $(seq 1 12); do
+  timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime \
+    -s TimelineAlignmentTest:I TimelineSyncTest:I TimelineFrameSyncTest:I TimelineThumbnail:I \
+    > emulator-screenshots/thumbnail-alignment-measurements.txt 2>&1 || true
+  if alignment="$(python3 .github/scripts/assert-thumbnail-alignment.py prepare \
+      emulator-screenshots/thumbnail-alignment-measurements.txt \
+      2> emulator-screenshots/thumbnail-alignment-prepare-error.txt)"; then
+    measurement_ready=true
+    break
+  fi
+  echo "Waiting for app-measured timeline geometry (attempt $snapshot_attempt/12)."
+  sleep 1
+done
+if [ "$measurement_ready" != true ]; then
+  cat emulator-screenshots/thumbnail-alignment-prepare-error.txt || true
+  collect_capture_diagnostics timeline-alignment-snapshot-missing
+  exit 23
+fi
+
 thumbnail_aligned=false
 for attempt in $(seq 1 12); do
   timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime \
