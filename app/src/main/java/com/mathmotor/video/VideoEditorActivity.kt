@@ -4283,6 +4283,24 @@ class VideoEditorActivity : Activity() {
             }
             laneScroll.post { updateLaneOriginSpacer(laneScroll.width) }
         }
+        if (clips.isNotEmpty()) {
+            // A clip must be draggable beyond the current last frame. Give every
+            // synchronized lane the same one-viewport tail runway; when a clip is
+            // dropped there, the real project end grows to that new clip end.
+            val dragTailBufferPx = timelineScrollViews.firstOrNull()?.width
+                ?.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
+            timelineScrollViews.forEach { lane ->
+                val content = lane.getChildAt(0) as? LinearLayout ?: return@forEach
+                content.addView(
+                    View(this).apply {
+                        isClickable = false
+                        isFocusable = false
+                        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                    },
+                    LinearLayout.LayoutParams(dragTailBufferPx.coerceAtLeast(dp(160)), 1)
+                )
+            }
+        }
         // The matching end spacer lets the final frame reach the center playhead too.
         // A MATCH_PARENT playhead inside a WRAP_CONTENT FrameLayout would let
         // the frame expand to the full available screen height and push the tool dock
