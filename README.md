@@ -1114,8 +1114,9 @@ The selected main-video clip exposes independent left/right edge grips: drag the
 - No versionCode bump, release signing, or signed release APK was made. The CI debug ZIP is not a release artifact.
 
 
-## 2026-11-08 — Remove the gray-looking video-lane lead-in without breaking time zero
+## 2026-11-08 — Timeline origin spacer: visual verification and final decision
 
-- Confirmed that the leading `timeline-origin-spacer` is required by the current fixed-centre-playhead architecture. At horizontal scroll offset 0, it places project time 0 under the centre playhead. Deleting its width would put the clip start at the lane's left edge while the playhead remains centred; the preview/ruler time mapping would then be offset and the first frame would not be under the playhead.
-- The spacer is not clip content and does not add duration. The visible color contrast came from the empty lead-in exposing the timeline card surface (`#080C12`) while the video strip used `#101924`. The complete video-lane content surface now uses the same `#101924` color as the thumbnails, so the lead-in no longer appears as a separate gray block.
-- The underlying time-zero geometry, shared scroll offsets, clip positions, trim math and preview seek mapping are intentionally unchanged. Unit/build and API 35 emulator verification are pending for this visual-only adjustment; no APK or version bump is authorized before those checks pass.
+- The leading `timeline-origin-spacer` remains necessary with the fixed centre playhead and non-negative `HorizontalScrollView.scrollX`: it places project time 0 under the centre playhead when the timeline is at its start. Removing its width would shift the first clip to the lane's left edge and make the fixed playhead map to a later project time.
+- An experiment that painted the entire video lane with the thumbnail strip's navy surface created a visible blue rectangle in the API 35 emulator screenshot. That styling was rejected and reverted. The origin spacer stays transparent; it must not be rendered as a separate colored block.
+- The actual interaction defect was the old one-finger gesture translating a clip instead of panning the shared timeline. PR #31 changes an ordinary thumbnail swipe to shared timeline pan and reserves long-press drag for clip movement. Main commit `b6e6a5dd935364e9639382ebd4ec313ab438fa05` passed the post-merge Android build and API 35 emulator workflows (`42515918596`, `42515918639`).
+- PR #32's attempted background styling was not retained. No timeline coordinate, spacer width, clip timing, preview seek or version code change is part of the accepted fix.
