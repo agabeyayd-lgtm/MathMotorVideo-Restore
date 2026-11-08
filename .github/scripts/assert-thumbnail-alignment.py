@@ -169,7 +169,8 @@ def verify(log_path: str, screenshot_path: str):
         for row in re.findall(
             r"TIMELINE_THUMBNAIL_TIMING sourceMs=(\d+) success=true "
             r"queueWaitMs=(\d+) frameDecodeMs=(\d+) bitmapScaleMs=(\d+) "
-            r"uiDispatchWaitMs=(\d+) uiApplyMs=(\d+)",
+            r"uiDispatchWaitMs=(\d+) uiApplyMs=(\d+) "
+            r"enqueuedUptimeMs=(\d+) uiAppliedUptimeMs=(\d+)",
             log,
         )
     ]
@@ -178,36 +179,58 @@ def verify(log_path: str, screenshot_path: str):
         r"decoder=([a-z0-9-]+) worker=(\d+) decodeMs=(\d+)",
         log,
     )
-    media3_rows = [row for row in decoder_rows if row[2] == "media3-shared"]
-    fallback_rows = [row for row in decoder_rows if row[2] == "platform-mmr-fallback"]
-    if not media3_rows:
+    mmr_rows = [row for row in decoder_rows if row[2] == "platform-mmr-primary"]
+    media3_rows = [row for row in decoder_rows if row[2] == "media3-fallback"]
+    if not decoder_rows or len(timing_rows) < 3:
         raise SystemExit(
-            "FAIL: the emulator did not exercise the shared Media3 filmstrip decoder; "
-            f"decoder records={decoder_rows[-8:]}"
+            "FAIL: thumbnail decode diagnostics are incomplete; "
+            f"decoder records={decoder_rows[-8:]}, successful timing rows={len(timing_rows)}."
         )
-    media3_times = [int(row[4]) for row in media3_rows]
+    decoder_times = [int(row[4]) for row in decoder_rows]
     print(
-        "  Decoder path: Media3 exact frames={} (median={}ms); "
-        "MMR compatibility fallbacks={}".format(
-            len(media3_rows), int(statistics.median(media3_times)), len(fallback_rows)
+        "  Decoder path: native MMR primary={} (median={}ms); "
+        "Media3 fallback={}".format(
+            len(mmr_rows),
+            int(statistics.median([int(row[4]) for row in mmr_rows])) if mmr_rows else 0,
+            len(media3_rows),
         )
     )
 
-    if timing_rows:
-        queue_waits = [row[1] for row in timing_rows]
-        decode_times = [row[2] for row in timing_rows]
-        total_times = [row[1] + row[2] + row[3] + row[4] + row[5] for row in timing_rows]
-        print(
-            "  Thumbnail timing (n={}) queue median/max={}ms/{}ms; "
-            "decode median/max={}ms/{}ms; enqueue-to-display median/max={}ms/{}ms".format(
-                len(timing_rows),
-                int(statistics.median(queue_waits)), max(queue_waits),
-                int(statistics.median(decode_times)), max(decode_times),
-                int(statistics.median(total_times)), max(total_times),
-            )
+    visible_sources = {timestamp for timestamp, _ in snapshot["cells"]}
+    visible_timing_rows = [row for row in timing_rows if row[0] in visible_sources]
+    if len(visible_timing_rows) < 3:
+        raise SystemExit(
+            "FAIL: fewer than three visible timeline cells have measured decode/display timing; "
+            f"visible timestamps={sorted(visible_sources)}, timing timestamps={[row[0] for row in timing_rows]}."
         )
-    else:
-        print("  Thumbnail timing: no successful decode timing records in this log capture.")
+
+    queue_waits = [row[1] for row in visible_timing_rows]
+    decode_times = [row[2] for row in visible_timing_rows]
+    total_times = [row[1] + row[2] + row[3] + row[4] + row[5] for row in visible_timing_rows]
+    visible_fill_ms = max(row[7] for row in visible_timing_rows) - min(row[6] for row in visible_timing_rows)
+    print(
+        "  Visible thumbnail timing (n={}) queue median/max={}ms/{}ms; "
+        "decode median/max={}ms/{}ms; enqueue-to-display median/max={}ms/{}ms; "
+        "visible-strip fill={}ms".format(
+            len(visible_timing_rows),
+            int(statistics.median(queue_waits)), max(queue_waits),
+            int(statistics.median(decode_times)), max(decode_times),
+            int(statistics.median(total_times)), max(total_times),
+            visible_fill_ms,
+        )
+    )
+    if max(queue_waits) > 1_000:
+        raise SystemExit(
+            f"FAIL: visible thumbnail queue wait reached {max(queue_waits)}ms; limit is 1000ms."
+        )
+    if max(decode_times) > 1_500:
+        raise SystemExit(
+            f"FAIL: visible thumbnail decode reached {max(decode_times)}ms; limit is 1500ms."
+        )
+    if visible_fill_ms > 2_500:
+        raise SystemExit(
+            f"FAIL: visible filmstrip took {visible_fill_ms}ms to fill; limit is 2500ms."
+        )
 
     image = Image.open(screenshot_path).convert("RGB")
     thumbnail_nodes = [
