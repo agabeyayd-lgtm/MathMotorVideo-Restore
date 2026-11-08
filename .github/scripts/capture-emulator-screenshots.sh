@@ -2981,10 +2981,10 @@ for line in open(path, errors="replace"):
     for item in match.group(1).split(";"):
         index, raw = item.split(":", 1)
         measured[int(index)] = tuple(map(int, raw.split(",")))
-    if 0 in measured:
-        latest = measured[0]
+    if 1 in measured:
+        latest = measured[1]
 if latest is None:
-    raise SystemExit("No measured bounds for the selected first video clip.")
+    raise SystemExit("No measured bounds for the selected first video clip (UI clip ids are 1-based).")
 left, top, right, bottom = latest
 width, height = right - left, bottom - top
 if width < 70 or height < 20:
