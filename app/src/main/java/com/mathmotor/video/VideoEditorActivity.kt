@@ -6562,6 +6562,24 @@ class VideoEditorActivity : Activity() {
         redoProjectButton?.isEnabled = redoProjectHistory.isNotEmpty()
     }
 
+    private fun logProjectHistoryTransition(
+        action: String,
+        current: ProjectEditSnapshot,
+        restored: ProjectEditSnapshot
+    ) {
+        if (!timelineSyncTestEnabled) return
+        android.util.Log.i(
+            "ProjectHistoryTest",
+            "PROJECT_HISTORY_APPLIED action=$action " +
+                "beforeClips=${current.clips.size} afterClips=${restored.clips.size} " +
+                "beforeOverlays=${current.overlays.size} afterOverlays=${restored.overlays.size} " +
+                "beforeTexts=${current.textLayers.size} afterTexts=${restored.textLayers.size} " +
+                "beforeMusic=${current.musicUri != null} afterMusic=${restored.musicUri != null} " +
+                "beforeSound=${current.soundUri != null} afterSound=${restored.soundUri != null} " +
+                "beforeFilter=${current.videoFilterPreset} afterFilter=${restored.videoFilterPreset}"
+        )
+    }
+
     private fun undoProjectEdit() {
         finishTextHistoryEdit()
         finishProjectHistoryGesture()
@@ -6569,9 +6587,11 @@ class VideoEditorActivity : Activity() {
             status.text = "Geri alınacak proje işlemi yok."
             return
         }
-        redoProjectHistory.add(captureProjectEditSnapshot())
+        val current = captureProjectEditSnapshot()
+        redoProjectHistory.add(current)
         val snapshot = undoProjectHistory.removeAt(undoProjectHistory.lastIndex)
         restoreProjectEditSnapshot(snapshot)
+        logProjectHistoryTransition("undo", current, snapshot)
         status.text = "Son proje işlemi geri alındı."
         updateProjectHistoryButtons()
     }
@@ -6583,10 +6603,12 @@ class VideoEditorActivity : Activity() {
             status.text = "Yinelenecek proje işlemi yok."
             return
         }
-        undoProjectHistory.add(captureProjectEditSnapshot())
+        val current = captureProjectEditSnapshot()
+        undoProjectHistory.add(current)
         if (undoProjectHistory.size > 50) undoProjectHistory.removeAt(0)
         val snapshot = redoProjectHistory.removeAt(redoProjectHistory.lastIndex)
         restoreProjectEditSnapshot(snapshot)
+        logProjectHistoryTransition("redo", current, snapshot)
         status.text = "Proje işlemi yinelendi."
         updateProjectHistoryButtons()
     }
