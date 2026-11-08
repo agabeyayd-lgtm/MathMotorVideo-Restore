@@ -1333,3 +1333,12 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Added unit coverage for legacy gap repair, out-of-order clip positions, and source-range/speed preservation.
 - Updated selected main-video clip outline to a rounded white CapCut-style frame. Existing white edge grips remain the independent trim touch targets; the outline is purely visual and does not change clip bounds.
 - Build and API 35 emulator validation for this change are pending. Do not deliver an updated APK until the latest-head build, unit tests and emulator checks pass.
+
+
+## 2026-11-08 — CapCut-style video trim grips: physical emulator verification
+
+- On current tested source commit 06ca571ef13dbfd78e4450327e9ac1073f8bf166, the API 35 emulator drove the actual left and right video trim touch targets using Android swipe events resolved from measured clip View bounds (not hard-coded screen positions).
+- All four gestures passed: left trim, left extend, right trim, and right extend. Each gesture changed only its intended source edge; the opposite source edge stayed unchanged, the clip duration changed in the expected direction, the first clip remained anchored at project time 0, and the following main-video clip was repacked to the exact new duration with no gap.
+- Verified examples: left trim changed source start 4042→4555 ms while source end stayed 8023 ms; left extend restored 4555→4042 ms. Right trim changed source end 8023→7510 ms while source start stayed 4042 ms; right extend restored 7510→8023 ms. Duration changed 3981↔3468 ms and the next clip start matched exactly.
+- The same emulator run also passed split continuity, direct clip drag/reorder, post-drop seam geometry/pixels, and the remaining draft save/reopen smoke. Android unit/build, debug APK packaging, and API 35 emulator workflows all completed successfully for this tested head: verify run 42506500040, APK run 42506500012, emulator run 42506500354.
+- No versionCode bump, release signing, or release build was made. Do not treat the generated debug APK ZIP as a release artifact.
