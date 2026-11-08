@@ -2441,8 +2441,8 @@ if ! [[ "$density_dpi" =~ ^[0-9]+$ ]] || [ "$density_dpi" -le 0 ]; then
   exit 31
 fi
 # Start at least 48dp from the right edge, safely outside the system Back
-# gesture area on density-scaled emulator configurations. Gesture vertically
-# through the ruler, never through a video clip (which now means move/reorder).
+# gesture area on density-scaled emulator configurations. Gesture directly on
+# the thumbnails to verify ordinary filmstrip swipes pan the shared time axis.
 right_edge_safe_margin_px="$(((48 * density_dpi + 159) / 160))"
 right_edge_safe_x="$((screen_width - right_edge_safe_margin_px))"
 forward_start="$((clip_x2 - swipe_inset))"
