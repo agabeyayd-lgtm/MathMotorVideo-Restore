@@ -2556,14 +2556,15 @@ echo "Step 11b: split the selected video through its real clip menu, then direct
 # The main-video filmstrip is now a move surface. Use its existing stationary
 # long-press context menu to invoke the same production splitSelectedClipAtPlayhead()
 # handler after import/thumbnail readiness has already passed above.
-# Move the real playhead close to the fixture midpoint. Frame snapping may settle
-# a few hundred milliseconds away from exactly 4000ms; that is still balanced.
+# Move the real playhead close to the fixture midpoint. HorizontalScrollView
+# consumes the measured touch-slop before scrolling, so add it to each gesture;
+# otherwise small correction swipes systematically undershoot the target.
 # The drag target and expected reflow below use the measured split boundary.
 midpoint_ready=false
-for attempt in $(seq 1 3); do
+for attempt in $(seq 1 5); do
   timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineSyncTest:I \
     > emulator-screenshots/video-midpoint-seek-logcat.txt 2>&1 || true
-  midpoint_action="$(python3 - emulator-screenshots/video-midpoint-seek-logcat.txt <<'PY'
+  midpoint_action="$(python3 - emulator-screenshots/video-midpoint-seek-logcat.txt "$touch_slop_px" <<'PY'
 import re
 import sys
 
@@ -2582,9 +2583,11 @@ if abs(target_ms - current_ms) <= 80:
     print("READY", current_ms)
 else:
     delta_px = max(-520, min(520, delta_px))
+    touch_slop_px = int(sys.argv[2])
+    gesture_delta_px = delta_px + (touch_slop_px if delta_px > 0 else -touch_slop_px)
     # The editor's verified scrub gesture advances time with a leftward swipe.
     start_x = 900 if delta_px > 0 else 500
-    end_x = start_x - delta_px
+    end_x = start_x - gesture_delta_px
     if not (128 <= start_x <= 952 and 128 <= end_x <= 952):
         raise SystemExit(f"Midpoint scrub would leave the safe ruler range: {start_x}->{end_x}")
     print(start_x, end_x, current_ms)
@@ -2596,7 +2599,7 @@ PY
     echo "Playhead already at fixture midpoint: ${midpoint_current}ms"
     break
   fi
-  echo "Moving ruler playhead from ${midpoint_current}ms toward 4000ms (attempt $attempt/3): ${midpoint_first}->${midpoint_second}"
+  echo "Moving ruler playhead from ${midpoint_current}ms toward 4000ms (attempt $attempt/5, touchSlop=${touch_slop_px}px): ${midpoint_first}->${midpoint_second}"
   timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$midpoint_first" "$ruler_y" "$midpoint_second" "$ruler_y" 600
   sleep 1
 done
