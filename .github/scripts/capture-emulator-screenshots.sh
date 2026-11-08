@@ -136,23 +136,35 @@ collect_capture_diagnostics() {
 }
 dump_hierarchy() {
   local remote="$1" local_file="$2"
-  local attempt
-  for attempt in 1 2; do
+  local attempt dump_status remote_state
+  for attempt in 1 2 3; do
     rm -f "$local_file"
     timeout -k 2s 5s adb -s emulator-5554 shell rm -f "/sdcard/$remote" >/dev/null 2>&1 || true
-    # UIAutomator can take longer than a screenshot after the keyboard closes
-    # or while Media3 is finalizing a preview. Retry rather than parsing a file
-    # that was never produced; --compressed also reduces hierarchy transfer time.
-    if timeout -k 2s 20s adb -s emulator-5554 shell uiautomator dump --compressed "/sdcard/$remote" >/dev/null 2>&1; then
-      # Large thumbnail-heavy editor trees can take more than 8 seconds to
-      # transfer from API 35 even after the dump itself has completed. Keep a
-      # hard bound, but do not fail a healthy emulator solely on a short pull timeout.
-      if timeout -k 3s 30s adb -s emulator-5554 pull "/sdcard/$remote" "$local_file" >/dev/null 2>&1 \
-          && [ -s "$local_file" ]; then
-        return 0
-      fi
+
+    # API 35 occasionally reports a successful uiautomator process before its
+    # hierarchy file is visible to the next ADB shell. Preserve its output and
+    # poll the device filesystem instead of assuming process exit == file ready.
+    dump_status=0
+    timeout -k 3s 25s adb -s emulator-5554 shell uiautomator dump --compressed "/sdcard/$remote" \
+      > "emulator-screenshots/$remote.dump-output.txt" 2>&1 || dump_status=$?
+
+    remote_state=""
+    for ready_attempt in $(seq 1 8); do
+      remote_state="$(timeout -k 2s 5s adb -s emulator-5554 shell \
+        'if [ -s "/sdcard/'"$remote"'" ]; then echo READY; else echo MISSING; fi' 2>/dev/null | tr -d "\r" || true)"
+      if [ "$remote_state" = "READY" ]; then break; fi
+      sleep 1
+    done
+
+    if [ "$remote_state" = "READY" ] && \
+       timeout -k 3s 30s adb -s emulator-5554 pull "/sdcard/$remote" "$local_file" \
+         >/dev/null 2>&1 && [ -s "$local_file" ]; then
+      echo "UI hierarchy captured on attempt $attempt (uiautomator exit=$dump_status)."
+      return 0
     fi
-    echo "UI hierarchy dump attempt $attempt/2 did not produce $local_file."
+
+    echo "UI hierarchy attempt $attempt/3 failed (uiautomator exit=$dump_status, remote=$remote_state)."
+    cat "emulator-screenshots/$remote.dump-output.txt" || true
     sleep 1
   done
   return 1
