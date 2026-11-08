@@ -48,6 +48,27 @@ internal object TimelineScaleMath {
             .roundToLong()
     }
 
+    /**
+     * Converts a horizontal clip drag into project time without leaving a small
+     * positive timestamp when the pointer crosses the visual time-zero boundary.
+     * pixelsForTime() rounds to whole pixels, so converting that rounded boundary
+     * back to milliseconds can otherwise produce values such as 4ms instead of 0.
+     */
+    fun timeAfterHorizontalDrag(
+        initialTimeMs: Long,
+        rawDeltaPixels: Float,
+        pixelsPerSecond: Float
+    ): Long {
+        val initialTime = initialTimeMs.coerceAtLeast(0L)
+        if (!rawDeltaPixels.isFinite() || !pixelsPerSecond.isFinite() || pixelsPerSecond <= 0f) {
+            return initialTime
+        }
+        val minimumDeltaPixels = -pixelsForTime(initialTime, pixelsPerSecond).toFloat()
+        if (rawDeltaPixels <= minimumDeltaPixels) return 0L
+        return (initialTime + millisecondsForPixels(rawDeltaPixels, pixelsPerSecond))
+            .coerceAtLeast(0L)
+    }
+
     /** Deterministic fit scale for a project duration and measured timeline width. */
     fun fitPixelsPerSecond(
         durationMs: Long,
