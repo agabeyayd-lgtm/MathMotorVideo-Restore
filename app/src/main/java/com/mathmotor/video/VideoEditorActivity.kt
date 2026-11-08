@@ -4156,10 +4156,10 @@ class VideoEditorActivity : Activity() {
             addSoundEffectTimelineBlock(effectTrack, totalMs)
             addSpacer(effectTrack, endMs, totalMs)
         }
-        // All lane origins are offset from the shared 84dp control gutter so time zero
-        // lands on the full timeline/Play center, not the center of the smaller
-        // scroll viewport to the right of that gutter. This keeps ruler, filmstrip
-        // and the stationary playhead on one vertical axis.
+        // Each lane's leading spacer is measured from that lane's actual on-screen
+        // viewport edge to the fixed playhead center. This keeps ruler, filmstrip and
+        // independently positioned rows on the same project-time origin after insets,
+        // responsive layout changes, and horizontal scrolling.
         timelineScrollViews.forEach { laneScroll ->
             val laneTrack = laneScroll.getChildAt(0) as? LinearLayout ?: return@forEach
             // Empty persistent lanes still represent the same project time axis.
