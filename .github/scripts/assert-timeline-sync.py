@@ -115,10 +115,10 @@ for index, sample in enumerate(samples):
         raise SystemExit(f"FAIL: negative lane scroll at sample {index}: {scrolls}.")
     if len(set(scrolls)) != 1:
         raise SystemExit(f"FAIL: timeline lanes drifted apart at sample {index}: {scrolls}.")
-    if abs(player_ms - playhead_ms) > 750:
+    if abs(player_ms - playhead_ms) > 100:
         raise SystemExit(
             f"FAIL: player/playhead time mismatch at sample {index}: "
-            f"player={player_ms} ms, playhead={playhead_ms} ms."
+            f"player={player_ms} ms, playhead={playhead_ms} ms; maximum allowed difference is 100 ms."
         )
     if abs(center - baseline_center) > 1:
         raise SystemExit(
