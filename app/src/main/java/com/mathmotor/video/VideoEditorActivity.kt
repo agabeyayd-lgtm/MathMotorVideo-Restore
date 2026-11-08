@@ -9068,6 +9068,13 @@ class VideoEditorActivity : Activity() {
         ensureTimelinePreviewLoaded()
         seekTimelinePreview(timelinePlayheadMs)
         updateTimelinePlayheadLabel()
+        // Capture the rebuilt clip View bounds after layout, not the pre-drop
+        // geometry. The emulator assertion uses this to verify the visible seam.
+        if (timelineSyncTestEnabled) {
+            timelineTracksFrame.post {
+                logTimelineAlignmentTestSnapshotIfNeeded(force = true)
+            }
+        }
         if(timelineSyncTestEnabled) android.util.Log.i(
             "TimelineSyncTest",
             "VIDEO_CLIP_DROP movedIndex=$index ordered=${plan.orderedClipIndices.joinToString(",")} starts=${plan.orderedClipIndices.joinToString(","){ i -> "$i:${plan.timelineStartByClipIndex[i]}" }}"
