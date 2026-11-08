@@ -174,8 +174,8 @@ def verify(log_path: str, screenshot_path: str):
         )
     ]
     decoder_rows = re.findall(
-        r"TIMELINE_THUMBNAIL_DECODED requestedMs=(\\d+)(?: actualFrameMs=(\\d+))? "
-        r"decoder=([a-z0-9-]+) worker=(\\d+) decodeMs=(\\d+)",
+        r"TIMELINE_THUMBNAIL_DECODED requestedMs=(\d+)(?: actualFrameMs=(\d+))? "
+        r"decoder=([a-z0-9-]+) worker=(\d+) decodeMs=(\d+)",
         log,
     )
     media3_rows = [row for row in decoder_rows if row[2] == "media3-shared"]
