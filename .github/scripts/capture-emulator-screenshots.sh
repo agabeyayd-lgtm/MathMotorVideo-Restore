@@ -2322,14 +2322,23 @@ for attempt in 1 2 3 4 5 6 7 8; do
   read -r thumb_center_x thumb_center_y play_center_x thumb_sample_ms <<< "$alignment"
   delta_x="$((play_center_x - thumb_center_x))"
   absolute_delta="$((delta_x < 0 ? -delta_x : delta_x))"
-  echo "Alignment attempt $attempt: sample=\${thumb_sample_ms}ms center=\${thumb_center_x}px playhead=\${play_center_x}px delta=\${delta_x}px"
+  echo "Alignment attempt $attempt: sample=${thumb_sample_ms}ms center=${thumb_center_x}px playhead=${play_center_x}px delta=${delta_x}px"
   if [ "$absolute_delta" -le 2 ]; then
     thumbnail_aligned=true
     break
   fi
   gesture_delta="$((delta_x + (delta_x < 0 ? -touch_slop_px : touch_slop_px)))"
-  gesture_end_x="$((thumb_center_x + gesture_delta))"
-  timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$thumb_center_x" "$ruler_y" "$gesture_end_x" "$ruler_y" 400
+  # Start outside the fixed playhead overlay hit region. The centre guide is
+  # intentionally visual-only, but keeping the gesture origin clear of it also
+  # ensures the HorizontalScrollView receives the horizontal correction drag.
+  if [ "$gesture_delta" -lt 0 ]; then
+    gesture_start_x="$((play_center_x + 64))"
+  else
+    gesture_start_x="$((play_center_x - 64))"
+  fi
+  gesture_end_x="$((gesture_start_x + gesture_delta))"
+  echo "  ruler correction swipe: x=${gesture_start_x}->${gesture_end_x} y=${ruler_y}"
+  timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$gesture_start_x" "$ruler_y" "$gesture_end_x" "$ruler_y" 400
   sleep 1
 done
 if [ "$thumbnail_aligned" != true ]; then
