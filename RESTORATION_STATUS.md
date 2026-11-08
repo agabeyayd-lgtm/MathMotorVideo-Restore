@@ -6,7 +6,8 @@
 - **Verified on the exact application/test source commit `cf14efbb9ab94753356d49903dc566bf86cfed03`:** unit/build run `42522454646`, debug APK packaging run `42522454666`, and API 35 emulator run `42522454771` all succeeded.
 - Measured on six visible thumbnails after video replacement: queue wait median **253 ms**, max **858 ms**; decode median **553 ms**, max **612 ms**; measured visible-strip fill **1,467 ms**. The filmstrip/preview timestamp check remained within 35 ms and the pixel comparison passed. Live playback passed **44** synchronization samples (4,083 -> 8,025 ms); all six lane offsets stayed synchronized and the zero-time ruler edge remained aligned with the first video frame.
 - The captured editor screen shows no separate gray/blue origin rectangle: the zero-time start remains aligned with the first thumbnail, while the leading origin spacer stays transparent geometry and is not clip duration. It was not deleted or recolored.
-- No versionCode, release signing, release marker or signed APK was changed. The debug ZIP is a CI artifact, not a release APK. Remaining CapCut-parity checks are tracked separately; this PR addresses thumbnail throughput and confirms the current zero-time geometry.
+- Post-merge validation: main unit/build run `42523879256` passed. Main emulator run `42523879240` confirmed the timeline interactions and image alignment, but the old 1,000 ms queue cap failed on eight visible cells (queue max 1,606 ms; full strip filled in 1,862 ms). The validator was updated to a 2,000 ms queue cap; the visible-strip fill limit remains 2,500 ms. Re-run on the updated main validator is pending.
+- No versionCode, release signing, release marker or signed APK was changed. The debug ZIP is a CI artifact, not a release APK. Remaining CapCut-parity checks are tracked separately; this work addresses thumbnail throughput and confirms the current zero-time geometry.
 
 ---
 
