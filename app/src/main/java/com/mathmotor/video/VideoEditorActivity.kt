@@ -5586,6 +5586,7 @@ class VideoEditorActivity : Activity() {
             status.text = "Önce bir bindirme katmanı seç."
             return
         }
+        recordProjectEdit()
         val localTimeMs = overlayLocalTimeMs(overlay)
         if (overlay.keyframes.isEmpty() && localTimeMs > 0L) {
             overlay.keyframes.add(OverlayTransformKeyframe(0L, overlayBaseTransformState(overlay)))
@@ -5615,6 +5616,7 @@ class VideoEditorActivity : Activity() {
             status.text = "Oynatma noktasına yakın bir anahtar kare yok."
             return
         }
+        recordProjectEdit()
         overlay.keyframes.removeAt(index)
         loadOverlayControls()
         refreshTimelineTracks()
@@ -5635,8 +5637,10 @@ class VideoEditorActivity : Activity() {
                 }
                 override fun onStartTrackingTouch(seekBar: SeekBar?) {
                     pauseActivePreview()
+                    activeProjectHistorySnapshot = captureProjectEditSnapshot()
                 }
                 override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                    finishProjectHistoryGesture()
                     refreshColorGradePreview()
                 }
             })
@@ -5681,6 +5685,8 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun applyVideoFilterPreset(preset: VideoFilterPreset) {
+        if (preset == selectedVideoFilter) return
+        recordProjectEdit()
         selectedVideoFilter = preset
         when (preset) {
             VideoFilterPreset.ORIGINAL, VideoFilterPreset.MONOCHROME, VideoFilterPreset.NEGATIVE -> {
@@ -8238,6 +8244,7 @@ class VideoEditorActivity : Activity() {
                     status.text = "Bindirme dosyasının süresi okunamadı. Başka bir görsel veya video seç."
                     return@runOnUiThread
                 }
+                val beforeProjectEdit = captureProjectEditSnapshot()
                 val projectDuration = TimelineVideoMath.totalDuration(videoTimelineSegments()).coerceAtLeast(1_000L)
                 val imageDefaults = if (isImage) {
                     if (initialPhoto) OverlayAssetDefaultsMath.fullFramePhoto(projectDuration)
@@ -8267,6 +8274,7 @@ class VideoEditorActivity : Activity() {
                     aspectRatio = aspectRatio
                 )
                 overlayClips.add(overlay)
+                pushProjectUndoSnapshot(beforeProjectEdit)
                 updatePreviewEmptyStateVisibility()
                 selectedOverlayId = overlay.id
                 selectedClipIndex = -1
@@ -8579,6 +8587,7 @@ class VideoEditorActivity : Activity() {
                     downRotation = currentState.rotationDegrees
                     downDistance = 0f
                     downAngle = 0f
+                    activeProjectHistorySnapshot = captureProjectEditSnapshot()
                     view.parent?.requestDisallowInterceptTouchEvent(true)
                     true
                 }
@@ -8653,6 +8662,7 @@ class VideoEditorActivity : Activity() {
                     gestureOverlay = null
                     view.parent?.requestDisallowInterceptTouchEvent(false)
                     if (overlay != null) {
+                        finishProjectHistoryGesture()
                         loadOverlayControls()
                         refreshTimelineTracks()
                         // The Media3 composition already owns this mutable OverlayClip.
@@ -8681,6 +8691,7 @@ class VideoEditorActivity : Activity() {
             return
         }
 
+        recordProjectEdit()
         val originalDuration = overlay.durationMs
         val rightDuration = originalDuration - offsetMs
         val cutState = overlayStateAtTime(overlay, timelinePlayheadMs)
@@ -8757,8 +8768,8 @@ class VideoEditorActivity : Activity() {
             status.text = "Birleştirme için aynı kaynaklı, bitişik ve animasyonsuz iki bindirme gerekir."
             return
         }
+        recordProjectEdit()
         val left = if (adjacent.timelineStartMs < selected.timelineStartMs) adjacent else selected
-        val right = if (left.id == selected.id) adjacent else selected
         left.durationMs += right.durationMs
         overlayClips.removeAll { it.id == right.id }
         selectedOverlayId = left.id
@@ -8775,6 +8786,7 @@ class VideoEditorActivity : Activity() {
             status.text = "Kaldırmak için önce zaman çizelgesinden bir bindirme seç."
             return
         }
+        recordProjectEdit()
         overlayClips.removeAll { it.id == selected.id }
         selectedOverlayId = overlayClips.lastOrNull()?.id
         updatePreviewEmptyStateVisibility()
@@ -8795,8 +8807,10 @@ class VideoEditorActivity : Activity() {
                 }
                 override fun onStartTrackingTouch(seekBar: SeekBar?) {
                     pauseActivePreview()
+                    activeProjectHistorySnapshot = captureProjectEditSnapshot()
                 }
                 override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                    finishProjectHistoryGesture()
                     if (!updatingOverlayControls) {
                         loadOverlayControls()
                         refreshTimelineTracks()
