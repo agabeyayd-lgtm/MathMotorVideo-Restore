@@ -783,6 +783,7 @@ class VideoEditorActivity : Activity() {
         super.onResume()
         timelineLifecycleState = "resumed"
         logTimelineLifecycle("onResume")
+        if (timelineSyncTestEnabled) scheduleTimelineAlignmentSnapshot()
     }
 
     override fun onPause() {
@@ -5159,10 +5160,10 @@ class VideoEditorActivity : Activity() {
                 ::timelinePlayheadLine.isInitialized && timelinePlayheadLine.width > 0 &&
                 ::previewCanvas.isInitialized && previewCanvas.width > 0 && previewCanvas.height > 0
             if (!geometryReady) {
-                if (attempt < 12) {
+                if (attempt < 40) {
                     timelineHandler.postDelayed(
                         { scheduleTimelineAlignmentSnapshot(attempt + 1) },
-                        80L
+                        100L
                     )
                 } else {
                     android.util.Log.w(
