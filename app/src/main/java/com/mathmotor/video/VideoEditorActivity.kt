@@ -655,6 +655,8 @@ class VideoEditorActivity : Activity() {
     private lateinit var textSizeSeek: SeekBar
     private lateinit var textInput: EditText
     private lateinit var keepSourceAudio: CheckBox
+    private var lastKeepSourceAudioValue = true
+    private var suppressHistoryMutationCallbacks = false
     private lateinit var status: TextView
     private lateinit var exportButton: Button
     private lateinit var exportNameInput: EditText
@@ -1906,7 +1908,17 @@ class VideoEditorActivity : Activity() {
             isChecked = true
             setTextColor(Color.WHITE)
             setOnCheckedChangeListener { _, checked ->
-                recordProjectEdit()
+                if (suppressHistoryMutationCallbacks) {
+                    lastKeepSourceAudioValue = checked
+                    return@setOnCheckedChangeListener
+                }
+                finishTextHistoryEdit()
+                finishProjectHistoryGesture()
+                val before = captureProjectEditSnapshot().copy(
+                    keepSourceAudio = lastKeepSourceAudioValue
+                )
+                pushProjectUndoSnapshot(before)
+                lastKeepSourceAudioValue = checked
                 player?.volume = if (checked) sourceAudioVolume / 100f else 0f
                 refreshTimelineSourceAudio()
             }
@@ -3868,8 +3880,8 @@ class VideoEditorActivity : Activity() {
                             layer.endMs = newStart + spanMs
                             layer.timingCustomized = true
                             selectedTextLayerId = layer.id
-                            finishProjectHistoryGesture()
                             loadTextLayerIntoControls(layer)
+                            finishProjectHistoryGesture()
                             status.text = "Yazı katmanı zaman çizelgesinde taşındı."
                             refreshTimelineTracks()
                             enterTextTools()
@@ -3967,8 +3979,8 @@ class VideoEditorActivity : Activity() {
                                 }
                                 layer.timingCustomized = true
                                 selectedTextLayerId = layer.id
-                                finishProjectHistoryGesture()
                                 loadTextLayerIntoControls(layer)
+                                finishProjectHistoryGesture()
                                 status.text = if (isStart) {
                                     "Yazı başlangıcı: ${formatTimelineMs(layer.startMs)}"
                                 } else {
@@ -4469,19 +4481,28 @@ class VideoEditorActivity : Activity() {
     private fun updateMusicSourceRangeControls() {
         if (!::musicSourceRangeLabel.isInitialized) return
         val duration = musicSourceDurationMs
+        if (musicUri == null || duration <= 0L) {
+            musicSourceStartMs = 0L
+            musicSourceEndMs = 0L
+            musicSourceRangeLabel.text = "Müzik seçilmedi."
+            musicSourceStartSeek.progress = 0
+            musicSourceEndSeek.progress = 1000
+            musicSourceStartSeek.isEnabled = false
+            musicSourceEndSeek.isEnabled = false
+            return
+        }
         val range = MusicSourceRangeMath.normalize(
             MusicSourceRange(musicSourceStartMs, musicSourceEndMs.takeIf { it > 0L } ?: duration),
             duration
         )
         musicSourceStartMs = range.startMs
         musicSourceEndMs = range.endMs
-        musicSourceRangeLabel.text = if (duration > 0L) {
+        musicSourceRangeLabel.text =
             "Dosya içi: ${formatTimelineMs(range.startMs)} – ${formatTimelineMs(range.endMs)}"
-        } else "Müzik kaynak aralığı okunuyor…"
-        if (duration > 0L) {
-            musicSourceStartSeek.progress = (range.startMs * 1000L / duration).toInt().coerceIn(0, 1000)
-            musicSourceEndSeek.progress = (range.endMs * 1000L / duration).toInt().coerceIn(0, 1000)
-        }
+        musicSourceStartSeek.isEnabled = true
+        musicSourceEndSeek.isEnabled = true
+        musicSourceStartSeek.progress = (range.startMs * 1000L / duration).toInt().coerceIn(0, 1000)
+        musicSourceEndSeek.progress = (range.endMs * 1000L / duration).toInt().coerceIn(0, 1000)
     }
 
     private fun updateMusicTimingLabel() {
@@ -6616,7 +6637,10 @@ class VideoEditorActivity : Activity() {
         ).coerceAtLeast(0)
         timelineHorizontalScrollX = pendingTimelineScrollX ?: 0
 
+        lastKeepSourceAudioValue = snapshot.keepSourceAudio
+        suppressHistoryMutationCallbacks = true
         if (::keepSourceAudio.isInitialized) keepSourceAudio.isChecked = snapshot.keepSourceAudio
+        suppressHistoryMutationCallbacks = false
         if (::soundLabel.isInitialized) {
             soundLabel.text = soundTitle?.let { "Ses/efekt: $it • ${formatMs(soundSourceDurationMs)}" }
                 ?: "Ses efekti seçilmedi."
@@ -8085,7 +8109,10 @@ class VideoEditorActivity : Activity() {
 
         loadTextLayerIntoControls(selectedTextLayer())
         refreshTextLayerList()
-        keepSourceAudio.isChecked = json.optBoolean("keepSourceAudio", true)
+        lastKeepSourceAudioValue = json.optBoolean("keepSourceAudio", true)
+        suppressHistoryMutationCallbacks = true
+        keepSourceAudio.isChecked = lastKeepSourceAudioValue
+        suppressHistoryMutationCallbacks = false
         exportNameInput.setText(json.optString("exportName", "MathMotor_Edit"))
         exportResolutionShortSide = when (json.optInt("exportResolutionShortSide", 0)) {
             720 -> 720
