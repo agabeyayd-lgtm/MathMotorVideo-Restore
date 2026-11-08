@@ -92,4 +92,24 @@ internal object TimelineThumbnailMath {
         val midpoint = cellStart + (cellEnd - cellStart) / 2L
         return midpoint.coerceIn(startMs, (endMs - 1L).coerceAtLeast(startMs))
     }
+
+    /**
+     * The selected clip cover belongs in the first visible filmstrip cell. Its
+     * source timestamp is independent of that cell's normal midpoint sample.
+     * Clamp legacy/stale cover metadata to the clip's current trimmed source range.
+     */
+    fun sampleTimeForCell(
+        startMs: Long,
+        endMs: Long,
+        count: Int,
+        index: Int,
+        firstCellCoverTimeMs: Long? = null
+    ): Long {
+        if (endMs <= startMs) return startMs
+        if (index == 0 && firstCellCoverTimeMs != null) {
+            return firstCellCoverTimeMs.coerceIn(startMs, (endMs - 1L).coerceAtLeast(startMs))
+        }
+        return sampleTime(startMs, endMs, count, index)
+    }
+
 }
