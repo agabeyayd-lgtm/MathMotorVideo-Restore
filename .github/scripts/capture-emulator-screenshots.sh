@@ -2994,7 +2994,9 @@ if width < 70 or height < 20:
 # travel far enough to make the production handler classify this as a drag.
 travel = min(42, max(34, width // 8))
 if edge == "start":
-    x1, x2 = (left + 26, left + 26 + travel) if direction == "trim" else (left + 36, left + 36 - travel)
+    # 420dpi emulator: keep the DOWN point beyond the 28dp playhead overlay
+    # while staying inside the edge target (clipWidth/3 is the limiting width).
+    x1, x2 = (left + 45, left + 45 + travel) if direction == "trim" else (left + 79, left + 79 - travel)
 else:
     x1, x2 = (right - 8, right - 8 - travel) if direction == "trim" else (right - 36, right - 36 + travel)
 y = (top + bottom) // 2
