@@ -59,6 +59,25 @@ class TimelineScaleMathTest {
     }
 
     @Test
+    fun splittingZoomsTheTimelineOutByOneStepButNeverBelowMinimumScale() {
+        assertEquals(
+            88f,
+            TimelineScaleMath.zoomOutAfterSplit(100f, 11f),
+            0.001f
+        )
+        assertEquals(
+            11f,
+            TimelineScaleMath.zoomOutAfterSplit(12f, 11f),
+            0.001f
+        )
+        assertEquals(
+            11f,
+            TimelineScaleMath.zoomOutAfterSplit(Float.NaN, 11f),
+            0.001f
+        )
+    }
+
+    @Test
     fun zoomAnchorKeepsTheSameTimestampUnderTheSameFingerMidpoint() {
         val oldScale = 22f
         val newScale = 44f
