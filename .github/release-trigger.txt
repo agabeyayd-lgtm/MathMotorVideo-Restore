@@ -2,3 +2,6 @@ Build and publish signed APK for versionCode 400 (8.33-capcut-editor). Includes 
 Signed editor update 8.34 / versionCode 401
 
 CapCut timeline update: PR #29 merged after all unit/build/emulator checks passed. Signed installable editor update 8.34 / versionCode 401.
+
+
+Signed editor update 8.35 / versionCode 402. Increment Android versionCode so installed 401 devices detect the new signed release.
