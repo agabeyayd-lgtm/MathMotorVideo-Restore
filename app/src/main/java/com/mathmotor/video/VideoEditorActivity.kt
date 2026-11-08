@@ -1792,6 +1792,7 @@ class VideoEditorActivity : Activity() {
         musicActions.addView(miniButton("Müzik ekle") { chooseAudio(true) },
             LinearLayout.LayoutParams(0, dp(42), 1f))
         musicActions.addView(miniButton("Müziği kaldır") {
+            if (musicUri != null) recordProjectEdit()
             musicUri = null
             musicTitle = null
             musicSourceDurationMs = 0L
@@ -1834,8 +1835,13 @@ class VideoEditorActivity : Activity() {
                 musicPreviewPlayer?.pause()
                 refreshTimelineTracks()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) { player?.playWhenReady = false }
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                player?.playWhenReady = false
+                activeProjectHistorySnapshot = captureProjectEditSnapshot()
+            }
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                finishProjectHistoryGesture()
+            }
         }
         musicSourceStartSeek.setOnSeekBarChangeListener(sourceRangeListener)
         musicSourceEndSeek.setOnSeekBarChangeListener(sourceRangeListener)
@@ -1851,6 +1857,7 @@ class VideoEditorActivity : Activity() {
         soundActions.addView(miniButton("Efekt ekle") { chooseAudio(false) },
             LinearLayout.LayoutParams(0, dp(42), 1f))
         soundActions.addView(miniButton("Efekti kaldır") {
+            if (soundUri != null) recordProjectEdit()
             soundUri = null
             soundTitle = null
             soundSourceDurationMs = 0L
@@ -1874,9 +1881,13 @@ class VideoEditorActivity : Activity() {
                 updateSoundControls()
                 if (!deferTimelineRefresh) refreshTimelineTracks()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) { deferTimelineRefresh = true }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                deferTimelineRefresh = true
+                activeProjectHistorySnapshot = captureProjectEditSnapshot()
+            }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
                 deferTimelineRefresh = false
+                finishProjectHistoryGesture()
                 refreshTimelineTracks()
             }
         })
@@ -1895,6 +1906,7 @@ class VideoEditorActivity : Activity() {
             isChecked = true
             setTextColor(Color.WHITE)
             setOnCheckedChangeListener { _, checked ->
+                recordProjectEdit()
                 player?.volume = if (checked) sourceAudioVolume / 100f else 0f
                 refreshTimelineSourceAudio()
             }
@@ -4526,6 +4538,7 @@ class VideoEditorActivity : Activity() {
                 android.view.MotionEvent.ACTION_DOWN -> {
                     bodyDownX = event.rawX
                     bodyInitial = TimelineRange(musicStartMs, musicDurationMs)
+                    activeProjectHistorySnapshot = captureProjectEditSnapshot()
                     bodyMoved = false
                     bodyTouchActive = true
                     bodyLongPressed = false
@@ -4572,9 +4585,11 @@ class VideoEditorActivity : Activity() {
                         musicDurationMs = moved.durationMs
                         updateMusicTimingLabel()
                         status.text = "Müzik zaman çizelgesinde taşındı."
+                        finishProjectHistoryGesture()
                         refreshTimelineTracks()
                         enterAudioTools()
                     } else if (!bodyMoved) {
+                        activeProjectHistorySnapshot = null
                         enterAudioTools()
                         view.performClick()
                     }
@@ -4583,6 +4598,7 @@ class VideoEditorActivity : Activity() {
                 android.view.MotionEvent.ACTION_CANCEL -> {
                     timelineHandler.removeCallbacks(bodyLongPressAction)
                     bodyTouchActive = false
+                    finishProjectHistoryGesture()
                     frame.translationX = 0f
                     frame.animate().scaleX(1f).scaleY(1f).setDuration(100L).start()
                     view.parent?.requestDisallowInterceptTouchEvent(false)
@@ -4618,6 +4634,7 @@ class VideoEditorActivity : Activity() {
                     android.view.MotionEvent.ACTION_DOWN -> {
                         downRawX = event.rawX
                         initial = TimelineRange(musicStartMs, musicDurationMs)
+                        activeProjectHistorySnapshot = captureProjectEditSnapshot()
                         moved = false
                         player?.playWhenReady = false
                         view.parent?.requestDisallowInterceptTouchEvent(true)
@@ -4664,14 +4681,17 @@ class VideoEditorActivity : Activity() {
                             musicDurationMs = updated.durationMs
                             updateMusicTimingLabel()
                             status.text = if (isStart) "Müzik başlangıcı ayarlandı." else "Müzik bitişi ayarlandı."
+                            finishProjectHistoryGesture()
                             refreshTimelineTracks()
                             enterAudioTools()
                         } else {
+                            activeProjectHistorySnapshot = null
                             enterAudioTools()
                         }
                         true
                     }
                     android.view.MotionEvent.ACTION_CANCEL -> {
+                        finishProjectHistoryGesture()
                         view.translationX = 0f
                         view.parent?.requestDisallowInterceptTouchEvent(false)
                         true
@@ -4754,6 +4774,7 @@ class VideoEditorActivity : Activity() {
                 android.view.MotionEvent.ACTION_DOWN -> {
                     bodyDownX = event.rawX
                     bodyInitial = TimelineAudioSegment(soundStartMs, soundSourceStartMs, soundDurationMs)
+                    activeProjectHistorySnapshot = captureProjectEditSnapshot()
                     bodyMoved = false
                     bodyTouchActive = true
                     bodyLongPressed = false
@@ -4802,9 +4823,11 @@ class VideoEditorActivity : Activity() {
                         soundDurationMs = moved.durationMs
                         updateSoundControls()
                         status.text = "Ses efekti zaman çizelgesinde taşındı."
+                        finishProjectHistoryGesture()
                         refreshTimelineTracks()
                         enterAudioTools()
                     } else if (!bodyMoved) {
+                        activeProjectHistorySnapshot = null
                         enterAudioTools()
                         view.performClick()
                     }
@@ -4813,6 +4836,7 @@ class VideoEditorActivity : Activity() {
                 android.view.MotionEvent.ACTION_CANCEL -> {
                     timelineHandler.removeCallbacks(bodyLongPressAction)
                     bodyTouchActive = false
+                    finishProjectHistoryGesture()
                     frame.translationX = 0f
                     frame.animate().scaleX(1f).scaleY(1f).setDuration(100L).start()
                     view.parent?.requestDisallowInterceptTouchEvent(false)
@@ -4848,6 +4872,7 @@ class VideoEditorActivity : Activity() {
                     android.view.MotionEvent.ACTION_DOWN -> {
                         downRawX = event.rawX
                         initial = TimelineAudioSegment(soundStartMs, soundSourceStartMs, soundDurationMs)
+                        activeProjectHistorySnapshot = captureProjectEditSnapshot()
                         moved = false
                         player?.playWhenReady = false
                         view.parent?.requestDisallowInterceptTouchEvent(true)
@@ -4903,14 +4928,17 @@ class VideoEditorActivity : Activity() {
                             soundDurationMs = updated.durationMs
                             updateSoundControls()
                             status.text = if (isStart) "Ses efektinin başlangıcı kırpıldı." else "Ses efektinin bitişi kırpıldı."
+                            finishProjectHistoryGesture()
                             refreshTimelineTracks()
                             enterAudioTools()
                         } else {
+                            activeProjectHistorySnapshot = null
                             enterAudioTools()
                         }
                         true
                     }
                     android.view.MotionEvent.ACTION_CANCEL -> {
+                        finishProjectHistoryGesture()
                         view.translationX = 0f
                         view.parent?.requestDisallowInterceptTouchEvent(false)
                         true
@@ -7306,8 +7334,12 @@ class VideoEditorActivity : Activity() {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (fromUser) onValue(progress.coerceIn(0, 100))
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                activeProjectHistorySnapshot = captureProjectEditSnapshot()
+            }
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                finishProjectHistoryGesture()
+            }
         }
 
     private fun installTextTimeListeners() {
@@ -8941,6 +8973,7 @@ class VideoEditorActivity : Activity() {
                     return@runOnUiThread
                 }
 
+                val beforeProjectEdit = captureProjectEditSnapshot()
                 if (forMusic) {
                     musicUri = uri
                     musicTitle = title
@@ -8972,6 +9005,7 @@ class VideoEditorActivity : Activity() {
                     refreshTimelineTracks()
                     status.text = "Ses katmanı eklendi. Başlama saniyesini aşağıdaki kaydırıcıdan ayarla."
                 }
+                pushProjectUndoSnapshot(beforeProjectEdit)
 
                 if (timelineSyncTestEnabled) {
                     android.util.Log.i(
