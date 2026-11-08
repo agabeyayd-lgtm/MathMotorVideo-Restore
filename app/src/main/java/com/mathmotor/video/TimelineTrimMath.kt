@@ -320,6 +320,28 @@ internal object TimelineVideoMath {
     fun totalDuration(segments: List<TimelineVideoSegment>): Long =
         segments.maxOfOrNull { normalize(it).timelineEndMs } ?: 0L
 
+    /**
+     * CapCut-style main video lane: every clip occupies the next slot in one
+     * continuous sequence. This is used when restoring/rebuilding the primary
+     * lane so stale saved offsets cannot leave an accidental empty gray region.
+     * The source in/out points and playback speed are never modified.
+     */
+    fun packSequentially(segments: List<TimelineVideoSegment>): TimelineVideoReorderPlan? {
+        if (segments.isEmpty()) return null
+        val safe = segments.map(::normalize)
+        if (safe.any { it.durationMs <= 0L }) return null
+        val ordered = segments.indices.sortedWith(
+            compareBy<Int> { safe[it].timelineStartMs }.thenBy { it }
+        )
+        var cursorMs = 0L
+        val starts = linkedMapOf<Int, Long>()
+        ordered.forEach { index ->
+            starts[index] = cursorMs
+            cursorMs += safe[index].durationMs
+        }
+        return TimelineVideoReorderPlan(ordered, starts)
+    }
+
     /** Last clip in layer order is topmost when time ranges overlap. */
     fun activeSegmentIndexAt(segments: List<TimelineVideoSegment>, projectTimeMs: Long): Int? {
         if (projectTimeMs < 0L) return null
