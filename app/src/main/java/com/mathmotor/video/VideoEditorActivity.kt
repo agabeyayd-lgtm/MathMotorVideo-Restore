@@ -9035,6 +9035,18 @@ class VideoEditorActivity : Activity() {
         timelinePreviewLoaded=false
         previewSingleClip=false
         timelinePlayheadMs=split.splitTimelineMs
+        // One notch of horizontal zoom-out exposes more neighbouring timeline
+        // space after a cut, making the new fragment easier to reposition.
+        // Only the shared px/sec scale changes; both fragment durations stay exact.
+        val splitScaleBefore = timelinePixelsPerSecond()
+        timelinePxPerSec = TimelineScaleMath.zoomOutAfterSplit(
+            splitScaleBefore,
+            minimumPixelsPerSecond = dp(11).toFloat()
+        )
+        if (timelineSyncTestEnabled) android.util.Log.i(
+            "TimelineSyncTest",
+            "TIMELINE_SPLIT_ZOOM beforePxPerSec=$splitScaleBefore afterPxPerSec=${timelinePixelsPerSecond()}"
+        )
         // The centered playhead and every lane share one scroll/time mapping.
         // Keep the split boundary under the fixed playhead after rebuilding the strip.
         pendingTimelineScrollX = TimelineScaleMath.pixelsForTime(
