@@ -7438,6 +7438,9 @@ class VideoEditorActivity : Activity() {
         return JSONObject().apply {
             put("format", "MathMotorVideoProject")
             put("version", 1)
+            // Versioned separately from the project container format. Older drafts
+            // could contain stale non-contiguous VIDEO offsets; migrate those once.
+            put("videoLaneLayoutVersion", 1)
             put("clips", clipArray)
             put("overlays", overlayArray)
             put("selectedOverlayId", selectedOverlayId ?: JSONObject.NULL)
@@ -7498,6 +7501,8 @@ class VideoEditorActivity : Activity() {
     private fun applyProjectJson(json: JSONObject) {
         require(json.optString("format") == "MathMotorVideoProject") { "Bu dosya MathMotorVideo proje dosyası değil." }
         require(json.optInt("version", 0) == 1) { "Bu proje sürümü desteklenmiyor." }
+        val migrateLegacyVideoLane = json.optInt("videoLaneLayoutVersion", 0) < 1
+        var migratedSelectedClipIndex: Int? = null
         val loadedClips = mutableListOf<Clip>()
         val clipArray = json.optJSONArray("clips") ?: JSONArray()
         var legacyTimelineCursorMs=0L
@@ -7602,6 +7607,29 @@ class VideoEditorActivity : Activity() {
         clearClipHistory()
         clips.clear()
         clips.addAll(loadedClips)
+        if (migrateLegacyVideoLane && clips.size > 1) {
+            // Migrate only old drafts once. After this save, intentional gaps made
+            // by dragging a split segment to an empty position are preserved.
+            val previous = clips.toList()
+            val plan = TimelineVideoMath.packSequentially(videoTimelineSegments())
+            if (plan != null) {
+                val originalSelected = json.optInt("selectedClipIndex", 0)
+                    .coerceIn(0, previous.lastIndex)
+                clips.clear()
+                clips.addAll(plan.orderedClipIndices.map { originalIndex ->
+                    previous[originalIndex].copy(
+                        timelineStartMs = plan.timelineStartByClipIndex[originalIndex]
+                            ?: previous[originalIndex].timelineStartMs
+                    )
+                })
+                migratedSelectedClipIndex =
+                    plan.orderedClipIndices.indexOf(originalSelected).takeIf { it >= 0 }
+                if (timelineSyncTestEnabled) android.util.Log.i(
+                    "TimelineSyncTest",
+                    "VIDEO_LANE_LEGACY_MIGRATED starts=${clips.indices.joinToString(","){ "$it:${clips[it].timelineStartMs}" }}"
+                )
+            }
+        }
         overlayClips.clear()
         overlayClips.addAll(loadedOverlays)
         updatePreviewEmptyStateVisibility()
@@ -7609,7 +7637,8 @@ class VideoEditorActivity : Activity() {
             overlayClips.any { it.id == id }
         } ?: overlayClips.lastOrNull()?.id
         nextOverlayId = maxOf(json.optLong("nextOverlayId", maxOverlayId + 1L), maxOverlayId + 1L)
-        selectedClipIndex = json.optInt("selectedClipIndex", 0).coerceIn(0, clips.lastIndex)
+        selectedClipIndex = migratedSelectedClipIndex
+            ?: json.optInt("selectedClipIndex", 0).coerceIn(0, clips.lastIndex)
         timelinePreviewLoaded = false
         previewSingleClip = true
         timelineLaneOrder.clear()
@@ -7627,6 +7656,7 @@ class VideoEditorActivity : Activity() {
             dp(11).toFloat(), dp(720).toFloat()
         ) ?: dp(22).toFloat()
         val savedTimelineScrollMs: Long? = when {
+            migrateLegacyVideoLane -> null
             json.has("timelineHorizontalScrollMs") ->
                 json.optLong("timelineHorizontalScrollMs", 0L).coerceAtLeast(0L)
             json.has("timelineHorizontalScrollX") ->
@@ -7644,7 +7674,7 @@ class VideoEditorActivity : Activity() {
         }
 
         val defaultPlayheadMs=clips[selectedClipIndex].timelineStartMs
-        timelinePlayheadMs = if (json.has("timelinePlayheadMs")) {
+        timelinePlayheadMs = if (!migrateLegacyVideoLane && json.has("timelinePlayheadMs")) {
             json.optLong("timelinePlayheadMs", defaultPlayheadMs)
                 .coerceIn(0L, totalOutputDurationMs())
         } else {
