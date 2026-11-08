@@ -71,37 +71,23 @@ jobs:
           retention-days: 14
 
       - name: Set up FFmpeg
+        # Pin the Node 24-compatible installer. Linux static builds come from
+        # John Van Sickle rather than the BtbN GitHub release asset that
+        # returned repeated HTTP 504 responses on the latest emulator job.
+        uses: FedericoCarboni/setup-ffmpeg@8073ccb51e517ed576e6871c7f2360c6de4ebb7c
+        with:
+          ffmpeg-version: release
+          architecture: x64
+          linking-type: static
+
+      - name: Verify FFmpeg installation
         shell: bash
         run: |
           set -euo pipefail
-          ffmpeg_archive_name="ffmpeg-N-128406-g1fe6854fd9-linux64-gpl.tar.xz"
-          ffmpeg_release="https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-11-04-12-51"
-          ffmpeg_archive="$RUNNER_TEMP/$ffmpeg_archive_name"
-          ffmpeg_checksums="$RUNNER_TEMP/ffmpeg-checksums.sha256"
-          ffmpeg_dir="$RUNNER_TEMP/ffmpeg-static"
-          mkdir -p "$ffmpeg_dir"
-          # Pin an immutable upstream release asset and validate it against the
-          # checksum manifest shipped in the same GitHub release. This avoids
-          # mutable "latest" aliases and intermittent non-archive HTML responses.
-          curl --fail --location --retry 3 --retry-delay 2 \
-            "$ffmpeg_release/$ffmpeg_archive_name" --output "$ffmpeg_archive"
-          curl --fail --location --retry 3 --retry-delay 2 \
-            "$ffmpeg_release/checksums.sha256" --output "$ffmpeg_checksums"
-          test -s "$ffmpeg_archive"
-          expected_sha="$(awk -v file="$ffmpeg_archive_name" '$2 == file || $2 == "*"file {print $1}' "$ffmpeg_checksums")"
-          test -n "$expected_sha"
-          echo "$expected_sha  $ffmpeg_archive" | sha256sum --check -
-          xz --test "$ffmpeg_archive"
-          tar -xJf "$ffmpeg_archive" -C "$ffmpeg_dir"
-          ffmpeg_binary="$(find "$ffmpeg_dir" -maxdepth 4 -type f -name ffmpeg -print -quit)"
-          ffprobe_binary="$(find "$ffmpeg_dir" -maxdepth 4 -type f -name ffprobe -print -quit)"
-          test -x "$ffmpeg_binary"
-          test -x "$ffprobe_binary"
-          chmod +x "$ffmpeg_binary" "$ffprobe_binary"
-          ffmpeg_bin_dir="$(dirname "$ffmpeg_binary")"
-          echo "$ffmpeg_bin_dir" >> "$GITHUB_PATH"
-          "$ffmpeg_binary" -version | head -n 1
-          "$ffprobe_binary" -version | head -n 1
+          command -v ffmpeg
+          command -v ffprobe
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
 
       - name: Generate a deterministic sample video for editor smoke tests
         run: |
