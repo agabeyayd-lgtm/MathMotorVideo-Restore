@@ -9160,28 +9160,21 @@ class VideoEditorActivity : Activity() {
                     val area = bounds
                     if (area.isEmpty) return
                     val half = borderPaint.strokeWidth / 2f
-                    // Top and bottom remain highlighted, while touching clip sides
-                    // stay open so the neighbouring frame reaches the seam.
-                    canvas.drawLine(
-                        area.left + half, area.top + half,
-                        area.right - half, area.top + half, borderPaint
+                    // Match CapCut's rounded white selection frame. The trim grips
+                    // remain separate touch targets at both ends; the outline is an
+                    // overlay and never changes the clip's measured timeline width.
+                    val outline = android.graphics.RectF(
+                        area.left + half,
+                        area.top + half,
+                        area.right - half,
+                        area.bottom - half
                     )
-                    canvas.drawLine(
-                        area.left + half, area.bottom - half,
-                        area.right - half, area.bottom - half, borderPaint
+                    canvas.drawRoundRect(
+                        outline,
+                        dp(4).toFloat(),
+                        dp(4).toFloat(),
+                        borderPaint
                     )
-                    if (!hasPreviousAdjacentClip) {
-                        canvas.drawLine(
-                            area.left + half, area.top + half,
-                            area.left + half, area.bottom - half, borderPaint
-                        )
-                    }
-                    if (!hasNextAdjacentClip) {
-                        canvas.drawLine(
-                            area.right - half, area.top + half,
-                            area.right - half, area.bottom - half, borderPaint
-                        )
-                    }
                 }
 
                 override fun setAlpha(alpha: Int) {
