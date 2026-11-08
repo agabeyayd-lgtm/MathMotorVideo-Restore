@@ -9484,8 +9484,9 @@ class VideoEditorActivity : Activity() {
             val cellEndMs = TimelineThumbnailMath.cellEndTime(
                 clip.startMs, clip.endMs, thumbnailCount, slot
             )
-            val frameTime = TimelineThumbnailMath.sampleTime(
-                clip.startMs, clip.endMs, thumbnailCount, slot
+            val frameTime = TimelineThumbnailMath.sampleTimeForCell(
+                clip.startMs, clip.endMs, thumbnailCount, slot,
+                firstCellCoverTimeMs = clip.coverTimeMs
             )
             // Expose the sample timestamp for diagnostics and accessibility. The
             // image now represents the center of this cell's shared timeline range.
@@ -9503,7 +9504,10 @@ class VideoEditorActivity : Activity() {
                 priorityDistanceMs,
                 cellStartMs,
                 cellEndMs,
-                usePosterPlaceholder = slot == 0
+                // Only use the temporary source-start poster when the clip has
+                // no user-selected cover and begins at source time zero. A trimmed
+                // or custom-cover clip must never flash an unrelated frame.
+                usePosterPlaceholder = slot == 0 && clip.coverTimeMs == null && clip.startMs == 0L
             )
         }
         container.addView(filmstrip, FrameLayout.LayoutParams(
@@ -10306,7 +10310,10 @@ class VideoEditorActivity : Activity() {
             return
         }
 
-        val showTemporaryPoster = usePosterPlaceholder && priorityDistanceMs <= 2_000L
+        // The first cell should never remain empty just because the playhead is
+        // far away from it. It receives the temporary poster immediately; its own
+        // timestamp-accurate frame still replaces it when decoding completes.
+        val showTemporaryPoster = usePosterPlaceholder
         if (showTemporaryPoster) {
             requestTimelinePoster(uri)
             val poster = timelinePosterCache.get(uri.toString())
@@ -10810,11 +10817,29 @@ class VideoEditorActivity : Activity() {
                 }
                 recordClipEdit()
                 clip.coverTimeMs = selectedSourceTimeMs
+                // Keep an independent, filmstrip-sized copy under the exact source
+                // timestamp. The first clip cell can then show the selected cover
+                // immediately instead of waiting for a duplicate decode or using
+                // the provider's unrelated generic poster.
+                runCatching {
+                    val (thumbWidth, thumbHeight) = TimelineThumbnailMath.fitDimensions(
+                        bitmap.width, bitmap.height, 162, 288
+                    )
+                    val cachedCover = if (bitmap.width == thumbWidth && bitmap.height == thumbHeight) {
+                        bitmap.copy(Bitmap.Config.ARGB_8888, false)
+                    } else {
+                        Bitmap.createScaledBitmap(bitmap, thumbWidth, thumbHeight, true)
+                    }
+                    timelineThumbnailCache.put("${clip.uri}#${selectedSourceTimeMs}", cachedCover)
+                }.onFailure {
+                    android.util.Log.w("ClipCover", "Selected cover could not be cached for the filmstrip", it)
+                }
                 loadTrimControls()
                 // “Kapak yap” now produces the visible JPG as well as persisting
                 // the selected source timestamp in the project.
                 saveClipCoverImage(bitmap, clip, selectedSourceTimeMs)
                 dialog.dismiss()
+                refreshTimelineTracks()
             }
             dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
                 val bitmap = previewBitmap
