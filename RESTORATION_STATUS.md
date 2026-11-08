@@ -1299,3 +1299,11 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - At the playback tap, Media3 was still buffering; shortly afterward it failed with `ExoPlaybackException: Unexpected runtime error`, caused by `NoSuchElementException` in `ExternalTextureManager.removeAllSurfaceTextureFrames` / `maybeQueueFrameToExternalShaderProgram`, and the composition player fell back to `STATE_IDLE`.
 - Commit `90fe35c56671b339a80b297f74cd56002799a791` makes the initial paused-overlay frame refresh one-shot per CompositionPlayer, breaking the self-triggering READY/seek loop. It also emits a debug-only player-error record under `TimelineSyncTest` so future emulator artifacts retain the root exception beside sync samples.
 - Do not lower the live-playback sample count or any timing tolerance. Verify on API 35 that the player reaches READY, begins advancing after Play, emits at least five live samples, and completes the subsequent split/reorder and save/reopen checks.
+
+
+## 2026-11-08 — split-reorder measurement parser field order
+
+- Emulator run `42485845233` on `17124eebf2349ebc99dc1abba7fa5e4afab0f155` confirms the paused-overlay refresh fix worked: live playback produced 62 samples and advanced from 3,083 ms to 7,855 ms; six timeline lanes remained synchronized. The split operation also passed with `firstEndMs=4000`, `secondStartMs=4000`, `gapMs=0`, and the measured on-screen seam was 0 px.
+- The run then stopped before the direct clip drag because the test helper's regex expected `playheadCenterPx` before `pxPerSecond`, while the actual production diagnostic emits `pxPerSecond` first. The valid sample existed in the captured log; the parser rejected it and reported no fixed-playhead measurement. This is a test-harness parser defect, not a failed production drag.
+- Commit `cb3908cb39034e79f9187db4498d4b93a0870925` changes the parser to consume the emitted field order and map scale/centre into the intended values. No app behavior, timing tolerance, or acceptance threshold was changed.
+- Re-run current-head emulator verification to prove direct drag/reorder and draft save/reopen. Keep PR #29 open until those checks pass.
