@@ -1,10 +1,11 @@
-## CapCut-style editor: progressive thumbnail decoding — 2026-11-08
+## CapCut-style editor: parallel filmstrip decoding and verified timeline alignment — 2026-11-08
 
-- On top of the current mainline editor, the timeline thumbnail path now uses one ordered decoder worker instead of three competing workers. The shared Media3 `FrameExtractor` is the primary decoder with `SeekParameters.EXACT`; `MediaMetadataRetriever` remains a compatibility fallback.
-- The fixed playhead, source timestamps, cell sampling, current cache, pending-request deduplication, and the 35 ms preview/filmstrip acceptance rule are unchanged. No gray-origin spacer or timeline geometry was removed as part of this performance change.
-- The API 35 alignment assertion now requires an observed shared-Media3 decode record and reports Media3/fallback timing alongside queue/decode/display timings.
-- **Validation pending on this exact branch head:** unit tests, debug build, and the full API 35 emulator flow must pass. Re-measure first exact-frame latency and full visible-strip fill time; the historical ~4.06 s / 19-frame result from PR #17 is a comparison point, not a result claimed for this new mainline-based build.
-- No app version, release signing, release marker, or signed APK was changed. The visible origin spacer treatment and the wider editor parity checklist remain separate open work.
+- The rejected one-worker/Media3-first experiment caused **2,965–5,064 ms** queue waits. The verified path uses three isolated workers with Android `MediaMetadataRetriever` as the primary decoder and reusable Media3 `FrameExtractor` as a fallback.
+- API 35 validation reads the actual import/replacement decode logs. Six visible thumbnails measured queue wait median/max **253/858 ms**, decode median/max **553/612 ms**, and visible-strip fill **1,467 ms**. Preview/filmstrip comparison passed the fixed **35 ms** tolerance.
+- The full emulator flow also passed live playback (44 samples, 4,083→8,025 ms, six synchronized lanes), video replacement at 00:00, split with a 0 ms seam, long-press clip move/reorder, all four trim/extend directions, keyboard-open project-canvas size, direct text drag, MP4 fixture export, and draft save/force-stop/reopen.
+- **Verified on source commit `cf14efbb9ab94753356d49903dc566bf86cfed03`:** unit/build `42522454646`, debug APK packaging `42522454666`, API 35 emulator `42522454771` — all success. The same source was merged as main commit `f94f4ee6e328e3e3860ee0a1cb3cfd2276dc0f4b`; its post-merge verification is tracked separately below.
+- The captured UI shows no separate gray/blue origin block and no per-thumbnail separator. The first video frame remains aligned with ruler zero/playhead. The origin spacer is transparent geometry and must not be deleted because it establishes the fixed-playhead zero-time mapping.
+- Draft PR #12 (old 1 dp margin renderer) and PR #17 (single-worker/Media3-first regression) were closed as superseded. No versionCode bump, signed release or production APK was created; the CI ZIP is a debug artifact only.
 
 ---
 
@@ -21,7 +22,7 @@
 - The 2026-11-07 emulator run (`42417189845`) passed unit tests, debug APK compilation, thumbnail pixel comparison, ruler scrubbing and live playback synchronization. It stopped before split interaction because the accessibility XML pull exceeded the script's 8-second transfer timeout; the app did not report a split or drag assertion failure.
 - The hierarchy pull now has a bounded 30-second timeout (with kill grace and the existing two-attempt retry). No emulator checks were skipped.
 - Removed the derived 84 ms preview timestamp allowance. Preview and scrub frame timestamps are checked against a fixed 35 ms limit; thumbnail centering must be within 2 px. The alignment loop allows up to eight measured correction gestures. The 4-second split midpoint is again limited to 100 ms (80 ms early-accept), not 750 ms.
-- **Verification for these stricter checks is pending on the updated commit.** No production version code, release signing, publish workflow or main-branch APK was changed.
+- **Verified on source commit `cf14efbb9ab94753356d49903dc566bf86cfed03`** by API 35 emulator run `42522454771`: preview and scrub frames passed the fixed 35 ms timestamp limit, thumbnail centering passed within 2 px, the split target landed at 4,042 ms, and split/drag/trim/persistence checks passed. Post-merge main run `42523879240` is the final confirmation. No production version code, signing or publishing changed.
 
 ---
 
@@ -31,7 +32,7 @@
 - Split timing is derived from one source-time cut. The right segment starts at the calculated end of the left segment, avoiding a millisecond-rounding seam at non-1× speed.
 - Legacy overlaps in the single main-video lane are shifted forward only as needed; source in/out points and intentional gaps are preserved. A clip dropped into empty timeline space moves independently without shifting neighbours; a drop onto an occupied clip inserts/reorders it and pushes only colliding followers, preserving later gaps.
 - Added JVM coverage for split continuity at 0.5×, 1×, 1.75× and 2×, invalid split locations, overlap repair and drag reflow.
-- **Verification is pending on this branch.** Do not call this complete until unit tests, Debug APK compilation and the API 35 emulator smoke pass on the same commit, including a real one-finger clip drag. No versionCode, release signing, publish workflow or production APK was changed.
+- **Verified on source commit `cf14efbb9ab94753356d49903dc566bf86cfed03`**: unit/build run `42522454646`, debug package run `42522454666`, and API 35 emulator run `42522454771` all passed. The emulator verified real split (0 ms seam), long-press move/reorder, all four trim/extend directions and force-stop draft restore. Post-merge main emulator run `42523879240` is the final confirmation. No versionCode or signed release changed.
 
 ---
 
@@ -42,7 +43,7 @@
 - Vertical room is recovered from surrounding controls: the playback row and global dock are hidden while a detail panel owns the controls, and the timeline lane area is compacted. The full timeline/dock return after leaving the panel. The keyboard hides the timeline and dock while retaining the fixed preview.
 - Emulator assertions now require identical canvas width/height with the keyboard open and identical preview-frame geometry while tools open, switch and close. Only the timeline/control area may compact.
 - A previous candidate measured **423×753 px** normally versus **216×385 px** with the keyboard. That failure is the regression baseline, not accepted behavior.
-- Source and emulator checks are on `feature/capcut-home-screen` (PR #28). Unit/build and emulator runs must be green on the exact latest commit before this fix is accepted. No version bump, release, signing, publication or merge is included.
+- **Verified on source commit `cf14efbb9ab94753356d49903dc566bf86cfed03`** in API 35 emulator run `42522454771`: normal project canvas measured 423×753 px and remained exactly 423×753 px with the keyboard open; the text selection frame remained within the canvas during a direct drag. Post-merge main emulator run `42523879240` is the final confirmation. No release signing or publishing was performed.
 
 ---
 
