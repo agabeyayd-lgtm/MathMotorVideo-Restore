@@ -2874,14 +2874,14 @@ timeout -k 2s 8s adb -s emulator-5554 shell input tap "$close_editor_x" "$close_
 draft_saved=false
 for attempt in $(seq 1 12); do
   timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s MathMotorDraft:I > emulator-screenshots/draft-autosave-logcat.txt 2>&1 || true
-  if grep -Fq "LOCAL_DRAFT_SAVED id=11111111-1111-4111-8111-111111111111 clips=1" emulator-screenshots/draft-autosave-logcat.txt; then
+  if grep -Fq "LOCAL_DRAFT_SAVED id=11111111-1111-4111-8111-111111111111 clips=2" emulator-screenshots/draft-autosave-logcat.txt; then
     draft_saved=true
     break
   fi
   sleep 1
 done
 if [ "$draft_saved" != true ]; then
-  echo "Editor closed, but did not confirm automatic draft save."
+  echo "Editor closed, but did not confirm automatic save of both split video segments."
   cat emulator-screenshots/draft-autosave-logcat.txt || true
   collect_capture_diagnostics draft-autosave-failure
   exit 11
