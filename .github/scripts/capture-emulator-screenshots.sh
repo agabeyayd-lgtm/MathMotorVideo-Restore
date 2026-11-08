@@ -2359,7 +2359,7 @@ for attempt in $(seq 1 12); do
   sleep 1
 done
 if [ "$thumbnail_aligned" != true ]; then
-  echo "Could not center any filmstrip thumbnail under the fixed playhead after 8 measured drags."
+  echo "Could not center any filmstrip thumbnail under the fixed playhead after 12 measured drags."
   collect_capture_diagnostics thumbnail-alignment-not-centered
   exit 24
 fi
