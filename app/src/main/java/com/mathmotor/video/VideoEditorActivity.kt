@@ -8816,6 +8816,7 @@ class VideoEditorActivity : Activity() {
         }
         recordProjectEdit()
         val left = if (adjacent.timelineStartMs < selected.timelineStartMs) adjacent else selected
+        val right = if (left.id == selected.id) adjacent else selected
         left.durationMs += right.durationMs
         overlayClips.removeAll { it.id == right.id }
         selectedOverlayId = left.id
