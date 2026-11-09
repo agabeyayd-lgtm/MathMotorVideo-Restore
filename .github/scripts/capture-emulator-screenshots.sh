@@ -565,6 +565,32 @@ if [ "$video_clip_loaded" != true ]; then
   exit 4
 fi
 
+# Preserve both audio-import completion markers before later interaction tests
+# intentionally clear logcat to isolate Undo/Redo and gesture diagnostics.
+audio_fixtures_ready=false
+for attempt in $(seq 1 25); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I \
+    > emulator-screenshots/audio-fixture-import-logcat.txt 2>&1 || true
+  if grep -Fq "EDITOR_SMOKE_AUDIO_REJECTED" emulator-screenshots/audio-fixture-import-logcat.txt; then
+    echo "At least one deterministic audio fixture was rejected by the production importer."
+    collect_capture_diagnostics audio-fixture-import-rejected
+    exit 75
+  fi
+  if grep -Fq "EDITOR_SMOKE_AUDIO_ADDED kind=music" emulator-screenshots/audio-fixture-import-logcat.txt \
+      && grep -Fq "EDITOR_SMOKE_AUDIO_ADDED kind=sound" emulator-screenshots/audio-fixture-import-logcat.txt; then
+    audio_fixtures_ready=true
+    break
+  fi
+  echo "Waiting for startup audio fixtures (attempt $attempt/25)"
+  sleep 1
+done
+if [ "$audio_fixtures_ready" != true ]; then
+  echo "Music and sound-effect fixtures were not both confirmed during editor startup."
+  collect_capture_diagnostics audio-fixture-startup-timeout
+  exit 76
+fi
+echo "PASS: both music and sound-effect fixtures were imported and their startup markers preserved."
+
 # Verify the editor's real inner project canvas is fitted and centered inside
 # the dark work stage. The deterministic fixture is 360x640 (9:16).
 timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTest:I \
@@ -1695,31 +1721,15 @@ dump_hierarchy editor-panel-closed.xml emulator-screenshots/editor-panel-closed.
 timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime -s EditorPanelLayoutTest:I \
   > emulator-screenshots/editor-panel-layout-logcat.txt 2>&1 || true
 
-# Both audio fixture imports run on background metadata threads. Do not start
-# hit-target interaction until the exact production importer confirms both.
-audio_fixtures_ready=false
-for attempt in $(seq 1 25); do
-  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I \
-    > emulator-screenshots/audio-fixture-import-logcat.txt 2>&1 || true
-  if grep -Fq "EDITOR_SMOKE_AUDIO_REJECTED" emulator-screenshots/audio-fixture-import-logcat.txt; then
-    echo "At least one deterministic audio fixture was rejected by the production importer."
-    collect_capture_diagnostics audio-fixture-import-rejected
-    exit 75
-  fi
-  if grep -Fq "EDITOR_SMOKE_AUDIO_ADDED kind=music" emulator-screenshots/audio-fixture-import-logcat.txt \
-      && grep -Fq "EDITOR_SMOKE_AUDIO_ADDED kind=sound" emulator-screenshots/audio-fixture-import-logcat.txt; then
-    audio_fixtures_ready=true
-    break
-  fi
-  echo "Waiting for production audio import to finish (attempt $attempt/25)"
-  sleep 1
-done
-if [ "$audio_fixtures_ready" != true ]; then
-  echo "Music and sound-effect fixtures were not both added before timeline touch tests."
-  collect_capture_diagnostics audio-fixture-import-timeout
+# Audio imports were waited for and snapshotted immediately after editor startup.
+# Never reread the live ring buffer here: Undo/Redo tests clear it intentionally.
+if ! grep -Fq "EDITOR_SMOKE_AUDIO_ADDED kind=music" emulator-screenshots/audio-fixture-import-logcat.txt \
+    || ! grep -Fq "EDITOR_SMOKE_AUDIO_ADDED kind=sound" emulator-screenshots/audio-fixture-import-logcat.txt; then
+  echo "The preserved editor-startup audio fixture markers are incomplete."
+  collect_capture_diagnostics audio-fixture-startup-markers-missing
   exit 76
 fi
-echo "PASS: both music and sound-effect fixtures reached the production timeline importer."
+echo "PASS: both audio fixtures were imported through the production importer (startup markers preserved)."
 
 echo "Step 8c/12: drag the music and sound-effect edge targets independently"
 run_audio_edge_smoke() {
