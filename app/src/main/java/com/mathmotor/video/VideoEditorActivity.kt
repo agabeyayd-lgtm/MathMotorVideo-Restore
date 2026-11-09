@@ -7223,6 +7223,7 @@ class VideoEditorActivity : Activity() {
                 "ProjectHistoryTest",
                 "PROJECT_HISTORY_CONTROLS musicModel=$musicVolume musicSeek=${if (::musicVolumeSeek.isInitialized) musicVolumeSeek.progress else -1} " +
                     "soundModel=$soundVolume soundSeek=${if (::soundVolumeSeek.isInitialized) soundVolumeSeek.progress else -1} " +
+                    "soundLabel=${if (::soundVolumeLabel.isInitialized) soundVolumeLabel.text else "uninitialized"} " +
                     "sourceModel=$sourceAudioVolume sourceSeek=${if (::sourceVolumeSeek.isInitialized) sourceVolumeSeek.progress else -1} " +
                     "clipSourceSeek=${if (::clipVolumeSeek.isInitialized) clipVolumeSeek.progress else -1} " +
                     "filterPreset=$selectedVideoFilter brightnessModel=$filterBrightness brightnessSeek=${if (::filterBrightnessSeek.isInitialized) filterBrightnessSeek.progress else -1} " +
