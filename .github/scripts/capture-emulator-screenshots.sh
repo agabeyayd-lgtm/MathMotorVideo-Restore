@@ -2764,7 +2764,7 @@ timeout -k 2s 8s adb -s emulator-5554 shell input keyevent 4
 sleep 1
 # Keep the canvas metrics for diagnosis, but the pixel assertion reads the
 # exact project-canvas rectangle from this fresh hierarchy snapshot.
-timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTest:I \
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTest:I EditorTouchTest:I \
   > emulator-screenshots/editor-text-selected-canvas-logcat.txt 2>&1 || true
 if ! take_screen emulator-screenshots/editor-text-selected.png; then
   collect_capture_diagnostics text-canvas-selection-capture-failure
@@ -2960,16 +2960,44 @@ if [ "$text_drag_dx" -lt -6 ] || [ "$text_drag_dx" -gt 6 ] || [ "$text_drag_dy" 
 fi
 echo "PASS: vertical in-canvas text drag moved the rendered selection frame from ($text_before_x,$text_before_y) to ($text_after_x,$text_after_y) without shifting it beyond the canvas edges."
 
-# Return from the text detail panel before querying project-wide history. The
-# pinned action was measured when the panel first opened, so this does not rely
-# on a fresh UIAutomator dump while the preview is still settling after drag.
-if [ -z "${text_panel_back:-}" ]; then
-  echo "The measured text-panel return action is unavailable after the canvas drag."
-  collect_capture_diagnostics text-history-panel-return-missing
+# The IME changes the lower editor layout: the return button moves after
+# the keyboard closes. Use the app's fresh post-IME layout measurement rather
+# than the stale coordinates from editor-text-panel.xml captured before typing.
+text_panel_back_current="$(python3 - emulator-screenshots/editor-text-selected-canvas-logcat.txt <<'PY'
+import re
+import sys
+
+matches = []
+for line in open(sys.argv[1], errors="replace"):
+    match = re.search(
+        r"TEXT_PANEL_RETURN_BOUNDS visible=true x=(\\d+) y=(\\d+) width=(\\d+) height=(\\d+)",
+        line,
+    )
+    if match:
+        matches.append(tuple(map(int, match.groups())))
+if not matches:
+    raise SystemExit("No visible post-IME text-panel return bounds were recorded.")
+x, y, width, height = matches[-1]
+if width < 100 or height < 40:
+    raise SystemExit(f"Invalid measured text-panel return size: {width}x{height}")
+print(x + width // 2, y + height // 2)
+PY
+)" || {
+  echo "Could not resolve the current text-panel return-button position after keyboard dismissal."
+  collect_capture_diagnostics text-history-panel-return-bounds-missing
+  exit 63
+}
+echo "Measured the current post-IME text-panel return action at $text_panel_back_current."
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_panel_back_current
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I \\
+  > emulator-screenshots/editor-text-panel-return-logcat.txt 2>&1 || true
+if ! grep -Fq "TEXT_PANEL_RETURN_TAPPED activePanel=text" emulator-screenshots/editor-text-panel-return-logcat.txt; then
+  echo "The measured text-panel return control did not report its click handler."
+  collect_capture_diagnostics text-history-panel-return-not-tapped
   exit 63
 fi
-timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_panel_back
-sleep 1
+echo "PASS: the current text-panel return button ran its click handler and closed the detail panel."
 
 echo "Step 8b: verify project-wide Undo/Redo restores a real text-canvas drag"
 dump_hierarchy editor-text-history-before-undo.xml emulator-screenshots/editor-text-history-before-undo.xml || {
