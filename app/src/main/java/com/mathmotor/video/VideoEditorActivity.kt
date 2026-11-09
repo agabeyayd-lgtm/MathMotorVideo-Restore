@@ -12221,8 +12221,8 @@ class VideoEditorActivity : Activity() {
         previewFrameBitmap = null
         // Drop queued thumbnail work. Each decoder worker releases its own retriever
         // in the worker-thread finally block when the executor shuts down.
-        pendingCoverSaveBitmap?.let { if (!it.isRecycled) it.recycle() }
-        pendingCoverSaveBitmap = null
+        pendingCoverThumbnailTargets.clear()
+        coverThumbnailCache.evictAll()
         timelineThumbnailExecutor.queue.clear()
         timelineThumbnailExecutor.shutdownNow()
         timelinePosterExecutor.shutdownNow()
