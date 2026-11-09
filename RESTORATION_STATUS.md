@@ -1,3 +1,9 @@
+## 2026-11-09 — IME dismissal regression assertions (PR #34)
+
+- Commit `b4cbed2fc3180fc0a2e82799a22014b1d3282bdd` adds explicit API 35 smoke assertions for both sides of the text-history restore: immediately after the grouped Undo the model and editor input must both be empty (`modelChars=0 inputChars=0`); immediately after Redo both must contain all 11 characters (`modelChars=11 inputChars=11`).
+- These checks complement, rather than replace, the existing project-history state assertions `11 -> 0` and `0 -> 11`. The separate canvas-drag Undo/Redo remains a distinct history step.
+- Run the full required CI set on the latest PR HEAD. Do not loosen assertions or publish until all checks pass.
+ 
 ## 2026-11-09 — IME composition replays text after Undo restore (PR #34)
 
 - The API 35 run on `7164717dfe6e59ac8963d1ab4aae7b4271ab38c6` confirmed that the grouped text Undo itself applies `11 -> 0`, but the new `TEXT_CONTROLS_RESTORED` marker then showed `modelChars=11 inputChars=11` during the Undo restore path. The old input text had been replayed into the selected layer before the next Redo could capture the empty state.
