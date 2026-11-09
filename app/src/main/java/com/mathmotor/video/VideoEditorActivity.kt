@@ -622,6 +622,8 @@ class VideoEditorActivity : Activity() {
     private var filterHue = 0
     private var updatingVideoFilterControls = false
     private var restoringProjectHistory = false
+    // Keep restored project models authoritative while the editor controls are rebound.
+    private var restoringProjectEditSnapshot = false
     private val videoFilterButtons = linkedMapOf<VideoFilterPreset, Button>()
     private lateinit var videoFilterSummary: TextView
     private lateinit var filterBrightnessLabel: TextView
@@ -1767,10 +1769,10 @@ class VideoEditorActivity : Activity() {
         textPanel.addView(textSizeSeek, matchWrap())
         textInput.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {
-                if (!loadingTextLayerControls) beginTextHistoryEdit()
+                if (!loadingTextLayerControls && !restoringProjectEditSnapshot) beginTextHistoryEdit()
             }
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                if (loadingTextLayerControls) return
+                if (loadingTextLayerControls || restoringProjectEditSnapshot) return
                 if (selectedTextLayer() == null && !s.isNullOrBlank()) {
                     val total = totalOutputDurationMs()
                     val layer = TextLayer(
@@ -7198,6 +7200,9 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun restoreProjectEditSnapshot(snapshot: ProjectEditSnapshot) {
+        val wasRestoringProjectEditSnapshot = restoringProjectEditSnapshot
+        restoringProjectEditSnapshot = true
+        try {
         clips.clear()
         clips.addAll(snapshot.clips.map { it.copy() })
         overlayClips.clear()
@@ -7310,13 +7315,18 @@ class VideoEditorActivity : Activity() {
             updatePausedOverlayPreviewLayers(timelinePlayheadMs)
         }
         updateProjectHistoryButtons()
+        } finally {
+            restoringProjectEditSnapshot = wasRestoringProjectEditSnapshot
+        }
     }
 
     private fun selectedTextLayer(): TextLayer? =
         selectedTextLayerId?.let { id -> textLayers.firstOrNull { it.id == id } }
 
     private fun syncSelectedTextLayerFromControls() {
-        if (loadingTextLayerControls || !::textInput.isInitialized) return
+        // During project Undo/Redo the snapshot is the source of truth. A stale
+        // EditText/IME callback must never write back over the restored TextLayer.
+        if (loadingTextLayerControls || restoringProjectEditSnapshot || !::textInput.isInitialized) return
         val layer = selectedTextLayer() ?: return
         // Preserve trailing spaces while typing; trim only when rendering/exporting.
         layer.text = textInput.text?.toString().orEmpty()
