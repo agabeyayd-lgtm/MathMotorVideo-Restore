@@ -1569,6 +1569,26 @@ dump_hierarchy editor-project-audio-after-volume.xml emulator-screenshots/editor
   collect_capture_diagnostics project-history-sound-volume-after-drag-missing
   exit 93
 }
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-sound-volume-gesture.txt 2>&1 || true
+if ! grep -Fq "PROJECT_HISTORY_GESTURE_END" emulator-screenshots/project-history-sound-volume-gesture.txt; then
+  echo "The sound-volume drag reached the SeekBar but did not finish a project-history gesture."
+  cat emulator-screenshots/project-history-sound-volume-gesture.txt || true
+  collect_capture_diagnostics project-history-sound-volume-gesture-not-committed
+  exit 94
+fi
+if ! grep -Fq "PROJECT_HISTORY_GESTURE_COMMITTED" emulator-screenshots/project-history-sound-volume-gesture.txt; then
+  echo "The sound-volume gesture did not complete the project-history commit stage."
+  cat emulator-screenshots/project-history-sound-volume-gesture.txt || true
+  collect_capture_diagnostics project-history-sound-volume-commit-missing
+  exit 94
+fi
+if grep -Fq "PROJECT_HISTORY_GESTURE_END" emulator-screenshots/project-history-sound-volume-gesture.txt &&
+   ! grep -Fq "afterSoundVolume=" emulator-screenshots/project-history-sound-volume-gesture.txt; then
+  echo "Sound-volume history diagnostics are missing the final model value."
+  cat emulator-screenshots/project-history-sound-volume-gesture.txt || true
+  collect_capture_diagnostics project-history-sound-volume-model-log-missing
+  exit 94
+fi
 volume_undo_coords="$(python3 - emulator-screenshots/editor-project-audio-after-volume.xml <<'PY'
 import re, sys, xml.etree.ElementTree as ET
 root = ET.parse(sys.argv[1]).getroot()
