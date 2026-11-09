@@ -7,3 +7,5 @@ CapCut timeline update: PR #29 merged after all unit/build/emulator checks passe
 Signed editor update 8.35 / versionCode 402. Increment Android versionCode so installed 401 devices detect the new signed release.
 
 Publish request: signed installable APK versionCode 402 after PR #30 merged and all CI checks passed.
+
+Signed editor update 8.36 / versionCode 403. Publish the signed installable APK after PR #34 merged with all three exact-head checks green.
