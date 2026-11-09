@@ -1154,3 +1154,5 @@ The selected main-video clip exposes independent left/right edge grips: drag the
 - Six visible thumbnail samples: queue median/max **253/858 ms**; decode median/max **553/612 ms**; visible-strip fill **1,467 ms**. Preview/filmstrip timestamp comparison passed the fixed 35 ms limit; live playback passed 44 sync samples across six lanes.
 - Captured UI confirms the first video frame begins at ruler zero/playhead alignment without a separate gray/blue spacer block. The origin spacer remains transparent layout geometry; removing it would break the centered-playhead zero-time mapping.
 - No version bump, signed release or production APK was created. The workflow's debug ZIP is not a release artifact.
+
+- The first sound-volume emulator attempt found that the SFX slider sits below the initially visible portion of the audio settings ScrollView. This was a test interaction/visibility issue, not a missing app control. The harness now scrolls only the audio settings sheet, recaptures accessibility hierarchy, and then performs the real SFX-volume drag/Undo/Redo.
