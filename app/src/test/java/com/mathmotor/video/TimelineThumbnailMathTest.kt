@@ -33,7 +33,7 @@ class TimelineThumbnailMathTest {
     fun sourceAspectRatioAccountsForQuarterTurnRotationMetadata() {
         assertEquals(9f / 16f, TimelineThumbnailMath.sourceAspectRatio(640, 360, 90)!!, 0.000001f)
         assertEquals(16f / 9f, TimelineThumbnailMath.sourceAspectRatio(360, 640, 270)!!, 0.000001f)
-        assertEquals(9f / 16f, TimelineThumbnailMath.sourceAspectRatio(360, 640, 450)!!, 0.000001f)
+        assertEquals(16f / 9f, TimelineThumbnailMath.sourceAspectRatio(360, 640, 450)!!, 0.000001f)
     }
 
     @Test

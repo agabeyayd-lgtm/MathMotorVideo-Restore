@@ -1,3 +1,10 @@
+## 2026-11-09 — Correct rotation-normalization unit expectation (PR #34)
+
+- Exact-head workflows for `a2d12497f684c9ead1dd8a16e02c8cc6d14a824f` all stopped at `testDebugUnitTest`: 174 tests ran and one assertion failed. Kotlin compilation and debug APK assembly completed before the unit-test task failed.
+- The failing `sourceAspectRatioAccountsForQuarterTurnRotationMetadata` test supplied source dimensions 360×640 with rotation 450°. The helper normalizes 450° to 90°, so the displayed orientation is landscape (16:9); the test incorrectly expected 9:16. Corrected that expected value without changing production rotation handling.
+- Because the unit-test task failed first, the emulator UI assertions did not run. The source-metadata canvas correction therefore remains unverified until all exact-head workflows pass; the 9:16 screenshot tolerance remains unchanged.
+- No app version bump, merge, or APK publication. Re-run unit tests, Android build/package and API 35 emulator checks on the corrected PR head.
+
 ## 2026-11-09 — Reduce real filmstrip decode work after emulator timing failure (PR #34)
 
 - Exact-head emulator run `42682344686` passed project text-history Undo/Redo, reopened the Metin panel, tapped its live `Araçlara dön` control, verified the preview canvas remained 423×753, and restored the text selection dock.
