@@ -1589,7 +1589,23 @@ if grep -Fq "PROJECT_HISTORY_GESTURE_END" emulator-screenshots/project-history-s
   collect_capture_diagnostics project-history-sound-volume-model-log-missing
   exit 94
 fi
-volume_undo_coords="$(python3 - emulator-screenshots/editor-project-audio-after-volume.xml <<'PY'
+# Tool detail panels replace the global timeline/Undo dock with a full-width
+# "Araçlara dön" action. Close the audio sheet before querying project history;
+# the application already committed the changed volume (verified above), but
+# Undo is deliberately not present in the detail panel's accessibility tree.
+volume_panel_back_coords="$(find_bottom_tool emulator-screenshots/editor-project-audio-after-volume.xml "Araçlara dön" || true)"
+if [ -z "$volume_panel_back_coords" ]; then
+  echo "The audio detail panel did not expose its return-to-tools control after the volume swipe."
+  collect_capture_diagnostics project-history-sound-volume-return-control-missing
+  exit 93
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$volume_panel_back_coords"
+sleep 1
+dump_hierarchy editor-main-dock-after-volume.xml emulator-screenshots/editor-main-dock-after-volume.xml || {
+  collect_capture_diagnostics project-history-sound-volume-main-dock-missing
+  exit 93
+}
+volume_undo_coords="$(python3 - emulator-screenshots/editor-main-dock-after-volume.xml <<'PY'
 import re, sys, xml.etree.ElementTree as ET
 root = ET.parse(sys.argv[1]).getroot()
 for node in root.iter("node"):
@@ -1627,11 +1643,11 @@ PY
 )" || { collect_capture_diagnostics project-history-sound-volume-undo-failed; exit 94; }
 read -r changed_sound_volume original_sound_volume <<< "$volume_history_values"
 echo "PASS: one Undo restored sound volume $changed_sound_volume -> $original_sound_volume and its slider matches."
-dump_hierarchy editor-project-audio-before-redo.xml emulator-screenshots/editor-project-audio-before-redo.xml || {
+dump_hierarchy editor-main-dock-before-redo.xml emulator-screenshots/editor-main-dock-before-redo.xml || {
   collect_capture_diagnostics project-history-sound-volume-redo-controls-missing
   exit 94
 }
-volume_redo_coords="$(python3 - emulator-screenshots/editor-project-audio-before-redo.xml <<'PY'
+volume_redo_coords="$(python3 - emulator-screenshots/editor-main-dock-before-redo.xml <<'PY'
 import re, sys, xml.etree.ElementTree as ET
 root = ET.parse(sys.argv[1]).getroot()
 for node in root.iter("node"):
@@ -1663,8 +1679,8 @@ print(f"PASS: one Redo reapplied sound volume {before} -> {after} and its slider
 PY
 
 # Restore the default source mix before later audio playback and trim checks.
-dump_hierarchy editor-project-audio-after-redo.xml emulator-screenshots/editor-project-audio-after-redo.xml || { collect_capture_diagnostics project-history-sound-volume-cleanup-controls-missing; exit 94; }
-cleanup_undo_coords="$(python3 - emulator-screenshots/editor-project-audio-after-redo.xml <<'PY'
+dump_hierarchy editor-main-dock-after-redo.xml emulator-screenshots/editor-main-dock-after-redo.xml || { collect_capture_diagnostics project-history-sound-volume-cleanup-controls-missing; exit 94; }
+cleanup_undo_coords="$(python3 - emulator-screenshots/editor-main-dock-after-redo.xml <<'PY'
 import re,sys,xml.etree.ElementTree as ET
 root=ET.parse(sys.argv[1]).getroot()
 for n in root.iter("node"):
@@ -1676,28 +1692,49 @@ raise SystemExit("Undo unavailable while restoring default test audio volume.")
 PY
 )" || { collect_capture_diagnostics project-history-sound-volume-cleanup-undo-disabled; exit 94; }
 timeout -k 2s 8s adb -s emulator-5554 logcat -c
-timeout -k 2s 8s adb -s emulator-5554 shell input tap $cleanup_undo_coords
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$cleanup_undo_coords"
 sleep 1
 timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-sound-volume-cleanup.txt 2>&1 || true
-python3 - emulator-screenshots/project-history-sound-volume-cleanup.txt "$original_sound_volume" <<'PY'
+python3 - emulator-screenshots/project-history-sound-volume-cleanup.txt "$changed_sound_volume" "$original_sound_volume" <<'PY'
 import re,sys
 lines=open(sys.argv[1],errors="replace").read().splitlines()
+events=[x for x in lines if "PROJECT_HISTORY_APPLIED action=undo " in x]
 controls=[x for x in lines if "PROJECT_HISTORY_CONTROLS " in x]
-if not controls: raise SystemExit("Default-volume cleanup did not log restored controls.")
+if not events or not controls: raise SystemExit("Default-volume cleanup did not log the final Undo transition and controls.")
+event=re.search(r"beforeSoundVolume=(\d+) afterSoundVolume=(\d+)",events[-1])
 m=re.search(r"soundModel=(\d+) soundSeek=(-?\d+)",controls[-1])
-expected=int(sys.argv[2])
+changed,expected=map(int,sys.argv[1:3])
+if not event or tuple(map(int,event.groups()))!=(changed,expected): raise SystemExit("Cleanup Undo did not restore the original sound value: "+events[-1])
 if not m or tuple(map(int,m.groups()))!=(expected,expected): raise SystemExit("Test audio volume was not restored before fixture import: "+controls[-1])
-print(f"PASS: restored initial sound volume {expected} before continuing emulator smoke tests.")
+print(f"PASS: Undo/Redo round-trip completed and one final Undo restored initial sound volume {expected}.")
 PY
 
-# The audio panel is still open after the volume checks. Return to the dock before
-# exercising preset and continuous color-grade history independently.
-filter_panel_back="$(find_bottom_tool emulator-screenshots/editor-project-audio-before-redo.xml "Araçlara dön" || true)"
-if [ -z "$filter_panel_back" ]; then
-  collect_capture_diagnostics project-history-filter-return-control-missing
-  exit 95
+# Re-open the audio sheet once at the restored baseline and prove the user-facing
+# label and SeekBar are still synchronized, then return to the dock for filters.
+audio_tab_after_cleanup="$(find_bottom_tool emulator-screenshots/editor-main-dock-after-redo.xml "Ses" || true)"
+if [ -z "$audio_tab_after_cleanup" ]; then
+  collect_capture_diagnostics project-history-sound-volume-verify-tab-missing
+  exit 94
 fi
-timeout -k 2s 8s adb -s emulator-5554 shell input tap $filter_panel_back
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$audio_tab_after_cleanup"
+sleep 1
+dump_hierarchy editor-audio-volume-restored.xml emulator-screenshots/editor-audio-volume-restored.xml || {
+  collect_capture_diagnostics project-history-sound-volume-restored-panel-missing
+  exit 94
+}
+if ! grep -Fq "Efekt sesi: $original_sound_volume%" emulator-screenshots/editor-audio-volume-restored.xml ||
+   ! grep -Fq "Ses efekti ses seviyesi" emulator-screenshots/editor-audio-volume-restored.xml; then
+  echo "The reopened audio panel did not show the original sound volume in both its label and slider."
+  collect_capture_diagnostics project-history-sound-volume-restored-ui-mismatch
+  exit 94
+fi
+echo "PASS: reopened audio panel displays the restored sound volume label and SeekBar control."
+restored_audio_back="$(find_bottom_tool emulator-screenshots/editor-audio-volume-restored.xml "Araçlara dön" || true)"
+if [ -z "$restored_audio_back" ]; then
+  collect_capture_diagnostics project-history-sound-volume-verify-return-missing
+  exit 94
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$restored_audio_back"
 sleep 1
 dump_hierarchy editor-main-dock-before-filter.xml emulator-screenshots/editor-main-dock-before-filter.xml || { collect_capture_diagnostics project-history-filter-dock-missing; exit 95; }
 filter_tab_coords="$(find_bottom_tool emulator-screenshots/editor-main-dock-before-filter.xml "Efektler" || true)"
