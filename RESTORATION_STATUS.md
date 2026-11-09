@@ -9,6 +9,8 @@
 - Unit/build and debug packaging passed on the canvas-history code, but the subsequent text-session and lane-order change requires a fresh successful build and emulator run. Do not mark PR #34 verified until the latest source checks complete.
 - Still required: direct Undo/Redo assertions for music/effect import-removal/volume/timing, overlay add/remove/transform/keyframes, text add/delete/style/timing, filters/canvas framing, and video trim/split/reorder; confirm preview and timeline restore together. Merge only after all required CI checks are green. No production APK/version-code update has been made.
 - **Latest API 35 emulator attempt (`f1b8e51d6de999893093429a395308fe4ad81cb6`):** Android unit/build and debug APK packaging passed. The emulator performed a real sound-effect trim and proved Undo restored `324→862 ms` and Redo reapplied `862→324 ms`; overlay edge-trim checks also passed. The job failed later in the editor-panel geometry validator because a late logcat read happened after unrelated Undo/Redo gestures cleared the ring buffer. The harness now snapshots panel geometry immediately after that workflow; geometry thresholds remain unchanged. Rerun every current-head workflow before marking the PR green.
+- Code audit found a restore-state defect: sound/music/source volume values and audio players were restored, but the matching SeekBar positions/percentage labels could remain stale. Project restore now updates the mixer controls and the legacy single-clip player's source volume; current emulator script now tests SFX-volume Undo/Redo against both the model and actual SeekBar progress.
+
 
 ---
 
