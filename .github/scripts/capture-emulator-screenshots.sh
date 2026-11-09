@@ -1539,10 +1539,32 @@ if [ -z "$sound_volume_bounds" ]; then
   exit 93
 fi
 read -r sound_cx sound_cy sound_w sound_h sound_x1 sound_y1 sound_x2 sound_y2 <<< "$sound_volume_bounds"
-sound_drag_start=$((sound_x2 - 18))
+# Start on the actual max-position thumb center (SeekBar horizontal padding is
+# included in the view bounds), then move far enough to produce a clear value change.
+sound_drag_start=$((sound_x2 - 16))
 sound_drag_end=$((sound_x1 + sound_w * 42 / 100))
-timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$sound_drag_start" "$sound_cy" "$sound_drag_end" "$sound_cy" 650
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$sound_drag_start" "$sound_cy" "$sound_drag_end" "$sound_cy" 1000
 sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s AudioVolumeTouchTest:I > emulator-screenshots/sound-volume-touch-logcat.txt 2>&1 || true
+if ! grep -Fq "VOLUME_SEEK_START" emulator-screenshots/sound-volume-touch-logcat.txt; then
+  echo "The swipe did not acquire the actual sound-volume SeekBar thumb; no application volume change can be tested yet."
+  cat emulator-screenshots/sound-volume-touch-logcat.txt || true
+  collect_capture_diagnostics project-history-sound-volume-thumb-not-acquired
+  exit 94
+fi
+if ! grep -Fq "VOLUME_SEEK_PROGRESS" emulator-screenshots/sound-volume-touch-logcat.txt; then
+  echo "The sound-volume SeekBar received touch tracking but emitted no fromUser progress change."
+  cat emulator-screenshots/sound-volume-touch-logcat.txt || true
+  collect_capture_diagnostics project-history-sound-volume-progress-not-changed
+  exit 94
+fi
+if ! grep -Fq "VOLUME_SEEK_STOP" emulator-screenshots/sound-volume-touch-logcat.txt; then
+  echo "The sound-volume SeekBar did not finish its drag gesture."
+  cat emulator-screenshots/sound-volume-touch-logcat.txt || true
+  collect_capture_diagnostics project-history-sound-volume-gesture-not-finished
+  exit 94
+fi
 dump_hierarchy editor-project-audio-after-volume.xml emulator-screenshots/editor-project-audio-after-volume.xml || {
   collect_capture_diagnostics project-history-sound-volume-after-drag-missing
   exit 93
