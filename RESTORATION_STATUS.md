@@ -1,3 +1,10 @@
+## 2026-11-09 — IME composition replays text after Undo restore (PR #34)
+
+- The API 35 run on `7164717dfe6e59ac8963d1ab4aae7b4271ab38c6` confirmed that the grouped text Undo itself applies `11 -> 0`, but the new `TEXT_CONTROLS_RESTORED` marker then showed `modelChars=11 inputChars=11` during the Undo restore path. The old input text had been replayed into the selected layer before the next Redo could capture the empty state.
+- The prior model-only snapshot change removed the snapshot-time UI pull, but did not detach the still-active IME input connection. Calling `restartInput()` from the restore path did not resolve the stale buffer and was removed.
+- Commit `0e2920c189d9985eb1c8845d908fdb48b2d0081c` now hides the IME, clears its composing span and clears EditText focus before committing text history and restoring either Undo or Redo. Restored values are applied without restarting the old input connection.
+- Required next: build and run the full API 35 suite on latest HEAD. Confirm `TEXT_CONTROLS_RESTORED modelChars=0 inputChars=0` immediately after the grouped typing Undo, then verify Redo logs `beforeTextChars=0 afterTextChars=11` and a following Redo restores the independent canvas drag. Keep the one-step assertions unchanged. No app version bump, merge, or release APK.
+ 
 ## 2026-11-09 — Text Undo/Redo model vs. EditText desynchronization (PR #34)
 
 - API 35 emulator run `42666577218` passed the earlier checks: text-panel return tap, canvas drag Undo/Redo, sound volume/trim Undo/Redo, overlay transform/trim, filter Undo/Redo, video drag/restore and grouped typing Undo across a one-second pause.
