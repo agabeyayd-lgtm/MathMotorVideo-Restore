@@ -486,16 +486,17 @@ class VideoEditorActivity : Activity() {
         override fun run() = work()
     }
     private val timelineThumbnailTaskSequence = java.util.concurrent.atomic.AtomicLong()
-    // Three isolated workers keep source-frame extraction concurrent. Each worker
-    // owns its MediaMetadataRetriever and only creates a Media3 extractor as a fallback.
+    // Four isolated workers keep the first visible filmstrip batch moving without
+    // sharing MediaMetadataRetriever instances. Each worker owns its retriever and
+    // creates a Media3 extractor only when the platform decoder cannot handle a source.
     private val timelineThumbnailWorkerSequence = java.util.concurrent.atomic.AtomicLong()
     private val timelineThumbnailRetrievers =
         java.util.concurrent.ConcurrentHashMap<Long, Pair<Uri, MediaMetadataRetriever>>()
     private val timelineThumbnailExtractors =
         java.util.concurrent.ConcurrentHashMap<Long, Pair<Uri, FrameExtractor>>()
     private val timelineThumbnailExecutor = java.util.concurrent.ThreadPoolExecutor(
-        3,
-        3,
+        4,
+        4,
         0L,
         java.util.concurrent.TimeUnit.MILLISECONDS,
         java.util.concurrent.PriorityBlockingQueue<Runnable>(
