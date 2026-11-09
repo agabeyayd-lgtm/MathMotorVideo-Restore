@@ -7920,14 +7920,43 @@ class VideoEditorActivity : Activity() {
 
     private fun volumeListener(onValue: (Int) -> Unit): SeekBar.OnSeekBarChangeListener =
         object : SeekBar.OnSeekBarChangeListener {
+            private var gestureStartProgress = -1
+
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                if (fromUser) onValue(progress.coerceIn(0, 100))
+                if (!fromUser) return
+                val normalized = progress.coerceIn(0, 100)
+                if (seekBar?.contentDescription == "Ses efekti ses seviyesi" &&
+                    timelineSyncTestEnabled
+                ) {
+                    android.util.Log.i(
+                        "AudioVolumeTouchTest",
+                        "VOLUME_SEEK_PROGRESS value=$normalized start=$gestureStartProgress"
+                    )
+                }
+                onValue(normalized)
             }
+
             override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                gestureStartProgress = seekBar?.progress ?: -1
+                if (seekBar?.contentDescription == "Ses efekti ses seviyesi") {
+                    android.util.Log.i(
+                        "AudioVolumeTouchTest",
+                        "VOLUME_SEEK_START progress=$gestureStartProgress width=${seekBar.width} " +
+                            "height=${seekBar.height} enabled=${seekBar.isEnabled}"
+                    )
+                }
                 activeProjectHistorySnapshot = beginProjectHistoryGesture()
             }
+
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                if (seekBar?.contentDescription == "Ses efekti ses seviyesi") {
+                    android.util.Log.i(
+                        "AudioVolumeTouchTest",
+                        "VOLUME_SEEK_STOP start=$gestureStartProgress end=${seekBar.progress} model=$soundVolume"
+                    )
+                }
                 finishProjectHistoryGesture()
+                gestureStartProgress = -1
             }
         }
 
