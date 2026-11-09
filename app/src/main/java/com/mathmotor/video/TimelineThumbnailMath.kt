@@ -1,5 +1,7 @@
 package com.mathmotor.video
 
+import kotlin.math.roundToInt
+
 /**
  * Pure sizing/sampling rules for the timeline filmstrip.
  *

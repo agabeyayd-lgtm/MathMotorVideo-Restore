@@ -1519,3 +1519,9 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - The test already confirmed SeekBar start/progress/stop callbacks and a completed history-gesture callback; the failure indicates the history snapshot was not committed as a changed project edit, or the gesture did not actually change the model. The prior harness discarded the most useful callback values on this failure path.
 - Added failure-only output of the captured `VOLUME_SEEK_START/PROGRESS/STOP` and `PROJECT_HISTORY_GESTURE_BEGIN/END/COMMITTED` records. This does not weaken assertions or alter production behavior. Next API 35 run will expose exact start/end progress and before/after model values so the underlying cause can be fixed rather than guessed.
 - Current branch commit: `083ed26373f59d590ecd19217da14f7b1fa9ace2`. No app version change, release APK, signing, or merge.
+
+### 2026-11-09 — Corrected thumbnail decode bounds compile failure
+- Exact-head CI for `bdd0d2d448c7a239a87926c2a5d7a3388ca3635b` failed before emulator startup in Kotlin compilation.
+- Root causes: `TimelineThumbnailMath.decodeBounds` used `roundToInt` without importing `kotlin.math.roundToInt`; the thumbnail scaling block referenced out-of-scope `maxWidthPx/maxHeightPx` instead of the already calculated `decodeWidthPx/decodeHeightPx`.
+- Corrected both source errors. The performance threshold remains unchanged; this fix only restores compilation and correctly constrains the scaled bitmap to the target-cell decode bounds.
+- A new exact-head CI run is required before judging the thumbnail performance improvement. No APK was produced or released from the failed run.

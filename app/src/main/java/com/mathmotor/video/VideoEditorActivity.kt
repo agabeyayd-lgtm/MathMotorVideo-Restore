@@ -11511,8 +11511,8 @@ class VideoEditorActivity : Activity() {
                     val (thumbnailWidth, thumbnailHeight) = TimelineThumbnailMath.fitDimensions(
                         original.width,
                         original.height,
-                        maxWidthPx.coerceAtLeast(1),
-                        maxHeightPx.coerceAtLeast(1)
+                        decodeWidthPx.coerceAtLeast(1),
+                        decodeHeightPx.coerceAtLeast(1)
                     )
                     val thumbnail = if (
                         original.width == thumbnailWidth && original.height == thumbnailHeight
