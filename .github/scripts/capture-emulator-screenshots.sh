@@ -975,6 +975,82 @@ if ! take_screen emulator-screenshots/editor-cover-tile-saved.png; then
   collect_capture_diagnostics cover-tile-after-save-capture-failed
   exit 86
 fi
+echo "Step 7b-CoverHistory: verify cover still image participates in project Undo/Redo"
+dump_hierarchy editor-cover-undo-controls.xml emulator-screenshots/editor-cover-undo-controls.xml || {
+  collect_capture_diagnostics cover-undo-controls-missing
+  exit 86
+}
+cover_undo_coords="$(python3 - emulator-screenshots/editor-cover-undo-controls.xml <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != "Proje işlemini geri al":
+        continue
+    if node.attrib.get("enabled", "false").lower() != "true":
+        continue
+    m = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if m:
+        x1,y1,x2,y2 = map(int, m.groups())
+        print((x1+x2)//2, (y1+y2)//2)
+        raise SystemExit(0)
+raise SystemExit("Project Undo was not enabled after saving the cover still.")
+PY
+)" || { collect_capture_diagnostics cover-undo-disabled; exit 86; }
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $cover_undo_coords
+cover_undo_restored=false
+for attempt in $(seq 1 12); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ClipCover:I > emulator-screenshots/cover-undo-logcat.txt 2>&1 || true
+  if grep -Fq "COVER_TILE_READY source=video" emulator-screenshots/cover-undo-logcat.txt; then
+    cover_undo_restored=true
+    break
+  fi
+  sleep 1
+done
+if [ "$cover_undo_restored" != true ]; then
+  echo "Project Undo did not restore the clip's original video-frame cover image."
+  cat emulator-screenshots/cover-undo-logcat.txt || true
+  collect_capture_diagnostics cover-undo-still-restore-failed
+  exit 86
+fi
+dump_hierarchy editor-cover-redo-controls.xml emulator-screenshots/editor-cover-redo-controls.xml || {
+  collect_capture_diagnostics cover-redo-controls-missing
+  exit 86
+}
+cover_redo_coords="$(python3 - emulator-screenshots/editor-cover-redo-controls.xml <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != "Proje işlemini yinele":
+        continue
+    if node.attrib.get("enabled", "false").lower() != "true":
+        continue
+    m = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if m:
+        x1,y1,x2,y2 = map(int, m.groups())
+        print((x1+x2)//2, (y1+y2)//2)
+        raise SystemExit(0)
+raise SystemExit("Project Redo was not enabled after cover Undo.")
+PY
+)" || { collect_capture_diagnostics cover-redo-disabled; exit 86; }
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $cover_redo_coords
+cover_redo_restored=false
+for attempt in $(seq 1 12); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ClipCover:I > emulator-screenshots/cover-redo-logcat.txt 2>&1 || true
+  if grep -Eq "COVER_TILE_READY source=saved-(file|cache)" emulator-screenshots/cover-redo-logcat.txt; then
+    cover_redo_restored=true
+    break
+  fi
+  sleep 1
+done
+if [ "$cover_redo_restored" != true ]; then
+  echo "Project Redo did not restore the separately saved cover still image."
+  cat emulator-screenshots/cover-redo-logcat.txt || true
+  collect_capture_diagnostics cover-redo-still-restore-failed
+  exit 86
+fi
+echo "PASS: cover Save, Undo and Redo switch the independent tile between the source frame and the saved still image."
 echo "PASS: fixed cover tile opened its picker, saved a project-local still image, and reloaded the tile from that saved file."
 
 echo "Step 8/12: verify the one-row clip tool strip and its upward detail panel"
