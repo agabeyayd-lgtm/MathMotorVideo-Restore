@@ -11282,7 +11282,6 @@ class VideoEditorActivity : Activity() {
     private fun persistClipCoverImage(bitmap: Bitmap, clip: Clip, sourceTimeMs: Long) {
         val directory = File(filesDir, "project_covers").apply { mkdirs() }
         val destination = File(directory, "cover_${java.util.UUID.randomUUID()}.jpg")
-        val previousPath = clip.coverImagePath
         val safeCopy = runCatching {
             val maxSide = 720
             val scale = minOf(1f, maxSide.toFloat() / maxOf(bitmap.width, bitmap.height).toFloat())
@@ -11319,7 +11318,9 @@ class VideoEditorActivity : Activity() {
                 recordProjectEdit()
                 clip.coverTimeMs = sourceTimeMs
                 clip.coverImagePath = saved.getOrThrow()
-                previousPath?.let { old -> if (old != clip.coverImagePath) File(old).delete() }
+                // Do not delete the previous file here: split/duplicate clips may
+                // still reference the same cover asset. Orphan cleanup can be done
+                // safely at project-level once all clip references are known.
                 loadTrimControls()
                 status.text = "Kapak görseli projeye kaydedildi."
             }
