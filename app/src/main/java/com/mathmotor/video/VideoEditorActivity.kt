@@ -106,6 +106,7 @@ class VideoEditorActivity : Activity() {
         var transformTranslateY: Float = 0f,
         var frameRate: Double? = null,
         var coverTimeMs: Long? = null,
+        var coverImagePath: String? = null,
         var speed: Float = 1f
     )
 
@@ -127,11 +128,43 @@ class VideoEditorActivity : Activity() {
         val keyframes: MutableList<OverlayTransformKeyframe> = mutableListOf()
     )
 
-    private data class ClipEditSnapshot(
+    private data class ProjectEditSnapshot(
         val clips: List<Clip>,
+        val overlays: List<OverlayClip>,
+        val textLayers: List<TextLayer>,
         val selectedClipIndex: Int,
+        val selectedOverlayId: Long?,
+        val selectedTextLayerId: Long?,
+        val clipHandlesVisible: Boolean,
         val timelinePlayheadMs: Long,
-        val previewSingleClip: Boolean
+        val timelinePxPerSec: Float,
+        val previewSingleClip: Boolean,
+        val canvasPreset: VideoCanvasPreset,
+        val timelineLaneOrder: List<String>,
+        val nextOverlayId: Long,
+        val nextTextLayerId: Long,
+        val musicUri: Uri?,
+        val musicTitle: String?,
+        val musicSourceDurationMs: Long,
+        val musicSourceStartMs: Long,
+        val musicSourceEndMs: Long,
+        val musicStartMs: Long,
+        val musicDurationMs: Long,
+        val soundUri: Uri?,
+        val soundTitle: String?,
+        val soundSourceDurationMs: Long,
+        val soundSourceStartMs: Long,
+        val soundDurationMs: Long,
+        val soundStartMs: Long,
+        val sourceAudioVolume: Int,
+        val musicVolume: Int,
+        val soundVolume: Int,
+        val keepSourceAudio: Boolean,
+        val videoFilterPreset: VideoFilterPreset,
+        val filterBrightness: Int,
+        val filterContrast: Int,
+        val filterSaturation: Int,
+        val filterHue: Int
     )
 
     private val clips = mutableListOf<Clip>()
@@ -141,11 +174,12 @@ class VideoEditorActivity : Activity() {
     private var overlayCompositionRefreshGeneration = 0L
     private var lastOverlayCompositionRefreshUptimeMs = 0L
     private var draftId: String? = null
-    private val undoClipHistory = mutableListOf<ClipEditSnapshot>()
-    private val redoClipHistory = mutableListOf<ClipEditSnapshot>()
-    private var activeTrimHistorySnapshot: ClipEditSnapshot? = null
-    private var undoClipButton: Button? = null
-    private var redoClipButton: Button? = null
+    private val undoProjectHistory = mutableListOf<ProjectEditSnapshot>()
+    private val redoProjectHistory = mutableListOf<ProjectEditSnapshot>()
+    private var activeProjectHistorySnapshot: ProjectEditSnapshot? = null
+    private var activeTextHistorySnapshot: ProjectEditSnapshot? = null
+    private var undoProjectButton: Button? = null
+    private var redoProjectButton: Button? = null
     private var selectedClipIndex = -1
     // Timeline trim chrome is shown only after an explicit clip selection tap.
     private var clipHandlesVisible = false
@@ -369,6 +403,25 @@ class VideoEditorActivity : Activity() {
     private val timelinePosterCache = object : android.util.LruCache<String, Bitmap>(4 * 1024 * 1024) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount.coerceAtLeast(1)
     }
+    // The left cover tile is an independent still-image surface. Keep its cache
+    // separate from the scrolling filmstrip so tile rebuilds never re-request strip cells.
+    private val coverThumbnailCache = object : android.util.LruCache<String, Bitmap>(4 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount.coerceAtLeast(1)
+    }
+    private val pendingCoverThumbnailTargets = mutableMapOf<String, MutableList<WeakReference<ImageView>>>()
+    private var coverThumbnailRequestSequence = 0L
+    // Cover stills use a separate decoder queue so a fixed gutter thumbnail can
+    // never occupy one of the three workers that fill the scrolling filmstrip.
+    private val coverThumbnailExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { task ->
+        Thread(task, "cover-thumbnail-decoder")
+    }
+    private val audioWaveformCache = object : android.util.LruCache<String, FloatArray>(256 * 1024) {
+        override fun sizeOf(key: String, value: FloatArray): Int = value.size * 4
+    }
+    private val pendingAudioWaveforms = mutableMapOf<String, MutableList<WeakReference<AudioWaveformView>>>()
+    private val audioWaveformExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { task ->
+        Thread(task, "audio-waveform-decoder")
+    }
     private val pendingTimelinePosterTargets = mutableMapOf<String, MutableList<WeakReference<ImageView>>>()
     private val pendingTimelinePosterLoads = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private val timelinePosterExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
@@ -568,6 +621,9 @@ class VideoEditorActivity : Activity() {
     private var filterSaturation = 0
     private var filterHue = 0
     private var updatingVideoFilterControls = false
+    private var restoringProjectHistory = false
+    // Keep restored project models authoritative while the editor controls are rebound.
+    private var restoringProjectEditSnapshot = false
     private val videoFilterButtons = linkedMapOf<VideoFilterPreset, Button>()
     private lateinit var videoFilterSummary: TextView
     private lateinit var filterBrightnessLabel: TextView
@@ -595,13 +651,13 @@ class VideoEditorActivity : Activity() {
     private lateinit var overlayRotationSeek: SeekBar
     private lateinit var overlayOpacitySeek: SeekBar
     private var updatingOverlayControls = false
-    private var clipCoverButton: Button? = null
-    private var pendingCoverSaveBitmap: Bitmap? = null
+    private var clipCoverButton: TextView? = null
+    private var clipCoverThumbnailView: ImageView? = null
     private lateinit var startLabel: TextView
     private lateinit var endLabel: TextView
     private lateinit var clipSpeedLabel: TextView
     private lateinit var clipSpeedSeek: SeekBar
-    private var clipSpeedHistorySnapshot: ClipEditSnapshot? = null
+    private var projectSpeedHistorySnapshot: ProjectEditSnapshot? = null
     private var updatingClipSpeedControl = false
     private lateinit var startSeek: SeekBar
     private lateinit var endSeek: SeekBar
@@ -624,6 +680,8 @@ class VideoEditorActivity : Activity() {
     private lateinit var textSizeSeek: SeekBar
     private lateinit var textInput: EditText
     private lateinit var keepSourceAudio: CheckBox
+    private var lastKeepSourceAudioValue = true
+    private var suppressHistoryMutationCallbacks = false
     private lateinit var status: TextView
     private lateinit var exportButton: Button
     private lateinit var exportNameInput: EditText
@@ -645,7 +703,6 @@ class VideoEditorActivity : Activity() {
         private const val REQUEST_OPEN_PROJECT = 5106
         private const val REQUEST_LEGACY_STORAGE = 5107
         private const val REQUEST_OVERLAY_ASSET = 5108
-        private const val REQUEST_SAVE_COVER_IMAGE = 5109
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -1267,24 +1324,24 @@ class VideoEditorActivity : Activity() {
             }
         )
 
-        val undoPlaybackButton = miniButton("↶") { undoClipEdit() }.apply {
+        val undoPlaybackButton = miniButton("↶") { undoProjectEdit() }.apply {
             isEnabled = false
             textSize = 18f
             minWidth = dp(30)
             minimumWidth = dp(30)
-            contentDescription = "Klip işlemini geri al"
+            contentDescription = "Proje işlemini geri al"
             setPadding(0, 0, 0, 0)
         }
-        val redoPlaybackButton = miniButton("↷") { redoClipEdit() }.apply {
+        val redoPlaybackButton = miniButton("↷") { redoProjectEdit() }.apply {
             isEnabled = false
             textSize = 18f
             minWidth = dp(30)
             minimumWidth = dp(30)
-            contentDescription = "Klip işlemini yinele"
+            contentDescription = "Proje işlemini yinele"
             setPadding(0, 0, 0, 0)
         }
-        undoClipButton = undoPlaybackButton
-        redoClipButton = redoPlaybackButton
+        undoProjectButton = undoPlaybackButton
+        redoProjectButton = redoPlaybackButton
         val fitTimelineButton = miniButton("Sığdır") { fitTimelineToProject() }.apply {
             textSize = 9f
             minWidth = dp(48)
@@ -1367,8 +1424,17 @@ class VideoEditorActivity : Activity() {
         selectedClipLabel = label("Önce bir video seç.", 12f, Color.WHITE, true)
         clipPanel.addView(selectedClipLabel)
         val clipActions1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val coverButton = miniButton("Kapak") { showClipCoverPicker() }.apply {
+        // CapCut keeps Kapak as a quiet text action in the lane gutter,
+        // not a raised/boxed mini-button that competes with the clip strip.
+        val coverButton = TextView(this).apply {
+            text = "Kapak"
+            textSize = 12f
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(205, 215, 224))
+            isClickable = true
+            isFocusable = true
             contentDescription = "Seçili klibin kapak karesini seç"
+            setOnClickListener { showClipCoverPicker() }
         }
         clipCoverButton = coverButton
         clipActions1.addView(coverButton, LinearLayout.LayoutParams(0, dp(46), 1f))
@@ -1431,7 +1497,7 @@ class VideoEditorActivity : Activity() {
                 }
                 override fun onStartTrackingTouch(seekBar: SeekBar?) {
                     pauseActivePreview()
-                    clipSpeedHistorySnapshot = captureClipEditSnapshot()
+                    projectSpeedHistorySnapshot = beginProjectHistoryGesture()
                 }
                 override fun onStopTrackingTouch(seekBar: SeekBar?) {
                     finishClipSpeedEdit()
@@ -1448,6 +1514,7 @@ class VideoEditorActivity : Activity() {
         clipVolumeSeek = SeekBar(this).apply {
             max = 100
             progress = sourceAudioVolume
+            contentDescription = "Orijinal video ses seviyesi"
             setOnSeekBarChangeListener(volumeListener { value ->
                 sourceAudioVolume = value
                 clipVolumeLabel.text = "Orijinal video sesi: " + value + "%"
@@ -1539,6 +1606,8 @@ class VideoEditorActivity : Activity() {
             addView(android.widget.RadioButton(this@VideoEditorActivity).apply { id = 3; text = "Alt"; setTextColor(Color.WHITE) })
             check(3)
             setOnCheckedChangeListener { _, checkedId ->
+                if (loadingTextLayerControls) return@setOnCheckedChangeListener
+                recordProjectEdit()
                 textPosition = when (checkedId) {
                     1 -> TextPosition.TOP
                     2 -> TextPosition.CENTER
@@ -1570,6 +1639,7 @@ class VideoEditorActivity : Activity() {
             check(31)
             setOnCheckedChangeListener { _, checkedId ->
                 if (loadingTextLayerControls) return@setOnCheckedChangeListener
+                recordProjectEdit()
                 textAnimationPreset = TextAnimationPreset.values().getOrNull(checkedId - 31)
                     ?: TextAnimationPreset.NONE
                 selectedTextLayer()?.animationPreset = textAnimationPreset
@@ -1598,8 +1668,11 @@ class VideoEditorActivity : Activity() {
                     selectedTextLayer()?.animationDurationMs = textAnimationDurationMs
                     updatePreviewTextOverlay()
                 }
-                override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                    activeProjectHistorySnapshot = beginProjectHistoryGesture()
+                }
                 override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                    finishProjectHistoryGesture()
                     refreshTimelineTracks()
                 }
             })
@@ -1628,6 +1701,7 @@ class VideoEditorActivity : Activity() {
             check(11)
             setOnCheckedChangeListener { _, checkedId ->
                 if (loadingTextLayerControls) return@setOnCheckedChangeListener
+                recordProjectEdit()
                 textColorPreset = TextColorPreset.values().getOrNull(checkedId - 11)
                     ?: TextColorPreset.WHITE
                 syncSelectedTextLayerFromControls()
@@ -1652,6 +1726,7 @@ class VideoEditorActivity : Activity() {
             isChecked = true
             setOnCheckedChangeListener { _, checked ->
                 if (loadingTextLayerControls) return@setOnCheckedChangeListener
+                recordProjectEdit()
                 textBold = checked
                 syncSelectedTextLayerFromControls()
                 updatePreviewTextOverlay()
@@ -1682,17 +1757,22 @@ class VideoEditorActivity : Activity() {
                     selectedTextLayer()?.sizeSp = textSizeSp
                 }
                 updatePreviewTextOverlay()
-                previewTextOverlays.forEach { it.requestLayout() }
                 refreshTextLayerList()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                if (!loadingTextLayerControls) activeProjectHistorySnapshot = beginProjectHistoryGesture()
+            }
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                finishProjectHistoryGesture()
+            }
         })
         textPanel.addView(textSizeSeek, matchWrap())
         textInput.addTextChangedListener(object : android.text.TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {
+                if (!loadingTextLayerControls && !restoringProjectEditSnapshot) beginTextHistoryEdit()
+            }
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                if (loadingTextLayerControls) return
+                if (loadingTextLayerControls || restoringProjectEditSnapshot) return
                 if (selectedTextLayer() == null && !s.isNullOrBlank()) {
                     val total = totalOutputDurationMs()
                     val layer = TextLayer(
@@ -1716,6 +1796,8 @@ class VideoEditorActivity : Activity() {
                 updatePreviewTextOverlay()
                 timelineHandler.removeCallbacks(textTimelineRefreshTask)
                 timelineHandler.postDelayed(textTimelineRefreshTask, 120L)
+                // Keep a complete text-edit session as one Undo step across
+                // pauses; focus loss or the next editor action commits it.
             }
             override fun afterTextChanged(s: android.text.Editable?) {}
         })
@@ -1745,6 +1827,7 @@ class VideoEditorActivity : Activity() {
         musicActions.addView(miniButton("Müzik ekle") { chooseAudio(true) },
             LinearLayout.LayoutParams(0, dp(42), 1f))
         musicActions.addView(miniButton("Müziği kaldır") {
+            if (musicUri != null) recordProjectEdit()
             musicUri = null
             musicTitle = null
             musicSourceDurationMs = 0L
@@ -1761,13 +1844,26 @@ class VideoEditorActivity : Activity() {
         audioPanel.addView(musicActions)
         musicVolumeLabel = label("Müzik sesi: 45%", 12f, Color.WHITE, true)
         audioPanel.addView(musicVolumeLabel)
-        musicVolumeSeek = SeekBar(this).apply { max = 100; progress = musicVolume }
+        musicVolumeSeek = SeekBar(this).apply {
+            max = 100
+            progress = musicVolume
+            contentDescription = "Müzik ses seviyesi"
+        }
         musicVolumeSeek.setOnSeekBarChangeListener(volumeListener { value ->
             musicVolume = value
             musicVolumeLabel.text = "Müzik sesi: " + value + "%"
             musicPreviewPlayer?.volume = value / 100f
         })
-        audioPanel.addView(musicVolumeSeek, matchWrap())
+        musicVolumeSeek.minimumHeight = dp(48)
+        musicVolumeSeek.minHeight = dp(48)
+        musicVolumeSeek.setPadding(
+            musicVolumeSeek.paddingLeft, dp(10),
+            musicVolumeSeek.paddingRight, dp(10)
+        )
+        audioPanel.addView(
+            musicVolumeSeek,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48))
+        )
 
         musicSourceRangeLabel = label("Müzik kaynak aralığı: tüm dosya", 12f, Color.WHITE, true)
         audioPanel.addView(musicSourceRangeLabel)
@@ -1787,8 +1883,13 @@ class VideoEditorActivity : Activity() {
                 musicPreviewPlayer?.pause()
                 refreshTimelineTracks()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) { player?.playWhenReady = false }
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                player?.playWhenReady = false
+                activeProjectHistorySnapshot = beginProjectHistoryGesture()
+            }
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                finishProjectHistoryGesture()
+            }
         }
         musicSourceStartSeek.setOnSeekBarChangeListener(sourceRangeListener)
         musicSourceEndSeek.setOnSeekBarChangeListener(sourceRangeListener)
@@ -1804,6 +1905,7 @@ class VideoEditorActivity : Activity() {
         soundActions.addView(miniButton("Efekt ekle") { chooseAudio(false) },
             LinearLayout.LayoutParams(0, dp(42), 1f))
         soundActions.addView(miniButton("Efekti kaldır") {
+            if (soundUri != null) recordProjectEdit()
             soundUri = null
             soundTitle = null
             soundSourceDurationMs = 0L
@@ -1827,27 +1929,60 @@ class VideoEditorActivity : Activity() {
                 updateSoundControls()
                 if (!deferTimelineRefresh) refreshTimelineTracks()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) { deferTimelineRefresh = true }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                deferTimelineRefresh = true
+                activeProjectHistorySnapshot = beginProjectHistoryGesture()
+            }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
                 deferTimelineRefresh = false
+                finishProjectHistoryGesture()
                 refreshTimelineTracks()
             }
         })
         audioPanel.addView(soundStartSeek, matchWrap())
         soundVolumeLabel = label("Efekt sesi: 100%", 12f, Color.WHITE, true)
         audioPanel.addView(soundVolumeLabel)
-        soundVolumeSeek = SeekBar(this).apply { max = 100; progress = soundVolume }
+        soundVolumeSeek = SeekBar(this).apply {
+            max = 100
+            progress = soundVolume
+            contentDescription = "Ses efekti ses seviyesi"
+        }
         soundVolumeSeek.setOnSeekBarChangeListener(volumeListener { value ->
             soundVolume = value
             soundVolumeLabel.text = "Efekt sesi: " + value + "%"
             soundPreviewPlayer?.volume = value / 100f
         })
-        audioPanel.addView(soundVolumeSeek, matchWrap())
+        // The platform's wrap-content SeekBar was only ~16dp high in the
+        // emulator, making its thumb hard to acquire reliably. Use a CapCut-like
+        // full-height touch target while keeping the visual track centered.
+        soundVolumeSeek.minimumHeight = dp(48)
+        soundVolumeSeek.minHeight = dp(48)
+        soundVolumeSeek.setPadding(
+            soundVolumeSeek.paddingLeft,
+            dp(10),
+            soundVolumeSeek.paddingRight,
+            dp(10)
+        )
+        audioPanel.addView(
+            soundVolumeSeek,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48))
+        )
         keepSourceAudio = CheckBox(this).apply {
             text = "Videonun kendi sesini koru"
             isChecked = true
             setTextColor(Color.WHITE)
             setOnCheckedChangeListener { _, checked ->
+                if (suppressHistoryMutationCallbacks) {
+                    lastKeepSourceAudioValue = checked
+                    return@setOnCheckedChangeListener
+                }
+                finishTextHistoryEdit()
+                finishProjectHistoryGesture()
+                val before = captureProjectEditSnapshot().copy(
+                    keepSourceAudio = lastKeepSourceAudioValue
+                )
+                pushProjectUndoSnapshot(before)
+                lastKeepSourceAudioValue = checked
                 player?.volume = if (checked) sourceAudioVolume / 100f else 0f
                 refreshTimelineSourceAudio()
             }
@@ -1855,7 +1990,11 @@ class VideoEditorActivity : Activity() {
         audioPanel.addView(keepSourceAudio)
         sourceVolumeLabel = label("Orijinal video sesi: 100%", 12f, Color.WHITE, true)
         audioPanel.addView(sourceVolumeLabel)
-        sourceVolumeSeek = SeekBar(this).apply { max = 100; progress = sourceAudioVolume }
+        sourceVolumeSeek = SeekBar(this).apply {
+            max = 100
+            progress = sourceAudioVolume
+            contentDescription = "Orijinal video ses seviyesi"
+        }
         sourceVolumeSeek.setOnSeekBarChangeListener(volumeListener { value ->
             sourceAudioVolume = value
             sourceVolumeLabel.text = "Orijinal video sesi: " + value + "%"
@@ -1886,22 +2025,22 @@ class VideoEditorActivity : Activity() {
         effectsPanel.addView(filterPresets)
 
         filterBrightnessLabel = label("Parlaklık: 0", 11f, Color.rgb(205, 218, 231), false)
-        filterBrightnessSeek = SeekBar(this).apply { max = 200; progress = 100 }
+        filterBrightnessSeek = SeekBar(this).apply { max = 200; progress = 100; contentDescription = "Parlaklık filtresi" }
         effectsPanel.addView(filterBrightnessLabel)
         effectsPanel.addView(filterBrightnessSeek, matchWrap())
 
         filterContrastLabel = label("Kontrast: 0", 11f, Color.rgb(205, 218, 231), false)
-        filterContrastSeek = SeekBar(this).apply { max = 200; progress = 100 }
+        filterContrastSeek = SeekBar(this).apply { max = 200; progress = 100; contentDescription = "Kontrast filtresi" }
         effectsPanel.addView(filterContrastLabel)
         effectsPanel.addView(filterContrastSeek, matchWrap())
 
         filterSaturationLabel = label("Doygunluk: 0", 11f, Color.rgb(205, 218, 231), false)
-        filterSaturationSeek = SeekBar(this).apply { max = 200; progress = 100 }
+        filterSaturationSeek = SeekBar(this).apply { max = 200; progress = 100; contentDescription = "Doygunluk filtresi" }
         effectsPanel.addView(filterSaturationLabel)
         effectsPanel.addView(filterSaturationSeek, matchWrap())
 
         filterHueLabel = label("Renk tonu: 0°", 11f, Color.rgb(205, 218, 231), false)
-        filterHueSeek = SeekBar(this).apply { max = 360; progress = 180 }
+        filterHueSeek = SeekBar(this).apply { max = 360; progress = 180; contentDescription = "Renk tonu filtresi" }
         effectsPanel.addView(filterHueLabel)
         effectsPanel.addView(filterHueSeek, matchWrap())
         effectsPanel.addView(actionButton("Renk ayarlarını sıfırla") {
@@ -2034,8 +2173,15 @@ class VideoEditorActivity : Activity() {
             }
             check(340)
             setOnCheckedChangeListener { _, checkedId ->
-                exportCanvasPreset = VideoCanvasPreset.values().getOrNull(checkedId - 340)
+                val nextPreset = VideoCanvasPreset.values().getOrNull(checkedId - 340)
                     ?: VideoCanvasPreset.SOURCE
+                if (restoringProjectHistory) {
+                    exportCanvasPreset = nextPreset
+                    return@setOnCheckedChangeListener
+                }
+                if (nextPreset == exportCanvasPreset) return@setOnCheckedChangeListener
+                recordProjectEdit()
+                exportCanvasPreset = nextPreset
                 refreshColorGradePreview()
                 updatePreviewCanvasSize()
                 status.text = when (exportCanvasPreset) {
@@ -2109,6 +2255,8 @@ class VideoEditorActivity : Activity() {
                         android.graphics.Rect(0, 0, textInput.width, textInput.height), true
                     )
                 }
+            } else {
+                finishTextHistoryEdit()
             }
         }
         editorPanelScroll.visibility = View.GONE
@@ -2382,8 +2530,10 @@ class VideoEditorActivity : Activity() {
                 return true
             }
         }
+        // applyKeyboardMode() has already requested the root layout. The next
+        // pre-draw will contain the post-IME bounds; requesting another layout on
+        // this full-width button only adds avoidable hierarchy churn.
         observer.addOnPreDrawListener(listener)
-        target.requestLayout()
     }
 
     private fun installResponsiveEditorLayout(
@@ -2814,6 +2964,7 @@ class VideoEditorActivity : Activity() {
     /** Stage one: replace the global dock with one compact horizontal clip-tool strip. */
     private fun enterClipTools() {
         if (!::editorDock.isInitialized || !::editorPanelScroll.isInitialized) return
+        finishTextHistoryEdit()
         logEditorPanelGeometry("before-open:clip-tools")
         clipToolsMode = true
         activeClipTool = null
@@ -2977,6 +3128,7 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun showEditorPanel(name: String) {
+        if (activeEditorPanel != name) finishTextHistoryEdit()
         // Capture the real pre-panel geometry before panel mode changes timeline
         // sizing. Logging after setTimelinePanelMode(true) records the resized
         // layout as the baseline and makes the emulator compare the wrong state.
@@ -3256,24 +3408,70 @@ class VideoEditorActivity : Activity() {
             }
             if (reorderable) {
                 row.addView(grip, LinearLayout.LayoutParams(dp(44), ViewGroup.LayoutParams.MATCH_PARENT))
-                val sideAction = TextView(this).apply {
-                    text = when {
-                        tag == "Video" -> "Kapak"
-                        tag == "Müzik" || tag == "Ses" -> "Ses\nekle"
-                        tag == "Metin" || tag == "Metin 1" -> "Metin\nekle"
-                        else -> ""
+                val sideAction: View = if (tag == "Video") {
+                    val coverAction = LinearLayout(this).apply {
+                        orientation = LinearLayout.VERTICAL
+                        gravity = Gravity.CENTER
+                        isClickable = true
+                        isFocusable = true
+                        contentDescription = "Kapak görselini düzenle"
+                        setOnClickListener {
+                            if (selectedClip() != null) showClipCoverPicker() else chooseVideo(true)
+                        }
                     }
-                    textSize = 9f
-                    gravity = Gravity.CENTER
-                    setTextColor(Color.rgb(166, 184, 201))
-                    isClickable = text.isNotBlank()
-                    isFocusable = text.isNotBlank()
-                    contentDescription = text.toString().replace("\n", " ")
-                    setOnClickListener {
-                        when (tag) {
-                            "Video" -> if (selectedClip() != null) showClipCoverPicker() else chooseVideo(true)
-                            "Müzik", "Ses" -> showEditorPanel("audio")
-                            "Metin", "Metin 1" -> showEditorPanel("text")
+                    val tile = FrameLayout(this).apply {
+                        background = android.graphics.drawable.GradientDrawable().apply {
+                            setColor(Color.rgb(37, 45, 55))
+                            cornerRadius = dp(5).toFloat()
+                            setStroke(dp(1), Color.rgb(78, 91, 105))
+                        }
+                        clipToOutline = true
+                    }
+                    val thumbnail = ImageView(this).apply {
+                        scaleType = ImageView.ScaleType.CENTER_CROP
+                        contentDescription = "Seçili klibin kapak karesi"
+                    }
+                    clipCoverThumbnailView = thumbnail
+                    tile.addView(thumbnail, FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+                    ))
+                    val editMark = TextView(this).apply {
+                        text = "✎"
+                        textSize = 13f
+                        gravity = Gravity.CENTER
+                        setTextColor(Color.WHITE)
+                        background = android.graphics.drawable.GradientDrawable().apply {
+                            setColor(0x99000000.toInt())
+                            cornerRadius = dp(10).toFloat()
+                        }
+                    }
+                    tile.addView(editMark, FrameLayout.LayoutParams(dp(18), dp(18), Gravity.TOP or Gravity.END))
+                    coverAction.addView(tile, LinearLayout.LayoutParams(dp(36), dp(36)))
+                    coverAction.addView(TextView(this).apply {
+                        text = "Kapak"
+                        textSize = 9f
+                        gravity = Gravity.CENTER
+                        setTextColor(Color.rgb(166, 184, 201))
+                    }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(16)))
+                    coverAction
+                } else {
+                    TextView(this).apply {
+                        text = when {
+                            tag == "Müzik" || tag == "Ses" -> "Ses\nekle"
+                            tag == "Metin" || tag == "Metin 1" -> "Metin\nekle"
+                            else -> ""
+                        }
+                        textSize = 9f
+                        gravity = Gravity.CENTER
+                        setTextColor(Color.rgb(166, 184, 201))
+                        isClickable = text.isNotBlank()
+                        isFocusable = text.isNotBlank()
+                        contentDescription = text.toString().replace("\n", " ")
+                        setOnClickListener {
+                            when (tag) {
+                                "Müzik", "Ses" -> showEditorPanel("audio")
+                                "Metin", "Metin 1" -> showEditorPanel("text")
+                            }
                         }
                     }
                 }
@@ -3315,6 +3513,7 @@ class VideoEditorActivity : Activity() {
                 grip.setOnTouchListener { view, event ->
                     when (event.actionMasked) {
                         MotionEvent.ACTION_DOWN -> {
+                            activeProjectHistorySnapshot = beginProjectHistoryGesture()
                             downRawY = event.rawY
                             moved = false
                             view.parent?.requestDisallowInterceptTouchEvent(true)
@@ -3358,10 +3557,13 @@ class VideoEditorActivity : Activity() {
                             } else {
                                 view.performClick()
                             }
+                            finishProjectHistoryGesture()
                             true
                         }
                         MotionEvent.ACTION_CANCEL -> {
                             view.parent?.requestDisallowInterceptTouchEvent(false)
+                            activeProjectHistorySnapshot = null
+                            if (moved) refreshTimelineTracks()
                             true
                         }
                         else -> false
@@ -3538,6 +3740,7 @@ class VideoEditorActivity : Activity() {
                     when (event.actionMasked) {
                         MotionEvent.ACTION_DOWN -> {
                             downX = event.rawX
+                            activeProjectHistorySnapshot = beginProjectHistoryGesture()
                             active = true
                             moved = false
                             longPressed = false
@@ -3569,14 +3772,19 @@ class VideoEditorActivity : Activity() {
                             view.parent?.requestDisallowInterceptTouchEvent(false)
                             if (longPressed && moved) {
                                 onMove(TimelineScaleMath.millisecondsForPixels(event.rawX - downX, timelinePixelsPerSecond()))
+                                finishProjectHistoryGesture()
                                 refreshTimelineTracks()
-                            } else if (!moved) onClick?.invoke()
+                            } else {
+                                activeProjectHistorySnapshot = null
+                                if (!moved) onClick?.invoke()
+                            }
                             view.performClick()
                             true
                         }
                         MotionEvent.ACTION_CANCEL -> {
                             timelineHandler.removeCallbacks(hold)
                             active = false
+                            activeProjectHistorySnapshot = null
                             frame.translationX = 0f
                             view.parent?.requestDisallowInterceptTouchEvent(false)
                             true
@@ -3618,6 +3826,7 @@ class VideoEditorActivity : Activity() {
                         MotionEvent.ACTION_DOWN -> {
                             downX = event.rawX
                             moved = false
+                            activeProjectHistorySnapshot = beginProjectHistoryGesture()
                             pauseActivePreview()
                             view.parent?.requestDisallowInterceptTouchEvent(true)
                             true
@@ -3637,11 +3846,13 @@ class VideoEditorActivity : Activity() {
                             view.translationX = 0f
                             view.parent?.requestDisallowInterceptTouchEvent(false)
                             callback(if (moved) delta else 0L)
+                            if (moved) finishProjectHistoryGesture() else activeProjectHistorySnapshot = null
                             view.performClick()
                             refreshTimelineTracks()
                             true
                         }
                         MotionEvent.ACTION_CANCEL -> {
+                            activeProjectHistorySnapshot = null
                             view.translationX = 0f
                             view.parent?.requestDisallowInterceptTouchEvent(false)
                             true
@@ -3748,6 +3959,7 @@ class VideoEditorActivity : Activity() {
                         bodyDownRawX = event.rawX
                         bodyInitialStartMs = layer.startMs
                         bodyInitialEndMs = layer.endMs
+                        activeProjectHistorySnapshot = beginProjectHistoryGesture()
                         bodyMoved = false
                         bodyTouchActive = true
                         bodyLongPressed = false
@@ -3798,18 +4010,23 @@ class VideoEditorActivity : Activity() {
                             layer.timingCustomized = true
                             selectedTextLayerId = layer.id
                             loadTextLayerIntoControls(layer)
+                            finishProjectHistoryGesture()
                             status.text = "Yazı katmanı zaman çizelgesinde taşındı."
                             refreshTimelineTracks()
                             enterTextTools()
                         } else if (!bodyMoved) {
+                            activeProjectHistorySnapshot = null
                             view.performClick()
                             refreshTimelineTracks()
+                        } else {
+                            activeProjectHistorySnapshot = null
                         }
                         true
                     }
                     android.view.MotionEvent.ACTION_CANCEL -> {
                         timelineHandler.removeCallbacks(bodyLongPressAction)
                         bodyTouchActive = false
+                        activeProjectHistorySnapshot = null
                         frame.translationX = 0f
                         frame.animate().scaleX(1f).scaleY(1f).setDuration(100L).start()
                         view.parent?.requestDisallowInterceptTouchEvent(false)
@@ -3848,6 +4065,7 @@ class VideoEditorActivity : Activity() {
                             downRawX = event.rawX
                             initialStartMs = layer.startMs
                             initialEndMs = layer.endMs
+                            activeProjectHistorySnapshot = beginProjectHistoryGesture()
                             moved = false
                             player?.playWhenReady = false
                             view.parent?.requestDisallowInterceptTouchEvent(true)
@@ -3891,6 +4109,7 @@ class VideoEditorActivity : Activity() {
                                 layer.timingCustomized = true
                                 selectedTextLayerId = layer.id
                                 loadTextLayerIntoControls(layer)
+                                finishProjectHistoryGesture()
                                 status.text = if (isStart) {
                                     "Yazı başlangıcı: ${formatTimelineMs(layer.startMs)}"
                                 } else {
@@ -3898,6 +4117,7 @@ class VideoEditorActivity : Activity() {
                                 }
                                 enterTextTools()
                             } else {
+                                activeProjectHistorySnapshot = null
                                 selectTextLayer(layer.id)
                             }
                             refreshTimelineTracks()
@@ -3905,6 +4125,7 @@ class VideoEditorActivity : Activity() {
                             true
                         }
                         android.view.MotionEvent.ACTION_CANCEL -> {
+                            activeProjectHistorySnapshot = null
                             view.translationX = 0f
                             view.parent?.requestDisallowInterceptTouchEvent(false)
                             true
@@ -4355,6 +4576,9 @@ class VideoEditorActivity : Activity() {
             scheduleTimelineAlignmentSnapshot()
         }
         updateTimelinePlayheadLine()
+        // refreshTimelineTracks() replaces the gutter ImageView on every rebuild.
+        // Rebind the independent cover surface here so no caller can leave it blank.
+        refreshClipCoverThumbnail(selectedClip() ?: clips.firstOrNull())
     }
 
 
@@ -4389,19 +4613,28 @@ class VideoEditorActivity : Activity() {
     private fun updateMusicSourceRangeControls() {
         if (!::musicSourceRangeLabel.isInitialized) return
         val duration = musicSourceDurationMs
+        if (musicUri == null || duration <= 0L) {
+            musicSourceStartMs = 0L
+            musicSourceEndMs = 0L
+            musicSourceRangeLabel.text = "Müzik seçilmedi."
+            musicSourceStartSeek.progress = 0
+            musicSourceEndSeek.progress = 1000
+            musicSourceStartSeek.isEnabled = false
+            musicSourceEndSeek.isEnabled = false
+            return
+        }
         val range = MusicSourceRangeMath.normalize(
             MusicSourceRange(musicSourceStartMs, musicSourceEndMs.takeIf { it > 0L } ?: duration),
             duration
         )
         musicSourceStartMs = range.startMs
         musicSourceEndMs = range.endMs
-        musicSourceRangeLabel.text = if (duration > 0L) {
+        musicSourceRangeLabel.text =
             "Dosya içi: ${formatTimelineMs(range.startMs)} – ${formatTimelineMs(range.endMs)}"
-        } else "Müzik kaynak aralığı okunuyor…"
-        if (duration > 0L) {
-            musicSourceStartSeek.progress = (range.startMs * 1000L / duration).toInt().coerceIn(0, 1000)
-            musicSourceEndSeek.progress = (range.endMs * 1000L / duration).toInt().coerceIn(0, 1000)
-        }
+        musicSourceStartSeek.isEnabled = true
+        musicSourceEndSeek.isEnabled = true
+        musicSourceStartSeek.progress = (range.startMs * 1000L / duration).toInt().coerceIn(0, 1000)
+        musicSourceEndSeek.progress = (range.endMs * 1000L / duration).toInt().coerceIn(0, 1000)
     }
 
     private fun updateMusicTimingLabel() {
@@ -4414,6 +4647,336 @@ class VideoEditorActivity : Activity() {
         val endMs = musicStartMs + musicDurationMs
         musicLabel.text = "Müzik: " + title + " • " +
             formatTimelineMs(musicStartMs) + " – " + formatTimelineMs(endMs) + " • döngü"
+    }
+
+    /** Lightweight visual waveform drawn inside an audio clip without changing audio timing. */
+    private inner class AudioWaveformView(
+        private val kind: String,
+        private val barColor: Int
+    ) : View(this@VideoEditorActivity) {
+        private val waveformPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = barColor
+            style = android.graphics.Paint.Style.FILL
+        }
+        private var amplitudes: FloatArray = FloatArray(0)
+        private var loggedFirstVisibleDraw = false
+
+        fun setWaveform(values: FloatArray) {
+            amplitudes = values
+            // A decoded waveform can finish while a timeline rebuild is still
+            // assembling its new FrameLayout. invalidate() on a detached View
+            // is not enough to guarantee a draw after the View is attached.
+            if (isAttachedToWindow) {
+                postInvalidateOnAnimation()
+            } else {
+                invalidate()
+            }
+        }
+
+        override fun onAttachedToWindow() {
+            super.onAttachedToWindow()
+            // Re-paint cached samples that may have arrived before attachment.
+            postInvalidateOnAnimation()
+        }
+
+        override fun onSizeChanged(width: Int, height: Int, oldWidth: Int, oldHeight: Int) {
+            super.onSizeChanged(width, height, oldWidth, oldHeight)
+            if (amplitudes.isNotEmpty() && width > 0 && height > 0) {
+                postInvalidateOnAnimation()
+            }
+        }
+
+        override fun onDraw(canvas: android.graphics.Canvas) {
+            super.onDraw(canvas)
+            val values = amplitudes
+            if (values.isEmpty() || width <= 0 || height <= 0) return
+            val horizontalStep = dp(3).toFloat()
+            val barCount = minOf(values.size, (width / horizontalStep).toInt().coerceAtLeast(1))
+            if (barCount <= 0) return
+            if (timelineSyncTestEnabled && !loggedFirstVisibleDraw) {
+                loggedFirstVisibleDraw = true
+                android.util.Log.i(
+                    "AudioWaveform",
+                    "AUDIO_WAVEFORM_DRAWN kind=$kind width=$width height=$height bars=$barCount attached=$isAttachedToWindow"
+                )
+            }
+            val cellWidth = width.toFloat() / barCount
+            val barWidth = minOf(dp(2).toFloat(), cellWidth * 0.72f).coerceAtLeast(1f)
+            // Keep the waveform in the lower band so the clip title remains legible.
+            // The waveform view is elevated above the transparent title surface below.
+            val centerY = height * 0.72f
+            val maximumHalfHeight = height * 0.22f
+            for (index in 0 until barCount) {
+                val sampleIndex = (index.toLong() * values.size / barCount).toInt().coerceIn(0, values.lastIndex)
+                val amplitude = values[sampleIndex].coerceIn(0.035f, 1f)
+                val halfHeight = (maximumHalfHeight * amplitude).coerceAtLeast(dp(1).toFloat())
+                val left = index * cellWidth + (cellWidth - barWidth) / 2f
+                canvas.drawRoundRect(
+                    left,
+                    centerY - halfHeight,
+                    left + barWidth,
+                    centerY + halfHeight,
+                    barWidth / 2f,
+                    barWidth / 2f,
+                    waveformPaint
+                )
+            }
+        }
+    }
+
+    private fun requestAudioWaveform(
+        uri: Uri,
+        sourceStartMs: Long,
+        sourceDurationMs: Long,
+        target: AudioWaveformView,
+        kind: String
+    ) {
+        if (sourceDurationMs <= 0L) return
+        val key = "${uri}#${sourceStartMs}#${sourceDurationMs}#120"
+        target.tag = key
+        val cached = audioWaveformCache.get(key)
+        if (cached != null) {
+            target.setWaveform(cached)
+            if (timelineLifecycleDiagnosticsEnabled) android.util.Log.i(
+                "AudioWaveform",
+                "AUDIO_WAVEFORM_READY kind=$kind source=cache bars=${cached.size}"
+            )
+            return
+        }
+        val waiting = pendingAudioWaveforms[key]
+        if (waiting != null) {
+            if (waiting.none { it.get() === target }) waiting.add(WeakReference(target))
+            return
+        }
+        pendingAudioWaveforms[key] = mutableListOf(WeakReference(target))
+        val task = Runnable {
+            val startedAt = SystemClock.uptimeMillis()
+            val decoded = decodeAudioWaveform(uri, sourceStartMs, sourceDurationMs, 120)
+            runOnUiThread {
+                val targets = pendingAudioWaveforms.remove(key).orEmpty()
+                if (decoded != null && !isFinishing && !isDestroyed) {
+                    audioWaveformCache.put(key, decoded)
+                    var applied = 0
+                    targets.forEach { reference ->
+                        val view = reference.get() ?: return@forEach
+                        if (view.tag == key) {
+                            view.setWaveform(decoded)
+                            applied++
+                        }
+                    }
+                    if (timelineLifecycleDiagnosticsEnabled || timelineSyncTestEnabled) {
+                        android.util.Log.i(
+                            "AudioWaveform",
+                            "AUDIO_WAVEFORM_READY kind=$kind source=decode bars=${decoded.size} " +
+                                "nonZero=${decoded.count { it > 0.08f }} elapsedMs=${SystemClock.uptimeMillis() - startedAt} targets=$applied"
+                        )
+                    }
+                } else if (timelineLifecycleDiagnosticsEnabled || timelineSyncTestEnabled) {
+                    android.util.Log.w(
+                        "AudioWaveform",
+                        "AUDIO_WAVEFORM_FAILED kind=$kind elapsedMs=${SystemClock.uptimeMillis() - startedAt}"
+                    )
+                }
+            }
+        }
+        try {
+            audioWaveformExecutor.execute(task)
+        } catch (_: java.util.concurrent.RejectedExecutionException) {
+            pendingAudioWaveforms.remove(key)
+        }
+    }
+
+    /**
+     * Decode PCM samples off the UI thread and reduce them to 120 peak buckets.
+     * PCM WAV tracks are read directly; compressed audio tracks use MediaCodec.
+     */
+    private fun decodeAudioWaveform(
+        uri: Uri,
+        sourceStartMs: Long,
+        sourceDurationMs: Long,
+        bucketCount: Int
+    ): FloatArray? {
+        val startUs = sourceStartMs.coerceAtLeast(0L) * 1_000L
+        val durationUs = sourceDurationMs.coerceAtLeast(1L) * 1_000L
+        val endUs = startUs + durationUs
+        val peaks = FloatArray(bucketCount.coerceAtLeast(1))
+        var decodedSamples = 0
+        var extractor: android.media.MediaExtractor? = null
+        var decoder: android.media.MediaCodec? = null
+
+        fun accumulatePcm(
+            buffer: java.nio.ByteBuffer,
+            byteCount: Int,
+            presentationTimeUs: Long,
+            sampleRate: Int,
+            channels: Int,
+            encoding: Int,
+            byteOffset: Int = 0
+        ) {
+            val safeRate = sampleRate.coerceAtLeast(1)
+            val safeChannels = channels.coerceIn(1, 8)
+            val bytesPerSample = when (encoding) {
+                android.media.AudioFormat.ENCODING_PCM_FLOAT -> 4
+                android.media.AudioFormat.ENCODING_PCM_8BIT -> 1
+                else -> 2
+            }
+            val frameBytes = bytesPerSample * safeChannels
+            if (frameBytes <= 0 || byteCount < frameBytes) return
+            val view = buffer.duplicate().order(java.nio.ByteOrder.LITTLE_ENDIAN).apply {
+                position(byteOffset.coerceAtLeast(0))
+                limit((byteOffset + byteCount).coerceAtMost(buffer.capacity()))
+            }.slice().order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            val frames = minOf(view.remaining() / frameBytes, 500_000)
+            for (frame in 0 until frames) {
+                var peak = 0f
+                repeat(safeChannels) {
+                    val sample = when (encoding) {
+                        android.media.AudioFormat.ENCODING_PCM_FLOAT -> view.float
+                        android.media.AudioFormat.ENCODING_PCM_8BIT ->
+                            ((view.get().toInt() and 0xff) - 128) / 128f
+                        else -> view.short / 32768f
+                    }
+                    peak = maxOf(peak, kotlin.math.abs(sample))
+                }
+                val frameTimeUs = presentationTimeUs + frame.toLong() * 1_000_000L / safeRate
+                if (frameTimeUs >= startUs && frameTimeUs < endUs) {
+                    val bucket = (((frameTimeUs - startUs) * peaks.size) / durationUs)
+                        .toInt().coerceIn(0, peaks.lastIndex)
+                    peaks[bucket] = maxOf(peaks[bucket], peak.coerceIn(0f, 1f))
+                    decodedSamples++
+                }
+            }
+        }
+
+        try {
+            extractor = android.media.MediaExtractor().apply {
+                setDataSource(this@VideoEditorActivity, uri, null)
+            }
+            var audioTrack = -1
+            var audioFormat: android.media.MediaFormat? = null
+            for (index in 0 until extractor.trackCount) {
+                val format = extractor.getTrackFormat(index)
+                val mime = format.getString(android.media.MediaFormat.KEY_MIME) ?: continue
+                if (mime.startsWith("audio/")) {
+                    audioTrack = index
+                    audioFormat = format
+                    break
+                }
+            }
+            val inputFormat = audioFormat ?: return null
+            val mime = inputFormat.getString(android.media.MediaFormat.KEY_MIME) ?: return null
+            val sourceSampleRate = if (inputFormat.containsKey(android.media.MediaFormat.KEY_SAMPLE_RATE))
+                inputFormat.getInteger(android.media.MediaFormat.KEY_SAMPLE_RATE) else 48_000
+            val sourceChannels = if (inputFormat.containsKey(android.media.MediaFormat.KEY_CHANNEL_COUNT))
+                inputFormat.getInteger(android.media.MediaFormat.KEY_CHANNEL_COUNT) else 2
+            val sourceEncoding = if (inputFormat.containsKey(android.media.MediaFormat.KEY_PCM_ENCODING))
+                inputFormat.getInteger(android.media.MediaFormat.KEY_PCM_ENCODING)
+            else android.media.AudioFormat.ENCODING_PCM_16BIT
+
+            extractor.selectTrack(audioTrack)
+            extractor.seekTo(startUs, android.media.MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+
+            if (mime == "audio/raw") {
+                val maxInputSize = if (inputFormat.containsKey(android.media.MediaFormat.KEY_MAX_INPUT_SIZE))
+                    inputFormat.getInteger(android.media.MediaFormat.KEY_MAX_INPUT_SIZE).coerceIn(64 * 1024, 4 * 1024 * 1024)
+                else 256 * 1024
+                val buffer = java.nio.ByteBuffer.allocateDirect(maxInputSize)
+                var safety = 0
+                while (safety++ < 100_000) {
+                    val sampleTimeUs = extractor.sampleTime
+                    if (sampleTimeUs < 0L || sampleTimeUs >= endUs) break
+                    buffer.clear()
+                    val size = extractor.readSampleData(buffer, 0)
+                    if (size <= 0) break
+                    accumulatePcm(buffer, size, sampleTimeUs, sourceSampleRate, sourceChannels, sourceEncoding)
+                    extractor.advance()
+                }
+            } else {
+                val codec = android.media.MediaCodec.createDecoderByType(mime).apply {
+                    configure(inputFormat, null, null, 0)
+                    start()
+                }
+                decoder = codec
+                val info = android.media.MediaCodec.BufferInfo()
+                var inputDone = false
+                var outputDone = false
+                var outputFormat: android.media.MediaFormat? = null
+                val deadline = SystemClock.uptimeMillis() + 15_000L
+                while (!outputDone && SystemClock.uptimeMillis() < deadline) {
+                    if (!inputDone) {
+                        val inputIndex = codec.dequeueInputBuffer(10_000L)
+                        if (inputIndex >= 0) {
+                            val inputBuffer = codec.getInputBuffer(inputIndex)
+                            if (inputBuffer == null) {
+                                codec.queueInputBuffer(inputIndex, 0, 0, endUs, android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                                inputDone = true
+                            } else {
+                                inputBuffer.clear()
+                                val sampleTimeUs = extractor.sampleTime
+                                if (sampleTimeUs < 0L || sampleTimeUs >= endUs) {
+                                    codec.queueInputBuffer(
+                                        inputIndex, 0, 0, endUs, android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM
+                                    )
+                                    inputDone = true
+                                } else {
+                                    val size = extractor.readSampleData(inputBuffer, 0)
+                                    if (size <= 0) {
+                                        codec.queueInputBuffer(
+                                            inputIndex, 0, 0, endUs, android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM
+                                        )
+                                        inputDone = true
+                                    } else {
+                                        codec.queueInputBuffer(inputIndex, 0, size, sampleTimeUs, 0)
+                                        extractor.advance()
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    when (val outputIndex = codec.dequeueOutputBuffer(info, 10_000L)) {
+                        android.media.MediaCodec.INFO_OUTPUT_FORMAT_CHANGED ->
+                            outputFormat = codec.outputFormat
+                        android.media.MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED,
+                        android.media.MediaCodec.INFO_TRY_AGAIN_LATER -> Unit
+                        else -> if (outputIndex >= 0) {
+                            val decodedFormat = outputFormat ?: codec.outputFormat
+                            if (info.size > 0) {
+                                val sampleRate = if (decodedFormat.containsKey(android.media.MediaFormat.KEY_SAMPLE_RATE))
+                                    decodedFormat.getInteger(android.media.MediaFormat.KEY_SAMPLE_RATE) else sourceSampleRate
+                                val channels = if (decodedFormat.containsKey(android.media.MediaFormat.KEY_CHANNEL_COUNT))
+                                    decodedFormat.getInteger(android.media.MediaFormat.KEY_CHANNEL_COUNT) else sourceChannels
+                                val encoding = if (decodedFormat.containsKey(android.media.MediaFormat.KEY_PCM_ENCODING))
+                                    decodedFormat.getInteger(android.media.MediaFormat.KEY_PCM_ENCODING)
+                                else android.media.AudioFormat.ENCODING_PCM_16BIT
+                                codec.getOutputBuffer(outputIndex)?.let { output ->
+                                    accumulatePcm(output, info.size, info.presentationTimeUs, sampleRate, channels, encoding, info.offset)
+                                }
+                            }
+                            if (info.flags and android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
+                                outputDone = true
+                            }
+                            codec.releaseOutputBuffer(outputIndex, false)
+                        }
+                    }
+                }
+            }
+
+            if (decodedSamples == 0) return null
+            val maximum = peaks.maxOrNull()?.coerceAtLeast(0.001f) ?: return null
+            return FloatArray(peaks.size) { index ->
+                (peaks[index] / maximum).coerceIn(0f, 1f).let { normalized ->
+                    kotlin.math.sqrt(normalized).coerceAtLeast(0.035f)
+                }
+            }
+        } catch (error: Exception) {
+            android.util.Log.w("AudioWaveform", "Audio waveform decode failed for $uri", error)
+            return null
+        } finally {
+            runCatching { decoder?.stop() }
+            runCatching { decoder?.release() }
+            runCatching { extractor?.release() }
+        }
     }
 
     private fun addMusicTimelineBlock(track: LinearLayout, totalMs: Long) {
@@ -4446,9 +5009,25 @@ class VideoEditorActivity : Activity() {
             clipToOutline = false
             contentDescription = "Müzik: ortasından taşı, kenarlarından süreyi ayarla"
         }
+        val musicWaveform = AudioWaveformView("music", Color.rgb(151, 226, 181)).apply {
+            contentDescription = "Müzik ses dalga biçimi"
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            // Draw above the full-size transparent title TextView, not behind its surface.
+            elevation = dp(1).toFloat()
+        }
+        frame.addView(musicWaveform, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+        musicUri?.let { source ->
+            val sourceDuration = (musicSourceEndMs - musicSourceStartMs).takeIf { it > 0L }
+                ?: musicSourceDurationMs
+            requestAudioWaveform(source, musicSourceStartMs, sourceDuration, musicWaveform, "music")
+        }
+
         val body = TextView(this).apply {
             text = "♫ " + (musicTitle ?: "Müzik")
             textSize = 9f
+            setBackgroundColor(Color.TRANSPARENT)
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER_VERTICAL
             maxLines = 1
@@ -4477,6 +5056,7 @@ class VideoEditorActivity : Activity() {
                 android.view.MotionEvent.ACTION_DOWN -> {
                     bodyDownX = event.rawX
                     bodyInitial = TimelineRange(musicStartMs, musicDurationMs)
+                    activeProjectHistorySnapshot = beginProjectHistoryGesture()
                     bodyMoved = false
                     bodyTouchActive = true
                     bodyLongPressed = false
@@ -4523,9 +5103,11 @@ class VideoEditorActivity : Activity() {
                         musicDurationMs = moved.durationMs
                         updateMusicTimingLabel()
                         status.text = "Müzik zaman çizelgesinde taşındı."
+                        finishProjectHistoryGesture()
                         refreshTimelineTracks()
                         enterAudioTools()
                     } else if (!bodyMoved) {
+                        activeProjectHistorySnapshot = null
                         enterAudioTools()
                         view.performClick()
                     }
@@ -4534,6 +5116,7 @@ class VideoEditorActivity : Activity() {
                 android.view.MotionEvent.ACTION_CANCEL -> {
                     timelineHandler.removeCallbacks(bodyLongPressAction)
                     bodyTouchActive = false
+                    finishProjectHistoryGesture()
                     frame.translationX = 0f
                     frame.animate().scaleX(1f).scaleY(1f).setDuration(100L).start()
                     view.parent?.requestDisallowInterceptTouchEvent(false)
@@ -4569,6 +5152,7 @@ class VideoEditorActivity : Activity() {
                     android.view.MotionEvent.ACTION_DOWN -> {
                         downRawX = event.rawX
                         initial = TimelineRange(musicStartMs, musicDurationMs)
+                        activeProjectHistorySnapshot = beginProjectHistoryGesture()
                         moved = false
                         player?.playWhenReady = false
                         view.parent?.requestDisallowInterceptTouchEvent(true)
@@ -4615,14 +5199,17 @@ class VideoEditorActivity : Activity() {
                             musicDurationMs = updated.durationMs
                             updateMusicTimingLabel()
                             status.text = if (isStart) "Müzik başlangıcı ayarlandı." else "Müzik bitişi ayarlandı."
+                            finishProjectHistoryGesture()
                             refreshTimelineTracks()
                             enterAudioTools()
                         } else {
+                            activeProjectHistorySnapshot = null
                             enterAudioTools()
                         }
                         true
                     }
                     android.view.MotionEvent.ACTION_CANCEL -> {
+                        finishProjectHistoryGesture()
                         view.translationX = 0f
                         view.parent?.requestDisallowInterceptTouchEvent(false)
                         true
@@ -4674,9 +5261,23 @@ class VideoEditorActivity : Activity() {
             clipToOutline = false
             contentDescription = "Ses efekti: ortasından taşı, kenarlarından kırp"
         }
+        val soundWaveform = AudioWaveformView("sound", Color.rgb(255, 207, 139)).apply {
+            contentDescription = "Ses efekti dalga biçimi"
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            // Draw above the full-size transparent title TextView, not behind its surface.
+            elevation = dp(1).toFloat()
+        }
+        frame.addView(soundWaveform, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+        soundUri?.let { source ->
+            requestAudioWaveform(source, soundSourceStartMs, soundDurationMs, soundWaveform, "sound")
+        }
+
         val body = TextView(this).apply {
             text = "♪ ${soundTitle ?: "Ses efekti"}"
             textSize = 9f
+            setBackgroundColor(Color.TRANSPARENT)
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER_VERTICAL
             maxLines = 1
@@ -4705,6 +5306,7 @@ class VideoEditorActivity : Activity() {
                 android.view.MotionEvent.ACTION_DOWN -> {
                     bodyDownX = event.rawX
                     bodyInitial = TimelineAudioSegment(soundStartMs, soundSourceStartMs, soundDurationMs)
+                    activeProjectHistorySnapshot = beginProjectHistoryGesture()
                     bodyMoved = false
                     bodyTouchActive = true
                     bodyLongPressed = false
@@ -4753,9 +5355,11 @@ class VideoEditorActivity : Activity() {
                         soundDurationMs = moved.durationMs
                         updateSoundControls()
                         status.text = "Ses efekti zaman çizelgesinde taşındı."
+                        finishProjectHistoryGesture()
                         refreshTimelineTracks()
                         enterAudioTools()
                     } else if (!bodyMoved) {
+                        activeProjectHistorySnapshot = null
                         enterAudioTools()
                         view.performClick()
                     }
@@ -4764,6 +5368,7 @@ class VideoEditorActivity : Activity() {
                 android.view.MotionEvent.ACTION_CANCEL -> {
                     timelineHandler.removeCallbacks(bodyLongPressAction)
                     bodyTouchActive = false
+                    finishProjectHistoryGesture()
                     frame.translationX = 0f
                     frame.animate().scaleX(1f).scaleY(1f).setDuration(100L).start()
                     view.parent?.requestDisallowInterceptTouchEvent(false)
@@ -4799,6 +5404,7 @@ class VideoEditorActivity : Activity() {
                     android.view.MotionEvent.ACTION_DOWN -> {
                         downRawX = event.rawX
                         initial = TimelineAudioSegment(soundStartMs, soundSourceStartMs, soundDurationMs)
+                        activeProjectHistorySnapshot = beginProjectHistoryGesture()
                         moved = false
                         player?.playWhenReady = false
                         view.parent?.requestDisallowInterceptTouchEvent(true)
@@ -4854,14 +5460,17 @@ class VideoEditorActivity : Activity() {
                             soundDurationMs = updated.durationMs
                             updateSoundControls()
                             status.text = if (isStart) "Ses efektinin başlangıcı kırpıldı." else "Ses efektinin bitişi kırpıldı."
+                            finishProjectHistoryGesture()
                             refreshTimelineTracks()
                             enterAudioTools()
                         } else {
+                            activeProjectHistorySnapshot = null
                             enterAudioTools()
                         }
                         true
                     }
                     android.view.MotionEvent.ACTION_CANCEL -> {
+                        finishProjectHistoryGesture()
                         view.translationX = 0f
                         view.parent?.requestDisallowInterceptTouchEvent(false)
                         true
@@ -5509,6 +6118,7 @@ class VideoEditorActivity : Activity() {
             status.text = "Önce bir bindirme katmanı seç."
             return
         }
+        recordProjectEdit()
         val localTimeMs = overlayLocalTimeMs(overlay)
         if (overlay.keyframes.isEmpty() && localTimeMs > 0L) {
             overlay.keyframes.add(OverlayTransformKeyframe(0L, overlayBaseTransformState(overlay)))
@@ -5538,6 +6148,7 @@ class VideoEditorActivity : Activity() {
             status.text = "Oynatma noktasına yakın bir anahtar kare yok."
             return
         }
+        recordProjectEdit()
         overlay.keyframes.removeAt(index)
         loadOverlayControls()
         refreshTimelineTracks()
@@ -5558,8 +6169,10 @@ class VideoEditorActivity : Activity() {
                 }
                 override fun onStartTrackingTouch(seekBar: SeekBar?) {
                     pauseActivePreview()
+                    activeProjectHistorySnapshot = beginProjectHistoryGesture()
                 }
                 override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                    finishProjectHistoryGesture()
                     refreshColorGradePreview()
                 }
             })
@@ -5604,6 +6217,8 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun applyVideoFilterPreset(preset: VideoFilterPreset) {
+        if (preset == selectedVideoFilter) return
+        recordProjectEdit()
         selectedVideoFilter = preset
         when (preset) {
             VideoFilterPreset.ORIGINAL, VideoFilterPreset.MONOCHROME, VideoFilterPreset.NEGATIVE -> {
@@ -6096,7 +6711,7 @@ class VideoEditorActivity : Activity() {
 
     private fun finishClipTransformGesture(
         clipIndex: Int,
-        before: ClipEditSnapshot?,
+        before: ProjectEditSnapshot?,
         cancelled: Boolean
     ) {
         val clip = clips.getOrNull(clipIndex)
@@ -6110,7 +6725,7 @@ class VideoEditorActivity : Activity() {
         clip?.let(::normalizeClipTransform)
         resetPlayerViewTransform()
         if (!cancelled && before != null && before.clips != clips) {
-            pushClipUndoSnapshot(before)
+            pushProjectUndoSnapshot(before)
         }
         if (clip != null) {
             timelinePreviewLoaded = false
@@ -6128,7 +6743,7 @@ class VideoEditorActivity : Activity() {
 
     private fun installClipTransformTouch() {
         var activeIndex = -1
-        var beforeSnapshot: ClipEditSnapshot? = null
+        var beforeSnapshot: ProjectEditSnapshot? = null
         // Keep one-finger drag coordinates in the gesture surface's local space,
         // matching the project canvas and the overlay/text transform handlers.
         var downX = 0f
@@ -6156,7 +6771,7 @@ class VideoEditorActivity : Activity() {
 
                     activeIndex = selectedClipIndex
                     val selected = clips[activeIndex]
-                    beforeSnapshot = captureClipEditSnapshot().copy(previewSingleClip = false)
+                    beforeSnapshot = beginProjectHistoryGesture().copy(previewSingleClip = false)
                     if (!timelinePreviewLoaded || timelineCompositionPlayer == null ||
                         playerView.player !== timelineCompositionPlayer
                     ) {
@@ -6281,6 +6896,7 @@ class VideoEditorActivity : Activity() {
     // the timeline touch surface unobstructed until the user chooses a tool.
     private fun selectTimelineClip(index:Int){
         if(index !in clips.indices)return
+        finishTextHistoryEdit()
         selectedTextLayerId = null
         selectedOverlayId = null
         updatePreviewTextOverlay()
@@ -6302,6 +6918,7 @@ class VideoEditorActivity : Activity() {
 
     private fun clearTimelineClipSelection() {
         if (!clipHandlesVisible && selectedClipIndex < 0) return
+        finishTextHistoryEdit()
         clipHandlesVisible = false
         selectedClipIndex = -1
         if (activeEditorPanel == "clip") toggleEditorPanel("clip")
@@ -6310,97 +6927,411 @@ class VideoEditorActivity : Activity() {
         updateTimelinePlayheadLabel()
     }
 
-    private fun captureClipEditSnapshot(): ClipEditSnapshot = ClipEditSnapshot(
-        clips = clips.map { it.copy() },
-        selectedClipIndex = selectedClipIndex,
-        timelinePlayheadMs = timelinePlayheadMs,
-        previewSingleClip = previewSingleClip
-    )
+    private fun copyOverlayForHistory(overlay: OverlayClip): OverlayClip =
+        overlay.copy(keyframes = overlay.keyframes.map { it.copy() }.toMutableList())
 
-    private fun recordClipEdit() {
-        pushClipUndoSnapshot(captureClipEditSnapshot())
+    private fun captureProjectEditSnapshot(): ProjectEditSnapshot {
+        // History snapshots are model-only. TextWatcher and each text-tool gesture
+        // commit user input to the selected TextLayer as it changes. Reading the
+        // EditText here is unsafe during Undo/Redo: after restoring an older empty
+        // snapshot, an IME/editor view can still expose its previous composing value
+        // for a frame and silently overwrite the restored model before Redo.
+        return ProjectEditSnapshot(
+            clips = clips.map { it.copy() },
+            overlays = overlayClips.map(::copyOverlayForHistory),
+            textLayers = textLayers.map { it.copy() },
+            selectedClipIndex = selectedClipIndex,
+            selectedOverlayId = selectedOverlayId,
+            selectedTextLayerId = selectedTextLayerId,
+            clipHandlesVisible = clipHandlesVisible,
+            timelinePlayheadMs = timelinePlayheadMs,
+            timelinePxPerSec = timelinePxPerSec,
+            previewSingleClip = previewSingleClip,
+            canvasPreset = exportCanvasPreset,
+            timelineLaneOrder = timelineLaneOrder.toList(),
+            nextOverlayId = nextOverlayId,
+            nextTextLayerId = nextTextLayerId,
+            musicUri = musicUri,
+            musicTitle = musicTitle,
+            musicSourceDurationMs = musicSourceDurationMs,
+            musicSourceStartMs = musicSourceStartMs,
+            musicSourceEndMs = musicSourceEndMs,
+            musicStartMs = musicStartMs,
+            musicDurationMs = musicDurationMs,
+            soundUri = soundUri,
+            soundTitle = soundTitle,
+            soundSourceDurationMs = soundSourceDurationMs,
+            soundSourceStartMs = soundSourceStartMs,
+            soundDurationMs = soundDurationMs,
+            soundStartMs = soundStartMs,
+            sourceAudioVolume = sourceAudioVolume,
+            musicVolume = musicVolume,
+            soundVolume = soundVolume,
+            keepSourceAudio = ::keepSourceAudio.isInitialized && keepSourceAudio.isChecked,
+            videoFilterPreset = selectedVideoFilter,
+            filterBrightness = filterBrightness,
+            filterContrast = filterContrast,
+            filterSaturation = filterSaturation,
+            filterHue = filterHue
+        )
     }
 
-    private fun pushClipUndoSnapshot(snapshot: ClipEditSnapshot) {
-        undoClipHistory.add(snapshot)
-        if (undoClipHistory.size > 50) undoClipHistory.removeAt(0)
-        redoClipHistory.clear()
-        updateClipHistoryButtons()
+    private fun hasProjectContentChanged(
+        before: ProjectEditSnapshot,
+        after: ProjectEditSnapshot
+    ): Boolean =
+        before.clips != after.clips ||
+            before.overlays != after.overlays ||
+            before.textLayers != after.textLayers ||
+            before.musicUri != after.musicUri ||
+            before.musicTitle != after.musicTitle ||
+            before.musicSourceDurationMs != after.musicSourceDurationMs ||
+            before.musicSourceStartMs != after.musicSourceStartMs ||
+            before.musicSourceEndMs != after.musicSourceEndMs ||
+            before.musicStartMs != after.musicStartMs ||
+            before.musicDurationMs != after.musicDurationMs ||
+            before.soundUri != after.soundUri ||
+            before.soundTitle != after.soundTitle ||
+            before.soundSourceDurationMs != after.soundSourceDurationMs ||
+            before.soundSourceStartMs != after.soundSourceStartMs ||
+            before.soundDurationMs != after.soundDurationMs ||
+            before.soundStartMs != after.soundStartMs ||
+            before.sourceAudioVolume != after.sourceAudioVolume ||
+            before.musicVolume != after.musicVolume ||
+            before.soundVolume != after.soundVolume ||
+            before.keepSourceAudio != after.keepSourceAudio ||
+            before.canvasPreset != after.canvasPreset ||
+            before.timelineLaneOrder != after.timelineLaneOrder ||
+            before.videoFilterPreset != after.videoFilterPreset ||
+            before.filterBrightness != after.filterBrightness ||
+            before.filterContrast != after.filterContrast ||
+            before.filterSaturation != after.filterSaturation ||
+            before.filterHue != after.filterHue
+
+    private fun beginProjectHistoryGesture(): ProjectEditSnapshot {
+        // Text stays one undoable entry for the whole editing session, even if
+        // the user pauses mid-sentence. Any new gesture closes that text entry
+        // before taking the gesture's own starting snapshot.
+        finishTextHistoryEdit()
+        finishProjectHistoryGesture()
+        val snapshot = captureProjectEditSnapshot()
+        if (timelineSyncTestEnabled) {
+            android.util.Log.i(
+                "ProjectHistoryTest",
+                "PROJECT_HISTORY_GESTURE_BEGIN soundVolume=${snapshot.soundVolume} undoCount=${undoProjectHistory.size}"
+            )
+        }
+        return snapshot
     }
 
-    private fun finishTrimHistoryGesture() {
-        val before = activeTrimHistorySnapshot ?: return
-        activeTrimHistorySnapshot = null
-        if (before.clips != clips) pushClipUndoSnapshot(before)
+    private fun recordProjectEdit() {
+        finishTextHistoryEdit()
+        finishProjectHistoryGesture()
+        pushProjectUndoSnapshot(captureProjectEditSnapshot())
     }
 
-    private fun clearClipHistory() {
-        undoClipHistory.clear()
-        redoClipHistory.clear()
-        activeTrimHistorySnapshot = null
-        updateClipHistoryButtons()
+    private fun pushProjectUndoSnapshot(snapshot: ProjectEditSnapshot) {
+        undoProjectHistory.add(snapshot)
+        if (undoProjectHistory.size > 50) undoProjectHistory.removeAt(0)
+        redoProjectHistory.clear()
+        updateProjectHistoryButtons()
+        if (timelineSyncTestEnabled) {
+            android.util.Log.i(
+                "ProjectHistoryTest",
+                "PROJECT_HISTORY_PUSH undoCount=${undoProjectHistory.size} redoCount=${redoProjectHistory.size} " +
+                    "soundVolume=${snapshot.soundVolume} undoEnabled=${undoProjectButton?.isEnabled}"
+            )
+        }
     }
 
-    private fun updateClipHistoryButtons() {
-        undoClipButton?.isEnabled = undoClipHistory.isNotEmpty()
-        redoClipButton?.isEnabled = redoClipHistory.isNotEmpty()
+    private fun finishProjectHistoryGesture() {
+        val before = activeProjectHistorySnapshot ?: return
+        activeProjectHistorySnapshot = null
+        val after = captureProjectEditSnapshot()
+        val changed = hasProjectContentChanged(before, after)
+        if (timelineSyncTestEnabled) {
+            android.util.Log.i(
+                "ProjectHistoryTest",
+                "PROJECT_HISTORY_GESTURE_END beforeSoundVolume=${before.soundVolume} " +
+                    "afterSoundVolume=${after.soundVolume} changed=$changed undoCountBefore=${undoProjectHistory.size}"
+            )
+        }
+        if (changed) {
+            pushProjectUndoSnapshot(before)
+        }
+        if (timelineSyncTestEnabled) {
+            android.util.Log.i(
+                "ProjectHistoryTest",
+                "PROJECT_HISTORY_GESTURE_COMMITTED soundVolume=${after.soundVolume} " +
+                    "undoCountAfter=${undoProjectHistory.size} undoEnabled=${undoProjectButton?.isEnabled}"
+            )
+        }
     }
 
-    private fun undoClipEdit() {
-        if (undoClipHistory.isEmpty()) {
-            status.text = "Geri alınacak klip işlemi yok."
+    private fun beginTextHistoryEdit() {
+        if (activeTextHistorySnapshot == null) {
+            activeTextHistorySnapshot = captureProjectEditSnapshot()
+        }
+    }
+
+    private fun finishTextHistoryEdit() {
+        val before = activeTextHistorySnapshot ?: return
+        activeTextHistorySnapshot = null
+        if (hasProjectContentChanged(before, captureProjectEditSnapshot())) {
+            pushProjectUndoSnapshot(before)
+        }
+    }
+
+    private fun clearProjectHistory() {
+        undoProjectHistory.clear()
+        redoProjectHistory.clear()
+        activeProjectHistorySnapshot = null
+        activeTextHistorySnapshot = null
+        updateProjectHistoryButtons()
+    }
+
+    private fun updateProjectHistoryButtons() {
+        undoProjectButton?.isEnabled = undoProjectHistory.isNotEmpty()
+        redoProjectButton?.isEnabled = redoProjectHistory.isNotEmpty()
+    }
+
+    private fun logProjectHistoryTransition(
+        action: String,
+        current: ProjectEditSnapshot,
+        restored: ProjectEditSnapshot
+    ) {
+        if (!timelineSyncTestEnabled) return
+        val beforeTextChars = current.textLayers.sumOf { it.text.length }
+        val afterTextChars = restored.textLayers.sumOf { it.text.length }
+        fun videoHistoryValue(items: List<Clip>): String = items.joinToString(";") { clip ->
+            String.format(
+                Locale.US,
+                "%d,%d,%d,%d,%.3f,%.4f,%.1f,%.4f,%.4f",
+                clip.timelineStartMs, clip.startMs, clip.endMs, clip.durationMs, clip.speed,
+                clip.transformScale, clip.transformRotationDegrees,
+                clip.transformTranslateX, clip.transformTranslateY
+            )
+        }
+        val beforeClipRanges = videoHistoryValue(current.clips)
+        val afterClipRanges = videoHistoryValue(restored.clips)
+        val beforeSelectedOverlay = current.selectedOverlayId?.let { id -> current.overlays.firstOrNull { it.id == id } }
+        val afterSelectedOverlay = restored.selectedOverlayId?.let { id -> restored.overlays.firstOrNull { it.id == id } }
+        fun overlayHistoryValue(overlay: OverlayClip?): String = overlay?.let {
+            String.format(
+                Locale.US,
+                "%.4f,%.4f,%.4f,%.1f,%d,%d,%d",
+                it.xFraction, it.yFraction, it.scale, it.rotationDegrees,
+                it.timelineStartMs, it.durationMs, it.keyframes.size
+            )
+        } ?: "none"
+        val beforeOverlayTransform = overlayHistoryValue(beforeSelectedOverlay)
+        val afterOverlayTransform = overlayHistoryValue(afterSelectedOverlay)
+        android.util.Log.i(
+            "ProjectHistoryTest",
+            "PROJECT_HISTORY_APPLIED action=$action " +
+                "beforeClips=${current.clips.size} afterClips=${restored.clips.size} " +
+                "beforeOverlays=${current.overlays.size} afterOverlays=${restored.overlays.size} " +
+                "beforeTexts=${current.textLayers.size} afterTexts=${restored.textLayers.size} " +
+                "beforeTextChars=$beforeTextChars afterTextChars=$afterTextChars " +
+                "beforeMusic=${current.musicUri != null} afterMusic=${restored.musicUri != null} " +
+                "beforeMusicStartMs=${current.musicStartMs} afterMusicStartMs=${restored.musicStartMs} " +
+                "beforeMusicDurationMs=${current.musicDurationMs} afterMusicDurationMs=${restored.musicDurationMs} " +
+                "beforeMusicSourceStartMs=${current.musicSourceStartMs} afterMusicSourceStartMs=${restored.musicSourceStartMs} " +
+                "beforeMusicSourceEndMs=${current.musicSourceEndMs} afterMusicSourceEndMs=${restored.musicSourceEndMs} " +
+                "beforeMusicVolume=${current.musicVolume} afterMusicVolume=${restored.musicVolume} " +
+                "beforeSound=${current.soundUri != null} afterSound=${restored.soundUri != null} " +
+                "beforeSoundStartMs=${current.soundStartMs} afterSoundStartMs=${restored.soundStartMs} " +
+                "beforeSoundDurationMs=${current.soundDurationMs} afterSoundDurationMs=${restored.soundDurationMs} " +
+                "beforeSoundSourceStartMs=${current.soundSourceStartMs} afterSoundSourceStartMs=${restored.soundSourceStartMs} " +
+                "beforeSoundVolume=${current.soundVolume} afterSoundVolume=${restored.soundVolume} " +
+                "beforeSourceAudioVolume=${current.sourceAudioVolume} afterSourceAudioVolume=${restored.sourceAudioVolume} " +
+                "beforeKeepSourceAudio=${current.keepSourceAudio} afterKeepSourceAudio=${restored.keepSourceAudio} " +
+                "beforeFilter=${current.videoFilterPreset} afterFilter=${restored.videoFilterPreset} " +
+                "beforeFilterBrightness=${current.filterBrightness} afterFilterBrightness=${restored.filterBrightness} " +
+                "beforeFilterContrast=${current.filterContrast} afterFilterContrast=${restored.filterContrast} " +
+                "beforeFilterSaturation=${current.filterSaturation} afterFilterSaturation=${restored.filterSaturation} " +
+                "beforeFilterHue=${current.filterHue} afterFilterHue=${restored.filterHue} " +
+                "beforeClipRanges=$beforeClipRanges afterClipRanges=$afterClipRanges " +
+                "beforeOverlayTransform=$beforeOverlayTransform afterOverlayTransform=$afterOverlayTransform"
+        )
+    }
+
+    /**
+     * Finish the active IME composition before changing project history. Keep
+     * EditText focus so the text detail panel remains active; the snapshot-restore
+     * guard prevents stale control callbacks from mutating the restored model.
+     */
+    private fun dismissTextInputForHistoryRestore() {
+        if (!::textInput.isInitialized) return
+        val keyboard = getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
+            as? android.view.inputmethod.InputMethodManager
+        textInput.windowToken?.let { keyboard?.hideSoftInputFromWindow(it, 0) }
+        textInput.clearComposingText()
+    }
+
+    private fun undoProjectEdit() {
+        dismissTextInputForHistoryRestore()
+        finishTextHistoryEdit()
+        finishProjectHistoryGesture()
+        if (undoProjectHistory.isEmpty()) {
+            status.text = "Geri alınacak proje işlemi yok."
             return
         }
-        redoClipHistory.add(captureClipEditSnapshot())
-        val snapshot = undoClipHistory.removeAt(undoClipHistory.lastIndex)
-        restoreClipEditSnapshot(snapshot)
-        status.text = "Son klip işlemi geri alındı."
-        updateClipHistoryButtons()
+        val current = captureProjectEditSnapshot()
+        redoProjectHistory.add(current)
+        val snapshot = undoProjectHistory.removeAt(undoProjectHistory.lastIndex)
+        restoreProjectEditSnapshot(snapshot)
+        logProjectHistoryTransition("undo", current, snapshot)
+        status.text = "Son proje işlemi geri alındı."
+        updateProjectHistoryButtons()
     }
 
-    private fun redoClipEdit() {
-        if (redoClipHistory.isEmpty()) {
-            status.text = "Yinelenecek klip işlemi yok."
+    private fun redoProjectEdit() {
+        dismissTextInputForHistoryRestore()
+        finishTextHistoryEdit()
+        finishProjectHistoryGesture()
+        if (redoProjectHistory.isEmpty()) {
+            status.text = "Yinelenecek proje işlemi yok."
             return
         }
-        undoClipHistory.add(captureClipEditSnapshot())
-        if (undoClipHistory.size > 50) undoClipHistory.removeAt(0)
-        val snapshot = redoClipHistory.removeAt(redoClipHistory.lastIndex)
-        restoreClipEditSnapshot(snapshot)
-        status.text = "Klip işlemi yinelendi."
-        updateClipHistoryButtons()
+        val current = captureProjectEditSnapshot()
+        undoProjectHistory.add(current)
+        if (undoProjectHistory.size > 50) undoProjectHistory.removeAt(0)
+        val snapshot = redoProjectHistory.removeAt(redoProjectHistory.lastIndex)
+        restoreProjectEditSnapshot(snapshot)
+        logProjectHistoryTransition("redo", current, snapshot)
+        status.text = "Proje işlemi yinelendi."
+        updateProjectHistoryButtons()
     }
 
-    private fun restoreClipEditSnapshot(snapshot: ClipEditSnapshot) {
+    private fun restoreProjectEditSnapshot(snapshot: ProjectEditSnapshot) {
+        val wasRestoringProjectEditSnapshot = restoringProjectEditSnapshot
+        restoringProjectEditSnapshot = true
+        try {
         clips.clear()
         clips.addAll(snapshot.clips.map { it.copy() })
+        overlayClips.clear()
+        overlayClips.addAll(snapshot.overlays.map(::copyOverlayForHistory))
+        textLayers.clear()
+        textLayers.addAll(snapshot.textLayers.map { it.copy() })
+
+        nextOverlayId = maxOf(snapshot.nextOverlayId, (overlayClips.maxOfOrNull { it.id } ?: 0L) + 1L)
+        nextTextLayerId = maxOf(snapshot.nextTextLayerId, (textLayers.maxOfOrNull { it.id } ?: 0L) + 1L)
         selectedClipIndex = snapshot.selectedClipIndex.takeIf { it in clips.indices } ?: -1
+        selectedOverlayId = snapshot.selectedOverlayId.takeIf { id -> overlayClips.any { it.id == id } }
+        selectedTextLayerId = snapshot.selectedTextLayerId.takeIf { id -> textLayers.any { it.id == id } }
+        clipHandlesVisible = snapshot.clipHandlesVisible && selectedClipIndex in clips.indices
+
+        musicUri = snapshot.musicUri
+        musicTitle = snapshot.musicTitle
+        musicSourceDurationMs = snapshot.musicSourceDurationMs
+        musicSourceStartMs = snapshot.musicSourceStartMs
+        musicSourceEndMs = snapshot.musicSourceEndMs
+        musicStartMs = snapshot.musicStartMs
+        musicDurationMs = snapshot.musicDurationMs
+        soundUri = snapshot.soundUri
+        soundTitle = snapshot.soundTitle
+        soundSourceDurationMs = snapshot.soundSourceDurationMs
+        soundSourceStartMs = snapshot.soundSourceStartMs
+        soundDurationMs = snapshot.soundDurationMs
+        soundStartMs = snapshot.soundStartMs
+        sourceAudioVolume = snapshot.sourceAudioVolume
+        musicVolume = snapshot.musicVolume
+        soundVolume = snapshot.soundVolume
+        selectedVideoFilter = snapshot.videoFilterPreset
+        filterBrightness = snapshot.filterBrightness
+        filterContrast = snapshot.filterContrast
+        filterSaturation = snapshot.filterSaturation
+        filterHue = snapshot.filterHue
+
+        timelinePxPerSec = snapshot.timelinePxPerSec
+        restoringProjectHistory = true
+        exportCanvasPreset = snapshot.canvasPreset
+        exportCanvasGroup.check(340 + VideoCanvasPreset.values().indexOf(snapshot.canvasPreset))
+        restoringProjectHistory = false
+        timelineLaneOrder.clear()
+        timelineLaneOrder.addAll(snapshot.timelineLaneOrder)
         timelinePreviewLoaded = false
-        previewSingleClip = snapshot.previewSingleClip && selectedClipIndex in clips.indices
+        previewSingleClip = false
         timelinePlayheadMs = snapshot.timelinePlayheadMs.coerceIn(0L, totalOutputDurationMs())
+        pendingTimelineScrollX = TimelineScaleMath.pixelsForTime(
+            timelinePlayheadMs, timelinePixelsPerSecond()
+        ).coerceAtLeast(0)
+        timelineHorizontalScrollX = pendingTimelineScrollX ?: 0
 
-        refreshTimelineAfterClipChange()
+        lastKeepSourceAudioValue = snapshot.keepSourceAudio
+        suppressHistoryMutationCallbacks = true
+        if (::keepSourceAudio.isInitialized) keepSourceAudio.isChecked = snapshot.keepSourceAudio
+        suppressHistoryMutationCallbacks = false
+        // Undo/Redo must restore the controls as well as the underlying mix.
+        // Programmatic SeekBar updates do not dispatch user edits, so they do not
+        // create new history entries.
+        if (::musicVolumeSeek.isInitialized) musicVolumeSeek.progress = musicVolume
+        if (::musicVolumeLabel.isInitialized) musicVolumeLabel.text = "Müzik sesi: $musicVolume%"
+        if (::soundVolumeSeek.isInitialized) soundVolumeSeek.progress = soundVolume
+        if (::soundVolumeLabel.isInitialized) soundVolumeLabel.text = "Efekt sesi: $soundVolume%"
+        if (::sourceVolumeSeek.isInitialized) sourceVolumeSeek.progress = sourceAudioVolume
+        if (::sourceVolumeLabel.isInitialized) sourceVolumeLabel.text = "Orijinal video sesi: $sourceAudioVolume%"
+        if (::clipVolumeSeek.isInitialized) clipVolumeSeek.progress = sourceAudioVolume
+        if (::clipVolumeLabel.isInitialized) clipVolumeLabel.text = "Orijinal video sesi: $sourceAudioVolume%"
+        player?.volume = if (snapshot.keepSourceAudio) sourceAudioVolume / 100f else 0f
+        // Restore preset highlighting, color-grade labels and every filter SeekBar
+        // before any diagnostics or downstream UI assertions inspect the controls.
+        loadVideoFilterControls()
+        if (timelineSyncTestEnabled) {
+            android.util.Log.i(
+                "ProjectHistoryTest",
+                "PROJECT_HISTORY_CONTROLS musicModel=$musicVolume musicSeek=${if (::musicVolumeSeek.isInitialized) musicVolumeSeek.progress else -1} " +
+                    "soundModel=$soundVolume soundSeek=${if (::soundVolumeSeek.isInitialized) soundVolumeSeek.progress else -1} " +
+                    "soundLabel=${if (::soundVolumeLabel.isInitialized) soundVolumeLabel.text else "uninitialized"} " +
+                    "sourceModel=$sourceAudioVolume sourceSeek=${if (::sourceVolumeSeek.isInitialized) sourceVolumeSeek.progress else -1} " +
+                    "clipSourceSeek=${if (::clipVolumeSeek.isInitialized) clipVolumeSeek.progress else -1} " +
+                    "filterPreset=$selectedVideoFilter brightnessModel=$filterBrightness brightnessSeek=${if (::filterBrightnessSeek.isInitialized) filterBrightnessSeek.progress else -1} " +
+                    "contrastModel=$filterContrast contrastSeek=${if (::filterContrastSeek.isInitialized) filterContrastSeek.progress else -1} " +
+                    "saturationModel=$filterSaturation saturationSeek=${if (::filterSaturationSeek.isInitialized) filterSaturationSeek.progress else -1} " +
+                    "hueModel=$filterHue hueSeek=${if (::filterHueSeek.isInitialized) filterHueSeek.progress else -1}"
+            )
+        }
+        if (::soundLabel.isInitialized) {
+            soundLabel.text = soundTitle?.let { "Ses/efekt: $it • ${formatMs(soundSourceDurationMs)}" }
+                ?: "Ses efekti seçilmedi."
+        }
+        updateMusicSourceRangeControls()
+        updateMusicTimingLabel()
+        updateSoundControls()
         loadTrimControls()
+        loadOverlayControls()
+        loadTextLayerIntoControls(selectedTextLayer())
+        refreshTextLayerList()
+        refreshTimelineAfterClipChange()
+        syncPreviewAudio()
         updateTimelinePlayheadDisplay()
+        updatePreviewCanvasSize()
 
-        if (clips.isEmpty()) {
-            previewSingleClip = false
-            player?.clearMediaItems()
-        } else {
-            // Always restore through the shared composition so per-clip effects
-            // remain visible after undo/redo as well as in exported output.
-            previewSingleClip = false
+        if (clips.isNotEmpty()) {
+            // Restore every media layer through the shared composition so the
+            // preview matches the project timeline and the eventual MP4 export.
             ensureTimelinePreviewLoaded()
             seekTimelinePreview(timelinePlayheadMs)
+        } else {
+            pauseActivePreview()
+            releaseTimelineCompositionPlayer()
+            player?.clearMediaItems()
+            updatePausedOverlayPreviewLayers(timelinePlayheadMs)
         }
-        updateClipHistoryButtons()
+        updateProjectHistoryButtons()
+        } finally {
+            restoringProjectEditSnapshot = wasRestoringProjectEditSnapshot
+        }
     }
 
     private fun selectedTextLayer(): TextLayer? =
         selectedTextLayerId?.let { id -> textLayers.firstOrNull { it.id == id } }
 
     private fun syncSelectedTextLayerFromControls() {
-        if (loadingTextLayerControls || !::textInput.isInitialized) return
+        // During project Undo/Redo the snapshot is the source of truth. A stale
+        // EditText/IME callback must never write back over the restored TextLayer.
+        if (loadingTextLayerControls || restoringProjectEditSnapshot || !::textInput.isInitialized) return
         val layer = selectedTextLayer() ?: return
         // Preserve trailing spaces while typing; trim only when rendering/exporting.
         layer.text = textInput.text?.toString().orEmpty()
@@ -6453,6 +7384,7 @@ class VideoEditorActivity : Activity() {
             status.text = "En fazla 12 metin katmanı ekleyebilirsin."
             return
         }
+        recordProjectEdit()
         syncSelectedTextLayerFromControls()
         val total = totalOutputDurationMs()
         if (total > 0L && timelinePlayheadMs >= total) {
@@ -6492,6 +7424,7 @@ class VideoEditorActivity : Activity() {
             status.text = "En fazla 12 metin ve çıkartma katmanı ekleyebilirsin."
             return
         }
+        recordProjectEdit()
         syncSelectedTextLayerFromControls()
         val total = totalOutputDurationMs()
         val start = timelinePlayheadMs.coerceIn(0L, (total - 1L).coerceAtLeast(0L))
@@ -6536,6 +7469,8 @@ class VideoEditorActivity : Activity() {
         }
         syncSelectedTextLayerFromControls()
         val next = (layer.sizeSp + delta).coerceIn(12, 96)
+        if (next == layer.sizeSp) return
+        recordProjectEdit()
         layer.sizeSp = next
         textSizeSp = next
         textSizeLabel.text = "Yazı boyutu: " + next + " sp"
@@ -6555,6 +7490,7 @@ class VideoEditorActivity : Activity() {
             status.text = "Kopyalamak için önce bir yazı katmanı seç."
             return
         }
+        recordProjectEdit()
         val copy = source.copy(id = nextTextLayerId++, text = source.text)
         textLayers.add(textLayers.indexOf(source) + 1, copy)
         selectedTextLayerId = copy.id
@@ -6572,6 +7508,7 @@ class VideoEditorActivity : Activity() {
             status.text = "Silmek için önce bir yazı katmanı seç."
             return
         }
+        recordProjectEdit()
         textLayers.removeAt(index)
         val next = textLayers.getOrNull(index.coerceAtMost(textLayers.lastIndex))
         selectedTextLayerId = next?.id
@@ -6640,6 +7577,7 @@ class VideoEditorActivity : Activity() {
     /** Audio-track selection mirrors every other timeline track. */
     private fun enterAudioTools() {
         if (!::editorDock.isInitialized || !::editorPanelScroll.isInitialized) return
+        finishTextHistoryEdit()
         selectedTextLayerId = null
         selectedOverlayId = null
         clipHandlesVisible = false
@@ -6678,6 +7616,7 @@ class VideoEditorActivity : Activity() {
 
     private fun selectTextLayer(id: Long) {
         if (textLayers.none { it.id == id }) return
+        finishTextHistoryEdit()
         syncSelectedTextLayerFromControls()
         selectedOverlayId = null
         selectedClipIndex = -1
@@ -6713,7 +7652,11 @@ class VideoEditorActivity : Activity() {
             textBold = layer?.isBold ?: true
             textAnimationPreset = layer?.animationPreset ?: TextAnimationPreset.NONE
             textAnimationDurationMs = layer?.animationDurationMs?.coerceIn(100L, 1_500L) ?: 350L
+            // Discard any stale composing span before reflecting a restored
+            // project value in the editor. The project model remains authoritative.
+            textInput.clearComposingText()
             textInput.setText(layer?.text.orEmpty())
+            textInput.setSelection(textInput.text?.length ?: 0)
             textSizeLabel.text = "Yazı boyutu: $textSizeSp sp"
             textSizeSeek.progress = textSizeSp - 12
             textPositionGroup.check(when (textPosition) {
@@ -6732,7 +7675,21 @@ class VideoEditorActivity : Activity() {
         } finally {
             loadingTextLayerControls = false
         }
-        syncSelectedTextLayerFromControls()
+        // updateTextControls() normalizes the timing while the controls are
+        // loading. Persist only those normalized timing values; never copy the
+        // EditText value back into the restored TextLayer from this load path.
+        selectedTextLayer()?.let { restoredLayer ->
+            restoredLayer.startMs = textStartMs.coerceAtLeast(0L)
+            restoredLayer.endMs = textEndMs.coerceAtLeast(restoredLayer.startMs)
+            restoredLayer.timingCustomized = textTimingCustomized
+            if (timelineSyncTestEnabled) {
+                android.util.Log.i(
+                    "ProjectHistoryTest",
+                    "TEXT_CONTROLS_RESTORED modelChars=${restoredLayer.text.length} " +
+                        "inputChars=${textInput.text?.length ?: 0} selectedId=${restoredLayer.id}"
+                )
+            }
+        }
         refreshTextLayerList()
         updatePreviewTextOverlay()
         refreshTimelineTracks()
@@ -6767,7 +7724,8 @@ class VideoEditorActivity : Activity() {
             val positionIndex = visiblePositionCounts[layer.position] ?: 0
             visiblePositionCounts[layer.position] = positionIndex + 1
             overlay.tag = layer.id
-            overlay.text = layer.text.trim()
+            val desiredText = layer.text.trim()
+            if (overlay.text.toString() != desiredText) overlay.text = desiredText
             val videoWidth = previewCanvas.width.coerceAtLeast(1)
             val videoHeight = previewCanvas.height.coerceAtLeast(1)
             val referenceWidth = referencePreviewCanvasWidth.takeIf { it > 0 } ?: videoWidth
@@ -6776,57 +7734,82 @@ class VideoEditorActivity : Activity() {
                 videoWidth.toFloat() / referenceWidth.toFloat(),
                 videoHeight.toFloat() / referenceHeight.toFloat()
             ).coerceIn(0.15f, 1f)
-            // Text is authored in project coordinates. Scale its screen rendering
-            // with the canvas so a short detail-panel preview does not crop it.
-            overlay.setTextSize(
+            // Text is authored in project coordinates. Avoid re-applying identical
+            // TextView properties on every playback/layout sync: TextView setters
+            // request another measure/layout even when the displayed value is unchanged.
+            val desiredTextSizePx = android.util.TypedValue.applyDimension(
                 android.util.TypedValue.COMPLEX_UNIT_SP,
-                (layer.sizeSp * previewScale).coerceAtLeast(6f)
+                (layer.sizeSp * previewScale).coerceAtLeast(6f),
+                resources.displayMetrics
             )
-            overlay.setTextColor(layer.colorPreset.colorInt)
-            overlay.setTypeface(Typeface.DEFAULT, if (layer.isBold) Typeface.BOLD else Typeface.NORMAL)
+            if (kotlin.math.abs(overlay.textSize - desiredTextSizePx) > 0.5f) {
+                overlay.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, desiredTextSizePx)
+            }
+            if (overlay.currentTextColor != layer.colorPreset.colorInt) {
+                overlay.setTextColor(layer.colorPreset.colorInt)
+            }
+            val desiredTypeface = Typeface.create(
+                Typeface.DEFAULT,
+                if (layer.isBold) Typeface.BOLD else Typeface.NORMAL
+            )
+            if (overlay.typeface != desiredTypeface) overlay.typeface = desiredTypeface
             val animationState = TextAnimationMath.stateAt(
                 layer.animationPreset,
                 timelinePlayheadMs - layer.startMs,
                 layer.endMs - timelinePlayheadMs,
                 layer.animationDurationMs
             )
-            overlay.alpha = animationState.alpha
-            overlay.scaleX = animationState.scale
-            overlay.scaleY = animationState.scale
-            overlay.rotation = PreviewCanvasMath.normalizeRotationDegrees(layer.rotationDegrees)
+            if (overlay.alpha != animationState.alpha) overlay.alpha = animationState.alpha
+            if (overlay.scaleX != animationState.scale) overlay.scaleX = animationState.scale
+            if (overlay.scaleY != animationState.scale) overlay.scaleY = animationState.scale
+            val desiredRotation = PreviewCanvasMath.normalizeRotationDegrees(layer.rotationDegrees)
+            if (overlay.rotation != desiredRotation) overlay.rotation = desiredRotation
             if (layer.kind == TextLayerKind.STICKER) {
-                overlay.setPadding(0, 0, 0, 0)
-                overlay.background = null
+                if (overlay.paddingLeft != 0 || overlay.paddingTop != 0 ||
+                    overlay.paddingRight != 0 || overlay.paddingBottom != 0
+                ) overlay.setPadding(0, 0, 0, 0)
+                if (overlay.background != null) overlay.background = null
                 overlay.setShadowLayer(4f, 0f, 2f, Color.BLACK)
             } else {
                 val horizontalInsetDp = (10f * previewScale).toInt().coerceAtLeast(1)
                 val verticalInsetDp = (6f * previewScale).toInt().coerceAtLeast(1)
-                overlay.setPadding(
-                    dp(horizontalInsetDp), dp(verticalInsetDp),
-                    dp(horizontalInsetDp), dp(verticalInsetDp)
-                )
-                overlay.background = android.graphics.drawable.GradientDrawable().apply {
-                    setColor(Color.argb(210, 0, 0, 0))
-                    cornerRadius = dp((8f * previewScale).toInt().coerceAtLeast(1)).toFloat()
+                val leftPadding = dp(horizontalInsetDp)
+                val verticalPadding = dp(verticalInsetDp)
+                if (overlay.paddingLeft != leftPadding || overlay.paddingTop != verticalPadding ||
+                    overlay.paddingRight != leftPadding || overlay.paddingBottom != verticalPadding
+                ) {
+                    overlay.setPadding(leftPadding, verticalPadding, leftPadding, verticalPadding)
+                }
+                if (overlay.background == null) {
+                    overlay.background = android.graphics.drawable.GradientDrawable().apply {
+                        setColor(Color.argb(210, 0, 0, 0))
+                        cornerRadius = dp((8f * previewScale).toInt().coerceAtLeast(1)).toFloat()
+                    }
                 }
                 overlay.setShadowLayer(2f * previewScale, previewScale, previewScale, Color.BLACK)
             }
-            overlay.visibility = View.VISIBLE
+            if (overlay.visibility != View.VISIBLE) overlay.visibility = View.VISIBLE
             val params = overlay.layoutParams as? FrameLayout.LayoutParams ?: return@forEachIndexed
-            params.gravity = Gravity.CENTER
-            params.topMargin = 0
-            params.bottomMargin = 0
-            params.leftMargin = 0
-            params.rightMargin = 0
-            overlay.layoutParams = params
+            if (params.gravity != Gravity.CENTER || params.topMargin != 0 ||
+                params.bottomMargin != 0 || params.leftMargin != 0 || params.rightMargin != 0
+            ) {
+                params.gravity = Gravity.CENTER
+                params.topMargin = 0
+                params.bottomMargin = 0
+                params.leftMargin = 0
+                params.rightMargin = 0
+                overlay.layoutParams = params
+            }
             // Text geometry must use the real project-canvas bounds. A fixed dp
             // minimum makes overlays wider/taller than the canvas when the editor
             // workspace is compressed (for example, while the keyboard is open).
             val availableTextWidth = (videoWidth - dp(16)).coerceAtLeast(1)
             val availableTextHeight = (videoHeight - dp(8)).coerceAtLeast(1)
-            overlay.maxWidth = availableTextWidth
-            overlay.minWidth = minOf(dp(48), availableTextWidth)
-            overlay.minimumHeight = minOf(dp(44), availableTextHeight)
+            if (overlay.maxWidth != availableTextWidth) overlay.maxWidth = availableTextWidth
+            val desiredMinWidth = minOf(dp(48), availableTextWidth)
+            if (overlay.minWidth != desiredMinWidth) overlay.minWidth = desiredMinWidth
+            val desiredMinimumHeight = minOf(dp(44), availableTextHeight)
+            if (overlay.minimumHeight != desiredMinimumHeight) overlay.minimumHeight = desiredMinimumHeight
             overlay.measure(
                 View.MeasureSpec.makeMeasureSpec(availableTextWidth, View.MeasureSpec.AT_MOST),
                 View.MeasureSpec.makeMeasureSpec(availableTextHeight, View.MeasureSpec.AT_MOST)
@@ -6871,14 +7854,20 @@ class VideoEditorActivity : Activity() {
             val frameHeight = (selectedTextView.measuredHeight + dp(8)).coerceAtLeast(dp(12))
             val frameParams = textSelectionFrame.layoutParams as? FrameLayout.LayoutParams
                 ?: FrameLayout.LayoutParams(frameWidth, frameHeight, Gravity.CENTER)
-            frameParams.width = frameWidth
-            frameParams.height = frameHeight
-            frameParams.gravity = Gravity.CENTER
-            frameParams.leftMargin = 0
-            frameParams.topMargin = 0
-            frameParams.rightMargin = 0
-            frameParams.bottomMargin = 0
-            textSelectionFrame.layoutParams = frameParams
+            val frameParamsChanged = frameParams.width != frameWidth ||
+                frameParams.height != frameHeight || frameParams.gravity != Gravity.CENTER ||
+                frameParams.leftMargin != 0 || frameParams.topMargin != 0 ||
+                frameParams.rightMargin != 0 || frameParams.bottomMargin != 0
+            if (frameParamsChanged) {
+                frameParams.width = frameWidth
+                frameParams.height = frameHeight
+                frameParams.gravity = Gravity.CENTER
+                frameParams.leftMargin = 0
+                frameParams.topMargin = 0
+                frameParams.rightMargin = 0
+                frameParams.bottomMargin = 0
+                textSelectionFrame.layoutParams = frameParams
+            }
             textSelectionFrame.pivotX = frameWidth / 2f
             textSelectionFrame.pivotY = frameHeight / 2f
             textSelectionFrame.translationX = selectedTextView.translationX
@@ -6942,11 +7931,13 @@ class VideoEditorActivity : Activity() {
                     // Text is a directly-manipulable project layer even when its
                     // properties panel is closed. Select it before beginning a drag.
                     view.parent?.requestDisallowInterceptTouchEvent(true)
+                    finishTextHistoryEdit()
                     if (selectedTextLayerId != layer.id) {
                         syncSelectedTextLayerFromControls()
                         selectedTextLayerId = layer.id
                         loadTextLayerIntoControls(layer)
                     }
+                    beginTextHistoryEdit()
                     downRawX = event.rawX
                     downRawY = event.rawY
                     val canvasWidth = previewCanvas.width.coerceAtLeast(1).toFloat()
@@ -7079,6 +8070,7 @@ class VideoEditorActivity : Activity() {
                             selectTextLayer(layer.id)
                         }
                     }
+                    finishTextHistoryEdit()
                     view.sendAccessibilityEvent(
                         android.view.accessibility.AccessibilityEvent.TYPE_VIEW_CLICKED
                     )
@@ -7086,6 +8078,7 @@ class VideoEditorActivity : Activity() {
                 }
                 android.view.MotionEvent.ACTION_CANCEL -> {
                     view.parent?.requestDisallowInterceptTouchEvent(false)
+                    finishTextHistoryEdit()
                     startDistance = 0f
                     true
                 }
@@ -7096,11 +8089,44 @@ class VideoEditorActivity : Activity() {
 
     private fun volumeListener(onValue: (Int) -> Unit): SeekBar.OnSeekBarChangeListener =
         object : SeekBar.OnSeekBarChangeListener {
+            private var gestureStartProgress = -1
+
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                if (fromUser) onValue(progress.coerceIn(0, 100))
+                if (!fromUser) return
+                val normalized = progress.coerceIn(0, 100)
+                if (seekBar?.contentDescription == "Ses efekti ses seviyesi" &&
+                    timelineSyncTestEnabled
+                ) {
+                    android.util.Log.i(
+                        "AudioVolumeTouchTest",
+                        "VOLUME_SEEK_PROGRESS value=$normalized start=$gestureStartProgress"
+                    )
+                }
+                onValue(normalized)
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                gestureStartProgress = seekBar?.progress ?: -1
+                if (seekBar?.contentDescription == "Ses efekti ses seviyesi") {
+                    android.util.Log.i(
+                        "AudioVolumeTouchTest",
+                        "VOLUME_SEEK_START progress=$gestureStartProgress width=${seekBar.width} " +
+                            "height=${seekBar.height} enabled=${seekBar.isEnabled}"
+                    )
+                }
+                activeProjectHistorySnapshot = beginProjectHistoryGesture()
+            }
+
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                if (seekBar?.contentDescription == "Ses efekti ses seviyesi") {
+                    android.util.Log.i(
+                        "AudioVolumeTouchTest",
+                        "VOLUME_SEEK_STOP start=$gestureStartProgress end=${seekBar.progress} model=$soundVolume"
+                    )
+                }
+                finishProjectHistoryGesture()
+                gestureStartProgress = -1
+            }
         }
 
     private fun installTextTimeListeners() {
@@ -7117,9 +8143,13 @@ class VideoEditorActivity : Activity() {
                 textEndMs = interval.endMs
                 updateTextControls()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) { deferTimelineRefresh = true }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                deferTimelineRefresh = true
+                activeProjectHistorySnapshot = beginProjectHistoryGesture()
+            }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
                 deferTimelineRefresh = false
+                finishProjectHistoryGesture()
                 refreshTimelineTracks()
             }
         })
@@ -7136,9 +8166,13 @@ class VideoEditorActivity : Activity() {
                 textEndMs = interval.endMs
                 updateTextControls()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) { deferTimelineRefresh = true }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                deferTimelineRefresh = true
+                activeProjectHistorySnapshot = beginProjectHistoryGesture()
+            }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
                 deferTimelineRefresh = false
+                finishProjectHistoryGesture()
                 refreshTimelineTracks()
             }
         })
@@ -7304,7 +8338,7 @@ class VideoEditorActivity : Activity() {
                     status.text = "Bu videonun süresi okunamadı. Başka bir video dosyası seç."
                     return@runOnUiThread
                 }
-                recordClipEdit()
+                recordProjectEdit()
                 val startsFreshVideoTimeline = replaceExisting || clips.isEmpty()
                 if (replaceExisting) {
                     clips.map { it.uri }.distinct().forEach { oldUri ->
@@ -7390,7 +8424,7 @@ class VideoEditorActivity : Activity() {
         }
     }
 
-    private fun createProjectJson(): JSONObject {
+    private fun createProjectJson(includeCoverAssets: Boolean = false): JSONObject {
         syncSelectedTextLayerFromControls()
         val clipArray = JSONArray()
         val textLayerArray = JSONArray()
@@ -7428,6 +8462,15 @@ class VideoEditorActivity : Activity() {
                 put("transformTranslateX", clip.transformTranslateX)
                 put("transformTranslateY", clip.transformTranslateY)
                 put("coverTimeMs", clip.coverTimeMs ?: JSONObject.NULL)
+                put("coverImagePath", clip.coverImagePath ?: JSONObject.NULL)
+                if (includeCoverAssets) {
+                    val coverBytes = clip.coverImagePath?.let { path ->
+                        runCatching { File(path).takeIf { it.isFile && it.length() in 1..6_000_000L }?.readBytes() }.getOrNull()
+                    }
+                    coverBytes?.let { bytes ->
+                        put("coverImageBase64", android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP))
+                    }
+                }
                 put("speed", clip.speed)
             })
         }
@@ -7543,6 +8586,23 @@ class VideoEditorActivity : Activity() {
             val end = item.optLong("endMs", duration).coerceIn(start, duration)
             require(duration > 0L && end > start) { "Projede geçersiz klip aralığı var." }
             val timelineStartMs=if(item.has("timelineStartMs"))item.optLong("timelineStartMs",legacyTimelineCursorMs).coerceAtLeast(0L) else legacyTimelineCursorMs
+            val embeddedCoverPath = item.optString("coverImageBase64").takeIf { it.isNotBlank() }?.let { encoded ->
+                runCatching {
+                    require(encoded.length <= 8_000_000) { "Kapak görseli proje dosyasında çok büyük." }
+                    val bytes = android.util.Base64.decode(encoded, android.util.Base64.DEFAULT)
+                    require(bytes.isNotEmpty() && bytes.size <= 6_000_000) { "Kapak görseli geçersiz." }
+                    val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                    require(bounds.outWidth in 1..4096 && bounds.outHeight in 1..4096) { "Kapak görseli boyutları geçersiz." }
+                    val directory = File(filesDir, "project_covers").apply { mkdirs() }
+                    val destination = File(directory, "cover_import_${java.util.UUID.randomUUID()}.jpg")
+                    destination.writeBytes(bytes)
+                    destination.absolutePath
+                }.getOrNull()
+            }
+            val existingCoverPath = item.optString("coverImagePath")
+                .takeIf { it.isNotBlank() && it != "null" && File(it).isFile }
+            val loadedCoverPath = embeddedCoverPath ?: existingCoverPath
             val loadedClip = Clip(
                 uri = uri,
                 title = item.optString("title", "Video klibi"),
@@ -7559,6 +8619,7 @@ class VideoEditorActivity : Activity() {
                 coverTimeMs = if (item.has("coverTimeMs") && !item.isNull("coverTimeMs")) {
                     item.optLong("coverTimeMs", start).coerceIn(start, (end - 1L).coerceAtLeast(start))
                 } else null,
+                coverImagePath = loadedCoverPath,
                 speed = ClipSpeedMath.normalize(item.optDouble("speed", 1.0).toFloat())
             )
             normalizeClipTransform(loadedClip)
@@ -7630,7 +8691,7 @@ class VideoEditorActivity : Activity() {
 
         require(loadedClips.isNotEmpty()) { "Projede video klibi bulunamadı." }
 
-        clearClipHistory()
+        clearProjectHistory()
         clips.clear()
         clips.addAll(loadedClips)
         if (migrateLegacyVideoLane && clips.size > 1) {
@@ -7813,7 +8874,10 @@ class VideoEditorActivity : Activity() {
 
         loadTextLayerIntoControls(selectedTextLayer())
         refreshTextLayerList()
-        keepSourceAudio.isChecked = json.optBoolean("keepSourceAudio", true)
+        lastKeepSourceAudioValue = json.optBoolean("keepSourceAudio", true)
+        suppressHistoryMutationCallbacks = true
+        keepSourceAudio.isChecked = lastKeepSourceAudioValue
+        suppressHistoryMutationCallbacks = false
         exportNameInput.setText(json.optString("exportName", "MathMotor_Edit"))
         exportResolutionShortSide = when (json.optInt("exportResolutionShortSide", 0)) {
             720 -> 720
@@ -7825,8 +8889,10 @@ class VideoEditorActivity : Activity() {
             1080 -> 303
             else -> 301
         })
+        restoringProjectHistory = true
         exportCanvasPreset = VideoCanvasPreset.fromKey(json.optString("exportCanvasPreset", "source"))
         exportCanvasGroup.check(340 + VideoCanvasPreset.values().indexOf(exportCanvasPreset))
+        restoringProjectHistory = false
         updateMusicTimingLabel()
         soundLabel.text = soundTitle?.let { "Ses/efekt: $it • ${formatMs(soundDurationMs)}" } ?: "Ses veya efekt seçilmedi."
         updateMusicTimingLabel()
@@ -7991,6 +9057,7 @@ class VideoEditorActivity : Activity() {
                     status.text = "Bindirme dosyasının süresi okunamadı. Başka bir görsel veya video seç."
                     return@runOnUiThread
                 }
+                val beforeProjectEdit = beginProjectHistoryGesture()
                 val projectDuration = TimelineVideoMath.totalDuration(videoTimelineSegments()).coerceAtLeast(1_000L)
                 val imageDefaults = if (isImage) {
                     if (initialPhoto) OverlayAssetDefaultsMath.fullFramePhoto(projectDuration)
@@ -8020,6 +9087,7 @@ class VideoEditorActivity : Activity() {
                     aspectRatio = aspectRatio
                 )
                 overlayClips.add(overlay)
+                pushProjectUndoSnapshot(beforeProjectEdit)
                 updatePreviewEmptyStateVisibility()
                 selectedOverlayId = overlay.id
                 selectedClipIndex = -1
@@ -8086,6 +9154,7 @@ class VideoEditorActivity : Activity() {
     /** Select an overlay track without opening its settings sheet over the timeline. */
     private fun enterOverlayTools() {
         if (!::editorDock.isInitialized || !::editorPanelScroll.isInitialized) return
+        finishTextHistoryEdit()
         selectedTextLayerId = null
         updatePreviewTextOverlay()
         clipToolsMode = true
@@ -8133,6 +9202,7 @@ class VideoEditorActivity : Activity() {
 
     private fun selectOverlay(id: Long) {
         val overlay = overlayClips.firstOrNull { it.id == id } ?: return
+        finishTextHistoryEdit()
         selectedTextLayerId = null
         selectedOverlayId = id
         selectedClipIndex = -1
@@ -8332,6 +9402,7 @@ class VideoEditorActivity : Activity() {
                     downRotation = currentState.rotationDegrees
                     downDistance = 0f
                     downAngle = 0f
+                    activeProjectHistorySnapshot = beginProjectHistoryGesture()
                     view.parent?.requestDisallowInterceptTouchEvent(true)
                     true
                 }
@@ -8406,6 +9477,7 @@ class VideoEditorActivity : Activity() {
                     gestureOverlay = null
                     view.parent?.requestDisallowInterceptTouchEvent(false)
                     if (overlay != null) {
+                        finishProjectHistoryGesture()
                         loadOverlayControls()
                         refreshTimelineTracks()
                         // The Media3 composition already owns this mutable OverlayClip.
@@ -8434,6 +9506,7 @@ class VideoEditorActivity : Activity() {
             return
         }
 
+        recordProjectEdit()
         val originalDuration = overlay.durationMs
         val rightDuration = originalDuration - offsetMs
         val cutState = overlayStateAtTime(overlay, timelinePlayheadMs)
@@ -8510,6 +9583,7 @@ class VideoEditorActivity : Activity() {
             status.text = "Birleştirme için aynı kaynaklı, bitişik ve animasyonsuz iki bindirme gerekir."
             return
         }
+        recordProjectEdit()
         val left = if (adjacent.timelineStartMs < selected.timelineStartMs) adjacent else selected
         val right = if (left.id == selected.id) adjacent else selected
         left.durationMs += right.durationMs
@@ -8528,6 +9602,7 @@ class VideoEditorActivity : Activity() {
             status.text = "Kaldırmak için önce zaman çizelgesinden bir bindirme seç."
             return
         }
+        recordProjectEdit()
         overlayClips.removeAll { it.id == selected.id }
         selectedOverlayId = overlayClips.lastOrNull()?.id
         updatePreviewEmptyStateVisibility()
@@ -8548,8 +9623,10 @@ class VideoEditorActivity : Activity() {
                 }
                 override fun onStartTrackingTouch(seekBar: SeekBar?) {
                     pauseActivePreview()
+                    activeProjectHistorySnapshot = beginProjectHistoryGesture()
                 }
                 override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                    finishProjectHistoryGesture()
                     if (!updatingOverlayControls) {
                         loadOverlayControls()
                         refreshTimelineTracks()
@@ -8726,6 +9803,7 @@ class VideoEditorActivity : Activity() {
                     return@runOnUiThread
                 }
 
+                val beforeProjectEdit = beginProjectHistoryGesture()
                 if (forMusic) {
                     musicUri = uri
                     musicTitle = title
@@ -8757,6 +9835,7 @@ class VideoEditorActivity : Activity() {
                     refreshTimelineTracks()
                     status.text = "Ses katmanı eklendi. Başlama saniyesini aşağıdaki kaydırıcıdan ayarla."
                 }
+                pushProjectUndoSnapshot(beforeProjectEdit)
 
                 if (timelineSyncTestEnabled) {
                     android.util.Log.i(
@@ -8785,10 +9864,6 @@ class VideoEditorActivity : Activity() {
     @Deprecated("Use Activity Result API")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQUEST_SAVE_COVER_IMAGE) {
-            savePendingCoverImage(if (resultCode == RESULT_OK) data?.data else null)
-            return
-        }
         if (resultCode != RESULT_OK) return
         if (requestCode == REQUEST_MAIN_VIDEO || requestCode == REQUEST_ADD_VIDEO) {
             val selectedUris = mutableListOf<Uri>()
@@ -8813,7 +9888,7 @@ class VideoEditorActivity : Activity() {
         when (requestCode) {
             REQUEST_SAVE_PROJECT -> {
                 runCatching {
-                    contentResolver.openOutputStream(uri)?.bufferedWriter(Charsets.UTF_8)?.use { it.write(createProjectJson().toString(2)) }
+                    contentResolver.openOutputStream(uri)?.bufferedWriter(Charsets.UTF_8)?.use { it.write(createProjectJson(includeCoverAssets = true).toString(2)) }
                         ?: error("Proje dosyası açılamadı.")
                 }.onSuccess {
                     status.text = "PROJE KAYDEDİLDİ. Daha sonra 'Kayıtlı projeyi aç' ile devam edebilirsin."
@@ -8870,7 +9945,7 @@ class VideoEditorActivity : Activity() {
                     status.text = "Videolar okunamadı. Mevcut kliplerin korunması için zaman çizelgesi değiştirilmedi. Başka bir MP4/video dosyası seç."
                     return@runOnUiThread
                 }
-                recordClipEdit()
+                recordProjectEdit()
                 val startsFreshTimeline = replaceExisting || clips.isEmpty()
                 if (replaceExisting) {
                     clips.map { it.uri }.distinct().forEach { oldUri ->
@@ -8964,7 +10039,7 @@ class VideoEditorActivity : Activity() {
 
     private fun duplicateClipAt(index:Int){
         val source=clips.getOrNull(index)?:return
-        recordClipEdit()
+        recordProjectEdit()
         val span=ClipSpeedMath.timelineDurationMs(source.endMs-source.startMs,source.speed)
         clips.add(index+1,source.copy(title="${source.title} • Kopya",timelineStartMs=source.timelineStartMs+span))
         selectedClipIndex=index+1;timelinePreviewLoaded=false;previewSingleClip=false
@@ -8976,7 +10051,7 @@ class VideoEditorActivity : Activity() {
 
     private fun removeClipAt(index:Int){
         if(index !in clips.indices)return
-        recordClipEdit()
+        recordProjectEdit()
         val removedUri = clips[index].uri
         clips.removeAt(index)
         if (clips.none { it.uri == removedUri }) {
@@ -9044,7 +10119,7 @@ class VideoEditorActivity : Activity() {
         val secondCover=clip.coverTimeMs?.coerceIn(
             split.second.sourceStartMs,(clip.endMs-1L).coerceAtLeast(split.second.sourceStartMs)
         )
-        recordClipEdit()
+        recordProjectEdit()
         clips[active]=clip.copy(
             title="${clip.title} • A",
             endMs=split.first.sourceEndMs,
@@ -9117,7 +10192,7 @@ class VideoEditorActivity : Activity() {
         }
         if (!changed) return
 
-        recordClipEdit()
+        recordProjectEdit()
         clips.clear()
         clips.addAll(reordered)
         selectedClipIndex = plan.orderedClipIndices.indexOf(index)
@@ -9154,7 +10229,7 @@ class VideoEditorActivity : Activity() {
         if(selectedClipIndex !in clips.indices){status.text="Önce katman seç.";return}
         val target=selectedClipIndex+delta
         if(target !in clips.indices){status.text="Bu katman daha fazla taşınamıyor.";return}
-        recordClipEdit();val moved=clips.removeAt(selectedClipIndex);clips.add(target,moved)
+        recordProjectEdit();val moved=clips.removeAt(selectedClipIndex);clips.add(target,moved)
         selectedClipIndex=target;timelinePreviewLoaded=false;previewSingleClip=false;timelinePlayheadMs=moved.timelineStartMs
         refreshTimelineAfterClipChange();loadTrimControls();ensureTimelinePreviewLoaded();seekTimelinePreview(timelinePlayheadMs);updateTimelinePlayheadLabel()
         status.text="Katman sırası değişti; zaman konumları korundu."
@@ -9571,7 +10646,7 @@ class VideoEditorActivity : Activity() {
                             initialStartMs = clip.startMs
                             initialEndMs = clip.endMs
                             moved = false
-                            activeTrimHistorySnapshot = captureClipEditSnapshot()
+                            activeProjectHistorySnapshot = beginProjectHistoryGesture()
                             player?.playWhenReady = false
                             view.parent?.requestDisallowInterceptTouchEvent(true)
                             true
@@ -9632,16 +10707,16 @@ class VideoEditorActivity : Activity() {
                                         )
                                     }
                                     status.text="Klip kesimi güncellendi."
-                                }else activeTrimHistorySnapshot=null
+                                }else activeProjectHistorySnapshot=null
                             } else {
-                                activeTrimHistorySnapshot = null
+                                activeProjectHistorySnapshot = null
                             }
                             view.performClick()
                             true
                         }
                         android.view.MotionEvent.ACTION_CANCEL -> {
                             view.translationX = 0f
-                            activeTrimHistorySnapshot = null
+                            activeProjectHistorySnapshot = null
                             view.parent?.requestDisallowInterceptTouchEvent(false)
                             true
                         }
@@ -10167,10 +11242,33 @@ class VideoEditorActivity : Activity() {
         }
     }
 
-    private fun decodeTimelineFrame(uri: Uri, timeMs: Long): Bitmap? {
-        // Use Android's native retriever first: the three per-thread retrievers
-        // provide fast parallel extraction for a filmstrip. Media3 is retained as
-        // a compatibility fallback for sources the platform retriever cannot decode.
+    /** Reads the authoritative source dimensions before the filmstrip frame is downscaled. */
+    private fun readTimelineSourceAspectRatioFromMetadata(uri: Uri): Float? {
+        timelineVideoAspectRatios[uri.toString()]?.let { return it }
+        val retriever = timelineThumbnailRetrieverFor(uri, "TimelineThumbnailMetadata") ?: return null
+        return runCatching {
+            val sourceWidth = retriever.extractMetadata(
+                MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH
+            )?.toIntOrNull() ?: return@runCatching null
+            val sourceHeight = retriever.extractMetadata(
+                MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT
+            )?.toIntOrNull() ?: return@runCatching null
+            val rotationDegrees = retriever.extractMetadata(
+                MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION
+            )?.toIntOrNull() ?: 0
+            TimelineThumbnailMath.sourceAspectRatio(sourceWidth, sourceHeight, rotationDegrees)
+        }.getOrNull()
+    }
+
+    private fun decodeTimelineFrame(
+        uri: Uri,
+        timeMs: Long,
+        maxWidthPx: Int,
+        maxHeightPx: Int
+    ): Bitmap? {
+        // Use native retrievers first, but decode just above the actual cell
+        // dimensions instead of always extracting a fixed 162x288 frame.
+        // Media3 remains a compatibility fallback for unsupported source formats.
         val frameTimeUs = timeMs.coerceAtLeast(0L) * 1000L
         val platformStartedAt = SystemClock.uptimeMillis()
         val retriever = timelineThumbnailRetrieverFor(uri, "TimelineThumbnail")
@@ -10180,8 +11278,8 @@ class VideoEditorActivity : Activity() {
                     activeRetriever.getScaledFrameAtTime(
                         frameTimeUs,
                         MediaMetadataRetriever.OPTION_CLOSEST,
-                        162,
-                        288
+                        maxWidthPx.coerceAtLeast(1),
+                        maxHeightPx.coerceAtLeast(1)
                     )
                 }.getOrNull()
             } else {
@@ -10396,6 +11494,16 @@ class VideoEditorActivity : Activity() {
         if (waiting != null) pendingTimelineThumbnails.remove(key)
         pendingTimelineThumbnailGenerations[key] = sourceGeneration
         pendingTimelineThumbnails[key] = mutableListOf(WeakReference(target))
+        val targetLayoutParams = target.layoutParams
+        val targetCellWidthPx = targetLayoutParams?.width?.takeIf { it > 0 }
+            ?: target.width.coerceAtLeast(1)
+        val targetCellHeightPx = targetLayoutParams?.height?.takeIf { it > 0 }
+            ?: target.height.coerceAtLeast(1)
+        val (decodeWidthPx, decodeHeightPx) = TimelineThumbnailMath.decodeBounds(
+            targetCellWidthPx,
+            targetCellHeightPx,
+            timelineVideoAspectRatio(uri)
+        )
         val enqueuedAtUptimeMs = SystemClock.uptimeMillis()
         if (timelineLifecycleDiagnosticsEnabled) android.util.Log.i(
             "TimelineThumbnail",
@@ -10413,9 +11521,13 @@ class VideoEditorActivity : Activity() {
             var frameDecodeDurationMs = -1L
             var bitmapScaleDurationMs = 0L
             var decoded: Bitmap? = null
+            var decodedSourceAspectRatio: Float? = null
             try {
+                // The scaled filmstrip bitmap can lose aspect precision through integer rounding.
+                // Always learn the project framing from original video metadata instead.
+                decodedSourceAspectRatio = readTimelineSourceAspectRatioFromMetadata(uri)
                 val frameDecodeStartedAtUptimeMs = SystemClock.uptimeMillis()
-                val original = decodeTimelineFrame(uri, timestampMs)
+                val original = decodeTimelineFrame(uri, timestampMs, decodeWidthPx, decodeHeightPx)
                 val frameDecodedAtUptimeMs = SystemClock.uptimeMillis()
                 frameDecodeDurationMs = frameDecodedAtUptimeMs - frameDecodeStartedAtUptimeMs
                 if (original != null && !original.isRecycled &&
@@ -10427,8 +11539,8 @@ class VideoEditorActivity : Activity() {
                     val (thumbnailWidth, thumbnailHeight) = TimelineThumbnailMath.fitDimensions(
                         original.width,
                         original.height,
-                        162,
-                        288
+                        decodeWidthPx.coerceAtLeast(1),
+                        decodeHeightPx.coerceAtLeast(1)
                     )
                     val thumbnail = if (
                         original.width == thumbnailWidth && original.height == thumbnailHeight
@@ -10469,18 +11581,24 @@ class VideoEditorActivity : Activity() {
                 var appliedAttachedTargets = 0
                 if (result != null && !isFinishing && !isDestroyed) {
                     timelineThumbnailCache.put(key, result)
-                    val decodedAspectRatio = result.width.toFloat() / result.height.coerceAtLeast(1).toFloat()
-                    val previousAspectRatio = timelineVideoAspectRatios.putIfAbsent(uri.toString(), decodedAspectRatio)
-                    if (previousAspectRatio == null &&
-                        kotlin.math.abs(decodedAspectRatio - TimelineThumbnailMath.DEFAULT_SOURCE_ASPECT_RATIO) > 0.02f
-                    ) {
-                        // The first decoded frame reveals the real source orientation.
-                        // Reflow both the timeline cells and the SOURCE project canvas;
-                        // video-size callbacks can arrive before this thumbnail is decoded.
-                        refreshTimelineTracks()
-                        if (exportCanvasPreset == VideoCanvasPreset.SOURCE) {
-                            updatePreviewCanvasSize()
+                    decodedSourceAspectRatio?.let { sourceAspectRatio ->
+                        val previousAspectRatio = timelineVideoAspectRatios.putIfAbsent(
+                            uri.toString(), sourceAspectRatio
+                        )
+                        if (previousAspectRatio == null &&
+                            kotlin.math.abs(sourceAspectRatio - TimelineThumbnailMath.DEFAULT_SOURCE_ASPECT_RATIO) > 0.0001f
+                        ) {
+                            // Reflow from exact source metadata, never from the downscaled bitmap's
+                            // integer dimensions; tiny thumbnail rounding must not change the canvas.
+                            refreshTimelineTracks()
+                            if (exportCanvasPreset == VideoCanvasPreset.SOURCE) {
+                                updatePreviewCanvasSize()
+                            }
                         }
+                        if (timelineSyncTestEnabled) android.util.Log.i(
+                            "TimelineFrameSyncTest",
+                            "TIMELINE_SOURCE_ASPECT_METADATA uri=$uri aspect=$sourceAspectRatio"
+                        )
                     }
                     if (timelineSyncTestEnabled) android.util.Log.i(
                         "TimelineFrameSyncTest",
@@ -10545,7 +11663,7 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun finishTrimControlGesture(){
-        deferTimelineRefresh=false;finishTrimHistoryGesture()
+        deferTimelineRefresh=false;finishProjectHistoryGesture()
         val clip=selectedClip()
         if(clip!=null){
             clip.coverTimeMs = clip.coverTimeMs?.coerceIn(
@@ -10575,7 +11693,7 @@ class VideoEditorActivity : Activity() {
             override fun onStartTrackingTouch(seekBar: SeekBar?) {
                 player?.playWhenReady = false
                 deferTimelineRefresh = true
-                activeTrimHistorySnapshot = captureClipEditSnapshot()
+                activeProjectHistorySnapshot = beginProjectHistoryGesture()
             }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
                 finishTrimControlGesture()
@@ -10597,7 +11715,7 @@ class VideoEditorActivity : Activity() {
             override fun onStartTrackingTouch(seekBar: SeekBar?) {
                 player?.playWhenReady = false
                 deferTimelineRefresh = true
-                activeTrimHistorySnapshot = captureClipEditSnapshot()
+                activeProjectHistorySnapshot = beginProjectHistoryGesture()
             }
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
                 finishTrimControlGesture()
@@ -10631,13 +11749,13 @@ class VideoEditorActivity : Activity() {
             status.text = "Hız ayarı için önce bir klip seç."
             return
         }
-        val before = captureClipEditSnapshot()
+        val before = beginProjectHistoryGesture()
         clip.speed = ClipSpeedMath.normalize(speed)
         finishClipSpeedEdit(before)
     }
 
-    private fun finishClipSpeedEdit(snapshot: ClipEditSnapshot? = clipSpeedHistorySnapshot) {
-        clipSpeedHistorySnapshot = null
+    private fun finishClipSpeedEdit(snapshot: ProjectEditSnapshot? = projectSpeedHistorySnapshot) {
+        projectSpeedHistorySnapshot = null
         val before = snapshot ?: return
         if (before.clips == clips) {
             updateClipSpeedControls()
@@ -10670,7 +11788,7 @@ class VideoEditorActivity : Activity() {
                 }
             }
         }
-        pushClipUndoSnapshot(before)
+        pushProjectUndoSnapshot(before)
         timelinePlayheadMs = timelinePlayheadMs.coerceIn(0L, totalOutputDurationMs().coerceAtLeast(0L))
         timelinePreviewLoaded = false
         previewSingleClip = false
@@ -10685,6 +11803,7 @@ class VideoEditorActivity : Activity() {
         val clip = selectedClip()
         updateClipSpeedControls()
         if (clip == null) {
+            refreshClipCoverThumbnail(null)
             clipCoverButton?.apply { isEnabled = false; text = "Kapak" }
             selectedClipLabel.text = "Önce bir video seç."
             startSeek.max = 1
@@ -10696,6 +11815,7 @@ class VideoEditorActivity : Activity() {
             updateTrimLabels()
             return
         }
+        refreshClipCoverThumbnail(clip)
         startSeek.isEnabled = true
         endSeek.isEnabled = true
         val durationProgressMax = TimelineTrimMath.progressMax(clip.durationMs)
@@ -10714,6 +11834,182 @@ class VideoEditorActivity : Activity() {
             }
         }
         updateTrimLabels()
+    }
+
+    private fun refreshClipCoverThumbnail(clip: Clip?) {
+        val target = clipCoverThumbnailView ?: return
+        if (clip == null) {
+            target.tag = null
+            target.setImageDrawable(null)
+            target.setBackgroundColor(Color.rgb(37, 45, 55))
+            return
+        }
+
+        val frameTimeMs = (clip.coverTimeMs ?: clip.startMs)
+            .coerceIn(0L, (clip.durationMs - 1L).coerceAtLeast(0L))
+        val savedPath = clip.coverImagePath?.takeIf { File(it).isFile }
+        val key = savedPath?.let { "cover-file:$it" } ?: "cover-frame:${clip.uri}#$frameTimeMs"
+        val requestId = ++coverThumbnailRequestSequence
+        target.tag = "$key|$requestId"
+
+        val cached = coverThumbnailCache.get(key)
+        if (cached != null && !cached.isRecycled) {
+            target.setImageBitmap(cached)
+            android.util.Log.i(
+                "ClipCover",
+                "COVER_TILE_READY source=${if (savedPath != null) "saved-cache" else "video-cache"} key=$key"
+            )
+            return
+        }
+
+        val waiting = pendingCoverThumbnailTargets[key]
+        if (waiting != null) {
+            if (waiting.none { it.get() === target }) waiting.add(WeakReference(target))
+            return
+        }
+        pendingCoverThumbnailTargets[key] = mutableListOf(WeakReference(target))
+        val targetMaxSide = (target.width.takeIf { it > 0 } ?: dp(36)) * 2
+        val task = TimelineThumbnailTask(
+            -4L,
+            timelineThumbnailTaskSequence.incrementAndGet()
+        ) {
+            val decoded = if (savedPath != null) {
+                runCatching {
+                    val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    android.graphics.BitmapFactory.decodeFile(savedPath, bounds)
+                    var sample = 1
+                    val sourceMax = maxOf(bounds.outWidth, bounds.outHeight)
+                    while (sourceMax > 0 && sourceMax / (sample * 2) >= targetMaxSide) sample *= 2
+                    android.graphics.BitmapFactory.decodeFile(
+                        savedPath,
+                        android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+                    )
+                }.getOrNull()
+            } else {
+                decodeIndependentCoverFrame(clip.uri, frameTimeMs, targetMaxSide)
+            }
+            runOnUiThread {
+                val targets = pendingCoverThumbnailTargets.remove(key).orEmpty()
+                if (decoded != null && !decoded.isRecycled && !isFinishing && !isDestroyed) {
+                    coverThumbnailCache.put(key, decoded)
+                    var appliedTargets = 0
+                    targets.forEach { reference ->
+                        val image = reference.get() ?: return@forEach
+                        val token = image.tag?.toString() ?: return@forEach
+                        if (token.startsWith("$key|")) {
+                            image.setImageBitmap(decoded)
+                            appliedTargets++
+                        }
+                    }
+                    if (appliedTargets > 0) android.util.Log.i(
+                        "ClipCover",
+                        "COVER_TILE_READY source=${if (savedPath != null) "saved-file" else "video-frame"} " +
+                            "sourceMs=$frameTimeMs width=${decoded.width} height=${decoded.height} targets=$appliedTargets"
+                    )
+                } else {
+                    decoded?.let { if (!it.isRecycled) it.recycle() }
+                }
+            }
+        }
+        try {
+            coverThumbnailExecutor.execute(task)
+        } catch (_: java.util.concurrent.RejectedExecutionException) {
+            pendingCoverThumbnailTargets.remove(key)
+        }
+    }
+
+    private fun decodeIndependentCoverFrame(uri: Uri, timeMs: Long, maxSide: Int): Bitmap? {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(this, uri)
+            val frameTimeUs = timeMs.coerceAtLeast(0L) * 1_000L
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                retriever.getScaledFrameAtTime(
+                    frameTimeUs,
+                    MediaMetadataRetriever.OPTION_CLOSEST,
+                    maxSide.coerceAtLeast(1),
+                    maxSide.coerceAtLeast(1)
+                )
+            } else {
+                val original = retriever.getFrameAtTime(frameTimeUs, MediaMetadataRetriever.OPTION_CLOSEST)
+                    ?: return null
+                val largest = maxOf(original.width, original.height)
+                if (largest <= maxSide) original else {
+                    val scale = maxSide.toFloat() / largest.toFloat()
+                    Bitmap.createScaledBitmap(
+                        original,
+                        (original.width * scale).toInt().coerceAtLeast(1),
+                        (original.height * scale).toInt().coerceAtLeast(1),
+                        true
+                    ).also { if (it !== original && !original.isRecycled) original.recycle() }
+                }
+            }
+        } catch (error: Exception) {
+            android.util.Log.w("ClipCover", "Independent cover frame decode failed at ${timeMs}ms", error)
+            null
+        } finally {
+            runCatching { retriever.release() }
+        }
+    }
+
+    private fun persistClipCoverImage(bitmap: Bitmap, clip: Clip, sourceTimeMs: Long) {
+        val directory = File(filesDir, "project_covers").apply { mkdirs() }
+        val destination = File(directory, "cover_${java.util.UUID.randomUUID()}.jpg")
+        val safeCopy = runCatching {
+            val maxSide = 720
+            val sourceMax = maxOf(bitmap.width, bitmap.height).coerceAtLeast(1)
+            val scale = minOf(1f, maxSide.toFloat() / sourceMax.toFloat())
+            if (scale < 1f) {
+                Bitmap.createScaledBitmap(
+                    bitmap,
+                    (bitmap.width * scale).toInt().coerceAtLeast(1),
+                    (bitmap.height * scale).toInt().coerceAtLeast(1),
+                    true
+                )
+            } else {
+                bitmap.copy(Bitmap.Config.ARGB_8888, false)
+            }
+        }.getOrNull()
+        if (safeCopy == null) {
+            status.text = "Kapak görseli kaydedilemedi: görüntü belleğe alınamadı."
+            return
+        }
+
+        Thread({
+            val saved = runCatching {
+                FileOutputStream(destination).use { output ->
+                    check(safeCopy.compress(Bitmap.CompressFormat.JPEG, 92, output)) {
+                        "JPEG kapak dosyası oluşturulamadı."
+                    }
+                }
+                check(destination.isFile && destination.length() > 0L) {
+                    "Kapak görseli boş kaydedildi."
+                }
+                destination.absolutePath
+            }
+            if (!safeCopy.isRecycled) safeCopy.recycle()
+            runOnUiThread {
+                if (isFinishing || isDestroyed || saved.isFailure) {
+                    destination.delete()
+                    status.text = "Kapak görseli proje içine kaydedilemedi."
+                    return@runOnUiThread
+                }
+                if (clips.none { it === clip }) {
+                    destination.delete()
+                    status.text = "Klip değişti; kapak kaydı iptal edildi."
+                    return@runOnUiThread
+                }
+                recordProjectEdit()
+                clip.coverTimeMs = sourceTimeMs
+                clip.coverImagePath = saved.getOrThrow()
+                android.util.Log.i(
+                    "ClipCover",
+                    "COVER_STILL_SAVED path=${clip.coverImagePath} bytes=${destination.length()} sourceMs=$sourceTimeMs"
+                )
+                loadTrimControls()
+                status.text = "Kapak görseli projeye kaydedildi."
+            }
+        }, "cover-image-save").start()
     }
 
     private fun updateTrimLabels() {
@@ -10736,6 +12032,7 @@ class VideoEditorActivity : Activity() {
             return
         }
 
+        android.util.Log.i("ClipCover", "COVER_PICKER_OPENED clip=$clipIndex coverTimeMs=${clip.coverTimeMs}")
         pauseActivePreview()
         val firstAllowedMs = clip.startMs.coerceIn(0L, clip.durationMs)
         val lastAllowedMs = (clip.endMs - 1L).coerceIn(
@@ -10795,6 +12092,10 @@ class VideoEditorActivity : Activity() {
                         val previous = previewBitmap
                         previewBitmap = decoded
                         coverPreview.setImageBitmap(decoded)
+                        android.util.Log.i(
+                            "ClipCover",
+                            "COVER_PICKER_FRAME_READY sourceMs=$requestedTimeMs width=${decoded.width} height=${decoded.height}"
+                        )
                         if (previous !== decoded && previous != null && !previous.isRecycled) previous.recycle()
                     } else {
                         timestampLabel.text = "Bu kare okunamadı: ${formatTimelineMs(requestedTimeMs)}"
@@ -10824,8 +12125,7 @@ class VideoEditorActivity : Activity() {
             .setTitle("Kapak karesi")
             .setView(content)
             .setNegativeButton("Vazgeç", null)
-            .setNeutralButton("JPG kaydet", null)
-            .setPositiveButton("Kapak yap", null)
+            .setPositiveButton("Kaydet", null)
             .create()
 
         dialog.setOnShowListener {
@@ -10841,21 +12141,8 @@ class VideoEditorActivity : Activity() {
                     requestCoverPreview()
                     return@setOnClickListener
                 }
-                recordClipEdit()
-                clip.coverTimeMs = selectedSourceTimeMs
-                loadTrimControls()
-                // “Kapak yap” now produces the visible JPG as well as persisting
-                // the selected source timestamp in the project.
-                saveClipCoverImage(bitmap, clip, selectedSourceTimeMs)
+                persistClipCoverImage(bitmap, clip, selectedSourceTimeMs)
                 dialog.dismiss()
-            }
-            dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
-                val bitmap = previewBitmap
-                if (bitmap == null || bitmap.isRecycled) {
-                    status.text = "Önce seçilen kapak karesinin önizlemesi yüklensin."
-                    return@setOnClickListener
-                }
-                saveClipCoverImage(bitmap, clip, selectedSourceTimeMs)
             }
             requestCoverPreview()
         }
@@ -10868,93 +12155,6 @@ class VideoEditorActivity : Activity() {
         }
         dialog.show()
     }
-
-    private fun saveClipCoverImage(bitmap: Bitmap, clip: Clip, sourceTimeMs: Long) {
-        val safeTitle = clip.title.substringBeforeLast('.', clip.title)
-            .replace(Regex("[^A-Za-z0-9_-]+"), "_")
-            .trim('_')
-            .take(36)
-            .ifBlank { "MathMotorVideo" }
-        val fileName = "${safeTitle}_Kapak_${sourceTimeMs}.jpg"
-
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            val copy = runCatching { bitmap.copy(Bitmap.Config.ARGB_8888, false) }.getOrNull()
-            if (copy == null) {
-                status.text = "Kapak görseli belleğe kopyalanamadı."
-                return
-            }
-            pendingCoverSaveBitmap?.let { if (!it.isRecycled) it.recycle() }
-            pendingCoverSaveBitmap = copy
-            val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-                addCategory(Intent.CATEGORY_OPENABLE)
-                type = "image/jpeg"
-                putExtra(Intent.EXTRA_TITLE, fileName)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-            }
-            try {
-                startActivityForResult(intent, REQUEST_SAVE_COVER_IMAGE)
-                status.text = "Kapak görselini kaydedeceğin klasörü seç."
-            } catch (error: Exception) {
-                pendingCoverSaveBitmap = null
-                if (!copy.isRecycled) copy.recycle()
-                status.text = "Kapak kaydetme penceresi açılamadı: ${error.message ?: error.javaClass.simpleName}"
-            }
-            return
-        }
-
-        var outputUri: Uri? = null
-        try {
-            val values = ContentValues().apply {
-                put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
-                put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
-                put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/MathMotor/Kapaklar")
-                put(MediaStore.MediaColumns.IS_PENDING, 1)
-            }
-            outputUri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
-                ?: throw IllegalStateException("Galeriye kayıt konumu oluşturulamadı.")
-            val stream = contentResolver.openOutputStream(outputUri)
-                ?: throw IllegalStateException("Kapak görseli dosyası açılamadı.")
-            stream.use { output ->
-                if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 94, output)) {
-                    throw IllegalStateException("JPEG kapak görseli oluşturulamadı.")
-                }
-            }
-            contentResolver.update(outputUri, ContentValues().apply {
-                put(MediaStore.MediaColumns.IS_PENDING, 0)
-            }, null, null)
-            android.util.Log.i("ClipCover", "COVER_JPG_SAVED sourceMs=${sourceTimeMs} uri=${outputUri}")
-            status.text = "Kapak görseli Galeri > Resimler > MathMotor > Kapaklar içine kaydedildi."
-        } catch (error: Exception) {
-            outputUri?.let { runCatching { contentResolver.delete(it, null, null) } }
-            status.text = "Kapak görseli kaydedilemedi: ${error.message ?: error.javaClass.simpleName}"
-        }
-    }
-
-    private fun savePendingCoverImage(uri: Uri?) {
-        val bitmap = pendingCoverSaveBitmap
-        pendingCoverSaveBitmap = null
-        if (bitmap == null || bitmap.isRecycled) {
-            status.text = "Kaydedilecek kapak görseli bulunamadı."
-            return
-        }
-        try {
-            if (uri == null) throw IllegalStateException("Kayıt konumu seçilmedi.")
-            val output = contentResolver.openOutputStream(uri)
-                ?: throw IllegalStateException("Seçilen dosya açılamadı.")
-            output.use { stream ->
-                if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 94, stream)) {
-                    throw IllegalStateException("JPEG kapak görseli oluşturulamadı.")
-                }
-            }
-            android.util.Log.i("ClipCover", "COVER_JPG_SAVED uri=$uri")
-            status.text = "Kapak görseli seçtiğin klasöre kaydedildi."
-        } catch (error: Exception) {
-            status.text = "Kapak görseli kaydedilemedi: ${error.message ?: error.javaClass.simpleName}"
-        } finally {
-            if (!bitmap.isRecycled) bitmap.recycle()
-        }
-    }
-
 
     private fun normalizeMainVideoLaneOverlaps() {
         if (clips.size < 2) return
@@ -11631,8 +12831,12 @@ class VideoEditorActivity : Activity() {
         previewFrameBitmap = null
         // Drop queued thumbnail work. Each decoder worker releases its own retriever
         // in the worker-thread finally block when the executor shuts down.
-        pendingCoverSaveBitmap?.let { if (!it.isRecycled) it.recycle() }
-        pendingCoverSaveBitmap = null
+        pendingCoverThumbnailTargets.clear()
+        coverThumbnailExecutor.shutdownNow()
+        coverThumbnailCache.evictAll()
+        pendingAudioWaveforms.clear()
+        audioWaveformExecutor.shutdownNow()
+        audioWaveformCache.evictAll()
         timelineThumbnailExecutor.queue.clear()
         timelineThumbnailExecutor.shutdownNow()
         timelinePosterExecutor.shutdownNow()

@@ -1,3 +1,24 @@
+## Project-wide Undo/Redo — 2026-11-09 (PR #34; verification in progress)
+
+- The editor's clip-only history has been replaced on the feature branch with a shared project snapshot covering main video clips and their transforms/speed/trim, image/video overlays and keyframes, text contents/style/timing/animation/placement, music and sound-effect sources/timing/volume, original-source audio enable/volume, global video filter/color controls, project canvas aspect preset, and timeline track order.
+- Undo and Redo share one chronological stack with a 50-step cap. Text typing remains one transaction across pauses and commits on focus loss or when the user begins another editor action. Seek-bar, preview transform and lane-reorder gestures each start and finish their own transaction.
+- Restoring a history entry rebuilds timeline lanes and ordering, selected-layer controls, playhead position, audio preview, canvas framing and composite video preview.
+- The API 35 emulator also performs a real sound-effect end-trim gesture, verifies the changed duration, then taps the global Undo and Redo controls and checks the exact restored/reapplied duration from project-history diagnostics.
+- Starting a clip-speed preset while text is still focused commits the text transaction first, so a later Undo does not collapse two different edits into one.
+- The API 35 emulator test exercises a real text-canvas drag with Undo/Redo and verifies its measured position. It also types CanvasSmoke in two parts with a one-second pause, requires one Undo to remove all 10 characters, and requires one Redo to restore the complete text session; separate undo/redo steps then restore the canvas drag.
+- **Verification boundary:** unit tests and Android compile/debug packaging passed before the last text-transaction and track-order additions. Those latest changes and the expanded emulator test require fresh successful build and emulator runs before this work is considered verified. Audio/overlay/filter-specific Undo/Redo flows and physical-device behavior remain to be exercised.
+- **Latest API 35 attempt (`f1b8e51d6de999893093429a395308fe4ad81cb6`):** unit/build and debug packaging passed; real sound-effect trim Undo/Redo passed (`324→862→324 ms`) and overlay trim smoke passed. The emulator job failed afterward because the editor-panel geometry parser read logcat only after later tests had cleared its ring buffer. The script now snapshots geometry immediately after panel interaction, before any unrelated logcat clear. Geometry limits are unchanged; current-head reruns remain required.
+- Audio Undo/Redo restore now synchronizes the model, music/SFX/source-volume slider positions and labels, and the legacy single-clip player's volume. The emulator suite adds an actual sound-volume drag followed by Undo and Redo assertions against both model and visible SeekBar progress.
+- Filter preset and brightness history are now covered by emulator interactions as well: monochrome preset Undo/Redo verifies the selected preset and controls, and a brightness slider drag verifies both the restored filter model and actual SeekBar progress. The test resets the filter to Original before later export checks.
+- Video trim Undo/Redo is added after the four-direction edge-drag smoke: the emulator compares the exact full clip ordering/ranges/transforms before and after history application and checks the first clip stays at timeline zero. Awaiting latest-head emulator result.
+- **Emulator finding:** the overlay canvas transform Undo/Redo test passed both model assertions and visible magenta-overlay pixel-centre checks. The following audio-fixture wait failed because those fixture import markers are emitted during `VideoEditorActivity.onCreate`, then later history tests clear logcat. The harness now waits for and snapshots both startup import markers immediately after clip import, before any interaction clears the ring buffer; the later audio tests read that preserved file.
+
+
+
+- PR #34 remains a draft and is not merged. No signed release APK or version-code change was made. A CI debug ZIP is not a production update.
+
+---
+
 ## CapCut-style editor: parallel filmstrip decoding and verified timeline alignment — 2026-11-08
 
 - The rejected one-worker/Media3-first experiment caused **2,965–5,064 ms** queue waits. The verified path uses three isolated workers with Android `MediaMetadataRetriever` as the primary decoder and reusable Media3 `FrameExtractor` as a fallback.
@@ -1133,3 +1154,63 @@ The selected main-video clip exposes independent left/right edge grips: drag the
 - Six visible thumbnail samples: queue median/max **253/858 ms**; decode median/max **553/612 ms**; visible-strip fill **1,467 ms**. Preview/filmstrip timestamp comparison passed the fixed 35 ms limit; live playback passed 44 sync samples across six lanes.
 - Captured UI confirms the first video frame begins at ruler zero/playhead alignment without a separate gray/blue spacer block. The origin spacer remains transparent layout geometry; removing it would break the centered-playhead zero-time mapping.
 - No version bump, signed release or production APK was created. The workflow's debug ZIP is not a release artifact.
+
+- The first sound-volume emulator attempt found that the SFX slider sits below the initially visible portion of the audio settings ScrollView. This was a test interaction/visibility issue, not a missing app control. The harness now scrolls only the audio settings sheet, recaptures accessibility hierarchy, and then performs the real SFX-volume drag/Undo/Redo.
+
+## 2026-11-09 — CapCut cover-control visual parity (in progress)
+
+- Compared the supplied MathMotor and CapCut editor screenshots. The MathMotor **Kapak** action was rendered as a raised mini-button; the CapCut reference shows it as a quiet, unboxed text action in the left timeline gutter.
+- Changed the clip-panel Kapak action to a plain, accessible text control while preserving the existing cover-frame picker action and selected-cover state label.
+- Acceptance still requires an API 35 screenshot comparison confirming the boxed background is gone, the Kapak action remains tappable, and timeline zero/clip alignment and the other lane controls are unchanged. This source change is not yet emulator-verified.
+- Keep the existing timeline origin spacer transparent; this visual correction must not alter shared ruler/filmstrip scroll mapping or thumbnail timing.
+
+
+## 2026-11-09 — CapCut cover thumbnail tile (source change; validation pending)
+
+- Corrected the prior misunderstanding: the reference has a distinct square cover-image tile in the left video-lane gutter, with a small edit/pencil affordance and a **Kapak** caption. A text-only label is not visual parity.
+- Added a square thumbnail tile to the video lane. It asynchronously decodes the selected clip's saved cover timestamp, or the clip's start frame when no custom cover is chosen. Tapping the tile opens the existing cover-frame picker; selecting a new cover refreshes the tile through the existing trim-control refresh path.
+- The image decode is guarded against stale selection results and uses the existing thumbnail executor. No timeline scale, ruler/filmstrip geometry, clip timing, or thumbnail strip mapping is changed.
+- Pending: inspect the exact API 35 screenshot at normal phone density; verify selected frame changes after choosing a new cover; verify tap target opens picker; run unit/build, debug packaging and emulator workflows on the exact head. Do not claim visual parity or ship an APK until all checks pass.
+
+
+## 2026-11-09 — Cover tile decode-path reuse
+
+- Inspection confirmed three distinct image paths: timestamped filmstrip frames use the 3-worker thumbnail executor and 32 MiB LRU cache; temporary provider posters use a separate single-thread poster executor and 4 MiB cache; optional cover JPG export writes to the user's Pictures/MathMotor/Kapaklar gallery folder (or a document picker on older Android). The saved JPG is not the editor's cover-tile source.
+- The first cover-tile implementation called the higher-resolution preview-frame decoder separately, which could duplicate frame work and compete with filmstrip decoding. Replaced that path with requestTimelineThumbnail() for the clip's selected cover timestamp (or source start when unset). The cover tile now reuses the exact timestamp-keyed filmstrip cache and in-flight request deduplication, at the existing 162×288 thumbnail scale; no second 1440px preview decode is launched for the tile.
+- This removes a potential redundant decode, but does not establish that the historical slow-loading symptom was caused by cover generation. The earlier recorded concern that thumbnails appeared after audio import remains a separate loading-order investigation. Validate on the latest API 35 emulator and physical phone; compare queue wait, decode time, first-visible time and full-strip fill before claiming a performance improvement.
+
+
+## 2026-11-09 — Independent persistent cover still
+
+- Corrected the cover architecture per the CapCut reference: the left cover tile is an independent still image, not a filmstrip cell and not a live alias of the filmstrip cache. When no custom cover exists it can display the chosen source frame; after Save, the selected frame is written as a bounded 720px JPEG in the app's project_covers directory and the tile loads that saved image directly.
+- Added Clip.coverImagePath to project JSON save/restore. The cover picker now saves the selected frame into project storage and updates the visible tile only after the file write succeeds. The selected source timestamp remains metadata; the filmstrip remains unchanged.
+- The prior separate gallery-export helper remains available but is no longer the action used by the primary Kapak yap button. Project-local image paths currently refer to this app installation's private storage; portability of a project JSON plus its cover assets to another device remains a separate packaging requirement.
+- Pending: compile and API 35 emulator validation for picker, save, clip switching, project save/reopen, undo, and cover tile independence from horizontal filmstrip scrolling. No APK or green claim until tests pass.
+
+
+## 2026-11-09 — CapCut parity follow-up: independent cover image lifecycle
+
+- The video-lane gutter now owns its own square cover ImageView; it is not a filmstrip cell and does not scroll with the thumbnails. The edit affordance opens the cover picker.
+- Cover tile rendering uses a dedicated 4 MiB LRU and in-flight request deduplication. Default covers use an independently requested small source frame; saved covers are decoded from their own project-local JPEG. Timeline rebuilds explicitly rebind the current selected clip's cover (or the first clip when none is selected), preventing a newly recreated gutter view from appearing blank.
+- A selected frame is scaled to at most 720px and written as a JPEG under app-private project_covers/. The picker now has a single Kaydet action that updates the clip's cover; the old separate Gallery JPG export path was removed from this picker to avoid a second, unrelated save action.
+- Manual project JSON export embeds cover bytes as Base64 (bounded to 6 MB per cover) and import materializes them into the new device's private cover folder. Local autosave drafts keep the lightweight local path because they are restored on the same installation. Clip.copy() carries the path into split/duplicate and history snapshots.
+- Added API 35 smoke assertions for: select the main clip, open the cover picker, save, reload from the saved-file path, Undo to the source-frame cover, and Redo to the saved still. The script now reselects the main clip after the preceding overlay test before opening Kapak.
+- Fixed the audio-history test's scroll preparation: the previous run found the SFX SeekBar only 9px visible at the ScrollView edge and attempted a drag on that sliver. The smoke now keeps scrolling until at least 40px of the control is visible before dragging. This is a test-harness correction; the application slider listener itself already captured one history snapshot per drag.
+- Validation: an earlier run at candidate head 51a9107471a8c617f56d647e06c4ee78d4c23335 failed Kotlin compilation because the first cover refresh refactor had removed persistClipCoverImage. That helper was restored at fa68c50bb5ba01d44fd7716ae27447313c4cb686; subsequent commits added the independent cache, project embedding, single Save action and API 35 assertions. The exact latest head still requires all three CI workflows to pass; do not treat the prior run as green and do not publish a release APK.
+
+
+## 2026-11-09 — Audio waveform and lane label parity
+
+- Music and sound-effect timeline blocks now render PCM-derived peak bars, not just a solid background with a text label. Decoding runs off the UI thread: WAV/PCM uses MediaExtractor sample reads; compressed audio uses MediaCodec PCM output. Samples are reduced to 120 amplitude buckets and drawn by an AudioWaveformView.
+- Waveform samples have a 256 KiB LRU and an independent single-thread decoder queue. Keys include source URI and source-range boundaries, so panning, zooming and timeline rebuilds reuse cached data; a changed trim range gets a new waveform. The video filmstrip and fixed cover tile use separate executors/caches.
+- API 35 smoke test on head 9a80eea4e47a46cfe023275accdae1c193e9f708 decoded both deterministic WAV fixtures and verified actual waveform pixels in the screenshot (music 3,294 pixels; effect 2,859 pixels). The same run passed unit/build but stopped later at the cover Save harness matching Android's uppercase KAYDET label; this is a test selector issue, not a waveform failure.
+- Fixed the clip gutter's add-action labels: the source previously contained a double-escaped newline and displayed literal \\n text. It now uses a real newline for the two-line “Metin ekle” and “Ses ekle” labels, and the accessibility description normalizes the actual line break.
+- Latest head 09d5de144e9e32be7264665bea54eab8a3dc00df has unit/build and debug APK build checks green; the latest API 35 emulator scenario is still running and must pass cover Save/Undo/Redo and audio interaction before the candidate can be accepted. No version bump, signed release APK or publication.
+
+
+## 2026-11-09 — SFX volume Undo failure diagnostics
+
+- Latest API 35 run passed the independent cover still Save/Undo/Redo checks, overlay transform Undo/Redo, and the audio waveform checks, but failed because project Undo remained disabled after the real sound-effect volume swipe.
+- The test already confirmed SeekBar start/progress/stop callbacks and a completed history-gesture callback; the failure indicates the history snapshot was not committed as a changed project edit, or the gesture did not actually change the model. The prior harness discarded the most useful callback values on this failure path.
+- Added failure-only output of the captured `VOLUME_SEEK_START/PROGRESS/STOP` and `PROJECT_HISTORY_GESTURE_BEGIN/END/COMMITTED` records. This does not weaken assertions or alter production behavior. Next API 35 run will expose exact start/end progress and before/after model values so the underlying cause can be fixed rather than guessed.
+- Current branch commit: `083ed26373f59d590ecd19217da14f7b1fa9ace2`. No app version change, release APK, signing, or merge.

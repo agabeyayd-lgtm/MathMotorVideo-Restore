@@ -1,3 +1,102 @@
+## 2026-11-09 — Keep audio waveforms visible above clip labels (PR #34)
+
+- Exact-head emulator run `42689741510` reached the real editor and confirmed both PCM files decoded into 120 waveform buckets and both custom views received `onDraw` callbacks. The screenshot nevertheless contained only 19 pixels of the expected sound-effect waveform color (the unchanged visual threshold is 24px); the music color was also barely visible (182px).
+- Inspection of the captured `editor-audio-waveforms.png` showed both audio clips rendered as solid colored blocks with their full-size title TextViews covering the waveform region. The waveform views were inserted before the title views at the same full-size bounds, so the labels' drawing surface obscured the bars.
+- Raised both waveform views above their title surfaces and moved bars into the lower band of each clip, preserving the centered title text. This is a production rendering/layout correction; no screenshot threshold was relaxed.
+- Re-run unit tests, APK build and the complete API 35 emulator workflow on the new exact HEAD. Keep the PR open and do not deliver an APK until the emulator gate passes.
+
+## 2026-11-09 — Correct rotation-normalization unit expectation (PR #34)
+
+- Exact-head workflows for `a2d12497f684c9ead1dd8a16e02c8cc6d14a824f` all stopped at `testDebugUnitTest`: 174 tests ran and one assertion failed. Kotlin compilation and debug APK assembly completed before the unit-test task failed.
+- The failing `sourceAspectRatioAccountsForQuarterTurnRotationMetadata` test supplied source dimensions 360×640 with rotation 450°. The helper normalizes 450° to 90°, so the displayed orientation is landscape (16:9); the test incorrectly expected 9:16. Corrected that expected value without changing production rotation handling.
+- Because the unit-test task failed first, the emulator UI assertions did not run. The source-metadata canvas correction therefore remains unverified until all exact-head workflows pass; the 9:16 screenshot tolerance remains unchanged.
+- No app version bump, merge, or APK publication. Re-run unit tests, Android build/package and API 35 emulator checks on the corrected PR head.
+
+## 2026-11-09 — Reduce real filmstrip decode work after emulator timing failure (PR #34)
+
+- Exact-head emulator run `42682344686` passed project text-history Undo/Redo, reopened the Metin panel, tapped its live `Araçlara dön` control, verified the preview canvas remained 423×753, and restored the text selection dock.
+- The only remaining failure was visible filmstrip fill time: 2,537 ms against 2,500 ms. Eight visible cells used native MediaMetadataRetriever; decode median/max was 543/1,498 ms and queue wait median/max was 222/958 ms. The fixed 162×288 decode was oversized for the actual 48dp timeline cells.
+- Changed thumbnail extraction to derive a 1.5× oversampled decode bound from each real cell's pixel dimensions and the source aspect ratio. The same bound is used by native scaled-frame extraction and final bitmap fitting; full-frame aspect-correct rendering remains unchanged while substantially fewer pixels are decoded.
+- Added unit coverage for portrait, landscape, 4:3, invalid metadata, and exact 1× sizing. The 2,500 ms performance gate remains unchanged.
+- Required: run the new exact-head Android build, unit tests, and emulator capture once. Inspect actual timing and all existing text-history/panel assertions before calling this fixed. Do not merge or publish an APK until all required checks are green.
+
+## 2026-11-09 — Correct text-panel return check after project history (PR #34)
+
+- Exact-head emulator run `42677350791` on `6b92d9399513b837f31ab7f6da4c0674b0e38834` passed Android build, unit tests, debug APK packaging, real text-canvas drag Undo/Redo, and grouped text-session Undo/Redo: one Undo restored `modelChars=0 inputChars=0`; one Redo restored `modelChars=11 inputChars=11`.
+- The emulator job went red only in its final text-panel return check. The harness had closed the text detail panel to expose global Undo/Redo controls, then tried to read a `TEXT_PANEL_RETURN_BOUNDS` event from the live logcat ring. The keyboard-transition event was emitted earlier; intervening history checks intentionally cleared logcat. This was a stale test-observation sequence, not evidence of a broken app return control.
+- Corrected the harness: after strict grouped Undo/Redo assertions, it reopens the Metin panel from the captured global-dock hierarchy, captures a fresh accessibility hierarchy, taps the currently visible `Araçlara dön` control, and requires both the return-tap and panel-closed markers. The keyboard-open/full-size-preview assertion and all text history character-count assertions remain unchanged.
+- Required: verify this correction on the new exact PR head with fresh CI. Do not merge, bump the app version, or publish a release APK until all required checks pass.
+
+## 2026-11-09 — Keep text panel active after IME dismissal (PR #34)
+
+- On commit `c8b51ccd51b5085404772028b4d8f0ab85626dbb`, the API 35 emulator proved the text-history fix: grouped Undo restored model/input to `0/0`; grouped Redo restored `11/11`; the following separate Redo restored the text canvas drag. Overlay Undo/Redo also passed.
+- The run then failed later at the existing text-panel return-control check because `dismissTextInputForHistoryRestore()` called `clearFocus()`. That hid the expected active text panel and prevented its post-keyboard return bounds from being logged. This is a UI regression introduced by the IME fix, not a failure of the new Undo/Redo assertions.
+- Commit `a4d55fcbaf30bd80cb0666ff138d588bae02696a` keeps EditText focus while still hiding the keyboard and clearing composing text. The snapshot-restore guard remains responsible for preventing stale control-to-model writes; normal text-panel navigation remains available.
+- Required: rerun the full API 35 emulator suite on latest HEAD and confirm both the `0/0 -> 11/11` history assertions and the subsequent measured text-panel return tap. No version bump, merge, or release.
+ 
+## 2026-11-09 — Suppress UI-to-model text sync during history restore (PR #34)
+
+- The last confirmed emulator run still failed at grouped text Redo: Undo reported `11 -> 0`, but Redo captured `11 -> 11`. The latest code had dismissed the IME before Undo/Redo, but another independent write-back path remained.
+- Inspection found `refreshTimelineTracks()` and `updateTextControls()` call `syncSelectedTextLayerFromControls()`. `restoreProjectEditSnapshot()` itself calls `loadTextLayerIntoControls()` and then rebuilds timeline tracks, so an EditText watcher/sync could mutate a snapshot-restored TextLayer while controls were being rebound.
+- Commit `3b33d74baf1f3f30a2b546538a5c58b52fa5cd18` adds a dedicated `restoringProjectEditSnapshot` guard for the complete restore transaction. TextWatcher history begin/change callbacks and every control-to-model sync now ignore events while the snapshot is being restored; the guard is restored in `finally`. Normal user text editing outside Undo/Redo is unchanged.
+- Required: run unit/build, debug APK packaging, and full API 35 editor smoke on latest HEAD. Verify the grouped Undo logs model/input `0/0`, Redo logs `11/11`, and the following independent canvas-drag Redo still works. Keep every assertion strict; no version bump, merge, or release APK.
+ 
+## 2026-11-09 — IME dismissal regression assertions (PR #34)
+
+- Commit `b4cbed2fc3180fc0a2e82799a22014b1d3282bdd` adds explicit API 35 smoke assertions for both sides of the text-history restore: immediately after the grouped Undo the model and editor input must both be empty (`modelChars=0 inputChars=0`); immediately after Redo both must contain all 11 characters (`modelChars=11 inputChars=11`).
+- These checks complement, rather than replace, the existing project-history state assertions `11 -> 0` and `0 -> 11`. The separate canvas-drag Undo/Redo remains a distinct history step.
+- Run the full required CI set on the latest PR HEAD. Do not loosen assertions or publish until all checks pass.
+ 
+## 2026-11-09 — IME composition replays text after Undo restore (PR #34)
+
+- The API 35 run on `7164717dfe6e59ac8963d1ab4aae7b4271ab38c6` confirmed that the grouped text Undo itself applies `11 -> 0`, but the new `TEXT_CONTROLS_RESTORED` marker then showed `modelChars=11 inputChars=11` during the Undo restore path. The old input text had been replayed into the selected layer before the next Redo could capture the empty state.
+- The prior model-only snapshot change removed the snapshot-time UI pull, but did not detach the still-active IME input connection. Calling `restartInput()` from the restore path did not resolve the stale buffer and was removed.
+- Commit `0e2920c189d9985eb1c8845d908fdb48b2d0081c` now hides the IME, clears its composing span and clears EditText focus before committing text history and restoring either Undo or Redo. Restored values are applied without restarting the old input connection.
+- Required next: build and run the full API 35 suite on latest HEAD. Confirm `TEXT_CONTROLS_RESTORED modelChars=0 inputChars=0` immediately after the grouped typing Undo, then verify Redo logs `beforeTextChars=0 afterTextChars=11` and a following Redo restores the independent canvas drag. Keep the one-step assertions unchanged. No app version bump, merge, or release APK.
+ 
+## 2026-11-09 — Text Undo/Redo model vs. EditText desynchronization (PR #34)
+
+- API 35 emulator run `42666577218` passed the earlier checks: text-panel return tap, canvas drag Undo/Redo, sound volume/trim Undo/Redo, overlay transform/trim, filter Undo/Redo, video drag/restore and grouped typing Undo across a one-second pause.
+- It then failed at the *first Redo after the grouped text Undo*. The app log proved Undo did remove the text (`beforeTextChars=11 afterTextChars=0`), but Redo captured the current state as `11 -> 11` rather than `0 -> 11`. The preceding text-drag Undo/Redo was correct.
+- Root cause in the history boundary: `captureProjectEditSnapshot()` pulled the UI EditText value back into the TextLayer immediately before copying the model. A just-restored older text state could therefore be overwritten by a stale editor/composing value before the Redo snapshot was captured. `loadTextLayerIntoControls()` also performed a full control-to-model sync at the end of a model-to-control load.
+- Commit `6ad1574f1420ac0571bd5e0d8b9175c3d269aeed` makes project snapshots model-only; keeps the TextLayer as source of truth; clears stale composing text before applying a restored value; restarts the focused input connection after restore; and writes only normalized timing fields back after loading controls. A debug-only `TEXT_CONTROLS_RESTORED` marker compares model and input character counts.
+- Required: on the latest PR head, build and run the API 35 smoke suite. Confirm the grouped text sequence logs `11 -> 0` on Undo then `0 -> 11` on Redo, and the subsequent independent canvas-drag Redo still succeeds. Do not loosen history assertions. Do not bump app version, merge, or release an APK.
+ 
+## 2026-11-09 — Text history smoke-test count correction (PR #34)
+
+- The API 35 run on `923507e8a4880b80dbf4057c65411d88442199c9` passed the text-panel return hierarchy capture, actual text-drag Undo/Redo, and canvas-position checks. It then stopped in the following grouped-typing assertion.
+- The harness types `Canvas` (6 characters) and `Smoke` (5 characters), so the literal `CanvasSmoke` is 11 characters. Runtime history diagnostics confirmed that Undoing the preceding drag preserved all 11 characters (`beforeTextChars=11 afterTextChars=11`); the test incorrectly expected 10.
+- Commit `dcab8bdb6dbc572a12723a8d5d1738f07a655a00` corrects the expected counts to 11 for drag Undo/Redo, 11→0 for the grouped typing Undo, and 0→11 for grouped typing Redo. No application behavior or assertion was weakened; the expected value now matches the exact text sent by the smoke test.
+- Required: rerun all unit/build, debug packaging and API 35 emulator checks on the latest branch head. Verify the full text edit session still takes one Undo/Redo across the one-second pause. Do not accept PR #34 until all required checks on the latest head succeed. No app version bump, merge, or release APK.
+ 
+## 2026-11-09 — Text preview layout churn (PR #34)
+
+- Latest API 35 run passed unit/build, debug APK packaging, cover still Save/Undo/Redo, overlay/audio trim, and the real MP4 export. It failed when Android UIAutomator could not reach idle after the text-canvas drag and panel return; the hierarchy dump repeatedly returned `ERROR: could not get idle state`.
+- The failure artifact contained thousands of redundant `requestLayout()` warnings from the preview text TextView and its canvas/selection containers. The text renderer reapplied identical text, text size, typeface, padding, constraints, and layout parameters during preview refreshes; the size slider also explicitly requested a second layout immediately after calling the renderer.
+- Commit `501c8015f1a031a28a45fd9b83fbe6b17f77b716` makes preview text property updates conditional on actual value changes, avoids assigning unchanged overlay/selection-frame layout parameters, and removes the redundant post-render `requestLayout()`. This is a production UI performance fix, not a relaxed emulator assertion.
+- Required next: run unit/build, debug packaging, and API 35 emulator tests on this exact head. Confirm the text-panel return is followed by a successful hierarchy dump and the project-wide text Undo/Redo checks. Do not mark PR #34 green until all required checks on the latest head succeed. No version bump, merge, or release APK.
+ 
+## Project-wide Undo/Redo — 2026-11-09 (PR #34; verification in progress)
+
+- Project snapshots now cover video clip state/transforms/speed/trim, overlay media/keyframes, text contents/style/timing/animation/placement, music/effects and source-audio settings, filters/color controls, project canvas aspect preset, and timeline track order.
+- One user action is intended to equal one history entry. Text is no longer committed by an idle timer: the complete focused edit is kept together across pauses and commits on focus loss or the next editor action. Seek-bar, preview-transform and lane-reorder gestures capture one start snapshot and commit at gesture end.
+- Undo/Redo restores the model, lane order, timeline, controls, selection, playhead, audio preview, canvas framing and composite video preview. History retains at most 50 entries.
+- The API 35 emulator also performs a real sound-effect end-trim gesture, verifies the changed duration, then taps the global Undo and Redo controls and checks the exact restored/reapplied duration from project-history diagnostics.
+- Clip-speed presets now close any focused text-edit transaction before recording their own snapshot, preserving one undo step per distinct action across editing domains.
+- API 35 smoke coverage now tests an actual text-canvas drag and its Undo/Redo positions. It additionally enters CanvasSmoke in two chunks separated by one second, checks that one Undo removes all 10 characters, and that one Redo restores them all in one step.
+- Unit/build and debug packaging passed on the canvas-history code, but the subsequent text-session and lane-order change requires a fresh successful build and emulator run. Do not mark PR #34 verified until the latest source checks complete.
+- Still required after the latest tests run: Undo/Redo for music/effect import-removal and music/source-audio controls; overlay add/remove/keyframes; text add/delete/style/timing; canvas-aspect framing; video split/reorder; and explicit visual proof that preview and timeline restore together. New emulator assertions have been added for SFX volume, overlay transform, filter preset/brightness, and video edge trim, but these are not considered passed until latest-head API 35 CI is green. Merge only after all required checks pass. No production APK/version-code update has been made.
+- **Latest API 35 emulator attempt (`f1b8e51d6de999893093429a395308fe4ad81cb6`):** Android unit/build and debug APK packaging passed. The emulator performed a real sound-effect trim and proved Undo restored `324→862 ms` and Redo reapplied `862→324 ms`; overlay edge-trim checks also passed. The job failed later in the editor-panel geometry validator because a late logcat read happened after unrelated Undo/Redo gestures cleared the ring buffer. The harness now snapshots panel geometry immediately after that workflow; geometry thresholds remain unchanged. Rerun every current-head workflow before marking the PR green.
+- Code audit found a restore-state defect: sound/music/source volume values and audio players were restored, but the matching SeekBar positions/percentage labels could remain stale. Project restore now updates the mixer controls and the legacy single-clip player's source volume; current emulator script now tests SFX-volume Undo/Redo against both the model and actual SeekBar progress.
+- Filter history coverage now includes real Monochrome preset Undo/Redo and brightness-slider Undo/Redo. The emulator asserts selected preset, filter values and actual brightness SeekBar progress; it resets to Original before the downstream rendering/export smoke checks.
+- The latest emulator run proved overlay canvas-transform Undo/Redo with matching model values and screenshot pixel centres. It then timed out waiting for audio fixture log markers: these are emitted during editor startup, but subsequent isolated gesture tests clear logcat. The harness now snapshots both audio-import markers immediately after editor startup/clip import, before any log resets, and consumes that saved file later. This was a test-harness ordering defect, not a failure of the production audio importer; latest-head rerun still required.
+- The emulator suite now also tests global video-trim Undo/Redo after the real four-direction trim sequence. It compares the complete ordered clip list (source IN/OUT, timeline start, original duration, speed and transform) and checks the first clip remains at project time zero. This additional coverage is pending latest-head CI.
+
+
+
+
+---
+
 ## CapCut-style editor: fast filmstrip decoding and verified zero-time alignment — 2026-11-08
 
 - Rejected the one-worker/Media3-first experiment: on API 35 it produced **2,965–5,064 ms** queue waits. Restored three isolated thumbnail workers and made Android's native `MediaMetadataRetriever` the primary frame path; the reusable Media3 `FrameExtractor` remains the fallback for sources the platform decoder cannot read.
@@ -1375,3 +1474,75 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - The emulator swiped directly on the filmstrip: left advanced the playhead to 5375 ms, right returned it to 3625 ms, and all six lane offsets remained equal (`418,418,418,418,418,418`) after the forward swipe. Live playback passed 53 synchronization samples (3625→8054 ms); ruler and first-frame zero edges stayed aligned.
 - The centered preview/thumbnail pixel comparison passed at the fixed 35 ms limit with RGB channel delta 0. Real clip-menu split had a 0 ms seam; long-press drag reordered the segment and post-drop geometry/pixels passed. All four video trim/extend directions and force-stop draft save/reopen also passed.
 - No versionCode bump, release signing, or signed release APK was made. The CI debug ZIP is not a release artifact.
+
+- **Current sound-volume test correction:** the previous attempt found the SFX SeekBar was below the visible viewport of the audio-panel ScrollView; the XML contained only the music SeekBar because the panel had not been scrolled. The harness now scrolls the actual vertical audio settings panel (not the timeline), captures a second hierarchy, and locates the SFX volume control before interaction. No accessibility assertion has been removed or relaxed; latest-head rerun is pending.
+
+## 2026-11-09 — Current validation gate and CapCut Kapak correction
+
+- Starting point: draft PR #34 head `0d887c708f3d80e197303967b5847c0a1108f8ba`. Unit/build workflow `42571612057` and debug packaging workflow `42571612044` passed. API 35 emulator workflow `42571612054` failed at the real sound-effect volume Undo assertion: the injected slider gesture left the model at 100, so Undo had no volume change to restore. This is a red emulator result; do not mark the gate green or publish a release APK.
+- Follow-up branch: `fix/capcut-cover-control-layout-20261109`, created from that exact candidate head. Commit `767bd6a3a81ff73db6b38a00b1e6c0e7718c1a60` changes the clip-panel **Kapak** action from a raised mini-button to an unboxed text action, matching the supplied CapCut reference while retaining the same cover-picker callback and accessible description.
+- README records the visual acceptance criteria. Still required on the exact latest branch head: verify the cover action visually and functionally, resolve the sound-volume drag/Undo failure, then run unit/build, debug packaging and API 35 emulator checks. Preserve the already-verified shared timeline mapping, 35 ms preview/thumbnail tolerance, thumbnail latency behavior, and transparent time-zero spacer. No version-code bump, signed production APK, or release publication.
+
+
+## 2026-11-09 — CapCut cover thumbnail tile (source change; validation pending)
+
+- Corrected the prior misunderstanding: the reference has a distinct square cover-image tile in the left video-lane gutter, with a small edit/pencil affordance and a **Kapak** caption. A text-only label is not visual parity.
+- Added a square thumbnail tile to the video lane. It asynchronously decodes the selected clip's saved cover timestamp, or the clip's start frame when no custom cover is chosen. Tapping the tile opens the existing cover-frame picker; selecting a new cover refreshes the tile through the existing trim-control refresh path.
+- The image decode is guarded against stale selection results and uses the existing thumbnail executor. No timeline scale, ruler/filmstrip geometry, clip timing, or thumbnail strip mapping is changed.
+- Pending: inspect the exact API 35 screenshot at normal phone density; verify selected frame changes after choosing a new cover; verify tap target opens picker; run unit/build, debug packaging and emulator workflows on the exact head. Do not claim visual parity or ship an APK until all checks pass.
+
+
+## 2026-11-09 — Cover tile decode-path reuse
+
+- Inspection confirmed three distinct image paths: timestamped filmstrip frames use the 3-worker thumbnail executor and 32 MiB LRU cache; temporary provider posters use a separate single-thread poster executor and 4 MiB cache; optional cover JPG export writes to the user's Pictures/MathMotor/Kapaklar gallery folder (or a document picker on older Android). The saved JPG is not the editor's cover-tile source.
+- The first cover-tile implementation called the higher-resolution preview-frame decoder separately, which could duplicate frame work and compete with filmstrip decoding. Replaced that path with requestTimelineThumbnail() for the clip's selected cover timestamp (or source start when unset). The cover tile now reuses the exact timestamp-keyed filmstrip cache and in-flight request deduplication, at the existing 162×288 thumbnail scale; no second 1440px preview decode is launched for the tile.
+- This removes a potential redundant decode, but does not establish that the historical slow-loading symptom was caused by cover generation. The earlier recorded concern that thumbnails appeared after audio import remains a separate loading-order investigation. Validate on the latest API 35 emulator and physical phone; compare queue wait, decode time, first-visible time and full-strip fill before claiming a performance improvement.
+
+
+## 2026-11-09 — Independent persistent cover still
+
+- Corrected the cover architecture per the CapCut reference: the left cover tile is an independent still image, not a filmstrip cell and not a live alias of the filmstrip cache. When no custom cover exists it can display the chosen source frame; after Save, the selected frame is written as a bounded 720px JPEG in the app's project_covers directory and the tile loads that saved image directly.
+- Added Clip.coverImagePath to project JSON save/restore. The cover picker now saves the selected frame into project storage and updates the visible tile only after the file write succeeds. The selected source timestamp remains metadata; the filmstrip remains unchanged.
+- The prior separate gallery-export helper remains available but is no longer the action used by the primary Kapak yap button. Project-local image paths currently refer to this app installation's private storage; portability of a project JSON plus its cover assets to another device remains a separate packaging requirement.
+- Pending: compile and API 35 emulator validation for picker, save, clip switching, project save/reopen, undo, and cover tile independence from horizontal filmstrip scrolling. No APK or green claim until tests pass.
+
+
+## 2026-11-09 — CapCut parity follow-up: independent cover image lifecycle
+
+- The video-lane gutter now owns its own square cover ImageView; it is not a filmstrip cell and does not scroll with the thumbnails. The edit affordance opens the cover picker.
+- Cover tile rendering uses a dedicated 4 MiB LRU and in-flight request deduplication. Default covers use an independently requested small source frame; saved covers are decoded from their own project-local JPEG. Timeline rebuilds explicitly rebind the current selected clip's cover (or the first clip when none is selected), preventing a newly recreated gutter view from appearing blank.
+- A selected frame is scaled to at most 720px and written as a JPEG under app-private project_covers/. The picker now has a single Kaydet action that updates the clip's cover; the old separate Gallery JPG export path was removed from this picker to avoid a second, unrelated save action.
+- Manual project JSON export embeds cover bytes as Base64 (bounded to 6 MB per cover) and import materializes them into the new device's private cover folder. Local autosave drafts keep the lightweight local path because they are restored on the same installation. Clip.copy() carries the path into split/duplicate and history snapshots.
+- Added API 35 smoke assertions for: select the main clip, open the cover picker, save, reload from the saved-file path, Undo to the source-frame cover, and Redo to the saved still. The script now reselects the main clip after the preceding overlay test before opening Kapak.
+- Fixed the audio-history test's scroll preparation: the previous run found the SFX SeekBar only 9px visible at the ScrollView edge and attempted a drag on that sliver. The smoke now keeps scrolling until at least 40px of the control is visible before dragging. This is a test-harness correction; the application slider listener itself already captured one history snapshot per drag.
+- Validation: an earlier run at candidate head 51a9107471a8c617f56d647e06c4ee78d4c23335 failed Kotlin compilation because the first cover refresh refactor had removed persistClipCoverImage. That helper was restored at fa68c50bb5ba01d44fd7716ae27447313c4cb686; subsequent commits added the independent cache, project embedding, single Save action and API 35 assertions. The exact latest head still requires all three CI workflows to pass; do not treat the prior run as green and do not publish a release APK.
+
+
+## 2026-11-09 — Audio waveform and lane label parity
+
+- Music and sound-effect timeline blocks now render PCM-derived peak bars, not just a solid background with a text label. Decoding runs off the UI thread: WAV/PCM uses MediaExtractor sample reads; compressed audio uses MediaCodec PCM output. Samples are reduced to 120 amplitude buckets and drawn by an AudioWaveformView.
+- Waveform samples have a 256 KiB LRU and an independent single-thread decoder queue. Keys include source URI and source-range boundaries, so panning, zooming and timeline rebuilds reuse cached data; a changed trim range gets a new waveform. The video filmstrip and fixed cover tile use separate executors/caches.
+- API 35 smoke test on head 9a80eea4e47a46cfe023275accdae1c193e9f708 decoded both deterministic WAV fixtures and verified actual waveform pixels in the screenshot (music 3,294 pixels; effect 2,859 pixels). The same run passed unit/build but stopped later at the cover Save harness matching Android's uppercase KAYDET label; this is a test selector issue, not a waveform failure.
+- Fixed the clip gutter's add-action labels: the source previously contained a double-escaped newline and displayed literal \\n text. It now uses a real newline for the two-line “Metin ekle” and “Ses ekle” labels, and the accessibility description normalizes the actual line break.
+- Latest head 09d5de144e9e32be7264665bea54eab8a3dc00df has unit/build and debug APK build checks green; the latest API 35 emulator scenario is still running and must pass cover Save/Undo/Redo and audio interaction before the candidate can be accepted. No version bump, signed release APK or publication.
+
+
+## 2026-11-09 — SFX volume Undo failure diagnostics
+
+- Latest API 35 run passed the independent cover still Save/Undo/Redo checks, overlay transform Undo/Redo, and the audio waveform checks, but failed because project Undo remained disabled after the real sound-effect volume swipe.
+- The test already confirmed SeekBar start/progress/stop callbacks and a completed history-gesture callback; the failure indicates the history snapshot was not committed as a changed project edit, or the gesture did not actually change the model. The prior harness discarded the most useful callback values on this failure path.
+- Added failure-only output of the captured `VOLUME_SEEK_START/PROGRESS/STOP` and `PROJECT_HISTORY_GESTURE_BEGIN/END/COMMITTED` records. This does not weaken assertions or alter production behavior. Next API 35 run will expose exact start/end progress and before/after model values so the underlying cause can be fixed rather than guessed.
+- Current branch commit: `083ed26373f59d590ecd19217da14f7b1fa9ace2`. No app version change, release APK, signing, or merge.
+
+### 2026-11-09 — Corrected thumbnail decode bounds compile failure
+- Exact-head CI for `bdd0d2d448c7a239a87926c2a5d7a3388ca3635b` failed before emulator startup in Kotlin compilation.
+- Root causes: `TimelineThumbnailMath.decodeBounds` used `roundToInt` without importing `kotlin.math.roundToInt`; the thumbnail scaling block referenced out-of-scope `maxWidthPx/maxHeightPx` instead of the already calculated `decodeWidthPx/decodeHeightPx`.
+- Corrected both source errors. The performance threshold remains unchanged; this fix only restores compilation and correctly constrains the scaled bitmap to the target-cell decode bounds.
+- A new exact-head CI run is required before judging the thumbnail performance improvement. No APK was produced or released from the failed run.
+
+
+### 2026-11-09 — Preserve exact source aspect when decoding small filmstrip thumbnails
+- API 35 run `42686126268` passed video launch/import and the music + sound-effect waveform render assertions, then failed the strict 9:16 project-canvas ratio check: the measured canvas was `422x753`.
+- Root cause: the editor learned source aspect from the already downscaled thumbnail bitmap. At small dimensions, integer rounding in the decoded bitmap can make a true 9:16 source look slightly wider/narrower, and that approximate ratio then incorrectly changes the project canvas.
+- The timeline now reads source width, height and rotation from `MediaMetadataRetriever` before downscaling the frame. Thumbnail dimensions are used only for display, never to redefine project framing. Added pure tests for portrait, landscape, 90/270-degree rotation and invalid metadata.
+- The emulator's 9:16 ratio threshold is unchanged. Exact-head unit/build and API 35 emulator verification are required before considering this fixed; no app version bump, release or merge.

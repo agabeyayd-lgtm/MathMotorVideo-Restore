@@ -1,5 +1,7 @@
 package com.mathmotor.video
 
+import kotlin.math.roundToInt
+
 /**
  * Pure sizing/sampling rules for the timeline filmstrip.
  *
@@ -43,6 +45,42 @@ internal object TimelineThumbnailMath {
         return (width * scale).toInt().coerceIn(1, boundWidth) to
             (height * scale).toInt().coerceIn(1, boundHeight)
     }
+
+    /** Returns the unscaled source-video aspect ratio, accounting for display rotation. */
+    fun sourceAspectRatio(sourceWidth: Int, sourceHeight: Int, rotationDegrees: Int = 0): Float? {
+        if (sourceWidth <= 0 || sourceHeight <= 0) return null
+        val normalizedRotation = ((rotationDegrees % 360) + 360) % 360
+        val swapsDimensions = normalizedRotation == 90 || normalizedRotation == 270
+        val ratio = if (swapsDimensions) {
+            sourceHeight.toFloat() / sourceWidth.toFloat()
+        } else {
+            sourceWidth.toFloat() / sourceHeight.toFloat()
+        }
+        return ratio.takeIf { it.isFinite() && it > 0f }
+    }
+
+    /** Decode at 1.5x the real cell size, preserving source aspect ratio. */
+    fun decodeBounds(
+        cellWidthPx: Int,
+        cellHeightPx: Int,
+        sourceAspectRatio: Float,
+        oversample: Float = 1.5f
+    ): Pair<Int, Int> {
+        val width = cellWidthPx.coerceAtLeast(1)
+        val height = cellHeightPx.coerceAtLeast(1)
+        val ratio = sourceAspectRatio.takeIf { it.isFinite() && it > 0f }
+            ?.coerceIn(0.25f, 4f) ?: DEFAULT_SOURCE_ASPECT_RATIO
+        val factor = oversample.takeIf { it.isFinite() && it > 0f } ?: 1.5f
+        val maxWidth = (width * factor).roundToInt().coerceAtLeast(1)
+        val maxHeight = (height * factor).roundToInt().coerceAtLeast(1)
+        val widthAtMaxHeight = (maxHeight * ratio).roundToInt().coerceAtLeast(1)
+        return if (widthAtMaxHeight <= maxWidth) {
+            widthAtMaxHeight to maxHeight
+        } else {
+            maxWidth to (maxWidth / ratio).roundToInt().coerceAtLeast(1)
+        }
+    }
+
     fun thumbnailCount(widthPx: Int, cellWidthPx: Int, maxCount: Int = 256): Int {
         val safeWidth = widthPx.coerceAtLeast(1).toLong()
         val safeCellWidth = cellWidthPx.coerceAtLeast(1).toLong()

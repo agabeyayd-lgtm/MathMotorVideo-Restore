@@ -565,6 +565,78 @@ if [ "$video_clip_loaded" != true ]; then
   exit 4
 fi
 
+# Preserve both audio-import completion markers before later interaction tests
+# intentionally clear logcat to isolate Undo/Redo and gesture diagnostics.
+audio_fixtures_ready=false
+for attempt in $(seq 1 25); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I \
+    > emulator-screenshots/audio-fixture-import-logcat.txt 2>&1 || true
+  if grep -Fq "EDITOR_SMOKE_AUDIO_REJECTED" emulator-screenshots/audio-fixture-import-logcat.txt; then
+    echo "At least one deterministic audio fixture was rejected by the production importer."
+    collect_capture_diagnostics audio-fixture-import-rejected
+    exit 75
+  fi
+  if grep -Fq "EDITOR_SMOKE_AUDIO_ADDED kind=music" emulator-screenshots/audio-fixture-import-logcat.txt \
+      && grep -Fq "EDITOR_SMOKE_AUDIO_ADDED kind=sound" emulator-screenshots/audio-fixture-import-logcat.txt; then
+    audio_fixtures_ready=true
+    break
+  fi
+  echo "Waiting for startup audio fixtures (attempt $attempt/25)"
+  sleep 1
+done
+if [ "$audio_fixtures_ready" != true ]; then
+  echo "Music and sound-effect fixtures were not both confirmed during editor startup."
+  collect_capture_diagnostics audio-fixture-startup-timeout
+  exit 76
+fi
+echo "PASS: both music and sound-effect fixtures were imported and their startup markers preserved."
+echo "Step 6a-Waveform: verify music and sound effects render real PCM waveforms off the UI thread"
+waveform_music_ready=false
+waveform_sound_ready=false
+waveform_music_drawn=false
+waveform_sound_drawn=false
+for waveform_attempt in $(seq 1 25); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s AudioWaveform:I > emulator-screenshots/audio-waveform-logcat.txt 2>&1 || true
+  if grep -Fq "AUDIO_WAVEFORM_READY kind=music" emulator-screenshots/audio-waveform-logcat.txt; then waveform_music_ready=true; fi
+  if grep -Fq "AUDIO_WAVEFORM_READY kind=sound" emulator-screenshots/audio-waveform-logcat.txt; then waveform_sound_ready=true; fi
+  if grep -Fq "AUDIO_WAVEFORM_DRAWN kind=music" emulator-screenshots/audio-waveform-logcat.txt; then waveform_music_drawn=true; fi
+  if grep -Fq "AUDIO_WAVEFORM_DRAWN kind=sound" emulator-screenshots/audio-waveform-logcat.txt; then waveform_sound_drawn=true; fi
+  if [ "$waveform_music_ready" = true ] && [ "$waveform_sound_ready" = true ] &&
+     [ "$waveform_music_drawn" = true ] && [ "$waveform_sound_drawn" = true ]; then break; fi
+  sleep 1
+done
+if [ "$waveform_music_ready" != true ] || [ "$waveform_sound_ready" != true ] ||
+   [ "$waveform_music_drawn" != true ] || [ "$waveform_sound_drawn" != true ]; then
+  echo "Music/effect waveform decode and actual onDraw were not both confirmed."
+  echo "music decoded=$waveform_music_ready drawn=$waveform_music_drawn; effect decoded=$waveform_sound_ready drawn=$waveform_sound_drawn"
+  cat emulator-screenshots/audio-waveform-logcat.txt || true
+  collect_capture_diagnostics audio-waveform-generation-or-draw-failed
+  exit 77
+fi
+if ! take_screen emulator-screenshots/editor-audio-waveforms.png; then
+  collect_capture_diagnostics audio-waveform-screenshot-failed
+  exit 77
+fi
+python3 - emulator-screenshots/editor-audio-waveforms.png <<'PY'
+from PIL import Image
+import sys
+
+image = Image.open(sys.argv[1]).convert("RGB")
+green_bars = 0
+orange_bars = 0
+for red, green, blue in image.getdata():
+    if abs(red - 151) <= 34 and abs(green - 226) <= 34 and abs(blue - 181) <= 34:
+        green_bars += 1
+    if red >= 220 and 165 <= green <= 235 and 95 <= blue <= 180 and red - green >= 20:
+        orange_bars += 1
+if green_bars < 24:
+    raise SystemExit(f"Music waveform color was not visible in the rendered timeline: {green_bars} pixels.")
+if orange_bars < 24:
+    raise SystemExit(f"Sound-effect waveform color was not visible in the rendered timeline: {orange_bars} pixels.")
+print(f"PASS: waveform bars rendered in the screenshot (music={green_bars}px, effect={orange_bars}px).")
+PY
+echo "PASS: real music and effect audio samples were decoded asynchronously into cached waveform bars."
+
 # Verify the editor's real inner project canvas is fitted and centered inside
 # the dark work stage. The deterministic fixture is 360x640 (9:16).
 timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTest:I \
@@ -865,6 +937,211 @@ fi
 # clip is inserted into the timeline, so inaccessible UI hierarchy is diagnostic
 # only and does not turn a successful import into a false failure.
 
+echo "Step 7a-Cover: verify independent cover tile opens, saves, and reloads its own still image"
+# Re-select the main video clip: the preceding overlay-canvas test intentionally
+# cleared video selection, and Kapak always edits the currently selected clip.
+if ! dump_hierarchy editor-cover-select-video.xml emulator-screenshots/editor-cover-select-video.xml; then
+  collect_capture_diagnostics cover-video-reselect-hierarchy-missing
+  exit 86
+fi
+cover_video_coords="$(python3 - emulator-screenshots/editor-cover-select-video.xml <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+matches = []
+for node in root.iter("node"):
+    desc = node.attrib.get("content-desc", "").strip()
+    if not desc.startswith("Klip 1:") or node.attrib.get("enabled", "false").lower() != "true":
+        continue
+    m = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if not m:
+        continue
+    x1,y1,x2,y2 = map(int, m.groups())
+    if x2 > x1 and y2 > y1:
+        matches.append(((x2-x1)*(y2-y1),(x1+x2)//2,(y1+y2)//2))
+if not matches:
+    raise SystemExit("The first main-video clip is not exposed as an accessible selection target.")
+_,x,y = max(matches)
+print(x,y)
+PY
+)" || { collect_capture_diagnostics cover-video-reselect-target-missing; exit 86; }
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $cover_video_coords
+sleep 1
+if ! dump_hierarchy editor-cover-tile-before.xml emulator-screenshots/editor-cover-tile-before.xml; then
+  collect_capture_diagnostics cover-tile-hierarchy-missing
+  exit 86
+fi
+cover_tile_bounds="$(find_content_description_bounds emulator-screenshots/editor-cover-tile-before.xml "Kapak görselini düzenle" || true)"
+if [ -z "$cover_tile_bounds" ]; then
+  echo "The fixed left-gutter cover tile is missing or not accessible."
+  collect_capture_diagnostics cover-tile-control-missing
+  exit 86
+fi
+read -r cover_tile_x cover_tile_y cover_tile_w cover_tile_h cover_tile_x1 cover_tile_y1 cover_tile_x2 cover_tile_y2 <<< "$cover_tile_bounds"
+if ! take_screen emulator-screenshots/editor-cover-tile-before.png; then
+  collect_capture_diagnostics cover-tile-before-capture-failed
+  exit 86
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$cover_tile_x" "$cover_tile_y"
+sleep 1
+cover_preview_ready=false
+for preview_attempt in $(seq 1 15); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ClipCover:I > emulator-screenshots/cover-picker-preview-logcat.txt 2>&1 || true
+  if grep -Fq "COVER_PICKER_FRAME_READY" emulator-screenshots/cover-picker-preview-logcat.txt; then
+    cover_preview_ready=true
+    break
+  fi
+  sleep 1
+done
+if [ "$cover_preview_ready" != true ]; then
+  echo "The cover-frame preview did not finish decoding before the Save control became available."
+  cat emulator-screenshots/cover-picker-preview-logcat.txt || true
+  collect_capture_diagnostics cover-picker-preview-not-ready
+  exit 86
+fi
+if ! dump_hierarchy editor-cover-picker.xml emulator-screenshots/editor-cover-picker.xml; then
+  collect_capture_diagnostics cover-picker-did-not-open
+  exit 86
+fi
+if ! grep -Fq "Kapak karesi zaman seçici" emulator-screenshots/editor-cover-picker.xml; then
+  echo "Tapping the cover tile did not open the dedicated cover-frame picker."
+  collect_capture_diagnostics cover-picker-control-missing
+  exit 86
+fi
+cover_save_coords="$(python3 - emulator-screenshots/editor-cover-picker.xml <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+matches = []
+for node in root.iter("node"):
+    if node.attrib.get("text", "").strip().casefold() != "kaydet":
+        continue
+    if node.attrib.get("enabled", "false").lower() != "true":
+        continue
+    m = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if not m:
+        continue
+    x1,y1,x2,y2 = map(int, m.groups())
+    if x2 > x1 and y2 > y1:
+        matches.append((x1,y1,x2,y2))
+if not matches:
+    raise SystemExit("The dedicated cover picker Save button is not enabled/visible.")
+x1,y1,x2,y2 = matches[-1]
+print((x1+x2)//2, (y1+y2)//2)
+PY
+)" || { collect_capture_diagnostics cover-picker-save-button-missing; exit 86; }
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $cover_save_coords
+cover_saved=false
+for attempt in $(seq 1 15); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ClipCover:I > emulator-screenshots/cover-save-logcat.txt 2>&1 || true
+  if grep -Fq "COVER_STILL_SAVED" emulator-screenshots/cover-save-logcat.txt; then
+    cover_saved=true
+    break
+  fi
+  sleep 1
+done
+if [ "$cover_saved" != true ]; then
+  echo "The cover picker Save action did not persist an independent project still image."
+  cat emulator-screenshots/cover-save-logcat.txt || true
+  collect_capture_diagnostics cover-still-save-failed
+  exit 86
+fi
+cover_tile_reloaded=false
+for attempt in $(seq 1 15); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ClipCover:I > emulator-screenshots/cover-tile-reload-logcat.txt 2>&1 || true
+  if grep -Fq "COVER_TILE_READY source=saved-file" emulator-screenshots/cover-tile-reload-logcat.txt; then
+    cover_tile_reloaded=true
+    break
+  fi
+  sleep 1
+done
+if [ "$cover_tile_reloaded" != true ]; then
+  echo "The cover file saved successfully but the independent tile did not reload from that saved file."
+  cat emulator-screenshots/cover-tile-reload-logcat.txt || true
+  collect_capture_diagnostics cover-still-display-failed
+  exit 86
+fi
+if ! take_screen emulator-screenshots/editor-cover-tile-saved.png; then
+  collect_capture_diagnostics cover-tile-after-save-capture-failed
+  exit 86
+fi
+echo "Step 7b-CoverHistory: verify cover still image participates in project Undo/Redo"
+dump_hierarchy editor-cover-undo-controls.xml emulator-screenshots/editor-cover-undo-controls.xml || {
+  collect_capture_diagnostics cover-undo-controls-missing
+  exit 86
+}
+cover_undo_coords="$(python3 - emulator-screenshots/editor-cover-undo-controls.xml <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != "Proje işlemini geri al":
+        continue
+    if node.attrib.get("enabled", "false").lower() != "true":
+        continue
+    m = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if m:
+        x1,y1,x2,y2 = map(int, m.groups())
+        print((x1+x2)//2, (y1+y2)//2)
+        raise SystemExit(0)
+raise SystemExit("Project Undo was not enabled after saving the cover still.")
+PY
+)" || { collect_capture_diagnostics cover-undo-disabled; exit 86; }
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $cover_undo_coords
+cover_undo_restored=false
+for attempt in $(seq 1 12); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ClipCover:I > emulator-screenshots/cover-undo-logcat.txt 2>&1 || true
+  if grep -Fq "COVER_TILE_READY source=video" emulator-screenshots/cover-undo-logcat.txt; then
+    cover_undo_restored=true
+    break
+  fi
+  sleep 1
+done
+if [ "$cover_undo_restored" != true ]; then
+  echo "Project Undo did not restore the clip's original video-frame cover image."
+  cat emulator-screenshots/cover-undo-logcat.txt || true
+  collect_capture_diagnostics cover-undo-still-restore-failed
+  exit 86
+fi
+dump_hierarchy editor-cover-redo-controls.xml emulator-screenshots/editor-cover-redo-controls.xml || {
+  collect_capture_diagnostics cover-redo-controls-missing
+  exit 86
+}
+cover_redo_coords="$(python3 - emulator-screenshots/editor-cover-redo-controls.xml <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != "Proje işlemini yinele":
+        continue
+    if node.attrib.get("enabled", "false").lower() != "true":
+        continue
+    m = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if m:
+        x1,y1,x2,y2 = map(int, m.groups())
+        print((x1+x2)//2, (y1+y2)//2)
+        raise SystemExit(0)
+raise SystemExit("Project Redo was not enabled after cover Undo.")
+PY
+)" || { collect_capture_diagnostics cover-redo-disabled; exit 86; }
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $cover_redo_coords
+cover_redo_restored=false
+for attempt in $(seq 1 12); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ClipCover:I > emulator-screenshots/cover-redo-logcat.txt 2>&1 || true
+  if grep -Eq "COVER_TILE_READY source=saved-(file|cache)" emulator-screenshots/cover-redo-logcat.txt; then
+    cover_redo_restored=true
+    break
+  fi
+  sleep 1
+done
+if [ "$cover_redo_restored" != true ]; then
+  echo "Project Redo did not restore the separately saved cover still image."
+  cat emulator-screenshots/cover-redo-logcat.txt || true
+  collect_capture_diagnostics cover-redo-still-restore-failed
+  exit 86
+fi
+echo "PASS: cover Save, Undo and Redo switch the independent tile between the source frame and the saved still image."
+echo "PASS: fixed cover tile opened its picker, saved a project-local still image, and reloaded the tile from that saved file."
+
 echo "Step 8/12: verify the one-row clip tool strip and its upward detail panel"
 find_bottom_tool() {
   local hierarchy="$1"
@@ -999,18 +1276,26 @@ read -r after_x after_y after_pixels <<< "$after_overlay"
 # rectangle measured in the Activity, not inferred from unrelated green UI pixels.
 timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTest:I \
   > emulator-screenshots/preview-canvas-logcat-after-drag.txt 2>&1 || true
-python3 - emulator-screenshots/preview-canvas-logcat-after-drag.txt emulator-screenshots/editor-overlay-after-drag.png <<'PY'
+python3 - emulator-screenshots/preview-canvas-logcat-after-drag.txt emulator-screenshots/editor-overlay-after-drag.png emulator-screenshots/preview-canvas-logcat.txt <<'PY'
 from PIL import Image
 import re
 import sys
 
-log_path, screenshot_path = sys.argv[1:]
+log_path, screenshot_path, baseline_log_path = sys.argv[1:]
 matches = [
     line for line in open(log_path, errors="replace")
     if "PREVIEW_CANVAS_BOUNDS" in line
 ]
 if not matches:
-    raise SystemExit("Measured preview canvas bounds were not logged after the overlay drag.")
+    # The editor logs bounds only when geometry changes. A drag that leaves
+    # the stage unchanged correctly emits no duplicate line, so reuse the
+    # measured startup bounds from this same emulator/editor session.
+    matches = [
+        line for line in open(baseline_log_path, errors="replace")
+        if "PREVIEW_CANVAS_BOUNDS" in line
+    ]
+if not matches:
+    raise SystemExit("No measured preview-canvas bounds were recorded in this editor session.")
 match = re.search(
     r"stage=(\d+)x(\d+) canvas=(\d+)x(\d+) "
     r"offset=(\d+),(\d+) origin=(-?\d+),(-?\d+) aspect=([0-9.]+)",
@@ -1085,6 +1370,106 @@ if [ "$((after_x - before_x))" -lt 12 ] || [ "$((after_x - before_x))" -gt 34 ] 
   exit 35
 fi
 echo "PASS: paused overlay was visible and moved directly on the canvas without pressing Play."
+echo "Step 8a-Undo: verify a real overlay canvas drag is restored by project Undo/Redo"
+dump_hierarchy editor-overlay-history-before-undo.xml emulator-screenshots/editor-overlay-history-before-undo.xml || {
+  collect_capture_diagnostics project-history-overlay-undo-controls-missing
+  exit 91
+}
+overlay_undo_coords="$(python3 - emulator-screenshots/editor-overlay-history-before-undo.xml <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != "Proje işlemini geri al" or node.attrib.get("enabled", "false").lower() != "true":
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        x1,y1,x2,y2 = map(int, match.groups())
+        print((x1+x2)//2, (y1+y2)//2)
+        raise SystemExit(0)
+raise SystemExit("Enabled project Undo control is unavailable after overlay drag.")
+PY
+)" || { collect_capture_diagnostics project-history-overlay-undo-disabled; exit 91; }
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $overlay_undo_coords
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-overlay-undo.txt 2>&1 || true
+python3 - emulator-screenshots/project-history-overlay-undo.txt <<'PY'
+import re, sys
+lines = open(sys.argv[1], errors="replace").read().splitlines()
+matches = [line for line in lines if "PROJECT_HISTORY_APPLIED action=undo " in line]
+if not matches: raise SystemExit("No project Undo diagnostic followed the overlay drag.")
+match = re.search(r"beforeOverlayTransform=([^ ]+) afterOverlayTransform=([^ ]+)", matches[-1])
+if not match: raise SystemExit("Undo diagnostic is missing selected overlay transform values: " + matches[-1])
+before, after = match.groups()
+if before == after or before == "none" or after == "none":
+    raise SystemExit("Undo did not restore a selected overlay transform: " + matches[-1])
+print("PASS: Undo changed overlay model transform from " + before + " back to " + after)
+PY
+if ! take_screen emulator-screenshots/editor-overlay-after-undo.png; then
+  collect_capture_diagnostics project-history-overlay-undo-capture-failure
+  exit 91
+fi
+overlay_undo_center="$(magenta_center emulator-screenshots/editor-overlay-after-undo.png)" || {
+  collect_capture_diagnostics project-history-overlay-undo-render-missing
+  exit 91
+}
+read -r overlay_undo_x overlay_undo_y overlay_undo_pixels <<< "$overlay_undo_center"
+if [ "$((overlay_undo_x - before_x))" -lt -7 ] || [ "$((overlay_undo_x - before_x))" -gt 7 ] ||
+   [ "$((overlay_undo_y - before_y))" -lt -7 ] || [ "$((overlay_undo_y - before_y))" -gt 7 ]; then
+  echo "Overlay Undo did not restore its original visible position: expected=($before_x,$before_y), actual=($overlay_undo_x,$overlay_undo_y)."
+  collect_capture_diagnostics project-history-overlay-undo-position-wrong
+  exit 91
+fi
+dump_hierarchy editor-overlay-history-before-redo.xml emulator-screenshots/editor-overlay-history-before-redo.xml || {
+  collect_capture_diagnostics project-history-overlay-redo-controls-missing
+  exit 92
+}
+overlay_redo_coords="$(python3 - emulator-screenshots/editor-overlay-history-before-redo.xml <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != "Proje işlemini yinele" or node.attrib.get("enabled", "false").lower() != "true":
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        x1,y1,x2,y2 = map(int, match.groups())
+        print((x1+x2)//2, (y1+y2)//2)
+        raise SystemExit(0)
+raise SystemExit("Enabled project Redo control is unavailable after overlay Undo.")
+PY
+)" || { collect_capture_diagnostics project-history-overlay-redo-disabled; exit 92; }
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $overlay_redo_coords
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-overlay-redo.txt 2>&1 || true
+python3 - emulator-screenshots/project-history-overlay-redo.txt <<'PY'
+import re, sys
+lines = open(sys.argv[1], errors="replace").read().splitlines()
+matches = [line for line in lines if "PROJECT_HISTORY_APPLIED action=redo " in line]
+if not matches: raise SystemExit("No project Redo diagnostic followed the overlay Undo.")
+match = re.search(r"beforeOverlayTransform=([^ ]+) afterOverlayTransform=([^ ]+)", matches[-1])
+if not match: raise SystemExit("Redo diagnostic is missing selected overlay transform values: " + matches[-1])
+before, after = match.groups()
+if before == after or before == "none" or after == "none":
+    raise SystemExit("Redo did not reapply the selected overlay transform: " + matches[-1])
+print("PASS: Redo reapplied overlay model transform from " + before + " to " + after)
+PY
+if ! take_screen emulator-screenshots/editor-overlay-after-redo.png; then
+  collect_capture_diagnostics project-history-overlay-redo-capture-failure
+  exit 92
+fi
+overlay_redo_center="$(magenta_center emulator-screenshots/editor-overlay-after-redo.png)" || {
+  collect_capture_diagnostics project-history-overlay-redo-render-missing
+  exit 92
+}
+read -r overlay_redo_x overlay_redo_y overlay_redo_pixels <<< "$overlay_redo_center"
+if [ "$((overlay_redo_x - after_x))" -lt -7 ] || [ "$((overlay_redo_x - after_x))" -gt 7 ] ||
+   [ "$((overlay_redo_y - after_y))" -lt -7 ] || [ "$((overlay_redo_y - after_y))" -gt 7 ]; then
+  echo "Overlay Redo did not restore its moved visible position: expected=($after_x,$after_y), actual=($overlay_redo_x,$overlay_redo_y)."
+  collect_capture_diagnostics project-history-overlay-redo-position-wrong
+  exit 92
+fi
+echo "PASS: project Undo/Redo restored the overlay's visible canvas position in both directions."
 overlay_back_coords="$(find_bottom_tool emulator-screenshots/editor-window.xml "Ana araçlara dön" || true)"
 if [ -z "$overlay_back_coords" ]; then
   echo "Could not find the overlay row's return-to-main-dock control."
@@ -1095,6 +1480,436 @@ timeout -k 2s 8s adb -s emulator-5554 shell input tap $overlay_back_coords
 sleep 1
 dump_hierarchy editor-main-dock.xml emulator-screenshots/editor-main-dock.xml || true
 
+echo "Step 8b-AudioHistory: verify sound-volume Undo/Redo restores both the mix model and visible slider"
+audio_tab_coords="$(find_bottom_tool emulator-screenshots/editor-main-dock.xml "Ses" || true)"
+if [ -z "$audio_tab_coords" ]; then
+  echo "Global editor dock did not expose the audio panel after overlay history tests."
+  collect_capture_diagnostics project-history-audio-tab-missing
+  exit 93
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $audio_tab_coords
+sleep 1
+if ! dump_hierarchy editor-project-audio-panel.xml emulator-screenshots/editor-project-audio-panel.xml; then
+  collect_capture_diagnostics project-history-audio-panel-missing
+  exit 93
+fi
+# The audio panel is a vertically scrollable settings sheet. On a standard
+# viewport only the music controls are initially visible; scroll its own sheet
+# (not the timeline) to expose the sound-effect volume slider.
+audio_sheet_bounds="$(python3 - emulator-screenshots/editor-project-audio-panel.xml <<'PY'
+import re,sys,xml.etree.ElementTree as ET
+root=ET.parse(sys.argv[1]).getroot(); candidates=[]
+for n in root.iter("node"):
+    if n.attrib.get("class")!="android.widget.ScrollView" or n.attrib.get("scrollable")!="true": continue
+    m=re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",n.attrib.get("bounds",""))
+    if not m: continue
+    x1,y1,x2,y2=map(int,m.groups())
+    if x2-x1>900 and y1>1300 and y2-y1>250: candidates.append((x1,y1,x2,y2))
+if not candidates: raise SystemExit("Could not locate the vertical audio settings ScrollView.")
+x1,y1,x2,y2=max(candidates,key=lambda b:(b[2]-b[0])*(b[3]-b[1]))
+print((x1+x2)//2,y1+35,y2-35)
+PY
+)" || { collect_capture_diagnostics project-history-audio-sheet-scrollview-missing; exit 93; }
+read -r audio_scroll_x audio_scroll_top audio_scroll_bottom <<< "$audio_sheet_bounds"
+sound_volume_bounds=""
+sound_volume_visible_height=0
+for scroll_attempt in $(seq 1 8); do
+  timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$audio_scroll_x" "$audio_scroll_bottom" "$audio_scroll_x" "$audio_scroll_top" 650
+  sleep 0.4
+  audio_scroll_xml="editor-project-audio-panel-scrolled-$scroll_attempt.xml"
+  if ! dump_hierarchy "$audio_scroll_xml" "emulator-screenshots/$audio_scroll_xml"; then
+    collect_capture_diagnostics project-history-audio-panel-scroll-capture-failed
+    exit 93
+  fi
+  sound_volume_bounds="$(find_content_description_bounds "emulator-screenshots/$audio_scroll_xml" "Ses efekti ses seviyesi" || true)"
+  if [ -n "$sound_volume_bounds" ]; then
+    read -r _ _ _ sound_volume_visible_height _ _ _ _ <<< "$sound_volume_bounds"
+    # A non-empty accessibility node may be only a few pixels of a SeekBar
+    # peeking above the ScrollView's clipped edge. It is not a usable touch
+    # target. Keep scrolling until the full control has a practical visible area.
+    if [ "$sound_volume_visible_height" -ge 40 ]; then
+      cp "emulator-screenshots/$audio_scroll_xml" emulator-screenshots/editor-project-audio-panel-scrolled.xml
+      break
+    fi
+    echo "Sound-effect volume slider is only partially visible ($sound_volume_visible_height px); scrolling farther (attempt $scroll_attempt/8)."
+    sound_volume_bounds=""
+  fi
+done
+if [ -z "$sound_volume_bounds" ]; then
+  echo "Sound-effect volume slider never became fully visible after scrolling the audio settings sheet."
+  collect_capture_diagnostics project-history-sound-volume-slider-still-offscreen
+  exit 93
+fi
+if [ -z "$sound_volume_bounds" ]; then
+  echo "Audio panel did not expose the accessible sound-effect volume slider."
+  collect_capture_diagnostics project-history-sound-volume-slider-missing
+  exit 93
+fi
+read -r sound_cx sound_cy sound_w sound_h sound_x1 sound_y1 sound_x2 sound_y2 <<< "$sound_volume_bounds"
+# Start on the actual max-position thumb center (SeekBar horizontal padding is
+# included in the view bounds), then move far enough to produce a clear value change.
+sound_drag_start=$((sound_x2 - 16))
+sound_drag_end=$((sound_x1 + sound_w * 42 / 100))
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$sound_drag_start" "$sound_cy" "$sound_drag_end" "$sound_cy" 1000
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s AudioVolumeTouchTest:I > emulator-screenshots/sound-volume-touch-logcat.txt 2>&1 || true
+if ! grep -Fq "VOLUME_SEEK_START" emulator-screenshots/sound-volume-touch-logcat.txt; then
+  echo "The swipe did not acquire the actual sound-volume SeekBar thumb; no application volume change can be tested yet."
+  cat emulator-screenshots/sound-volume-touch-logcat.txt || true
+  collect_capture_diagnostics project-history-sound-volume-thumb-not-acquired
+  exit 94
+fi
+if ! grep -Fq "VOLUME_SEEK_PROGRESS" emulator-screenshots/sound-volume-touch-logcat.txt; then
+  echo "The sound-volume SeekBar received touch tracking but emitted no fromUser progress change."
+  cat emulator-screenshots/sound-volume-touch-logcat.txt || true
+  collect_capture_diagnostics project-history-sound-volume-progress-not-changed
+  exit 94
+fi
+if ! grep -Fq "VOLUME_SEEK_STOP" emulator-screenshots/sound-volume-touch-logcat.txt; then
+  echo "The sound-volume SeekBar did not finish its drag gesture."
+  cat emulator-screenshots/sound-volume-touch-logcat.txt || true
+  collect_capture_diagnostics project-history-sound-volume-gesture-not-finished
+  exit 94
+fi
+dump_hierarchy editor-project-audio-after-volume.xml emulator-screenshots/editor-project-audio-after-volume.xml || {
+  collect_capture_diagnostics project-history-sound-volume-after-drag-missing
+  exit 93
+}
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-sound-volume-gesture.txt 2>&1 || true
+if ! grep -Fq "PROJECT_HISTORY_GESTURE_END" emulator-screenshots/project-history-sound-volume-gesture.txt; then
+  echo "The sound-volume drag reached the SeekBar but did not finish a project-history gesture."
+  cat emulator-screenshots/project-history-sound-volume-gesture.txt || true
+  collect_capture_diagnostics project-history-sound-volume-gesture-not-committed
+  exit 94
+fi
+if ! grep -Fq "PROJECT_HISTORY_GESTURE_COMMITTED" emulator-screenshots/project-history-sound-volume-gesture.txt; then
+  echo "The sound-volume gesture did not complete the project-history commit stage."
+  cat emulator-screenshots/project-history-sound-volume-gesture.txt || true
+  collect_capture_diagnostics project-history-sound-volume-commit-missing
+  exit 94
+fi
+if grep -Fq "PROJECT_HISTORY_GESTURE_END" emulator-screenshots/project-history-sound-volume-gesture.txt &&
+   ! grep -Fq "afterSoundVolume=" emulator-screenshots/project-history-sound-volume-gesture.txt; then
+  echo "Sound-volume history diagnostics are missing the final model value."
+  cat emulator-screenshots/project-history-sound-volume-gesture.txt || true
+  collect_capture_diagnostics project-history-sound-volume-model-log-missing
+  exit 94
+fi
+# Tool detail panels replace the global timeline/Undo dock with a full-width
+# "Araçlara dön" action. Close the audio sheet before querying project history;
+# the application already committed the changed volume (verified above), but
+# Undo is deliberately not present in the detail panel's accessibility tree.
+volume_panel_back_coords="$(find_bottom_tool emulator-screenshots/editor-project-audio-after-volume.xml "Araçlara dön" || true)"
+if [ -z "$volume_panel_back_coords" ]; then
+  echo "The audio detail panel did not expose its return-to-tools control after the volume swipe."
+  collect_capture_diagnostics project-history-sound-volume-return-control-missing
+  exit 93
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$volume_panel_back_coords"
+sleep 1
+dump_hierarchy editor-main-dock-after-volume.xml emulator-screenshots/editor-main-dock-after-volume.xml || {
+  collect_capture_diagnostics project-history-sound-volume-main-dock-missing
+  exit 93
+}
+volume_undo_coords="$(python3 - emulator-screenshots/editor-main-dock-after-volume.xml <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != "Proje işlemini geri al" or node.attrib.get("enabled", "false").lower() != "true": continue
+    m = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if m:
+        x1,y1,x2,y2 = map(int,m.groups()); print((x1+x2)//2,(y1+y2)//2); raise SystemExit(0)
+raise SystemExit("Project Undo is unavailable after the volume gesture.")
+PY
+)" || {
+  echo "Undo is unavailable after the real SFX-volume swipe. Captured touch and history values follow."
+  cat emulator-screenshots/sound-volume-touch-logcat.txt || true
+  cat emulator-screenshots/project-history-sound-volume-gesture.txt || true
+  collect_capture_diagnostics project-history-sound-volume-undo-disabled
+  exit 93
+}
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $volume_undo_coords
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-sound-volume-undo.txt 2>&1 || true
+volume_history_values="$(python3 - emulator-screenshots/project-history-sound-volume-undo.txt <<'PY'
+import re, sys
+lines = open(sys.argv[1], errors="replace").read().splitlines()
+events = [line for line in lines if "PROJECT_HISTORY_APPLIED action=undo " in line]
+controls = [line for line in lines if "PROJECT_HISTORY_CONTROLS " in line]
+if not events or not controls: raise SystemExit("Undo did not log both history transition and restored control state.")
+event = re.search(r"beforeSoundVolume=(\d+) afterSoundVolume=(\d+)", events[-1])
+ui = re.search(r"soundModel=(\d+) soundSeek=(-?\d+)", controls[-1])
+if not event or not ui: raise SystemExit("Undo diagnostics do not include sound mix, SeekBar, and label values.")
+changed, restored = map(int,event.groups()); model, seek = map(int,ui.groups())
+label = re.search(r"soundLabel=Efekt sesi: (\d+)%", controls[-1])
+if changed == restored: raise SystemExit(f"Sound volume Undo did not change the model: {events[-1]}")
+if model != restored or seek != restored or not label or int(label.group(1)) != restored:
+    raise SystemExit(f"Undo did not restore the model, SeekBar, and label together: model={model}, seek={seek}, label={label.group(1) if label else 'missing'}, expected={restored}; {controls[-1]}")
+print(changed, restored)
+PY
+)" || { collect_capture_diagnostics project-history-sound-volume-undo-failed; exit 94; }
+read -r changed_sound_volume original_sound_volume <<< "$volume_history_values"
+echo "PASS: one Undo restored sound volume $changed_sound_volume -> $original_sound_volume and its SeekBar progress matches."
+dump_hierarchy editor-main-dock-before-redo.xml emulator-screenshots/editor-main-dock-before-redo.xml || {
+  collect_capture_diagnostics project-history-sound-volume-redo-controls-missing
+  exit 94
+}
+volume_redo_coords="$(python3 - emulator-screenshots/editor-main-dock-before-redo.xml <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != "Proje işlemini yinele" or node.attrib.get("enabled", "false").lower() != "true": continue
+    m = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if m:
+        x1,y1,x2,y2 = map(int,m.groups()); print((x1+x2)//2,(y1+y2)//2); raise SystemExit(0)
+raise SystemExit("Project Redo is unavailable after sound-volume Undo.")
+PY
+)" || { collect_capture_diagnostics project-history-sound-volume-redo-disabled; exit 94; }
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $volume_redo_coords
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-sound-volume-redo.txt 2>&1 || true
+python3 - emulator-screenshots/project-history-sound-volume-redo.txt "$changed_sound_volume" "$original_sound_volume" <<'PY'
+import re, sys
+lines = open(sys.argv[1], errors="replace").read().splitlines()
+events = [line for line in lines if "PROJECT_HISTORY_APPLIED action=redo " in line]
+controls = [line for line in lines if "PROJECT_HISTORY_CONTROLS " in line]
+if not events or not controls: raise SystemExit("Redo did not log both history transition and restored control state.")
+event = re.search(r"beforeSoundVolume=(\d+) afterSoundVolume=(\d+)", events[-1])
+ui = re.search(r"soundModel=(\d+) soundSeek=(-?\d+)", controls[-1])
+if not event or not ui: raise SystemExit("Redo diagnostics do not include sound mix, SeekBar, and label values.")
+before, after = map(int,event.groups()); model, seek = map(int,ui.groups())
+expected_new, expected_old = map(int,sys.argv[2:4])
+label = re.search(r"soundLabel=Efekt sesi: (\d+)%", controls[-1])
+if before != expected_old or after != expected_new: raise SystemExit(f"Redo applied the wrong sound volume: {events[-1]}")
+if model != after or seek != after or not label or int(label.group(1)) != after:
+    raise SystemExit(f"Redo did not restore the model, SeekBar, and label together: model={model}, seek={seek}, label={label.group(1) if label else 'missing'}, expected={after}; {controls[-1]}")
+print(f"PASS: one Redo reapplied sound volume {before} -> {after} and its SeekBar progress matches.")
+PY
+
+# Restore the default source mix before later audio playback and trim checks.
+dump_hierarchy editor-main-dock-after-redo.xml emulator-screenshots/editor-main-dock-after-redo.xml || { collect_capture_diagnostics project-history-sound-volume-cleanup-controls-missing; exit 94; }
+cleanup_undo_coords="$(python3 - emulator-screenshots/editor-main-dock-after-redo.xml <<'PY'
+import re,sys,xml.etree.ElementTree as ET
+root=ET.parse(sys.argv[1]).getroot()
+for n in root.iter("node"):
+    if n.attrib.get("content-desc","").strip()=="Proje işlemini geri al" and n.attrib.get("enabled","false").lower()=="true":
+        m=re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",n.attrib.get("bounds",""))
+        if m:
+            x1,y1,x2,y2=map(int,m.groups()); print((x1+x2)//2,(y1+y2)//2); raise SystemExit(0)
+raise SystemExit("Undo unavailable while restoring default test audio volume.")
+PY
+)" || { collect_capture_diagnostics project-history-sound-volume-cleanup-undo-disabled; exit 94; }
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$cleanup_undo_coords"
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-sound-volume-cleanup.txt 2>&1 || true
+python3 - emulator-screenshots/project-history-sound-volume-cleanup.txt "$changed_sound_volume" "$original_sound_volume" <<'PY'
+import re,sys
+lines=open(sys.argv[1],errors="replace").read().splitlines()
+events=[x for x in lines if "PROJECT_HISTORY_APPLIED action=undo " in x]
+controls=[x for x in lines if "PROJECT_HISTORY_CONTROLS " in x]
+if not events or not controls: raise SystemExit("Default-volume cleanup did not log the final Undo transition and controls.")
+event=re.search(r"beforeSoundVolume=(\d+) afterSoundVolume=(\d+)",events[-1])
+m=re.search(r"soundModel=(\d+) soundSeek=(-?\d+)",controls[-1])
+changed,expected=map(int,sys.argv[2:4])
+if not event or tuple(map(int,event.groups()))!=(changed,expected): raise SystemExit("Cleanup Undo did not restore the original sound value: "+events[-1])
+label=re.search(r"soundLabel=Efekt sesi: (\d+)%",controls[-1])
+if not m or tuple(map(int,m.groups()))!=(expected,expected) or not label or int(label.group(1))!=expected:
+    raise SystemExit("Test audio model, SeekBar, or label was not restored before fixture import: "+controls[-1])
+print(f"PASS: Undo/Redo round-trip restored the model, SeekBar and label to initial sound volume {expected}.")
+PY
+
+# The audio panel was closed before Undo/Redo, so the global dock is already
+# visible here. Continue directly with the independent filter-history checks.
+dump_hierarchy editor-main-dock-before-filter.xml emulator-screenshots/editor-main-dock-before-filter.xml || { collect_capture_diagnostics project-history-filter-dock-missing; exit 95; }
+filter_tab_coords="$(find_bottom_tool emulator-screenshots/editor-main-dock-before-filter.xml "Efektler" || true)"
+if [ -z "$filter_tab_coords" ]; then
+  collect_capture_diagnostics project-history-filter-tab-missing
+  exit 95
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $filter_tab_coords
+sleep 1
+dump_hierarchy editor-filter-panel.xml emulator-screenshots/editor-filter-panel.xml || { collect_capture_diagnostics project-history-filter-panel-missing; exit 95; }
+mono_preset_coords="$(find_bottom_tool emulator-screenshots/editor-filter-panel.xml "Siyah-beyaz" || true)"
+if [ -z "$mono_preset_coords" ]; then
+  collect_capture_diagnostics project-history-monochrome-preset-missing
+  exit 95
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $mono_preset_coords
+sleep 1
+dump_hierarchy editor-filter-after-monochrome.xml emulator-screenshots/editor-filter-after-monochrome.xml || { collect_capture_diagnostics project-history-filter-undo-controls-missing; exit 95; }
+# Detail panels hide the global playback Undo/Redo row. Return to the main dock
+# before invoking project history, matching the actual editor interaction flow.
+filter_panel_back="$(find_bottom_tool emulator-screenshots/editor-filter-after-monochrome.xml "Araçlara dön" || true)"
+if [ -z "$filter_panel_back" ]; then collect_capture_diagnostics project-history-filter-return-control-missing; exit 95; fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$filter_panel_back"
+sleep 1
+dump_hierarchy editor-main-dock-after-monochrome.xml emulator-screenshots/editor-main-dock-after-monochrome.xml || { collect_capture_diagnostics project-history-filter-main-dock-missing; exit 95; }
+filter_undo_coords="$(python3 - emulator-screenshots/editor-main-dock-after-monochrome.xml <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != "Proje işlemini geri al" or node.attrib.get("enabled", "false").lower() != "true": continue
+    m = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if m:
+        x1,y1,x2,y2=map(int,m.groups()); print((x1+x2)//2,(y1+y2)//2); raise SystemExit(0)
+raise SystemExit("Undo unavailable after monochrome preset.")
+PY
+)" || { collect_capture_diagnostics project-history-filter-undo-disabled; exit 95; }
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $filter_undo_coords
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-filter-preset-undo.txt 2>&1 || true
+python3 - emulator-screenshots/project-history-filter-preset-undo.txt <<'PY'
+import re, sys
+lines=open(sys.argv[1],errors="replace").read().splitlines()
+event=[x for x in lines if "PROJECT_HISTORY_APPLIED action=undo " in x]
+controls=[x for x in lines if "PROJECT_HISTORY_CONTROLS " in x]
+if not event or not controls: raise SystemExit("Filter Undo did not log restored model and controls.")
+if not re.search(r"beforeFilter=MONOCHROME afterFilter=ORIGINAL",event[-1]): raise SystemExit("Filter preset Undo did not restore ORIGINAL: "+event[-1])
+if not re.search(r"filterPreset=ORIGINAL brightnessModel=0 brightnessSeek=100",controls[-1]): raise SystemExit("Filter preset Undo restored model but not color controls: "+controls[-1])
+print("PASS: one Undo restored the Original filter preset and synchronized the brightness control.")
+PY
+dump_hierarchy editor-main-dock-before-preset-redo.xml emulator-screenshots/editor-main-dock-before-preset-redo.xml || { collect_capture_diagnostics project-history-filter-redo-controls-missing; exit 96; }
+filter_redo_coords="$(python3 - emulator-screenshots/editor-main-dock-before-preset-redo.xml <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+root=ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("content-desc","").strip()!="Proje işlemini yinele" or node.attrib.get("enabled","false").lower()!="true": continue
+    m=re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",node.attrib.get("bounds",""))
+    if m:
+        x1,y1,x2,y2=map(int,m.groups()); print((x1+x2)//2,(y1+y2)//2); raise SystemExit(0)
+raise SystemExit("Redo unavailable after filter Undo.")
+PY
+)" || { collect_capture_diagnostics project-history-filter-redo-disabled; exit 96; }
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $filter_redo_coords
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-filter-preset-redo.txt 2>&1 || true
+python3 - emulator-screenshots/project-history-filter-preset-redo.txt <<'PY'
+import re, sys
+lines=open(sys.argv[1],errors="replace").read().splitlines()
+event=[x for x in lines if "PROJECT_HISTORY_APPLIED action=redo " in x]
+controls=[x for x in lines if "PROJECT_HISTORY_CONTROLS " in x]
+if not event or not controls: raise SystemExit("Filter Redo did not log restored model and controls.")
+if not re.search(r"beforeFilter=ORIGINAL afterFilter=MONOCHROME",event[-1]): raise SystemExit("Filter preset Redo did not reapply MONOCHROME: "+event[-1])
+if not re.search(r"filterPreset=MONOCHROME",controls[-1]): raise SystemExit("Filter preset Redo left the UI control stale: "+controls[-1])
+print("PASS: one Redo reapplied the Monochrome preset.")
+PY
+
+# Reopen the filter detail panel after the preset history round-trip. Its
+# SeekBars are intentionally absent from the global dock accessibility tree.
+filter_tab_after_preset="$(find_bottom_tool emulator-screenshots/editor-main-dock-before-preset-redo.xml "Efektler" || true)"
+if [ -z "$filter_tab_after_preset" ]; then collect_capture_diagnostics project-history-filter-reopen-tab-missing; exit 97; fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$filter_tab_after_preset"
+sleep 1
+dump_hierarchy editor-filter-panel-before-brightness.xml emulator-screenshots/editor-filter-panel-before-brightness.xml || { collect_capture_diagnostics project-history-filter-reopen-panel-missing; exit 97; }
+# The effects detail panel is a vertically scrolling child below the fixed
+# timeline. Its preset buttons are initially visible, while the color-grade
+# sliders are below the fold on the 1080x1920 API 35 emulator. Scroll inside
+# that panel (not the timeline) before querying the accessibility tree.
+timeout -k 2s 8s adb -s emulator-5554 shell input swipe 530 1740 530 1430 550
+sleep 1
+dump_hierarchy editor-filter-panel-scrolled-to-brightness.xml emulator-screenshots/editor-filter-panel-scrolled-to-brightness.xml || { collect_capture_diagnostics project-history-filter-scroll-hierarchy-missing; exit 97; }
+echo "Step 8b-FilterSlider: verify brightness gesture Undo/Redo restores actual slider progress"
+brightness_bounds="$(find_content_description_bounds emulator-screenshots/editor-filter-panel-scrolled-to-brightness.xml "Parlaklık filtresi" || true)"
+if [ -z "$brightness_bounds" ]; then collect_capture_diagnostics project-history-brightness-slider-missing; exit 97; fi
+read -r brightness_cx brightness_cy brightness_w brightness_h brightness_x1 brightness_y1 brightness_x2 brightness_y2 <<< "$brightness_bounds"
+brightness_drag_start=$((brightness_x1 + brightness_w / 2))
+brightness_drag_end=$((brightness_x1 + brightness_w * 62 / 100))
+timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$brightness_drag_start" "$brightness_cy" "$brightness_drag_end" "$brightness_cy" 650
+sleep 1
+dump_hierarchy editor-filter-after-brightness-drag.xml emulator-screenshots/editor-filter-after-brightness-drag.xml || { collect_capture_diagnostics project-history-brightness-undo-controls-missing; exit 97; }
+brightness_panel_back="$(find_bottom_tool emulator-screenshots/editor-filter-after-brightness-drag.xml "Araçlara dön" || true)"
+if [ -z "$brightness_panel_back" ]; then collect_capture_diagnostics project-history-brightness-return-control-missing; exit 97; fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$brightness_panel_back"
+sleep 1
+dump_hierarchy editor-main-dock-after-brightness-drag.xml emulator-screenshots/editor-main-dock-after-brightness-drag.xml || { collect_capture_diagnostics project-history-brightness-main-dock-missing; exit 97; }
+brightness_undo_coords="$(python3 - emulator-screenshots/editor-main-dock-after-brightness-drag.xml <<'PY'
+import re,sys,xml.etree.ElementTree as ET
+root=ET.parse(sys.argv[1]).getroot()
+for n in root.iter("node"):
+    if n.attrib.get("content-desc","").strip()=="Proje işlemini geri al" and n.attrib.get("enabled","false").lower()=="true":
+        m=re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",n.attrib.get("bounds",""))
+        if m:
+            x1,y1,x2,y2=map(int,m.groups()); print((x1+x2)//2,(y1+y2)//2); raise SystemExit(0)
+raise SystemExit("Undo unavailable after brightness gesture.")
+PY
+)" || { collect_capture_diagnostics project-history-brightness-undo-disabled; exit 97; }
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $brightness_undo_coords
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-brightness-undo.txt 2>&1 || true
+brightness_undo_values="$(python3 - emulator-screenshots/project-history-brightness-undo.txt <<'PY'
+import re,sys
+lines=open(sys.argv[1],errors="replace").read().splitlines()
+events=[x for x in lines if "PROJECT_HISTORY_APPLIED action=undo " in x]
+controls=[x for x in lines if "PROJECT_HISTORY_CONTROLS " in x]
+if not events or not controls: raise SystemExit("Brightness Undo did not emit model and control diagnostics.")
+e=re.search(r"beforeFilterBrightness=(-?\d+) afterFilterBrightness=(-?\d+)",events[-1])
+u=re.search(r"brightnessModel=(-?\d+) brightnessSeek=(-?\d+)",controls[-1])
+if not e or not u: raise SystemExit("Brightness diagnostics missing from Undo.")
+changed,restored=map(int,e.groups()); model,seek=map(int,u.groups())
+if changed==restored: raise SystemExit("Brightness gesture did not change the filter model: "+events[-1])
+if model!=restored or seek!=restored+100: raise SystemExit(f"Undo left brightness slider out of sync: model={model}, seek={seek}, expectedSeek={restored+100}; {controls[-1]}")
+print(changed,restored)
+PY
+)" || { collect_capture_diagnostics project-history-brightness-undo-failed; exit 98; }
+read -r changed_brightness original_brightness <<< "$brightness_undo_values"
+echo "PASS: one Undo restored brightness $changed_brightness -> $original_brightness and its slider progress."
+dump_hierarchy editor-main-dock-before-brightness-redo.xml emulator-screenshots/editor-main-dock-before-brightness-redo.xml || { collect_capture_diagnostics project-history-brightness-redo-controls-missing; exit 98; }
+brightness_redo_coords="$(python3 - emulator-screenshots/editor-main-dock-before-brightness-redo.xml <<'PY'
+import re,sys,xml.etree.ElementTree as ET
+root=ET.parse(sys.argv[1]).getroot()
+for n in root.iter("node"):
+    if n.attrib.get("content-desc","").strip()=="Proje işlemini yinele" and n.attrib.get("enabled","false").lower()=="true":
+        m=re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",n.attrib.get("bounds",""))
+        if m:
+            x1,y1,x2,y2=map(int,m.groups()); print((x1+x2)//2,(y1+y2)//2); raise SystemExit(0)
+raise SystemExit("Redo unavailable after brightness Undo.")
+PY
+)" || { collect_capture_diagnostics project-history-brightness-redo-disabled; exit 98; }
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $brightness_redo_coords
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-brightness-redo.txt 2>&1 || true
+python3 - emulator-screenshots/project-history-brightness-redo.txt "$changed_brightness" "$original_brightness" <<'PY'
+import re,sys
+lines=open(sys.argv[1],errors="replace").read().splitlines()
+events=[x for x in lines if "PROJECT_HISTORY_APPLIED action=redo " in x]
+controls=[x for x in lines if "PROJECT_HISTORY_CONTROLS " in x]
+if not events or not controls: raise SystemExit("Brightness Redo did not emit model and control diagnostics.")
+e=re.search(r"beforeFilterBrightness=(-?\d+) afterFilterBrightness=(-?\d+)",events[-1])
+u=re.search(r"brightnessModel=(-?\d+) brightnessSeek=(-?\d+)",controls[-1])
+if not e or not u: raise SystemExit("Brightness diagnostics missing from Redo.")
+before,after=map(int,e.groups()); model,seek=map(int,u.groups())
+expected_new,expected_old=map(int,sys.argv[2:4])
+if before!=expected_old or after!=expected_new: raise SystemExit("Redo reapplied wrong brightness: "+events[-1])
+if model!=after or seek!=after+100: raise SystemExit("Redo left brightness slider out of sync: "+controls[-1])
+print(f"PASS: one Redo reapplied brightness {before} -> {after} and its slider progress.")
+PY
+
+# Reset to the unfiltered project appearance before the video/export smoke tests.
+# Reopen the detail panel because its controls are intentionally hidden while
+# the global Undo/Redo row is active.
+filter_tab_before_reset="$(find_bottom_tool emulator-screenshots/editor-main-dock-before-brightness-redo.xml "Efektler" || true)"
+if [ -z "$filter_tab_before_reset" ]; then collect_capture_diagnostics project-history-filter-reset-tab-missing; exit 99; fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$filter_tab_before_reset"
+sleep 1
+dump_hierarchy editor-filter-before-reset.xml emulator-screenshots/editor-filter-before-reset.xml || { collect_capture_diagnostics project-history-filter-reset-panel-missing; exit 99; }
+original_preset_coords="$(find_bottom_tool emulator-screenshots/editor-filter-before-reset.xml "Orijinal" || true)"
+if [ -z "$original_preset_coords" ]; then collect_capture_diagnostics project-history-filter-original-preset-missing; exit 99; fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$original_preset_coords"
+sleep 1
+dump_hierarchy editor-filter-after-reset.xml emulator-screenshots/editor-filter-after-reset.xml || { collect_capture_diagnostics project-history-filter-reset-complete-panel-missing; exit 99; }
+filter_panel_back="$(find_bottom_tool emulator-screenshots/editor-filter-after-reset.xml "Araçlara dön" || true)"
+if [ -z "$filter_panel_back" ]; then collect_capture_diagnostics project-history-filter-close-control-missing; exit 99; fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$filter_panel_back"
+sleep 1
+dump_hierarchy editor-main-dock-after-filter.xml emulator-screenshots/editor-main-dock-after-filter.xml || true
 video_clip_coords="$(python3 - emulator-screenshots/editor-main-dock.xml <<'PY'
 import re
 import sys
@@ -1304,31 +2119,21 @@ if ! take_screen emulator-screenshots/editor-panel-closed.png; then
 fi
 dump_hierarchy editor-panel-closed.xml emulator-screenshots/editor-panel-closed.xml || true
 
-# Both audio fixture imports run on background metadata threads. Do not start
-# hit-target interaction until the exact production importer confirms both.
-audio_fixtures_ready=false
-for attempt in $(seq 1 25); do
-  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I \
-    > emulator-screenshots/audio-fixture-import-logcat.txt 2>&1 || true
-  if grep -Fq "EDITOR_SMOKE_AUDIO_REJECTED" emulator-screenshots/audio-fixture-import-logcat.txt; then
-    echo "At least one deterministic audio fixture was rejected by the production importer."
-    collect_capture_diagnostics audio-fixture-import-rejected
-    exit 75
-  fi
-  if grep -Fq "EDITOR_SMOKE_AUDIO_ADDED kind=music" emulator-screenshots/audio-fixture-import-logcat.txt \
-      && grep -Fq "EDITOR_SMOKE_AUDIO_ADDED kind=sound" emulator-screenshots/audio-fixture-import-logcat.txt; then
-    audio_fixtures_ready=true
-    break
-  fi
-  echo "Waiting for production audio import to finish (attempt $attempt/25)"
-  sleep 1
-done
-if [ "$audio_fixtures_ready" != true ]; then
-  echo "Music and sound-effect fixtures were not both added before timeline touch tests."
-  collect_capture_diagnostics audio-fixture-import-timeout
+# Capture panel geometry before later Undo/Redo/audio gestures clear logcat. These
+# measurements belong to the panel workflow above and must not depend on logs
+# surviving unrelated test phases.
+timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime -s EditorPanelLayoutTest:I \
+  > emulator-screenshots/editor-panel-layout-logcat.txt 2>&1 || true
+
+# Audio imports were waited for and snapshotted immediately after editor startup.
+# Never reread the live ring buffer here: Undo/Redo tests clear it intentionally.
+if ! grep -Fq "EDITOR_SMOKE_AUDIO_ADDED kind=music" emulator-screenshots/audio-fixture-import-logcat.txt \
+    || ! grep -Fq "EDITOR_SMOKE_AUDIO_ADDED kind=sound" emulator-screenshots/audio-fixture-import-logcat.txt; then
+  echo "The preserved editor-startup audio fixture markers are incomplete."
+  collect_capture_diagnostics audio-fixture-startup-markers-missing
   exit 76
 fi
-echo "PASS: both music and sound-effect fixtures reached the production timeline importer."
+echo "PASS: both audio fixtures were imported through the production importer (startup markers preserved)."
 
 echo "Step 8c/12: drag the music and sound-effect edge targets independently"
 run_audio_edge_smoke() {
@@ -1398,6 +2203,91 @@ run_audio_edge_smoke music start "Müzik başlangıç tutamacı" right
 run_audio_edge_smoke music end "Müzik bitiş tutamacı" left
 run_audio_edge_smoke sound start "Efekt başlangıç tutamacı" right
 run_audio_edge_smoke sound end "Efekt bitiş tutamacı" left
+
+echo "Step 8c-Undo: verify project Undo/Redo restores an actual sound-effect end trim"
+sound_trim_values="$(python3 - emulator-screenshots/audio-sound-end-touch-logcat.txt <<'PY'
+import re
+import sys
+lines = open(sys.argv[1], errors="replace").read().splitlines()
+matches = [line for line in lines if "AUDIO_EDGE_TRIM kind=sound edge=end " in line]
+if not matches:
+    raise SystemExit("The latest sound-effect end-trim measurement is missing.")
+fields = dict(re.findall(r"([A-Za-z]+)=([^ ]+)", matches[-1]))
+for key in ("beforeDurationMs", "afterDurationMs"):
+    if key not in fields:
+        raise SystemExit("Missing " + key + " in audio trim marker: " + matches[-1])
+before, after = int(fields["beforeDurationMs"]), int(fields["afterDurationMs"])
+if after >= before:
+    raise SystemExit(f"The sound end trim did not shorten the effect: {before} -> {after}")
+print(before, after)
+PY
+)" || {
+  collect_capture_diagnostics project-history-sound-trim-marker-missing
+  exit 88
+}
+read -r sound_before_duration sound_after_duration <<< "$sound_trim_values"
+dump_hierarchy editor-history-audio-before-undo.xml emulator-screenshots/editor-history-audio-before-undo.xml || {
+  collect_capture_diagnostics project-history-audio-controls-missing
+  exit 88
+}
+history_audio_undo="$(python3 - emulator-screenshots/editor-history-audio-before-undo.xml <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != "Proje işlemini geri al" or node.attrib.get("enabled","false").lower() != "true":
+        continue
+    m = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds",""))
+    if m:
+        x1,y1,x2,y2 = map(int,m.groups())
+        print((x1+x2)//2,(y1+y2)//2); raise SystemExit(0)
+raise SystemExit("Enabled project Undo control is unavailable.")
+PY
+)" || {
+  collect_capture_diagnostics project-history-audio-undo-disabled
+  exit 88
+}
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $history_audio_undo
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-sound-trim-undo.txt 2>&1 || true
+if ! grep -Eq "PROJECT_HISTORY_APPLIED action=undo .*beforeSoundDurationMs=$sound_after_duration afterSoundDurationMs=$sound_before_duration" emulator-screenshots/project-history-sound-trim-undo.txt; then
+  echo "Undo did not restore the sound-effect duration from $sound_after_duration to $sound_before_duration."
+  cat emulator-screenshots/project-history-sound-trim-undo.txt || true
+  collect_capture_diagnostics project-history-sound-trim-undo-failed
+  exit 89
+fi
+echo "PASS: one project Undo restored sound-effect duration $sound_after_duration -> $sound_before_duration ms."
+dump_hierarchy editor-history-audio-before-redo.xml emulator-screenshots/editor-history-audio-before-redo.xml || {
+  collect_capture_diagnostics project-history-audio-redo-controls-missing
+  exit 89
+}
+history_audio_redo="$(python3 - emulator-screenshots/editor-history-audio-before-redo.xml <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != "Proje işlemini yinele" or node.attrib.get("enabled","false").lower() != "true":
+        continue
+    m = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds",""))
+    if m:
+        x1,y1,x2,y2 = map(int,m.groups())
+        print((x1+x2)//2,(y1+y2)//2); raise SystemExit(0)
+raise SystemExit("Enabled project Redo control is unavailable.")
+PY
+)" || {
+  collect_capture_diagnostics project-history-audio-redo-disabled
+  exit 89
+}
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $history_audio_redo
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-sound-trim-redo.txt 2>&1 || true
+if ! grep -Eq "PROJECT_HISTORY_APPLIED action=redo .*beforeSoundDurationMs=$sound_before_duration afterSoundDurationMs=$sound_after_duration" emulator-screenshots/project-history-sound-trim-redo.txt; then
+  echo "Redo did not reapply the sound-effect trim from $sound_before_duration to $sound_after_duration."
+  cat emulator-screenshots/project-history-sound-trim-redo.txt || true
+  collect_capture_diagnostics project-history-sound-trim-redo-failed
+  exit 90
+fi
+echo "PASS: one project Redo reapplied sound-effect duration $sound_before_duration -> $sound_after_duration ms."
 
 run_overlay_edge_smoke() {
   local edge="$1" description="$2" direction="$3"
@@ -1578,8 +2468,8 @@ if ! grep -q "Proje" emulator-screenshots/editor-main-dock-after-audio.xml; then
 fi
 echo "PASS: returned from the audio contextual strip to the global editor dock."
 
-timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime -s EditorPanelLayoutTest:I > emulator-screenshots/editor-panel-layout-logcat.txt 2>&1 || true
-
+# The panel geometry log was snapshotted immediately after its workflow. Do not
+# reread logcat here: later test phases intentionally clear its ring buffer.
 python3 - emulator-screenshots/editor-panel-layout-logcat.txt <<'PY'
 import re
 import sys
@@ -1796,7 +2686,11 @@ if [ -z "$new_text_coords" ]; then
 fi
 timeout -k 2s 8s adb -s emulator-5554 shell input tap $new_text_coords
 sleep 1
-timeout -k 2s 8s adb -s emulator-5554 shell input text "CanvasSmoke"
+timeout -k 2s 8s adb -s emulator-5554 shell input text "Canvas"
+# A deliberate pause longer than the former 650 ms debounce must not split
+# one focused text-edit session into two history entries.
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 shell input text "Smoke"
 sleep 1
 
 # Keep the IME open long enough to verify the real keyboard layout. The old
@@ -1870,7 +2764,7 @@ timeout -k 2s 8s adb -s emulator-5554 shell input keyevent 4
 sleep 1
 # Keep the canvas metrics for diagnosis, but the pixel assertion reads the
 # exact project-canvas rectangle from this fresh hierarchy snapshot.
-timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTest:I \
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTest:I EditorTouchTest:I \
   > emulator-screenshots/editor-text-selected-canvas-logcat.txt 2>&1 || true
 if ! take_screen emulator-screenshots/editor-text-selected.png; then
   collect_capture_diagnostics text-canvas-selection-capture-failure
@@ -2066,6 +2960,230 @@ if [ "$text_drag_dx" -lt -6 ] || [ "$text_drag_dx" -gt 6 ] || [ "$text_drag_dy" 
 fi
 echo "PASS: vertical in-canvas text drag moved the rendered selection frame from ($text_before_x,$text_before_y) to ($text_after_x,$text_after_y) without shifting it beyond the canvas edges."
 
+# The IME changes the lower editor layout: the return button moves after
+# the keyboard closes. Use the app's fresh post-IME layout measurement rather
+# than the stale coordinates from editor-text-panel.xml captured before typing.
+text_panel_back_current="$(python3 - emulator-screenshots/editor-text-selected-canvas-logcat.txt <<'PY'
+import re
+import sys
+
+matches = []
+for line in open(sys.argv[1], errors="replace"):
+    match = re.search(
+        r"TEXT_PANEL_RETURN_BOUNDS visible=true x=(\d+) y=(\d+) width=(\d+) height=(\d+)",
+        line,
+    )
+    if match:
+        matches.append(tuple(map(int, match.groups())))
+if not matches:
+    raise SystemExit("No visible post-IME text-panel return bounds were recorded.")
+x, y, width, height = matches[-1]
+if width < 100 or height < 40:
+    raise SystemExit(f"Invalid measured text-panel return size: {width}x{height}")
+print(x + width // 2, y + height // 2)
+PY
+)" || {
+  echo "Could not resolve the current text-panel return-button position after keyboard dismissal."
+  collect_capture_diagnostics text-history-panel-return-bounds-missing
+  exit 63
+}
+echo "Measured the current post-IME text-panel return action at $text_panel_back_current."
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_panel_back_current
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I > emulator-screenshots/editor-text-panel-return-logcat.txt 2>&1 || true
+if ! grep -Fq "TEXT_PANEL_RETURN_TAPPED activePanel=text" emulator-screenshots/editor-text-panel-return-logcat.txt; then
+  echo "The measured text-panel return control did not report its click handler."
+  collect_capture_diagnostics text-history-panel-return-not-tapped
+  exit 63
+fi
+echo "PASS: the current text-panel return button ran its click handler and closed the detail panel."
+
+echo "Step 8b: verify project-wide Undo/Redo restores a real text-canvas drag"
+dump_hierarchy editor-text-history-before-undo.xml emulator-screenshots/editor-text-history-before-undo.xml || {
+  echo "Could not inspect the editor controls before the project-history test."
+  collect_capture_diagnostics project-history-undo-controls-missing
+  exit 63
+}
+history_undo_coords="$(python3 - emulator-screenshots/editor-text-history-before-undo.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != "Proje işlemini geri al":
+        continue
+    if node.attrib.get("enabled", "false").lower() != "true":
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        x1, y1, x2, y2 = map(int, match.groups())
+        print((x1 + x2) // 2, (y1 + y2) // 2)
+        raise SystemExit(0)
+raise SystemExit("Enabled project Undo button was not found.")
+PY
+)"
+if [ -z "$history_undo_coords" ]; then
+  echo "Project Undo was not enabled after the text drag."
+  collect_capture_diagnostics project-history-undo-not-enabled
+  exit 63
+fi
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $history_undo_coords
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-undo-logcat.txt 2>&1 || true
+if ! grep -Eq "PROJECT_HISTORY_APPLIED action=undo .*beforeTexts=1 afterTexts=1" emulator-screenshots/project-history-undo-logcat.txt; then
+  echo "Project Undo did not restore the previous text-layer state."
+  cat emulator-screenshots/project-history-undo-logcat.txt || true
+  collect_capture_diagnostics project-history-undo-not-applied
+  exit 63
+fi
+if ! take_screen emulator-screenshots/editor-text-after-undo.png; then
+  collect_capture_diagnostics project-history-undo-capture-failure
+  exit 6
+fi
+text_undo_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-after-undo.png emulator-screenshots/editor-text-after-drag-canvas-logcat.txt emulator-screenshots/editor-text-panel.xml)" || {
+  echo "The text selection frame disappeared after Undo."
+  collect_capture_diagnostics project-history-undo-selection-missing
+  exit 63
+}
+read -r _ _ _ _ text_undo_x text_undo_y <<< "$text_undo_bounds"
+if [ "$((text_undo_y - text_before_y))" -lt -8 ] || [ "$((text_undo_y - text_before_y))" -gt 8 ]; then
+  echo "Undo did not restore the text's pre-drag vertical position: before=$text_before_y afterUndo=$text_undo_y."
+  collect_capture_diagnostics project-history-undo-position-wrong
+  exit 63
+fi
+echo "PASS: project Undo restored the selected text to its measured pre-drag position ($text_undo_x,$text_undo_y)."
+
+dump_hierarchy editor-text-history-before-redo.xml emulator-screenshots/editor-text-history-before-redo.xml || {
+  echo "Could not inspect the editor controls before the project Redo test."
+  collect_capture_diagnostics project-history-redo-controls-missing
+  exit 64
+}
+history_redo_coords="$(python3 - emulator-screenshots/editor-text-history-before-redo.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != "Proje işlemini yinele":
+        continue
+    if node.attrib.get("enabled", "false").lower() != "true":
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        x1, y1, x2, y2 = map(int, match.groups())
+        print((x1 + x2) // 2, (y1 + y2) // 2)
+        raise SystemExit(0)
+raise SystemExit("Enabled project Redo button was not found.")
+PY
+)"
+if [ -z "$history_redo_coords" ]; then
+  echo "Project Redo was not enabled after Undo."
+  collect_capture_diagnostics project-history-redo-not-enabled
+  exit 64
+fi
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $history_redo_coords
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-redo-logcat.txt 2>&1 || true
+if ! grep -Eq "PROJECT_HISTORY_APPLIED action=redo .*beforeTexts=1 afterTexts=1" emulator-screenshots/project-history-redo-logcat.txt; then
+  echo "Project Redo did not reapply the text-layer state."
+  cat emulator-screenshots/project-history-redo-logcat.txt || true
+  collect_capture_diagnostics project-history-redo-not-applied
+  exit 64
+fi
+if ! take_screen emulator-screenshots/editor-text-after-redo.png; then
+  collect_capture_diagnostics project-history-redo-capture-failure
+  exit 6
+fi
+text_redo_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-after-redo.png emulator-screenshots/editor-text-after-drag-canvas-logcat.txt emulator-screenshots/editor-text-panel.xml)" || {
+  echo "The text selection frame disappeared after Redo."
+  collect_capture_diagnostics project-history-redo-selection-missing
+  exit 64
+}
+read -r _ _ _ _ text_redo_x text_redo_y <<< "$text_redo_bounds"
+if [ "$((text_redo_y - text_after_y))" -lt -8 ] || [ "$((text_redo_y - text_after_y))" -gt 8 ]; then
+  echo "Redo did not restore the text's post-drag vertical position: afterDrag=$text_after_y afterRedo=$text_redo_y."
+  collect_capture_diagnostics project-history-redo-position-wrong
+  exit 64
+fi
+echo "PASS: project Redo restored the selected text to its measured post-drag position ($text_redo_x,$text_redo_y)."
+
+echo "Step 8c: verify a sentence with a long typing pause is one Undo/Redo step"
+# First undo the restored drag. The text remains complete.
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $history_undo_coords
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-undo-drag-before-text.txt 2>&1 || true
+if ! grep -Eq "PROJECT_HISTORY_APPLIED action=undo .*beforeTextChars=11 afterTextChars=11" emulator-screenshots/project-history-undo-drag-before-text.txt; then
+  echo "Undoing the text drag unexpectedly changed the text contents."
+  cat emulator-screenshots/project-history-undo-drag-before-text.txt || true
+  collect_capture_diagnostics project-history-text-before-typing-undo-wrong
+  exit 65
+fi
+# The next Undo must remove both halves of CanvasSmoke, despite the one-second pause.
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $history_undo_coords
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-undo-whole-text.txt 2>&1 || true
+if ! grep -Eq "PROJECT_HISTORY_APPLIED action=undo .*beforeTextChars=11 afterTextChars=0" emulator-screenshots/project-history-undo-whole-text.txt; then
+  echo "One Undo did not remove the entire CanvasSmoke text session; typing may have split across pause."
+  cat emulator-screenshots/project-history-undo-whole-text.txt || true
+  collect_capture_diagnostics project-history-text-was-split
+  exit 65
+fi
+if ! grep -Fq "TEXT_CONTROLS_RESTORED modelChars=0 inputChars=0" emulator-screenshots/project-history-undo-whole-text.txt; then
+  echo "Undo emptied the model but the editor input still contains stale text."
+  cat emulator-screenshots/project-history-undo-whole-text.txt || true
+  collect_capture_diagnostics project-history-text-input-not-cleared
+  exit 65
+fi
+echo "PASS: one Undo removed all 11 characters across a one-second typing pause and restored an empty editor input."
+# One Redo must restore the complete sentence in a single step.
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $history_redo_coords
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-redo-whole-text.txt 2>&1 || true
+if ! grep -Eq "PROJECT_HISTORY_APPLIED action=redo .*beforeTextChars=0 afterTextChars=11" emulator-screenshots/project-history-redo-whole-text.txt; then
+  echo "One Redo did not restore the complete text session."
+  cat emulator-screenshots/project-history-redo-whole-text.txt || true
+  collect_capture_diagnostics project-history-text-redo-incomplete
+  exit 65
+fi
+if ! grep -Fq "TEXT_CONTROLS_RESTORED modelChars=11 inputChars=11" emulator-screenshots/project-history-redo-whole-text.txt; then
+  echo "Redo restored the model but not the editor input text."
+  cat emulator-screenshots/project-history-redo-whole-text.txt || true
+  collect_capture_diagnostics project-history-text-input-redo-not-restored
+  exit 65
+fi
+# The second Redo restores the separate canvas-drag action.
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $history_redo_coords
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-redo-drag-after-text.txt 2>&1 || true
+if ! grep -Eq "PROJECT_HISTORY_APPLIED action=redo .*beforeTextChars=11 afterTextChars=11" emulator-screenshots/project-history-redo-drag-after-text.txt; then
+  echo "Redoing the text drag changed the text content unexpectedly."
+  cat emulator-screenshots/project-history-redo-drag-after-text.txt || true
+  collect_capture_diagnostics project-history-text-after-redo-wrong
+  exit 65
+fi
+if ! take_screen emulator-screenshots/editor-text-after-grouped-redo.png; then
+  collect_capture_diagnostics project-history-grouped-redo-capture-failure
+  exit 6
+fi
+text_group_redo_bounds="$(detect_text_selection_bounds emulator-screenshots/editor-text-after-grouped-redo.png emulator-screenshots/editor-text-after-drag-canvas-logcat.txt emulator-screenshots/editor-text-panel.xml)" || {
+  echo "The selected text frame disappeared after grouped text Undo/Redo."
+  collect_capture_diagnostics project-history-grouped-redo-selection-missing
+  exit 65
+}
+read -r _ _ _ _ text_group_redo_x text_group_redo_y <<< "$text_group_redo_bounds"
+if [ "$((text_group_redo_y - text_after_y))" -lt -8 ] || [ "$((text_group_redo_y - text_after_y))" -gt 8 ]; then
+  echo "Grouped Undo/Redo did not return the text to its post-drag position."
+  collect_capture_diagnostics project-history-grouped-redo-position-wrong
+  exit 65
+fi
+echo "PASS: one Redo restored the complete text session and the next Redo restored its separate drag."
+
 if [ "$text_edit_toggle_changed" = true ]; then
   timeout -k 2s 8s adb -s emulator-5554 shell input tap "$text_toggle_x" "$text_toggle_y"
   sleep 1
@@ -2160,45 +3278,43 @@ print(
 )
 PY
 }
-# The keyboard changed the vertical layout. Use the application's
-# measured post-layout bounds for the sticky sibling return control; do not
-# traverse the large timeline accessibility hierarchy again.
-timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I \
-  > emulator-screenshots/text-panel-return-bounds-logcat.txt 2>&1 || true
-text_panel_back="$(python3 - emulator-screenshots/text-panel-return-bounds-logcat.txt <<'PY'
-import re
-import sys
-
-for line in reversed(open(sys.argv[1], errors="replace").read().splitlines()):
-    match = re.search(
-        r"TEXT_PANEL_RETURN_BOUNDS visible=true x=(\d+) y=(\d+) width=(\d+) height=(\d+)",
-        line,
-    )
-    if not match:
-        continue
-    x, y, width, height = map(int, match.groups())
-    if width > 0 and height > 0:
-        print(x + width // 2, y + height // 2)
-        raise SystemExit(0)
-raise SystemExit("No visible measured text-panel return bounds were logged after keyboard dismissal.")
-PY
-)"
-if [ -z "$text_panel_back" ]; then
-  echo "The text-panel return control did not report visible post-keyboard bounds."
-  collect_capture_diagnostics text-panel-return-after-keyboard-missing
+# The first text-panel return check above verifies keyboard dismissal and the
+# immediate return action. Project history is then exercised from the global
+# dock, so the detail panel is closed while Undo/Redo runs. Reopen Metin from
+# the hierarchy captured immediately before Redo, then inspect and tap the
+# current return button. Do not read a pre-Undo IME bounds marker from logcat:
+# the history assertions intentionally clear that ring buffer.
+text_tab_after_history="$(find_bottom_tool emulator-screenshots/editor-text-history-before-redo.xml "Metin" || true)"
+if [ -z "$text_tab_after_history" ]; then
+  echo "The global dock did not expose the Metin tab after grouped text Undo/Redo."
+  collect_capture_diagnostics text-history-reopen-tab-missing
   exit 56
 fi
-echo "Tapping the measured text-panel return control at $text_panel_back after text editing."
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$text_tab_after_history"
+sleep 1
+if ! dump_hierarchy editor-text-panel-after-history.xml emulator-screenshots/editor-text-panel-after-history.xml; then
+  echo "Could not capture the text panel after grouped history restore."
+  collect_capture_diagnostics text-history-reopened-panel-hierarchy-missing
+  exit 56
+fi
+text_panel_back_after_history="$(find_bottom_tool emulator-screenshots/editor-text-panel-after-history.xml "Araçlara dön" || true)"
+if [ -z "$text_panel_back_after_history" ]; then
+  echo "The reopened text panel did not expose its visible Araçlara dön control after Undo/Redo."
+  collect_capture_diagnostics text-history-return-control-missing
+  exit 56
+fi
+echo "Tapping the freshly measured text-panel return control at $text_panel_back_after_history after history restore."
 timeout -k 2s 8s adb -s emulator-5554 logcat -c
-timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_panel_back
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$text_panel_back_after_history"
 sleep 1
 timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I > emulator-screenshots/text-panel-return-logcat.txt 2>&1 || true
-if ! grep -Fq "TEXT_PANEL_RETURN_TAPPED" emulator-screenshots/text-panel-return-logcat.txt ||
+if ! grep -Fq "TEXT_PANEL_RETURN_TAPPED activePanel=text" emulator-screenshots/text-panel-return-logcat.txt ||
    ! grep -Fq "TEXT_PANEL_CLOSED activePanel=none" emulator-screenshots/text-panel-return-logcat.txt; then
-  echo "The text detail panel did not confirm its return-to-tools action."
-  collect_capture_diagnostics text-canvas-panel-return-not-confirmed
+  echo "The text detail panel did not confirm its return-to-tools action after Undo/Redo."
+  collect_capture_diagnostics text-history-panel-return-not-confirmed
   exit 56
 fi
+echo "PASS: after grouped text Undo/Redo, the Metin panel reopened and its measured return control closed it cleanly."
 if ! take_screen emulator-screenshots/editor-text-panel-closed.png; then
   collect_capture_diagnostics text-canvas-panel-closed-capture-failure
   exit 6
@@ -3112,6 +4228,71 @@ for edge_direction in "start trim" "start extend" "end trim" "end extend"; do
   timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$edge_x1" "$edge_y" "$edge_x2" "$edge_y" 700
   assert_video_edge_trim "$edge" "$direction"
 done
+
+echo "Step 11a-VideoHistory: verify the last real video edge trim is one global Undo/Redo step"
+dump_hierarchy editor-video-trim-history-after.xml emulator-screenshots/editor-video-trim-history-after.xml || { collect_capture_diagnostics project-history-video-trim-controls-missing; exit 103; }
+video_trim_undo_coords="$(python3 - emulator-screenshots/editor-video-trim-history-after.xml <<'PY'
+import re,sys,xml.etree.ElementTree as ET
+root=ET.parse(sys.argv[1]).getroot()
+for n in root.iter("node"):
+    if n.attrib.get("content-desc","").strip()=="Proje işlemini geri al" and n.attrib.get("enabled","false").lower()=="true":
+        m=re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",n.attrib.get("bounds",""))
+        if m:
+            x1,y1,x2,y2=map(int,m.groups()); print((x1+x2)//2,(y1+y2)//2); raise SystemExit(0)
+raise SystemExit("Global Undo unavailable after a physical video trim.")
+PY
+)" || { collect_capture_diagnostics project-history-video-trim-undo-disabled; exit 103; }
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $video_trim_undo_coords
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-video-trim-undo.txt 2>&1 || true
+video_trim_history_values="$(python3 - emulator-screenshots/project-history-video-trim-undo.txt <<'PY'
+import re,sys
+lines=open(sys.argv[1],errors="replace").read().splitlines()
+events=[x for x in lines if "PROJECT_HISTORY_APPLIED action=undo " in x]
+if not events: raise SystemExit("No global project Undo diagnostic followed the video trim.")
+m=re.search(r"beforeClipRanges=([^ ]+) afterClipRanges=([^ ]+)",events[-1])
+if not m: raise SystemExit("Undo diagnostics did not contain complete video clip ranges: "+events[-1])
+trimmed,restored=m.groups()
+if trimmed==restored: raise SystemExit("Video trim Undo did not restore a previous clip range: "+events[-1])
+def first_clip(raw):
+    return tuple(raw.split(";")[0].split(","))
+before,after=first_clip(trimmed),first_clip(restored)
+if len(before)<9 or len(after)<9: raise SystemExit("Video history range tuple is incomplete.")
+if before[0]!="0" or after[0]!="0": raise SystemExit(f"First main-video clip moved away from zero during Undo: {before}, {after}")
+print(trimmed,restored)
+PY
+)" || { collect_capture_diagnostics project-history-video-trim-undo-failed; exit 104; }
+read -r trimmed_video_ranges restored_video_ranges <<< "$video_trim_history_values"
+echo "PASS: one global Undo restored the previous main-video clip range."
+dump_hierarchy editor-video-trim-history-before-redo.xml emulator-screenshots/editor-video-trim-history-before-redo.xml || { collect_capture_diagnostics project-history-video-trim-redo-controls-missing; exit 104; }
+video_trim_redo_coords="$(python3 - emulator-screenshots/editor-video-trim-history-before-redo.xml <<'PY'
+import re,sys,xml.etree.ElementTree as ET
+root=ET.parse(sys.argv[1]).getroot()
+for n in root.iter("node"):
+    if n.attrib.get("content-desc","").strip()=="Proje işlemini yinele" and n.attrib.get("enabled","false").lower()=="true":
+        m=re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",n.attrib.get("bounds",""))
+        if m:
+            x1,y1,x2,y2=map(int,m.groups()); print((x1+x2)//2,(y1+y2)//2); raise SystemExit(0)
+raise SystemExit("Global Redo unavailable after video trim Undo.")
+PY
+)" || { collect_capture_diagnostics project-history-video-trim-redo-disabled; exit 104; }
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $video_trim_redo_coords
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-video-trim-redo.txt 2>&1 || true
+python3 - emulator-screenshots/project-history-video-trim-redo.txt "$trimmed_video_ranges" "$restored_video_ranges" <<'PY'
+import re,sys
+lines=open(sys.argv[1],errors="replace").read().splitlines()
+events=[x for x in lines if "PROJECT_HISTORY_APPLIED action=redo " in x]
+if not events: raise SystemExit("No global project Redo diagnostic followed the video trim Undo.")
+m=re.search(r"beforeClipRanges=([^ ]+) afterClipRanges=([^ ]+)",events[-1])
+if not m: raise SystemExit("Redo diagnostics did not contain complete video clip ranges: "+events[-1])
+before,after=m.groups()
+expected_trimmed,expected_restored=sys.argv[2:4]
+if before!=expected_restored or after!=expected_trimmed: raise SystemExit("Video trim Redo did not reapply the exact post-trim clip arrangement: "+events[-1])
+print("PASS: one global Redo reapplied the exact video trim and timeline arrangement.")
+PY
 
 echo "PASS: both video trim grips were physically dragged inward and outward; source edges stayed independent and the main-video lane remained gapless."
 echo "PASS: split seam is 0ms; direct drag, visible filmstrip seam and reorder geometry verified; draft save/reopen follows."
