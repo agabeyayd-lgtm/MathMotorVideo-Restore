@@ -1156,3 +1156,10 @@ The selected main-video clip exposes independent left/right edge grips: drag the
 - No version bump, signed release or production APK was created. The workflow's debug ZIP is not a release artifact.
 
 - The first sound-volume emulator attempt found that the SFX slider sits below the initially visible portion of the audio settings ScrollView. This was a test interaction/visibility issue, not a missing app control. The harness now scrolls only the audio settings sheet, recaptures accessibility hierarchy, and then performs the real SFX-volume drag/Undo/Redo.
+
+## 2026-11-09 — CapCut cover-control visual parity (in progress)
+
+- Compared the supplied MathMotor and CapCut editor screenshots. The MathMotor **Kapak** action was rendered as a raised mini-button; the CapCut reference shows it as a quiet, unboxed text action in the left timeline gutter.
+- Changed the clip-panel Kapak action to a plain, accessible text control while preserving the existing cover-frame picker action and selected-cover state label.
+- Acceptance still requires an API 35 screenshot comparison confirming the boxed background is gone, the Kapak action remains tappable, and timeline zero/clip alignment and the other lane controls are unchanged. This source change is not yet emulator-verified.
+- Keep the existing timeline origin spacer transparent; this visual correction must not alter shared ruler/filmstrip scroll mapping or thumbnail timing.
