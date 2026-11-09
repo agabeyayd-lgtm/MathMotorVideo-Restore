@@ -1644,7 +1644,7 @@ print(changed, restored)
 PY
 )" || { collect_capture_diagnostics project-history-sound-volume-undo-failed; exit 94; }
 read -r changed_sound_volume original_sound_volume <<< "$volume_history_values"
-echo "PASS: one Undo restored sound volume $changed_sound_volume -> $original_sound_volume and its slider matches."
+echo "PASS: one Undo restored sound volume $changed_sound_volume -> $original_sound_volume and its SeekBar progress matches."
 dump_hierarchy editor-main-dock-before-redo.xml emulator-screenshots/editor-main-dock-before-redo.xml || {
   collect_capture_diagnostics project-history-sound-volume-redo-controls-missing
   exit 94
@@ -1679,7 +1679,7 @@ label = re.search(r"soundLabel=Efekt sesi: (\\d+)%", controls[-1])
 if before != expected_old or after != expected_new: raise SystemExit(f"Redo applied the wrong sound volume: {events[-1]}")
 if model != after or seek != after or not label or int(label.group(1)) != after:
     raise SystemExit(f"Redo did not restore the model, SeekBar, and label together: model={model}, seek={seek}, label={label.group(1) if label else 'missing'}, expected={after}; {controls[-1]}")
-print(f"PASS: one Redo reapplied sound volume {before} -> {after} and its slider matches.")
+print(f"PASS: one Redo reapplied sound volume {before} -> {after} and its SeekBar progress matches.")
 PY
 
 # Restore the default source mix before later audio playback and trim checks.
@@ -1715,33 +1715,8 @@ if not m or tuple(map(int,m.groups()))!=(expected,expected) or not label or int(
 print(f"PASS: Undo/Redo round-trip restored the model, SeekBar and label to initial sound volume {expected}.")
 PY
 
-# Re-open the audio sheet once at the restored baseline and prove the user-facing
-# label and SeekBar are still synchronized, then return to the dock for filters.
-audio_tab_after_cleanup="$(find_bottom_tool emulator-screenshots/editor-main-dock-after-redo.xml "Ses" || true)"
-if [ -z "$audio_tab_after_cleanup" ]; then
-  collect_capture_diagnostics project-history-sound-volume-verify-tab-missing
-  exit 94
-fi
-timeout -k 2s 8s adb -s emulator-5554 shell input tap "$audio_tab_after_cleanup"
-sleep 1
-dump_hierarchy editor-audio-volume-restored.xml emulator-screenshots/editor-audio-volume-restored.xml || {
-  collect_capture_diagnostics project-history-sound-volume-restored-panel-missing
-  exit 94
-}
-if ! grep -Fq "Efekt sesi: $original_sound_volume%" emulator-screenshots/editor-audio-volume-restored.xml ||
-   ! grep -Fq "Ses efekti ses seviyesi" emulator-screenshots/editor-audio-volume-restored.xml; then
-  echo "The reopened audio panel did not show the original sound volume in both its label and slider."
-  collect_capture_diagnostics project-history-sound-volume-restored-ui-mismatch
-  exit 94
-fi
-echo "PASS: reopened audio panel displays the restored sound volume label and SeekBar control."
-restored_audio_back="$(find_bottom_tool emulator-screenshots/editor-audio-volume-restored.xml "Araçlara dön" || true)"
-if [ -z "$restored_audio_back" ]; then
-  collect_capture_diagnostics project-history-sound-volume-verify-return-missing
-  exit 94
-fi
-timeout -k 2s 8s adb -s emulator-5554 shell input tap "$restored_audio_back"
-sleep 1
+# The audio panel was closed before Undo/Redo, so the global dock is already
+# visible here. Continue directly with the independent filter-history checks.
 dump_hierarchy editor-main-dock-before-filter.xml emulator-screenshots/editor-main-dock-before-filter.xml || { collect_capture_diagnostics project-history-filter-dock-missing; exit 95; }
 filter_tab_coords="$(find_bottom_tool emulator-screenshots/editor-main-dock-before-filter.xml "Efektler" || true)"
 if [ -z "$filter_tab_coords" ]; then
