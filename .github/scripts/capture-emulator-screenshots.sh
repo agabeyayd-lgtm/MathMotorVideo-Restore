@@ -1807,8 +1807,15 @@ if [ -z "$filter_tab_after_preset" ]; then collect_capture_diagnostics project-h
 timeout -k 2s 8s adb -s emulator-5554 shell input tap "$filter_tab_after_preset"
 sleep 1
 dump_hierarchy editor-filter-panel-before-brightness.xml emulator-screenshots/editor-filter-panel-before-brightness.xml || { collect_capture_diagnostics project-history-filter-reopen-panel-missing; exit 97; }
+# The effects detail panel is a vertically scrolling child below the fixed
+# timeline. Its preset buttons are initially visible, while the color-grade
+# sliders are below the fold on the 1080x1920 API 35 emulator. Scroll inside
+# that panel (not the timeline) before querying the accessibility tree.
+timeout -k 2s 8s adb -s emulator-5554 shell input swipe 530 1740 530 1430 550
+sleep 1
+dump_hierarchy editor-filter-panel-scrolled-to-brightness.xml emulator-screenshots/editor-filter-panel-scrolled-to-brightness.xml || { collect_capture_diagnostics project-history-filter-scroll-hierarchy-missing; exit 97; }
 echo "Step 8b-FilterSlider: verify brightness gesture Undo/Redo restores actual slider progress"
-brightness_bounds="$(find_content_description_bounds emulator-screenshots/editor-filter-panel-before-brightness.xml "Parlaklık filtresi" || true)"
+brightness_bounds="$(find_content_description_bounds emulator-screenshots/editor-filter-panel-scrolled-to-brightness.xml "Parlaklık filtresi" || true)"
 if [ -z "$brightness_bounds" ]; then collect_capture_diagnostics project-history-brightness-slider-missing; exit 97; fi
 read -r brightness_cx brightness_cy brightness_w brightness_h brightness_x1 brightness_y1 brightness_x2 brightness_y2 <<< "$brightness_bounds"
 brightness_drag_start=$((brightness_x1 + brightness_w / 2))
