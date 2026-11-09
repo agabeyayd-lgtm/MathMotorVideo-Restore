@@ -610,6 +610,24 @@ if ! take_screen emulator-screenshots/editor-audio-waveforms.png; then
   collect_capture_diagnostics audio-waveform-screenshot-failed
   exit 77
 fi
+python3 - emulator-screenshots/editor-audio-waveforms.png <<'PY'
+from PIL import Image
+import sys
+
+image = Image.open(sys.argv[1]).convert("RGB")
+green_bars = 0
+orange_bars = 0
+for red, green, blue in image.getdata():
+    if abs(red - 151) <= 34 and abs(green - 226) <= 34 and abs(blue - 181) <= 34:
+        green_bars += 1
+    if red >= 220 and 165 <= green <= 235 and 95 <= blue <= 180 and red - green >= 20:
+        orange_bars += 1
+if green_bars < 24:
+    raise SystemExit(f"Music waveform color was not visible in the rendered timeline: {green_bars} pixels.")
+if orange_bars < 24:
+    raise SystemExit(f"Sound-effect waveform color was not visible in the rendered timeline: {orange_bars} pixels.")
+print(f"PASS: waveform bars rendered in the screenshot (music={green_bars}px, effect={orange_bars}px).")
+PY
 echo "PASS: real music and effect audio samples were decoded asynchronously into cached waveform bars."
 
 # Verify the editor's real inner project canvas is fitted and centered inside
