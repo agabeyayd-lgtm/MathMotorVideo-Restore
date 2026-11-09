@@ -7148,7 +7148,22 @@ class VideoEditorActivity : Activity() {
         )
     }
 
+    /**
+     * Finish the active IME composition before changing project history. If the
+     * EditText keeps focus after a keyboard hide, Android can reconnect the old
+     * composing buffer and replay stale characters into the restored TextLayer.
+     */
+    private fun dismissTextInputForHistoryRestore() {
+        if (!::textInput.isInitialized) return
+        val keyboard = getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
+            as? android.view.inputmethod.InputMethodManager
+        textInput.windowToken?.let { keyboard?.hideSoftInputFromWindow(it, 0) }
+        textInput.clearComposingText()
+        textInput.clearFocus()
+    }
+
     private fun undoProjectEdit() {
+        dismissTextInputForHistoryRestore()
         finishTextHistoryEdit()
         finishProjectHistoryGesture()
         if (undoProjectHistory.isEmpty()) {
@@ -7165,6 +7180,7 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun redoProjectEdit() {
+        dismissTextInputForHistoryRestore()
         finishTextHistoryEdit()
         finishProjectHistoryGesture()
         if (redoProjectHistory.isEmpty()) {
@@ -7625,11 +7641,7 @@ class VideoEditorActivity : Activity() {
             // project value in the editor. The project model remains authoritative.
             textInput.clearComposingText()
             textInput.setText(layer?.text.orEmpty())
-            if (textInput.hasFocus()) {
-                textInput.setSelection(textInput.text?.length ?: 0)
-                (getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
-                    as? android.view.inputmethod.InputMethodManager)?.restartInput(textInput)
-            }
+            textInput.setSelection(textInput.text?.length ?: 0)
             textSizeLabel.text = "Yazı boyutu: $textSizeSp sp"
             textSizeSeek.progress = textSizeSp - 12
             textPositionGroup.check(when (textPosition) {
