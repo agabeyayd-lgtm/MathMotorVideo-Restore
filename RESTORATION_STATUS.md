@@ -1,3 +1,10 @@
+## 2026-11-09 — Text preview layout churn (PR #34)
+
+- Latest API 35 run passed unit/build, debug APK packaging, cover still Save/Undo/Redo, overlay/audio trim, and the real MP4 export. It failed when Android UIAutomator could not reach idle after the text-canvas drag and panel return; the hierarchy dump repeatedly returned `ERROR: could not get idle state`.
+- The failure artifact contained thousands of redundant `requestLayout()` warnings from the preview text TextView and its canvas/selection containers. The text renderer reapplied identical text, text size, typeface, padding, constraints, and layout parameters during preview refreshes; the size slider also explicitly requested a second layout immediately after calling the renderer.
+- Commit `501c8015f1a031a28a45fd9b83fbe6b17f77b716` makes preview text property updates conditional on actual value changes, avoids assigning unchanged overlay/selection-frame layout parameters, and removes the redundant post-render `requestLayout()`. This is a production UI performance fix, not a relaxed emulator assertion.
+- Required next: run unit/build, debug packaging, and API 35 emulator tests on this exact head. Confirm the text-panel return is followed by a successful hierarchy dump and the project-wide text Undo/Redo checks. Do not mark PR #34 green until all required checks on the latest head succeed. No version bump, merge, or release APK.
+ 
 ## Project-wide Undo/Redo — 2026-11-09 (PR #34; verification in progress)
 
 - Project snapshots now cover video clip state/transforms/speed/trim, overlay media/keyframes, text contents/style/timing/animation/placement, music/effects and source-audio settings, filters/color controls, project canvas aspect preset, and timeline track order.
