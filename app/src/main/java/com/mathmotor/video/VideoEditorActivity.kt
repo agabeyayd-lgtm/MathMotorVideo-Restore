@@ -7151,9 +7151,9 @@ class VideoEditorActivity : Activity() {
     }
 
     /**
-     * Finish the active IME composition before changing project history. If the
-     * EditText keeps focus after a keyboard hide, Android can reconnect the old
-     * composing buffer and replay stale characters into the restored TextLayer.
+     * Finish the active IME composition before changing project history. Keep
+     * EditText focus so the text detail panel remains active; the snapshot-restore
+     * guard prevents stale control callbacks from mutating the restored model.
      */
     private fun dismissTextInputForHistoryRestore() {
         if (!::textInput.isInitialized) return
@@ -7161,7 +7161,6 @@ class VideoEditorActivity : Activity() {
             as? android.view.inputmethod.InputMethodManager
         textInput.windowToken?.let { keyboard?.hideSoftInputFromWindow(it, 0) }
         textInput.clearComposingText()
-        textInput.clearFocus()
     }
 
     private fun undoProjectEdit() {
