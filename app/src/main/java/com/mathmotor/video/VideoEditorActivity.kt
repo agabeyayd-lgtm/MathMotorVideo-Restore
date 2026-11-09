@@ -6608,6 +6608,17 @@ class VideoEditorActivity : Activity() {
         if (!timelineSyncTestEnabled) return
         val beforeTextChars = current.textLayers.sumOf { it.text.length }
         val afterTextChars = restored.textLayers.sumOf { it.text.length }
+        fun videoHistoryValue(items: List<Clip>): String = items.joinToString(";") { clip ->
+            String.format(
+                Locale.US,
+                "%d,%d,%d,%d,%.3f,%.4f,%.1f,%.4f,%.4f",
+                clip.timelineStartMs, clip.startMs, clip.endMs, clip.durationMs, clip.speed,
+                clip.transformScale, clip.transformRotationDegrees,
+                clip.transformTranslateX, clip.transformTranslateY
+            )
+        }
+        val beforeClipRanges = videoHistoryValue(current.clips)
+        val afterClipRanges = videoHistoryValue(restored.clips)
         val beforeSelectedOverlay = current.selectedOverlayId?.let { id -> current.overlays.firstOrNull { it.id == id } }
         val afterSelectedOverlay = restored.selectedOverlayId?.let { id -> restored.overlays.firstOrNull { it.id == id } }
         fun overlayHistoryValue(overlay: OverlayClip?): String = overlay?.let {
@@ -6645,6 +6656,7 @@ class VideoEditorActivity : Activity() {
                 "beforeFilterContrast=${current.filterContrast} afterFilterContrast=${restored.filterContrast} " +
                 "beforeFilterSaturation=${current.filterSaturation} afterFilterSaturation=${restored.filterSaturation} " +
                 "beforeFilterHue=${current.filterHue} afterFilterHue=${restored.filterHue} " +
+                "beforeClipRanges=$beforeClipRanges afterClipRanges=$afterClipRanges " +
                 "beforeOverlayTransform=$beforeOverlayTransform afterOverlayTransform=$afterOverlayTransform"
         )
     }
