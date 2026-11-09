@@ -1269,18 +1269,26 @@ read -r after_x after_y after_pixels <<< "$after_overlay"
 # rectangle measured in the Activity, not inferred from unrelated green UI pixels.
 timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTest:I \
   > emulator-screenshots/preview-canvas-logcat-after-drag.txt 2>&1 || true
-python3 - emulator-screenshots/preview-canvas-logcat-after-drag.txt emulator-screenshots/editor-overlay-after-drag.png <<'PY'
+python3 - emulator-screenshots/preview-canvas-logcat-after-drag.txt emulator-screenshots/editor-overlay-after-drag.png emulator-screenshots/preview-canvas-logcat.txt <<'PY'
 from PIL import Image
 import re
 import sys
 
-log_path, screenshot_path = sys.argv[1:]
+log_path, screenshot_path, baseline_log_path = sys.argv[1:]
 matches = [
     line for line in open(log_path, errors="replace")
     if "PREVIEW_CANVAS_BOUNDS" in line
 ]
 if not matches:
-    raise SystemExit("Measured preview canvas bounds were not logged after the overlay drag.")
+    # The editor logs bounds only when geometry changes. A drag that leaves
+    # the stage unchanged correctly emits no duplicate line, so reuse the
+    # measured startup bounds from this same emulator/editor session.
+    matches = [
+        line for line in open(baseline_log_path, errors="replace")
+        if "PREVIEW_CANVAS_BOUNDS" in line
+    ]
+if not matches:
+    raise SystemExit("No measured preview-canvas bounds were recorded in this editor session.")
 match = re.search(
     r"stage=(\d+)x(\d+) canvas=(\d+)x(\d+) "
     r"offset=(\d+),(\d+) origin=(-?\d+),(-?\d+) aspect=([0-9.]+)",
