@@ -4702,8 +4702,10 @@ class VideoEditorActivity : Activity() {
             }
             val cellWidth = width.toFloat() / barCount
             val barWidth = minOf(dp(2).toFloat(), cellWidth * 0.72f).coerceAtLeast(1f)
-            val centerY = height / 2f
-            val maximumHalfHeight = height * 0.40f
+            // Keep the waveform in the lower band so the clip title remains legible.
+            // The waveform view is elevated above the transparent title surface below.
+            val centerY = height * 0.72f
+            val maximumHalfHeight = height * 0.22f
             for (index in 0 until barCount) {
                 val sampleIndex = (index.toLong() * values.size / barCount).toInt().coerceIn(0, values.lastIndex)
                 val amplitude = values[sampleIndex].coerceIn(0.035f, 1f)
@@ -5010,6 +5012,8 @@ class VideoEditorActivity : Activity() {
         val musicWaveform = AudioWaveformView("music", Color.rgb(151, 226, 181)).apply {
             contentDescription = "Müzik ses dalga biçimi"
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            // Draw above the full-size transparent title TextView, not behind its surface.
+            elevation = dp(1).toFloat()
         }
         frame.addView(musicWaveform, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
@@ -5260,6 +5264,8 @@ class VideoEditorActivity : Activity() {
         val soundWaveform = AudioWaveformView("sound", Color.rgb(255, 207, 139)).apply {
             contentDescription = "Ses efekti dalga biçimi"
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            // Draw above the full-size transparent title TextView, not behind its surface.
+            elevation = dp(1).toFloat()
         }
         frame.addView(soundWaveform, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT

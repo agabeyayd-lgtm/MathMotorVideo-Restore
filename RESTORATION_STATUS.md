@@ -1,3 +1,10 @@
+## 2026-11-09 — Keep audio waveforms visible above clip labels (PR #34)
+
+- Exact-head emulator run `42689741510` reached the real editor and confirmed both PCM files decoded into 120 waveform buckets and both custom views received `onDraw` callbacks. The screenshot nevertheless contained only 19 pixels of the expected sound-effect waveform color (the unchanged visual threshold is 24px); the music color was also barely visible (182px).
+- Inspection of the captured `editor-audio-waveforms.png` showed both audio clips rendered as solid colored blocks with their full-size title TextViews covering the waveform region. The waveform views were inserted before the title views at the same full-size bounds, so the labels' drawing surface obscured the bars.
+- Raised both waveform views above their title surfaces and moved bars into the lower band of each clip, preserving the centered title text. This is a production rendering/layout correction; no screenshot threshold was relaxed.
+- Re-run unit tests, APK build and the complete API 35 emulator workflow on the new exact HEAD. Keep the PR open and do not deliver an APK until the emulator gate passes.
+
 ## 2026-11-09 — Correct rotation-normalization unit expectation (PR #34)
 
 - Exact-head workflows for `a2d12497f684c9ead1dd8a16e02c8cc6d14a824f` all stopped at `testDebugUnitTest`: 174 tests ran and one assertion failed. Kotlin compilation and debug APK assembly completed before the unit-test task failed.
