@@ -6923,9 +6923,11 @@ class VideoEditorActivity : Activity() {
         overlay.copy(keyframes = overlay.keyframes.map { it.copy() }.toMutableList())
 
     private fun captureProjectEditSnapshot(): ProjectEditSnapshot {
-        // Pull the focused text controls into the model before copying so text edits
-        // and selection transforms participate in the same project-wide history.
-        syncSelectedTextLayerFromControls()
+        // History snapshots are model-only. TextWatcher and each text-tool gesture
+        // commit user input to the selected TextLayer as it changes. Reading the
+        // EditText here is unsafe during Undo/Redo: after restoring an older empty
+        // snapshot, an IME/editor view can still expose its previous composing value
+        // for a frame and silently overwrite the restored model before Redo.
         return ProjectEditSnapshot(
             clips = clips.map { it.copy() },
             overlays = overlayClips.map(::copyOverlayForHistory),
@@ -7619,7 +7621,15 @@ class VideoEditorActivity : Activity() {
             textBold = layer?.isBold ?: true
             textAnimationPreset = layer?.animationPreset ?: TextAnimationPreset.NONE
             textAnimationDurationMs = layer?.animationDurationMs?.coerceIn(100L, 1_500L) ?: 350L
+            // Discard any stale composing span before reflecting a restored
+            // project value in the editor. The project model remains authoritative.
+            textInput.clearComposingText()
             textInput.setText(layer?.text.orEmpty())
+            if (textInput.hasFocus()) {
+                textInput.setSelection(textInput.text?.length ?: 0)
+                (getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
+                    as? android.view.inputmethod.InputMethodManager)?.restartInput(textInput)
+            }
             textSizeLabel.text = "Yazı boyutu: $textSizeSp sp"
             textSizeSeek.progress = textSizeSp - 12
             textPositionGroup.check(when (textPosition) {
@@ -7638,7 +7648,21 @@ class VideoEditorActivity : Activity() {
         } finally {
             loadingTextLayerControls = false
         }
-        syncSelectedTextLayerFromControls()
+        // updateTextControls() normalizes the timing while the controls are
+        // loading. Persist only those normalized timing values; never copy the
+        // EditText value back into the restored TextLayer from this load path.
+        selectedTextLayer()?.let { restoredLayer ->
+            restoredLayer.startMs = textStartMs.coerceAtLeast(0L)
+            restoredLayer.endMs = textEndMs.coerceAtLeast(restoredLayer.startMs)
+            restoredLayer.timingCustomized = textTimingCustomized
+            if (timelineSyncTestEnabled) {
+                android.util.Log.i(
+                    "ProjectHistoryTest",
+                    "TEXT_CONTROLS_RESTORED modelChars=${restoredLayer.text.length} " +
+                        "inputChars=${textInput.text?.length ?: 0} selectedId=${restoredLayer.id}"
+                )
+            }
+        }
         refreshTextLayerList()
         updatePreviewTextOverlay()
         refreshTimelineTracks()
