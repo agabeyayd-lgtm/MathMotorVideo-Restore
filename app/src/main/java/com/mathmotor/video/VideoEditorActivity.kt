@@ -415,6 +415,13 @@ class VideoEditorActivity : Activity() {
     private val coverThumbnailExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { task ->
         Thread(task, "cover-thumbnail-decoder")
     }
+    private val audioWaveformCache = object : android.util.LruCache<String, FloatArray>(256 * 1024) {
+        override fun sizeOf(key: String, value: FloatArray): Int = value.size * 4
+    }
+    private val pendingAudioWaveforms = mutableMapOf<String, MutableList<WeakReference<AudioWaveformView>>>()
+    private val audioWaveformExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { task ->
+        Thread(task, "audio-waveform-decoder")
+    }
     private val pendingTimelinePosterTargets = mutableMapOf<String, MutableList<WeakReference<ImageView>>>()
     private val pendingTimelinePosterLoads = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private val timelinePosterExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
@@ -4616,6 +4623,305 @@ class VideoEditorActivity : Activity() {
             formatTimelineMs(musicStartMs) + " – " + formatTimelineMs(endMs) + " • döngü"
     }
 
+    /** Lightweight visual waveform drawn inside an audio clip without changing audio timing. */
+    private inner class AudioWaveformView(
+        private val barColor: Int
+    ) : View(this@VideoEditorActivity) {
+        private val waveformPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = barColor
+            style = android.graphics.Paint.Style.FILL
+        }
+        private var amplitudes: FloatArray = FloatArray(0)
+
+        fun setWaveform(values: FloatArray) {
+            amplitudes = values
+            invalidate()
+        }
+
+        override fun onDraw(canvas: android.graphics.Canvas) {
+            super.onDraw(canvas)
+            val values = amplitudes
+            if (values.isEmpty() || width <= 0 || height <= 0) return
+            val horizontalStep = dp(3).toFloat()
+            val barCount = minOf(values.size, (width / horizontalStep).toInt().coerceAtLeast(1))
+            if (barCount <= 0) return
+            val cellWidth = width.toFloat() / barCount
+            val barWidth = minOf(dp(2).toFloat(), cellWidth * 0.72f).coerceAtLeast(1f)
+            val centerY = height / 2f
+            val maximumHalfHeight = height * 0.40f
+            for (index in 0 until barCount) {
+                val sampleIndex = (index.toLong() * values.size / barCount).toInt().coerceIn(0, values.lastIndex)
+                val amplitude = values[sampleIndex].coerceIn(0.035f, 1f)
+                val halfHeight = (maximumHalfHeight * amplitude).coerceAtLeast(dp(1).toFloat())
+                val left = index * cellWidth + (cellWidth - barWidth) / 2f
+                canvas.drawRoundRect(
+                    left,
+                    centerY - halfHeight,
+                    left + barWidth,
+                    centerY + halfHeight,
+                    barWidth / 2f,
+                    barWidth / 2f,
+                    waveformPaint
+                )
+            }
+        }
+    }
+
+    private fun requestAudioWaveform(
+        uri: Uri,
+        sourceStartMs: Long,
+        sourceDurationMs: Long,
+        target: AudioWaveformView,
+        kind: String
+    ) {
+        if (sourceDurationMs <= 0L) return
+        val key = "${uri}#${sourceStartMs}#${sourceDurationMs}#120"
+        target.tag = key
+        val cached = audioWaveformCache.get(key)
+        if (cached != null) {
+            target.setWaveform(cached)
+            if (timelineLifecycleDiagnosticsEnabled) android.util.Log.i(
+                "AudioWaveform",
+                "AUDIO_WAVEFORM_READY kind=$kind source=cache bars=${cached.size}"
+            )
+            return
+        }
+        val waiting = pendingAudioWaveforms[key]
+        if (waiting != null) {
+            if (waiting.none { it.get() === target }) waiting.add(WeakReference(target))
+            return
+        }
+        pendingAudioWaveforms[key] = mutableListOf(WeakReference(target))
+        val task = Runnable {
+            val startedAt = SystemClock.uptimeMillis()
+            val decoded = decodeAudioWaveform(uri, sourceStartMs, sourceDurationMs, 120)
+            runOnUiThread {
+                val targets = pendingAudioWaveforms.remove(key).orEmpty()
+                if (decoded != null && !isFinishing && !isDestroyed) {
+                    audioWaveformCache.put(key, decoded)
+                    var applied = 0
+                    targets.forEach { reference ->
+                        val view = reference.get() ?: return@forEach
+                        if (view.tag == key) {
+                            view.setWaveform(decoded)
+                            applied++
+                        }
+                    }
+                    if (timelineLifecycleDiagnosticsEnabled || timelineSyncTestEnabled) {
+                        android.util.Log.i(
+                            "AudioWaveform",
+                            "AUDIO_WAVEFORM_READY kind=$kind source=decode bars=${decoded.size} " +
+                                "nonZero=${decoded.count { it > 0.08f }} elapsedMs=${SystemClock.uptimeMillis() - startedAt} targets=$applied"
+                        )
+                    }
+                } else if (timelineLifecycleDiagnosticsEnabled || timelineSyncTestEnabled) {
+                    android.util.Log.w(
+                        "AudioWaveform",
+                        "AUDIO_WAVEFORM_FAILED kind=$kind elapsedMs=${SystemClock.uptimeMillis() - startedAt}"
+                    )
+                }
+            }
+        }
+        try {
+            audioWaveformExecutor.execute(task)
+        } catch (_: java.util.concurrent.RejectedExecutionException) {
+            pendingAudioWaveforms.remove(key)
+        }
+    }
+
+    /**
+     * Decode PCM samples off the UI thread and reduce them to 120 peak buckets.
+     * PCM WAV tracks are read directly; compressed audio tracks use MediaCodec.
+     */
+    private fun decodeAudioWaveform(
+        uri: Uri,
+        sourceStartMs: Long,
+        sourceDurationMs: Long,
+        bucketCount: Int
+    ): FloatArray? {
+        val startUs = sourceStartMs.coerceAtLeast(0L) * 1_000L
+        val durationUs = sourceDurationMs.coerceAtLeast(1L) * 1_000L
+        val endUs = startUs + durationUs
+        val peaks = FloatArray(bucketCount.coerceAtLeast(1))
+        var decodedSamples = 0
+        var extractor: android.media.MediaExtractor? = null
+        var decoder: android.media.MediaCodec? = null
+
+        fun accumulatePcm(
+            buffer: java.nio.ByteBuffer,
+            byteCount: Int,
+            presentationTimeUs: Long,
+            sampleRate: Int,
+            channels: Int,
+            encoding: Int,
+            byteOffset: Int = 0
+        ) {
+            val safeRate = sampleRate.coerceAtLeast(1)
+            val safeChannels = channels.coerceIn(1, 8)
+            val bytesPerSample = when (encoding) {
+                android.media.AudioFormat.ENCODING_PCM_FLOAT -> 4
+                android.media.AudioFormat.ENCODING_PCM_8BIT -> 1
+                else -> 2
+            }
+            val frameBytes = bytesPerSample * safeChannels
+            if (frameBytes <= 0 || byteCount < frameBytes) return
+            val view = buffer.duplicate().order(java.nio.ByteOrder.LITTLE_ENDIAN).apply {
+                position(byteOffset.coerceAtLeast(0))
+                limit((byteOffset + byteCount).coerceAtMost(buffer.capacity()))
+            }.slice().order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            val frames = minOf(view.remaining() / frameBytes, 500_000)
+            for (frame in 0 until frames) {
+                var peak = 0f
+                repeat(safeChannels) {
+                    val sample = when (encoding) {
+                        android.media.AudioFormat.ENCODING_PCM_FLOAT -> view.float
+                        android.media.AudioFormat.ENCODING_PCM_8BIT ->
+                            ((view.get().toInt() and 0xff) - 128) / 128f
+                        else -> view.short / 32768f
+                    }
+                    peak = maxOf(peak, kotlin.math.abs(sample))
+                }
+                val frameTimeUs = presentationTimeUs + frame.toLong() * 1_000_000L / safeRate
+                if (frameTimeUs >= startUs && frameTimeUs < endUs) {
+                    val bucket = (((frameTimeUs - startUs) * peaks.size) / durationUs)
+                        .toInt().coerceIn(0, peaks.lastIndex)
+                    peaks[bucket] = maxOf(peaks[bucket], peak.coerceIn(0f, 1f))
+                    decodedSamples++
+                }
+            }
+        }
+
+        try {
+            extractor = android.media.MediaExtractor().apply {
+                setDataSource(this@VideoEditorActivity, uri, null)
+            }
+            var audioTrack = -1
+            var audioFormat: android.media.MediaFormat? = null
+            for (index in 0 until extractor.trackCount) {
+                val format = extractor.getTrackFormat(index)
+                val mime = format.getString(android.media.MediaFormat.KEY_MIME) ?: continue
+                if (mime.startsWith("audio/")) {
+                    audioTrack = index
+                    audioFormat = format
+                    break
+                }
+            }
+            val inputFormat = audioFormat ?: return null
+            val mime = inputFormat.getString(android.media.MediaFormat.KEY_MIME) ?: return null
+            val sourceSampleRate = if (inputFormat.containsKey(android.media.MediaFormat.KEY_SAMPLE_RATE))
+                inputFormat.getInteger(android.media.MediaFormat.KEY_SAMPLE_RATE) else 48_000
+            val sourceChannels = if (inputFormat.containsKey(android.media.MediaFormat.KEY_CHANNEL_COUNT))
+                inputFormat.getInteger(android.media.MediaFormat.KEY_CHANNEL_COUNT) else 2
+            val sourceEncoding = if (inputFormat.containsKey(android.media.MediaFormat.KEY_PCM_ENCODING))
+                inputFormat.getInteger(android.media.MediaFormat.KEY_PCM_ENCODING)
+            else android.media.AudioFormat.ENCODING_PCM_16BIT
+
+            extractor.selectTrack(audioTrack)
+            extractor.seekTo(startUs, android.media.MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+
+            if (mime == "audio/raw") {
+                val maxInputSize = if (inputFormat.containsKey(android.media.MediaFormat.KEY_MAX_INPUT_SIZE))
+                    inputFormat.getInteger(android.media.MediaFormat.KEY_MAX_INPUT_SIZE).coerceIn(64 * 1024, 4 * 1024 * 1024)
+                else 256 * 1024
+                val buffer = java.nio.ByteBuffer.allocateDirect(maxInputSize)
+                var safety = 0
+                while (safety++ < 100_000) {
+                    val sampleTimeUs = extractor.sampleTime
+                    if (sampleTimeUs < 0L || sampleTimeUs >= endUs) break
+                    buffer.clear()
+                    val size = extractor.readSampleData(buffer, 0)
+                    if (size <= 0) break
+                    accumulatePcm(buffer, size, sampleTimeUs, sourceSampleRate, sourceChannels, sourceEncoding)
+                    extractor.advance()
+                }
+            } else {
+                decoder = android.media.MediaCodec.createDecoderByType(mime).apply {
+                    configure(inputFormat, null, null, 0)
+                    start()
+                }
+                val codec = decoder
+                val info = android.media.MediaCodec.BufferInfo()
+                var inputDone = false
+                var outputDone = false
+                var outputFormat: android.media.MediaFormat? = null
+                val deadline = SystemClock.uptimeMillis() + 15_000L
+                while (!outputDone && SystemClock.uptimeMillis() < deadline) {
+                    if (!inputDone) {
+                        val inputIndex = codec.dequeueInputBuffer(10_000L)
+                        if (inputIndex >= 0) {
+                            val inputBuffer = codec.getInputBuffer(inputIndex)
+                            if (inputBuffer == null) {
+                                codec.queueInputBuffer(inputIndex, 0, 0, endUs, android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                                inputDone = true
+                            } else {
+                                inputBuffer.clear()
+                                val sampleTimeUs = extractor.sampleTime
+                                if (sampleTimeUs < 0L || sampleTimeUs >= endUs) {
+                                    codec.queueInputBuffer(
+                                        inputIndex, 0, 0, endUs, android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM
+                                    )
+                                    inputDone = true
+                                } else {
+                                    val size = extractor.readSampleData(inputBuffer, 0)
+                                    if (size <= 0) {
+                                        codec.queueInputBuffer(
+                                            inputIndex, 0, 0, endUs, android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM
+                                        )
+                                        inputDone = true
+                                    } else {
+                                        codec.queueInputBuffer(inputIndex, 0, size, sampleTimeUs, 0)
+                                        extractor.advance()
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    when (val outputIndex = codec.dequeueOutputBuffer(info, 10_000L)) {
+                        android.media.MediaCodec.INFO_OUTPUT_FORMAT_CHANGED ->
+                            outputFormat = codec.outputFormat
+                        android.media.MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED,
+                        android.media.MediaCodec.INFO_TRY_AGAIN_LATER -> Unit
+                        else -> if (outputIndex >= 0) {
+                            val decodedFormat = outputFormat ?: codec.outputFormat
+                            if (info.size > 0) {
+                                val sampleRate = if (decodedFormat.containsKey(android.media.MediaFormat.KEY_SAMPLE_RATE))
+                                    decodedFormat.getInteger(android.media.MediaFormat.KEY_SAMPLE_RATE) else sourceSampleRate
+                                val channels = if (decodedFormat.containsKey(android.media.MediaFormat.KEY_CHANNEL_COUNT))
+                                    decodedFormat.getInteger(android.media.MediaFormat.KEY_CHANNEL_COUNT) else sourceChannels
+                                val encoding = if (decodedFormat.containsKey(android.media.MediaFormat.KEY_PCM_ENCODING))
+                                    decodedFormat.getInteger(android.media.MediaFormat.KEY_PCM_ENCODING)
+                                else android.media.AudioFormat.ENCODING_PCM_16BIT
+                                codec.getOutputBuffer(outputIndex)?.let { output ->
+                                    accumulatePcm(output, info.size, info.presentationTimeUs, sampleRate, channels, encoding, info.offset)
+                                }
+                            }
+                            if (info.flags and android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
+                                outputDone = true
+                            }
+                            codec.releaseOutputBuffer(outputIndex, false)
+                        }
+                    }
+                }
+            }
+
+            if (decodedSamples == 0) return null
+            val maximum = peaks.maxOrNull()?.coerceAtLeast(0.001f) ?: return null
+            return FloatArray(peaks.size) { index ->
+                (peaks[index] / maximum).coerceIn(0f, 1f).let { normalized ->
+                    kotlin.math.sqrt(normalized).coerceAtLeast(0.035f)
+                }
+            }
+        } catch (error: Exception) {
+            android.util.Log.w("AudioWaveform", "Audio waveform decode failed for $uri", error)
+            return null
+        } finally {
+            runCatching { decoder?.stop() }
+            runCatching { decoder?.release() }
+            runCatching { extractor?.release() }
+        }
+    }
+
     private fun addMusicTimelineBlock(track: LinearLayout, totalMs: Long) {
         val normalized = TimelineRangeMath.normalize(
             TimelineRange(musicStartMs, musicDurationMs),
@@ -4646,6 +4952,19 @@ class VideoEditorActivity : Activity() {
             clipToOutline = false
             contentDescription = "Müzik: ortasından taşı, kenarlarından süreyi ayarla"
         }
+        val musicWaveform = AudioWaveformView(Color.rgb(151, 226, 181)).apply {
+            contentDescription = "Müzik ses dalga biçimi"
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }
+        frame.addView(musicWaveform, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+        musicUri?.let { source ->
+            val sourceDuration = (musicSourceEndMs - musicSourceStartMs).takeIf { it > 0L }
+                ?: musicSourceDurationMs
+            requestAudioWaveform(source, musicSourceStartMs, sourceDuration, musicWaveform, "music")
+        }
+
         val body = TextView(this).apply {
             text = "♫ " + (musicTitle ?: "Müzik")
             textSize = 9f
@@ -4882,6 +5201,17 @@ class VideoEditorActivity : Activity() {
             clipToOutline = false
             contentDescription = "Ses efekti: ortasından taşı, kenarlarından kırp"
         }
+        val soundWaveform = AudioWaveformView(Color.rgb(255, 207, 139)).apply {
+            contentDescription = "Ses efekti dalga biçimi"
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }
+        frame.addView(soundWaveform, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+        soundUri?.let { source ->
+            requestAudioWaveform(source, soundSourceStartMs, soundDurationMs, soundWaveform, "sound")
+        }
+
         val body = TextView(this).apply {
             text = "♪ ${soundTitle ?: "Ses efekti"}"
             textSize = 9f
@@ -12263,6 +12593,9 @@ class VideoEditorActivity : Activity() {
         pendingCoverThumbnailTargets.clear()
         coverThumbnailExecutor.shutdownNow()
         coverThumbnailCache.evictAll()
+        pendingAudioWaveforms.clear()
+        audioWaveformExecutor.shutdownNow()
+        audioWaveformCache.evictAll()
         timelineThumbnailExecutor.queue.clear()
         timelineThumbnailExecutor.shutdownNow()
         timelinePosterExecutor.shutdownNow()
