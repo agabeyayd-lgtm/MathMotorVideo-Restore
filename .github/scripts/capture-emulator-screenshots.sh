@@ -1252,13 +1252,26 @@ print((x1+x2)//2,y1+35,y2-35)
 PY
 )" || { collect_capture_diagnostics project-history-audio-sheet-scrollview-missing; exit 93; }
 read -r audio_scroll_x audio_scroll_top audio_scroll_bottom <<< "$audio_sheet_bounds"
-timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$audio_scroll_x" "$audio_scroll_bottom" "$audio_scroll_x" "$audio_scroll_top" 650
-sleep 1
-if ! dump_hierarchy editor-project-audio-panel-scrolled.xml emulator-screenshots/editor-project-audio-panel-scrolled.xml; then
-  collect_capture_diagnostics project-history-audio-panel-scroll-capture-failed
+sound_volume_bounds=""
+for scroll_attempt in $(seq 1 4); do
+  timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$audio_scroll_x" "$audio_scroll_bottom" "$audio_scroll_x" "$audio_scroll_top" 650
+  sleep 0.4
+  audio_scroll_xml="editor-project-audio-panel-scrolled-$scroll_attempt.xml"
+  if ! dump_hierarchy "$audio_scroll_xml" "emulator-screenshots/$audio_scroll_xml"; then
+    collect_capture_diagnostics project-history-audio-panel-scroll-capture-failed
+    exit 93
+  fi
+  sound_volume_bounds="$(find_content_description_bounds "emulator-screenshots/$audio_scroll_xml" "Ses efekti ses seviyesi" || true)"
+  if [ -n "$sound_volume_bounds" ]; then
+    cp "emulator-screenshots/$audio_scroll_xml" emulator-screenshots/editor-project-audio-panel-scrolled.xml
+    break
+  fi
+done
+if [ -z "$sound_volume_bounds" ]; then
+  echo "Sound-effect volume slider did not enter the viewport after scrolling the audio settings sheet."
+  collect_capture_diagnostics project-history-sound-volume-slider-still-offscreen
   exit 93
 fi
-sound_volume_bounds="$(find_content_description_bounds emulator-screenshots/editor-project-audio-panel-scrolled.xml "Ses efekti ses seviyesi" || true)"
 if [ -z "$sound_volume_bounds" ]; then
   echo "Audio panel did not expose the accessible sound-effect volume slider."
   collect_capture_diagnostics project-history-sound-volume-slider-missing
