@@ -1339,7 +1339,8 @@ PY
 )" || { collect_capture_diagnostics project-history-audio-sheet-scrollview-missing; exit 93; }
 read -r audio_scroll_x audio_scroll_top audio_scroll_bottom <<< "$audio_sheet_bounds"
 sound_volume_bounds=""
-for scroll_attempt in $(seq 1 4); do
+sound_volume_visible_height=0
+for scroll_attempt in $(seq 1 8); do
   timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$audio_scroll_x" "$audio_scroll_bottom" "$audio_scroll_x" "$audio_scroll_top" 650
   sleep 0.4
   audio_scroll_xml="editor-project-audio-panel-scrolled-$scroll_attempt.xml"
@@ -1349,12 +1350,20 @@ for scroll_attempt in $(seq 1 4); do
   fi
   sound_volume_bounds="$(find_content_description_bounds "emulator-screenshots/$audio_scroll_xml" "Ses efekti ses seviyesi" || true)"
   if [ -n "$sound_volume_bounds" ]; then
-    cp "emulator-screenshots/$audio_scroll_xml" emulator-screenshots/editor-project-audio-panel-scrolled.xml
-    break
+    read -r _ _ _ sound_volume_visible_height _ _ _ _ <<< "$sound_volume_bounds"
+    # A non-empty accessibility node may be only a few pixels of a SeekBar
+    # peeking above the ScrollView's clipped edge. It is not a usable touch
+    # target. Keep scrolling until the full control has a practical visible area.
+    if [ "$sound_volume_visible_height" -ge 40 ]; then
+      cp "emulator-screenshots/$audio_scroll_xml" emulator-screenshots/editor-project-audio-panel-scrolled.xml
+      break
+    fi
+    echo "Sound-effect volume slider is only partially visible ($sound_volume_visible_height px); scrolling farther (attempt $scroll_attempt/8)."
+    sound_volume_bounds=""
   fi
 done
 if [ -z "$sound_volume_bounds" ]; then
-  echo "Sound-effect volume slider did not enter the viewport after scrolling the audio settings sheet."
+  echo "Sound-effect volume slider never became fully visible after scrolling the audio settings sheet."
   collect_capture_diagnostics project-history-sound-volume-slider-still-offscreen
   exit 93
 fi
