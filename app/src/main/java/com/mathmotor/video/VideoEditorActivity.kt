@@ -629,7 +629,7 @@ class VideoEditorActivity : Activity() {
     private lateinit var overlayRotationSeek: SeekBar
     private lateinit var overlayOpacitySeek: SeekBar
     private var updatingOverlayControls = false
-    private var clipCoverButton: Button? = null
+    private var clipCoverButton: TextView? = null
     private var pendingCoverSaveBitmap: Bitmap? = null
     private lateinit var startLabel: TextView
     private lateinit var endLabel: TextView
@@ -1403,8 +1403,17 @@ class VideoEditorActivity : Activity() {
         selectedClipLabel = label("Önce bir video seç.", 12f, Color.WHITE, true)
         clipPanel.addView(selectedClipLabel)
         val clipActions1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val coverButton = miniButton("Kapak") { showClipCoverPicker() }.apply {
+        // CapCut keeps Kapak as a quiet text action in the lane gutter,
+        // not a raised/boxed mini-button that competes with the clip strip.
+        val coverButton = TextView(this).apply {
+            text = "Kapak"
+            textSize = 12f
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(205, 215, 224))
+            isClickable = true
+            isFocusable = true
             contentDescription = "Seçili klibin kapak karesini seç"
+            setOnClickListener { showClipCoverPicker() }
         }
         clipCoverButton = coverButton
         clipActions1.addView(coverButton, LinearLayout.LayoutParams(0, dp(46), 1f))
