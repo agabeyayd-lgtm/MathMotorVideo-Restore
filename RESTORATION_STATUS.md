@@ -1,3 +1,10 @@
+## 2026-11-09 — Keep text panel active after IME dismissal (PR #34)
+
+- On commit `c8b51ccd51b5085404772028b4d8f0ab85626dbb`, the API 35 emulator proved the text-history fix: grouped Undo restored model/input to `0/0`; grouped Redo restored `11/11`; the following separate Redo restored the text canvas drag. Overlay Undo/Redo also passed.
+- The run then failed later at the existing text-panel return-control check because `dismissTextInputForHistoryRestore()` called `clearFocus()`. That hid the expected active text panel and prevented its post-keyboard return bounds from being logged. This is a UI regression introduced by the IME fix, not a failure of the new Undo/Redo assertions.
+- Commit `a4d55fcbaf30bd80cb0666ff138d588bae02696a` keeps EditText focus while still hiding the keyboard and clearing composing text. The snapshot-restore guard remains responsible for preventing stale control-to-model writes; normal text-panel navigation remains available.
+- Required: rerun the full API 35 emulator suite on latest HEAD and confirm both the `0/0 -> 11/11` history assertions and the subsequent measured text-panel return tap. No version bump, merge, or release.
+ 
 ## 2026-11-09 — Suppress UI-to-model text sync during history restore (PR #34)
 
 - The last confirmed emulator run still failed at grouped text Redo: Undo reported `11 -> 0`, but Redo captured `11 -> 11`. The latest code had dismissed the IME before Undo/Redo, but another independent write-back path remained.
