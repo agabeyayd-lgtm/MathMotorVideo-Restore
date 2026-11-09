@@ -9,6 +9,8 @@
 - **Verification boundary:** unit tests and Android compile/debug packaging passed before the last text-transaction and track-order additions. Those latest changes and the expanded emulator test require fresh successful build and emulator runs before this work is considered verified. Audio/overlay/filter-specific Undo/Redo flows and physical-device behavior remain to be exercised.
 - **Latest API 35 attempt (`f1b8e51d6de999893093429a395308fe4ad81cb6`):** unit/build and debug packaging passed; real sound-effect trim Undo/Redo passed (`324→862→324 ms`) and overlay trim smoke passed. The emulator job failed afterward because the editor-panel geometry parser read logcat only after later tests had cleared its ring buffer. The script now snapshots geometry immediately after panel interaction, before any unrelated logcat clear. Geometry limits are unchanged; current-head reruns remain required.
 - Audio Undo/Redo restore now synchronizes the model, music/SFX/source-volume slider positions and labels, and the legacy single-clip player's volume. The emulator suite adds an actual sound-volume drag followed by Undo and Redo assertions against both model and visible SeekBar progress.
+- Filter preset and brightness history are now covered by emulator interactions as well: monochrome preset Undo/Redo verifies the selected preset and controls, and a brightness slider drag verifies both the restored filter model and actual SeekBar progress. The test resets the filter to Original before later export checks.
+
 
 - PR #34 remains a draft and is not merged. No signed release APK or version-code change was made. A CI debug ZIP is not a production update.
 
