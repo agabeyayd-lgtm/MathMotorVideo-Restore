@@ -1741,7 +1741,14 @@ fi
 timeout -k 2s 8s adb -s emulator-5554 shell input tap $mono_preset_coords
 sleep 1
 dump_hierarchy editor-filter-after-monochrome.xml emulator-screenshots/editor-filter-after-monochrome.xml || { collect_capture_diagnostics project-history-filter-undo-controls-missing; exit 95; }
-filter_undo_coords="$(python3 - emulator-screenshots/editor-filter-after-monochrome.xml <<'PY'
+# Detail panels hide the global playback Undo/Redo row. Return to the main dock
+# before invoking project history, matching the actual editor interaction flow.
+filter_panel_back="$(find_bottom_tool emulator-screenshots/editor-filter-after-monochrome.xml "Araçlara dön" || true)"
+if [ -z "$filter_panel_back" ]; then collect_capture_diagnostics project-history-filter-return-control-missing; exit 95; fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$filter_panel_back"
+sleep 1
+dump_hierarchy editor-main-dock-after-monochrome.xml emulator-screenshots/editor-main-dock-after-monochrome.xml || { collect_capture_diagnostics project-history-filter-main-dock-missing; exit 95; }
+filter_undo_coords="$(python3 - emulator-screenshots/editor-main-dock-after-monochrome.xml <<'PY'
 import re, sys, xml.etree.ElementTree as ET
 root = ET.parse(sys.argv[1]).getroot()
 for node in root.iter("node"):
@@ -1766,8 +1773,8 @@ if not re.search(r"beforeFilter=MONOCHROME afterFilter=ORIGINAL",event[-1]): rai
 if not re.search(r"filterPreset=ORIGINAL brightnessModel=0 brightnessSeek=100",controls[-1]): raise SystemExit("Filter preset Undo restored model but not color controls: "+controls[-1])
 print("PASS: one Undo restored the Original filter preset and synchronized the brightness control.")
 PY
-dump_hierarchy editor-filter-before-preset-redo.xml emulator-screenshots/editor-filter-before-preset-redo.xml || { collect_capture_diagnostics project-history-filter-redo-controls-missing; exit 96; }
-filter_redo_coords="$(python3 - emulator-screenshots/editor-filter-before-preset-redo.xml <<'PY'
+dump_hierarchy editor-main-dock-before-preset-redo.xml emulator-screenshots/editor-main-dock-before-preset-redo.xml || { collect_capture_diagnostics project-history-filter-redo-controls-missing; exit 96; }
+filter_redo_coords="$(python3 - emulator-screenshots/editor-main-dock-before-preset-redo.xml <<'PY'
 import re, sys, xml.etree.ElementTree as ET
 root=ET.parse(sys.argv[1]).getroot()
 for node in root.iter("node"):
@@ -1793,8 +1800,15 @@ if not re.search(r"filterPreset=MONOCHROME",controls[-1]): raise SystemExit("Fil
 print("PASS: one Redo reapplied the Monochrome preset.")
 PY
 
+# Reopen the filter detail panel after the preset history round-trip. Its
+# SeekBars are intentionally absent from the global dock accessibility tree.
+filter_tab_after_preset="$(find_bottom_tool emulator-screenshots/editor-main-dock-before-preset-redo.xml "Efektler" || true)"
+if [ -z "$filter_tab_after_preset" ]; then collect_capture_diagnostics project-history-filter-reopen-tab-missing; exit 97; fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$filter_tab_after_preset"
+sleep 1
+dump_hierarchy editor-filter-panel-before-brightness.xml emulator-screenshots/editor-filter-panel-before-brightness.xml || { collect_capture_diagnostics project-history-filter-reopen-panel-missing; exit 97; }
 echo "Step 8b-FilterSlider: verify brightness gesture Undo/Redo restores actual slider progress"
-brightness_bounds="$(find_content_description_bounds emulator-screenshots/editor-filter-panel.xml "Parlaklık filtresi" || true)"
+brightness_bounds="$(find_content_description_bounds emulator-screenshots/editor-filter-panel-before-brightness.xml "Parlaklık filtresi" || true)"
 if [ -z "$brightness_bounds" ]; then collect_capture_diagnostics project-history-brightness-slider-missing; exit 97; fi
 read -r brightness_cx brightness_cy brightness_w brightness_h brightness_x1 brightness_y1 brightness_x2 brightness_y2 <<< "$brightness_bounds"
 brightness_drag_start=$((brightness_x1 + brightness_w / 2))
@@ -1802,7 +1816,12 @@ brightness_drag_end=$((brightness_x1 + brightness_w * 62 / 100))
 timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$brightness_drag_start" "$brightness_cy" "$brightness_drag_end" "$brightness_cy" 650
 sleep 1
 dump_hierarchy editor-filter-after-brightness-drag.xml emulator-screenshots/editor-filter-after-brightness-drag.xml || { collect_capture_diagnostics project-history-brightness-undo-controls-missing; exit 97; }
-brightness_undo_coords="$(python3 - emulator-screenshots/editor-filter-after-brightness-drag.xml <<'PY'
+brightness_panel_back="$(find_bottom_tool emulator-screenshots/editor-filter-after-brightness-drag.xml "Araçlara dön" || true)"
+if [ -z "$brightness_panel_back" ]; then collect_capture_diagnostics project-history-brightness-return-control-missing; exit 97; fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$brightness_panel_back"
+sleep 1
+dump_hierarchy editor-main-dock-after-brightness-drag.xml emulator-screenshots/editor-main-dock-after-brightness-drag.xml || { collect_capture_diagnostics project-history-brightness-main-dock-missing; exit 97; }
+brightness_undo_coords="$(python3 - emulator-screenshots/editor-main-dock-after-brightness-drag.xml <<'PY'
 import re,sys,xml.etree.ElementTree as ET
 root=ET.parse(sys.argv[1]).getroot()
 for n in root.iter("node"):
@@ -1834,8 +1853,8 @@ PY
 )" || { collect_capture_diagnostics project-history-brightness-undo-failed; exit 98; }
 read -r changed_brightness original_brightness <<< "$brightness_undo_values"
 echo "PASS: one Undo restored brightness $changed_brightness -> $original_brightness and its slider progress."
-dump_hierarchy editor-filter-before-brightness-redo.xml emulator-screenshots/editor-filter-before-brightness-redo.xml || { collect_capture_diagnostics project-history-brightness-redo-controls-missing; exit 98; }
-brightness_redo_coords="$(python3 - emulator-screenshots/editor-filter-before-brightness-redo.xml <<'PY'
+dump_hierarchy editor-main-dock-before-brightness-redo.xml emulator-screenshots/editor-main-dock-before-brightness-redo.xml || { collect_capture_diagnostics project-history-brightness-redo-controls-missing; exit 98; }
+brightness_redo_coords="$(python3 - emulator-screenshots/editor-main-dock-before-brightness-redo.xml <<'PY'
 import re,sys,xml.etree.ElementTree as ET
 root=ET.parse(sys.argv[1]).getroot()
 for n in root.iter("node"):
@@ -1867,14 +1886,21 @@ print(f"PASS: one Redo reapplied brightness {before} -> {after} and its slider p
 PY
 
 # Reset to the unfiltered project appearance before the video/export smoke tests.
-original_preset_coords="$(find_bottom_tool emulator-screenshots/editor-filter-panel.xml "Orijinal" || true)"
-if [ -n "$original_preset_coords" ]; then
-  timeout -k 2s 8s adb -s emulator-5554 shell input tap $original_preset_coords
-  sleep 1
-fi
-filter_panel_back="$(find_bottom_tool emulator-screenshots/editor-filter-panel.xml "Araçlara dön" || true)"
+# Reopen the detail panel because its controls are intentionally hidden while
+# the global Undo/Redo row is active.
+filter_tab_before_reset="$(find_bottom_tool emulator-screenshots/editor-main-dock-before-brightness-redo.xml "Efektler" || true)"
+if [ -z "$filter_tab_before_reset" ]; then collect_capture_diagnostics project-history-filter-reset-tab-missing; exit 99; fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$filter_tab_before_reset"
+sleep 1
+dump_hierarchy editor-filter-before-reset.xml emulator-screenshots/editor-filter-before-reset.xml || { collect_capture_diagnostics project-history-filter-reset-panel-missing; exit 99; }
+original_preset_coords="$(find_bottom_tool emulator-screenshots/editor-filter-before-reset.xml "Orijinal" || true)"
+if [ -z "$original_preset_coords" ]; then collect_capture_diagnostics project-history-filter-original-preset-missing; exit 99; fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$original_preset_coords"
+sleep 1
+dump_hierarchy editor-filter-after-reset.xml emulator-screenshots/editor-filter-after-reset.xml || { collect_capture_diagnostics project-history-filter-reset-complete-panel-missing; exit 99; }
+filter_panel_back="$(find_bottom_tool emulator-screenshots/editor-filter-after-reset.xml "Araçlara dön" || true)"
 if [ -z "$filter_panel_back" ]; then collect_capture_diagnostics project-history-filter-close-control-missing; exit 99; fi
-timeout -k 2s 8s adb -s emulator-5554 shell input tap $filter_panel_back
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$filter_panel_back"
 sleep 1
 dump_hierarchy editor-main-dock-after-filter.xml emulator-screenshots/editor-main-dock-after-filter.xml || true
 video_clip_coords="$(python3 - emulator-screenshots/editor-main-dock.xml <<'PY'
