@@ -1290,6 +1290,169 @@ if model != after or seek != after: raise SystemExit(f"Redo restored the model b
 print(f"PASS: one Redo reapplied sound volume {before} -> {after} and its slider matches.")
 PY
 
+
+# The audio panel is still open after the volume checks. Return to the dock before
+# exercising preset and continuous color-grade history independently.
+filter_panel_back="$(find_bottom_tool emulator-screenshots/editor-project-audio-before-redo.xml "Araçlara dön" || true)"
+if [ -z "$filter_panel_back" ]; then
+  collect_capture_diagnostics project-history-filter-return-control-missing
+  exit 95
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $filter_panel_back
+sleep 1
+dump_hierarchy editor-main-dock-before-filter.xml emulator-screenshots/editor-main-dock-before-filter.xml || { collect_capture_diagnostics project-history-filter-dock-missing; exit 95; }
+filter_tab_coords="$(find_bottom_tool emulator-screenshots/editor-main-dock-before-filter.xml "Efektler" || true)"
+if [ -z "$filter_tab_coords" ]; then
+  collect_capture_diagnostics project-history-filter-tab-missing
+  exit 95
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $filter_tab_coords
+sleep 1
+dump_hierarchy editor-filter-panel.xml emulator-screenshots/editor-filter-panel.xml || { collect_capture_diagnostics project-history-filter-panel-missing; exit 95; }
+mono_preset_coords="$(find_bottom_tool emulator-screenshots/editor-filter-panel.xml "Siyah-beyaz" || true)"
+if [ -z "$mono_preset_coords" ]; then
+  collect_capture_diagnostics project-history-monochrome-preset-missing
+  exit 95
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $mono_preset_coords
+sleep 1
+dump_hierarchy editor-filter-after-monochrome.xml emulator-screenshots/editor-filter-after-monochrome.xml || { collect_capture_diagnostics project-history-filter-undo-controls-missing; exit 95; }
+filter_undo_coords="$(python3 - emulator-screenshots/editor-filter-after-monochrome.xml <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != "Proje işlemini geri al" or node.attrib.get("enabled", "false").lower() != "true": continue
+    m = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if m:
+        x1,y1,x2,y2=map(int,m.groups()); print((x1+x2)//2,(y1+y2)//2); raise SystemExit(0)
+raise SystemExit("Undo unavailable after monochrome preset.")
+PY
+)" || { collect_capture_diagnostics project-history-filter-undo-disabled; exit 95; }
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $filter_undo_coords
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-filter-preset-undo.txt 2>&1 || true
+python3 - emulator-screenshots/project-history-filter-preset-undo.txt <<'PY'
+import re, sys
+lines=open(sys.argv[1],errors="replace").read().splitlines()
+event=[x for x in lines if "PROJECT_HISTORY_APPLIED action=undo " in x]
+controls=[x for x in lines if "PROJECT_HISTORY_CONTROLS " in x]
+if not event or not controls: raise SystemExit("Filter Undo did not log restored model and controls.")
+if not re.search(r"beforeFilter=MONOCHROME afterFilter=ORIGINAL",event[-1]): raise SystemExit("Filter preset Undo did not restore ORIGINAL: "+event[-1])
+if not re.search(r"filterPreset=ORIGINAL brightnessModel=0 brightnessSeek=100",controls[-1]): raise SystemExit("Filter preset Undo restored model but not color controls: "+controls[-1])
+print("PASS: one Undo restored the Original filter preset and synchronized the brightness control.")
+PY
+dump_hierarchy editor-filter-before-preset-redo.xml emulator-screenshots/editor-filter-before-preset-redo.xml || { collect_capture_diagnostics project-history-filter-redo-controls-missing; exit 96; }
+filter_redo_coords="$(python3 - emulator-screenshots/editor-filter-before-preset-redo.xml <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+root=ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("content-desc","").strip()!="Proje işlemini yinele" or node.attrib.get("enabled","false").lower()!="true": continue
+    m=re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",node.attrib.get("bounds",""))
+    if m:
+        x1,y1,x2,y2=map(int,m.groups()); print((x1+x2)//2,(y1+y2)//2); raise SystemExit(0)
+raise SystemExit("Redo unavailable after filter Undo.")
+PY
+)" || { collect_capture_diagnostics project-history-filter-redo-disabled; exit 96; }
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $filter_redo_coords
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-filter-preset-redo.txt 2>&1 || true
+python3 - emulator-screenshots/project-history-filter-preset-redo.txt <<'PY'
+import re, sys
+lines=open(sys.argv[1],errors="replace").read().splitlines()
+event=[x for x in lines if "PROJECT_HISTORY_APPLIED action=redo " in x]
+controls=[x for x in lines if "PROJECT_HISTORY_CONTROLS " in x]
+if not event or not controls: raise SystemExit("Filter Redo did not log restored model and controls.")
+if not re.search(r"beforeFilter=ORIGINAL afterFilter=MONOCHROME",event[-1]): raise SystemExit("Filter preset Redo did not reapply MONOCHROME: "+event[-1])
+if not re.search(r"filterPreset=MONOCHROME",controls[-1]): raise SystemExit("Filter preset Redo left the UI control stale: "+controls[-1])
+print("PASS: one Redo reapplied the Monochrome preset.")
+PY
+
+echo "Step 8b-FilterSlider: verify brightness gesture Undo/Redo restores actual slider progress"
+brightness_bounds="$(find_content_description_bounds emulator-screenshots/editor-filter-panel.xml "Parlaklık filtresi" || true)"
+if [ -z "$brightness_bounds" ]; then collect_capture_diagnostics project-history-brightness-slider-missing; exit 97; fi
+read -r brightness_cx brightness_cy brightness_w brightness_h brightness_x1 brightness_y1 brightness_x2 brightness_y2 <<< "$brightness_bounds"
+brightness_drag_start=$((brightness_x1 + brightness_w / 2))
+brightness_drag_end=$((brightness_x1 + brightness_w * 62 / 100))
+timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$brightness_drag_start" "$brightness_cy" "$brightness_drag_end" "$brightness_cy" 650
+sleep 1
+dump_hierarchy editor-filter-after-brightness-drag.xml emulator-screenshots/editor-filter-after-brightness-drag.xml || { collect_capture_diagnostics project-history-brightness-undo-controls-missing; exit 97; }
+brightness_undo_coords="$(python3 - emulator-screenshots/editor-filter-after-brightness-drag.xml <<'PY'
+import re,sys,xml.etree.ElementTree as ET
+root=ET.parse(sys.argv[1]).getroot()
+for n in root.iter("node"):
+    if n.attrib.get("content-desc","").strip()=="Proje işlemini geri al" and n.attrib.get("enabled","false").lower()=="true":
+        m=re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",n.attrib.get("bounds",""))
+        if m:
+            x1,y1,x2,y2=map(int,m.groups()); print((x1+x2)//2,(y1+y2)//2); raise SystemExit(0)
+raise SystemExit("Undo unavailable after brightness gesture.")
+PY
+)" || { collect_capture_diagnostics project-history-brightness-undo-disabled; exit 97; }
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $brightness_undo_coords
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-brightness-undo.txt 2>&1 || true
+brightness_undo_values="$(python3 - emulator-screenshots/project-history-brightness-undo.txt <<'PY'
+import re,sys
+lines=open(sys.argv[1],errors="replace").read().splitlines()
+events=[x for x in lines if "PROJECT_HISTORY_APPLIED action=undo " in x]
+controls=[x for x in lines if "PROJECT_HISTORY_CONTROLS " in x]
+if not events or not controls: raise SystemExit("Brightness Undo did not emit model and control diagnostics.")
+e=re.search(r"beforeFilterBrightness=(-?\d+) afterFilterBrightness=(-?\d+)",events[-1])
+u=re.search(r"brightnessModel=(-?\d+) brightnessSeek=(-?\d+)",controls[-1])
+if not e or not u: raise SystemExit("Brightness diagnostics missing from Undo.")
+changed,restored=map(int,e.groups()); model,seek=map(int,u.groups())
+if changed==restored: raise SystemExit("Brightness gesture did not change the filter model: "+events[-1])
+if model!=restored or seek!=restored+100: raise SystemExit(f"Undo left brightness slider out of sync: model={model}, seek={seek}, expectedSeek={restored+100}; {controls[-1]}")
+print(changed,restored)
+PY
+)" || { collect_capture_diagnostics project-history-brightness-undo-failed; exit 98; }
+read -r changed_brightness original_brightness <<< "$brightness_undo_values"
+echo "PASS: one Undo restored brightness $changed_brightness -> $original_brightness and its slider progress."
+dump_hierarchy editor-filter-before-brightness-redo.xml emulator-screenshots/editor-filter-before-brightness-redo.xml || { collect_capture_diagnostics project-history-brightness-redo-controls-missing; exit 98; }
+brightness_redo_coords="$(python3 - emulator-screenshots/editor-filter-before-brightness-redo.xml <<'PY'
+import re,sys,xml.etree.ElementTree as ET
+root=ET.parse(sys.argv[1]).getroot()
+for n in root.iter("node"):
+    if n.attrib.get("content-desc","").strip()=="Proje işlemini yinele" and n.attrib.get("enabled","false").lower()=="true":
+        m=re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",n.attrib.get("bounds",""))
+        if m:
+            x1,y1,x2,y2=map(int,m.groups()); print((x1+x2)//2,(y1+y2)//2); raise SystemExit(0)
+raise SystemExit("Redo unavailable after brightness Undo.")
+PY
+)" || { collect_capture_diagnostics project-history-brightness-redo-disabled; exit 98; }
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $brightness_redo_coords
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-brightness-redo.txt 2>&1 || true
+python3 - emulator-screenshots/project-history-brightness-redo.txt "$changed_brightness" "$original_brightness" <<'PY'
+import re,sys
+lines=open(sys.argv[1],errors="replace").read().splitlines()
+events=[x for x in lines if "PROJECT_HISTORY_APPLIED action=redo " in x]
+controls=[x for x in lines if "PROJECT_HISTORY_CONTROLS " in x]
+if not events or not controls: raise SystemExit("Brightness Redo did not emit model and control diagnostics.")
+e=re.search(r"beforeFilterBrightness=(-?\d+) afterFilterBrightness=(-?\d+)",events[-1])
+u=re.search(r"brightnessModel=(-?\d+) brightnessSeek=(-?\d+)",controls[-1])
+if not e or not u: raise SystemExit("Brightness diagnostics missing from Redo.")
+before,after=map(int,e.groups()); model,seek=map(int,u.groups())
+expected_new,expected_old=map(int,sys.argv[2:4])
+if before!=expected_old or after!=expected_new: raise SystemExit("Redo reapplied wrong brightness: "+events[-1])
+if model!=after or seek!=after+100: raise SystemExit("Redo left brightness slider out of sync: "+controls[-1])
+print(f"PASS: one Redo reapplied brightness {before} -> {after} and its slider progress.")
+PY
+
+# Reset to the unfiltered project appearance before the video/export smoke tests.
+original_preset_coords="$(find_bottom_tool emulator-screenshots/editor-filter-panel.xml "Orijinal" || true)"
+if [ -n "$original_preset_coords" ]; then
+  timeout -k 2s 8s adb -s emulator-5554 shell input tap $original_preset_coords
+  sleep 1
+fi
+filter_panel_back="$(find_bottom_tool emulator-screenshots/editor-filter-panel.xml "Araçlara dön" || true)"
+if [ -z "$filter_panel_back" ]; then collect_capture_diagnostics project-history-filter-close-control-missing; exit 99; fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $filter_panel_back
+sleep 1
+dump_hierarchy editor-main-dock-after-filter.xml emulator-screenshots/editor-main-dock-after-filter.xml || true
 video_clip_coords="$(python3 - emulator-screenshots/editor-main-dock.xml <<'PY'
 import re
 import sys
