@@ -1316,7 +1316,7 @@ if model != after or seek != after: raise SystemExit(f"Redo restored the model b
 print(f"PASS: one Redo reapplied sound volume {before} -> {after} and its slider matches.")
 PY
 
-# Restore the default source mix before importing the audio fixtures used by later tests.
+# Restore the default source mix before later audio playback and trim checks.
 dump_hierarchy editor-project-audio-after-redo.xml emulator-screenshots/editor-project-audio-after-redo.xml || { collect_capture_diagnostics project-history-sound-volume-cleanup-controls-missing; exit 94; }
 cleanup_undo_coords="$(python3 - emulator-screenshots/editor-project-audio-after-redo.xml <<'PY'
 import re,sys,xml.etree.ElementTree as ET
