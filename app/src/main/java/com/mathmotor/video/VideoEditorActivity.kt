@@ -403,6 +403,13 @@ class VideoEditorActivity : Activity() {
     private val timelinePosterCache = object : android.util.LruCache<String, Bitmap>(4 * 1024 * 1024) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount.coerceAtLeast(1)
     }
+    // The left cover tile is an independent still-image surface. Keep its cache
+    // separate from the scrolling filmstrip so tile rebuilds never re-request strip cells.
+    private val coverThumbnailCache = object : android.util.LruCache<String, Bitmap>(4 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount.coerceAtLeast(1)
+    }
+    private val pendingCoverThumbnailTargets = mutableMapOf<String, MutableList<WeakReference<ImageView>>>()
+    private var coverThumbnailRequestSequence = 0L
     private val pendingTimelinePosterTargets = mutableMapOf<String, MutableList<WeakReference<ImageView>>>()
     private val pendingTimelinePosterLoads = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private val timelinePosterExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
@@ -4533,6 +4540,9 @@ class VideoEditorActivity : Activity() {
             scheduleTimelineAlignmentSnapshot()
         }
         updateTimelinePlayheadLine()
+        // refreshTimelineTracks() replaces the gutter ImageView on every rebuild.
+        // Rebind the independent cover surface here so no caller can leave it blank.
+        refreshClipCoverThumbnail(selectedClip() ?: clips.firstOrNull())
     }
 
 
@@ -11239,92 +11249,65 @@ class VideoEditorActivity : Activity() {
             target.setBackgroundColor(Color.rgb(37, 45, 55))
             return
         }
-        val generation = (target.tag as? Long ?: 0L) + 1L
-        target.tag = generation
-        val savedPath = clip.coverImagePath
-        if (!savedPath.isNullOrBlank()) {
-            Thread({
-                val bitmap = android.graphics.BitmapFactory.decodeFile(savedPath)
-                runOnUiThread {
-                    if (target.tag != generation || selectedClip() !== clip || isFinishing || isDestroyed) {
-                        bitmap?.let { if (!it.isRecycled) it.recycle() }
-                        return@runOnUiThread
-                    }
-                    if (bitmap != null && !bitmap.isRecycled) target.setImageBitmap(bitmap)
-                    else refreshClipCoverThumbnailFromVideo(clip, target, generation)
-                }
-            }, "cover-image-load").start()
-            return
-        }
-        refreshClipCoverThumbnailFromVideo(clip, target, generation)
-    }
 
-    private fun refreshClipCoverThumbnailFromVideo(clip: Clip, target: ImageView, generation: Long) {
         val frameTimeMs = (clip.coverTimeMs ?: clip.startMs)
             .coerceIn(0L, (clip.durationMs - 1L).coerceAtLeast(0L))
-        val task = TimelineThumbnailTask(-4L, timelineThumbnailTaskSequence.incrementAndGet()) {
-            val decoded = decodeTimelinePreviewFrame(clip.uri, frameTimeMs)
+        val savedPath = clip.coverImagePath?.takeIf { File(it).isFile }
+        val key = savedPath?.let { "cover-file:$it" } ?: "cover-frame:${clip.uri}#$frameTimeMs"
+        val requestId = ++coverThumbnailRequestSequence
+        target.tag = "$key|$requestId"
+
+        val cached = coverThumbnailCache.get(key)
+        if (cached != null && !cached.isRecycled) {
+            target.setImageBitmap(cached)
+            return
+        }
+
+        val waiting = pendingCoverThumbnailTargets[key]
+        if (waiting != null) {
+            if (waiting.none { it.get() === target }) waiting.add(WeakReference(target))
+            return
+        }
+        pendingCoverThumbnailTargets[key] = mutableListOf(WeakReference(target))
+        val targetMaxSide = (target.width.takeIf { it > 0 } ?: dp(36)) * 2
+        val task = TimelineThumbnailTask(
+            -4L,
+            timelineThumbnailTaskSequence.incrementAndGet()
+        ) {
+            val decoded = if (savedPath != null) {
+                runCatching {
+                    val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    android.graphics.BitmapFactory.decodeFile(savedPath, bounds)
+                    var sample = 1
+                    val sourceMax = maxOf(bounds.outWidth, bounds.outHeight)
+                    while (sourceMax > 0 && sourceMax / (sample * 2) >= targetMaxSide) sample *= 2
+                    android.graphics.BitmapFactory.decodeFile(
+                        savedPath,
+                        android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+                    )
+                }.getOrNull()
+            } else {
+                decodeTimelineFrame(clip.uri, frameTimeMs)
+            }
             runOnUiThread {
-                if (target.tag != generation || selectedClip() !== clip || isFinishing || isDestroyed) {
+                val targets = pendingCoverThumbnailTargets.remove(key).orEmpty()
+                if (decoded != null && !decoded.isRecycled && !isFinishing && !isDestroyed) {
+                    coverThumbnailCache.put(key, decoded)
+                    targets.forEach { reference ->
+                        val image = reference.get() ?: return@forEach
+                        val token = image.tag?.toString() ?: return@forEach
+                        if (token.startsWith("$key|")) image.setImageBitmap(decoded)
+                    }
+                } else {
                     decoded?.let { if (!it.isRecycled) it.recycle() }
-                    return@runOnUiThread
                 }
-                if (decoded != null && !decoded.isRecycled) target.setImageBitmap(decoded)
             }
         }
         try {
             timelineThumbnailExecutor.execute(task)
         } catch (_: java.util.concurrent.RejectedExecutionException) {
-            // Keep the tile responsive; the user can retry by opening the cover picker.
+            pendingCoverThumbnailTargets.remove(key)
         }
-    }
-
-    private fun persistClipCoverImage(bitmap: Bitmap, clip: Clip, sourceTimeMs: Long) {
-        val directory = File(filesDir, "project_covers").apply { mkdirs() }
-        val destination = File(directory, "cover_${java.util.UUID.randomUUID()}.jpg")
-        val safeCopy = runCatching {
-            val maxSide = 720
-            val scale = minOf(1f, maxSide.toFloat() / maxOf(bitmap.width, bitmap.height).toFloat())
-            if (scale < 1f) Bitmap.createScaledBitmap(
-                bitmap, (bitmap.width * scale).toInt().coerceAtLeast(1),
-                (bitmap.height * scale).toInt().coerceAtLeast(1), true
-            ) else bitmap.copy(Bitmap.Config.ARGB_8888, false)
-        }.getOrNull()
-        if (safeCopy == null) {
-            status.text = "Kapak görseli kaydedilemedi: görüntü belleğe alınamadı."
-            return
-        }
-        Thread({
-            val saved = runCatching {
-                FileOutputStream(destination).use { output ->
-                    check(safeCopy.compress(Bitmap.CompressFormat.JPEG, 92, output)) {
-                        "JPEG kapak dosyası oluşturulamadı."
-                    }
-                }
-                destination.absolutePath
-            }
-            if (!safeCopy.isRecycled) safeCopy.recycle()
-            runOnUiThread {
-                if (isFinishing || isDestroyed || !saved.isSuccess) {
-                    destination.delete()
-                    status.text = "Kapak görseli proje içine kaydedilemedi."
-                    return@runOnUiThread
-                }
-                if (clips.none { it === clip }) {
-                    destination.delete()
-                    status.text = "Klip değişti; kapak kaydı iptal edildi."
-                    return@runOnUiThread
-                }
-                recordProjectEdit()
-                clip.coverTimeMs = sourceTimeMs
-                clip.coverImagePath = saved.getOrThrow()
-                // Do not delete the previous file here: split/duplicate clips may
-                // still reference the same cover asset. Orphan cleanup can be done
-                // safely at project-level once all clip references are known.
-                loadTrimControls()
-                status.text = "Kapak görseli projeye kaydedildi."
-            }
-        }, "cover-image-save").start()
     }
 
     private fun updateTrimLabels() {
