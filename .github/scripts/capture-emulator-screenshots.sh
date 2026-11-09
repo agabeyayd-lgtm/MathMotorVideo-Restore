@@ -1234,7 +1234,31 @@ if ! dump_hierarchy editor-project-audio-panel.xml emulator-screenshots/editor-p
   collect_capture_diagnostics project-history-audio-panel-missing
   exit 93
 fi
-sound_volume_bounds="$(find_content_description_bounds emulator-screenshots/editor-project-audio-panel.xml "Ses efekti ses seviyesi" || true)"
+# The audio panel is a vertically scrollable settings sheet. On a standard
+# viewport only the music controls are initially visible; scroll its own sheet
+# (not the timeline) to expose the sound-effect volume slider.
+audio_sheet_bounds="$(python3 - emulator-screenshots/editor-project-audio-panel.xml <<'PY'
+import re,sys,xml.etree.ElementTree as ET
+root=ET.parse(sys.argv[1]).getroot(); candidates=[]
+for n in root.iter("node"):
+    if n.attrib.get("class")!="android.widget.ScrollView" or n.attrib.get("scrollable")!="true": continue
+    m=re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",n.attrib.get("bounds",""))
+    if not m: continue
+    x1,y1,x2,y2=map(int,m.groups())
+    if x2-x1>900 and y1>1300 and y2-y1>250: candidates.append((x1,y1,x2,y2))
+if not candidates: raise SystemExit("Could not locate the vertical audio settings ScrollView.")
+x1,y1,x2,y2=max(candidates,key=lambda b:(b[2]-b[0])*(b[3]-b[1]))
+print((x1+x2)//2,y1+35,y2-35)
+PY
+)" || { collect_capture_diagnostics project-history-audio-sheet-scrollview-missing; exit 93; }
+read -r audio_scroll_x audio_scroll_top audio_scroll_bottom <<< "$audio_sheet_bounds"
+timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$audio_scroll_x" "$audio_scroll_bottom" "$audio_scroll_x" "$audio_scroll_top" 650
+sleep 1
+if ! dump_hierarchy editor-project-audio-panel-scrolled.xml emulator-screenshots/editor-project-audio-panel-scrolled.xml; then
+  collect_capture_diagnostics project-history-audio-panel-scroll-capture-failed
+  exit 93
+fi
+sound_volume_bounds="$(find_content_description_bounds emulator-screenshots/editor-project-audio-panel-scrolled.xml "Ses efekti ses seviyesi" || true)"
 if [ -z "$sound_volume_bounds" ]; then
   echo "Audio panel did not expose the accessible sound-effect volume slider."
   collect_capture_diagnostics project-history-sound-volume-slider-missing
