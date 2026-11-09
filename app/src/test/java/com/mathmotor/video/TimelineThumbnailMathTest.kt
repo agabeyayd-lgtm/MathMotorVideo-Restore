@@ -1,6 +1,7 @@
 package com.mathmotor.video
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -20,6 +21,26 @@ class TimelineThumbnailMathTest {
     fun decodeBoundsClampInvalidAspectRatiosAndOversampling() {
         assertEquals(122 to 216, TimelineThumbnailMath.decodeBounds(81, 144, Float.NaN))
         assertEquals(81 to 144, TimelineThumbnailMath.decodeBounds(81, 144, 9f / 16f, 1f))
+    }
+
+    @Test
+    fun sourceAspectRatioUsesOriginalDimensionsWithoutThumbnailRounding() {
+        assertEquals(9f / 16f, TimelineThumbnailMath.sourceAspectRatio(360, 640)!!, 0.000001f)
+        assertEquals(16f / 9f, TimelineThumbnailMath.sourceAspectRatio(640, 360)!!, 0.000001f)
+    }
+
+    @Test
+    fun sourceAspectRatioAccountsForQuarterTurnRotationMetadata() {
+        assertEquals(9f / 16f, TimelineThumbnailMath.sourceAspectRatio(640, 360, 90)!!, 0.000001f)
+        assertEquals(16f / 9f, TimelineThumbnailMath.sourceAspectRatio(360, 640, 270)!!, 0.000001f)
+        assertEquals(9f / 16f, TimelineThumbnailMath.sourceAspectRatio(360, 640, 450)!!, 0.000001f)
+    }
+
+    @Test
+    fun sourceAspectRatioRejectsMissingOrInvalidSourceDimensions() {
+        assertNull(TimelineThumbnailMath.sourceAspectRatio(0, 640))
+        assertNull(TimelineThumbnailMath.sourceAspectRatio(360, 0))
+        assertNull(TimelineThumbnailMath.sourceAspectRatio(-1, 640))
     }
 
     @Test

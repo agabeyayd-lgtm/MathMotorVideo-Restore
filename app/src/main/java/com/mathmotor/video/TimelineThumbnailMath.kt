@@ -46,6 +46,19 @@ internal object TimelineThumbnailMath {
             (height * scale).toInt().coerceIn(1, boundHeight)
     }
 
+    /** Returns the unscaled source-video aspect ratio, accounting for display rotation. */
+    fun sourceAspectRatio(sourceWidth: Int, sourceHeight: Int, rotationDegrees: Int = 0): Float? {
+        if (sourceWidth <= 0 || sourceHeight <= 0) return null
+        val normalizedRotation = ((rotationDegrees % 360) + 360) % 360
+        val swapsDimensions = normalizedRotation == 90 || normalizedRotation == 270
+        val ratio = if (swapsDimensions) {
+            sourceHeight.toFloat() / sourceWidth.toFloat()
+        } else {
+            sourceWidth.toFloat() / sourceHeight.toFloat()
+        }
+        return ratio.takeIf { it.isFinite() && it > 0f }
+    }
+
     /** Decode at 1.5x the real cell size, preserving source aspect ratio. */
     fun decodeBounds(
         cellWidthPx: Int,

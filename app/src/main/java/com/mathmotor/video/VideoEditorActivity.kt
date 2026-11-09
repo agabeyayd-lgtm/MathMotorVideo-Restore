@@ -11236,6 +11236,24 @@ class VideoEditorActivity : Activity() {
         }
     }
 
+    /** Reads the authoritative source dimensions before the filmstrip frame is downscaled. */
+    private fun readTimelineSourceAspectRatioFromMetadata(uri: Uri): Float? {
+        timelineVideoAspectRatios[uri.toString()]?.let { return it }
+        val retriever = timelineThumbnailRetrieverFor(uri, "TimelineThumbnailMetadata") ?: return null
+        return runCatching {
+            val sourceWidth = retriever.extractMetadata(
+                MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH
+            )?.toIntOrNull() ?: return@runCatching null
+            val sourceHeight = retriever.extractMetadata(
+                MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT
+            )?.toIntOrNull() ?: return@runCatching null
+            val rotationDegrees = retriever.extractMetadata(
+                MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION
+            )?.toIntOrNull() ?: 0
+            TimelineThumbnailMath.sourceAspectRatio(sourceWidth, sourceHeight, rotationDegrees)
+        }.getOrNull()
+    }
+
     private fun decodeTimelineFrame(
         uri: Uri,
         timeMs: Long,
@@ -11497,7 +11515,11 @@ class VideoEditorActivity : Activity() {
             var frameDecodeDurationMs = -1L
             var bitmapScaleDurationMs = 0L
             var decoded: Bitmap? = null
+            var decodedSourceAspectRatio: Float? = null
             try {
+                // The scaled filmstrip bitmap can lose aspect precision through integer rounding.
+                // Always learn the project framing from original video metadata instead.
+                decodedSourceAspectRatio = readTimelineSourceAspectRatioFromMetadata(uri)
                 val frameDecodeStartedAtUptimeMs = SystemClock.uptimeMillis()
                 val original = decodeTimelineFrame(uri, timestampMs, decodeWidthPx, decodeHeightPx)
                 val frameDecodedAtUptimeMs = SystemClock.uptimeMillis()
@@ -11553,18 +11575,24 @@ class VideoEditorActivity : Activity() {
                 var appliedAttachedTargets = 0
                 if (result != null && !isFinishing && !isDestroyed) {
                     timelineThumbnailCache.put(key, result)
-                    val decodedAspectRatio = result.width.toFloat() / result.height.coerceAtLeast(1).toFloat()
-                    val previousAspectRatio = timelineVideoAspectRatios.putIfAbsent(uri.toString(), decodedAspectRatio)
-                    if (previousAspectRatio == null &&
-                        kotlin.math.abs(decodedAspectRatio - TimelineThumbnailMath.DEFAULT_SOURCE_ASPECT_RATIO) > 0.02f
-                    ) {
-                        // The first decoded frame reveals the real source orientation.
-                        // Reflow both the timeline cells and the SOURCE project canvas;
-                        // video-size callbacks can arrive before this thumbnail is decoded.
-                        refreshTimelineTracks()
-                        if (exportCanvasPreset == VideoCanvasPreset.SOURCE) {
-                            updatePreviewCanvasSize()
+                    decodedSourceAspectRatio?.let { sourceAspectRatio ->
+                        val previousAspectRatio = timelineVideoAspectRatios.putIfAbsent(
+                            uri.toString(), sourceAspectRatio
+                        )
+                        if (previousAspectRatio == null &&
+                            kotlin.math.abs(sourceAspectRatio - TimelineThumbnailMath.DEFAULT_SOURCE_ASPECT_RATIO) > 0.0001f
+                        ) {
+                            // Reflow from exact source metadata, never from the downscaled bitmap's
+                            // integer dimensions; tiny thumbnail rounding must not change the canvas.
+                            refreshTimelineTracks()
+                            if (exportCanvasPreset == VideoCanvasPreset.SOURCE) {
+                                updatePreviewCanvasSize()
+                            }
                         }
+                        if (timelineSyncTestEnabled) android.util.Log.i(
+                            "TimelineFrameSyncTest",
+                            "TIMELINE_SOURCE_ASPECT_METADATA uri=$uri aspect=$sourceAspectRatio"
+                        )
                     }
                     if (timelineSyncTestEnabled) android.util.Log.i(
                         "TimelineFrameSyncTest",

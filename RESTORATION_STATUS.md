@@ -1525,3 +1525,10 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Root causes: `TimelineThumbnailMath.decodeBounds` used `roundToInt` without importing `kotlin.math.roundToInt`; the thumbnail scaling block referenced out-of-scope `maxWidthPx/maxHeightPx` instead of the already calculated `decodeWidthPx/decodeHeightPx`.
 - Corrected both source errors. The performance threshold remains unchanged; this fix only restores compilation and correctly constrains the scaled bitmap to the target-cell decode bounds.
 - A new exact-head CI run is required before judging the thumbnail performance improvement. No APK was produced or released from the failed run.
+
+
+### 2026-11-09 — Preserve exact source aspect when decoding small filmstrip thumbnails
+- API 35 run `42686126268` passed video launch/import and the music + sound-effect waveform render assertions, then failed the strict 9:16 project-canvas ratio check: the measured canvas was `422x753`.
+- Root cause: the editor learned source aspect from the already downscaled thumbnail bitmap. At small dimensions, integer rounding in the decoded bitmap can make a true 9:16 source look slightly wider/narrower, and that approximate ratio then incorrectly changes the project canvas.
+- The timeline now reads source width, height and rotation from `MediaMetadataRetriever` before downscaling the frame. Thumbnail dimensions are used only for display, never to redefine project framing. Added pure tests for portrait, landscape, 90/270-degree rotation and invalid metadata.
+- The emulator's 9:16 ratio threshold is unchanged. Exact-head unit/build and API 35 emulator verification are required before considering this fixed; no app version bump, release or merge.
