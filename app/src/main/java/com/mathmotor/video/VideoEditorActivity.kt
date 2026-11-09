@@ -1484,6 +1484,7 @@ class VideoEditorActivity : Activity() {
         clipVolumeSeek = SeekBar(this).apply {
             max = 100
             progress = sourceAudioVolume
+            contentDescription = "Orijinal video ses seviyesi"
             setOnSeekBarChangeListener(volumeListener { value ->
                 sourceAudioVolume = value
                 clipVolumeLabel.text = "Orijinal video sesi: " + value + "%"
@@ -1814,7 +1815,11 @@ class VideoEditorActivity : Activity() {
         audioPanel.addView(musicActions)
         musicVolumeLabel = label("Müzik sesi: 45%", 12f, Color.WHITE, true)
         audioPanel.addView(musicVolumeLabel)
-        musicVolumeSeek = SeekBar(this).apply { max = 100; progress = musicVolume }
+        musicVolumeSeek = SeekBar(this).apply {
+            max = 100
+            progress = musicVolume
+            contentDescription = "Müzik ses seviyesi"
+        }
         musicVolumeSeek.setOnSeekBarChangeListener(volumeListener { value ->
             musicVolume = value
             musicVolumeLabel.text = "Müzik sesi: " + value + "%"
@@ -1899,7 +1904,11 @@ class VideoEditorActivity : Activity() {
         audioPanel.addView(soundStartSeek, matchWrap())
         soundVolumeLabel = label("Efekt sesi: 100%", 12f, Color.WHITE, true)
         audioPanel.addView(soundVolumeLabel)
-        soundVolumeSeek = SeekBar(this).apply { max = 100; progress = soundVolume }
+        soundVolumeSeek = SeekBar(this).apply {
+            max = 100
+            progress = soundVolume
+            contentDescription = "Ses efekti ses seviyesi"
+        }
         soundVolumeSeek.setOnSeekBarChangeListener(volumeListener { value ->
             soundVolume = value
             soundVolumeLabel.text = "Efekt sesi: " + value + "%"
@@ -1929,7 +1938,11 @@ class VideoEditorActivity : Activity() {
         audioPanel.addView(keepSourceAudio)
         sourceVolumeLabel = label("Orijinal video sesi: 100%", 12f, Color.WHITE, true)
         audioPanel.addView(sourceVolumeLabel)
-        sourceVolumeSeek = SeekBar(this).apply { max = 100; progress = sourceAudioVolume }
+        sourceVolumeSeek = SeekBar(this).apply {
+            max = 100
+            progress = sourceAudioVolume
+            contentDescription = "Orijinal video ses seviyesi"
+        }
         sourceVolumeSeek.setOnSeekBarChangeListener(volumeListener { value ->
             sourceAudioVolume = value
             sourceVolumeLabel.text = "Orijinal video sesi: " + value + "%"
@@ -6625,6 +6638,8 @@ class VideoEditorActivity : Activity() {
                 "beforeSoundDurationMs=${current.soundDurationMs} afterSoundDurationMs=${restored.soundDurationMs} " +
                 "beforeSoundSourceStartMs=${current.soundSourceStartMs} afterSoundSourceStartMs=${restored.soundSourceStartMs} " +
                 "beforeSoundVolume=${current.soundVolume} afterSoundVolume=${restored.soundVolume} " +
+                "beforeSourceAudioVolume=${current.sourceAudioVolume} afterSourceAudioVolume=${restored.sourceAudioVolume} " +
+                "beforeKeepSourceAudio=${current.keepSourceAudio} afterKeepSourceAudio=${restored.keepSourceAudio} " +
                 "beforeFilter=${current.videoFilterPreset} afterFilter=${restored.videoFilterPreset} " +
                 "beforeOverlayTransform=$beforeOverlayTransform afterOverlayTransform=$afterOverlayTransform"
         )
@@ -6719,6 +6734,27 @@ class VideoEditorActivity : Activity() {
         suppressHistoryMutationCallbacks = true
         if (::keepSourceAudio.isInitialized) keepSourceAudio.isChecked = snapshot.keepSourceAudio
         suppressHistoryMutationCallbacks = false
+        // Undo/Redo must restore the controls as well as the underlying mix.
+        // Programmatic SeekBar updates do not dispatch user edits, so they do not
+        // create new history entries.
+        if (::musicVolumeSeek.isInitialized) musicVolumeSeek.progress = musicVolume
+        if (::musicVolumeLabel.isInitialized) musicVolumeLabel.text = "Müzik sesi: $musicVolume%"
+        if (::soundVolumeSeek.isInitialized) soundVolumeSeek.progress = soundVolume
+        if (::soundVolumeLabel.isInitialized) soundVolumeLabel.text = "Efekt sesi: $soundVolume%"
+        if (::sourceVolumeSeek.isInitialized) sourceVolumeSeek.progress = sourceAudioVolume
+        if (::sourceVolumeLabel.isInitialized) sourceVolumeLabel.text = "Orijinal video sesi: $sourceAudioVolume%"
+        if (::clipVolumeSeek.isInitialized) clipVolumeSeek.progress = sourceAudioVolume
+        if (::clipVolumeLabel.isInitialized) clipVolumeLabel.text = "Orijinal video sesi: $sourceAudioVolume%"
+        player?.volume = if (snapshot.keepSourceAudio) sourceAudioVolume / 100f else 0f
+        if (timelineSyncTestEnabled) {
+            android.util.Log.i(
+                "ProjectHistoryTest",
+                "PROJECT_HISTORY_CONTROLS musicModel=$musicVolume musicSeek=${if (::musicVolumeSeek.isInitialized) musicVolumeSeek.progress else -1} " +
+                    "soundModel=$soundVolume soundSeek=${if (::soundVolumeSeek.isInitialized) soundVolumeSeek.progress else -1} " +
+                    "sourceModel=$sourceAudioVolume sourceSeek=${if (::sourceVolumeSeek.isInitialized) sourceVolumeSeek.progress else -1} " +
+                    "clipSourceSeek=${if (::clipVolumeSeek.isInitialized) clipVolumeSeek.progress else -1}"
+            )
+        }
         if (::soundLabel.isInitialized) {
             soundLabel.text = soundTitle?.let { "Ses/efekt: $it • ${formatMs(soundSourceDurationMs)}" }
                 ?: "Ses efekti seçilmedi."
