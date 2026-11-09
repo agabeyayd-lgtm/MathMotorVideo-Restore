@@ -2960,6 +2960,17 @@ if [ "$text_drag_dx" -lt -6 ] || [ "$text_drag_dx" -gt 6 ] || [ "$text_drag_dy" 
 fi
 echo "PASS: vertical in-canvas text drag moved the rendered selection frame from ($text_before_x,$text_before_y) to ($text_after_x,$text_after_y) without shifting it beyond the canvas edges."
 
+# Return from the text detail panel before querying project-wide history. The
+# pinned action was measured when the panel first opened, so this does not rely
+# on a fresh UIAutomator dump while the preview is still settling after drag.
+if [ -z "${text_panel_back:-}" ]; then
+  echo "The measured text-panel return action is unavailable after the canvas drag."
+  collect_capture_diagnostics text-history-panel-return-missing
+  exit 63
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_panel_back
+sleep 1
+
 echo "Step 8b: verify project-wide Undo/Redo restores a real text-canvas drag"
 dump_hierarchy editor-text-history-before-undo.xml emulator-screenshots/editor-text-history-before-undo.xml || {
   echo "Could not inspect the editor controls before the project-history test."
