@@ -11279,6 +11279,10 @@ class VideoEditorActivity : Activity() {
         val cached = coverThumbnailCache.get(key)
         if (cached != null && !cached.isRecycled) {
             target.setImageBitmap(cached)
+            android.util.Log.i(
+                "ClipCover",
+                "COVER_TILE_READY source=${if (savedPath != null) "saved-cache" else "video-cache"} key=$key"
+            )
             return
         }
 
@@ -11312,11 +11316,20 @@ class VideoEditorActivity : Activity() {
                 val targets = pendingCoverThumbnailTargets.remove(key).orEmpty()
                 if (decoded != null && !decoded.isRecycled && !isFinishing && !isDestroyed) {
                     coverThumbnailCache.put(key, decoded)
+                    var appliedTargets = 0
                     targets.forEach { reference ->
                         val image = reference.get() ?: return@forEach
                         val token = image.tag?.toString() ?: return@forEach
-                        if (token.startsWith("$key|")) image.setImageBitmap(decoded)
+                        if (token.startsWith("$key|")) {
+                            image.setImageBitmap(decoded)
+                            appliedTargets++
+                        }
                     }
+                    if (appliedTargets > 0) android.util.Log.i(
+                        "ClipCover",
+                        "COVER_TILE_READY source=${if (savedPath != null) "saved-file" else "video-frame"} " +
+                            "sourceMs=$frameTimeMs width=${decoded.width} height=${decoded.height} targets=$appliedTargets"
+                    )
                 } else {
                     decoded?.let { if (!it.isRecycled) it.recycle() }
                 }
@@ -11409,6 +11422,7 @@ class VideoEditorActivity : Activity() {
             return
         }
 
+        android.util.Log.i("ClipCover", "COVER_PICKER_OPENED clip=$clipIndex coverTimeMs=${clip.coverTimeMs}")
         pauseActivePreview()
         val firstAllowedMs = clip.startMs.coerceIn(0L, clip.durationMs)
         val lastAllowedMs = (clip.endMs - 1L).coerceIn(
@@ -11468,6 +11482,10 @@ class VideoEditorActivity : Activity() {
                         val previous = previewBitmap
                         previewBitmap = decoded
                         coverPreview.setImageBitmap(decoded)
+                        android.util.Log.i(
+                            "ClipCover",
+                            "COVER_PICKER_FRAME_READY sourceMs=$requestedTimeMs width=${decoded.width} height=${decoded.height}"
+                        )
                         if (previous !== decoded && previous != null && !previous.isRecycled) previous.recycle()
                     } else {
                         timestampLabel.text = "Bu kare okunamadı: ${formatTimelineMs(requestedTimeMs)}"
