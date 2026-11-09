@@ -3777,6 +3777,71 @@ for edge_direction in "start trim" "start extend" "end trim" "end extend"; do
   assert_video_edge_trim "$edge" "$direction"
 done
 
+echo "Step 11a-VideoHistory: verify the last real video edge trim is one global Undo/Redo step"
+dump_hierarchy editor-video-trim-history-after.xml emulator-screenshots/editor-video-trim-history-after.xml || { collect_capture_diagnostics project-history-video-trim-controls-missing; exit 103; }
+video_trim_undo_coords="$(python3 - emulator-screenshots/editor-video-trim-history-after.xml <<'PY'
+import re,sys,xml.etree.ElementTree as ET
+root=ET.parse(sys.argv[1]).getroot()
+for n in root.iter("node"):
+    if n.attrib.get("content-desc","").strip()=="Proje işlemini geri al" and n.attrib.get("enabled","false").lower()=="true":
+        m=re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",n.attrib.get("bounds",""))
+        if m:
+            x1,y1,x2,y2=map(int,m.groups()); print((x1+x2)//2,(y1+y2)//2); raise SystemExit(0)
+raise SystemExit("Global Undo unavailable after a physical video trim.")
+PY
+)" || { collect_capture_diagnostics project-history-video-trim-undo-disabled; exit 103; }
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $video_trim_undo_coords
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-video-trim-undo.txt 2>&1 || true
+video_trim_history_values="$(python3 - emulator-screenshots/project-history-video-trim-undo.txt <<'PY'
+import re,sys
+lines=open(sys.argv[1],errors="replace").read().splitlines()
+events=[x for x in lines if "PROJECT_HISTORY_APPLIED action=undo " in x]
+if not events: raise SystemExit("No global project Undo diagnostic followed the video trim.")
+m=re.search(r"beforeClipRanges=([^ ]+) afterClipRanges=([^ ]+)",events[-1])
+if not m: raise SystemExit("Undo diagnostics did not contain complete video clip ranges: "+events[-1])
+trimmed,restored=m.groups()
+if trimmed==restored: raise SystemExit("Video trim Undo did not restore a previous clip range: "+events[-1])
+def first_clip(raw):
+    return tuple(raw.split(";")[0].split(","))
+before,after=first_clip(trimmed),first_clip(restored)
+if len(before)<9 or len(after)<9: raise SystemExit("Video history range tuple is incomplete.")
+if before[0]!="0" or after[0]!="0": raise SystemExit(f"First main-video clip moved away from zero during Undo: {before}, {after}")
+print(trimmed,restored)
+PY
+)" || { collect_capture_diagnostics project-history-video-trim-undo-failed; exit 104; }
+read -r trimmed_video_ranges restored_video_ranges <<< "$video_trim_history_values"
+echo "PASS: one global Undo restored the previous main-video clip range."
+dump_hierarchy editor-video-trim-history-before-redo.xml emulator-screenshots/editor-video-trim-history-before-redo.xml || { collect_capture_diagnostics project-history-video-trim-redo-controls-missing; exit 104; }
+video_trim_redo_coords="$(python3 - emulator-screenshots/editor-video-trim-history-before-redo.xml <<'PY'
+import re,sys,xml.etree.ElementTree as ET
+root=ET.parse(sys.argv[1]).getroot()
+for n in root.iter("node"):
+    if n.attrib.get("content-desc","").strip()=="Proje işlemini yinele" and n.attrib.get("enabled","false").lower()=="true":
+        m=re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",n.attrib.get("bounds",""))
+        if m:
+            x1,y1,x2,y2=map(int,m.groups()); print((x1+x2)//2,(y1+y2)//2); raise SystemExit(0)
+raise SystemExit("Global Redo unavailable after video trim Undo.")
+PY
+)" || { collect_capture_diagnostics project-history-video-trim-redo-disabled; exit 104; }
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $video_trim_redo_coords
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-video-trim-redo.txt 2>&1 || true
+python3 - emulator-screenshots/project-history-video-trim-redo.txt "$trimmed_video_ranges" "$restored_video_ranges" <<'PY'
+import re,sys
+lines=open(sys.argv[1],errors="replace").read().splitlines()
+events=[x for x in lines if "PROJECT_HISTORY_APPLIED action=redo " in x]
+if not events: raise SystemExit("No global project Redo diagnostic followed the video trim Undo.")
+m=re.search(r"beforeClipRanges=([^ ]+) afterClipRanges=([^ ]+)",events[-1])
+if not m: raise SystemExit("Redo diagnostics did not contain complete video clip ranges: "+events[-1])
+before,after=m.groups()
+expected_trimmed,expected_restored=sys.argv[2:4]
+if before!=expected_restored or after!=expected_trimmed: raise SystemExit("Video trim Redo did not reapply the exact post-trim clip arrangement: "+events[-1])
+print("PASS: one global Redo reapplied the exact video trim and timeline arrangement.")
+PY
+
 echo "PASS: both video trim grips were physically dragged inward and outward; source edges stayed independent and the main-video lane remained gapless."
 echo "PASS: split seam is 0ms; direct drag, visible filmstrip seam and reorder geometry verified; draft save/reopen follows."
 
