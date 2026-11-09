@@ -7893,7 +7893,7 @@ class VideoEditorActivity : Activity() {
         }
     }
 
-    private fun createProjectJson(): JSONObject {
+    private fun createProjectJson(includeCoverAssets: Boolean = false): JSONObject {
         syncSelectedTextLayerFromControls()
         val clipArray = JSONArray()
         val textLayerArray = JSONArray()
@@ -7932,6 +7932,14 @@ class VideoEditorActivity : Activity() {
                 put("transformTranslateY", clip.transformTranslateY)
                 put("coverTimeMs", clip.coverTimeMs ?: JSONObject.NULL)
                 put("coverImagePath", clip.coverImagePath ?: JSONObject.NULL)
+                if (includeCoverAssets) {
+                    val coverBytes = clip.coverImagePath?.let { path ->
+                        runCatching { File(path).takeIf { it.isFile && it.length() in 1..6_000_000L }?.readBytes() }.getOrNull()
+                    }
+                    coverBytes?.let { bytes ->
+                        put("coverImageBase64", android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP))
+                    }
+                }
                 put("speed", clip.speed)
             })
         }
@@ -8047,6 +8055,23 @@ class VideoEditorActivity : Activity() {
             val end = item.optLong("endMs", duration).coerceIn(start, duration)
             require(duration > 0L && end > start) { "Projede geçersiz klip aralığı var." }
             val timelineStartMs=if(item.has("timelineStartMs"))item.optLong("timelineStartMs",legacyTimelineCursorMs).coerceAtLeast(0L) else legacyTimelineCursorMs
+            val embeddedCoverPath = item.optString("coverImageBase64").takeIf { it.isNotBlank() }?.let { encoded ->
+                runCatching {
+                    require(encoded.length <= 8_000_000) { "Kapak görseli proje dosyasında çok büyük." }
+                    val bytes = android.util.Base64.decode(encoded, android.util.Base64.DEFAULT)
+                    require(bytes.isNotEmpty() && bytes.size <= 6_000_000) { "Kapak görseli geçersiz." }
+                    val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                    require(bounds.outWidth in 1..4096 && bounds.outHeight in 1..4096) { "Kapak görseli boyutları geçersiz." }
+                    val directory = File(filesDir, "project_covers").apply { mkdirs() }
+                    val destination = File(directory, "cover_import_${java.util.UUID.randomUUID()}.jpg")
+                    destination.writeBytes(bytes)
+                    destination.absolutePath
+                }.getOrNull()
+            }
+            val existingCoverPath = item.optString("coverImagePath")
+                .takeIf { it.isNotBlank() && it != "null" && File(it).isFile }
+            val loadedCoverPath = embeddedCoverPath ?: existingCoverPath
             val loadedClip = Clip(
                 uri = uri,
                 title = item.optString("title", "Video klibi"),
@@ -8063,7 +8088,7 @@ class VideoEditorActivity : Activity() {
                 coverTimeMs = if (item.has("coverTimeMs") && !item.isNull("coverTimeMs")) {
                     item.optLong("coverTimeMs", start).coerceIn(start, (end - 1L).coerceAtLeast(start))
                 } else null,
-                coverImagePath = item.optString("coverImagePath").takeIf { it.isNotBlank() && it != "null" },
+                coverImagePath = loadedCoverPath,
                 speed = ClipSpeedMath.normalize(item.optDouble("speed", 1.0).toFloat())
             )
             normalizeClipTransform(loadedClip)
@@ -9336,7 +9361,7 @@ class VideoEditorActivity : Activity() {
         when (requestCode) {
             REQUEST_SAVE_PROJECT -> {
                 runCatching {
-                    contentResolver.openOutputStream(uri)?.bufferedWriter(Charsets.UTF_8)?.use { it.write(createProjectJson().toString(2)) }
+                    contentResolver.openOutputStream(uri)?.bufferedWriter(Charsets.UTF_8)?.use { it.write(createProjectJson(includeCoverAssets = true).toString(2)) }
                         ?: error("Proje dosyası açılamadı.")
                 }.onSuccess {
                     status.text = "PROJE KAYDEDİLDİ. Daha sonra 'Kayıtlı projeyi aç' ile devam edebilirsin."
