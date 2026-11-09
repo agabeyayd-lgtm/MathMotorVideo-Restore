@@ -11335,6 +11335,66 @@ class VideoEditorActivity : Activity() {
         }
     }
 
+    private fun persistClipCoverImage(bitmap: Bitmap, clip: Clip, sourceTimeMs: Long) {
+        val directory = File(filesDir, "project_covers").apply { mkdirs() }
+        val destination = File(directory, "cover_${java.util.UUID.randomUUID()}.jpg")
+        val safeCopy = runCatching {
+            val maxSide = 720
+            val sourceMax = maxOf(bitmap.width, bitmap.height).coerceAtLeast(1)
+            val scale = minOf(1f, maxSide.toFloat() / sourceMax.toFloat())
+            if (scale < 1f) {
+                Bitmap.createScaledBitmap(
+                    bitmap,
+                    (bitmap.width * scale).toInt().coerceAtLeast(1),
+                    (bitmap.height * scale).toInt().coerceAtLeast(1),
+                    true
+                )
+            } else {
+                bitmap.copy(Bitmap.Config.ARGB_8888, false)
+            }
+        }.getOrNull()
+        if (safeCopy == null) {
+            status.text = "Kapak görseli kaydedilemedi: görüntü belleğe alınamadı."
+            return
+        }
+
+        Thread({
+            val saved = runCatching {
+                FileOutputStream(destination).use { output ->
+                    check(safeCopy.compress(Bitmap.CompressFormat.JPEG, 92, output)) {
+                        "JPEG kapak dosyası oluşturulamadı."
+                    }
+                }
+                check(destination.isFile && destination.length() > 0L) {
+                    "Kapak görseli boş kaydedildi."
+                }
+                destination.absolutePath
+            }
+            if (!safeCopy.isRecycled) safeCopy.recycle()
+            runOnUiThread {
+                if (isFinishing || isDestroyed || saved.isFailure) {
+                    destination.delete()
+                    status.text = "Kapak görseli proje içine kaydedilemedi."
+                    return@runOnUiThread
+                }
+                if (clips.none { it === clip }) {
+                    destination.delete()
+                    status.text = "Klip değişti; kapak kaydı iptal edildi."
+                    return@runOnUiThread
+                }
+                recordProjectEdit()
+                clip.coverTimeMs = sourceTimeMs
+                clip.coverImagePath = saved.getOrThrow()
+                android.util.Log.i(
+                    "ClipCover",
+                    "COVER_STILL_SAVED path=${clip.coverImagePath} bytes=${destination.length()} sourceMs=$sourceTimeMs"
+                )
+                loadTrimControls()
+                status.text = "Kapak görseli projeye kaydedildi."
+            }
+        }, "cover-image-save").start()
+    }
+
     private fun updateTrimLabels() {
         val clip = selectedClip()
         startLabel.text = "Başlangıç: ${formatTimelineMs(clip?.startMs ?: 0L)}"
