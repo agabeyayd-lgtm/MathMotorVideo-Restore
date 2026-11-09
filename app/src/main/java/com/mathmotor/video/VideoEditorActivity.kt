@@ -631,8 +631,6 @@ class VideoEditorActivity : Activity() {
     private var updatingOverlayControls = false
     private var clipCoverButton: TextView? = null
     private var clipCoverThumbnailView: ImageView? = null
-    private var clipCoverThumbnailGeneration = 0L
-    private var clipCoverThumbnailBitmap: Bitmap? = null
     private var pendingCoverSaveBitmap: Bitmap? = null
     private lateinit var startLabel: TextView
     private lateinit var endLabel: TextView
@@ -11232,33 +11230,27 @@ class VideoEditorActivity : Activity() {
 
     private fun refreshClipCoverThumbnail(clip: Clip?) {
         val target = clipCoverThumbnailView ?: return
-        val generation = ++clipCoverThumbnailGeneration
         if (clip == null) {
+            target.tag = null
             target.setImageDrawable(null)
             target.setBackgroundColor(Color.rgb(37, 45, 55))
             return
         }
-        val frameTimeMs = (clip.coverTimeMs ?: clip.startMs).coerceIn(0L, (clip.durationMs - 1L).coerceAtLeast(0L))
-        val task = TimelineThumbnailTask(-3L, timelineThumbnailTaskSequence.incrementAndGet()) {
-            val decoded = decodeTimelinePreviewFrame(clip.uri, frameTimeMs)
-            runOnUiThread {
-                if (generation != clipCoverThumbnailGeneration || selectedClip() !== clip || isFinishing || isDestroyed) {
-                    decoded?.let { if (!it.isRecycled) it.recycle() }
-                    return@runOnUiThread
-                }
-                if (decoded != null && !decoded.isRecycled) {
-                    val previous = clipCoverThumbnailBitmap
-                    clipCoverThumbnailBitmap = decoded
-                    target.setImageBitmap(decoded)
-                    previous?.let { if (it !== decoded && !it.isRecycled) it.recycle() }
-                }
-            }
-        }
-        try {
-            timelineThumbnailExecutor.execute(task)
-        } catch (_: java.util.concurrent.RejectedExecutionException) {
-            // Keep the styled tile available; the picker remains usable.
-        }
+        val frameTimeMs = (clip.coverTimeMs ?: clip.startMs)
+            .coerceIn(0L, (clip.durationMs - 1L).coerceAtLeast(0L))
+
+        // Reuse the exact timestamped filmstrip thumbnail pipeline/cache.
+        // This avoids a second, high-resolution decode just for the cover tile,
+        // and requestTimelineThumbnail deduplicates any in-flight matching frame.
+        requestTimelineThumbnail(
+            uri = clip.uri,
+            timeMs = frameTimeMs,
+            target = target,
+            priorityDistanceMs = 0L,
+            cellStartMs = frameTimeMs,
+            cellEndMs = frameTimeMs + 1L,
+            usePosterPlaceholder = false
+        )
     }
 
     private fun updateTrimLabels() {
