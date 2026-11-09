@@ -1599,7 +1599,13 @@ for node in root.iter("node"):
         x1,y1,x2,y2 = map(int,m.groups()); print((x1+x2)//2,(y1+y2)//2); raise SystemExit(0)
 raise SystemExit("Project Undo is unavailable after the volume gesture.")
 PY
-)" || { collect_capture_diagnostics project-history-sound-volume-undo-disabled; exit 93; }
+)" || {
+  echo "Undo is unavailable after the real SFX-volume swipe. Captured touch and history values follow."
+  cat emulator-screenshots/sound-volume-touch-logcat.txt || true
+  cat emulator-screenshots/project-history-sound-volume-gesture.txt || true
+  collect_capture_diagnostics project-history-sound-volume-undo-disabled
+  exit 93
+}
 timeout -k 2s 8s adb -s emulator-5554 logcat -c
 timeout -k 2s 8s adb -s emulator-5554 shell input tap $volume_undo_coords
 sleep 1
