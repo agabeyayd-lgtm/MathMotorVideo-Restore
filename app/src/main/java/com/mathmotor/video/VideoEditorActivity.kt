@@ -106,6 +106,7 @@ class VideoEditorActivity : Activity() {
         var transformTranslateY: Float = 0f,
         var frameRate: Double? = null,
         var coverTimeMs: Long? = null,
+        var coverImagePath: String? = null,
         var speed: Float = 1f
     )
 
@@ -7920,6 +7921,7 @@ class VideoEditorActivity : Activity() {
                 put("transformTranslateX", clip.transformTranslateX)
                 put("transformTranslateY", clip.transformTranslateY)
                 put("coverTimeMs", clip.coverTimeMs ?: JSONObject.NULL)
+                put("coverImagePath", clip.coverImagePath ?: JSONObject.NULL)
                 put("speed", clip.speed)
             })
         }
@@ -8051,6 +8053,7 @@ class VideoEditorActivity : Activity() {
                 coverTimeMs = if (item.has("coverTimeMs") && !item.isNull("coverTimeMs")) {
                     item.optLong("coverTimeMs", start).coerceIn(start, (end - 1L).coerceAtLeast(start))
                 } else null,
+                coverImagePath = item.optString("coverImagePath").takeIf { it.isNotBlank() && it != "null" },
                 speed = ClipSpeedMath.normalize(item.optDouble("speed", 1.0).toFloat())
             )
             normalizeClipTransform(loadedClip)
@@ -11236,21 +11239,91 @@ class VideoEditorActivity : Activity() {
             target.setBackgroundColor(Color.rgb(37, 45, 55))
             return
         }
+        val generation = (target.tag as? Long ?: 0L) + 1L
+        target.tag = generation
+        val savedPath = clip.coverImagePath
+        if (!savedPath.isNullOrBlank()) {
+            Thread({
+                val bitmap = android.graphics.BitmapFactory.decodeFile(savedPath)
+                runOnUiThread {
+                    if (target.tag != generation || selectedClip() !== clip || isFinishing || isDestroyed) {
+                        bitmap?.let { if (!it.isRecycled) it.recycle() }
+                        return@runOnUiThread
+                    }
+                    if (bitmap != null && !bitmap.isRecycled) target.setImageBitmap(bitmap)
+                    else refreshClipCoverThumbnailFromVideo(clip, target, generation)
+                }
+            }, "cover-image-load").start()
+            return
+        }
+        refreshClipCoverThumbnailFromVideo(clip, target, generation)
+    }
+
+    private fun refreshClipCoverThumbnailFromVideo(clip: Clip, target: ImageView, generation: Long) {
         val frameTimeMs = (clip.coverTimeMs ?: clip.startMs)
             .coerceIn(0L, (clip.durationMs - 1L).coerceAtLeast(0L))
+        val task = TimelineThumbnailTask(-4L, timelineThumbnailTaskSequence.incrementAndGet()) {
+            val decoded = decodeTimelinePreviewFrame(clip.uri, frameTimeMs)
+            runOnUiThread {
+                if (target.tag != generation || selectedClip() !== clip || isFinishing || isDestroyed) {
+                    decoded?.let { if (!it.isRecycled) it.recycle() }
+                    return@runOnUiThread
+                }
+                if (decoded != null && !decoded.isRecycled) target.setImageBitmap(decoded)
+            }
+        }
+        try {
+            timelineThumbnailExecutor.execute(task)
+        } catch (_: java.util.concurrent.RejectedExecutionException) {
+            // Keep the tile responsive; the user can retry by opening the cover picker.
+        }
+    }
 
-        // Reuse the exact timestamped filmstrip thumbnail pipeline/cache.
-        // This avoids a second, high-resolution decode just for the cover tile,
-        // and requestTimelineThumbnail deduplicates any in-flight matching frame.
-        requestTimelineThumbnail(
-            uri = clip.uri,
-            timeMs = frameTimeMs,
-            target = target,
-            priorityDistanceMs = 0L,
-            cellStartMs = frameTimeMs,
-            cellEndMs = frameTimeMs + 1L,
-            usePosterPlaceholder = false
-        )
+    private fun persistClipCoverImage(bitmap: Bitmap, clip: Clip, sourceTimeMs: Long) {
+        val directory = File(filesDir, "project_covers").apply { mkdirs() }
+        val destination = File(directory, "cover_${java.util.UUID.randomUUID()}.jpg")
+        val previousPath = clip.coverImagePath
+        val safeCopy = runCatching {
+            val maxSide = 720
+            val scale = minOf(1f, maxSide.toFloat() / maxOf(bitmap.width, bitmap.height).toFloat())
+            if (scale < 1f) Bitmap.createScaledBitmap(
+                bitmap, (bitmap.width * scale).toInt().coerceAtLeast(1),
+                (bitmap.height * scale).toInt().coerceAtLeast(1), true
+            ) else bitmap.copy(Bitmap.Config.ARGB_8888, false)
+        }.getOrNull()
+        if (safeCopy == null) {
+            status.text = "Kapak görseli kaydedilemedi: görüntü belleğe alınamadı."
+            return
+        }
+        Thread({
+            val saved = runCatching {
+                FileOutputStream(destination).use { output ->
+                    check(safeCopy.compress(Bitmap.CompressFormat.JPEG, 92, output)) {
+                        "JPEG kapak dosyası oluşturulamadı."
+                    }
+                }
+                destination.absolutePath
+            }
+            if (!safeCopy.isRecycled) safeCopy.recycle()
+            runOnUiThread {
+                if (isFinishing || isDestroyed || !saved.isSuccess) {
+                    destination.delete()
+                    status.text = "Kapak görseli proje içine kaydedilemedi."
+                    return@runOnUiThread
+                }
+                if (clips.none { it === clip }) {
+                    destination.delete()
+                    status.text = "Klip değişti; kapak kaydı iptal edildi."
+                    return@runOnUiThread
+                }
+                recordProjectEdit()
+                clip.coverTimeMs = sourceTimeMs
+                clip.coverImagePath = saved.getOrThrow()
+                previousPath?.let { old -> if (old != clip.coverImagePath) File(old).delete() }
+                loadTrimControls()
+                status.text = "Kapak görseli projeye kaydedildi."
+            }
+        }, "cover-image-save").start()
     }
 
     private fun updateTrimLabels() {
@@ -11378,12 +11451,7 @@ class VideoEditorActivity : Activity() {
                     requestCoverPreview()
                     return@setOnClickListener
                 }
-                recordProjectEdit()
-                clip.coverTimeMs = selectedSourceTimeMs
-                loadTrimControls()
-                // “Kapak yap” now produces the visible JPG as well as persisting
-                // the selected source timestamp in the project.
-                saveClipCoverImage(bitmap, clip, selectedSourceTimeMs)
+                persistClipCoverImage(bitmap, clip, selectedSourceTimeMs)
                 dialog.dismiss()
             }
             dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
