@@ -1304,6 +1304,12 @@ if ! take_screen emulator-screenshots/editor-panel-closed.png; then
 fi
 dump_hierarchy editor-panel-closed.xml emulator-screenshots/editor-panel-closed.xml || true
 
+# Capture panel geometry before later Undo/Redo/audio gestures clear logcat. These
+# measurements belong to the panel workflow above and must not depend on logs
+# surviving unrelated test phases.
+timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime -s EditorPanelLayoutTest:I \
+  > emulator-screenshots/editor-panel-layout-logcat.txt 2>&1 || true
+
 # Both audio fixture imports run on background metadata threads. Do not start
 # hit-target interaction until the exact production importer confirms both.
 audio_fixtures_ready=false
@@ -1663,8 +1669,8 @@ if ! grep -q "Proje" emulator-screenshots/editor-main-dock-after-audio.xml; then
 fi
 echo "PASS: returned from the audio contextual strip to the global editor dock."
 
-timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime -s EditorPanelLayoutTest:I > emulator-screenshots/editor-panel-layout-logcat.txt 2>&1 || true
-
+# The panel geometry log was snapshotted immediately after its workflow. Do not
+# reread logcat here: later test phases intentionally clear its ring buffer.
 python3 - emulator-screenshots/editor-panel-layout-logcat.txt <<'PY'
 import re
 import sys
