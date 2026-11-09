@@ -1,3 +1,11 @@
+## 2026-11-09 — Text Undo/Redo model vs. EditText desynchronization (PR #34)
+
+- API 35 emulator run `42666577218` passed the earlier checks: text-panel return tap, canvas drag Undo/Redo, sound volume/trim Undo/Redo, overlay transform/trim, filter Undo/Redo, video drag/restore and grouped typing Undo across a one-second pause.
+- It then failed at the *first Redo after the grouped text Undo*. The app log proved Undo did remove the text (`beforeTextChars=11 afterTextChars=0`), but Redo captured the current state as `11 -> 11` rather than `0 -> 11`. The preceding text-drag Undo/Redo was correct.
+- Root cause in the history boundary: `captureProjectEditSnapshot()` pulled the UI EditText value back into the TextLayer immediately before copying the model. A just-restored older text state could therefore be overwritten by a stale editor/composing value before the Redo snapshot was captured. `loadTextLayerIntoControls()` also performed a full control-to-model sync at the end of a model-to-control load.
+- Commit `6ad1574f1420ac0571bd5e0d8b9175c3d269aeed` makes project snapshots model-only; keeps the TextLayer as source of truth; clears stale composing text before applying a restored value; restarts the focused input connection after restore; and writes only normalized timing fields back after loading controls. A debug-only `TEXT_CONTROLS_RESTORED` marker compares model and input character counts.
+- Required: on the latest PR head, build and run the API 35 smoke suite. Confirm the grouped text sequence logs `11 -> 0` on Undo then `0 -> 11` on Redo, and the subsequent independent canvas-drag Redo still succeeds. Do not loosen history assertions. Do not bump app version, merge, or release an APK.
+ 
 ## 2026-11-09 — Text history smoke-test count correction (PR #34)
 
 - The API 35 run on `923507e8a4880b80dbf4057c65411d88442199c9` passed the text-panel return hierarchy capture, actual text-drag Undo/Redo, and canvas-position checks. It then stopped in the following grouped-typing assertion.
