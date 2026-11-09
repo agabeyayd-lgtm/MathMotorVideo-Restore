@@ -3278,45 +3278,43 @@ print(
 )
 PY
 }
-# The keyboard changed the vertical layout. Use the application's
-# measured post-layout bounds for the sticky sibling return control; do not
-# traverse the large timeline accessibility hierarchy again.
-timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I \
-  > emulator-screenshots/text-panel-return-bounds-logcat.txt 2>&1 || true
-text_panel_back="$(python3 - emulator-screenshots/text-panel-return-bounds-logcat.txt <<'PY'
-import re
-import sys
-
-for line in reversed(open(sys.argv[1], errors="replace").read().splitlines()):
-    match = re.search(
-        r"TEXT_PANEL_RETURN_BOUNDS visible=true x=(\d+) y=(\d+) width=(\d+) height=(\d+)",
-        line,
-    )
-    if not match:
-        continue
-    x, y, width, height = map(int, match.groups())
-    if width > 0 and height > 0:
-        print(x + width // 2, y + height // 2)
-        raise SystemExit(0)
-raise SystemExit("No visible measured text-panel return bounds were logged after keyboard dismissal.")
-PY
-)"
-if [ -z "$text_panel_back" ]; then
-  echo "The text-panel return control did not report visible post-keyboard bounds."
-  collect_capture_diagnostics text-panel-return-after-keyboard-missing
+# The first text-panel return check above verifies keyboard dismissal and the
+# immediate return action. Project history is then exercised from the global
+# dock, so the detail panel is closed while Undo/Redo runs. Reopen Metin from
+# the hierarchy captured immediately before Redo, then inspect and tap the
+# current return button. Do not read a pre-Undo IME bounds marker from logcat:
+# the history assertions intentionally clear that ring buffer.
+text_tab_after_history="$(find_bottom_tool emulator-screenshots/editor-text-history-before-redo.xml "Metin" || true)"
+if [ -z "$text_tab_after_history" ]; then
+  echo "The global dock did not expose the Metin tab after grouped text Undo/Redo."
+  collect_capture_diagnostics text-history-reopen-tab-missing
   exit 56
 fi
-echo "Tapping the measured text-panel return control at $text_panel_back after text editing."
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$text_tab_after_history"
+sleep 1
+if ! dump_hierarchy editor-text-panel-after-history.xml emulator-screenshots/editor-text-panel-after-history.xml; then
+  echo "Could not capture the text panel after grouped history restore."
+  collect_capture_diagnostics text-history-reopened-panel-hierarchy-missing
+  exit 56
+fi
+text_panel_back_after_history="$(find_bottom_tool emulator-screenshots/editor-text-panel-after-history.xml "Araçlara dön" || true)"
+if [ -z "$text_panel_back_after_history" ]; then
+  echo "The reopened text panel did not expose its visible Araçlara dön control after Undo/Redo."
+  collect_capture_diagnostics text-history-return-control-missing
+  exit 56
+fi
+echo "Tapping the freshly measured text-panel return control at $text_panel_back_after_history after history restore."
 timeout -k 2s 8s adb -s emulator-5554 logcat -c
-timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_panel_back
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$text_panel_back_after_history"
 sleep 1
 timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I > emulator-screenshots/text-panel-return-logcat.txt 2>&1 || true
-if ! grep -Fq "TEXT_PANEL_RETURN_TAPPED" emulator-screenshots/text-panel-return-logcat.txt ||
+if ! grep -Fq "TEXT_PANEL_RETURN_TAPPED activePanel=text" emulator-screenshots/text-panel-return-logcat.txt ||
    ! grep -Fq "TEXT_PANEL_CLOSED activePanel=none" emulator-screenshots/text-panel-return-logcat.txt; then
-  echo "The text detail panel did not confirm its return-to-tools action."
-  collect_capture_diagnostics text-canvas-panel-return-not-confirmed
+  echo "The text detail panel did not confirm its return-to-tools action after Undo/Redo."
+  collect_capture_diagnostics text-history-panel-return-not-confirmed
   exit 56
 fi
+echo "PASS: after grouped text Undo/Redo, the Metin panel reopened and its measured return control closed it cleanly."
 if ! take_screen emulator-screenshots/editor-text-panel-closed.png; then
   collect_capture_diagnostics text-canvas-panel-closed-capture-failure
   exit 6

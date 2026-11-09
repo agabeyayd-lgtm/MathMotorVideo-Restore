@@ -1,3 +1,10 @@
+## 2026-11-09 — Correct text-panel return check after project history (PR #34)
+
+- Exact-head emulator run `42677350791` on `6b92d9399513b837f31ab7f6da4c0674b0e38834` passed Android build, unit tests, debug APK packaging, real text-canvas drag Undo/Redo, and grouped text-session Undo/Redo: one Undo restored `modelChars=0 inputChars=0`; one Redo restored `modelChars=11 inputChars=11`.
+- The emulator job went red only in its final text-panel return check. The harness had closed the text detail panel to expose global Undo/Redo controls, then tried to read a `TEXT_PANEL_RETURN_BOUNDS` event from the live logcat ring. The keyboard-transition event was emitted earlier; intervening history checks intentionally cleared logcat. This was a stale test-observation sequence, not evidence of a broken app return control.
+- Corrected the harness: after strict grouped Undo/Redo assertions, it reopens the Metin panel from the captured global-dock hierarchy, captures a fresh accessibility hierarchy, taps the currently visible `Araçlara dön` control, and requires both the return-tap and panel-closed markers. The keyboard-open/full-size-preview assertion and all text history character-count assertions remain unchanged.
+- Required: verify this correction on the new exact PR head with fresh CI. Do not merge, bump the app version, or publish a release APK until all required checks pass.
+
 ## 2026-11-09 — Keep text panel active after IME dismissal (PR #34)
 
 - On commit `c8b51ccd51b5085404772028b4d8f0ab85626dbb`, the API 35 emulator proved the text-history fix: grouped Undo restored model/input to `0/0`; grouped Redo restored `11/11`; the following separate Redo restored the text canvas drag. Overlay Undo/Redo also passed.
