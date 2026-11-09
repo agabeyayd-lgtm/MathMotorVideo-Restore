@@ -976,6 +976,21 @@ if ! take_screen emulator-screenshots/editor-cover-tile-before.png; then
 fi
 timeout -k 2s 8s adb -s emulator-5554 shell input tap "$cover_tile_x" "$cover_tile_y"
 sleep 1
+cover_preview_ready=false
+for preview_attempt in $(seq 1 15); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ClipCover:I > emulator-screenshots/cover-picker-preview-logcat.txt 2>&1 || true
+  if grep -Fq "COVER_PICKER_FRAME_READY" emulator-screenshots/cover-picker-preview-logcat.txt; then
+    cover_preview_ready=true
+    break
+  fi
+  sleep 1
+done
+if [ "$cover_preview_ready" != true ]; then
+  echo "The cover-frame preview did not finish decoding before the Save control became available."
+  cat emulator-screenshots/cover-picker-preview-logcat.txt || true
+  collect_capture_diagnostics cover-picker-preview-not-ready
+  exit 86
+fi
 if ! dump_hierarchy editor-cover-picker.xml emulator-screenshots/editor-cover-picker.xml; then
   collect_capture_diagnostics cover-picker-did-not-open
   exit 86
@@ -990,7 +1005,7 @@ import re, sys, xml.etree.ElementTree as ET
 root = ET.parse(sys.argv[1]).getroot()
 matches = []
 for node in root.iter("node"):
-    if node.attrib.get("text", "").strip() != "Kaydet":
+    if node.attrib.get("text", "").strip().casefold() != "kaydet":
         continue
     if node.attrib.get("enabled", "false").lower() != "true":
         continue
