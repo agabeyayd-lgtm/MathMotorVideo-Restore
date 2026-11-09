@@ -11236,10 +11236,15 @@ class VideoEditorActivity : Activity() {
         }
     }
 
-    private fun decodeTimelineFrame(uri: Uri, timeMs: Long): Bitmap? {
-        // Use Android's native retriever first: the three per-thread retrievers
-        // provide fast parallel extraction for a filmstrip. Media3 is retained as
-        // a compatibility fallback for sources the platform retriever cannot decode.
+    private fun decodeTimelineFrame(
+        uri: Uri,
+        timeMs: Long,
+        maxWidthPx: Int,
+        maxHeightPx: Int
+    ): Bitmap? {
+        // Use native retrievers first, but decode just above the actual cell
+        // dimensions instead of always extracting a fixed 162x288 frame.
+        // Media3 remains a compatibility fallback for unsupported source formats.
         val frameTimeUs = timeMs.coerceAtLeast(0L) * 1000L
         val platformStartedAt = SystemClock.uptimeMillis()
         val retriever = timelineThumbnailRetrieverFor(uri, "TimelineThumbnail")
@@ -11249,8 +11254,8 @@ class VideoEditorActivity : Activity() {
                     activeRetriever.getScaledFrameAtTime(
                         frameTimeUs,
                         MediaMetadataRetriever.OPTION_CLOSEST,
-                        162,
-                        288
+                        maxWidthPx.coerceAtLeast(1),
+                        maxHeightPx.coerceAtLeast(1)
                     )
                 }.getOrNull()
             } else {
@@ -11465,6 +11470,16 @@ class VideoEditorActivity : Activity() {
         if (waiting != null) pendingTimelineThumbnails.remove(key)
         pendingTimelineThumbnailGenerations[key] = sourceGeneration
         pendingTimelineThumbnails[key] = mutableListOf(WeakReference(target))
+        val targetLayoutParams = target.layoutParams
+        val targetCellWidthPx = targetLayoutParams?.width?.takeIf { it > 0 }
+            ?: target.width.coerceAtLeast(1)
+        val targetCellHeightPx = targetLayoutParams?.height?.takeIf { it > 0 }
+            ?: target.height.coerceAtLeast(1)
+        val (decodeWidthPx, decodeHeightPx) = TimelineThumbnailMath.decodeBounds(
+            targetCellWidthPx,
+            targetCellHeightPx,
+            timelineVideoAspectRatio(uri)
+        )
         val enqueuedAtUptimeMs = SystemClock.uptimeMillis()
         if (timelineLifecycleDiagnosticsEnabled) android.util.Log.i(
             "TimelineThumbnail",
@@ -11484,7 +11499,7 @@ class VideoEditorActivity : Activity() {
             var decoded: Bitmap? = null
             try {
                 val frameDecodeStartedAtUptimeMs = SystemClock.uptimeMillis()
-                val original = decodeTimelineFrame(uri, timestampMs)
+                val original = decodeTimelineFrame(uri, timestampMs, decodeWidthPx, decodeHeightPx)
                 val frameDecodedAtUptimeMs = SystemClock.uptimeMillis()
                 frameDecodeDurationMs = frameDecodedAtUptimeMs - frameDecodeStartedAtUptimeMs
                 if (original != null && !original.isRecycled &&
@@ -11496,8 +11511,8 @@ class VideoEditorActivity : Activity() {
                     val (thumbnailWidth, thumbnailHeight) = TimelineThumbnailMath.fitDimensions(
                         original.width,
                         original.height,
-                        162,
-                        288
+                        maxWidthPx.coerceAtLeast(1),
+                        maxHeightPx.coerceAtLeast(1)
                     )
                     val thumbnail = if (
                         original.width == thumbnailWidth && original.height == thumbnailHeight

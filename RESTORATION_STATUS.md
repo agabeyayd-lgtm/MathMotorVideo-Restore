@@ -1,3 +1,11 @@
+## 2026-11-09 — Reduce real filmstrip decode work after emulator timing failure (PR #34)
+
+- Exact-head emulator run `42682344686` passed project text-history Undo/Redo, reopened the Metin panel, tapped its live `Araçlara dön` control, verified the preview canvas remained 423×753, and restored the text selection dock.
+- The only remaining failure was visible filmstrip fill time: 2,537 ms against 2,500 ms. Eight visible cells used native MediaMetadataRetriever; decode median/max was 543/1,498 ms and queue wait median/max was 222/958 ms. The fixed 162×288 decode was oversized for the actual 48dp timeline cells.
+- Changed thumbnail extraction to derive a 1.5× oversampled decode bound from each real cell's pixel dimensions and the source aspect ratio. The same bound is used by native scaled-frame extraction and final bitmap fitting; full-frame aspect-correct rendering remains unchanged while substantially fewer pixels are decoded.
+- Added unit coverage for portrait, landscape, 4:3, invalid metadata, and exact 1× sizing. The 2,500 ms performance gate remains unchanged.
+- Required: run the new exact-head Android build, unit tests, and emulator capture once. Inspect actual timing and all existing text-history/panel assertions before calling this fixed. Do not merge or publish an APK until all required checks are green.
+
 ## 2026-11-09 — Correct text-panel return check after project history (PR #34)
 
 - Exact-head emulator run `42677350791` on `6b92d9399513b837f31ab7f6da4c0674b0e38834` passed Android build, unit tests, debug APK packaging, real text-canvas drag Undo/Redo, and grouped text-session Undo/Redo: one Undo restored `modelChars=0 inputChars=0`; one Redo restored `modelChars=11 inputChars=11`.
