@@ -1290,6 +1290,33 @@ if model != after or seek != after: raise SystemExit(f"Redo restored the model b
 print(f"PASS: one Redo reapplied sound volume {before} -> {after} and its slider matches.")
 PY
 
+# Restore the default source mix before importing the audio fixtures used by later tests.
+dump_hierarchy editor-project-audio-after-redo.xml emulator-screenshots/editor-project-audio-after-redo.xml || { collect_capture_diagnostics project-history-sound-volume-cleanup-controls-missing; exit 94; }
+cleanup_undo_coords="$(python3 - emulator-screenshots/editor-project-audio-after-redo.xml <<'PY'
+import re,sys,xml.etree.ElementTree as ET
+root=ET.parse(sys.argv[1]).getroot()
+for n in root.iter("node"):
+    if n.attrib.get("content-desc","").strip()=="Proje işlemini geri al" and n.attrib.get("enabled","false").lower()=="true":
+        m=re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",n.attrib.get("bounds",""))
+        if m:
+            x1,y1,x2,y2=map(int,m.groups()); print((x1+x2)//2,(y1+y2)//2); raise SystemExit(0)
+raise SystemExit("Undo unavailable while restoring default test audio volume.")
+PY
+)" || { collect_capture_diagnostics project-history-sound-volume-cleanup-undo-disabled; exit 94; }
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $cleanup_undo_coords
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-sound-volume-cleanup.txt 2>&1 || true
+python3 - emulator-screenshots/project-history-sound-volume-cleanup.txt "$original_sound_volume" <<'PY'
+import re,sys
+lines=open(sys.argv[1],errors="replace").read().splitlines()
+controls=[x for x in lines if "PROJECT_HISTORY_CONTROLS " in x]
+if not controls: raise SystemExit("Default-volume cleanup did not log restored controls.")
+m=re.search(r"soundModel=(\d+) soundSeek=(-?\d+)",controls[-1])
+expected=int(sys.argv[2])
+if not m or tuple(map(int,m.groups()))!=(expected,expected): raise SystemExit("Test audio volume was not restored before fixture import: "+controls[-1])
+print(f"PASS: restored initial sound volume {expected} before continuing emulator smoke tests.")
+PY
 
 # The audio panel is still open after the volume checks. Return to the dock before
 # exercising preset and continuous color-grade history independently.
