@@ -1,3 +1,10 @@
+## 2026-11-09 — Suppress UI-to-model text sync during history restore (PR #34)
+
+- The last confirmed emulator run still failed at grouped text Redo: Undo reported `11 -> 0`, but Redo captured `11 -> 11`. The latest code had dismissed the IME before Undo/Redo, but another independent write-back path remained.
+- Inspection found `refreshTimelineTracks()` and `updateTextControls()` call `syncSelectedTextLayerFromControls()`. `restoreProjectEditSnapshot()` itself calls `loadTextLayerIntoControls()` and then rebuilds timeline tracks, so an EditText watcher/sync could mutate a snapshot-restored TextLayer while controls were being rebound.
+- Commit `3b33d74baf1f3f30a2b546538a5c58b52fa5cd18` adds a dedicated `restoringProjectEditSnapshot` guard for the complete restore transaction. TextWatcher history begin/change callbacks and every control-to-model sync now ignore events while the snapshot is being restored; the guard is restored in `finally`. Normal user text editing outside Undo/Redo is unchanged.
+- Required: run unit/build, debug APK packaging, and full API 35 editor smoke on latest HEAD. Verify the grouped Undo logs model/input `0/0`, Redo logs `11/11`, and the following independent canvas-drag Redo still works. Keep every assertion strict; no version bump, merge, or release APK.
+ 
 ## 2026-11-09 — IME dismissal regression assertions (PR #34)
 
 - Commit `b4cbed2fc3180fc0a2e82799a22014b1d3282bdd` adds explicit API 35 smoke assertions for both sides of the text-history restore: immediately after the grouped Undo the model and editor input must both be empty (`modelChars=0 inputChars=0`); immediately after Redo both must contain all 11 characters (`modelChars=11 inputChars=11`).
