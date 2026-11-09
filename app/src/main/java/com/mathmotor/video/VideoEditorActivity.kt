@@ -2528,8 +2528,10 @@ class VideoEditorActivity : Activity() {
                 return true
             }
         }
+        // applyKeyboardMode() has already requested the root layout. The next
+        // pre-draw will contain the post-IME bounds; requesting another layout on
+        // this full-width button only adds avoidable hierarchy churn.
         observer.addOnPreDrawListener(listener)
-        target.requestLayout()
     }
 
     private fun installResponsiveEditorLayout(
