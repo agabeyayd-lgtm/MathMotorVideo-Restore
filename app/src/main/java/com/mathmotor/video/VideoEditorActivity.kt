@@ -1755,7 +1755,6 @@ class VideoEditorActivity : Activity() {
                     selectedTextLayer()?.sizeSp = textSizeSp
                 }
                 updatePreviewTextOverlay()
-                previewTextOverlays.forEach { it.requestLayout() }
                 refreshTextLayerList()
             }
             override fun onStartTrackingTouch(seekBar: SeekBar?) {
@@ -7672,7 +7671,8 @@ class VideoEditorActivity : Activity() {
             val positionIndex = visiblePositionCounts[layer.position] ?: 0
             visiblePositionCounts[layer.position] = positionIndex + 1
             overlay.tag = layer.id
-            overlay.text = layer.text.trim()
+            val desiredText = layer.text.trim()
+            if (overlay.text.toString() != desiredText) overlay.text = desiredText
             val videoWidth = previewCanvas.width.coerceAtLeast(1)
             val videoHeight = previewCanvas.height.coerceAtLeast(1)
             val referenceWidth = referencePreviewCanvasWidth.takeIf { it > 0 } ?: videoWidth
@@ -7681,57 +7681,82 @@ class VideoEditorActivity : Activity() {
                 videoWidth.toFloat() / referenceWidth.toFloat(),
                 videoHeight.toFloat() / referenceHeight.toFloat()
             ).coerceIn(0.15f, 1f)
-            // Text is authored in project coordinates. Scale its screen rendering
-            // with the canvas so a short detail-panel preview does not crop it.
-            overlay.setTextSize(
+            // Text is authored in project coordinates. Avoid re-applying identical
+            // TextView properties on every playback/layout sync: TextView setters
+            // request another measure/layout even when the displayed value is unchanged.
+            val desiredTextSizePx = android.util.TypedValue.applyDimension(
                 android.util.TypedValue.COMPLEX_UNIT_SP,
-                (layer.sizeSp * previewScale).coerceAtLeast(6f)
+                (layer.sizeSp * previewScale).coerceAtLeast(6f),
+                resources.displayMetrics
             )
-            overlay.setTextColor(layer.colorPreset.colorInt)
-            overlay.setTypeface(Typeface.DEFAULT, if (layer.isBold) Typeface.BOLD else Typeface.NORMAL)
+            if (kotlin.math.abs(overlay.textSize - desiredTextSizePx) > 0.5f) {
+                overlay.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, desiredTextSizePx)
+            }
+            if (overlay.currentTextColor != layer.colorPreset.colorInt) {
+                overlay.setTextColor(layer.colorPreset.colorInt)
+            }
+            val desiredTypeface = Typeface.create(
+                Typeface.DEFAULT,
+                if (layer.isBold) Typeface.BOLD else Typeface.NORMAL
+            )
+            if (overlay.typeface != desiredTypeface) overlay.typeface = desiredTypeface
             val animationState = TextAnimationMath.stateAt(
                 layer.animationPreset,
                 timelinePlayheadMs - layer.startMs,
                 layer.endMs - timelinePlayheadMs,
                 layer.animationDurationMs
             )
-            overlay.alpha = animationState.alpha
-            overlay.scaleX = animationState.scale
-            overlay.scaleY = animationState.scale
-            overlay.rotation = PreviewCanvasMath.normalizeRotationDegrees(layer.rotationDegrees)
+            if (overlay.alpha != animationState.alpha) overlay.alpha = animationState.alpha
+            if (overlay.scaleX != animationState.scale) overlay.scaleX = animationState.scale
+            if (overlay.scaleY != animationState.scale) overlay.scaleY = animationState.scale
+            val desiredRotation = PreviewCanvasMath.normalizeRotationDegrees(layer.rotationDegrees)
+            if (overlay.rotation != desiredRotation) overlay.rotation = desiredRotation
             if (layer.kind == TextLayerKind.STICKER) {
-                overlay.setPadding(0, 0, 0, 0)
-                overlay.background = null
+                if (overlay.paddingLeft != 0 || overlay.paddingTop != 0 ||
+                    overlay.paddingRight != 0 || overlay.paddingBottom != 0
+                ) overlay.setPadding(0, 0, 0, 0)
+                if (overlay.background != null) overlay.background = null
                 overlay.setShadowLayer(4f, 0f, 2f, Color.BLACK)
             } else {
                 val horizontalInsetDp = (10f * previewScale).toInt().coerceAtLeast(1)
                 val verticalInsetDp = (6f * previewScale).toInt().coerceAtLeast(1)
-                overlay.setPadding(
-                    dp(horizontalInsetDp), dp(verticalInsetDp),
-                    dp(horizontalInsetDp), dp(verticalInsetDp)
-                )
-                overlay.background = android.graphics.drawable.GradientDrawable().apply {
-                    setColor(Color.argb(210, 0, 0, 0))
-                    cornerRadius = dp((8f * previewScale).toInt().coerceAtLeast(1)).toFloat()
+                val leftPadding = dp(horizontalInsetDp)
+                val verticalPadding = dp(verticalInsetDp)
+                if (overlay.paddingLeft != leftPadding || overlay.paddingTop != verticalPadding ||
+                    overlay.paddingRight != leftPadding || overlay.paddingBottom != verticalPadding
+                ) {
+                    overlay.setPadding(leftPadding, verticalPadding, leftPadding, verticalPadding)
+                }
+                if (overlay.background == null) {
+                    overlay.background = android.graphics.drawable.GradientDrawable().apply {
+                        setColor(Color.argb(210, 0, 0, 0))
+                        cornerRadius = dp((8f * previewScale).toInt().coerceAtLeast(1)).toFloat()
+                    }
                 }
                 overlay.setShadowLayer(2f * previewScale, previewScale, previewScale, Color.BLACK)
             }
-            overlay.visibility = View.VISIBLE
+            if (overlay.visibility != View.VISIBLE) overlay.visibility = View.VISIBLE
             val params = overlay.layoutParams as? FrameLayout.LayoutParams ?: return@forEachIndexed
-            params.gravity = Gravity.CENTER
-            params.topMargin = 0
-            params.bottomMargin = 0
-            params.leftMargin = 0
-            params.rightMargin = 0
-            overlay.layoutParams = params
+            if (params.gravity != Gravity.CENTER || params.topMargin != 0 ||
+                params.bottomMargin != 0 || params.leftMargin != 0 || params.rightMargin != 0
+            ) {
+                params.gravity = Gravity.CENTER
+                params.topMargin = 0
+                params.bottomMargin = 0
+                params.leftMargin = 0
+                params.rightMargin = 0
+                overlay.layoutParams = params
+            }
             // Text geometry must use the real project-canvas bounds. A fixed dp
             // minimum makes overlays wider/taller than the canvas when the editor
             // workspace is compressed (for example, while the keyboard is open).
             val availableTextWidth = (videoWidth - dp(16)).coerceAtLeast(1)
             val availableTextHeight = (videoHeight - dp(8)).coerceAtLeast(1)
-            overlay.maxWidth = availableTextWidth
-            overlay.minWidth = minOf(dp(48), availableTextWidth)
-            overlay.minimumHeight = minOf(dp(44), availableTextHeight)
+            if (overlay.maxWidth != availableTextWidth) overlay.maxWidth = availableTextWidth
+            val desiredMinWidth = minOf(dp(48), availableTextWidth)
+            if (overlay.minWidth != desiredMinWidth) overlay.minWidth = desiredMinWidth
+            val desiredMinimumHeight = minOf(dp(44), availableTextHeight)
+            if (overlay.minimumHeight != desiredMinimumHeight) overlay.minimumHeight = desiredMinimumHeight
             overlay.measure(
                 View.MeasureSpec.makeMeasureSpec(availableTextWidth, View.MeasureSpec.AT_MOST),
                 View.MeasureSpec.makeMeasureSpec(availableTextHeight, View.MeasureSpec.AT_MOST)
@@ -7776,14 +7801,20 @@ class VideoEditorActivity : Activity() {
             val frameHeight = (selectedTextView.measuredHeight + dp(8)).coerceAtLeast(dp(12))
             val frameParams = textSelectionFrame.layoutParams as? FrameLayout.LayoutParams
                 ?: FrameLayout.LayoutParams(frameWidth, frameHeight, Gravity.CENTER)
-            frameParams.width = frameWidth
-            frameParams.height = frameHeight
-            frameParams.gravity = Gravity.CENTER
-            frameParams.leftMargin = 0
-            frameParams.topMargin = 0
-            frameParams.rightMargin = 0
-            frameParams.bottomMargin = 0
-            textSelectionFrame.layoutParams = frameParams
+            val frameParamsChanged = frameParams.width != frameWidth ||
+                frameParams.height != frameHeight || frameParams.gravity != Gravity.CENTER ||
+                frameParams.leftMargin != 0 || frameParams.topMargin != 0 ||
+                frameParams.rightMargin != 0 || frameParams.bottomMargin != 0
+            if (frameParamsChanged) {
+                frameParams.width = frameWidth
+                frameParams.height = frameHeight
+                frameParams.gravity = Gravity.CENTER
+                frameParams.leftMargin = 0
+                frameParams.topMargin = 0
+                frameParams.rightMargin = 0
+                frameParams.bottomMargin = 0
+                textSelectionFrame.layoutParams = frameParams
+            }
             textSelectionFrame.pivotX = frameWidth / 2f
             textSelectionFrame.pivotY = frameHeight / 2f
             textSelectionFrame.translationX = selectedTextView.translationX
