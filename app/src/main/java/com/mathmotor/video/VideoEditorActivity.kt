@@ -4835,11 +4835,11 @@ class VideoEditorActivity : Activity() {
                     extractor.advance()
                 }
             } else {
-                decoder = android.media.MediaCodec.createDecoderByType(mime).apply {
+                val codec = android.media.MediaCodec.createDecoderByType(mime).apply {
                     configure(inputFormat, null, null, 0)
                     start()
                 }
-                val codec = decoder
+                decoder = codec
                 val info = android.media.MediaCodec.BufferInfo()
                 var inputDone = false
                 var outputDone = false
