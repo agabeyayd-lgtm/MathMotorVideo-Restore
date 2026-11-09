@@ -1,3 +1,10 @@
+## 2026-11-09 — Text history smoke-test count correction (PR #34)
+
+- The API 35 run on `923507e8a4880b80dbf4057c65411d88442199c9` passed the text-panel return hierarchy capture, actual text-drag Undo/Redo, and canvas-position checks. It then stopped in the following grouped-typing assertion.
+- The harness types `Canvas` (6 characters) and `Smoke` (5 characters), so the literal `CanvasSmoke` is 11 characters. Runtime history diagnostics confirmed that Undoing the preceding drag preserved all 11 characters (`beforeTextChars=11 afterTextChars=11`); the test incorrectly expected 10.
+- Commit `dcab8bdb6dbc572a12723a8d5d1738f07a655a00` corrects the expected counts to 11 for drag Undo/Redo, 11→0 for the grouped typing Undo, and 0→11 for grouped typing Redo. No application behavior or assertion was weakened; the expected value now matches the exact text sent by the smoke test.
+- Required: rerun all unit/build, debug packaging and API 35 emulator checks on the latest branch head. Verify the full text edit session still takes one Undo/Redo across the one-second pause. Do not accept PR #34 until all required checks on the latest head succeed. No app version bump, merge, or release APK.
+ 
 ## 2026-11-09 — Text preview layout churn (PR #34)
 
 - Latest API 35 run passed unit/build, debug APK packaging, cover still Save/Undo/Redo, overlay/audio trim, and the real MP4 export. It failed when Android UIAutomator could not reach idle after the text-canvas drag and panel return; the hierarchy dump repeatedly returned `ERROR: could not get idle state`.
