@@ -6762,6 +6762,9 @@ class VideoEditorActivity : Activity() {
         if (::clipVolumeSeek.isInitialized) clipVolumeSeek.progress = sourceAudioVolume
         if (::clipVolumeLabel.isInitialized) clipVolumeLabel.text = "Orijinal video sesi: $sourceAudioVolume%"
         player?.volume = if (snapshot.keepSourceAudio) sourceAudioVolume / 100f else 0f
+        // Restore preset highlighting, color-grade labels and every filter SeekBar
+        // before any diagnostics or downstream UI assertions inspect the controls.
+        loadVideoFilterControls()
         if (timelineSyncTestEnabled) {
             android.util.Log.i(
                 "ProjectHistoryTest",
@@ -6783,7 +6786,6 @@ class VideoEditorActivity : Activity() {
         updateMusicTimingLabel()
         updateSoundControls()
         loadTrimControls()
-        loadVideoFilterControls()
         loadOverlayControls()
         loadTextLayerIntoControls(selectedTextLayer())
         refreshTextLayerList()
