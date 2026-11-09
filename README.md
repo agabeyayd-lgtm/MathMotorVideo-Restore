@@ -1163,3 +1163,11 @@ The selected main-video clip exposes independent left/right edge grips: drag the
 - Changed the clip-panel Kapak action to a plain, accessible text control while preserving the existing cover-frame picker action and selected-cover state label.
 - Acceptance still requires an API 35 screenshot comparison confirming the boxed background is gone, the Kapak action remains tappable, and timeline zero/clip alignment and the other lane controls are unchanged. This source change is not yet emulator-verified.
 - Keep the existing timeline origin spacer transparent; this visual correction must not alter shared ruler/filmstrip scroll mapping or thumbnail timing.
+
+
+## 2026-11-09 — CapCut cover thumbnail tile (source change; validation pending)
+
+- Corrected the prior misunderstanding: the reference has a distinct square cover-image tile in the left video-lane gutter, with a small edit/pencil affordance and a **Kapak** caption. A text-only label is not visual parity.
+- Added a square thumbnail tile to the video lane. It asynchronously decodes the selected clip's saved cover timestamp, or the clip's start frame when no custom cover is chosen. Tapping the tile opens the existing cover-frame picker; selecting a new cover refreshes the tile through the existing trim-control refresh path.
+- The image decode is guarded against stale selection results and uses the existing thumbnail executor. No timeline scale, ruler/filmstrip geometry, clip timing, or thumbnail strip mapping is changed.
+- Pending: inspect the exact API 35 screenshot at normal phone density; verify selected frame changes after choosing a new cover; verify tap target opens picker; run unit/build, debug packaging and emulator workflows on the exact head. Do not claim visual parity or ship an APK until all checks pass.
