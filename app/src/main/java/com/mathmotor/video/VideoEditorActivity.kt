@@ -3431,8 +3431,8 @@ class VideoEditorActivity : Activity() {
                 } else {
                     TextView(this).apply {
                         text = when {
-                            tag == "Müzik" || tag == "Ses" -> "Ses\\nekle"
-                            tag == "Metin" || tag == "Metin 1" -> "Metin\\nekle"
+                            tag == "Müzik" || tag == "Ses" -> "Ses\nekle"
+                            tag == "Metin" || tag == "Metin 1" -> "Metin\nekle"
                             else -> ""
                         }
                         textSize = 9f
@@ -3440,7 +3440,7 @@ class VideoEditorActivity : Activity() {
                         setTextColor(Color.rgb(166, 184, 201))
                         isClickable = text.isNotBlank()
                         isFocusable = text.isNotBlank()
-                        contentDescription = text.toString().replace("\\n", " ")
+                        contentDescription = text.toString().replace("\n", " ")
                         setOnClickListener {
                             when (tag) {
                                 "Müzik", "Ses" -> showEditorPanel("audio")
