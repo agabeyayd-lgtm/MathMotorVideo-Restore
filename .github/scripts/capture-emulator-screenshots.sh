@@ -593,17 +593,24 @@ echo "PASS: both music and sound-effect fixtures were imported and their startup
 echo "Step 6a-Waveform: verify music and sound effects render real PCM waveforms off the UI thread"
 waveform_music_ready=false
 waveform_sound_ready=false
+waveform_music_drawn=false
+waveform_sound_drawn=false
 for waveform_attempt in $(seq 1 25); do
   timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s AudioWaveform:I > emulator-screenshots/audio-waveform-logcat.txt 2>&1 || true
   if grep -Fq "AUDIO_WAVEFORM_READY kind=music" emulator-screenshots/audio-waveform-logcat.txt; then waveform_music_ready=true; fi
   if grep -Fq "AUDIO_WAVEFORM_READY kind=sound" emulator-screenshots/audio-waveform-logcat.txt; then waveform_sound_ready=true; fi
-  if [ "$waveform_music_ready" = true ] && [ "$waveform_sound_ready" = true ]; then break; fi
+  if grep -Fq "AUDIO_WAVEFORM_DRAWN kind=music" emulator-screenshots/audio-waveform-logcat.txt; then waveform_music_drawn=true; fi
+  if grep -Fq "AUDIO_WAVEFORM_DRAWN kind=sound" emulator-screenshots/audio-waveform-logcat.txt; then waveform_sound_drawn=true; fi
+  if [ "$waveform_music_ready" = true ] && [ "$waveform_sound_ready" = true ] &&
+     [ "$waveform_music_drawn" = true ] && [ "$waveform_sound_drawn" = true ]; then break; fi
   sleep 1
 done
-if [ "$waveform_music_ready" != true ] || [ "$waveform_sound_ready" != true ]; then
-  echo "Music or sound-effect waveform was not decoded into visible timeline buckets."
+if [ "$waveform_music_ready" != true ] || [ "$waveform_sound_ready" != true ] ||
+   [ "$waveform_music_drawn" != true ] || [ "$waveform_sound_drawn" != true ]; then
+  echo "Music/effect waveform decode and actual onDraw were not both confirmed."
+  echo "music decoded=$waveform_music_ready drawn=$waveform_music_drawn; effect decoded=$waveform_sound_ready drawn=$waveform_sound_drawn"
   cat emulator-screenshots/audio-waveform-logcat.txt || true
-  collect_capture_diagnostics audio-waveform-generation-failed
+  collect_capture_diagnostics audio-waveform-generation-or-draw-failed
   exit 77
 fi
 if ! take_screen emulator-screenshots/editor-audio-waveforms.png; then
