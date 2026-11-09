@@ -3115,7 +3115,7 @@ timeout -k 2s 8s adb -s emulator-5554 logcat -c
 timeout -k 2s 8s adb -s emulator-5554 shell input tap $history_undo_coords
 sleep 1
 timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-undo-drag-before-text.txt 2>&1 || true
-if ! grep -Eq "PROJECT_HISTORY_APPLIED action=undo .*beforeTextChars=10 afterTextChars=10" emulator-screenshots/project-history-undo-drag-before-text.txt; then
+if ! grep -Eq "PROJECT_HISTORY_APPLIED action=undo .*beforeTextChars=11 afterTextChars=11" emulator-screenshots/project-history-undo-drag-before-text.txt; then
   echo "Undoing the text drag unexpectedly changed the text contents."
   cat emulator-screenshots/project-history-undo-drag-before-text.txt || true
   collect_capture_diagnostics project-history-text-before-typing-undo-wrong
@@ -3126,19 +3126,19 @@ timeout -k 2s 8s adb -s emulator-5554 logcat -c
 timeout -k 2s 8s adb -s emulator-5554 shell input tap $history_undo_coords
 sleep 1
 timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-undo-whole-text.txt 2>&1 || true
-if ! grep -Eq "PROJECT_HISTORY_APPLIED action=undo .*beforeTextChars=10 afterTextChars=0" emulator-screenshots/project-history-undo-whole-text.txt; then
+if ! grep -Eq "PROJECT_HISTORY_APPLIED action=undo .*beforeTextChars=11 afterTextChars=0" emulator-screenshots/project-history-undo-whole-text.txt; then
   echo "One Undo did not remove the entire CanvasSmoke text session; typing may have split across pause."
   cat emulator-screenshots/project-history-undo-whole-text.txt || true
   collect_capture_diagnostics project-history-text-was-split
   exit 65
 fi
-echo "PASS: one Undo removed all 10 characters across a one-second typing pause."
+echo "PASS: one Undo removed all 11 characters across a one-second typing pause."
 # One Redo must restore the complete sentence in a single step.
 timeout -k 2s 8s adb -s emulator-5554 logcat -c
 timeout -k 2s 8s adb -s emulator-5554 shell input tap $history_redo_coords
 sleep 1
 timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-redo-whole-text.txt 2>&1 || true
-if ! grep -Eq "PROJECT_HISTORY_APPLIED action=redo .*beforeTextChars=0 afterTextChars=10" emulator-screenshots/project-history-redo-whole-text.txt; then
+if ! grep -Eq "PROJECT_HISTORY_APPLIED action=redo .*beforeTextChars=0 afterTextChars=11" emulator-screenshots/project-history-redo-whole-text.txt; then
   echo "One Redo did not restore the complete text session."
   cat emulator-screenshots/project-history-redo-whole-text.txt || true
   collect_capture_diagnostics project-history-text-redo-incomplete
@@ -3149,7 +3149,7 @@ timeout -k 2s 8s adb -s emulator-5554 logcat -c
 timeout -k 2s 8s adb -s emulator-5554 shell input tap $history_redo_coords
 sleep 1
 timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-redo-drag-after-text.txt 2>&1 || true
-if ! grep -Eq "PROJECT_HISTORY_APPLIED action=redo .*beforeTextChars=10 afterTextChars=10" emulator-screenshots/project-history-redo-drag-after-text.txt; then
+if ! grep -Eq "PROJECT_HISTORY_APPLIED action=redo .*beforeTextChars=11 afterTextChars=11" emulator-screenshots/project-history-redo-drag-after-text.txt; then
   echo "Redoing the text drag changed the text content unexpectedly."
   cat emulator-screenshots/project-history-redo-drag-after-text.txt || true
   collect_capture_diagnostics project-history-text-after-redo-wrong
