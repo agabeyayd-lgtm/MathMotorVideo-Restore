@@ -892,6 +892,34 @@ fi
 # only and does not turn a successful import into a false failure.
 
 echo "Step 7a-Cover: verify independent cover tile opens, saves, and reloads its own still image"
+# Re-select the main video clip: the preceding overlay-canvas test intentionally
+# cleared video selection, and Kapak always edits the currently selected clip.
+if ! dump_hierarchy editor-cover-select-video.xml emulator-screenshots/editor-cover-select-video.xml; then
+  collect_capture_diagnostics cover-video-reselect-hierarchy-missing
+  exit 86
+fi
+cover_video_coords="$(python3 - emulator-screenshots/editor-cover-select-video.xml <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+matches = []
+for node in root.iter("node"):
+    desc = node.attrib.get("content-desc", "").strip()
+    if not desc.startswith("Klip 1:") or node.attrib.get("enabled", "false").lower() != "true":
+        continue
+    m = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if not m:
+        continue
+    x1,y1,x2,y2 = map(int, m.groups())
+    if x2 > x1 and y2 > y1:
+        matches.append(((x2-x1)*(y2-y1),(x1+x2)//2,(y1+y2)//2))
+if not matches:
+    raise SystemExit("The first main-video clip is not exposed as an accessible selection target.")
+_,x,y = max(matches)
+print(x,y)
+PY
+)" || { collect_capture_diagnostics cover-video-reselect-target-missing; exit 86; }
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $cover_video_coords
+sleep 1
 if ! dump_hierarchy editor-cover-tile-before.xml emulator-screenshots/editor-cover-tile-before.xml; then
   collect_capture_diagnostics cover-tile-hierarchy-missing
   exit 86
