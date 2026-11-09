@@ -7,6 +7,7 @@
 - Starting a clip-speed preset while text is still focused commits the text transaction first, so a later Undo does not collapse two different edits into one.
 - The API 35 emulator test exercises a real text-canvas drag with Undo/Redo and verifies its measured position. It also types CanvasSmoke in two parts with a one-second pause, requires one Undo to remove all 10 characters, and requires one Redo to restore the complete text session; separate undo/redo steps then restore the canvas drag.
 - **Verification boundary:** unit tests and Android compile/debug packaging passed before the last text-transaction and track-order additions. Those latest changes and the expanded emulator test require fresh successful build and emulator runs before this work is considered verified. Audio/overlay/filter-specific Undo/Redo flows and physical-device behavior remain to be exercised.
+- **Latest API 35 attempt (`f1b8e51d6de999893093429a395308fe4ad81cb6`):** unit/build and debug packaging passed; real sound-effect trim Undo/Redo passed (`324→862→324 ms`) and overlay trim smoke passed. The emulator job failed afterward because the editor-panel geometry parser read logcat only after later tests had cleared its ring buffer. The script now snapshots geometry immediately after panel interaction, before any unrelated logcat clear. Geometry limits are unchanged; current-head reruns remain required.
 - PR #34 remains a draft and is not merged. No signed release APK or version-code change was made. A CI debug ZIP is not a production update.
 
 ---
