@@ -2990,8 +2990,7 @@ PY
 echo "Measured the current post-IME text-panel return action at $text_panel_back_current."
 timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_panel_back_current
 sleep 1
-timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I \
-  > emulator-screenshots/editor-text-panel-return-logcat.txt 2>&1 || true
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I > emulator-screenshots/editor-text-panel-return-logcat.txt 2>&1 || true
 if ! grep -Fq "TEXT_PANEL_RETURN_TAPPED activePanel=text" emulator-screenshots/editor-text-panel-return-logcat.txt; then
   echo "The measured text-panel return control did not report its click handler."
   collect_capture_diagnostics text-history-panel-return-not-tapped
