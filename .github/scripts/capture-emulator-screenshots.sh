@@ -1085,6 +1085,106 @@ if [ "$((after_x - before_x))" -lt 12 ] || [ "$((after_x - before_x))" -gt 34 ] 
   exit 35
 fi
 echo "PASS: paused overlay was visible and moved directly on the canvas without pressing Play."
+echo "Step 8a-Undo: verify a real overlay canvas drag is restored by project Undo/Redo"
+dump_hierarchy editor-overlay-history-before-undo.xml emulator-screenshots/editor-overlay-history-before-undo.xml || {
+  collect_capture_diagnostics project-history-overlay-undo-controls-missing
+  exit 91
+}
+overlay_undo_coords="$(python3 - emulator-screenshots/editor-overlay-history-before-undo.xml <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != "Proje işlemini geri al" or node.attrib.get("enabled", "false").lower() != "true":
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        x1,y1,x2,y2 = map(int, match.groups())
+        print((x1+x2)//2, (y1+y2)//2)
+        raise SystemExit(0)
+raise SystemExit("Enabled project Undo control is unavailable after overlay drag.")
+PY
+)" || { collect_capture_diagnostics project-history-overlay-undo-disabled; exit 91; }
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $overlay_undo_coords
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-overlay-undo.txt 2>&1 || true
+python3 - emulator-screenshots/project-history-overlay-undo.txt <<'PY'
+import re, sys
+lines = open(sys.argv[1], errors="replace").read().splitlines()
+matches = [line for line in lines if "PROJECT_HISTORY_APPLIED action=undo " in line]
+if not matches: raise SystemExit("No project Undo diagnostic followed the overlay drag.")
+match = re.search(r"beforeOverlayTransform=([^ ]+) afterOverlayTransform=([^ ]+)", matches[-1])
+if not match: raise SystemExit("Undo diagnostic is missing selected overlay transform values: " + matches[-1])
+before, after = match.groups()
+if before == after or before == "none" or after == "none":
+    raise SystemExit("Undo did not restore a selected overlay transform: " + matches[-1])
+print("PASS: Undo changed overlay model transform from " + before + " back to " + after)
+PY
+if ! take_screen emulator-screenshots/editor-overlay-after-undo.png; then
+  collect_capture_diagnostics project-history-overlay-undo-capture-failure
+  exit 91
+fi
+overlay_undo_center="$(magenta_center emulator-screenshots/editor-overlay-after-undo.png)" || {
+  collect_capture_diagnostics project-history-overlay-undo-render-missing
+  exit 91
+}
+read -r overlay_undo_x overlay_undo_y overlay_undo_pixels <<< "$overlay_undo_center"
+if [ "$((overlay_undo_x - before_x))" -lt -7 ] || [ "$((overlay_undo_x - before_x))" -gt 7 ] ||
+   [ "$((overlay_undo_y - before_y))" -lt -7 ] || [ "$((overlay_undo_y - before_y))" -gt 7 ]; then
+  echo "Overlay Undo did not restore its original visible position: expected=($before_x,$before_y), actual=($overlay_undo_x,$overlay_undo_y)."
+  collect_capture_diagnostics project-history-overlay-undo-position-wrong
+  exit 91
+fi
+dump_hierarchy editor-overlay-history-before-redo.xml emulator-screenshots/editor-overlay-history-before-redo.xml || {
+  collect_capture_diagnostics project-history-overlay-redo-controls-missing
+  exit 92
+}
+overlay_redo_coords="$(python3 - emulator-screenshots/editor-overlay-history-before-redo.xml <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != "Proje işlemini yinele" or node.attrib.get("enabled", "false").lower() != "true":
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        x1,y1,x2,y2 = map(int, match.groups())
+        print((x1+x2)//2, (y1+y2)//2)
+        raise SystemExit(0)
+raise SystemExit("Enabled project Redo control is unavailable after overlay Undo.")
+PY
+)" || { collect_capture_diagnostics project-history-overlay-redo-disabled; exit 92; }
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $overlay_redo_coords
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-overlay-redo.txt 2>&1 || true
+python3 - emulator-screenshots/project-history-overlay-redo.txt <<'PY'
+import re, sys
+lines = open(sys.argv[1], errors="replace").read().splitlines()
+matches = [line for line in lines if "PROJECT_HISTORY_APPLIED action=redo " in line]
+if not matches: raise SystemExit("No project Redo diagnostic followed the overlay Undo.")
+match = re.search(r"beforeOverlayTransform=([^ ]+) afterOverlayTransform=([^ ]+)", matches[-1])
+if not match: raise SystemExit("Redo diagnostic is missing selected overlay transform values: " + matches[-1])
+before, after = match.groups()
+if before == after or before == "none" or after == "none":
+    raise SystemExit("Redo did not reapply the selected overlay transform: " + matches[-1])
+print("PASS: Redo reapplied overlay model transform from " + before + " to " + after)
+PY
+if ! take_screen emulator-screenshots/editor-overlay-after-redo.png; then
+  collect_capture_diagnostics project-history-overlay-redo-capture-failure
+  exit 92
+fi
+overlay_redo_center="$(magenta_center emulator-screenshots/editor-overlay-after-redo.png)" || {
+  collect_capture_diagnostics project-history-overlay-redo-render-missing
+  exit 92
+}
+read -r overlay_redo_x overlay_redo_y overlay_redo_pixels <<< "$overlay_redo_center"
+if [ "$((overlay_redo_x - after_x))" -lt -7 ] || [ "$((overlay_redo_x - after_x))" -gt 7 ] ||
+   [ "$((overlay_redo_y - after_y))" -lt -7 ] || [ "$((overlay_redo_y - after_y))" -gt 7 ]; then
+  echo "Overlay Redo did not restore its moved visible position: expected=($after_x,$after_y), actual=($overlay_redo_x,$overlay_redo_y)."
+  collect_capture_diagnostics project-history-overlay-redo-position-wrong
+  exit 92
+fi
+echo "PASS: project Undo/Redo restored the overlay's visible canvas position in both directions."
 overlay_back_coords="$(find_bottom_tool emulator-screenshots/editor-window.xml "Ana araçlara dön" || true)"
 if [ -z "$overlay_back_coords" ]; then
   echo "Could not find the overlay row's return-to-main-dock control."
