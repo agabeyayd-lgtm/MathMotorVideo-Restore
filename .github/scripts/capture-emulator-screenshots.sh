@@ -590,6 +590,27 @@ if [ "$audio_fixtures_ready" != true ]; then
   exit 76
 fi
 echo "PASS: both music and sound-effect fixtures were imported and their startup markers preserved."
+echo "Step 6a-Waveform: verify music and sound effects render real PCM waveforms off the UI thread"
+waveform_music_ready=false
+waveform_sound_ready=false
+for waveform_attempt in $(seq 1 25); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s AudioWaveform:I > emulator-screenshots/audio-waveform-logcat.txt 2>&1 || true
+  if grep -Fq "AUDIO_WAVEFORM_READY kind=music" emulator-screenshots/audio-waveform-logcat.txt; then waveform_music_ready=true; fi
+  if grep -Fq "AUDIO_WAVEFORM_READY kind=sound" emulator-screenshots/audio-waveform-logcat.txt; then waveform_sound_ready=true; fi
+  if [ "$waveform_music_ready" = true ] && [ "$waveform_sound_ready" = true ]; then break; fi
+  sleep 1
+done
+if [ "$waveform_music_ready" != true ] || [ "$waveform_sound_ready" != true ]; then
+  echo "Music or sound-effect waveform was not decoded into visible timeline buckets."
+  cat emulator-screenshots/audio-waveform-logcat.txt || true
+  collect_capture_diagnostics audio-waveform-generation-failed
+  exit 77
+fi
+if ! take_screen emulator-screenshots/editor-audio-waveforms.png; then
+  collect_capture_diagnostics audio-waveform-screenshot-failed
+  exit 77
+fi
+echo "PASS: real music and effect audio samples were decoded asynchronously into cached waveform bars."
 
 # Verify the editor's real inner project canvas is fitted and centered inside
 # the dark work stage. The deterministic fixture is 360x640 (9:16).
