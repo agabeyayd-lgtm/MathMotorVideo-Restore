@@ -1195,6 +1195,101 @@ timeout -k 2s 8s adb -s emulator-5554 shell input tap $overlay_back_coords
 sleep 1
 dump_hierarchy editor-main-dock.xml emulator-screenshots/editor-main-dock.xml || true
 
+echo "Step 8b-AudioHistory: verify sound-volume Undo/Redo restores both the mix model and visible slider"
+audio_tab_coords="$(find_bottom_tool emulator-screenshots/editor-main-dock.xml "Ses" || true)"
+if [ -z "$audio_tab_coords" ]; then
+  echo "Global editor dock did not expose the audio panel after overlay history tests."
+  collect_capture_diagnostics project-history-audio-tab-missing
+  exit 93
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $audio_tab_coords
+sleep 1
+if ! dump_hierarchy editor-project-audio-panel.xml emulator-screenshots/editor-project-audio-panel.xml; then
+  collect_capture_diagnostics project-history-audio-panel-missing
+  exit 93
+fi
+sound_volume_bounds="$(find_content_description_bounds emulator-screenshots/editor-project-audio-panel.xml "Ses efekti ses seviyesi" || true)"
+if [ -z "$sound_volume_bounds" ]; then
+  echo "Audio panel did not expose the accessible sound-effect volume slider."
+  collect_capture_diagnostics project-history-sound-volume-slider-missing
+  exit 93
+fi
+read -r sound_cx sound_cy sound_w sound_h sound_x1 sound_y1 sound_x2 sound_y2 <<< "$sound_volume_bounds"
+sound_drag_start=$((sound_x2 - 18))
+sound_drag_end=$((sound_x1 + sound_w * 42 / 100))
+timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$sound_drag_start" "$sound_cy" "$sound_drag_end" "$sound_cy" 650
+sleep 1
+dump_hierarchy editor-project-audio-after-volume.xml emulator-screenshots/editor-project-audio-after-volume.xml || {
+  collect_capture_diagnostics project-history-sound-volume-after-drag-missing
+  exit 93
+}
+volume_undo_coords="$(python3 - emulator-screenshots/editor-project-audio-after-volume.xml <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != "Proje işlemini geri al" or node.attrib.get("enabled", "false").lower() != "true": continue
+    m = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if m:
+        x1,y1,x2,y2 = map(int,m.groups()); print((x1+x2)//2,(y1+y2)//2); raise SystemExit(0)
+raise SystemExit("Project Undo is unavailable after the volume gesture.")
+PY
+)" || { collect_capture_diagnostics project-history-sound-volume-undo-disabled; exit 93; }
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $volume_undo_coords
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-sound-volume-undo.txt 2>&1 || true
+volume_history_values="$(python3 - emulator-screenshots/project-history-sound-volume-undo.txt <<'PY'
+import re, sys
+lines = open(sys.argv[1], errors="replace").read().splitlines()
+events = [line for line in lines if "PROJECT_HISTORY_APPLIED action=undo " in line]
+controls = [line for line in lines if "PROJECT_HISTORY_CONTROLS " in line]
+if not events or not controls: raise SystemExit("Undo did not log both history transition and restored control state.")
+event = re.search(r"beforeSoundVolume=(\d+) afterSoundVolume=(\d+)", events[-1])
+ui = re.search(r"soundModel=(\d+) soundSeek=(-?\d+)", controls[-1])
+if not event or not ui: raise SystemExit("Undo diagnostics do not include sound mix and SeekBar values.")
+changed, restored = map(int,event.groups()); model, seek = map(int,ui.groups())
+if changed == restored: raise SystemExit(f"Sound volume Undo did not change the model: {events[-1]}")
+if model != restored or seek != restored: raise SystemExit(f"Undo restored the model but not its visible slider: model={model}, seek={seek}, expected={restored}; {controls[-1]}")
+print(changed, restored)
+PY
+)" || { collect_capture_diagnostics project-history-sound-volume-undo-failed; exit 94; }
+read -r changed_sound_volume original_sound_volume <<< "$volume_history_values"
+echo "PASS: one Undo restored sound volume $changed_sound_volume -> $original_sound_volume and its slider matches."
+dump_hierarchy editor-project-audio-before-redo.xml emulator-screenshots/editor-project-audio-before-redo.xml || {
+  collect_capture_diagnostics project-history-sound-volume-redo-controls-missing
+  exit 94
+}
+volume_redo_coords="$(python3 - emulator-screenshots/editor-project-audio-before-redo.xml <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != "Proje işlemini yinele" or node.attrib.get("enabled", "false").lower() != "true": continue
+    m = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if m:
+        x1,y1,x2,y2 = map(int,m.groups()); print((x1+x2)//2,(y1+y2)//2); raise SystemExit(0)
+raise SystemExit("Project Redo is unavailable after sound-volume Undo.")
+PY
+)" || { collect_capture_diagnostics project-history-sound-volume-redo-disabled; exit 94; }
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $volume_redo_coords
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-sound-volume-redo.txt 2>&1 || true
+python3 - emulator-screenshots/project-history-sound-volume-redo.txt "$changed_sound_volume" "$original_sound_volume" <<'PY'
+import re, sys
+lines = open(sys.argv[1], errors="replace").read().splitlines()
+events = [line for line in lines if "PROJECT_HISTORY_APPLIED action=redo " in line]
+controls = [line for line in lines if "PROJECT_HISTORY_CONTROLS " in line]
+if not events or not controls: raise SystemExit("Redo did not log both history transition and restored control state.")
+event = re.search(r"beforeSoundVolume=(\d+) afterSoundVolume=(\d+)", events[-1])
+ui = re.search(r"soundModel=(\d+) soundSeek=(-?\d+)", controls[-1])
+if not event or not ui: raise SystemExit("Redo diagnostics do not include sound mix and SeekBar values.")
+before, after = map(int,event.groups()); model, seek = map(int,ui.groups())
+expected_new, expected_old = map(int,sys.argv[2:4])
+if before != expected_old or after != expected_new: raise SystemExit(f"Redo applied the wrong sound volume: {events[-1]}")
+if model != after or seek != after: raise SystemExit(f"Redo restored the model but not its visible slider: model={model}, seek={seek}, expected={after}; {controls[-1]}")
+print(f"PASS: one Redo reapplied sound volume {before} -> {after} and its slider matches.")
+PY
+
 video_clip_coords="$(python3 - emulator-screenshots/editor-main-dock.xml <<'PY'
 import re
 import sys
