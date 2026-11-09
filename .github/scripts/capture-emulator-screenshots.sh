@@ -3132,7 +3132,13 @@ if ! grep -Eq "PROJECT_HISTORY_APPLIED action=undo .*beforeTextChars=11 afterTex
   collect_capture_diagnostics project-history-text-was-split
   exit 65
 fi
-echo "PASS: one Undo removed all 11 characters across a one-second typing pause."
+if ! grep -Fq "TEXT_CONTROLS_RESTORED modelChars=0 inputChars=0" emulator-screenshots/project-history-undo-whole-text.txt; then
+  echo "Undo emptied the model but the editor input still contains stale text."
+  cat emulator-screenshots/project-history-undo-whole-text.txt || true
+  collect_capture_diagnostics project-history-text-input-not-cleared
+  exit 65
+fi
+echo "PASS: one Undo removed all 11 characters across a one-second typing pause and restored an empty editor input."
 # One Redo must restore the complete sentence in a single step.
 timeout -k 2s 8s adb -s emulator-5554 logcat -c
 timeout -k 2s 8s adb -s emulator-5554 shell input tap $history_redo_coords
@@ -3142,6 +3148,12 @@ if ! grep -Eq "PROJECT_HISTORY_APPLIED action=redo .*beforeTextChars=0 afterText
   echo "One Redo did not restore the complete text session."
   cat emulator-screenshots/project-history-redo-whole-text.txt || true
   collect_capture_diagnostics project-history-text-redo-incomplete
+  exit 65
+fi
+if ! grep -Fq "TEXT_CONTROLS_RESTORED modelChars=11 inputChars=11" emulator-screenshots/project-history-redo-whole-text.txt; then
+  echo "Redo restored the model but not the editor input text."
+  cat emulator-screenshots/project-history-redo-whole-text.txt || true
+  collect_capture_diagnostics project-history-text-input-redo-not-restored
   exit 65
 fi
 # The second Redo restores the separate canvas-drag action.
