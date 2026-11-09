@@ -6595,6 +6595,18 @@ class VideoEditorActivity : Activity() {
         if (!timelineSyncTestEnabled) return
         val beforeTextChars = current.textLayers.sumOf { it.text.length }
         val afterTextChars = restored.textLayers.sumOf { it.text.length }
+        val beforeSelectedOverlay = current.selectedOverlayId?.let { id -> current.overlays.firstOrNull { it.id == id } }
+        val afterSelectedOverlay = restored.selectedOverlayId?.let { id -> restored.overlays.firstOrNull { it.id == id } }
+        fun overlayHistoryValue(overlay: OverlayClip?): String = overlay?.let {
+            String.format(
+                Locale.US,
+                "%.4f,%.4f,%.4f,%.1f,%d,%d,%d",
+                it.xFraction, it.yFraction, it.scale, it.rotationDegrees,
+                it.timelineStartMs, it.durationMs, it.keyframes.size
+            )
+        } ?: "none"
+        val beforeOverlayTransform = overlayHistoryValue(beforeSelectedOverlay)
+        val afterOverlayTransform = overlayHistoryValue(afterSelectedOverlay)
         android.util.Log.i(
             "ProjectHistoryTest",
             "PROJECT_HISTORY_APPLIED action=$action " +
@@ -6613,7 +6625,8 @@ class VideoEditorActivity : Activity() {
                 "beforeSoundDurationMs=${current.soundDurationMs} afterSoundDurationMs=${restored.soundDurationMs} " +
                 "beforeSoundSourceStartMs=${current.soundSourceStartMs} afterSoundSourceStartMs=${restored.soundSourceStartMs} " +
                 "beforeSoundVolume=${current.soundVolume} afterSoundVolume=${restored.soundVolume} " +
-                "beforeFilter=${current.videoFilterPreset} afterFilter=${restored.videoFilterPreset}"
+                "beforeFilter=${current.videoFilterPreset} afterFilter=${restored.videoFilterPreset} " +
+                "beforeOverlayTransform=$beforeOverlayTransform afterOverlayTransform=$afterOverlayTransform"
         )
     }
 
