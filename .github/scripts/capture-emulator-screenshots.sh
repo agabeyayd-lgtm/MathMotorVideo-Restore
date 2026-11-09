@@ -2970,7 +2970,7 @@ import sys
 matches = []
 for line in open(sys.argv[1], errors="replace"):
     match = re.search(
-        r"TEXT_PANEL_RETURN_BOUNDS visible=true x=(\\d+) y=(\\d+) width=(\\d+) height=(\\d+)",
+        r"TEXT_PANEL_RETURN_BOUNDS visible=true x=(\d+) y=(\d+) width=(\d+) height=(\d+)",
         line,
     )
     if match:
