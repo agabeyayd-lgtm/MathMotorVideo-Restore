@@ -410,6 +410,11 @@ class VideoEditorActivity : Activity() {
     }
     private val pendingCoverThumbnailTargets = mutableMapOf<String, MutableList<WeakReference<ImageView>>>()
     private var coverThumbnailRequestSequence = 0L
+    // Cover stills use a separate decoder queue so a fixed gutter thumbnail can
+    // never occupy one of the three workers that fill the scrolling filmstrip.
+    private val coverThumbnailExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { task ->
+        Thread(task, "cover-thumbnail-decoder")
+    }
     private val pendingTimelinePosterTargets = mutableMapOf<String, MutableList<WeakReference<ImageView>>>()
     private val pendingTimelinePosterLoads = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private val timelinePosterExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
@@ -11310,7 +11315,7 @@ class VideoEditorActivity : Activity() {
                     )
                 }.getOrNull()
             } else {
-                decodeTimelineFrame(clip.uri, frameTimeMs)
+                decodeIndependentCoverFrame(clip.uri, frameTimeMs, targetMaxSide)
             }
             runOnUiThread {
                 val targets = pendingCoverThumbnailTargets.remove(key).orEmpty()
@@ -11336,9 +11341,43 @@ class VideoEditorActivity : Activity() {
             }
         }
         try {
-            timelineThumbnailExecutor.execute(task)
+            coverThumbnailExecutor.execute(task)
         } catch (_: java.util.concurrent.RejectedExecutionException) {
             pendingCoverThumbnailTargets.remove(key)
+        }
+    }
+
+    private fun decodeIndependentCoverFrame(uri: Uri, timeMs: Long, maxSide: Int): Bitmap? {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(this, uri)
+            val frameTimeUs = timeMs.coerceAtLeast(0L) * 1_000L
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                retriever.getScaledFrameAtTime(
+                    frameTimeUs,
+                    MediaMetadataRetriever.OPTION_CLOSEST,
+                    maxSide.coerceAtLeast(1),
+                    maxSide.coerceAtLeast(1)
+                )
+            } else {
+                val original = retriever.getFrameAtTime(frameTimeUs, MediaMetadataRetriever.OPTION_CLOSEST)
+                    ?: return null
+                val largest = maxOf(original.width, original.height)
+                if (largest <= maxSide) original else {
+                    val scale = maxSide.toFloat() / largest.toFloat()
+                    Bitmap.createScaledBitmap(
+                        original,
+                        (original.width * scale).toInt().coerceAtLeast(1),
+                        (original.height * scale).toInt().coerceAtLeast(1),
+                        true
+                    ).also { if (it !== original && !original.isRecycled) original.recycle() }
+                }
+            }
+        } catch (error: Exception) {
+            android.util.Log.w("ClipCover", "Independent cover frame decode failed at ${timeMs}ms", error)
+            null
+        } finally {
+            runCatching { retriever.release() }
         }
     }
 
@@ -12222,6 +12261,7 @@ class VideoEditorActivity : Activity() {
         // Drop queued thumbnail work. Each decoder worker releases its own retriever
         // in the worker-thread finally block when the executor shuts down.
         pendingCoverThumbnailTargets.clear()
+        coverThumbnailExecutor.shutdownNow()
         coverThumbnailCache.evictAll()
         timelineThumbnailExecutor.queue.clear()
         timelineThumbnailExecutor.shutdownNow()
