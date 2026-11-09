@@ -4648,6 +4648,7 @@ class VideoEditorActivity : Activity() {
 
     /** Lightweight visual waveform drawn inside an audio clip without changing audio timing. */
     private inner class AudioWaveformView(
+        private val kind: String,
         private val barColor: Int
     ) : View(this@VideoEditorActivity) {
         private val waveformPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
@@ -4655,10 +4656,31 @@ class VideoEditorActivity : Activity() {
             style = android.graphics.Paint.Style.FILL
         }
         private var amplitudes: FloatArray = FloatArray(0)
+        private var loggedFirstVisibleDraw = false
 
         fun setWaveform(values: FloatArray) {
             amplitudes = values
-            invalidate()
+            // A decoded waveform can finish while a timeline rebuild is still
+            // assembling its new FrameLayout. invalidate() on a detached View
+            // is not enough to guarantee a draw after the View is attached.
+            if (isAttachedToWindow) {
+                postInvalidateOnAnimation()
+            } else {
+                invalidate()
+            }
+        }
+
+        override fun onAttachedToWindow() {
+            super.onAttachedToWindow()
+            // Re-paint cached samples that may have arrived before attachment.
+            postInvalidateOnAnimation()
+        }
+
+        override fun onSizeChanged(width: Int, height: Int, oldWidth: Int, oldHeight: Int) {
+            super.onSizeChanged(width, height, oldWidth, oldHeight)
+            if (amplitudes.isNotEmpty() && width > 0 && height > 0) {
+                postInvalidateOnAnimation()
+            }
         }
 
         override fun onDraw(canvas: android.graphics.Canvas) {
@@ -4668,6 +4690,13 @@ class VideoEditorActivity : Activity() {
             val horizontalStep = dp(3).toFloat()
             val barCount = minOf(values.size, (width / horizontalStep).toInt().coerceAtLeast(1))
             if (barCount <= 0) return
+            if (timelineSyncTestEnabled && !loggedFirstVisibleDraw) {
+                loggedFirstVisibleDraw = true
+                android.util.Log.i(
+                    "AudioWaveform",
+                    "AUDIO_WAVEFORM_DRAWN kind=$kind width=$width height=$height bars=$barCount attached=$isAttachedToWindow"
+                )
+            }
             val cellWidth = width.toFloat() / barCount
             val barWidth = minOf(dp(2).toFloat(), cellWidth * 0.72f).coerceAtLeast(1f)
             val centerY = height / 2f
@@ -4975,7 +5004,7 @@ class VideoEditorActivity : Activity() {
             clipToOutline = false
             contentDescription = "Müzik: ortasından taşı, kenarlarından süreyi ayarla"
         }
-        val musicWaveform = AudioWaveformView(Color.rgb(151, 226, 181)).apply {
+        val musicWaveform = AudioWaveformView("music", Color.rgb(151, 226, 181)).apply {
             contentDescription = "Müzik ses dalga biçimi"
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         }
@@ -4991,6 +5020,7 @@ class VideoEditorActivity : Activity() {
         val body = TextView(this).apply {
             text = "♫ " + (musicTitle ?: "Müzik")
             textSize = 9f
+            setBackgroundColor(Color.TRANSPARENT)
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER_VERTICAL
             maxLines = 1
@@ -5224,7 +5254,7 @@ class VideoEditorActivity : Activity() {
             clipToOutline = false
             contentDescription = "Ses efekti: ortasından taşı, kenarlarından kırp"
         }
-        val soundWaveform = AudioWaveformView(Color.rgb(255, 207, 139)).apply {
+        val soundWaveform = AudioWaveformView("sound", Color.rgb(255, 207, 139)).apply {
             contentDescription = "Ses efekti dalga biçimi"
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         }
@@ -5238,6 +5268,7 @@ class VideoEditorActivity : Activity() {
         val body = TextView(this).apply {
             text = "♪ ${soundTitle ?: "Ses efekti"}"
             textSize = 9f
+            setBackgroundColor(Color.TRANSPARENT)
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER_VERTICAL
             maxLines = 1
