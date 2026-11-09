@@ -1714,7 +1714,7 @@ controls=[x for x in lines if "PROJECT_HISTORY_CONTROLS " in x]
 if not events or not controls: raise SystemExit("Default-volume cleanup did not log the final Undo transition and controls.")
 event=re.search(r"beforeSoundVolume=(\d+) afterSoundVolume=(\d+)",events[-1])
 m=re.search(r"soundModel=(\d+) soundSeek=(-?\d+)",controls[-1])
-changed,expected=map(int,sys.argv[1:3])
+changed,expected=map(int,sys.argv[2:4])
 if not event or tuple(map(int,event.groups()))!=(changed,expected): raise SystemExit("Cleanup Undo did not restore the original sound value: "+events[-1])
 label=re.search(r"soundLabel=Efekt sesi: (\d+)%",controls[-1])
 if not m or tuple(map(int,m.groups()))!=(expected,expected) or not label or int(label.group(1))!=expected:
