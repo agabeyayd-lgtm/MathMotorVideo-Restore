@@ -1973,22 +1973,22 @@ class VideoEditorActivity : Activity() {
         effectsPanel.addView(filterPresets)
 
         filterBrightnessLabel = label("Parlaklık: 0", 11f, Color.rgb(205, 218, 231), false)
-        filterBrightnessSeek = SeekBar(this).apply { max = 200; progress = 100 }
+        filterBrightnessSeek = SeekBar(this).apply { max = 200; progress = 100; contentDescription = "Parlaklık filtresi" }
         effectsPanel.addView(filterBrightnessLabel)
         effectsPanel.addView(filterBrightnessSeek, matchWrap())
 
         filterContrastLabel = label("Kontrast: 0", 11f, Color.rgb(205, 218, 231), false)
-        filterContrastSeek = SeekBar(this).apply { max = 200; progress = 100 }
+        filterContrastSeek = SeekBar(this).apply { max = 200; progress = 100; contentDescription = "Kontrast filtresi" }
         effectsPanel.addView(filterContrastLabel)
         effectsPanel.addView(filterContrastSeek, matchWrap())
 
         filterSaturationLabel = label("Doygunluk: 0", 11f, Color.rgb(205, 218, 231), false)
-        filterSaturationSeek = SeekBar(this).apply { max = 200; progress = 100 }
+        filterSaturationSeek = SeekBar(this).apply { max = 200; progress = 100; contentDescription = "Doygunluk filtresi" }
         effectsPanel.addView(filterSaturationLabel)
         effectsPanel.addView(filterSaturationSeek, matchWrap())
 
         filterHueLabel = label("Renk tonu: 0°", 11f, Color.rgb(205, 218, 231), false)
-        filterHueSeek = SeekBar(this).apply { max = 360; progress = 180 }
+        filterHueSeek = SeekBar(this).apply { max = 360; progress = 180; contentDescription = "Renk tonu filtresi" }
         effectsPanel.addView(filterHueLabel)
         effectsPanel.addView(filterHueSeek, matchWrap())
         effectsPanel.addView(actionButton("Renk ayarlarını sıfırla") {
@@ -6641,6 +6641,10 @@ class VideoEditorActivity : Activity() {
                 "beforeSourceAudioVolume=${current.sourceAudioVolume} afterSourceAudioVolume=${restored.sourceAudioVolume} " +
                 "beforeKeepSourceAudio=${current.keepSourceAudio} afterKeepSourceAudio=${restored.keepSourceAudio} " +
                 "beforeFilter=${current.videoFilterPreset} afterFilter=${restored.videoFilterPreset} " +
+                "beforeFilterBrightness=${current.filterBrightness} afterFilterBrightness=${restored.filterBrightness} " +
+                "beforeFilterContrast=${current.filterContrast} afterFilterContrast=${restored.filterContrast} " +
+                "beforeFilterSaturation=${current.filterSaturation} afterFilterSaturation=${restored.filterSaturation} " +
+                "beforeFilterHue=${current.filterHue} afterFilterHue=${restored.filterHue} " +
                 "beforeOverlayTransform=$beforeOverlayTransform afterOverlayTransform=$afterOverlayTransform"
         )
     }
@@ -6752,7 +6756,11 @@ class VideoEditorActivity : Activity() {
                 "PROJECT_HISTORY_CONTROLS musicModel=$musicVolume musicSeek=${if (::musicVolumeSeek.isInitialized) musicVolumeSeek.progress else -1} " +
                     "soundModel=$soundVolume soundSeek=${if (::soundVolumeSeek.isInitialized) soundVolumeSeek.progress else -1} " +
                     "sourceModel=$sourceAudioVolume sourceSeek=${if (::sourceVolumeSeek.isInitialized) sourceVolumeSeek.progress else -1} " +
-                    "clipSourceSeek=${if (::clipVolumeSeek.isInitialized) clipVolumeSeek.progress else -1}"
+                    "clipSourceSeek=${if (::clipVolumeSeek.isInitialized) clipVolumeSeek.progress else -1} " +
+                    "filterPreset=$selectedVideoFilter brightnessModel=$filterBrightness brightnessSeek=${if (::filterBrightnessSeek.isInitialized) filterBrightnessSeek.progress else -1} " +
+                    "contrastModel=$filterContrast contrastSeek=${if (::filterContrastSeek.isInitialized) filterContrastSeek.progress else -1} " +
+                    "saturationModel=$filterSaturation saturationSeek=${if (::filterSaturationSeek.isInitialized) filterSaturationSeek.progress else -1} " +
+                    "hueModel=$filterHue hueSeek=${if (::filterHueSeek.isInitialized) filterHueSeek.progress else -1}"
             )
         }
         if (::soundLabel.isInitialized) {
