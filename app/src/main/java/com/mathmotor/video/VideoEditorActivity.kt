@@ -1853,7 +1853,16 @@ class VideoEditorActivity : Activity() {
             musicVolumeLabel.text = "Müzik sesi: " + value + "%"
             musicPreviewPlayer?.volume = value / 100f
         })
-        audioPanel.addView(musicVolumeSeek, matchWrap())
+        musicVolumeSeek.minimumHeight = dp(48)
+        musicVolumeSeek.minHeight = dp(48)
+        musicVolumeSeek.setPadding(
+            musicVolumeSeek.paddingLeft, dp(10),
+            musicVolumeSeek.paddingRight, dp(10)
+        )
+        audioPanel.addView(
+            musicVolumeSeek,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48))
+        )
 
         musicSourceRangeLabel = label("Müzik kaynak aralığı: tüm dosya", 12f, Color.WHITE, true)
         audioPanel.addView(musicSourceRangeLabel)
@@ -1942,7 +1951,21 @@ class VideoEditorActivity : Activity() {
             soundVolumeLabel.text = "Efekt sesi: " + value + "%"
             soundPreviewPlayer?.volume = value / 100f
         })
-        audioPanel.addView(soundVolumeSeek, matchWrap())
+        // The platform's wrap-content SeekBar was only ~16dp high in the
+        // emulator, making its thumb hard to acquire reliably. Use a CapCut-like
+        // full-height touch target while keeping the visual track centered.
+        soundVolumeSeek.minimumHeight = dp(48)
+        soundVolumeSeek.minHeight = dp(48)
+        soundVolumeSeek.setPadding(
+            soundVolumeSeek.paddingLeft,
+            dp(10),
+            soundVolumeSeek.paddingRight,
+            dp(10)
+        )
+        audioPanel.addView(
+            soundVolumeSeek,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48))
+        )
         keepSourceAudio = CheckBox(this).apply {
             text = "Videonun kendi sesini koru"
             isChecked = true
