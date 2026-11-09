@@ -6972,7 +6972,14 @@ class VideoEditorActivity : Activity() {
         // before taking the gesture's own starting snapshot.
         finishTextHistoryEdit()
         finishProjectHistoryGesture()
-        return captureProjectEditSnapshot()
+        val snapshot = captureProjectEditSnapshot()
+        if (timelineSyncTestEnabled) {
+            android.util.Log.i(
+                "ProjectHistoryTest",
+                "PROJECT_HISTORY_GESTURE_BEGIN soundVolume=${snapshot.soundVolume} undoCount=${undoProjectHistory.size}"
+            )
+        }
+        return snapshot
     }
 
     private fun recordProjectEdit() {
@@ -6986,13 +6993,36 @@ class VideoEditorActivity : Activity() {
         if (undoProjectHistory.size > 50) undoProjectHistory.removeAt(0)
         redoProjectHistory.clear()
         updateProjectHistoryButtons()
+        if (timelineSyncTestEnabled) {
+            android.util.Log.i(
+                "ProjectHistoryTest",
+                "PROJECT_HISTORY_PUSH undoCount=${undoProjectHistory.size} redoCount=${redoProjectHistory.size} " +
+                    "soundVolume=${snapshot.soundVolume} undoEnabled=${undoProjectButton?.isEnabled}"
+            )
+        }
     }
 
     private fun finishProjectHistoryGesture() {
         val before = activeProjectHistorySnapshot ?: return
         activeProjectHistorySnapshot = null
-        if (hasProjectContentChanged(before, captureProjectEditSnapshot())) {
+        val after = captureProjectEditSnapshot()
+        val changed = hasProjectContentChanged(before, after)
+        if (timelineSyncTestEnabled) {
+            android.util.Log.i(
+                "ProjectHistoryTest",
+                "PROJECT_HISTORY_GESTURE_END beforeSoundVolume=${before.soundVolume} " +
+                    "afterSoundVolume=${after.soundVolume} changed=$changed undoCountBefore=${undoProjectHistory.size}"
+            )
+        }
+        if (changed) {
             pushProjectUndoSnapshot(before)
+        }
+        if (timelineSyncTestEnabled) {
+            android.util.Log.i(
+                "ProjectHistoryTest",
+                "PROJECT_HISTORY_GESTURE_COMMITTED soundVolume=${after.soundVolume} " +
+                    "undoCountAfter=${undoProjectHistory.size} undoEnabled=${undoProjectButton?.isEnabled}"
+            )
         }
     }
 
