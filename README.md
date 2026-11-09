@@ -1206,3 +1206,11 @@ The selected main-video clip exposes independent left/right edge grips: drag the
 - API 35 smoke test on head 9a80eea4e47a46cfe023275accdae1c193e9f708 decoded both deterministic WAV fixtures and verified actual waveform pixels in the screenshot (music 3,294 pixels; effect 2,859 pixels). The same run passed unit/build but stopped later at the cover Save harness matching Android's uppercase KAYDET label; this is a test selector issue, not a waveform failure.
 - Fixed the clip gutter's add-action labels: the source previously contained a double-escaped newline and displayed literal \\n text. It now uses a real newline for the two-line “Metin ekle” and “Ses ekle” labels, and the accessibility description normalizes the actual line break.
 - Latest head 09d5de144e9e32be7264665bea54eab8a3dc00df has unit/build and debug APK build checks green; the latest API 35 emulator scenario is still running and must pass cover Save/Undo/Redo and audio interaction before the candidate can be accepted. No version bump, signed release APK or publication.
+
+
+## 2026-11-09 — SFX volume Undo failure diagnostics
+
+- Latest API 35 run passed the independent cover still Save/Undo/Redo checks, overlay transform Undo/Redo, and the audio waveform checks, but failed because project Undo remained disabled after the real sound-effect volume swipe.
+- The test already confirmed SeekBar start/progress/stop callbacks and a completed history-gesture callback; the failure indicates the history snapshot was not committed as a changed project edit, or the gesture did not actually change the model. The prior harness discarded the most useful callback values on this failure path.
+- Added failure-only output of the captured `VOLUME_SEEK_START/PROGRESS/STOP` and `PROJECT_HISTORY_GESTURE_BEGIN/END/COMMITTED` records. This does not weaken assertions or alter production behavior. Next API 35 run will expose exact start/end progress and before/after model values so the underlying cause can be fixed rather than guessed.
+- Current branch commit: `083ed26373f59d590ecd19217da14f7b1fa9ace2`. No app version change, release APK, signing, or merge.
