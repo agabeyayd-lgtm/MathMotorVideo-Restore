@@ -630,6 +630,9 @@ class VideoEditorActivity : Activity() {
     private lateinit var overlayOpacitySeek: SeekBar
     private var updatingOverlayControls = false
     private var clipCoverButton: TextView? = null
+    private var clipCoverThumbnailView: ImageView? = null
+    private var clipCoverThumbnailGeneration = 0L
+    private var clipCoverThumbnailBitmap: Bitmap? = null
     private var pendingCoverSaveBitmap: Bitmap? = null
     private lateinit var startLabel: TextView
     private lateinit var endLabel: TextView
@@ -3363,24 +3366,70 @@ class VideoEditorActivity : Activity() {
             }
             if (reorderable) {
                 row.addView(grip, LinearLayout.LayoutParams(dp(44), ViewGroup.LayoutParams.MATCH_PARENT))
-                val sideAction = TextView(this).apply {
-                    text = when {
-                        tag == "Video" -> "Kapak"
-                        tag == "Müzik" || tag == "Ses" -> "Ses\nekle"
-                        tag == "Metin" || tag == "Metin 1" -> "Metin\nekle"
-                        else -> ""
+                val sideAction: View = if (tag == "Video") {
+                    val coverAction = LinearLayout(this).apply {
+                        orientation = LinearLayout.VERTICAL
+                        gravity = Gravity.CENTER
+                        isClickable = true
+                        isFocusable = true
+                        contentDescription = "Kapak görselini düzenle"
+                        setOnClickListener {
+                            if (selectedClip() != null) showClipCoverPicker() else chooseVideo(true)
+                        }
                     }
-                    textSize = 9f
-                    gravity = Gravity.CENTER
-                    setTextColor(Color.rgb(166, 184, 201))
-                    isClickable = text.isNotBlank()
-                    isFocusable = text.isNotBlank()
-                    contentDescription = text.toString().replace("\n", " ")
-                    setOnClickListener {
-                        when (tag) {
-                            "Video" -> if (selectedClip() != null) showClipCoverPicker() else chooseVideo(true)
-                            "Müzik", "Ses" -> showEditorPanel("audio")
-                            "Metin", "Metin 1" -> showEditorPanel("text")
+                    val tile = FrameLayout(this).apply {
+                        background = android.graphics.drawable.GradientDrawable().apply {
+                            setColor(Color.rgb(37, 45, 55))
+                            cornerRadius = dp(5).toFloat()
+                            setStroke(dp(1), Color.rgb(78, 91, 105))
+                        }
+                        clipToOutline = true
+                    }
+                    val thumbnail = ImageView(this).apply {
+                        scaleType = ImageView.ScaleType.CENTER_CROP
+                        contentDescription = "Seçili klibin kapak karesi"
+                    }
+                    clipCoverThumbnailView = thumbnail
+                    tile.addView(thumbnail, FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+                    ))
+                    val editMark = TextView(this).apply {
+                        text = "✎"
+                        textSize = 13f
+                        gravity = Gravity.CENTER
+                        setTextColor(Color.WHITE)
+                        background = android.graphics.drawable.GradientDrawable().apply {
+                            setColor(0x99000000.toInt())
+                            cornerRadius = dp(10).toFloat()
+                        }
+                    }
+                    tile.addView(editMark, FrameLayout.LayoutParams(dp(18), dp(18), Gravity.TOP or Gravity.END))
+                    coverAction.addView(tile, LinearLayout.LayoutParams(dp(36), dp(36)))
+                    coverAction.addView(TextView(this).apply {
+                        text = "Kapak"
+                        textSize = 9f
+                        gravity = Gravity.CENTER
+                        setTextColor(Color.rgb(166, 184, 201))
+                    }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(16)))
+                    coverAction
+                } else {
+                    TextView(this).apply {
+                        text = when {
+                            tag == "Müzik" || tag == "Ses" -> "Ses\\nekle"
+                            tag == "Metin" || tag == "Metin 1" -> "Metin\\nekle"
+                            else -> ""
+                        }
+                        textSize = 9f
+                        gravity = Gravity.CENTER
+                        setTextColor(Color.rgb(166, 184, 201))
+                        isClickable = text.isNotBlank()
+                        isFocusable = text.isNotBlank()
+                        contentDescription = text.toString().replace("\\n", " ")
+                        setOnClickListener {
+                            when (tag) {
+                                "Müzik", "Ses" -> showEditorPanel("audio")
+                                "Metin", "Metin 1" -> showEditorPanel("text")
+                            }
                         }
                     }
                 }
@@ -11148,6 +11197,7 @@ class VideoEditorActivity : Activity() {
         val clip = selectedClip()
         updateClipSpeedControls()
         if (clip == null) {
+            refreshClipCoverThumbnail(null)
             clipCoverButton?.apply { isEnabled = false; text = "Kapak" }
             selectedClipLabel.text = "Önce bir video seç."
             startSeek.max = 1
@@ -11159,6 +11209,7 @@ class VideoEditorActivity : Activity() {
             updateTrimLabels()
             return
         }
+        refreshClipCoverThumbnail(clip)
         startSeek.isEnabled = true
         endSeek.isEnabled = true
         val durationProgressMax = TimelineTrimMath.progressMax(clip.durationMs)
@@ -11177,6 +11228,37 @@ class VideoEditorActivity : Activity() {
             }
         }
         updateTrimLabels()
+    }
+
+    private fun refreshClipCoverThumbnail(clip: Clip?) {
+        val target = clipCoverThumbnailView ?: return
+        val generation = ++clipCoverThumbnailGeneration
+        if (clip == null) {
+            target.setImageDrawable(null)
+            target.setBackgroundColor(Color.rgb(37, 45, 55))
+            return
+        }
+        val frameTimeMs = (clip.coverTimeMs ?: clip.startMs).coerceIn(0L, (clip.durationMs - 1L).coerceAtLeast(0L))
+        val task = TimelineThumbnailTask(-3L, timelineThumbnailTaskSequence.incrementAndGet()) {
+            val decoded = decodeTimelinePreviewFrame(clip.uri, frameTimeMs)
+            runOnUiThread {
+                if (generation != clipCoverThumbnailGeneration || selectedClip() !== clip || isFinishing || isDestroyed) {
+                    decoded?.let { if (!it.isRecycled) it.recycle() }
+                    return@runOnUiThread
+                }
+                if (decoded != null && !decoded.isRecycled) {
+                    val previous = clipCoverThumbnailBitmap
+                    clipCoverThumbnailBitmap = decoded
+                    target.setImageBitmap(decoded)
+                    previous?.let { if (it !== decoded && !it.isRecycled) it.recycle() }
+                }
+            }
+        }
+        try {
+            timelineThumbnailExecutor.execute(task)
+        } catch (_: java.util.concurrent.RejectedExecutionException) {
+            // Keep the styled tile available; the picker remains usable.
+        }
     }
 
     private fun updateTrimLabels() {
