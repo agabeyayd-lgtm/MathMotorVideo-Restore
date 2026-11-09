@@ -1634,10 +1634,12 @@ controls = [line for line in lines if "PROJECT_HISTORY_CONTROLS " in line]
 if not events or not controls: raise SystemExit("Undo did not log both history transition and restored control state.")
 event = re.search(r"beforeSoundVolume=(\d+) afterSoundVolume=(\d+)", events[-1])
 ui = re.search(r"soundModel=(\d+) soundSeek=(-?\d+)", controls[-1])
-if not event or not ui: raise SystemExit("Undo diagnostics do not include sound mix and SeekBar values.")
+if not event or not ui: raise SystemExit("Undo diagnostics do not include sound mix, SeekBar, and label values.")
 changed, restored = map(int,event.groups()); model, seek = map(int,ui.groups())
+label = re.search(r"soundLabel=Efekt sesi: (\\d+)%", controls[-1])
 if changed == restored: raise SystemExit(f"Sound volume Undo did not change the model: {events[-1]}")
-if model != restored or seek != restored: raise SystemExit(f"Undo restored the model but not its visible slider: model={model}, seek={seek}, expected={restored}; {controls[-1]}")
+if model != restored or seek != restored or not label or int(label.group(1)) != restored:
+    raise SystemExit(f"Undo did not restore the model, SeekBar, and label together: model={model}, seek={seek}, label={label.group(1) if label else 'missing'}, expected={restored}; {controls[-1]}")
 print(changed, restored)
 PY
 )" || { collect_capture_diagnostics project-history-sound-volume-undo-failed; exit 94; }
@@ -1670,11 +1672,13 @@ controls = [line for line in lines if "PROJECT_HISTORY_CONTROLS " in line]
 if not events or not controls: raise SystemExit("Redo did not log both history transition and restored control state.")
 event = re.search(r"beforeSoundVolume=(\d+) afterSoundVolume=(\d+)", events[-1])
 ui = re.search(r"soundModel=(\d+) soundSeek=(-?\d+)", controls[-1])
-if not event or not ui: raise SystemExit("Redo diagnostics do not include sound mix and SeekBar values.")
+if not event or not ui: raise SystemExit("Redo diagnostics do not include sound mix, SeekBar, and label values.")
 before, after = map(int,event.groups()); model, seek = map(int,ui.groups())
 expected_new, expected_old = map(int,sys.argv[2:4])
+label = re.search(r"soundLabel=Efekt sesi: (\\d+)%", controls[-1])
 if before != expected_old or after != expected_new: raise SystemExit(f"Redo applied the wrong sound volume: {events[-1]}")
-if model != after or seek != after: raise SystemExit(f"Redo restored the model but not its visible slider: model={model}, seek={seek}, expected={after}; {controls[-1]}")
+if model != after or seek != after or not label or int(label.group(1)) != after:
+    raise SystemExit(f"Redo did not restore the model, SeekBar, and label together: model={model}, seek={seek}, label={label.group(1) if label else 'missing'}, expected={after}; {controls[-1]}")
 print(f"PASS: one Redo reapplied sound volume {before} -> {after} and its slider matches.")
 PY
 
@@ -1705,8 +1709,10 @@ event=re.search(r"beforeSoundVolume=(\d+) afterSoundVolume=(\d+)",events[-1])
 m=re.search(r"soundModel=(\d+) soundSeek=(-?\d+)",controls[-1])
 changed,expected=map(int,sys.argv[1:3])
 if not event or tuple(map(int,event.groups()))!=(changed,expected): raise SystemExit("Cleanup Undo did not restore the original sound value: "+events[-1])
-if not m or tuple(map(int,m.groups()))!=(expected,expected): raise SystemExit("Test audio volume was not restored before fixture import: "+controls[-1])
-print(f"PASS: Undo/Redo round-trip completed and one final Undo restored initial sound volume {expected}.")
+label=re.search(r"soundLabel=Efekt sesi: (\\d+)%",controls[-1])
+if not m or tuple(map(int,m.groups()))!=(expected,expected) or not label or int(label.group(1))!=expected:
+    raise SystemExit("Test audio model, SeekBar, or label was not restored before fixture import: "+controls[-1])
+print(f"PASS: Undo/Redo round-trip restored the model, SeekBar and label to initial sound volume {expected}.")
 PY
 
 # Re-open the audio sheet once at the restored baseline and prove the user-facing
