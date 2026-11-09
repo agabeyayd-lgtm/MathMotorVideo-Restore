@@ -891,6 +891,92 @@ fi
 # clip is inserted into the timeline, so inaccessible UI hierarchy is diagnostic
 # only and does not turn a successful import into a false failure.
 
+echo "Step 7a-Cover: verify independent cover tile opens, saves, and reloads its own still image"
+if ! dump_hierarchy editor-cover-tile-before.xml emulator-screenshots/editor-cover-tile-before.xml; then
+  collect_capture_diagnostics cover-tile-hierarchy-missing
+  exit 86
+fi
+cover_tile_bounds="$(find_content_description_bounds emulator-screenshots/editor-cover-tile-before.xml "Kapak görselini düzenle" || true)"
+if [ -z "$cover_tile_bounds" ]; then
+  echo "The fixed left-gutter cover tile is missing or not accessible."
+  collect_capture_diagnostics cover-tile-control-missing
+  exit 86
+fi
+read -r cover_tile_x cover_tile_y cover_tile_w cover_tile_h cover_tile_x1 cover_tile_y1 cover_tile_x2 cover_tile_y2 <<< "$cover_tile_bounds"
+if ! take_screen emulator-screenshots/editor-cover-tile-before.png; then
+  collect_capture_diagnostics cover-tile-before-capture-failed
+  exit 86
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$cover_tile_x" "$cover_tile_y"
+sleep 1
+if ! dump_hierarchy editor-cover-picker.xml emulator-screenshots/editor-cover-picker.xml; then
+  collect_capture_diagnostics cover-picker-did-not-open
+  exit 86
+fi
+if ! grep -Fq "Kapak karesi zaman seçici" emulator-screenshots/editor-cover-picker.xml; then
+  echo "Tapping the cover tile did not open the dedicated cover-frame picker."
+  collect_capture_diagnostics cover-picker-control-missing
+  exit 86
+fi
+cover_save_coords="$(python3 - emulator-screenshots/editor-cover-picker.xml <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+matches = []
+for node in root.iter("node"):
+    if node.attrib.get("text", "").strip() != "Kaydet":
+        continue
+    if node.attrib.get("enabled", "false").lower() != "true":
+        continue
+    m = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if not m:
+        continue
+    x1,y1,x2,y2 = map(int, m.groups())
+    if x2 > x1 and y2 > y1:
+        matches.append((x1,y1,x2,y2))
+if not matches:
+    raise SystemExit("The dedicated cover picker Save button is not enabled/visible.")
+x1,y1,x2,y2 = matches[-1]
+print((x1+x2)//2, (y1+y2)//2)
+PY
+)" || { collect_capture_diagnostics cover-picker-save-button-missing; exit 86; }
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $cover_save_coords
+cover_saved=false
+for attempt in $(seq 1 15); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ClipCover:I > emulator-screenshots/cover-save-logcat.txt 2>&1 || true
+  if grep -Fq "COVER_STILL_SAVED" emulator-screenshots/cover-save-logcat.txt; then
+    cover_saved=true
+    break
+  fi
+  sleep 1
+done
+if [ "$cover_saved" != true ]; then
+  echo "The cover picker Save action did not persist an independent project still image."
+  cat emulator-screenshots/cover-save-logcat.txt || true
+  collect_capture_diagnostics cover-still-save-failed
+  exit 86
+fi
+cover_tile_reloaded=false
+for attempt in $(seq 1 15); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ClipCover:I > emulator-screenshots/cover-tile-reload-logcat.txt 2>&1 || true
+  if grep -Fq "COVER_TILE_READY source=saved-file" emulator-screenshots/cover-tile-reload-logcat.txt; then
+    cover_tile_reloaded=true
+    break
+  fi
+  sleep 1
+done
+if [ "$cover_tile_reloaded" != true ]; then
+  echo "The cover file saved successfully but the independent tile did not reload from that saved file."
+  cat emulator-screenshots/cover-tile-reload-logcat.txt || true
+  collect_capture_diagnostics cover-still-display-failed
+  exit 86
+fi
+if ! take_screen emulator-screenshots/editor-cover-tile-saved.png; then
+  collect_capture_diagnostics cover-tile-after-save-capture-failed
+  exit 86
+fi
+echo "PASS: fixed cover tile opened its picker, saved a project-local still image, and reloaded the tile from that saved file."
+
 echo "Step 8/12: verify the one-row clip tool strip and its upward detail panel"
 find_bottom_tool() {
   local hierarchy="$1"
