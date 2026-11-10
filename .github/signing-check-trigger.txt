@@ -3,3 +3,5 @@ Signing verification for the next editor update: compare the exact publisher-sel
 Verify signing continuity for published 8.37 / versionCode 404 against the previous 8.36 / versionCode 403 release using the publisher-selected signing key.
 
 Re-run 8.37 / versionCode 404 signing continuity verification after moving release-history JSON parsing to a file.
+
+Re-run version 404 signing continuity after parsing previous release tag/code variables.
