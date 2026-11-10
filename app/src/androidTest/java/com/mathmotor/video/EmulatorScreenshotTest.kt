@@ -78,24 +78,35 @@ class EmulatorScreenshotTest {
         val args = InstrumentationRegistry.getArguments()
         val draftId = requireNotNull(args.getString("draftId"))
 
+        android.util.Log.i("TimelineSyncTest", "CLIP_REORDER_TEST start draftId=$draftId")
         // am instrument leaves the launcher focused. Re-open the already-saved
         // split project in the real editor from inside this test process so the
         // injected pointer stream is delivered to the editor window, not HOME.
+        android.util.Log.i("TimelineSyncTest", "CLIP_REORDER_TEST launching_editor_entry")
         context.startActivity(Intent(context, EditorTestEntryActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
             putExtra("draft_id", draftId)
             putExtra("timeline_sync_test", true)
         })
+        android.util.Log.i("TimelineSyncTest", "CLIP_REORDER_TEST editor_entry_launch_returned")
 
+        android.util.Log.i("TimelineSyncTest", "CLIP_REORDER_TEST waiting_for_first_clip")
+        val firstClipVisible = device.wait(Until.hasObject(By.descContains("Klip 1:")), 20_000)
+        android.util.Log.i("TimelineSyncTest", "CLIP_REORDER_TEST first_clip_visible=$firstClipVisible")
         assertTrue(
             "The restored split project did not return to the editor; no first video clip is exposed",
-            device.wait(Until.hasObject(By.descContains("Klip 1:")), 20_000)
+            firstClipVisible
         )
+        android.util.Log.i("TimelineSyncTest", "CLIP_REORDER_TEST waiting_for_second_clip")
+        val secondClipVisible = device.wait(Until.hasObject(By.descContains("Klip 2:")), 15_000)
+        android.util.Log.i("TimelineSyncTest", "CLIP_REORDER_TEST second_clip_visible=$secondClipVisible")
         assertTrue(
             "The second split clip was not restored",
-            device.wait(Until.hasObject(By.descContains("Klip 2:")), 15_000)
+            secondClipVisible
         )
+        android.util.Log.i("TimelineSyncTest", "CLIP_REORDER_TEST waiting_for_ui_idle")
         device.waitForIdle()
+        android.util.Log.i("TimelineSyncTest", "CLIP_REORDER_TEST editor_ready")
 
         val firstClip = device.findObject(By.descContains("Klip 1:"))
             ?: throw AssertionError("Could not find the first restored clip surface")
