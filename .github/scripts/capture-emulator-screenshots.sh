@@ -4106,14 +4106,22 @@ if ! grep -Fq "com.mathmotor.video.next.test/androidx.test.runner.AndroidJUnitRu
   collect_capture_diagnostics video-long-press-runner-not-registered
   exit 96
 fi
-timeout -k 2s 35s adb -s emulator-5554 shell am instrument -w \
+instrumentation_status=0
+timeout -k 3s 120s adb -s emulator-5554 shell am instrument -w \
   -e class com.mathmotor.video.EmulatorScreenshotTest#injectLongPressDragGesture \
   -e draftId "$smoke_draft_id" \
   com.mathmotor.video.next.test/androidx.test.runner.AndroidJUnitRunner \
-  > emulator-screenshots/video-long-press-drag-instrumentation.txt 2>&1
-if ! grep -q "OK (1 test)" emulator-screenshots/video-long-press-drag-instrumentation.txt; then
-  cat emulator-screenshots/video-long-press-drag-instrumentation.txt
-  echo "The long-press clip drag instrumentation did not complete successfully."
+  > emulator-screenshots/video-long-press-drag-instrumentation.txt 2>&1 || instrumentation_status=$?
+# Preserve complete device diagnostics before the emulator is shut down.
+timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime \
+  > emulator-screenshots/video-long-press-full-logcat.txt 2>&1 || true
+timeout -k 2s 8s adb -s emulator-5554 shell dumpsys activity activities \
+  > emulator-screenshots/video-long-press-activities.txt 2>&1 || true
+if [ "$instrumentation_status" -ne 0 ] || ! grep -q "OK (1 test)" emulator-screenshots/video-long-press-drag-instrumentation.txt; then
+  echo "The long-press clip drag instrumentation did not complete successfully (exit=$instrumentation_status)."
+  cat emulator-screenshots/video-long-press-drag-instrumentation.txt || true
+  tail -n 180 emulator-screenshots/video-long-press-full-logcat.txt || true
+  cat emulator-screenshots/video-long-press-activities.txt || true
   collect_capture_diagnostics video-long-press-drag-instrumentation-failed
   exit 96
 fi
