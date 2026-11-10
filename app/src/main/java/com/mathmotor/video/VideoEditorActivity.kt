@@ -498,17 +498,17 @@ class VideoEditorActivity : Activity() {
         override fun run() = work()
     }
     private val timelineThumbnailTaskSequence = java.util.concurrent.atomic.AtomicLong()
-    // Three isolated workers keep the tail of an eight-cell visible batch below
-    // the queue-wait budget without returning to unrestricted codec concurrency.
-    // Each worker owns its retriever; Media3 remains a fallback for unsupported sources.
+    // Four isolated workers reduce the measured tail latency of an eight-cell
+    // visible batch. Each worker owns its retriever; Media3 remains a fallback
+    // for unsupported sources. This is bounded concurrency, not an unbounded pool.
     private val timelineThumbnailWorkerSequence = java.util.concurrent.atomic.AtomicLong()
     private val timelineThumbnailRetrievers =
         java.util.concurrent.ConcurrentHashMap<Long, Pair<Uri, MediaMetadataRetriever>>()
     private val timelineThumbnailExtractors =
         java.util.concurrent.ConcurrentHashMap<Long, Pair<Uri, FrameExtractor>>()
     private val timelineThumbnailExecutor = java.util.concurrent.ThreadPoolExecutor(
-        3,
-        3,
+        4,
+        4,
         0L,
         java.util.concurrent.TimeUnit.MILLISECONDS,
         java.util.concurrent.PriorityBlockingQueue<Runnable>(
