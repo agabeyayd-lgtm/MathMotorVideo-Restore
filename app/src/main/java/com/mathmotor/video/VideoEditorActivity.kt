@@ -486,17 +486,17 @@ class VideoEditorActivity : Activity() {
         override fun run() = work()
     }
     private val timelineThumbnailTaskSequence = java.util.concurrent.atomic.AtomicLong()
-    // Three isolated workers balance filmstrip throughput against concurrent codec
-    // contention. Each worker owns its retriever and creates a Media3 extractor only
-    // when the platform decoder cannot handle a source.
+    // Two isolated workers avoid saturating the emulator/device video codec when
+    // several visible filmstrip cells decode together. Each worker owns its retriever
+    // and creates a Media3 extractor only when the platform decoder cannot handle a source.
     private val timelineThumbnailWorkerSequence = java.util.concurrent.atomic.AtomicLong()
     private val timelineThumbnailRetrievers =
         java.util.concurrent.ConcurrentHashMap<Long, Pair<Uri, MediaMetadataRetriever>>()
     private val timelineThumbnailExtractors =
         java.util.concurrent.ConcurrentHashMap<Long, Pair<Uri, FrameExtractor>>()
     private val timelineThumbnailExecutor = java.util.concurrent.ThreadPoolExecutor(
-        3,
-        3,
+        2,
+        2,
         0L,
         java.util.concurrent.TimeUnit.MILLISECONDS,
         java.util.concurrent.PriorityBlockingQueue<Runnable>(
@@ -11315,8 +11315,9 @@ class VideoEditorActivity : Activity() {
         val frameTimeUs = timeMs.coerceAtLeast(0L) * 1000L
         val platformStartedAt = SystemClock.uptimeMillis()
         val retriever = timelineThumbnailRetrieverFor(uri, "TimelineThumbnail")
+        var platformDecodePath = "unavailable"
         val platformFrame = retriever?.let { activeRetriever ->
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            val scaledFrame = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                 runCatching {
                     activeRetriever.getScaledFrameAtTime(
                         frameTimeUs,
@@ -11327,15 +11328,27 @@ class VideoEditorActivity : Activity() {
                 }.getOrNull()
             } else {
                 null
-            } ?: runCatching {
-                activeRetriever.getFrameAtTime(frameTimeUs, MediaMetadataRetriever.OPTION_CLOSEST)
-            }.getOrNull()
+            }
+            if (scaledFrame != null) {
+                platformDecodePath = "scaled"
+                scaledFrame
+            } else {
+                platformDecodePath = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                    "full-frame-fallback"
+                } else {
+                    "full-frame-legacy"
+                }
+                runCatching {
+                    activeRetriever.getFrameAtTime(frameTimeUs, MediaMetadataRetriever.OPTION_CLOSEST)
+                }.getOrNull()
+            }
         }
         if (platformFrame != null) {
             if (timelineSyncTestEnabled) android.util.Log.i(
                 "TimelineFrameSyncTest",
                 "TIMELINE_THUMBNAIL_DECODED requestedMs=$timeMs decoder=platform-mmr-primary " +
-                    "worker=${Thread.currentThread().id} decodeMs=${SystemClock.uptimeMillis() - platformStartedAt}"
+                    "worker=${Thread.currentThread().id} decodeMs=${SystemClock.uptimeMillis() - platformStartedAt} " +
+                    "path=$platformDecodePath bitmap=${platformFrame.width}x${platformFrame.height}"
             )
             return platformFrame
         }
