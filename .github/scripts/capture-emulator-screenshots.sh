@@ -3992,6 +3992,31 @@ read -r drag_start_x drag_y drag_drop_x <<< "$clip_drag_coords"
 # Match the production gesture: hold the clip stationary until its long-press
 # timer fires, then drag with the same pointer. adb input draganddrop moves
 # immediately and only pans the timeline, so it does not test clip reordering.
+# connectedDebugAndroidTest may remove its test package after the selected
+# backup test finishes. Explicitly reinstall the generated instrumentation APK
+# before invoking the separate gesture helper, then verify Android registered
+# the exact runner instead of allowing a bare INSTRUMENTATION_FAILED.
+test_apk="app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
+if [ ! -s "$test_apk" ]; then
+  echo "The Android instrumentation APK is missing: $test_apk"
+  collect_capture_diagnostics video-long-press-test-apk-missing
+  exit 96
+fi
+if ! timeout -k 2s 30s adb -s emulator-5554 install -r "$test_apk" \
+    > emulator-screenshots/video-long-press-test-apk-install.txt 2>&1; then
+  cat emulator-screenshots/video-long-press-test-apk-install.txt
+  collect_capture_diagnostics video-long-press-test-apk-install-failed
+  exit 96
+fi
+registered_instrumentation="$(timeout -k 2s 8s adb -s emulator-5554 shell pm list instrumentation 2>&1 | tr -d "\\r" || true)"
+printf '%s\\n' "$registered_instrumentation" > emulator-screenshots/video-long-press-instrumentation-list.txt
+if ! grep -Fq "com.mathmotor.video.next.test/androidx.test.runner.AndroidJUnitRunner" \
+    emulator-screenshots/video-long-press-instrumentation-list.txt; then
+  echo "The long-press test runner is not registered after installation:"
+  cat emulator-screenshots/video-long-press-instrumentation-list.txt
+  collect_capture_diagnostics video-long-press-runner-not-registered
+  exit 96
+fi
 timeout -k 2s 20s adb -s emulator-5554 shell am instrument -w \
   -e class com.mathmotor.video.EmulatorScreenshotTest#injectLongPressDragGesture \
   -e startX "$drag_start_x" -e startY "$drag_y" \
