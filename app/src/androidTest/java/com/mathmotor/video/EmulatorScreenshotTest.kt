@@ -116,16 +116,17 @@ class EmulatorScreenshotTest {
             secondBounds.width() > 20 && secondBounds.height() > 20
         )
 
-        // Drop the second clip over the centre of the first. Because the two
-        // pieces were split edge-to-edge, this moves the second piece to 00:00.
+        // Drop the second clip in the first quarter of the first segment.
+        // The production insertion threshold is the target clip's midpoint:
+        // dropping at its centre is ambiguous and may leave the piece after it.
         val startX = secondBounds.centerX().toFloat()
         val startY = secondBounds.centerY().toFloat()
-        val endX = firstBounds.centerX().toFloat()
+        val endX = (firstBounds.left + firstBounds.width() / 4).toFloat()
         val endY = firstBounds.centerY().toFloat()
         assertTrue(
-            "The clip drag target is not to the left of the moved segment: " +
-                "first=$firstBounds second=$secondBounds",
-            endX < startX
+            "The drag must land in the first half of the first clip to insert at 00:00: " +
+                "first=$firstBounds second=$secondBounds targetX=$endX",
+            endX < firstBounds.centerX().toFloat() && endX < startX
         )
 
         val downTime = SystemClock.uptimeMillis()
@@ -221,20 +222,23 @@ class EmulatorScreenshotTest {
 
         takeScreenshot(device, "video-split-after-drag.png")
 
-        // Navigate back to MainActivity so VideoEditorActivity.onStop performs
-        // its normal autosave. The script then checks the exact restored order.
-        device.executeShellCommand(
-            "am start -n com.mathmotor.video.next/com.mathmotor.video.MainActivity -f 0x200000"
-        )
-        for (attempt in 0 until 10) {
+        // Send the editor to Home so Android invokes VideoEditorActivity.onStop
+        // and its real local-draft autosave. Launching MainActivity from shell
+        // can be delivered to the current editor top instance on API 35.
+        device.executeShellCommand("logcat -c")
+        assertTrue("Could not background the editor after the clip drag", device.pressHome())
+        var reorderedDraftSaved = false
+        for (attempt in 0 until 12) {
             val draftLog = device.executeShellCommand("logcat -d -v threadtime -s MathMotorDraft:I")
-            if (draftLog.contains("LOCAL_DRAFT_SAVED id=$draftId")) break
-            SystemClock.sleep(300L)
+            if (draftLog.contains("LOCAL_DRAFT_SAVED id=$draftId clips=2")) {
+                reorderedDraftSaved = true
+                break
+            }
+            SystemClock.sleep(400L)
         }
-        val draftLog = device.executeShellCommand("logcat -d -v threadtime -s MathMotorDraft:I")
         assertTrue(
-            "The reordered split project was not autosaved before the instrumentation test ended",
-            draftLog.contains("LOCAL_DRAFT_SAVED id=$draftId")
+            "The reordered split project was not autosaved after returning Home",
+            reorderedDraftSaved
         )
     }
     private fun takeScreenshot(device: UiDevice, name: String) {
