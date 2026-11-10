@@ -1644,8 +1644,10 @@ class VideoEditorActivity : Activity() {
         textPanel.removeView(tabScroll)
         textPanel.removeView(tabFrame)
         textPanel.getChildAt(0)?.visibility = View.GONE // legacy METİN heading
-        textPanel.addView(tabScroll, 2)
-        textPanel.addView(tabFrame, 3)
+        // The gesture toggle must remain directly below the input row; insert
+        // the category strip and its content after it, not in front of it.
+        textPanel.addView(tabScroll, 3)
+        textPanel.addView(tabFrame, 4)
 
         tabScrolls["Stiller"]?.visibility = View.VISIBLE
         tabButtons["Stiller"]?.apply {
