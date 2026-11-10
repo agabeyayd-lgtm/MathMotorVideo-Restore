@@ -100,6 +100,9 @@ jobs:
           print(f"{tag}|{code}")
           PY
           )"
+          previous_tag=""
+          previous_code=""
+          IFS='|' read -r previous_tag previous_code <<< "$previous_record"
           if [ -z "$previous_tag" ] || [ -z "$previous_code" ]; then
             echo "::error::Could not resolve the previous signed release."
             exit 1
