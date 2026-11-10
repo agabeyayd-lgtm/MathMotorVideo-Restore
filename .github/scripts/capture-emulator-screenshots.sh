@@ -3989,7 +3989,21 @@ if [ -z "$clip_drag_coords" ]; then
   exit 95
 fi
 read -r drag_start_x drag_y drag_drop_x <<< "$clip_drag_coords"
-timeout -k 2s 8s adb -s emulator-5554 shell input draganddrop "$drag_start_x" "$drag_y" "$drag_drop_x" "$drag_y" 900
+# Match the production gesture: hold the clip stationary until its long-press
+# timer fires, then drag with the same pointer. adb input draganddrop moves
+# immediately and only pans the timeline, so it does not test clip reordering.
+timeout -k 2s 20s adb -s emulator-5554 shell am instrument -w \
+  -e class com.mathmotor.video.EmulatorScreenshotTest#injectLongPressDragGesture \
+  -e startX "$drag_start_x" -e startY "$drag_y" \
+  -e endX "$drag_drop_x" -e endY "$drag_y" \
+  com.mathmotor.video.next.test/androidx.test.runner.AndroidJUnitRunner \
+  > emulator-screenshots/video-long-press-drag-instrumentation.txt 2>&1
+if ! grep -q "OK (1 test)" emulator-screenshots/video-long-press-drag-instrumentation.txt; then
+  cat emulator-screenshots/video-long-press-drag-instrumentation.txt
+  echo "The long-press clip drag instrumentation did not complete successfully."
+  collect_capture_diagnostics video-long-press-drag-instrumentation-failed
+  exit 96
+fi
 drag_marker=""
 for attempt in $(seq 1 12); do
   timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineSyncTest:I \
