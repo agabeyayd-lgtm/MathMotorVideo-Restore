@@ -5087,6 +5087,12 @@ class VideoEditorActivity : Activity() {
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT
         ))
+        // TextView is added after the waveform so it can receive gestures, but
+        // its transparent surface must not paint over the waveform bars. Raise
+        // the non-interactive visual child after all content layers are attached.
+        musicWaveform.isClickable = false
+        musicWaveform.isFocusable = false
+        musicWaveform.bringToFront()
 
         var bodyDownX = 0f
         var bodyMoved = false
@@ -5337,6 +5343,11 @@ class VideoEditorActivity : Activity() {
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT
         ))
+        // Keep the audio title/gesture surface transparent while drawing the
+        // waveform above it; non-clickable bars let touches fall through to body.
+        soundWaveform.isClickable = false
+        soundWaveform.isFocusable = false
+        soundWaveform.bringToFront()
 
         var bodyDownX = 0f
         var bodyMoved = false
