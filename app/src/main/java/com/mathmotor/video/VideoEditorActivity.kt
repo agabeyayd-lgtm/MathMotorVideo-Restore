@@ -4751,10 +4751,10 @@ class VideoEditorActivity : Activity() {
             }
             val cellWidth = width.toFloat() / barCount
             val barWidth = minOf(dp(3).toFloat(), cellWidth * 0.84f).coerceAtLeast(1f)
-            // Keep the waveform in the lower band so the clip title remains legible.
-            // The waveform view is elevated above the transparent title surface below.
-            val centerY = height * 0.68f
-            val maximumHalfHeight = height * 0.28f
+            // Keep the title in the upper half and the waveform in a distinct
+            // lower band, matching compact editor lanes without crossing the label.
+            val centerY = height * 0.82f
+            val maximumHalfHeight = height * 0.14f
             for (index in 0 until barCount) {
                 val sampleIndex = (index.toLong() * values.size / barCount).toInt().coerceIn(0, values.lastIndex)
                 val amplitude = values[sampleIndex].coerceIn(0.035f, 1f)
