@@ -2699,7 +2699,7 @@ for node in root.iter("node"):
         continue
     if node.attrib.get("enabled", "false").lower() != "true":
         continue
-    match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
     if not match:
         continue
     left, top, right, bottom = map(int, match.groups())
@@ -2746,7 +2746,7 @@ root = ET.parse(sys.argv[1]).getroot()
 for node in root.iter("node"):
     if node.attrib.get("content-desc", "").strip() != sys.argv[2]:
         continue
-    match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
     if match:
         left, top, right, bottom = map(int, match.groups())
         print((left + right) // 2, (top + bottom) // 2)
