@@ -72,13 +72,16 @@ jobs:
           fi
 
           releases_json="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100")"
-          previous_record="$(RELEASES_JSON="$releases_json" EXPECTED_CODE="$expected_code" python3 - <<'PY'
+          releases_file="$RUNNER_TEMP/releases.json"
+          printf '%s' "$releases_json" > "$releases_file"
+          previous_record="$(python3 - "$releases_file" "$expected_code" <<'PY'
           import json
-          import os
+          import sys
           import re
+          from pathlib import Path
 
-          releases = json.loads(os.environ["RELEASES_JSON"])
-          expected = int(os.environ["EXPECTED_CODE"])
+          releases = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          expected = int(sys.argv[2])
           candidates = []
           for release in releases:
               if release.get("draft") or release.get("prerelease"):
@@ -97,7 +100,6 @@ jobs:
           print(f"{tag}|{code}")
           PY
           )"
-          IFS='|' read -r previous_tag previous_code <<< "$previous_record"
           if [ -z "$previous_tag" ] || [ -z "$previous_code" ]; then
             echo "::error::Could not resolve the previous signed release."
             exit 1
