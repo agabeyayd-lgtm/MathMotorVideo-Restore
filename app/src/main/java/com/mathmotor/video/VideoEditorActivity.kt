@@ -1068,12 +1068,11 @@ class VideoEditorActivity : Activity() {
             maxWidth = dp(170)
             setTextColor(Color.WHITE)
             setTypeface(Typeface.DEFAULT, Typeface.BOLD)
-            setPadding(dp(10), dp(6), dp(10), dp(6))
+            // Text is transparent by default; an optional backplate is applied
+            // only when the selected layer's backgroundEnabled style is true.
+            setPadding(0, 0, 0, 0)
             setShadowLayer(2f, 1f, 1f, Color.BLACK)
-            background = android.graphics.drawable.GradientDrawable().apply {
-                setColor(Color.argb(210, 0, 0, 0))
-                cornerRadius = dp(8).toFloat()
-            }
+            background = null
             visibility = View.GONE
         }
         previewCanvas.addView(
