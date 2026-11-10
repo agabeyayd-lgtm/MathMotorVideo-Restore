@@ -13,6 +13,7 @@ on:
     branches:
       - main
     paths:
+      - "app/build.gradle.kts"
       - ".github/signing-check-trigger.txt"
       - ".github/workflows/verify-release-signing.yml"
 
@@ -62,7 +63,7 @@ jobs:
           expected_code="$(grep -E 'versionCode[[:space:]]*=' app/build.gradle.kts | head -1 | grep -oE '[0-9]+')"
           release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest")"
           latest_tag="$(printf '%s' "$release_json" | jq -r '.tag_name')"
-          latest_code="$(RELEASE_JSON="$release_json" python3 -c 'import json,os,re; body=json.loads(os.environ["RELEASE_JSON"]).get("body") or ""; m=re.search(r"versionCode\\s*=\\s*(\\d+)", body, re.I); print(m.group(1) if m else "")')"
+          latest_code="$(RELEASE_JSON="$release_json" python3 -c 'import json,os,re; body=json.loads(os.environ["RELEASE_JSON"]).get("body") or ""; m=re.search(r"versionCode\s*=\s*(\d+)", body, re.I); print(m.group(1) if m else "")')"
           echo "Expected app versionCode: $expected_code"
           echo "Latest signed release: $latest_tag (versionCode=$latest_code)"
           if [ "$latest_code" != "$expected_code" ]; then
@@ -84,7 +85,7 @@ jobs:
                   continue
               if not any(asset.get("name") == "MathMotorVideo.apk" for asset in release.get("assets", [])):
                   continue
-              match = re.search(r"versionCode\\s*=\\s*(\\d+)", release.get("body") or "", re.I)
+              match = re.search(r"versionCode\s*=\s*(\d+)", release.get("body") or "", re.I)
               if not match:
                   continue
               code = int(match.group(1))
@@ -93,10 +94,10 @@ jobs:
           if not candidates:
               raise SystemExit("No previous published signed APK with a lower versionCode was found.")
           code, tag = max(candidates)
-          print(f"{tag}\\t{code}")
+          print(f"{tag}|{code}")
           PY
           )"
-          IFS=$'\\t' read -r previous_tag previous_code <<< "$previous_record"
+          IFS='|' read -r previous_tag previous_code <<< "$previous_record"
           if [ -z "$previous_tag" ] || [ -z "$previous_code" ]; then
             echo "::error::Could not resolve the previous signed release."
             exit 1
