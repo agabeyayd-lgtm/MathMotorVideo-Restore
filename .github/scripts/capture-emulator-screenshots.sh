@@ -3918,88 +3918,33 @@ if [ -z "$split_second_duration_ms" ]; then
   exit 93
 fi
 
-# Read both clip surfaces from the app's measured View geometry. UIAutomator
-# can fail to obtain an idle accessibility snapshot while many thumbnail cells
-# are attached; the debug snapshot records every visible clip by index instead.
-sleep 1
-# Re-read the live sync stream after the split has applied its zoom-out.
-# This file must contain the post-split pxPerSecond value used by the drag math.
-timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineSyncTest:I \
-  > emulator-screenshots/video-split-drag-logcat.txt 2>&1
-timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineAlignmentTest:I \
-  > emulator-screenshots/video-split-before-drag-measurements.txt 2>&1
-# The split handler zooms the shared timeline out. Use the fresh post-split
-# sync sample (66.3 px/s in this fixture), not the pre-split midpoint sample;
-# using the old scale over-drags the clip beyond the project-zero edge.
-clip_drag_coords="$(python3 - emulator-screenshots/video-split-before-drag-measurements.txt emulator-screenshots/video-split-drag-logcat.txt "$split_boundary_ms" <<'PY'
-import re
-import sys
-
-bounds = {}
-pattern = re.compile(r"TIMELINE_ALIGNMENT_SNAPSHOT .*?clipBoundsByIndex=([0-9:,;]+)")
-for line in open(sys.argv[1], errors="replace"):
-    match = pattern.search(line)
-    if not match:
-        continue
-    measured = {}
-    for entry in match.group(1).split(";"):
-        key, raw = entry.split(":", 1)
-        measured[int(key)] = tuple(map(int, raw.split(",")))
-    if set(measured) >= {1, 2}:
-        bounds = measured
-if set(bounds) < {1, 2}:
-    raise SystemExit(f"Expected two app-measured split clip surfaces; found {bounds}")
-pixel_seam_px = bounds[2][0] - bounds[1][2]
-if abs(pixel_seam_px) > 1:
-    raise SystemExit(
-        f"Split clips are not visually edge-to-edge: first={bounds[1]}, "
-        f"second={bounds[2]}, seam={pixel_seam_px}px (maximum ±1px)"
-    )
-print(f"PASS: split clip screen edges meet within 1px (measured seam={pixel_seam_px}px)", file=sys.stderr)
-second = bounds[2]
-start_x = (second[0] + second[2]) // 2
-start_y = (second[1] + second[3]) // 2
-
-# The second segment currently starts at split_boundary_ms. Drag its centre
-# backwards by that exact time so its new start clamps to project time zero.
-# Use live px/s; a 16px bias ensures the requested start is strictly before zero.
-split_boundary_ms = int(sys.argv[3])
-sample = None
-for line in open(sys.argv[2], errors="replace"):
-    # The production log writes pxPerSecond before playheadCenterPx.
-    # Match the emitted field order; the old expression expected the reverse
-    # order and silently rejected every valid live sync sample.
-    match = re.search(
-        r"TIMELINE_SYNC_SAMPLE .*?pxPerSecond=([0-9.]+).*?playheadCenterPx=(\d+)",
-        line
-    )
-    if match:
-        sample = (int(match.group(2)), float(match.group(1)))
-if sample is None:
-    raise SystemExit("No measured fixed-playhead position/scale for the split reorder.")
-_, pixels_per_second = sample
-drop_x = round(start_x - split_boundary_ms * pixels_per_second / 1000.0 - 16)
-if start_x <= drop_x or drop_x < 128:
-    raise SystemExit(
-        f"Second segment cannot reach project zero from a safe coordinate: "
-        f"second={second}, drop={drop_x}, start={start_x}, split={split_boundary_ms}"
-    )
-print(start_x, start_y, drop_x)
-PY
-)"
-if [ -z "$clip_drag_coords" ]; then
-  echo "Could not resolve the second split clip's direct-drag hit target."
-  collect_capture_diagnostics video-split-drag-target-missing
+# The instrumentation runner takes focus away from the editor. First move
+# back to MainActivity so VideoEditorActivity.onStop writes the split project.
+smoke_draft_id="11111111-1111-4111-8111-111111111111"
+timeout -k 2s 12s adb -s emulator-5554 shell am start \
+  -n com.mathmotor.video.next/com.mathmotor.video.MainActivity -f 0x200000 \
+  > emulator-screenshots/video-split-draft-save-launch.txt 2>&1
+draft_saved=false
+for attempt in $(seq 1 10); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s MathMotorDraft:I \
+    > emulator-screenshots/video-split-draft-save-logcat.txt 2>&1 || true
+  if grep -Fq "LOCAL_DRAFT_SAVED id=$smoke_draft_id clips=2" \
+      emulator-screenshots/video-split-draft-save-logcat.txt; then
+    draft_saved=true
+    break
+  fi
+  sleep 1
+done
+if [ "$draft_saved" != true ]; then
+  echo "The split project was not autosaved before the instrumentation runner took focus."
+  collect_capture_diagnostics video-split-draft-save-failed
   exit 95
 fi
-read -r drag_start_x drag_y drag_drop_x <<< "$clip_drag_coords"
-# Match the production gesture: hold the clip stationary until its long-press
-# timer fires, then drag with the same pointer. adb input draganddrop moves
-# immediately and only pans the timeline, so it does not test clip reordering.
-# connectedDebugAndroidTest may remove its test package after the selected
-# backup test finishes. Explicitly reinstall the generated instrumentation APK
-# before invoking the separate gesture helper, then verify Android registered
-# the exact runner instead of allowing a bare INSTRUMENTATION_FAILED.
+
+# Run the gesture from inside the test process. It restores that saved project
+# into the editor, reads fresh visible clip bounds, injects the long-press drag
+# while the editor is foreground, asserts the real drop marker and seam, then
+# saves the reordered project before returning.
 test_apk="app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
 if [ ! -s "$test_apk" ]; then
   echo "The Android instrumentation APK is missing: $test_apk"
@@ -4012,7 +3957,7 @@ if ! timeout -k 2s 30s adb -s emulator-5554 install -r "$test_apk" \
   collect_capture_diagnostics video-long-press-test-apk-install-failed
   exit 96
 fi
-registered_instrumentation="$(timeout -k 2s 8s adb -s emulator-5554 shell pm list instrumentation 2>&1 | tr -d "\\r" || true)"
+registered_instrumentation="$(timeout -k 2s 8s adb -s emulator-5554 shell pm list instrumentation 2>&1 | tr -d "\r" || true)"
 printf '%s\n' "$registered_instrumentation" > emulator-screenshots/video-long-press-instrumentation-list.txt
 if ! grep -Fq "com.mathmotor.video.next.test/androidx.test.runner.AndroidJUnitRunner" \
     emulator-screenshots/video-long-press-instrumentation-list.txt; then
@@ -4021,10 +3966,9 @@ if ! grep -Fq "com.mathmotor.video.next.test/androidx.test.runner.AndroidJUnitRu
   collect_capture_diagnostics video-long-press-runner-not-registered
   exit 96
 fi
-timeout -k 2s 20s adb -s emulator-5554 shell am instrument -w \
+timeout -k 2s 35s adb -s emulator-5554 shell am instrument -w \
   -e class com.mathmotor.video.EmulatorScreenshotTest#injectLongPressDragGesture \
-  -e startX "$drag_start_x" -e startY "$drag_y" \
-  -e endX "$drag_drop_x" -e endY "$drag_y" \
+  -e draftId "$smoke_draft_id" \
   com.mathmotor.video.next.test/androidx.test.runner.AndroidJUnitRunner \
   > emulator-screenshots/video-long-press-drag-instrumentation.txt 2>&1
 if ! grep -q "OK (1 test)" emulator-screenshots/video-long-press-drag-instrumentation.txt; then
@@ -4033,7 +3977,23 @@ if ! grep -q "OK (1 test)" emulator-screenshots/video-long-press-drag-instrument
   collect_capture_diagnostics video-long-press-drag-instrumentation-failed
   exit 96
 fi
-drag_marker=""
+
+# The test screenshots live under the instrumentation package's external files.
+test_drag_screenshot="/sdcard/Android/data/com.mathmotor.video.next.test/files/Pictures/emulator-screenshots/video-split-after-drag.png"
+if ! timeout -k 2s 15s adb -s emulator-5554 pull "$test_drag_screenshot" \
+    emulator-screenshots/video-split-after-drag.png \
+    > emulator-screenshots/video-split-after-drag-pull.txt 2>&1 \
+    || [ ! -s emulator-screenshots/video-split-after-drag.png ]; then
+  cat emulator-screenshots/video-split-after-drag-pull.txt
+  collect_capture_diagnostics video-split-after-drag-screenshot-missing
+  exit 98
+fi
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineSyncTest:I \
+  > emulator-screenshots/video-split-drag-logcat.txt 2>&1 || true
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineAlignmentTest:I \
+  > emulator-screenshots/video-split-after-drag-measurements.txt 2>&1 || true
+drag_marker="$(grep "VIDEO_CLIP_DROP" emulator-screenshots/video-split-drag-logcat.txt | tail -n 1 || true)"
+
 for attempt in $(seq 1 12); do
   timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineSyncTest:I \
     > emulator-screenshots/video-split-drag-logcat.txt 2>&1 || true
