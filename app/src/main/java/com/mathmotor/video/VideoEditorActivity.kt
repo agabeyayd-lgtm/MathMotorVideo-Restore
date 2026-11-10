@@ -486,8 +486,9 @@ class VideoEditorActivity : Activity() {
         override fun run() = work()
     }
     private val timelineThumbnailTaskSequence = java.util.concurrent.atomic.AtomicLong()
-    // Three isolated workers keep source-frame extraction concurrent. Each worker
-    // owns its MediaMetadataRetriever and only creates a Media3 extractor as a fallback.
+    // Three isolated workers balance filmstrip throughput against concurrent codec
+    // contention. Each worker owns its retriever and creates a Media3 extractor only
+    // when the platform decoder cannot handle a source.
     private val timelineThumbnailWorkerSequence = java.util.concurrent.atomic.AtomicLong()
     private val timelineThumbnailRetrievers =
         java.util.concurrent.ConcurrentHashMap<Long, Pair<Uri, MediaMetadataRetriever>>()
@@ -4701,11 +4702,11 @@ class VideoEditorActivity : Activity() {
                 )
             }
             val cellWidth = width.toFloat() / barCount
-            val barWidth = minOf(dp(2).toFloat(), cellWidth * 0.72f).coerceAtLeast(1f)
+            val barWidth = minOf(dp(3).toFloat(), cellWidth * 0.84f).coerceAtLeast(1f)
             // Keep the waveform in the lower band so the clip title remains legible.
             // The waveform view is elevated above the transparent title surface below.
-            val centerY = height * 0.72f
-            val maximumHalfHeight = height * 0.22f
+            val centerY = height * 0.68f
+            val maximumHalfHeight = height * 0.28f
             for (index in 0 until barCount) {
                 val sampleIndex = (index.toLong() * values.size / barCount).toInt().coerceIn(0, values.lastIndex)
                 val amplitude = values[sampleIndex].coerceIn(0.035f, 1f)
@@ -7208,6 +7209,46 @@ class VideoEditorActivity : Activity() {
         val wasRestoringProjectEditSnapshot = restoringProjectEditSnapshot
         restoringProjectEditSnapshot = true
         try {
+        // A text-only Undo/Redo does not change the Media3 composition. Keep the
+        // already prepared preview player in place instead of synchronously
+        // releasing/rebuilding its codecs for an edit that lives in Android views.
+        // Be conservative: reuse only when every media/composition input is identical.
+        val canReuseTimelinePreview =
+            timelinePreviewLoaded &&
+                timelineCompositionPlayer != null &&
+                ::playerView.isInitialized &&
+                playerView.player === timelineCompositionPlayer &&
+                clips == snapshot.clips &&
+                overlayClips == snapshot.overlays &&
+                musicUri == snapshot.musicUri &&
+                musicTitle == snapshot.musicTitle &&
+                musicSourceDurationMs == snapshot.musicSourceDurationMs &&
+                musicSourceStartMs == snapshot.musicSourceStartMs &&
+                musicSourceEndMs == snapshot.musicSourceEndMs &&
+                musicStartMs == snapshot.musicStartMs &&
+                musicDurationMs == snapshot.musicDurationMs &&
+                soundUri == snapshot.soundUri &&
+                soundTitle == snapshot.soundTitle &&
+                soundSourceDurationMs == snapshot.soundSourceDurationMs &&
+                soundSourceStartMs == snapshot.soundSourceStartMs &&
+                soundDurationMs == snapshot.soundDurationMs &&
+                soundStartMs == snapshot.soundStartMs &&
+                sourceAudioVolume == snapshot.sourceAudioVolume &&
+                musicVolume == snapshot.musicVolume &&
+                soundVolume == snapshot.soundVolume &&
+                (::keepSourceAudio.isInitialized && keepSourceAudio.isChecked) == snapshot.keepSourceAudio &&
+                selectedVideoFilter == snapshot.videoFilterPreset &&
+                filterBrightness == snapshot.filterBrightness &&
+                filterContrast == snapshot.filterContrast &&
+                filterSaturation == snapshot.filterSaturation &&
+                filterHue == snapshot.filterHue &&
+                exportCanvasPreset == snapshot.canvasPreset
+        if (timelineSyncTestEnabled) {
+            android.util.Log.i(
+                "ProjectHistoryTest",
+                "PROJECT_HISTORY_PREVIEW_REUSE reused=$canReuseTimelinePreview"
+            )
+        }
         clips.clear()
         clips.addAll(snapshot.clips.map { it.copy() })
         overlayClips.clear()
@@ -7251,8 +7292,10 @@ class VideoEditorActivity : Activity() {
         restoringProjectHistory = false
         timelineLaneOrder.clear()
         timelineLaneOrder.addAll(snapshot.timelineLaneOrder)
-        timelinePreviewLoaded = false
-        previewSingleClip = false
+        if (!canReuseTimelinePreview) {
+            timelinePreviewLoaded = false
+            previewSingleClip = false
+        }
         timelinePlayheadMs = snapshot.timelinePlayheadMs.coerceIn(0L, totalOutputDurationMs())
         pendingTimelineScrollX = TimelineScaleMath.pixelsForTime(
             timelinePlayheadMs, timelinePixelsPerSecond()

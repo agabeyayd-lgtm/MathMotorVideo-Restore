@@ -59,18 +59,18 @@ internal object TimelineThumbnailMath {
         return ratio.takeIf { it.isFinite() && it > 0f }
     }
 
-    /** Decode at 1.5x the real cell size, preserving source aspect ratio. */
+    /** Decode at the rendered cell size; extra pixels add decode cost without improving on-screen detail. */
     fun decodeBounds(
         cellWidthPx: Int,
         cellHeightPx: Int,
         sourceAspectRatio: Float,
-        oversample: Float = 1.5f
+        oversample: Float = 1f
     ): Pair<Int, Int> {
         val width = cellWidthPx.coerceAtLeast(1)
         val height = cellHeightPx.coerceAtLeast(1)
         val ratio = sourceAspectRatio.takeIf { it.isFinite() && it > 0f }
             ?.coerceIn(0.25f, 4f) ?: DEFAULT_SOURCE_ASPECT_RATIO
-        val factor = oversample.takeIf { it.isFinite() && it > 0f } ?: 1.5f
+        val factor = oversample.takeIf { it.isFinite() && it > 0f } ?: 1f
         val maxWidth = (width * factor).roundToInt().coerceAtLeast(1)
         val maxHeight = (height * factor).roundToInt().coerceAtLeast(1)
         val widthAtMaxHeight = (maxHeight * ratio).roundToInt().coerceAtLeast(1)

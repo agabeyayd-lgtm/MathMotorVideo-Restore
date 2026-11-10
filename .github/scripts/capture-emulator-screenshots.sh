@@ -4125,7 +4125,10 @@ if edge == "start":
     # while staying inside the edge target (clipWidth/3 is the limiting width).
     x1, x2 = (left + 45, left + 45 + travel) if direction == "trim" else (left + 45, left + 45 - travel)
 else:
-    x1, x2 = (right - 8, right - 8 - travel) if direction == "trim" else (right - 36, right - 36 + travel)
+    # Use a stable point inside the trailing grip, not its outermost 8px edge.
+    # Keep the same down point for trim and extend; only drag direction changes.
+    x1 = right - 36
+    x2 = x1 - travel if direction == "trim" else x1 + travel
 y = (top + bottom) // 2
 if not (left <= x1 < right and left <= x2 < right and top <= y < bottom):
     raise SystemExit(f"Resolved touch is outside the measured clip: bounds={latest}, points={x1},{x2},{y}")

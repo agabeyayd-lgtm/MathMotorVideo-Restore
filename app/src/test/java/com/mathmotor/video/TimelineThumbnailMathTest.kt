@@ -7,20 +7,20 @@ import org.junit.Test
 
 class TimelineThumbnailMathTest {
     @Test
-    fun decodeBoundsOversampleTheVisiblePortraitCellWithoutFullSizeDecode() {
-        assertEquals(122 to 216, TimelineThumbnailMath.decodeBounds(81, 144, 9f / 16f))
+    fun decodeBoundsMatchRenderedPortraitCellWithoutOversampling() {
+        assertEquals(81 to 144, TimelineThumbnailMath.decodeBounds(81, 144, 9f / 16f))
     }
 
     @Test
     fun decodeBoundsFollowLandscapeAndFourThreeCellAspectRatios() {
-        assertEquals(384 to 216, TimelineThumbnailMath.decodeBounds(256, 144, 16f / 9f))
-        assertEquals(288 to 216, TimelineThumbnailMath.decodeBounds(192, 144, 4f / 3f))
+        assertEquals(256 to 144, TimelineThumbnailMath.decodeBounds(256, 144, 16f / 9f))
+        assertEquals(192 to 144, TimelineThumbnailMath.decodeBounds(192, 144, 4f / 3f))
     }
 
     @Test
-    fun decodeBoundsClampInvalidAspectRatiosAndOversampling() {
-        assertEquals(122 to 216, TimelineThumbnailMath.decodeBounds(81, 144, Float.NaN))
-        assertEquals(81 to 144, TimelineThumbnailMath.decodeBounds(81, 144, 9f / 16f, 1f))
+    fun decodeBoundsClampInvalidAspectRatiosAndExplicitOversampling() {
+        assertEquals(81 to 144, TimelineThumbnailMath.decodeBounds(81, 144, Float.NaN))
+        assertEquals(122 to 216, TimelineThumbnailMath.decodeBounds(81, 144, 9f / 16f, 1.5f))
     }
 
     @Test
