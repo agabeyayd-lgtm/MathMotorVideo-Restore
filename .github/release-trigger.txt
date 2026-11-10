@@ -9,3 +9,5 @@ Signed editor update 8.35 / versionCode 402. Increment Android versionCode so in
 Publish request: signed installable APK versionCode 402 after PR #30 merged and all CI checks passed.
 
 Signed editor update 8.36 / versionCode 403. Publish the signed installable APK after PR #34 merged with all three exact-head checks green.
+
+Signed editor update 8.37 / versionCode 404. Publish after PR #35 merged with all three exact-head checks green; includes first-visible filmstrip decode optimization and media-identical Undo/Redo preview reuse.
