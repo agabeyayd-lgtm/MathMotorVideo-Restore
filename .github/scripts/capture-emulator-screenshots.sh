@@ -3994,13 +3994,6 @@ timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineAlignme
   > emulator-screenshots/video-split-after-drag-measurements.txt 2>&1 || true
 drag_marker="$(grep "VIDEO_CLIP_DROP" emulator-screenshots/video-split-drag-logcat.txt | tail -n 1 || true)"
 
-for attempt in $(seq 1 12); do
-  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineSyncTest:I \
-    > emulator-screenshots/video-split-drag-logcat.txt 2>&1 || true
-  drag_marker="$(grep "VIDEO_CLIP_DROP" emulator-screenshots/video-split-drag-logcat.txt | tail -n 1 || true)"
-  if [ -n "$drag_marker" ]; then break; fi
-  sleep 1
-done
 if [ -z "$drag_marker" ]; then
   echo "A direct one-finger horizontal clip drag did not reach the production drop handler."
   collect_capture_diagnostics video-direct-clip-drag-not-received
@@ -4013,10 +4006,6 @@ if ! echo "$drag_marker" | grep -Eq "ordered=1,0 .*starts=1:0,0:${expected_first
   echo "The direct drag did not place the second half at 00:00 and push the first by its own duration (${expected_first_start_ms}ms): $drag_marker"
   collect_capture_diagnostics video-direct-clip-drag-order
   exit 97
-fi
-if ! take_screen emulator-screenshots/video-split-after-drag.png; then
-  collect_capture_diagnostics video-split-after-drag-capture
-  exit 6
 fi
 # Validate the ACTUAL post-drop Views and pixels. The earlier split check only
 # measured the pre-drag geometry; it could not catch a divider drawn by the two
