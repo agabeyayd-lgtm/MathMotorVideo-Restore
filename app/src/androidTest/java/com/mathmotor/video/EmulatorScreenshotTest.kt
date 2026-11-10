@@ -166,11 +166,11 @@ class EmulatorScreenshotTest {
             device.executeShellCommand("logcat -d -v threadtime -s TimelineSyncTest:I")
 
         var dropMarker = ""
-        repeat(12) {
+        for (attempt in 0 until 12) {
             dropMarker = readTimelineLog().lineSequence()
                 .lastOrNull { line -> line.contains("VIDEO_CLIP_DROP") }
                 .orEmpty()
-            if (dropMarker.isNotBlank()) return@repeat
+            if (dropMarker.isNotBlank()) break
             SystemClock.sleep(500L)
         }
         assertTrue(
@@ -182,34 +182,41 @@ class EmulatorScreenshotTest {
         )
         android.util.Log.i("TimelineSyncTest", "VIDEO_CLIP_DRAG_ASSERTION_PASS $dropMarker")
 
-        val alignmentLog = device.executeShellCommand(
-            "logcat -d -v threadtime -s TimelineAlignmentTest:I"
-        )
         val snapshotPattern = Regex(
             "TIMELINE_ALIGNMENT_SNAPSHOT .*?clipBoundsByIndex=([0-9:,;]+)"
         )
-        val latestBounds = alignmentLog.lineSequence().mapNotNull { line ->
-            val raw = snapshotPattern.find(line)?.groupValues?.getOrNull(1) ?: return@mapNotNull null
-            raw.split(";").mapNotNull { entry ->
-                val parts = entry.split(":", limit = 2)
-                if (parts.size != 2) return@mapNotNull null
-                val rect = parts[1].split(",").mapNotNull(String::toIntOrNull)
-                if (rect.size != 4) return@mapNotNull null
-                parts[0].toIntOrNull()?.let { it to rect }
-            }.toMap()
-        }.lastOrNull { it.size >= 2 }
+        var latestBounds: Map<Int, List<Int>>? = null
+        for (attempt in 0 until 12) {
+            val alignmentLog = device.executeShellCommand(
+                "logcat -d -v threadtime -s TimelineAlignmentTest:I"
+            )
+            latestBounds = alignmentLog.lineSequence().mapNotNull { line ->
+                val raw = snapshotPattern.find(line)?.groupValues?.getOrNull(1)
+                    ?: return@mapNotNull null
+                raw.split(";").mapNotNull { entry ->
+                    val parts = entry.split(":", limit = 2)
+                    if (parts.size != 2) return@mapNotNull null
+                    val rect = parts[1].split(",").mapNotNull(String::toIntOrNull)
+                    if (rect.size != 4) return@mapNotNull null
+                    parts[0].toIntOrNull()?.let { it to rect }
+                }.toMap()
+            }.lastOrNull { it.size >= 2 }
+            if (latestBounds != null) break
+            SystemClock.sleep(400L)
+        }
+        val measuredBounds = latestBounds
             ?: throw AssertionError("No post-drop main-video geometry snapshot was recorded")
 
-        val orderedRects = latestBounds.toSortedMap().values.toList()
+        val orderedRects = measuredBounds.toSortedMap().values.toList()
         val seamPx = orderedRects[0][2] - orderedRects[1][0]
         assertTrue(
             "Post-drop main-video clips must remain adjacent; measured seam=$seamPx px, " +
-                "bounds=$latestBounds",
+                "bounds=$measuredBounds",
             kotlin.math.abs(seamPx) <= 1
         )
         android.util.Log.i(
             "TimelineSyncTest",
-            "VIDEO_CLIP_DRAG_GEOMETRY_PASS seamPx=$seamPx bounds=$latestBounds"
+            "VIDEO_CLIP_DRAG_GEOMETRY_PASS seamPx=$seamPx bounds=$measuredBounds"
         )
 
         takeScreenshot(device, "video-split-after-drag.png")
@@ -219,10 +226,9 @@ class EmulatorScreenshotTest {
         device.executeShellCommand(
             "am start -n com.mathmotor.video.next/com.mathmotor.video.MainActivity -f 0x200000"
         )
-        var savedMarker = ""
-        repeat(10) {
-            savedMarker = readTimelineLog()
-            if (savedMarker.contains("LOCAL_DRAFT_SAVED id=$draftId")) return@repeat
+        for (attempt in 0 until 10) {
+            val draftLog = device.executeShellCommand("logcat -d -v threadtime -s MathMotorDraft:I")
+            if (draftLog.contains("LOCAL_DRAFT_SAVED id=$draftId")) break
             SystemClock.sleep(300L)
         }
         val draftLog = device.executeShellCommand("logcat -d -v threadtime -s MathMotorDraft:I")
