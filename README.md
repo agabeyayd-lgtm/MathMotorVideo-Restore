@@ -1,3 +1,18 @@
+## Current verified baseline — 2026-11-10
+
+- PR #35 is merged into `main` (merge commit `4bae7412f8c330247f983b150c2dc1bd951142df`). Latest source HEAD: `48b1ef097a4ac3ce0231e98dd0021ed9e5a5684a`.
+- Latest HEAD unit/build: [run 42788533221](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/42788533221) — success. Latest HEAD API 35 emulator: [run 42788532908](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/42788532908) — success.
+- Latest emulator filmstrip sample: 6 visible thumbnails; queue median/max 547/1,214 ms; decode median/max 389/861 ms; enqueue-to-display median/max 1,121/2,135 ms; visible-strip fill 2,137 ms. The existing 2,500 ms fill gate was not changed.
+- The latest source uses two isolated thumbnail decoder workers and logs whether the platform decoder used scaled-frame or full-frame fallback. This was committed after the signed 404 release; therefore the current published APK does not yet contain this last two-worker/diagnostic change.
+- Release signing continuity: [run 42787617434](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/42787617434) succeeded on parent commit `4aad695`; it compared signed versionCode 404 against 403 and verified the selected publisher signing source. Latest published release is [app-v8.3-73](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/releases/tag/app-v8.3-73), `versionCode=404`, `versionName=8.37-capcut-editor`.
+- A failed earlier signing-verifier run on `fbddd0b` was caused by the previous-release tag not being read from the Python result. The follow-up fix is present in the workflow and the later signing check passed. Do not treat that historical failed run as the current state.
+- Do not publish the latest `48b1ef0` source under versionCode 404 again. If this source is to be delivered through the in-app updater, the next release must use a higher versionCode (405) and pass fresh build, emulator, signing-continuity and signed-release verification.
+- Remaining verification boundary: the CI emulator uses fixture media; the user's exact gallery-selected media and physical-device update/install behavior still need real-device confirmation. Do not claim those are proven by emulator tests.
+
+Historical investigation notes below are snapshots from earlier dates/PR states; their “pending”, “draft”, and “not merged” labels do not describe the current baseline.
+
+---
+
 ## Project-wide Undo/Redo — 2026-11-09 (PR #34; verification in progress)
 
 - The editor's clip-only history has been replaced on the feature branch with a shared project snapshot covering main video clips and their transforms/speed/trim, image/video overlays and keyframes, text contents/style/timing/animation/placement, music and sound-effect sources/timing/volume, original-source audio enable/volume, global video filter/color controls, project canvas aspect preset, and timeline track order.
