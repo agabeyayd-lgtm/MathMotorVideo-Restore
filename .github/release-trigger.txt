@@ -11,3 +11,5 @@ Publish request: signed installable APK versionCode 402 after PR #30 merged and 
 Signed editor update 8.36 / versionCode 403. Publish the signed installable APK after PR #34 merged with all three exact-head checks green.
 
 Signed editor update 8.37 / versionCode 404. Publish after PR #35 merged with all three exact-head checks green; includes first-visible filmstrip decode optimization and media-identical Undo/Redo preview reuse.
+
+Signed editor update 8.38 / versionCode 405. Publish the latest verified two-worker filmstrip decoder and decoder-path diagnostics after unit/build, API 35 emulator and signing-continuity checks pass.
