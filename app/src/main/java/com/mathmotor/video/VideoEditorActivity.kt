@@ -26,6 +26,7 @@ import android.text.style.AbsoluteSizeSpan
 import android.text.style.BackgroundColorSpan
 import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
+import android.text.style.TypefaceSpan
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
@@ -209,6 +210,8 @@ class VideoEditorActivity : Activity() {
     private var textSizeSp = 24
     private var textColorPreset = TextColorPreset.WHITE
     private var textBold = true
+    private var textFontPreset = TextFontPreset.SYSTEM
+    private var textBackgroundEnabled = false
     private var textAnimationPreset = TextAnimationPreset.NONE
     private var textAnimationDurationMs = 350L
     private lateinit var textAnimationGroup: android.widget.RadioGroup
@@ -216,6 +219,8 @@ class VideoEditorActivity : Activity() {
     private lateinit var textAnimationDurationSeek: SeekBar
     private lateinit var textColorGroup: android.widget.RadioGroup
     private lateinit var textBoldCheck: CheckBox
+    private lateinit var textFontGroup: android.widget.RadioGroup
+    private lateinit var textBackgroundCheck: CheckBox
     private lateinit var textOverlayEditToggle: Button
     private enum class TextPosition { TOP, CENTER, BOTTOM }
     private enum class TextLayerKind { TEXT, STICKER }
@@ -230,6 +235,11 @@ class VideoEditorActivity : Activity() {
         CYAN(Color.rgb(65, 224, 255)),
         RED(Color.rgb(255, 90, 105)),
         GREEN(Color.rgb(103, 245, 154))
+    }
+    private enum class TextFontPreset(val familyName: String, val title: String) {
+        SYSTEM("sans-serif", "Sistem"),
+        SERIF("serif", "Serif"),
+        MONOSPACE("monospace", "Daktilo")
     }
 
     private data class TextLayer(
@@ -247,7 +257,9 @@ class VideoEditorActivity : Activity() {
         var rotationDegrees: Float = 0f,
         var kind: TextLayerKind = TextLayerKind.TEXT,
         var animationPreset: TextAnimationPreset = TextAnimationPreset.NONE,
-        var animationDurationMs: Long = 350L
+        var animationDurationMs: Long = 350L,
+        var fontPreset: TextFontPreset = TextFontPreset.SYSTEM,
+        var backgroundEnabled: Boolean = false
     )
 
     private val textLayers = mutableListOf<TextLayer>()
@@ -1539,151 +1551,132 @@ class VideoEditorActivity : Activity() {
             11f, Color.rgb(154, 171, 190), false
         ))
 
-        val textPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        textPanel.addView(label("METİN KATMANLARI", 13f, Color.rgb(121, 202, 218), true))
-        textPanel.addView(label("Yazıyı videonun üstünde sürükle; iki parmakla büyüt, küçült veya döndür.", 11f, Color.rgb(154, 171, 190), false))
-        textOverlayEditToggle = miniButton("Önizlemede yazı düzenleme: KAPALI") {
-            textOverlayEditingEnabled = !textOverlayEditingEnabled
-            updateTextOverlayEditToggle()
-            status.text = if (textOverlayEditingEnabled) {
-                "Yazıyı sürükleyebilir, iki parmakla boyutlandırıp döndürebilirsin."
-            } else {
-                "Önizlemede yazı hareketi kapalı. Metin alanı ve boyut düğmeleri kullanılabilir."
-            }
-        }.apply {
-            contentDescription = "Önizleme üzerindeki yazıyı sürükleme, iki parmakla boyutlandırma ve döndürmeyi aç veya kapat"
-            minHeight = dp(42)
-        }
-        textPanel.addView(textOverlayEditToggle, matchWrap())
-        updateTextOverlayEditToggle()
-        val textLayerActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        textLayerActions.addView(miniButton("＋ Yeni") { addTextLayer() },
-            LinearLayout.LayoutParams(0, dp(42), 1f))
-        textLayerActions.addView(miniButton("Kopyala") { duplicateSelectedTextLayer() },
-            LinearLayout.LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(4) })
-        textLayerActions.addView(miniButton("Sil") { removeSelectedTextLayer() },
-            LinearLayout.LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(4) })
-        textPanel.addView(textLayerActions)
-        val textLayerScroll = android.widget.HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false
-            overScrollMode = View.OVER_SCROLL_NEVER
-        }
-        textLayerList = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(4), 0, dp(4))
-        }
-        textLayerScroll.addView(textLayerList)
-        textPanel.addView(textLayerScroll, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(48)
-        ))
+        val textPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(8), dp(2), dp(8), dp(4)) }
+        textPanel.addView(label("METİN", 13f, Color.rgb(121, 202, 218), true))
         textInput = EditText(this).apply {
-            hint = "Videoda görünecek yazı"
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.rgb(154, 171, 190))
-            setSingleLine(false)
-            minLines = 1
-            maxLines = 2
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or
-                android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or
-                android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
-            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE or
-                android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI
+            hint = "Metin girin"; setTextColor(Color.WHITE); setHintTextColor(Color.rgb(154, 171, 190))
+            setSingleLine(false); minLines = 1; maxLines = 2
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE or android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI
             setPadding(dp(12), dp(8), dp(12), dp(8))
-            setBackgroundColor(Color.rgb(27, 39, 54))
-        }
-        textPanel.addView(textInput, matchWrap())
-        textPanel.addView(label("Yazının görünme aralığı", 11f, Color.rgb(154, 171, 190), false))
-        textStartLabel = label("Yazı başlangıcı: 00:00", 12f, Color.WHITE, true)
-        textPanel.addView(textStartLabel)
-        textStartSeek = SeekBar(this).apply { max = 0; isEnabled = false }
-        textPanel.addView(textStartSeek, matchWrap())
-        textEndLabel = label("Yazı bitişi: 00:00", 12f, Color.WHITE, true)
-        textPanel.addView(textEndLabel)
-        textEndSeek = SeekBar(this).apply { max = 0; isEnabled = false }
-        textPanel.addView(textEndSeek, matchWrap())
-        installTextTimeListeners()
-        textPanel.addView(label("Yazı konumu", 11f, Color.rgb(154, 171, 190), false))
-        textPositionGroup = android.widget.RadioGroup(this).apply {
-            orientation = android.widget.RadioGroup.HORIZONTAL
-            addView(android.widget.RadioButton(this@VideoEditorActivity).apply { id = 1; text = "Üst"; setTextColor(Color.WHITE) })
-            addView(android.widget.RadioButton(this@VideoEditorActivity).apply { id = 2; text = "Orta"; setTextColor(Color.WHITE) })
-            addView(android.widget.RadioButton(this@VideoEditorActivity).apply { id = 3; text = "Alt"; setTextColor(Color.WHITE) })
-            check(3)
-            setOnCheckedChangeListener { _, checkedId ->
-                if (loadingTextLayerControls) return@setOnCheckedChangeListener
-                recordProjectEdit()
-                textPosition = when (checkedId) {
-                    1 -> TextPosition.TOP
-                    2 -> TextPosition.CENTER
-                    else -> TextPosition.BOTTOM
-                }
-                if (!loadingTextLayerControls) {
-                    selectedTextLayer()?.let { it.yFraction = defaultTextYFraction(textPosition) }
-                    syncSelectedTextLayerFromControls()
-                }
-                updatePreviewTextOverlay()
-                refreshTimelineTracks()
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.rgb(39, 43, 49)); cornerRadius = dp(10).toFloat(); setStroke(dp(1), Color.rgb(64, 69, 77))
             }
         }
-        textPanel.addView(textPositionGroup, matchWrap())
-        textPanel.addView(label("Giriş / çıkış animasyonu", 11f, Color.rgb(154, 171, 190), false))
-        textAnimationGroup = android.widget.RadioGroup(this).apply {
-            orientation = android.widget.RadioGroup.HORIZONTAL
-            TextAnimationPreset.values().forEachIndexed { index, preset ->
+        val textInputRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        textInputRow.addView(textInput, LinearLayout.LayoutParams(0, dp(48), 1f))
+        textInputRow.addView(miniButton("✓") {
+            finishTextHistoryEdit()
+            val ime = getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
+            ime?.hideSoftInputFromWindow(textInput.windowToken, 0); textInput.clearFocus()
+            status.text = "Metin güncellendi."
+        }, LinearLayout.LayoutParams(dp(48), dp(48)).apply { leftMargin = dp(6) })
+        textPanel.addView(textInputRow, matchWrap())
+
+        textOverlayEditToggle = miniButton("Önizlemede yazıyı taşı: KAPALI") {
+            textOverlayEditingEnabled = !textOverlayEditingEnabled; updateTextOverlayEditToggle()
+            status.text = if (textOverlayEditingEnabled) "Yazıyı önizlemede sürükleyebilir, iki parmakla boyutlandırıp döndürebilirsin." else "Önizlemede doğrudan yazı taşıma kapalı."
+        }.apply {
+            contentDescription = "Önizleme üzerindeki yazıyı taşıma ve boyutlandırmayı aç veya kapat"; minHeight = dp(34)
+        }
+        textPanel.addView(textOverlayEditToggle, matchWrap()); updateTextOverlayEditToggle()
+
+        val textActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        textActions.addView(miniButton("＋ Yeni") { addTextLayer() }, LinearLayout.LayoutParams(0, dp(38), 1f))
+        textActions.addView(miniButton("Kopyala") { duplicateSelectedTextLayer() }, LinearLayout.LayoutParams(0, dp(38), 1f).apply { leftMargin = dp(4) })
+        textActions.addView(miniButton("Sil") { removeSelectedTextLayer() }, LinearLayout.LayoutParams(0, dp(38), 1f).apply { leftMargin = dp(4) })
+        textPanel.addView(textActions)
+        val textLayerScroll = android.widget.HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; overScrollMode = View.OVER_SCROLL_NEVER }
+        textLayerList = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(2), 0, dp(2)) }
+        textLayerScroll.addView(textLayerList)
+        textPanel.addView(textLayerScroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(42)))
+
+        val tabNames = listOf("Şablonlar", "Yazı tipleri", "Stiller", "Efektler", "Animasyonlar")
+        val tabButtons = linkedMapOf<String, Button>()
+        val tabPanels = linkedMapOf<String, LinearLayout>()
+        val tabScrolls = linkedMapOf<String, ScrollView>()
+        val tabFrame = FrameLayout(this)
+        tabNames.forEach { name ->
+            val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(2), dp(4), dp(2), dp(8)) }
+            val scroll = ScrollView(this).apply {
+                isFillViewport = true; isVerticalScrollBarEnabled = false; overScrollMode = View.OVER_SCROLL_NEVER
+                addView(content, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+                visibility = View.GONE
+            }
+            tabPanels[name] = content; tabScrolls[name] = scroll
+            tabFrame.addView(scroll, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        }
+        val tabRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        tabNames.forEach { name ->
+            val tab = miniButton(name) {
+                tabScrolls.forEach { (key, view) -> view.visibility = if (key == name) View.VISIBLE else View.GONE }
+                tabButtons.forEach { (key, button) ->
+                    val selected = key == name
+                    button.background = android.graphics.drawable.GradientDrawable().apply {
+                        setColor(if (selected) Color.rgb(35, 53, 67) else Color.TRANSPARENT)
+                        cornerRadius = dp(8).toFloat()
+                        setStroke(dp(if (selected) 1 else 0), if (selected) Color.rgb(57, 220, 190) else Color.TRANSPARENT)
+                    }
+                    button.setTextColor(if (selected) Color.rgb(86, 231, 200) else Color.WHITE)
+                }
+            }.apply { textSize = 11f; minHeight = dp(38); setPadding(dp(9), 0, dp(9), 0); contentDescription = "Metin düzenleme sekmesi: $name" }
+            tabButtons[name] = tab
+            tabRow.addView(tab, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(40)).apply { rightMargin = dp(4) })
+        }
+        val tabScroll = android.widget.HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; overScrollMode = View.OVER_SCROLL_NEVER; addView(tabRow) }
+        textPanel.addView(tabScroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(42)))
+        textPanel.addView(tabFrame, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(190)))
+        tabScrolls["Stiller"]?.visibility = View.VISIBLE
+        tabButtons["Stiller"]?.apply {
+            setTextColor(Color.rgb(86, 231, 200))
+            background = android.graphics.drawable.GradientDrawable().apply { setColor(Color.rgb(35, 53, 67)); cornerRadius = dp(8).toFloat(); setStroke(dp(1), Color.rgb(57, 220, 190)) }
+        }
+
+        val templates = tabPanels.getValue("Şablonlar")
+        templates.addView(label("Hızlı metin stilleri", 12f, Color.WHITE, true))
+        fun applyTextTemplate(color: TextColorPreset, bold: Boolean, font: TextFontPreset, size: Int) {
+            recordProjectEdit(); textColorPreset = color; textBold = bold; textFontPreset = font; textSizeSp = size
+            selectedTextLayer()?.apply { colorPreset = color; isBold = bold; fontPreset = font; sizeSp = size }
+            selectedTextLayer()?.let { loadTextLayerIntoControls(it) }
+            updatePreviewTextOverlay(); refreshTimelineTracks()
+        }
+        val presets = listOf(
+            Triple("Klasik", TextColorPreset.WHITE, TextFontPreset.SYSTEM) to Pair(false, 28),
+            Triple("Sarı kalın", TextColorPreset.YELLOW, TextFontPreset.SYSTEM) to Pair(true, 30),
+            Triple("Serif", TextColorPreset.WHITE, TextFontPreset.SERIF) to Pair(false, 30),
+            Triple("Daktilo", TextColorPreset.CYAN, TextFontPreset.MONOSPACE) to Pair(true, 26)
+        )
+        presets.chunked(2).forEach { group ->
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            group.forEachIndexed { index, item ->
+                val style = item.first; val options = item.second
+                row.addView(miniButton(style.first) { applyTextTemplate(style.second, options.first, style.third, options.second) },
+                    LinearLayout.LayoutParams(0, dp(42), 1f).apply { if (index > 0) leftMargin = dp(5) })
+            }
+            templates.addView(row, matchWrap()); templates.addView(gap(4))
+        }
+
+        val fonts = tabPanels.getValue("Yazı tipleri")
+        fonts.addView(label("Yazı ailesi", 12f, Color.WHITE, true))
+        textFontGroup = android.widget.RadioGroup(this).apply {
+            orientation = android.widget.RadioGroup.VERTICAL
+            TextFontPreset.values().forEachIndexed { index, preset ->
                 addView(android.widget.RadioButton(this@VideoEditorActivity).apply {
-                    id = 31 + index
-                    text = preset.title
-                    textSize = 10f
-                    setTextColor(Color.WHITE)
-                    buttonTintList = android.content.res.ColorStateList.valueOf(Color.rgb(57, 220, 190))
-                    minHeight = dp(38)
-                    setPadding(dp(2), 0, dp(4), 0)
+                    id = 51 + index; text = preset.title; textSize = 12f; setTextColor(Color.WHITE)
+                    buttonTintList = android.content.res.ColorStateList.valueOf(Color.rgb(57, 220, 190)); minHeight = dp(34)
                 })
             }
-            check(31)
+            check(51)
             setOnCheckedChangeListener { _, checkedId ->
                 if (loadingTextLayerControls) return@setOnCheckedChangeListener
-                recordProjectEdit()
-                textAnimationPreset = TextAnimationPreset.values().getOrNull(checkedId - 31)
-                    ?: TextAnimationPreset.NONE
-                selectedTextLayer()?.animationPreset = textAnimationPreset
-                updatePreviewTextOverlay()
-                refreshTimelineTracks()
+                recordProjectEdit(); textFontPreset = TextFontPreset.values().getOrNull(checkedId - 51) ?: TextFontPreset.SYSTEM
+                syncSelectedTextLayerFromControls(); updatePreviewTextOverlay()
             }
         }
-        val textAnimationScroll = android.widget.HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false
-            overScrollMode = View.OVER_SCROLL_NEVER
-            addView(textAnimationGroup)
-        }
-        textPanel.addView(textAnimationScroll, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(44)
-        ))
-        textAnimationDurationLabel = label("Animasyon süresi: 350 ms", 11f, Color.rgb(205, 218, 231), false)
-        textPanel.addView(textAnimationDurationLabel)
-        textAnimationDurationSeek = SeekBar(this).apply {
-            max = 1_400
-            progress = 250
-            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                    if (!fromUser || loadingTextLayerControls) return
-                    textAnimationDurationMs = (progress + 100L).coerceIn(100L, 1_500L)
-                    textAnimationDurationLabel.text = "Animasyon süresi: $textAnimationDurationMs ms"
-                    selectedTextLayer()?.animationDurationMs = textAnimationDurationMs
-                    updatePreviewTextOverlay()
-                }
-                override fun onStartTrackingTouch(seekBar: SeekBar?) {
-                    activeProjectHistorySnapshot = beginProjectHistoryGesture()
-                }
-                override fun onStopTrackingTouch(seekBar: SeekBar?) {
-                    finishProjectHistoryGesture()
-                    refreshTimelineTracks()
-                }
-            })
-        }
-        textPanel.addView(textAnimationDurationSeek, matchWrap())
-        textPanel.addView(label("Yazı rengi", 11f, Color.rgb(154, 171, 190), false))
+        fonts.addView(textFontGroup, matchWrap())
+
+        val styles = tabPanels.getValue("Stiller")
+        styles.addView(label("Yazı rengi", 11f, Color.rgb(154, 171, 190), false))
         textColorGroup = android.widget.RadioGroup(this).apply {
             orientation = android.widget.RadioGroup.HORIZONTAL
             TextColorPreset.values().forEachIndexed { index, preset ->
@@ -1696,82 +1689,120 @@ class VideoEditorActivity : Activity() {
                         TextColorPreset.RED -> "Kırmızı"
                         TextColorPreset.GREEN -> "Yeşil"
                     }
-                    textSize = 10f
-                    setTextColor(preset.colorInt)
-                    buttonTintList = android.content.res.ColorStateList.valueOf(preset.colorInt)
-                    minHeight = dp(38)
-                    setPadding(dp(2), 0, dp(4), 0)
+                    textSize = 10f; setTextColor(preset.colorInt); buttonTintList = android.content.res.ColorStateList.valueOf(preset.colorInt)
+                    minHeight = dp(38); setPadding(dp(2), 0, dp(4), 0)
                 })
             }
             check(11)
             setOnCheckedChangeListener { _, checkedId ->
                 if (loadingTextLayerControls) return@setOnCheckedChangeListener
-                recordProjectEdit()
-                textColorPreset = TextColorPreset.values().getOrNull(checkedId - 11)
-                    ?: TextColorPreset.WHITE
-                syncSelectedTextLayerFromControls()
-                updatePreviewTextOverlay()
+                recordProjectEdit(); textColorPreset = TextColorPreset.values().getOrNull(checkedId - 11) ?: TextColorPreset.WHITE
+                syncSelectedTextLayerFromControls(); updatePreviewTextOverlay()
             }
         }
-        val textColorScroll = android.widget.HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false
-            overScrollMode = View.OVER_SCROLL_NEVER
-        }
-        textColorScroll.addView(textColorGroup, ViewGroup.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
-        textPanel.addView(textColorScroll, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(44)
-        ))
+        val colorScroll = android.widget.HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; overScrollMode = View.OVER_SCROLL_NEVER; addView(textColorGroup) }
+        styles.addView(colorScroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(44)))
         textBoldCheck = CheckBox(this).apply {
-            text = "Kalın yazı"
-            textSize = 12f
-            setTextColor(Color.WHITE)
-            buttonTintList = android.content.res.ColorStateList.valueOf(Color.rgb(57, 220, 190))
-            isChecked = true
+            text = "Kalın yazı"; textSize = 12f; setTextColor(Color.WHITE)
+            buttonTintList = android.content.res.ColorStateList.valueOf(Color.rgb(57, 220, 190)); isChecked = true
             setOnCheckedChangeListener { _, checked ->
                 if (loadingTextLayerControls) return@setOnCheckedChangeListener
-                recordProjectEdit()
-                textBold = checked
-                syncSelectedTextLayerFromControls()
-                updatePreviewTextOverlay()
+                recordProjectEdit(); textBold = checked; syncSelectedTextLayerFromControls(); updatePreviewTextOverlay()
             }
         }
-        textPanel.addView(textBoldCheck, matchWrap())
+        styles.addView(textBoldCheck, matchWrap())
         textSizeLabel = label("Yazı boyutu: $textSizeSp", 12f, Color.WHITE, true)
-        val textSizeRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
+        val sizeRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
             addView(textSizeLabel, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            addView(miniButton("A−") { adjustSelectedTextSize(-4) }, LinearLayout.LayoutParams(dp(52), dp(42)))
-            addView(miniButton("A+") { adjustSelectedTextSize(4) }, LinearLayout.LayoutParams(dp(52), dp(42)).apply { leftMargin = dp(4) })
+            addView(miniButton("A−") { adjustSelectedTextSize(-4) }, LinearLayout.LayoutParams(dp(48), dp(38)))
+            addView(miniButton("A+") { adjustSelectedTextSize(4) }, LinearLayout.LayoutParams(dp(48), dp(38)).apply { leftMargin = dp(4) })
         }
-        textPanel.addView(textSizeRow, matchWrap())
-        textSizeSeek = SeekBar(this).apply {
-            max = 84
-            progress = textSizeSp - 12
-            contentDescription = "Yazı boyutu"
-        }
+        styles.addView(sizeRow, matchWrap())
+        textSizeSeek = SeekBar(this).apply { max = 84; progress = textSizeSp - 12; contentDescription = "Yazı boyutu" }
         textSizeSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
-                textSizeSp = (progress + 12).coerceIn(12, 96)
-                textSizeLabel.text = "Yazı boyutu: $textSizeSp sp"
-                if (!loadingTextLayerControls) {
-                    syncSelectedTextLayerFromControls()
-                    selectedTextLayer()?.sizeSp = textSizeSp
-                }
-                updatePreviewTextOverlay()
-                refreshTextLayerList()
+                textSizeSp = (progress + 12).coerceIn(12, 96); textSizeLabel.text = "Yazı boyutu: $textSizeSp sp"
+                if (!loadingTextLayerControls) { syncSelectedTextLayerFromControls(); selectedTextLayer()?.sizeSp = textSizeSp }
+                updatePreviewTextOverlay(); refreshTextLayerList()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {
-                if (!loadingTextLayerControls) activeProjectHistorySnapshot = beginProjectHistoryGesture()
-            }
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {
-                finishProjectHistoryGesture()
-            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) { if (!loadingTextLayerControls) activeProjectHistorySnapshot = beginProjectHistoryGesture() }
+            override fun onStopTrackingTouch(seekBar: SeekBar?) { finishProjectHistoryGesture() }
         })
-        textPanel.addView(textSizeSeek, matchWrap())
+        styles.addView(textSizeSeek, matchWrap())
+        styles.addView(label("Yazı konumu", 11f, Color.rgb(154, 171, 190), false))
+        textPositionGroup = android.widget.RadioGroup(this).apply {
+            orientation = android.widget.RadioGroup.HORIZONTAL
+            addView(android.widget.RadioButton(this@VideoEditorActivity).apply { id = 1; text = "Üst"; setTextColor(Color.WHITE) })
+            addView(android.widget.RadioButton(this@VideoEditorActivity).apply { id = 2; text = "Orta"; setTextColor(Color.WHITE) })
+            addView(android.widget.RadioButton(this@VideoEditorActivity).apply { id = 3; text = "Alt"; setTextColor(Color.WHITE) })
+            check(3)
+            setOnCheckedChangeListener { _, checkedId ->
+                if (loadingTextLayerControls) return@setOnCheckedChangeListener
+                recordProjectEdit()
+                textPosition = when (checkedId) { 1 -> TextPosition.TOP; 2 -> TextPosition.CENTER; else -> TextPosition.BOTTOM }
+                selectedTextLayer()?.let { it.yFraction = defaultTextYFraction(textPosition) }
+                syncSelectedTextLayerFromControls(); updatePreviewTextOverlay(); refreshTimelineTracks()
+            }
+        }
+        styles.addView(textPositionGroup, matchWrap())
+        styles.addView(label("Yazının görünme aralığı", 11f, Color.rgb(154, 171, 190), false))
+        textStartLabel = label("Yazı başlangıcı: 00:00", 12f, Color.WHITE, true); styles.addView(textStartLabel)
+        textStartSeek = SeekBar(this).apply { max = 0; isEnabled = false }; styles.addView(textStartSeek, matchWrap())
+        textEndLabel = label("Yazı bitişi: 00:00", 12f, Color.WHITE, true); styles.addView(textEndLabel)
+        textEndSeek = SeekBar(this).apply { max = 0; isEnabled = false }; styles.addView(textEndSeek, matchWrap())
+        installTextTimeListeners()
+
+        val effects = tabPanels.getValue("Efektler")
+        effects.addView(label("Metin arka planı varsayılan olarak kapalıdır; istersen arkasına kutu ekleyebilirsin.", 11f, Color.rgb(180, 194, 208), false))
+        textBackgroundCheck = CheckBox(this).apply {
+            text = "Metin arka planı"; contentDescription = "Metin arka planını aç veya kapat"
+            textSize = 12f; setTextColor(Color.WHITE); buttonTintList = android.content.res.ColorStateList.valueOf(Color.rgb(57, 220, 190)); isChecked = false
+            setOnCheckedChangeListener { _, checked ->
+                if (loadingTextLayerControls) return@setOnCheckedChangeListener
+                recordProjectEdit(); textBackgroundEnabled = checked; selectedTextLayer()?.backgroundEnabled = checked
+                updatePreviewTextOverlay()
+            }
+        }
+        effects.addView(textBackgroundCheck, matchWrap())
+
+        val animations = tabPanels.getValue("Animasyonlar")
+        animations.addView(label("Giriş / çıkış animasyonu", 11f, Color.rgb(154, 171, 190), false))
+        textAnimationGroup = android.widget.RadioGroup(this).apply {
+            orientation = android.widget.RadioGroup.HORIZONTAL
+            TextAnimationPreset.values().forEachIndexed { index, preset ->
+                addView(android.widget.RadioButton(this@VideoEditorActivity).apply {
+                    id = 31 + index; text = preset.title; textSize = 10f; setTextColor(Color.WHITE)
+                    buttonTintList = android.content.res.ColorStateList.valueOf(Color.rgb(57, 220, 190))
+                    minHeight = dp(38); setPadding(dp(2), 0, dp(4), 0)
+                })
+            }
+            check(31)
+            setOnCheckedChangeListener { _, checkedId ->
+                if (loadingTextLayerControls) return@setOnCheckedChangeListener
+                recordProjectEdit(); textAnimationPreset = TextAnimationPreset.values().getOrNull(checkedId - 31) ?: TextAnimationPreset.NONE
+                selectedTextLayer()?.animationPreset = textAnimationPreset; updatePreviewTextOverlay(); refreshTimelineTracks()
+            }
+        }
+        val animationScroll = android.widget.HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; overScrollMode = View.OVER_SCROLL_NEVER; addView(textAnimationGroup) }
+        animations.addView(animationScroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(44)))
+        textAnimationDurationLabel = label("Animasyon süresi: 350 ms", 11f, Color.rgb(205, 218, 231), false); animations.addView(textAnimationDurationLabel)
+        textAnimationDurationSeek = SeekBar(this).apply {
+            max = 1_400; progress = 250
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                    if (!fromUser || loadingTextLayerControls) return
+                    textAnimationDurationMs = (progress + 100L).coerceIn(100L, 1_500L)
+                    textAnimationDurationLabel.text = "Animasyon süresi: $textAnimationDurationMs ms"
+                    selectedTextLayer()?.animationDurationMs = textAnimationDurationMs; updatePreviewTextOverlay()
+                }
+                override fun onStartTrackingTouch(seekBar: SeekBar?) { activeProjectHistorySnapshot = beginProjectHistoryGesture() }
+                override fun onStopTrackingTouch(seekBar: SeekBar?) { finishProjectHistoryGesture(); refreshTimelineTracks() }
+            })
+        }
+        animations.addView(textAnimationDurationSeek, matchWrap())
+
         textInput.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {
                 if (!loadingTextLayerControls && !restoringProjectEditSnapshot) beginTextHistoryEdit()
@@ -1781,28 +1812,15 @@ class VideoEditorActivity : Activity() {
                 if (selectedTextLayer() == null && !s.isNullOrBlank()) {
                     val total = totalOutputDurationMs()
                     val layer = TextLayer(
-                        id = nextTextLayerId++,
-                        text = "",
-                        startMs = 0L,
-                        endMs = total,
-                        timingCustomized = false,
-                        position = textPosition,
-                        sizeSp = textSizeSp,
-                        colorPreset = textColorPreset,
-                        isBold = textBold,
-                        xFraction = 0.5f,
-                        yFraction = defaultTextYFraction(textPosition)
+                        id = nextTextLayerId++, text = "", startMs = 0L, endMs = total, timingCustomized = false,
+                        position = textPosition, sizeSp = textSizeSp, colorPreset = textColorPreset, isBold = textBold,
+                        xFraction = 0.5f, yFraction = defaultTextYFraction(textPosition),
+                        fontPreset = textFontPreset, backgroundEnabled = textBackgroundEnabled
                     )
-                    textLayers.add(layer)
-                    selectedTextLayerId = layer.id
+                    textLayers.add(layer); selectedTextLayerId = layer.id
                 }
-                syncSelectedTextLayerFromControls()
-                refreshTextLayerList()
-                updatePreviewTextOverlay()
-                timelineHandler.removeCallbacks(textTimelineRefreshTask)
-                timelineHandler.postDelayed(textTimelineRefreshTask, 120L)
-                // Keep a complete text-edit session as one Undo step across
-                // pauses; focus loss or the next editor action commits it.
+                syncSelectedTextLayerFromControls(); refreshTextLayerList(); updatePreviewTextOverlay()
+                timelineHandler.removeCallbacks(textTimelineRefreshTask); timelineHandler.postDelayed(textTimelineRefreshTask, 120L)
             }
             override fun afterTextChanged(s: android.text.Editable?) {}
         })
@@ -3170,7 +3188,8 @@ class VideoEditorActivity : Activity() {
                     "clipVolume" -> if (keyboardLayoutActive) 112 else 150
                     // Keep a usable project preview visible while text controls
                     // remain in this scrollable detail panel.
-                    "text" -> if (keyboardLayoutActive) 124 else 168
+                    // Room for the composer tabs without resizing the project preview canvas.
+                    "text" -> if (keyboardLayoutActive) 226 else 242
                     else -> if (keyboardLayoutActive) 124 else 196
                 }
                 val stickyHeaderHeight = 40
@@ -4583,7 +4602,8 @@ class VideoEditorActivity : Activity() {
         updateTimelinePlayheadLine()
         // refreshTimelineTracks() replaces the gutter ImageView on every rebuild.
         // Rebind the independent cover surface here so no caller can leave it blank.
-        refreshClipCoverThumbnail(selectedClip() ?: clips.firstOrNull())
+        // Project cover is a fixed still from the first clip, not the clip under the playhead.
+        refreshClipCoverThumbnail(clips.firstOrNull())
     }
 
 
@@ -5517,7 +5537,8 @@ class VideoEditorActivity : Activity() {
         val requestedScroll = TimelineScaleMath.pixelsForTime(
             timelinePlayheadMs, timelinePixelsPerSecond()
         ).coerceAtLeast(0)
-        if (firstLane.scrollX == requestedScroll) return
+        // A rebuilt text/audio lane can drift while the video row already has the target.
+        if (timelineScrollViews.all { it.width > 0 && it.scrollX == requestedScroll }) return
         scrollTimelineProgrammatically(requestedScroll)
     }
 
@@ -7390,7 +7411,9 @@ class VideoEditorActivity : Activity() {
         layer.colorPreset = textColorPreset
         layer.isBold = textBold
         layer.animationPreset = textAnimationPreset
-        layer.animationDurationMs = textAnimationDurationMs.coerceIn(100L, 1_500L)
+        layer.animationDurationMs = textAnimationDurationMs
+        layer.fontPreset = textFontPreset
+        layer.backgroundEnabled = textBackgroundEnabled.coerceIn(100L, 1_500L)
     }
 
     private fun refreshTextLayerList() {
@@ -7449,7 +7472,9 @@ class VideoEditorActivity : Activity() {
             colorPreset = textColorPreset,
             isBold = textBold,
             xFraction = 0.5f,
-            yFraction = defaultTextYFraction(TextPosition.BOTTOM)
+            yFraction = defaultTextYFraction(TextPosition.BOTTOM),
+            fontPreset = textFontPreset,
+            backgroundEnabled = textBackgroundEnabled
         )
         textLayers.add(layer)
         selectedTextLayerId = layer.id
@@ -7684,6 +7709,7 @@ class VideoEditorActivity : Activity() {
         updatePreviewTextOverlay()
         refreshTimelineTracks()
         enterTextTools()
+        showEditorPanel("text")
         status.text = "Yazı katmanı seçildi."
     }
 
@@ -7699,6 +7725,8 @@ class VideoEditorActivity : Activity() {
             textBold = layer?.isBold ?: true
             textAnimationPreset = layer?.animationPreset ?: TextAnimationPreset.NONE
             textAnimationDurationMs = layer?.animationDurationMs?.coerceIn(100L, 1_500L) ?: 350L
+            textFontPreset = layer?.fontPreset ?: TextFontPreset.SYSTEM
+            textBackgroundEnabled = layer?.backgroundEnabled ?: false
             // Discard any stale composing span before reflecting a restored
             // project value in the editor. The project model remains authoritative.
             textInput.clearComposingText()
@@ -7713,6 +7741,8 @@ class VideoEditorActivity : Activity() {
             })
             textColorGroup.check(11 + TextColorPreset.values().indexOf(textColorPreset).coerceAtLeast(0))
             textBoldCheck.isChecked = textBold
+            textFontGroup.check(51 + TextFontPreset.values().indexOf(textFontPreset).coerceAtLeast(0))
+            textBackgroundCheck.isChecked = textBackgroundEnabled
             textAnimationGroup.check(
                 31 + TextAnimationPreset.values().indexOf(textAnimationPreset).coerceAtLeast(0)
             )
@@ -7796,7 +7826,7 @@ class VideoEditorActivity : Activity() {
                 overlay.setTextColor(layer.colorPreset.colorInt)
             }
             val desiredTypeface = Typeface.create(
-                Typeface.DEFAULT,
+                layer.fontPreset.familyName,
                 if (layer.isBold) Typeface.BOLD else Typeface.NORMAL
             )
             if (overlay.typeface != desiredTypeface) overlay.typeface = desiredTypeface
@@ -7818,20 +7848,20 @@ class VideoEditorActivity : Activity() {
                 if (overlay.background != null) overlay.background = null
                 overlay.setShadowLayer(4f, 0f, 2f, Color.BLACK)
             } else {
-                val horizontalInsetDp = (10f * previewScale).toInt().coerceAtLeast(1)
-                val verticalInsetDp = (6f * previewScale).toInt().coerceAtLeast(1)
-                val leftPadding = dp(horizontalInsetDp)
-                val verticalPadding = dp(verticalInsetDp)
-                if (overlay.paddingLeft != leftPadding || overlay.paddingTop != verticalPadding ||
-                    overlay.paddingRight != leftPadding || overlay.paddingBottom != verticalPadding
-                ) {
-                    overlay.setPadding(leftPadding, verticalPadding, leftPadding, verticalPadding)
-                }
-                if (overlay.background == null) {
-                    overlay.background = android.graphics.drawable.GradientDrawable().apply {
-                        setColor(Color.argb(210, 0, 0, 0))
-                        cornerRadius = dp((8f * previewScale).toInt().coerceAtLeast(1)).toFloat()
+                if (layer.backgroundEnabled) {
+                    val hInset = dp((10f * previewScale).toInt().coerceAtLeast(1))
+                    val vInset = dp((6f * previewScale).toInt().coerceAtLeast(1))
+                    if (overlay.paddingLeft != hInset || overlay.paddingTop != vInset || overlay.paddingRight != hInset || overlay.paddingBottom != vInset) {
+                        overlay.setPadding(hInset, vInset, hInset, vInset)
                     }
+                    if (overlay.background == null) {
+                        overlay.background = android.graphics.drawable.GradientDrawable().apply {
+                            setColor(Color.argb(190, 0, 0, 0)); cornerRadius = dp((8f * previewScale).toInt().coerceAtLeast(1)).toFloat()
+                        }
+                    }
+                } else {
+                    if (overlay.paddingLeft != 0 || overlay.paddingTop != 0 || overlay.paddingRight != 0 || overlay.paddingBottom != 0) overlay.setPadding(0, 0, 0, 0)
+                    if (overlay.background != null) overlay.background = null
                 }
                 overlay.setShadowLayer(2f * previewScale, previewScale, previewScale, Color.BLACK)
             }
@@ -7937,12 +7967,9 @@ class VideoEditorActivity : Activity() {
         minimumHeight = dp(44)
         setTextColor(Color.WHITE)
         setTypeface(Typeface.DEFAULT, Typeface.BOLD)
-        setPadding(dp(10), dp(6), dp(10), dp(6))
+        setPadding(0, 0, 0, 0)
         setShadowLayer(2f, 1f, 1f, Color.BLACK)
-        background = android.graphics.drawable.GradientDrawable().apply {
-            setColor(Color.argb(210, 0, 0, 0))
-            cornerRadius = dp(8).toFloat()
-        }
+        background = null
         visibility = View.GONE
         isClickable = true
         elevation = dp(TouchPriority.PASSIVE_PREVIEW_DP).toFloat()
@@ -8490,6 +8517,8 @@ class VideoEditorActivity : Activity() {
                 put("rotationDegrees", layer.rotationDegrees)
                 put("colorPreset", layer.colorPreset.name)
                 put("isBold", layer.isBold)
+                put("fontPreset", layer.fontPreset.name)
+                put("backgroundEnabled", layer.backgroundEnabled)
                 put("kind", layer.kind.name)
                 put("animationPreset", layer.animationPreset.key)
                 put("animationDurationMs", layer.animationDurationMs)
@@ -8874,6 +8903,8 @@ class VideoEditorActivity : Activity() {
                         TextColorPreset.valueOf(item.optString("colorPreset", "WHITE"))
                     }.getOrDefault(TextColorPreset.WHITE),
                     isBold = item.optBoolean("isBold", true),
+                    fontPreset = runCatching { TextFontPreset.valueOf(item.optString("fontPreset", "SYSTEM")) }.getOrDefault(TextFontPreset.SYSTEM),
+                    backgroundEnabled = item.optBoolean("backgroundEnabled", false),
                     kind = runCatching {
                         TextLayerKind.valueOf(item.optString("kind", "TEXT"))
                     }.getOrDefault(TextLayerKind.TEXT),
@@ -11863,8 +11894,8 @@ class VideoEditorActivity : Activity() {
         val clip = selectedClip()
         updateClipSpeedControls()
         if (clip == null) {
-            refreshClipCoverThumbnail(null)
-            clipCoverButton?.apply { isEnabled = false; text = "Kapak" }
+            refreshClipCoverThumbnail(clips.firstOrNull())
+            clipCoverButton?.apply { isEnabled = clips.isNotEmpty(); text = "Kapak" }
             selectedClipLabel.text = "Önce bir video seç."
             startSeek.max = 1
             endSeek.max = 1
@@ -11875,7 +11906,8 @@ class VideoEditorActivity : Activity() {
             updateTrimLabels()
             return
         }
-        refreshClipCoverThumbnail(clip)
+        // Clip selection must not repaint the project-level cover tile.
+        refreshClipCoverThumbnail(clips.firstOrNull())
         startSeek.isEnabled = true
         endSeek.isEnabled = true
         val durationProgressMax = TimelineTrimMath.progressMax(clip.durationMs)
@@ -12085,10 +12117,11 @@ class VideoEditorActivity : Activity() {
      * The selected frame is metadata; it never replaces timestamp-accurate filmstrip cells.
      */
     private fun showClipCoverPicker() {
-        val clipIndex = selectedClipIndex
-        val clip = selectedClip()
+        // The project cover changes only after an explicit Save in this picker.
+        val clipIndex = 0
+        val clip = clips.firstOrNull()
         if (clip == null) {
-            status.text = "Kapak seçmek için önce zaman çizgisinden bir klip seç."
+            status.text = "Kapak seçmek için önce bir video ekle."
             return
         }
 
@@ -12455,7 +12488,8 @@ class VideoEditorActivity : Activity() {
         val endMs = layer.endMs
         val styled = SpannableString(overlayText).apply {
             setSpan(ForegroundColorSpan(layer.colorPreset.colorInt), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            if (layer.kind != TextLayerKind.STICKER) {
+            setSpan(TypefaceSpan(layer.fontPreset.familyName), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            if (layer.kind != TextLayerKind.STICKER && layer.backgroundEnabled) {
                 setSpan(BackgroundColorSpan(Color.argb(190, 0, 0, 0)), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
             if (layer.isBold) {
