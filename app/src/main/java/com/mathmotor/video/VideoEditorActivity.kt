@@ -486,17 +486,17 @@ class VideoEditorActivity : Activity() {
         override fun run() = work()
     }
     private val timelineThumbnailTaskSequence = java.util.concurrent.atomic.AtomicLong()
-    // Two isolated workers avoid saturating the emulator/device video codec when
-    // several visible filmstrip cells decode together. Each worker owns its retriever
-    // and creates a Media3 extractor only when the platform decoder cannot handle a source.
+    // Three isolated workers keep the tail of an eight-cell visible batch below
+    // the queue-wait budget without returning to unrestricted codec concurrency.
+    // Each worker owns its retriever; Media3 remains a fallback for unsupported sources.
     private val timelineThumbnailWorkerSequence = java.util.concurrent.atomic.AtomicLong()
     private val timelineThumbnailRetrievers =
         java.util.concurrent.ConcurrentHashMap<Long, Pair<Uri, MediaMetadataRetriever>>()
     private val timelineThumbnailExtractors =
         java.util.concurrent.ConcurrentHashMap<Long, Pair<Uri, FrameExtractor>>()
     private val timelineThumbnailExecutor = java.util.concurrent.ThreadPoolExecutor(
-        2,
-        2,
+        3,
+        3,
         0L,
         java.util.concurrent.TimeUnit.MILLISECONDS,
         java.util.concurrent.PriorityBlockingQueue<Runnable>(
