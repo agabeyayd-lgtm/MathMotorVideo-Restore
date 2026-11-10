@@ -519,10 +519,10 @@ class VideoEditorActivity : Activity() {
         ),
         java.util.concurrent.ThreadFactory { worker ->
             Thread({
-                // Thumbnail decoding is opportunistic background work. Keep decoder
-                // workers below the UI/playback thread priority so a full visible
-                // filmstrip batch cannot delay the live playhead clock.
-                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
+                // Keep thumbnail decoding below Android's UI thread priority,
+                // but do not background-throttle it: visible filmstrip cells must
+                // meet the queue latency budget while playback remains responsive.
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_DEFAULT)
                 try {
                     worker.run()
                 } finally {
