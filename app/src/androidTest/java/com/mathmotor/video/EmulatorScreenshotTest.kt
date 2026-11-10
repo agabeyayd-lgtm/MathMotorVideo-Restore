@@ -98,17 +98,29 @@ class EmulatorScreenshotTest {
             }
         }
 
+        android.util.Log.i(
+            "TimelineSyncTest",
+            "VIDEO_CLIP_DRAG_INJECT start=($startX,$startY) end=($endX,$endY)"
+        )
         inject(MotionEvent.ACTION_DOWN, startX, startY)
+        android.util.Log.i("TimelineSyncTest", "VIDEO_CLIP_DRAG_INJECT down accepted")
         // The view's production long-press Runnable uses Android's configured
         // timeout. Add a small margin so CI scheduling cannot race the timer.
-        SystemClock.sleep(android.view.ViewConfiguration.getLongPressTimeout().toLong() + 180L)
+        val longPressWaitMs = android.view.ViewConfiguration.getLongPressTimeout().toLong() + 220L
+        SystemClock.sleep(longPressWaitMs)
+        android.util.Log.i(
+            "TimelineSyncTest",
+            "VIDEO_CLIP_DRAG_INJECT waitedLongPressMs=$longPressWaitMs"
+        )
         val midpointX = (startX + endX) / 2f
         val midpointY = (startY + endY) / 2f
         inject(MotionEvent.ACTION_MOVE, midpointX, midpointY)
-        SystemClock.sleep(80L)
+        SystemClock.sleep(120L)
         inject(MotionEvent.ACTION_MOVE, endX, endY)
-        SystemClock.sleep(80L)
+        SystemClock.sleep(120L)
         inject(MotionEvent.ACTION_UP, endX, endY)
+        android.util.Log.i("TimelineSyncTest", "VIDEO_CLIP_DRAG_INJECT up accepted")
+        instrumentation.waitForIdleSync()
     }
 
     private fun takeScreenshot(device: UiDevice, name: String) {
