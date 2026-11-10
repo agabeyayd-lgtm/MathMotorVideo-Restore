@@ -7236,7 +7236,7 @@ class VideoEditorActivity : Activity() {
                 sourceAudioVolume == snapshot.sourceAudioVolume &&
                 musicVolume == snapshot.musicVolume &&
                 soundVolume == snapshot.soundVolume &&
-                keepSourceAudio == snapshot.keepSourceAudio &&
+                (::keepSourceAudio.isInitialized && keepSourceAudio.isChecked) == snapshot.keepSourceAudio &&
                 selectedVideoFilter == snapshot.videoFilterPreset &&
                 filterBrightness == snapshot.filterBrightness &&
                 filterContrast == snapshot.filterContrast &&
