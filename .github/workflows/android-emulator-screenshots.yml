@@ -28,15 +28,15 @@ permissions:
   contents: read
 
 concurrency:
-  # Isolate each source revision so a wedged emulator run from an older commit
-  # cannot hold the lock for the latest PR head. Duplicate runs of one SHA replace each other.
-  group: android-emulator-screenshots-${{ github.ref }}-${{ github.sha }}
+  # Keep one emulator run per PR. A new commit cancels an older run for the same
+  # PR instead of allowing stale API-35 emulators to consume parallel runners.
+  group: android-emulator-screenshots-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   emulator-ui:
     runs-on: ubuntu-24.04
-    timeout-minutes: 70
+    timeout-minutes: 35
     steps:
       - name: Check out source
         uses: actions/checkout@v4
