@@ -2681,6 +2681,91 @@ for text_tab in "Şablonlar" "Yazı tipleri" "Stiller" "Efektler" "Animasyonlar"
 done
 echo "PASS: all five text composer categories are visible in the real editor hierarchy."
 
+# Visibility alone is not enough: each CapCut-style tab must actually switch
+# the live editor panel to its own controls. Tap every real Android button,
+# capture the resulting hierarchy, and require a category-specific heading.
+text_tab_index=0
+while IFS='|' read -r text_tab expected_heading; do
+  text_tab_index=$((text_tab_index + 1))
+  text_tab_coords="$(python3 - emulator-screenshots/editor-text-panel.xml "Metin düzenleme sekmesi: $text_tab" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+description = sys.argv[2]
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != description:
+        continue
+    if node.attrib.get("enabled", "false").lower() != "true":
+        continue
+    match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+    if not match:
+        continue
+    left, top, right, bottom = map(int, match.groups())
+    if right - left < 12 or bottom - top < 12:
+        continue
+    print((left + right) // 2, (top + bottom) // 2)
+    raise SystemExit(0)
+raise SystemExit(f"Text composer tab is not visibly tappable: {description}")
+PY
+)" || {
+    echo "Could not locate the live '$text_tab' text-composer tab."
+    collect_capture_diagnostics "text-composer-tab-$text_tab_index-hit-target-missing"
+    exit 93
+  }
+  timeout -k 2s 8s adb -s emulator-5554 shell input tap "$text_tab_coords"
+  sleep 1
+  tab_xml="editor-text-tab-$text_tab_index.xml"
+  if ! dump_hierarchy "$tab_xml" "emulator-screenshots/$tab_xml"; then
+    echo "Could not inspect the live '$text_tab' content after tapping its tab."
+    collect_capture_diagnostics "text-composer-tab-$text_tab_index-hierarchy-missing"
+    exit 93
+  fi
+  if ! grep -Fq "$expected_heading" "emulator-screenshots/$tab_xml"; then
+    echo "The '$text_tab' tab did not reveal its expected controls: '$expected_heading'."
+    collect_capture_diagnostics "text-composer-tab-$text_tab_index-content-missing"
+    exit 93
+  fi
+  echo "PASS: tapping '$text_tab' revealed '$expected_heading'."
+done <<'TEXT_TABS'
+Şablonlar|Hızlı metin stilleri
+Yazı tipleri|Yazı ailesi
+Stiller|Yazı rengi
+Efektler|Metin arka planı varsayılan olarak kapalıdır
+Animasyonlar|Giriş / çıkış animasyonu
+TEXT_TABS
+
+# Restore the normal Stiller tab so subsequent text creation and canvas tests
+# begin from the same known editor state on every emulator run.
+styles_tab_coords="$(python3 - emulator-screenshots/editor-text-panel.xml "Metin düzenleme sekmesi: Stiller" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != sys.argv[2]:
+        continue
+    match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+    if match:
+        left, top, right, bottom = map(int, match.groups())
+        print((left + right) // 2, (top + bottom) // 2)
+        raise SystemExit(0)
+raise SystemExit("Stiller tab is unavailable after text composer checks.")
+PY
+)" || {
+  collect_capture_diagnostics text-composer-styles-tab-restore-missing
+  exit 93
+}
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$styles_tab_coords"
+sleep 1
+if ! dump_hierarchy editor-text-panel-styles-restored.xml emulator-screenshots/editor-text-panel-styles-restored.xml ||
+   ! grep -Fq "Yazı rengi" emulator-screenshots/editor-text-panel-styles-restored.xml; then
+  echo "The text composer could not return to the default Stiller tab."
+  collect_capture_diagnostics text-composer-styles-tab-restore-failed
+  exit 93
+fi
+
 # Measure the pinned return button while the text panel is first opened. Its
 # sibling-header position is independent of the scrolling settings/IME.
 text_panel_back="$(find_bottom_tool emulator-screenshots/editor-text-panel.xml "Araçlara dön" || true)"
