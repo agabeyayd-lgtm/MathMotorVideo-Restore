@@ -7411,9 +7411,9 @@ class VideoEditorActivity : Activity() {
         layer.colorPreset = textColorPreset
         layer.isBold = textBold
         layer.animationPreset = textAnimationPreset
-        layer.animationDurationMs = textAnimationDurationMs
+        layer.animationDurationMs = textAnimationDurationMs.coerceIn(100L, 1_500L)
         layer.fontPreset = textFontPreset
-        layer.backgroundEnabled = textBackgroundEnabled.coerceIn(100L, 1_500L)
+        layer.backgroundEnabled = textBackgroundEnabled
     }
 
     private fun refreshTextLayerList() {
@@ -7709,7 +7709,6 @@ class VideoEditorActivity : Activity() {
         updatePreviewTextOverlay()
         refreshTimelineTracks()
         enterTextTools()
-        showEditorPanel("text")
         status.text = "Yazı katmanı seçildi."
     }
 
