@@ -2,19 +2,18 @@ name: Verify release signing continuity
 
 on:
   workflow_dispatch:
-  pull_request:
-    branches:
-      - main
-    paths:
-      - "app/build.gradle.kts"
-      - ".github/signing-check-trigger.txt"
-      - ".github/workflows/verify-release-signing.yml"
+  # Verify only after the signed APK publication has completed. This avoids
+  # racing the publisher and comparing a new version against the older latest tag.
+  workflow_run:
+    workflows:
+      - "Build and publish APK"
+    types:
+      - completed
+  # Exercise modifications to this verifier immediately.
   push:
     branches:
       - main
     paths:
-      - "app/build.gradle.kts"
-      - ".github/signing-check-trigger.txt"
       - ".github/workflows/verify-release-signing.yml"
 
 permissions:
@@ -26,6 +25,7 @@ concurrency:
 
 jobs:
   compare-signing-certificates:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
