@@ -383,27 +383,12 @@ internal object TimelineVideoMath {
         }
 
     /**
-     * Resolves old/invalid overlaps in the single main-video lane without changing source trims.
-     * Existing intentional gaps are retained; a clip is moved right only when its start would
-     * otherwise collide with the previous clip.
+     * Compatibility entry point for older callers. The primary video lane never has
+     * intentional empty ranges: repair every saved offset, including the leading edge,
+     * by packing the current timeline order from project time zero.
      */
-    fun resolveOverlaps(segments: List<TimelineVideoSegment>): TimelineVideoReorderPlan? {
-        if (segments.isEmpty()) return null
-        val safe = segments.map(::normalize)
-        if (safe.any { it.durationMs <= 0L }) return null
-
-        val ordered = segments.indices.sortedWith(
-            compareBy<Int> { safe[it].timelineStartMs }.thenBy { it }
-        )
-        var cursorMs = safe[ordered.first()].timelineStartMs
-        val starts = linkedMapOf<Int, Long>()
-        ordered.forEach { index ->
-            val startMs = maxOf(safe[index].timelineStartMs, cursorMs)
-            starts[index] = startMs
-            cursorMs = startMs + safe[index].durationMs
-        }
-        return TimelineVideoReorderPlan(ordered, starts)
-    }
+    fun resolveOverlaps(segments: List<TimelineVideoSegment>): TimelineVideoReorderPlan? =
+        packSequentially(segments)
 
     /**
      * Splits a clip at the closest source-time boundary represented by the requested
