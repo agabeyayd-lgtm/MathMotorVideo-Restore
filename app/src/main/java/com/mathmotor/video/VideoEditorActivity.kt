@@ -1625,6 +1625,17 @@ class VideoEditorActivity : Activity() {
         val tabScroll = android.widget.HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; overScrollMode = View.OVER_SCROLL_NEVER; addView(tabRow) }
         textPanel.addView(tabScroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(42)))
         textPanel.addView(tabFrame, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(190)))
+
+        // Keep the five CapCut-style text categories directly below the text
+        // input. The old edit toggle/actions/layer list pushed these controls
+        // below the visible drawer fold, so UI automation and users could not
+        // reach them without scrolling the whole panel.
+        textPanel.removeView(tabScroll)
+        textPanel.removeView(tabFrame)
+        textPanel.getChildAt(0)?.visibility = View.GONE // legacy METİN heading
+        textPanel.addView(tabScroll, 2)
+        textPanel.addView(tabFrame, 3)
+
         tabScrolls["Stiller"]?.visibility = View.VISIBLE
         tabButtons["Stiller"]?.apply {
             setTextColor(Color.rgb(86, 231, 200))
