@@ -4300,8 +4300,8 @@ class VideoEditorActivity : Activity() {
             lane.addView(addVideoButton, LinearLayout.LayoutParams(dp(28), ViewGroup.LayoutParams.MATCH_PARENT))
         } else {
             // CapCut-style main video strip: one VIDEO lane, one shared time axis.
-            // Clips retain their real project start/end positions; overlaps are
-            // stacked inside this same strip instead of creating extra VIDEO rows.
+            // The refresh path packs clips contiguously from zero; this renderer only
+            // paints those normalized ranges and never creates empty clip placeholders.
             val placements = TimelineVideoMath.singleTrackPlacements(videoTimelineSegments())
             val stripHeight = dp(TimelineThumbnailMath.THUMBNAIL_STRIP_HEIGHT_DP)
             val furthestClipEndPx = placements.maxOfOrNull {
@@ -8795,8 +8795,8 @@ class VideoEditorActivity : Activity() {
         clips.clear()
         clips.addAll(loadedClips)
         if (migrateLegacyVideoLane && clips.size > 1) {
-            // Migrate only old drafts once. After this save, intentional gaps made
-            // by dragging a split segment to an empty position are preserved.
+            // Repack old draft offsets once during migration. The live timeline refresh
+            // also enforces the same zero-based, gapless sequence after every main-video edit.
             val previous = clips.toList()
             val plan = TimelineVideoMath.packSequentially(videoTimelineSegments())
             if (plan != null) {
@@ -12274,7 +12274,7 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun normalizeMainVideoLaneOverlaps() {
-        if (clips.size < 2) return
+        if (clips.isEmpty()) return
         val segments = videoTimelineSegments()
         val plan = TimelineVideoMath.packSequentially(segments) ?: return
         val previous = clips.toList()
@@ -12325,7 +12325,7 @@ class VideoEditorActivity : Activity() {
     private fun activeClipIndexAt(projectTimeMs:Long):Int? =
         TimelineVideoMath.activeSegmentIndexAt(videoTimelineSegments(),projectTimeMs)
 
-    /** Snap only while the playhead is over an actual clip; timeline gaps remain exact gaps. */
+    /** Snap to source frames while the playhead is over a clip in the gapless main-video lane. */
     private fun snapTimelineTimeToSourceFrame(projectTimeMs: Long): Long {
         val index = activeClipIndexAt(projectTimeMs) ?: return projectTimeMs
         val clip = clips.getOrNull(index) ?: return projectTimeMs
