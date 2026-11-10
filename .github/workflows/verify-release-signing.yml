@@ -54,25 +54,65 @@ jobs:
           echo "ANDROID_HOME=$ANDROID_HOME"
           test -x "$ANDROID_HOME/build-tools/36.0.0/apksigner"
 
-      - name: Download current signed 401 release
+      - name: Download latest and previous signed releases
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          expected_code="$(grep -E 'versionCode[[:space:]]*=' app/build.gradle.kts | head -1 | grep -oE '[0-9]+')"
           release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest")"
-          tag="$(printf '%s' "$release_json" | jq -r '.tag_name')"
-          code="$(RELEASE_JSON="$release_json" python3 -c 'import json,os,re; body=json.loads(os.environ["RELEASE_JSON"]).get("body") or ""; m=re.search(r"versionCode\s*=\s*(\d+)", body, re.I); print(m.group(1) if m else "")')"
-          echo "Latest signed release tag: $tag"
-          echo "Latest signed release versionCode: $code"
-          if [ "$code" != "401" ]; then
-            echo "::error::Expected latest signed release versionCode 401, found '$code'. Stop and review release state."
+          latest_tag="$(printf '%s' "$release_json" | jq -r '.tag_name')"
+          latest_code="$(RELEASE_JSON="$release_json" python3 -c 'import json,os,re; body=json.loads(os.environ["RELEASE_JSON"]).get("body") or ""; m=re.search(r"versionCode\\s*=\\s*(\\d+)", body, re.I); print(m.group(1) if m else "")')"
+          echo "Expected app versionCode: $expected_code"
+          echo "Latest signed release: $latest_tag (versionCode=$latest_code)"
+          if [ "$latest_code" != "$expected_code" ]; then
+            echo "::error::Latest signed release versionCode '$latest_code' does not match app/build.gradle.kts '$expected_code'."
             exit 1
           fi
-          mkdir -p "$RUNNER_TEMP/published-release"
-          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern "MathMotorVideo.apk" --dir "$RUNNER_TEMP/published-release"
+
+          releases_json="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100")"
+          previous_record="$(RELEASES_JSON="$releases_json" EXPECTED_CODE="$expected_code" python3 - <<'PY'
+          import json
+          import os
+          import re
+
+          releases = json.loads(os.environ["RELEASES_JSON"])
+          expected = int(os.environ["EXPECTED_CODE"])
+          candidates = []
+          for release in releases:
+              if release.get("draft") or release.get("prerelease"):
+                  continue
+              if not any(asset.get("name") == "MathMotorVideo.apk" for asset in release.get("assets", [])):
+                  continue
+              match = re.search(r"versionCode\\s*=\\s*(\\d+)", release.get("body") or "", re.I)
+              if not match:
+                  continue
+              code = int(match.group(1))
+              if code < expected:
+                  candidates.append((code, release.get("tag_name", "")))
+          if not candidates:
+              raise SystemExit("No previous published signed APK with a lower versionCode was found.")
+          code, tag = max(candidates)
+          print(f"{tag}\\t{code}")
+          PY
+          )"
+          IFS=$'\\t' read -r previous_tag previous_code <<< "$previous_record"
+          if [ -z "$previous_tag" ] || [ -z "$previous_code" ]; then
+            echo "::error::Could not resolve the previous signed release."
+            exit 1
+          fi
+
+          mkdir -p "$RUNNER_TEMP/published-release" "$RUNNER_TEMP/previous-release"
+          gh release download "$latest_tag" --repo "$GITHUB_REPOSITORY" --pattern "MathMotorVideo.apk" --dir "$RUNNER_TEMP/published-release"
+          gh release download "$previous_tag" --repo "$GITHUB_REPOSITORY" --pattern "MathMotorVideo.apk" --dir "$RUNNER_TEMP/previous-release"
           test -s "$RUNNER_TEMP/published-release/MathMotorVideo.apk"
+          test -s "$RUNNER_TEMP/previous-release/MathMotorVideo.apk"
           echo "PUBLISHED_APK=$RUNNER_TEMP/published-release/MathMotorVideo.apk" >> "$GITHUB_ENV"
-          echo "PUBLISHED_TAG=$tag" >> "$GITHUB_ENV"
+          echo "PUBLISHED_TAG=$latest_tag" >> "$GITHUB_ENV"
+          echo "PUBLISHED_VERSION_CODE=$latest_code" >> "$GITHUB_ENV"
+          echo "PREVIOUS_APK=$RUNNER_TEMP/previous-release/MathMotorVideo.apk" >> "$GITHUB_ENV"
+          echo "PREVIOUS_TAG=$previous_tag" >> "$GITHUB_ENV"
+          echo "PREVIOUS_VERSION_CODE=$previous_code" >> "$GITHUB_ENV"
 
       - name: Test every configured signing source without publishing
         env:
@@ -106,6 +146,29 @@ jobs:
             echo "::error::apksigner output did not contain the expected SHA-256 certificate field."
             exit 1
           fi
+
+          previous_verify_output="$("$apksigner_path" verify --print-certs "$PREVIOUS_APK" 2>&1)" || {
+            printf '%s\\n' "$previous_verify_output"
+            echo "::error::apksigner could not verify the previous signed APK ($PREVIOUS_TAG)."
+            exit 1
+          }
+          previous_fingerprint="$(printf '%s\\n' "$previous_verify_output" | awk -F': *' 'tolower($1) ~ /signer #1 certificate sha-256 digest/ {print $2; exit}')"
+          if [ -z "$previous_fingerprint" ]; then
+            printf '%s\\n' "$previous_verify_output"
+            echo "::error::Previous APK signer SHA-256 could not be read."
+            exit 1
+          fi
+          echo "Previous signed release: $PREVIOUS_TAG (versionCode=$PREVIOUS_VERSION_CODE)"
+          echo "Previous signer SHA-256: $previous_fingerprint"
+          if [ "$published_fingerprint" != "$previous_fingerprint" ]; then
+            echo "::error::New release signer does not match the previous published release. In-app update continuity is not safe."
+            echo "New=$published_fingerprint Previous=$previous_fingerprint"
+            exit 1
+          fi
+          echo "New release certificate matches the previous published release."
+          echo "- Previous release: $PREVIOUS_TAG (versionCode=$PREVIOUS_VERSION_CODE)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- New release: $PUBLISHED_TAG (versionCode=$PUBLISHED_VERSION_CODE)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Certificate continuity: MATCH" >> "$GITHUB_STEP_SUMMARY"
 
           echo "Published release tag: $PUBLISHED_TAG"
           echo "Published signer SHA-256: $published_fingerprint"
@@ -177,13 +240,13 @@ jobs:
             echo "$source_name signer SHA-256: $candidate_fingerprint"
             echo "- $source_name signer SHA-256: \`$candidate_fingerprint\`" >> "$GITHUB_STEP_SUMMARY"
             if [ "$candidate_fingerprint" = "$published_fingerprint" ]; then
-              echo "::notice::$source_name MATCHES the published 401 signer."
+              echo "::notice::$source_name MATCHES the published release signer."
               echo "- $source_name result: MATCH" >> "$GITHUB_STEP_SUMMARY"
               echo "::endgroup::"
               return 0
             fi
 
-            echo "::warning::$source_name does not match the published 401 signer."
+            echo "::warning::$source_name does not match the published release signer."
             echo "- $source_name result: MISMATCH" >> "$GITHUB_STEP_SUMMARY"
             echo "::endgroup::"
             return 1
@@ -204,7 +267,7 @@ jobs:
             fi
             normalize_properties "$bundle_dir/keystore.properties"
             if ! try_candidate "MMV_SIGNING_BUNDLE_B64 (publisher-selected)" "$bundle_dir/keystore.properties"; then
-              echo "::error::The signing bundle selected by the publisher does not match the published 401 certificate."
+              echo "::error::The signing bundle selected by the publisher does not match the published release certificate."
               exit 1
             fi
           elif [ -n "$ANDROID_KEYSTORE_BASE64" ] && [ -n "$ANDROID_KEYSTORE_PASSWORD" ] \
@@ -225,7 +288,7 @@ jobs:
             } > "$legacy_dir/keystore.properties"
             normalize_properties "$legacy_dir/keystore.properties"
             if ! try_candidate "ANDROID_KEYSTORE_* (publisher-selected)" "$legacy_dir/keystore.properties"; then
-              echo "::error::The legacy signing source selected by the publisher does not match the published 401 certificate."
+              echo "::error::The legacy signing source selected by the publisher does not match the published release certificate."
               exit 1
             fi
           else
@@ -233,5 +296,5 @@ jobs:
             exit 1
           fi
 
-          echo "The exact signing source selected by the publisher matches the published 401 certificate. No release was published."
+          echo "The exact signing source selected by the publisher matches the published release certificate. No release was published."
           echo "- Overall result: MATCH (publisher-selected source)" >> "$GITHUB_STEP_SUMMARY"
