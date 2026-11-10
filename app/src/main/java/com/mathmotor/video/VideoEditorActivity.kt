@@ -3440,7 +3440,7 @@ class VideoEditorActivity : Activity() {
                         isFocusable = true
                         contentDescription = "Kapak görselini düzenle"
                         setOnClickListener {
-                            if (selectedClip() != null) showClipCoverPicker() else chooseVideo(true)
+                            if (clips.isNotEmpty()) showClipCoverPicker() else chooseVideo(true)
                         }
                     }
                     val tile = FrameLayout(this).apply {
