@@ -88,12 +88,8 @@ class EmulatorScreenshotTest {
         })
 
         assertTrue(
-            "The restored split project did not return to the editor",
-            device.wait(Until.hasObject(By.text("Düzenle")), 20_000)
-        )
-        assertTrue(
-            "The first split clip was not restored",
-            device.wait(Until.hasObject(By.descContains("Klip 1:")), 15_000)
+            "The restored split project did not return to the editor; no first video clip is exposed",
+            device.wait(Until.hasObject(By.descContains("Klip 1:")), 20_000)
         )
         assertTrue(
             "The second split clip was not restored",
@@ -240,6 +236,71 @@ class EmulatorScreenshotTest {
             "The reordered split project was not autosaved after returning Home",
             reorderedDraftSaved
         )
+
+        // The production drop log identifies the segment inserted at project zero.
+        // Its duration must survive a fresh Activity/process task launch, not merely
+        // remain correct in the in-memory editor before it is closed.
+        val movedDurationMs = Regex("starts=1:0,0:(\\d+)")
+            .find(dropMarker)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.toLongOrNull()
+            ?: throw AssertionError("Could not read the moved segment duration from VIDEO_CLIP_DROP: $dropMarker")
+        assertTrue("The moved split segment must have positive duration", movedDurationMs > 0L)
+
+        device.executeShellCommand("logcat -c")
+        context.startActivity(Intent(context, EditorTestEntryActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            putExtra("draft_id", draftId)
+            putExtra("timeline_sync_test", true)
+        })
+        assertTrue(
+            "The reordered project did not reopen with its first video clip",
+            device.wait(Until.hasObject(By.descContains("Klip 1:")), 20_000)
+        )
+        assertTrue(
+            "The reordered project did not reopen with its second video clip",
+            device.wait(Until.hasObject(By.descContains("Klip 2:")), 15_000)
+        )
+        device.waitForIdle()
+
+        val restoredRangesPattern = Regex(
+            "EDITOR_SMOKE_DRAFT_VIDEO_RESTORED id=${Regex.escape(draftId)} " +
+                "clips=2 ranges=0:(\\d+),(\\d+):(\\d+)"
+        )
+        var restoredRanges: MatchResult? = null
+        var restoreLog = ""
+        for (attempt in 0 until 16) {
+            restoreLog = device.executeShellCommand(
+                "logcat -d -v threadtime -s EditorSmokeTest:I"
+            )
+            restoredRanges = restoredRangesPattern.find(restoreLog)
+            if (restoredRanges != null) break
+            SystemClock.sleep(350L)
+        }
+        val ranges = restoredRanges?.groupValues
+            ?: throw AssertionError(
+                "The reopened editor did not confirm the exact two-clip project ranges. Log: $restoreLog"
+            )
+        val firstEndMs = ranges[1].toLong()
+        val secondStartMs = ranges[2].toLong()
+        val secondEndMs = ranges[3].toLong()
+        assertTrue(
+            "The moved split segment did not remain first after saving/reopening: " +
+                "expected first duration=$movedDurationMs, restored ranges=0:$firstEndMs,$secondStartMs:$secondEndMs",
+            firstEndMs == movedDurationMs
+        )
+        assertTrue(
+            "The saved/reopened split clips must remain exactly adjacent: " +
+                "ranges=0:$firstEndMs,$secondStartMs:$secondEndMs",
+            firstEndMs == secondStartMs && secondEndMs > secondStartMs
+        )
+        android.util.Log.i(
+            "TimelineSyncTest",
+            "VIDEO_CLIP_DRAG_PERSISTENCE_PASS movedDurationMs=$movedDurationMs " +
+                "restoredRanges=0:$firstEndMs,$secondStartMs:$secondEndMs gapMs=${secondStartMs - firstEndMs}"
+        )
+        takeScreenshot(device, "video-split-restored-after-reopen.png")
     }
     private fun takeScreenshot(device: UiDevice, name: String) {
         val testContext = InstrumentationRegistry.getInstrumentation().context
