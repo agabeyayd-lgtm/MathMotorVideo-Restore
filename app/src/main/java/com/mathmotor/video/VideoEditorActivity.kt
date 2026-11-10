@@ -1631,6 +1631,12 @@ class VideoEditorActivity : Activity() {
         textPanel.addView(tabScroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(42)))
         textPanel.addView(tabFrame, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(190)))
 
+        // Keep preview gesture editing accessible above the tab drawer content.
+        // The emulator flow must be able to toggle direct manipulation without
+        // scrolling past the five category tabs.
+        textPanel.removeView(textOverlayEditToggle)
+        textPanel.addView(textOverlayEditToggle, 2)
+
         // Keep the five CapCut-style text categories directly below the text
         // input. The old edit toggle/actions/layer list pushed these controls
         // below the visible drawer fold, so UI automation and users could not
