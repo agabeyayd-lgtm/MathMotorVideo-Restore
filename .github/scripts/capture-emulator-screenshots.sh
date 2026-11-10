@@ -2670,6 +2670,17 @@ fi
 timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_tab_coords
 sleep 1
 dump_hierarchy editor-text-panel.xml emulator-screenshots/editor-text-panel.xml || true
+
+# Require the CapCut-style text composer tabs on the real Android view hierarchy.
+for text_tab in "Şablonlar" "Yazı tipleri" "Stiller" "Efektler" "Animasyonlar"; do
+  if ! grep -Fq "$text_tab" emulator-screenshots/editor-text-panel.xml; then
+    echo "Text composer is missing the '$text_tab' tab."
+    collect_capture_diagnostics "text-composer-tab-missing"
+    exit 93
+  fi
+done
+echo "PASS: all five text composer categories are visible in the real editor hierarchy."
+
 # Measure the pinned return button while the text panel is first opened. Its
 # sibling-header position is independent of the scrolling settings/IME.
 text_panel_back="$(find_bottom_tool emulator-screenshots/editor-text-panel.xml "Araçlara dön" || true)"
