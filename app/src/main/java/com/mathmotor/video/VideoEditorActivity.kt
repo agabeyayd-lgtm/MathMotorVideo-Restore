@@ -10490,6 +10490,10 @@ class VideoEditorActivity : Activity() {
             val longPressAction = Runnable {
                 if (filmstripTouchActive && !filmstripPannedTimeline) {
                     filmstripLongPressed = true
+                    if (timelineSyncTestEnabled) android.util.Log.i(
+                        "TimelineSyncTest",
+                        "VIDEO_CLIP_TOUCH longPress index=$index"
+                    )
                     animate().scaleX(0.96f).scaleY(0.96f).setDuration(120L).start()
                 }
             }
@@ -10504,6 +10508,12 @@ class VideoEditorActivity : Activity() {
                         lastRawX = event.rawX
                         initialStartMs = clip.timelineStartMs
                         initialTimelineScrollX = timelineScrollViews.firstOrNull()?.scrollX ?: 0
+                        if (timelineSyncTestEnabled) android.util.Log.i(
+                            "TimelineSyncTest",
+                            "VIDEO_CLIP_TOUCH down index=$index rawX=\${event.rawX} rawY=\${event.rawY} " +
+                                "clipStartMs=$initialStartMs scrollX=$initialTimelineScrollX " +
+                                "viewBounds=\${left},\${top},\${right},\${bottom}"
+                        )
                         pauseActivePreview()
                         // Match CapCut: an ordinary one-finger swipe on the filmstrip
                         // pans the shared time axis. A clip becomes movable only after
@@ -10523,6 +10533,11 @@ class VideoEditorActivity : Activity() {
                         ).scaledTouchSlop
                         if (filmstripLongPressed) {
                             if (kotlin.math.abs(dx) > touchSlop) {
+                                if (!filmstripMoved && timelineSyncTestEnabled) android.util.Log.i(
+                                    "TimelineSyncTest",
+                                    "VIDEO_CLIP_TOUCH dragMove index=$index dx=\${dx} rawX=\${event.rawX} " +
+                                        "scrollX=\${timelineScrollViews.firstOrNull()?.scrollX ?: initialTimelineScrollX}"
+                                )
                                 filmstripMoved = true
                                 timelineHandler.removeCallbacks(longPressAction)
                                 view.parent?.requestDisallowInterceptTouchEvent(true)
@@ -10572,6 +10587,12 @@ class VideoEditorActivity : Activity() {
                         true
                     }
                     android.view.MotionEvent.ACTION_UP -> {
+                        if (timelineSyncTestEnabled) android.util.Log.i(
+                            "TimelineSyncTest",
+                            "VIDEO_CLIP_TOUCH up index=$index moved=$filmstripMoved " +
+                                "longPressed=$filmstripLongPressed panned=$filmstripPannedTimeline " +
+                                "rawDx=\${event.rawX - downRawX} rawX=\${event.rawX}"
+                        )
                         timelineHandler.removeCallbacks(longPressAction)
                         filmstripTouchActive = false
                         view.parent?.requestDisallowInterceptTouchEvent(false)
@@ -10602,6 +10623,10 @@ class VideoEditorActivity : Activity() {
                         true
                     }
                     android.view.MotionEvent.ACTION_CANCEL -> {
+                        if (timelineSyncTestEnabled) android.util.Log.i(
+                            "TimelineSyncTest",
+                            "VIDEO_CLIP_TOUCH cancel index=$index rawX=\${event.rawX} rawY=\${event.rawY}"
+                        )
                         timelineHandler.removeCallbacks(longPressAction)
                         filmstripTouchActive = false
                         filmstripPannedTimeline = false
