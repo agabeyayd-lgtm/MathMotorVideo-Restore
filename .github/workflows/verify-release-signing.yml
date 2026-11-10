@@ -149,13 +149,13 @@ jobs:
           fi
 
           previous_verify_output="$("$apksigner_path" verify --print-certs "$PREVIOUS_APK" 2>&1)" || {
-            printf '%s\\n' "$previous_verify_output"
+            printf '%s\n' "$previous_verify_output"
             echo "::error::apksigner could not verify the previous signed APK ($PREVIOUS_TAG)."
             exit 1
           }
-          previous_fingerprint="$(printf '%s\\n' "$previous_verify_output" | awk -F': *' 'tolower($1) ~ /signer #1 certificate sha-256 digest/ {print $2; exit}')"
+          previous_fingerprint="$(printf '%s\n' "$previous_verify_output" | awk -F': *' 'tolower($1) ~ /signer #1 certificate sha-256 digest/ {print $2; exit}')"
           if [ -z "$previous_fingerprint" ]; then
-            printf '%s\\n' "$previous_verify_output"
+            printf '%s\n' "$previous_verify_output"
             echo "::error::Previous APK signer SHA-256 could not be read."
             exit 1
           fi
