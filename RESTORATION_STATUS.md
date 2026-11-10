@@ -1,3 +1,16 @@
+## 2026-11-10 — Current verified baseline after PR #35
+
+- PR #35 merged into main as `4bae7412f8c330247f983b150c2dc1bd951142df`. Latest main HEAD is `48b1ef097a4ac3ce0231e98dd0021ed9e5a5684a`.
+- Exact latest-head unit/build run [42788533221](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/42788533221) passed. Exact latest-head API 35 emulator run [42788532908](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/42788532908) passed.
+- Latest filmstrip measurement (6 visible thumbnails): queue median/max 547/1,214 ms; decode median/max 389/861 ms; enqueue-to-display median/max 1,121/2,135 ms; visible-strip fill 2,137 ms. Existing 2,500 ms fill threshold is unchanged.
+- Latest source uses two isolated thumbnail decoder workers. It logs scaled-frame versus full-frame fallback for the native platform decoder. The latest emulator also passed the grouped text Undo/Redo sequence (11→0→11), sound-effect trim Undo/Redo (324→862→324 ms), replacement filmstrip content ratio, split seam (0 ms), and drag/reorder checks.
+- Signed release `app-v8.3-73` is published with `versionCode=404` / `versionName=8.37-capcut-editor`. Signing-continuity run [42787617434](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/42787617434) passed on parent `4aad695`, comparing version 404 to 403 and verifying the publisher-selected signing source.
+- The previous red signing check on `fbddd0b` was a workflow variable-assignment defect; the assignment is present in the subsequent workflow revision and the later verifier run passed.
+- Important release boundary: the 404 signed APK predates latest HEAD `48b1ef0`; it does not include the last two-worker/decoder-path diagnostic commit. Do not rebuild/re-publish with the same versionCode. If delivering latest HEAD through the in-app updater, bump to versionCode 405 and verify build, emulator, signing continuity, and signed release before asking the user to update.
+- Physical-device behavior and export of the user's exact gallery-picked media are not yet proven by the fixture-based emulator run.
+
+---
+
 ## 2026-11-09 — Keep audio waveforms visible above clip labels (PR #34)
 
 - Exact-head emulator run `42689741510` reached the real editor and confirmed both PCM files decoded into 120 waveform buckets and both custom views received `onDraw` callbacks. The screenshot nevertheless contained only 19 pixels of the expected sound-effect waveform color (the unchanged visual threshold is 24px); the music color was also barely visible (182px).
