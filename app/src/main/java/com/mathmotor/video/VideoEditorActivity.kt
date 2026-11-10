@@ -7209,6 +7209,46 @@ class VideoEditorActivity : Activity() {
         val wasRestoringProjectEditSnapshot = restoringProjectEditSnapshot
         restoringProjectEditSnapshot = true
         try {
+        // A text-only Undo/Redo does not change the Media3 composition. Keep the
+        // already prepared preview player in place instead of synchronously
+        // releasing/rebuilding its codecs for an edit that lives in Android views.
+        // Be conservative: reuse only when every media/composition input is identical.
+        val canReuseTimelinePreview =
+            timelinePreviewLoaded &&
+                timelineCompositionPlayer != null &&
+                ::playerView.isInitialized &&
+                playerView.player === timelineCompositionPlayer &&
+                clips == snapshot.clips &&
+                overlayClips == snapshot.overlays &&
+                musicUri == snapshot.musicUri &&
+                musicTitle == snapshot.musicTitle &&
+                musicSourceDurationMs == snapshot.musicSourceDurationMs &&
+                musicSourceStartMs == snapshot.musicSourceStartMs &&
+                musicSourceEndMs == snapshot.musicSourceEndMs &&
+                musicStartMs == snapshot.musicStartMs &&
+                musicDurationMs == snapshot.musicDurationMs &&
+                soundUri == snapshot.soundUri &&
+                soundTitle == snapshot.soundTitle &&
+                soundSourceDurationMs == snapshot.soundSourceDurationMs &&
+                soundSourceStartMs == snapshot.soundSourceStartMs &&
+                soundDurationMs == snapshot.soundDurationMs &&
+                soundStartMs == snapshot.soundStartMs &&
+                sourceAudioVolume == snapshot.sourceAudioVolume &&
+                musicVolume == snapshot.musicVolume &&
+                soundVolume == snapshot.soundVolume &&
+                keepSourceAudio == snapshot.keepSourceAudio &&
+                selectedVideoFilter == snapshot.videoFilterPreset &&
+                filterBrightness == snapshot.filterBrightness &&
+                filterContrast == snapshot.filterContrast &&
+                filterSaturation == snapshot.filterSaturation &&
+                filterHue == snapshot.filterHue &&
+                exportCanvasPreset == snapshot.canvasPreset
+        if (timelineSyncTestEnabled) {
+            android.util.Log.i(
+                "ProjectHistoryTest",
+                "PROJECT_HISTORY_PREVIEW_REUSE reused=$canReuseTimelinePreview"
+            )
+        }
         clips.clear()
         clips.addAll(snapshot.clips.map { it.copy() })
         overlayClips.clear()
@@ -7252,8 +7292,10 @@ class VideoEditorActivity : Activity() {
         restoringProjectHistory = false
         timelineLaneOrder.clear()
         timelineLaneOrder.addAll(snapshot.timelineLaneOrder)
-        timelinePreviewLoaded = false
-        previewSingleClip = false
+        if (!canReuseTimelinePreview) {
+            timelinePreviewLoaded = false
+            previewSingleClip = false
+        }
         timelinePlayheadMs = snapshot.timelinePlayheadMs.coerceIn(0L, totalOutputDurationMs())
         pendingTimelineScrollX = TimelineScaleMath.pixelsForTime(
             timelinePlayheadMs, timelinePixelsPerSecond()
