@@ -1564,6 +1564,12 @@ class VideoEditorActivity : Activity() {
         }
         val textInputRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         textInputRow.addView(textInput, LinearLayout.LayoutParams(0, dp(48), 1f))
+        // Keep the primary add action in the first visible row beside the text
+        // field. A separate row below the tab content was outside the drawer's
+        // initial viewport on the 1080x1920 emulator.
+        textInputRow.addView(miniButton("＋ Yeni") {
+            addTextLayer()
+        }, LinearLayout.LayoutParams(dp(66), dp(48)).apply { leftMargin = dp(4) })
         textInputRow.addView(miniButton("✓") {
             finishTextHistoryEdit()
             val ime = getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
@@ -1581,8 +1587,7 @@ class VideoEditorActivity : Activity() {
         textPanel.addView(textOverlayEditToggle, matchWrap()); updateTextOverlayEditToggle()
 
         val textActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        textActions.addView(miniButton("＋ Yeni") { addTextLayer() }, LinearLayout.LayoutParams(0, dp(38), 1f))
-        textActions.addView(miniButton("Kopyala") { duplicateSelectedTextLayer() }, LinearLayout.LayoutParams(0, dp(38), 1f).apply { leftMargin = dp(4) })
+        textActions.addView(miniButton("Kopyala") { duplicateSelectedTextLayer() }, LinearLayout.LayoutParams(0, dp(38), 1f))
         textActions.addView(miniButton("Sil") { removeSelectedTextLayer() }, LinearLayout.LayoutParams(0, dp(38), 1f).apply { leftMargin = dp(4) })
         textPanel.addView(textActions)
         val textLayerScroll = android.widget.HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; overScrollMode = View.OVER_SCROLL_NEVER }
