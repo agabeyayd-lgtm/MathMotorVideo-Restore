@@ -3922,6 +3922,10 @@ fi
 # can fail to obtain an idle accessibility snapshot while many thumbnail cells
 # are attached; the debug snapshot records every visible clip by index instead.
 sleep 1
+# Re-read the live sync stream after the split has applied its zoom-out.
+# This file must contain the post-split pxPerSecond value used by the drag math.
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineSyncTest:I \
+  > emulator-screenshots/video-split-drag-logcat.txt 2>&1
 timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineAlignmentTest:I \
   > emulator-screenshots/video-split-before-drag-measurements.txt 2>&1
 # The split handler zooms the shared timeline out. Use the fresh post-split
