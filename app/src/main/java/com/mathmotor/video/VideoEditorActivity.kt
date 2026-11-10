@@ -5545,9 +5545,11 @@ class VideoEditorActivity : Activity() {
         val centerX = timelineTracksFrame.width / 2
         timelinePlayheadLine.visibility = View.VISIBLE
         val params = timelinePlayheadLine.layoutParams as? FrameLayout.LayoutParams ?: return
-        params.width = dp(28)
-        // The white playhead is a stationary viewport guide; timeline content moves beneath it.
-        params.leftMargin = centerX - dp(14)
+        // The guide is visual-only: keep its hit-test bounds as narrow as the
+        // visible 2dp line. A wide transparent 28dp wrapper can sit over the
+        // selected clip's trim grip at project time zero and steal edge gestures.
+        params.width = dp(2)
+        params.leftMargin = centerX - dp(1)
         timelinePlayheadLine.layoutParams = params
         // Playback and the white playhead remain fixed while the time readout updates.
         timelinePlayheadLine.bringToFront()
