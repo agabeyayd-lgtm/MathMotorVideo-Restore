@@ -2684,18 +2684,21 @@ echo "PASS: all five text composer categories are visible in the real editor hie
 # Visibility alone is not enough: each CapCut-style tab must actually switch
 # the live editor panel to its own controls. Tap every real Android button,
 # capture the resulting hierarchy, and require a category-specific heading.
+# Keep the input list on file descriptor 3. ADB shell commands inherit
+# stdin and can consume a here-document attached to fd 0 after the first tab.
+tab_hierarchy="emulator-screenshots/editor-text-panel.xml"
 text_tab_index=0
-while IFS='|' read -r text_tab expected_heading; do
+while IFS='|' read -r text_tab expected_heading <&3; do
   text_tab_index=$((text_tab_index + 1))
-  text_tab_coords="$(python3 - emulator-screenshots/editor-text-panel.xml "Metin düzenleme sekmesi: $text_tab" <<'PY'
+  tab_description="Metin düzenleme sekmesi: $text_tab"
+  tab_data="$(python3 - "$tab_hierarchy" "$tab_description" <<'PY'
 import re
 import sys
 import xml.etree.ElementTree as ET
 
 root = ET.parse(sys.argv[1]).getroot()
-description = sys.argv[2]
 for node in root.iter("node"):
-    if node.attrib.get("content-desc", "").strip() != description:
+    if node.attrib.get("content-desc", "").strip() != sys.argv[2]:
         continue
     if node.attrib.get("enabled", "false").lower() != "true":
         continue
@@ -2703,18 +2706,68 @@ for node in root.iter("node"):
     if not match:
         continue
     left, top, right, bottom = map(int, match.groups())
-    if right - left < 12 or bottom - top < 12:
-        continue
-    print((left + right) // 2, (top + bottom) // 2)
-    raise SystemExit(0)
-raise SystemExit(f"Text composer tab is not visibly tappable: {description}")
+    if right > left and bottom > top:
+        print((left + right) // 2, (top + bottom) // 2, right - left)
+        raise SystemExit(0)
+raise SystemExit(f"Text composer tab is unavailable: {sys.argv[2]}")
 PY
 )" || {
     echo "Could not locate the live '$text_tab' text-composer tab."
     collect_capture_diagnostics "text-composer-tab-$text_tab_index-hit-target-missing"
     exit 93
   }
-  timeout -k 2s 8s adb -s emulator-5554 shell input tap "$text_tab_coords"
+  read -r tab_x tab_y tab_visible_width <<< "$tab_data"
+
+  # The final Animasyonlar tab is wider than the initial horizontal viewport.
+  # Scroll the actual tab strip until the selected button has a full hit target.
+  if [ "$tab_visible_width" -lt 80 ]; then
+    tab_fully_visible=false
+    for scroll_attempt in $(seq 1 3); do
+      timeout -k 2s 8s adb -s emulator-5554 shell input swipe 1000 "$tab_y" 300 "$tab_y" 400
+      sleep 1
+      tab_scroll_xml="editor-text-tab-scroll-$text_tab_index-$scroll_attempt.xml"
+      if ! dump_hierarchy "$tab_scroll_xml" "emulator-screenshots/$tab_scroll_xml"; then
+        echo "Could not inspect the scrolled text tab strip for '$text_tab'."
+        collect_capture_diagnostics "text-composer-tab-$text_tab_index-scroll-hierarchy-missing"
+        exit 93
+      fi
+      tab_hierarchy="emulator-screenshots/$tab_scroll_xml"
+      tab_data="$(python3 - "$tab_hierarchy" "$tab_description" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != sys.argv[2]:
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if not match:
+        continue
+    left, top, right, bottom = map(int, match.groups())
+    print((left + right) // 2, (top + bottom) // 2, right - left)
+    raise SystemExit(0)
+raise SystemExit(f"Text composer tab is not visible after scrolling: {sys.argv[2]}")
+PY
+)" || {
+        echo "Could not resolve '$text_tab' after horizontal scrolling."
+        collect_capture_diagnostics "text-composer-tab-$text_tab_index-scroll-target-missing"
+        exit 93
+      }
+      read -r tab_x tab_y tab_visible_width <<< "$tab_data"
+      if [ "$tab_visible_width" -ge 80 ]; then
+        tab_fully_visible=true
+        break
+      fi
+    done
+    if [ "$tab_fully_visible" != true ]; then
+      echo "The '$text_tab' tab never became fully tappable after horizontal scrolling (width=$tab_visible_width px)."
+      collect_capture_diagnostics "text-composer-tab-$text_tab_index-not-fully-visible"
+      exit 93
+    fi
+  fi
+
+  timeout -k 2s 8s adb -s emulator-5554 shell input tap "$tab_x" "$tab_y"
   sleep 1
   tab_xml="editor-text-tab-$text_tab_index.xml"
   if ! dump_hierarchy "$tab_xml" "emulator-screenshots/$tab_xml"; then
@@ -2722,13 +2775,14 @@ PY
     collect_capture_diagnostics "text-composer-tab-$text_tab_index-hierarchy-missing"
     exit 93
   fi
-  if ! grep -Fq "$expected_heading" "emulator-screenshots/$tab_xml"; then
+  tab_hierarchy="emulator-screenshots/$tab_xml"
+  if ! grep -Fq "$expected_heading" "$tab_hierarchy"; then
     echo "The '$text_tab' tab did not reveal its expected controls: '$expected_heading'."
     collect_capture_diagnostics "text-composer-tab-$text_tab_index-content-missing"
     exit 93
   fi
   echo "PASS: tapping '$text_tab' revealed '$expected_heading'."
-done <<'TEXT_TABS'
+done 3<<'TEXT_TABS'
 Şablonlar|Hızlı metin stilleri
 Yazı tipleri|Yazı ailesi
 Stiller|Yazı rengi
@@ -2738,7 +2792,7 @@ TEXT_TABS
 
 # Restore the normal Stiller tab so subsequent text creation and canvas tests
 # begin from the same known editor state on every emulator run.
-styles_tab_coords="$(python3 - emulator-screenshots/editor-text-panel.xml "Metin düzenleme sekmesi: Stiller" <<'PY'
+styles_tab_coords="$(python3 - "$tab_hierarchy" "Metin düzenleme sekmesi: Stiller" <<'PY'
 import re
 import sys
 import xml.etree.ElementTree as ET
