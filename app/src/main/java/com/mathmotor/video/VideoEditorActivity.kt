@@ -10327,14 +10327,28 @@ class VideoEditorActivity : Activity() {
         status.text = "Klip yeni zaman konumuna taşındı; video klipleri çakışmayacak şekilde hizalandı."
     }
 
-    private fun moveSelectedClip(delta:Int){
-        if(selectedClipIndex !in clips.indices){status.text="Önce katman seç.";return}
-        val target=selectedClipIndex+delta
-        if(target !in clips.indices){status.text="Bu katman daha fazla taşınamıyor.";return}
-        recordProjectEdit();val moved=clips.removeAt(selectedClipIndex);clips.add(target,moved)
-        selectedClipIndex=target;timelinePreviewLoaded=false;previewSingleClip=false;timelinePlayheadMs=moved.timelineStartMs
-        refreshTimelineAfterClipChange();loadTrimControls();ensureTimelinePreviewLoaded();seekTimelinePreview(timelinePlayheadMs);updateTimelinePlayheadLabel()
-        status.text="Katman sırası değişti; zaman konumları korundu."
+    private fun moveSelectedClip(delta:Int) {
+        if (selectedClipIndex !in clips.indices) {
+            status.text = "Önce klip seç."
+            return
+        }
+        val targetIndex = selectedClipIndex + delta
+        if (targetIndex !in clips.indices) {
+            status.text = "Bu klip daha fazla taşınamıyor."
+            return
+        }
+
+        // Use the same insertion/reflow path as a timeline drag. Updating only the
+        // backing list leaves stale project offsets behind; the next lane refresh
+        // would otherwise restore the old order or leave an empty range.
+        val segments = videoTimelineSegments()
+        val requestedStartMs = if (delta < 0) {
+            segments[targetIndex].timelineStartMs
+        } else {
+            val next = segments[targetIndex]
+            next.timelineStartMs + next.durationMs / 2L
+        }
+        reorderTimelineClipFromDrop(selectedClipIndex, requestedStartMs)
     }
 
     
