@@ -4003,11 +4003,12 @@ if [ -z "$split_second_duration_ms" ]; then
   exit 93
 fi
 
-# The instrumentation runner takes focus away from the editor. First move
-# back to MainActivity so VideoEditorActivity.onStop writes the split project.
+# Background the editor through Android Home so onStop definitely runs.
+# Starting MainActivity with am start can be delivered to the top editor instance
+# on API 35 and leave the editor foregrounded, which does not trigger autosave.
 smoke_draft_id="11111111-1111-4111-8111-111111111111"
-timeout -k 2s 12s adb -s emulator-5554 shell am start \
-  -n com.mathmotor.video.next/com.mathmotor.video.MainActivity -f 0x200000 \
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input keyevent KEYCODE_HOME \
   > emulator-screenshots/video-split-draft-save-launch.txt 2>&1
 draft_saved=false
 for attempt in $(seq 1 10); do
