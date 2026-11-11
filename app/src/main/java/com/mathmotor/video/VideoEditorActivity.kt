@@ -439,6 +439,10 @@ class VideoEditorActivity : Activity() {
     private val timelinePosterExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
     private val pendingTimelineThumbnails = mutableMapOf<String, MutableList<WeakReference<ImageView>>>()
     private val pendingTimelineThumbnailGenerations = mutableMapOf<String, Long>()
+    // Keep both queued and currently-running filmstrip tasks addressable by source.
+    // Removing a clip must not leave its obsolete decoders occupying the shared pool.
+    private val timelineThumbnailTasksBySource =
+        java.util.concurrent.ConcurrentHashMap<String, MutableSet<TimelineThumbnailTask>>()
     private val timelineThumbnailSourceGenerations = java.util.concurrent.ConcurrentHashMap<String, Long>()
     private val pendingTimelinePosterGenerations = java.util.concurrent.ConcurrentHashMap<String, Long>()
     // Learned from the actual decoded frame, so imported and restored clips share
@@ -450,6 +454,18 @@ class VideoEditorActivity : Activity() {
     private fun timelineThumbnailSourceGeneration(uri: Uri): Long =
         timelineThumbnailSourceGenerations[uri.toString()] ?: 0L
 
+    private fun trackTimelineThumbnailTask(sourceKey: String, task: TimelineThumbnailTask) {
+        timelineThumbnailTasksBySource.computeIfAbsent(sourceKey) {
+            java.util.concurrent.ConcurrentHashMap.newKeySet<TimelineThumbnailTask>()
+        }.add(task)
+    }
+
+    private fun untrackTimelineThumbnailTask(sourceKey: String, task: TimelineThumbnailTask) {
+        val tasks = timelineThumbnailTasksBySource[sourceKey] ?: return
+        tasks.remove(task)
+        if (tasks.isEmpty()) timelineThumbnailTasksBySource.remove(sourceKey, tasks)
+    }
+
     /**
      * Invalidate every asynchronous frame request for a video that has left the
      * timeline. A worker may already be decoding, so generation checks also guard
@@ -460,8 +476,24 @@ class VideoEditorActivity : Activity() {
         val sourceKey = uri.toString()
         val nextGeneration = timelineThumbnailSourceGeneration(uri) + 1L
         timelineThumbnailSourceGenerations[sourceKey] = nextGeneration
+        // queue.removeIf() alone only removes work that has not started. The API-35
+        // failure showed three decoders still running for a clip after it was removed;
+        // a newly imported clip then waited behind frames that could never be displayed.
+        val obsoleteTasks = timelineThumbnailTasksBySource.remove(sourceKey).orEmpty().toList()
+        obsoleteTasks.forEach { task ->
+            timelineThumbnailExecutor.remove(task)
+            task.cancelForSourceInvalidation()
+        }
         timelineThumbnailExecutor.queue.removeIf { task ->
             (task as? TimelineThumbnailTask)?.sourceUriKey == sourceKey
+        }
+        if (obsoleteTasks.isNotEmpty() && (timelineSyncTestEnabled || timelineLifecycleDiagnosticsEnabled)) {
+            android.util.Log.i(
+                "TimelineThumbnail",
+                "TIMELINE_SOURCE_TASKS_INVALIDATED uri=$sourceKey generation=$nextGeneration " +
+                    "cancelled=${obsoleteTasks.size} activeWorkers=${timelineThumbnailExecutor.activeCount} " +
+                    "queuedTasks=${timelineThumbnailExecutor.queue.size}"
+            )
         }
         val prefix = "$sourceKey#"
         pendingTimelineThumbnails.keys.filter { it.startsWith(prefix) }.forEach { key ->
@@ -489,13 +521,45 @@ class VideoEditorActivity : Activity() {
         private val sequence: Long,
         val sourceUriKey: String? = null,
         val sourceGeneration: Long? = null,
+        private val onFinished: (() -> Unit)? = null,
         private val work: () -> Unit
     ) : Runnable, Comparable<TimelineThumbnailTask> {
+        private val cancelled = java.util.concurrent.atomic.AtomicBoolean(false)
+        private val finished = java.util.concurrent.atomic.AtomicBoolean(false)
+        @Volatile private var runningThread: Thread? = null
+
         override fun compareTo(other: TimelineThumbnailTask): Int {
             val priority = distanceFromPlayheadMs.compareTo(other.distanceFromPlayheadMs)
             return if (priority != 0) priority else sequence.compareTo(other.sequence)
         }
-        override fun run() = work()
+
+        fun cancelForSourceInvalidation() {
+            cancelled.set(true)
+            runningThread?.interrupt()
+            finishOnce()
+        }
+
+        fun isCancelled(): Boolean = cancelled.get()
+
+        private fun finishOnce() {
+            if (finished.compareAndSet(false, true)) onFinished?.invoke()
+        }
+
+        override fun run() {
+            if (cancelled.get()) {
+                finishOnce()
+                return
+            }
+            runningThread = Thread.currentThread()
+            try {
+                if (!cancelled.get()) work()
+            } finally {
+                runningThread = null
+                // Do not let cancellation's interrupt flag poison the next pooled task.
+                if (cancelled.get()) Thread.interrupted()
+                finishOnce()
+            }
+        }
     }
     private val timelineThumbnailTaskSequence = java.util.concurrent.atomic.AtomicLong()
     // Three isolated workers avoid saturating API-35 frame decoding while
@@ -7784,7 +7848,9 @@ class VideoEditorActivity : Activity() {
             )
             textAnimationDurationSeek.progress = (textAnimationDurationMs - 100L).toInt().coerceIn(0, 1_400)
             textAnimationDurationLabel.text = "Animasyon süresi: $textAnimationDurationMs ms"
-            updateTextControls()
+            // The caller rebuilds the timeline immediately after rebinding these controls.
+            // Avoid a second full filmstrip/view reconstruction from the control refresh.
+            updateTextControls(refreshTimeline = false)
         } finally {
             loadingTextLayerControls = false
         }
@@ -11676,14 +11742,19 @@ class VideoEditorActivity : Activity() {
             "TIMELINE_THUMBNAIL_CACHE_MISS sourceMs=$timestampMs queueDepth=${timelineThumbnailExecutor.queue.size} " +
                 "activeWorkers=${timelineThumbnailExecutor.activeCount} pendingKeys=${pendingTimelineThumbnails.size}"
         )
-        val task = TimelineThumbnailTask(
+        lateinit var task: TimelineThumbnailTask
+        task = TimelineThumbnailTask(
             priorityDistanceMs.coerceAtLeast(0L),
             timelineThumbnailTaskSequence.incrementAndGet(),
             sourceUriKey = sourceKey,
-            sourceGeneration = sourceGeneration
+            sourceGeneration = sourceGeneration,
+            onFinished = { untrackTimelineThumbnailTask(sourceKey, task) }
         ) {
             val taskStartedAtUptimeMs = SystemClock.uptimeMillis()
             val queueWaitMs = taskStartedAtUptimeMs - enqueuedAtUptimeMs
+            if (Thread.currentThread().isInterrupted ||
+                sourceGeneration != timelineThumbnailSourceGeneration(uri)
+            ) return@TimelineThumbnailTask
             var frameDecodeDurationMs = -1L
             var bitmapScaleDurationMs = 0L
             var decoded: Bitmap? = null
@@ -11692,9 +11763,18 @@ class VideoEditorActivity : Activity() {
                 // The scaled filmstrip bitmap can lose aspect precision through integer rounding.
                 // Always learn the project framing from original video metadata instead.
                 decodedSourceAspectRatio = readTimelineSourceAspectRatioFromMetadata(uri)
+                if (Thread.currentThread().isInterrupted ||
+                    sourceGeneration != timelineThumbnailSourceGeneration(uri)
+                ) return@TimelineThumbnailTask
                 val frameDecodeStartedAtUptimeMs = SystemClock.uptimeMillis()
                 val original = decodeTimelineFrame(uri, timestampMs, decodeWidthPx, decodeHeightPx)
                 val frameDecodedAtUptimeMs = SystemClock.uptimeMillis()
+                if (Thread.currentThread().isInterrupted ||
+                    sourceGeneration != timelineThumbnailSourceGeneration(uri)
+                ) {
+                    original?.let { if (!it.isRecycled) it.recycle() }
+                    return@TimelineThumbnailTask
+                }
                 frameDecodeDurationMs = frameDecodedAtUptimeMs - frameDecodeStartedAtUptimeMs
                 if (original != null && !original.isRecycled &&
                     original.width > 0 && original.height > 0
@@ -11817,9 +11897,11 @@ class VideoEditorActivity : Activity() {
                 }
             }
         }
+        trackTimelineThumbnailTask(sourceKey, task)
         try {
             timelineThumbnailExecutor.execute(task)
         } catch (_: java.util.concurrent.RejectedExecutionException) {
+            task.cancelForSourceInvalidation()
             if (pendingTimelineThumbnailGenerations[key] == sourceGeneration) {
                 pendingTimelineThumbnailGenerations.remove(key)
                 pendingTimelineThumbnails.remove(key)
