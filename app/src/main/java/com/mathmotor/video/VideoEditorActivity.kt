@@ -11251,7 +11251,9 @@ class VideoEditorActivity : Activity() {
                         }
                     }
                     try {
-                        previewFrameExecutor.execute(task)
+                        // Overlay stills are secondary to the base playhead frame;
+                        // keep them on the cancellable/background filmstrip lane.
+                        timelineThumbnailExecutor.execute(task)
                     } catch (_: java.util.concurrent.RejectedExecutionException) {
                         pausedOverlayPreviewPendingKeys.remove(overlay.id)
                     }
