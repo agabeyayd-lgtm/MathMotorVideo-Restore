@@ -297,6 +297,9 @@ class VideoEditorActivity : Activity() {
     private val pausedOverlayPreviewBitmaps = mutableMapOf<Long, Bitmap>()
     private val pausedOverlayPreviewBitmapKeys = mutableMapOf<Long, String>()
     private val pausedOverlayPreviewPendingKeys = mutableMapOf<Long, String>()
+    // Keep only the newest queued still for each overlay; obsolete overlay decodes
+    // must not occupy the filmstrip workers or accumulate during a long scrub.
+    private val pausedOverlayPreviewTasks = mutableMapOf<Long, TimelineThumbnailTask>()
     private val previewFrameRequestGeneration = java.util.concurrent.atomic.AtomicLong()
     private var pendingPreviewFrameTask: TimelineThumbnailTask? = null
     private var previewFrameBitmap: Bitmap? = null
@@ -424,16 +427,32 @@ class VideoEditorActivity : Activity() {
     private var coverThumbnailRequestSequence = 0L
     // Cover stills use a separate decoder queue so a fixed gutter thumbnail can
     // never occupy one of the three workers that fill the scrolling filmstrip.
-    private val coverThumbnailExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { worker ->
-        Thread({
-            try {
-                worker.run()
-            } finally {
-                releaseTimelineThumbnailRetriever()
-                releaseTimelineThumbnailExtractor()
+    // Cover tiles, cover-picker stills, and paused overlay stills are secondary
+    // decode work. Keep them on one removable low-throughput lane, separate from
+    // the two filmstrip workers and the reserved main playhead decoder.
+    private val coverThumbnailExecutor = java.util.concurrent.ThreadPoolExecutor(
+        1,
+        1,
+        0L,
+        java.util.concurrent.TimeUnit.MILLISECONDS,
+        java.util.concurrent.PriorityBlockingQueue<Runnable>(
+            11,
+            java.util.Comparator { first, second ->
+                (first as TimelineThumbnailTask).compareTo(second as TimelineThumbnailTask)
             }
-        }, "cover-thumbnail-decoder")
-    }
+        ),
+        java.util.concurrent.ThreadFactory { worker ->
+            Thread({
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_DEFAULT)
+                try {
+                    worker.run()
+                } finally {
+                    releaseTimelineThumbnailRetriever()
+                    releaseTimelineThumbnailExtractor()
+                }
+            }, "cover-thumbnail-decoder")
+        }
+    )
     private val audioWaveformCache = object : android.util.LruCache<String, FloatArray>(256 * 1024) {
         override fun sizeOf(key: String, value: FloatArray): Int = value.size * 4
     }
@@ -11075,6 +11094,17 @@ class VideoEditorActivity : Activity() {
         }
     }
 
+    private fun cancelPausedOverlayPreviewTask(overlayId: Long) {
+        val task = pausedOverlayPreviewTasks.remove(overlayId) ?: return
+        val wasRunning = task.isRunning()
+        coverThumbnailExecutor.remove(task)
+        task.cancelForSupersededRequest()
+        if (timelineSyncTestEnabled) android.util.Log.i(
+            "TimelineFrameSyncTest",
+            "TIMELINE_OVERLAY_FRAME_SUPERSEDED overlayId=$overlayId running=$wasRunning"
+        )
+    }
+
     private fun hidePausedOverlayPreviewLayers() {
         if (::pausedOverlayPreviewContainer.isInitialized) {
             pausedOverlayPreviewContainer.visibility = View.GONE
@@ -11099,8 +11129,11 @@ class VideoEditorActivity : Activity() {
 
     private fun decodePausedOverlayPreviewFrame(
         overlay: OverlayClip,
-        projectTimeMs: Long
+        projectTimeMs: Long,
+        maxWidthPx: Int,
+        maxHeightPx: Int
     ): Bitmap? {
+        if (Thread.currentThread().isInterrupted) return null
         if (overlay.isImage) {
             return runCatching {
                 contentResolver.openInputStream(overlay.uri)?.use { input ->
@@ -11111,30 +11144,37 @@ class VideoEditorActivity : Activity() {
         val sourceTimeMs = (
             overlay.sourceStartMs + (projectTimeMs - overlay.timelineStartMs).coerceAtLeast(0L)
         ).coerceIn(0L, (overlay.sourceDurationMs - 1L).coerceAtLeast(0L))
+        val frameTimeUs = sourceTimeMs * 1_000L
         val retriever = timelineThumbnailRetrieverFor(overlay.uri, "TimelineOverlayPreview")
             ?: return null
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+        val scaled = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             runCatching {
                 retriever.getScaledFrameAtTime(
-                    sourceTimeMs * 1_000L,
+                    frameTimeUs,
                     MediaMetadataRetriever.OPTION_CLOSEST,
-                    1440,
-                    1440
-                )
-            }.getOrNull() ?: runCatching {
-                retriever.getFrameAtTime(
-                    sourceTimeMs * 1_000L,
-                    MediaMetadataRetriever.OPTION_CLOSEST
+                    maxWidthPx.coerceAtLeast(1),
+                    maxHeightPx.coerceAtLeast(1)
                 )
             }.getOrNull()
         } else {
-            runCatching {
-                retriever.getFrameAtTime(
-                    sourceTimeMs * 1_000L,
-                    MediaMetadataRetriever.OPTION_CLOSEST
-                )
-            }.getOrNull()
+            null
         }
+        if (Thread.currentThread().isInterrupted) {
+            scaled?.let { if (!it.isRecycled) it.recycle() }
+            return null
+        }
+        if (scaled != null) return scaled
+        val full = runCatching {
+            retriever.getFrameAtTime(
+                frameTimeUs,
+                MediaMetadataRetriever.OPTION_CLOSEST
+            )
+        }.getOrNull()
+        if (Thread.currentThread().isInterrupted) {
+            full?.let { if (!it.isRecycled) it.recycle() }
+            return null
+        }
+        return full
     }
 
     /**
@@ -11157,6 +11197,7 @@ class VideoEditorActivity : Activity() {
             .sortedBy { it.id }
         val activeIds = active.mapTo(mutableSetOf()) { it.id }
         (pausedOverlayPreviewViews.keys - activeIds).toList().forEach { id ->
+            cancelPausedOverlayPreviewTask(id)
             pausedOverlayPreviewViews.remove(id)?.let(pausedOverlayPreviewContainer::removeView)
             pausedOverlayPreviewPendingKeys.remove(id)
             pausedOverlayPreviewBitmaps.remove(id)?.let { bitmap ->
@@ -11221,23 +11262,45 @@ class VideoEditorActivity : Activity() {
             if (cachedBitmap != null && !cachedBitmap.isRecycled &&
                 pausedOverlayPreviewBitmapKeys[overlay.id] == desiredKey
             ) {
+                cancelPausedOverlayPreviewTask(overlay.id)
+                pausedOverlayPreviewPendingKeys.remove(overlay.id)
                 if (imageView.drawable == null) imageView.setImageBitmap(cachedBitmap)
                 imageView.visibility = View.VISIBLE
             } else {
                 imageView.setImageDrawable(null)
                 imageView.visibility = View.INVISIBLE
                 if (pausedOverlayPreviewPendingKeys[overlay.id] != desiredKey) {
+                    cancelPausedOverlayPreviewTask(overlay.id)
                     pausedOverlayPreviewPendingKeys[overlay.id] = desiredKey
                     val overlayId = overlay.id
                     val requestedTimeMs = projectTimeMs
-                    val task = TimelineThumbnailTask(
+                    // The still is shown inside the preview canvas, not exported from
+                    // this bitmap. Two display pixels per canvas pixel preserve sharpness
+                    // without decoding every overlay frame at the 1440px filmstrip cap.
+                    val decodeWidthPx = (frameWidth * 2).coerceIn(1, 1440)
+                    val decodeHeightPx = (frameHeight * 2).coerceIn(1, 1440)
+                    lateinit var task: TimelineThumbnailTask
+                    task = TimelineThumbnailTask(
                         0L,
                         timelineThumbnailTaskSequence.incrementAndGet()
                     ) {
-                        val decoded = decodePausedOverlayPreviewFrame(overlay, requestedTimeMs)
+                        if (task.isCancelled()) return@TimelineThumbnailTask
+                        val decoded = decodePausedOverlayPreviewFrame(
+                            overlay,
+                            requestedTimeMs,
+                            decodeWidthPx,
+                            decodeHeightPx
+                        )
+                        if (task.isCancelled()) {
+                            decoded?.let { if (!it.isRecycled) it.recycle() }
+                            return@TimelineThumbnailTask
+                        }
                         runOnUiThread {
+                            val ownsRequest = pausedOverlayPreviewTasks[overlayId] === task
+                            if (ownsRequest) pausedOverlayPreviewTasks.remove(overlayId)
                             val stillActive = overlayClips.firstOrNull { it.id == overlayId }
-                            val isStillCurrent = stillActive != null &&
+                            val isStillCurrent = ownsRequest &&
+                                stillActive != null &&
                                 timelinePlayheadMs >= stillActive.timelineStartMs &&
                                 timelinePlayheadMs < stillActive.timelineStartMs + stillActive.durationMs &&
                                 pausedOverlayPreviewKey(stillActive, timelinePlayheadMs) == desiredKey &&
@@ -11261,12 +11324,18 @@ class VideoEditorActivity : Activity() {
                             }
                         }
                     }
+                    pausedOverlayPreviewTasks[overlayId] = task
                     try {
-                        // Overlay stills are secondary to the base playhead frame;
-                        // keep them on the cancellable/background filmstrip lane.
-                        timelineThumbnailExecutor.execute(task)
+                        // Overlay frames share only the secondary still lane; they
+                        // cannot occupy the filmstrip or reserved main-preview workers.
+                        coverThumbnailExecutor.execute(task)
                     } catch (_: java.util.concurrent.RejectedExecutionException) {
-                        pausedOverlayPreviewPendingKeys.remove(overlay.id)
+                        if (pausedOverlayPreviewTasks[overlayId] === task) {
+                            pausedOverlayPreviewTasks.remove(overlayId)
+                        }
+                        if (pausedOverlayPreviewPendingKeys[overlayId] == desiredKey) {
+                            pausedOverlayPreviewPendingKeys.remove(overlayId)
+                        }
                     }
                 }
             }
@@ -13170,6 +13239,7 @@ class VideoEditorActivity : Activity() {
         cancelPendingPreviewFrameRequest("destroy")
         if (::previewFrameOverlay.isInitialized) previewFrameOverlay.setImageDrawable(null)
         hidePausedOverlayPreviewLayers()
+        pausedOverlayPreviewTasks.keys.toList().forEach(::cancelPausedOverlayPreviewTask)
         pausedOverlayPreviewViews.values.forEach { view -> view.setImageDrawable(null) }
         pausedOverlayPreviewViews.clear()
         pausedOverlayPreviewPendingKeys.clear()
