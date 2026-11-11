@@ -11143,11 +11143,52 @@ class VideoEditorActivity : Activity() {
     ): Bitmap? {
         if (Thread.currentThread().isInterrupted) return null
         if (overlay.isImage) {
-            return runCatching {
+            val bounds = android.graphics.BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+            runCatching {
                 contentResolver.openInputStream(overlay.uri)?.use { input ->
-                    android.graphics.BitmapFactory.decodeStream(input)
+                    android.graphics.BitmapFactory.decodeStream(input, null, bounds)
+                }
+            }
+            if (Thread.currentThread().isInterrupted ||
+                bounds.outWidth <= 0 || bounds.outHeight <= 0
+            ) return null
+
+            // Image logos/stills can be several thousand pixels across even though
+            // the project canvas is much smaller. Decode one oversampled canvas-sized
+            // bitmap instead of retaining the original camera/photo resolution.
+            val sourceScale = minOf(
+                1f,
+                maxWidthPx.coerceAtLeast(1).toFloat() / bounds.outWidth,
+                maxHeightPx.coerceAtLeast(1).toFloat() / bounds.outHeight
+            )
+            val targetWidth = (bounds.outWidth * sourceScale).toInt().coerceAtLeast(1)
+            val targetHeight = (bounds.outHeight * sourceScale).toInt().coerceAtLeast(1)
+            var sampleSize = 1
+            while (
+                bounds.outWidth / (sampleSize * 2) >= targetWidth &&
+                bounds.outHeight / (sampleSize * 2) >= targetHeight
+            ) {
+                sampleSize *= 2
+            }
+            val decoded = runCatching {
+                contentResolver.openInputStream(overlay.uri)?.use { input ->
+                    android.graphics.BitmapFactory.decodeStream(
+                        input,
+                        null,
+                        android.graphics.BitmapFactory.Options().apply {
+                            inSampleSize = sampleSize
+                            inPreferredConfig = Bitmap.Config.ARGB_8888
+                        }
+                    )
                 }
             }.getOrNull()
+            if (Thread.currentThread().isInterrupted) {
+                decoded?.let { if (!it.isRecycled) it.recycle() }
+                return null
+            }
+            return decoded
         }
         val sourceTimeMs = (
             overlay.sourceStartMs + (projectTimeMs - overlay.timelineStartMs).coerceAtLeast(0L)
