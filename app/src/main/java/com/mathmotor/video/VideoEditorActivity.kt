@@ -11560,10 +11560,10 @@ class VideoEditorActivity : Activity() {
         }
         val lastFrameMs = (totalOutputDurationMs() - 1L).coerceAtLeast(0L)
         val safeProjectTimeMs = projectTimeMs.coerceIn(0L, lastFrameMs)
-        updatePausedOverlayPreviewLayers(safeProjectTimeMs)
         val activeIndex = activeClipIndexAt(safeProjectTimeMs)
         val clip = clips.getOrNull(activeIndex ?: -1)
         if (clip == null) {
+            updatePausedOverlayPreviewLayers(safeProjectTimeMs)
             showPreviewFramePending(keepPreviousFrame)
             return // A timeline gap is intentionally rendered as black.
         }
@@ -11732,6 +11732,10 @@ class VideoEditorActivity : Activity() {
             }
         }
         pendingPreviewFrameTask = task
+        // Overlay decoders use the same secondary still lane as filmstrip and
+        // cover frames. Queue them only after the exact base-frame request owns
+        // the interactive decoder slot.
+        updatePausedOverlayPreviewLayers(safeProjectTimeMs)
         lateinit var dispatchPreviewTask: Runnable
         dispatchPreviewTask = Runnable {
             if (pendingPreviewFrameDispatch === dispatchPreviewTask) {
