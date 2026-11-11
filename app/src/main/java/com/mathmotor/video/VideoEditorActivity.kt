@@ -429,34 +429,13 @@ class VideoEditorActivity : Activity() {
     }
     private val pendingCoverThumbnailTargets = mutableMapOf<String, MutableList<WeakReference<ImageView>>>()
     private var coverThumbnailRequestSequence = 0L
-    // Cover stills use a separate decoder queue so a fixed gutter thumbnail can
-    // never occupy one of the three workers that fill the scrolling filmstrip.
-    // Cover tiles, cover-picker stills, and paused overlay stills are secondary
-    // decode work. Keep them on one removable low-throughput lane, separate from
-    // the two filmstrip workers and the reserved main playhead decoder.
-    private val coverThumbnailExecutor = java.util.concurrent.ThreadPoolExecutor(
-        1,
-        1,
-        0L,
-        java.util.concurrent.TimeUnit.MILLISECONDS,
-        java.util.concurrent.PriorityBlockingQueue<Runnable>(
-            11,
-            java.util.Comparator { first, second ->
-                (first as TimelineThumbnailTask).compareTo(second as TimelineThumbnailTask)
-            }
-        ),
-        java.util.concurrent.ThreadFactory { worker ->
-            Thread({
-                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_DEFAULT)
-                try {
-                    worker.run()
-                } finally {
-                    releaseTimelineThumbnailRetriever()
-                    releaseTimelineThumbnailExtractor()
-                }
-            }, "cover-thumbnail-decoder")
-        }
-    )
+    // Every non-interactive still decode shares the single background-priority
+    // filmstrip worker. Keeping cover, poster, overlay, and timeline thumbnails
+    // in one queue prevents multiple MediaMetadataRetriever instances from
+    // competing with the reserved exact playhead decoder for codec/CPU time.
+    // The playhead remains on previewFrameExecutor with normal thread priority.
+    private val coverThumbnailExecutor: java.util.concurrent.ThreadPoolExecutor
+        get() = timelineThumbnailExecutor
     private val audioWaveformCache = object : android.util.LruCache<String, FloatArray>(256 * 1024) {
         override fun sizeOf(key: String, value: FloatArray): Int = value.size * 4
     }
