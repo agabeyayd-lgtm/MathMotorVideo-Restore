@@ -614,6 +614,7 @@ if ! take_screen emulator-screenshots/editor-audio-waveforms.png; then
   exit 77
 fi
 python3 - emulator-screenshots/editor-audio-waveforms.png <<'PY'
+import sys
 sys.path.insert(0, ".github/scripts")
 from ci_image import Image
 import sys
@@ -750,6 +751,7 @@ for attempt in $(seq 1 25); do
 import re
 import sys
 import xml.etree.ElementTree as ET
+import sys
 sys.path.insert(0, ".github/scripts")
 from ci_image import Image
 
@@ -878,6 +880,7 @@ if ! take_screen emulator-screenshots/editor-video-clip-deselected.png; then
   exit 6
 fi
 overlay_reselect_center="$(python3 - emulator-screenshots/editor-video-clip-deselected.png <<'PY'
+import sys
 sys.path.insert(0, ".github/scripts")
 from ci_image import Image
 import sys
@@ -1203,6 +1206,7 @@ fi
 cp emulator-screenshots/editor.png emulator-screenshots/editor-overlay-paused.png
 magenta_center() {
   python3 - "$1" <<'PY'
+import sys
 sys.path.insert(0, ".github/scripts")
 from ci_image import Image
 import sys
@@ -1277,6 +1281,7 @@ read -r after_x after_y after_pixels <<< "$after_overlay"
 timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTest:I \
   > emulator-screenshots/preview-canvas-logcat-after-drag.txt 2>&1 || true
 python3 - emulator-screenshots/preview-canvas-logcat-after-drag.txt emulator-screenshots/editor-overlay-after-drag.png emulator-screenshots/preview-canvas-logcat.txt <<'PY'
+import sys
 sys.path.insert(0, ".github/scripts")
 from ci_image import Image
 import re
@@ -2928,6 +2933,7 @@ detect_text_selection_bounds() {
 import re
 import sys
 import xml.etree.ElementTree as ET
+import sys
 sys.path.insert(0, ".github/scripts")
 from ci_image import Image
 
@@ -3346,6 +3352,7 @@ assert_preview_canvas_unchanged_from_snapshot() {
 import re
 import sys
 import xml.etree.ElementTree as ET
+import sys
 sys.path.insert(0, ".github/scripts")
 from ci_image import Image
 
@@ -4247,6 +4254,7 @@ if [ "$post_drop_seam_ready" != true ]; then
   exit 98
 fi
 if ! python3 - emulator-screenshots/video-split-after-drag.png emulator-screenshots/video-split-after-drag-measurements.txt <<'PY'
+import sys
 sys.path.insert(0, ".github/scripts")
 from ci_image import Image
 import re
@@ -4740,6 +4748,7 @@ for attempt in $(seq 1 15); do
   timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTest:I \
     > emulator-screenshots/initial-photo-canvas-logcat.txt 2>&1 || true
   photo_metrics="$(python3 - emulator-screenshots/editor-initial-photo-full-frame.png emulator-screenshots/initial-photo-canvas-logcat.txt <<'PY'
+import sys
 sys.path.insert(0, ".github/scripts")
 from ci_image import Image
 import re
