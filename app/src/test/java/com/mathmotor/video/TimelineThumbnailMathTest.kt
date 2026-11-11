@@ -36,8 +36,8 @@ class TimelineThumbnailMathTest {
     }
 
     @Test
-    fun previewDecodeBoundsHandleInvalidDimensionsAndOversampling() {
-        assertEquals(1 to 941, TimelineThumbnailMath.previewDecodeBounds(0, 753))
+    fun previewDecodeBoundsHandleInvalidDimensionsAndNonPositiveOversampling() {
+        assertEquals(1 to 753, TimelineThumbnailMath.previewDecodeBounds(0, 753))
         assertEquals(423 to 753, TimelineThumbnailMath.previewDecodeBounds(423, 753, Float.NaN))
         assertEquals(423 to 753, TimelineThumbnailMath.previewDecodeBounds(423, 753, 0f))
     }
