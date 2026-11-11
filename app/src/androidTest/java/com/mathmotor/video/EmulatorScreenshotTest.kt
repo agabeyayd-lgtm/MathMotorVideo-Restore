@@ -317,12 +317,18 @@ class EmulatorScreenshotTest {
         takeScreenshot(device, "video-split-restored-after-reopen.png")
     }
     private fun takeScreenshot(device: UiDevice, name: String) {
-        val testContext = InstrumentationRegistry.getInstrumentation().context
-        val pictures = File(
-            testContext.getExternalFilesDir(Environment.DIRECTORY_PICTURES),
-            "emulator-screenshots"
+        // Screenshots are collected from the target app package by the CI script.
+        // InstrumentationRegistry.context belongs to the separate test APK and can
+        // resolve to an unavailable/unwritable external-files location on API 35.
+        val appContext = InstrumentationRegistry.getInstrumentation().targetContext
+        val picturesRoot = requireNotNull(
+            appContext.getExternalFilesDir(Environment.DIRECTORY_PICTURES)
+        ) { "App external Pictures directory is unavailable" }
+        val pictures = File(picturesRoot, "emulator-screenshots")
+        assertTrue(
+            "Could not create app screenshot directory: ${pictures.absolutePath}",
+            pictures.isDirectory || pictures.mkdirs()
         )
-        assertTrue("Could not create screenshot directory", pictures.exists() || pictures.mkdirs())
         val saved = device.takeScreenshot(File(pictures, name))
         assertTrue("Screenshot was not saved: $name", saved)
     }
