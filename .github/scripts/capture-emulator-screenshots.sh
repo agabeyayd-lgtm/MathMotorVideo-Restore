@@ -4210,31 +4210,45 @@ if abs(seam) > 1:
         f"Post-drop clip Views are not edge-to-edge: left={left}, right={right}, seam={seam}px"
     )
 sample_x = (left[2] + right[0]) // 2
-sample_y = (max(left[1], right[1]) + min(left[3], right[3])) // 2
-if not (0 <= sample_y < image.height):
-    raise SystemExit(f"Post-drop seam sample is outside screenshot: y={sample_y}, size={image.size}")
-# The selected clip's rounded trim handle overlays the exact seam.
-# Geometry above proves the Views meet; sample well inside both clips so the
-# expected white handle is not mistaken for a dark/empty filmstrip divider.
+# Android view bounds are reported in the app's coordinate space, while the
+# captured PNG can be density-scaled and include system insets. Do not use the
+# view-space vertical midpoint as a PNG pixel row. Find the actual fixture-frame
+# row at the seam by scanning the two interior strips in the captured image.
+# The selected clip's rounded trim handle overlays the exact seam, so sample
+# 18..22 pixels to either side, never on the handle itself.
 def fixture_frame_pixel(rgb):
     red, green, blue = rgb
     return green > 120 and green > red * 1.5 and green > blue * 1.5
-left_pixels = [
-    image.getpixel((sample_x - offset, sample_y))
-    for offset in range(18, 23)
-]
-right_pixels = [
-    image.getpixel((sample_x + offset, sample_y))
-    for offset in range(18, 23)
-]
-left_visible = sum(fixture_frame_pixel(pixel) for pixel in left_pixels)
-right_visible = sum(fixture_frame_pixel(pixel) for pixel in right_pixels)
-if left_visible < 4 or right_visible < 4:
+
+best_row = None
+best_counts = (0, 0)
+best_score = 0
+for y in range(image.height):
+    left_pixels = [
+        image.getpixel((sample_x - offset, y))
+        for offset in range(18, 23)
+        if 0 <= sample_x - offset < image.width
+    ]
+    right_pixels = [
+        image.getpixel((sample_x + offset, y))
+        for offset in range(18, 23)
+        if 0 <= sample_x + offset < image.width
+    ]
+    left_visible = sum(fixture_frame_pixel(pixel) for pixel in left_pixels)
+    right_visible = sum(fixture_frame_pixel(pixel) for pixel in right_pixels)
+    score = min(left_visible, right_visible)
+    if score > best_score:
+        best_score = score
+        best_row = y
+        best_counts = (left_visible, right_visible)
+
+if best_score < 4:
     raise SystemExit(
         f"Filmstrip frame is not visible on both sides of the joined clips: "
-        f"seam={sample_x}px y={sample_y}, left={left_visible}/5 {left_pixels}, "
-        f"right={right_visible}/5 {right_pixels}"
+        f"seam={sample_x}px bestRow={best_row} "
+        f"left={best_counts[0]}/5 right={best_counts[1]}/5"
     )
+left_visible, right_visible = best_counts
 print(
     f"PASS: post-drop clip Views meet within 1px and both filmstrip frames remain visible "
     f"(left={left_visible}/5, right={right_visible}/5; seam={sample_x}px)"
