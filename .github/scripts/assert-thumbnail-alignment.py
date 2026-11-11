@@ -103,10 +103,7 @@ def pixel_mean(image, x, y, radius=2):
     return tuple(round(statistics.mean(pixel[channel] for pixel in values)) for channel in range(3))
 
 def verify(log_path: str, screenshot_path: str):
-    try:
-        from PIL import Image
-    except ImportError as exc:
-        raise SystemExit("FAIL: Pillow is required for the preview/thumbnail pixel check.") from exc
+    # Screenshot decoding is provided by ci_image.py through the already-installed FFmpeg binary.
 
     log = Path(log_path).read_text(encoding="utf-8", errors="replace")
     snapshot = latest_snapshot(log_path)
