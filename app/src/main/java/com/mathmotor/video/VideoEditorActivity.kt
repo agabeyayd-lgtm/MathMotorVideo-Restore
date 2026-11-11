@@ -448,6 +448,11 @@ class VideoEditorActivity : Activity() {
     // Learned from the actual decoded frame, so imported and restored clips share
     // the same aspect-ratio-aware filmstrip path without blocking the UI for metadata.
     private val timelineVideoAspectRatios = java.util.concurrent.ConcurrentHashMap<String, Float>()
+    // Metadata is immutable for a content URI during an editor session. Cache both
+    // successful reads and failures so concurrent filmstrip workers never open/read
+    // the same source metadata repeatedly before the first frame reaches the UI.
+    // A non-positive value is the cached "unavailable" sentinel.
+    private val timelineVideoAspectRatioMetadataCache = java.util.concurrent.ConcurrentHashMap<String, Float>()
     private fun timelineVideoAspectRatio(uri: Uri): Float =
         timelineVideoAspectRatios[uri.toString()] ?: TimelineThumbnailMath.DEFAULT_SOURCE_ASPECT_RATIO
 
@@ -11012,7 +11017,10 @@ class VideoEditorActivity : Activity() {
         }
         return try {
             FrameExtractor.Builder(this, MediaItem.fromUri(uri))
-                .setSeekParameters(androidx.media3.exoplayer.SeekParameters.EXACT)
+                // Filmstrip cells are representative images, not frame-accurate preview.
+            // Seeking to sync samples avoids decoding every inter-frame from the
+            // previous keyframe for each separate thumbnail request.
+            .setSeekParameters(androidx.media3.exoplayer.SeekParameters.CLOSEST_SYNC)
                 .setEffects(listOf(Presentation.createForHeight(288)))
                 .build()
                 .also { timelineThumbnailExtractors[threadId] = uri to it }
@@ -11461,22 +11469,43 @@ class VideoEditorActivity : Activity() {
         }
     }
 
-    /** Reads the authoritative source dimensions before the filmstrip frame is downscaled. */
+    /** Reads the authoritative source dimensions once per source URI, before downscaling. */
     private fun readTimelineSourceAspectRatioFromMetadata(uri: Uri): Float? {
-        timelineVideoAspectRatios[uri.toString()]?.let { return it }
-        val retriever = timelineThumbnailRetrieverFor(uri, "TimelineThumbnailMetadata") ?: return null
-        return runCatching {
-            val sourceWidth = retriever.extractMetadata(
-                MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH
-            )?.toIntOrNull() ?: return@runCatching null
-            val sourceHeight = retriever.extractMetadata(
-                MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT
-            )?.toIntOrNull() ?: return@runCatching null
-            val rotationDegrees = retriever.extractMetadata(
-                MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION
-            )?.toIntOrNull() ?: 0
-            TimelineThumbnailMath.sourceAspectRatio(sourceWidth, sourceHeight, rotationDegrees)
-        }.getOrNull()
+        val sourceKey = uri.toString()
+        timelineVideoAspectRatios[sourceKey]?.let { return it }
+
+        val startedAtUptimeMs = SystemClock.uptimeMillis()
+        val loadedByThisCall = java.util.concurrent.atomic.AtomicBoolean(false)
+        val cachedValue = timelineVideoAspectRatioMetadataCache.computeIfAbsent(sourceKey) {
+            loadedByThisCall.set(true)
+            val retriever = timelineThumbnailRetrieverFor(uri, "TimelineThumbnailMetadata")
+            val ratio = retriever?.let { activeRetriever ->
+                runCatching {
+                    val sourceWidth = activeRetriever.extractMetadata(
+                        MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH
+                    )?.toIntOrNull() ?: return@runCatching null
+                    val sourceHeight = activeRetriever.extractMetadata(
+                        MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT
+                    )?.toIntOrNull() ?: return@runCatching null
+                    val rotationDegrees = activeRetriever.extractMetadata(
+                        MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION
+                    )?.toIntOrNull() ?: 0
+                    TimelineThumbnailMath.sourceAspectRatio(sourceWidth, sourceHeight, rotationDegrees)
+                }.getOrNull()
+            }
+            ratio ?: 0f
+        }
+
+        val result = timelineVideoAspectRatios[sourceKey] ?: cachedValue.takeIf { it > 0f }
+        if (timelineSyncTestEnabled || timelineLifecycleDiagnosticsEnabled) {
+            android.util.Log.i(
+                "TimelineThumbnail",
+                "TIMELINE_METADATA_ASPECT source=$sourceKey cacheHit=${!loadedByThisCall.get()} " +
+                    "durationMs=${SystemClock.uptimeMillis() - startedAtUptimeMs} ratio=${result ?: "unavailable"}"
+            )
+        }
+        result?.let { timelineVideoAspectRatios.putIfAbsent(sourceKey, it) }
+        return timelineVideoAspectRatios[sourceKey] ?: result
     }
 
     private fun decodeTimelineFrame(
@@ -11485,9 +11514,11 @@ class VideoEditorActivity : Activity() {
         maxWidthPx: Int,
         maxHeightPx: Int
     ): Bitmap? {
-        // Use native retrievers first, but decode just above the actual cell
-        // dimensions instead of always extracting a fixed 162x288 frame.
-        // Media3 remains a compatibility fallback for unsupported source formats.
+        // Filmstrip thumbnails are representative frames, not the paused-preview
+        // frame. Prefer the nearest sync sample: Android documents that OPTION_CLOSEST
+        // can have larger overhead when the requested timestamp is between sync
+        // samples. The preview path continues to use the more accurate seek mode.
+        // Decode only near the actual cell bounds; Media3 is the compatibility fallback.
         val frameTimeUs = timeMs.coerceAtLeast(0L) * 1000L
         val platformStartedAt = SystemClock.uptimeMillis()
         val retriever = timelineThumbnailRetrieverFor(uri, "TimelineThumbnail")
@@ -11497,7 +11528,7 @@ class VideoEditorActivity : Activity() {
                 runCatching {
                     activeRetriever.getScaledFrameAtTime(
                         frameTimeUs,
-                        MediaMetadataRetriever.OPTION_CLOSEST,
+                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
                         maxWidthPx.coerceAtLeast(1),
                         maxHeightPx.coerceAtLeast(1)
                     )
@@ -11515,7 +11546,7 @@ class VideoEditorActivity : Activity() {
                     "full-frame-legacy"
                 }
                 runCatching {
-                    activeRetriever.getFrameAtTime(frameTimeUs, MediaMetadataRetriever.OPTION_CLOSEST)
+                    activeRetriever.getFrameAtTime(frameTimeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
                 }.getOrNull()
             }
         }
