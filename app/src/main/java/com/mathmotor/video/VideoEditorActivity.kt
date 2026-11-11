@@ -11758,20 +11758,29 @@ class VideoEditorActivity : Activity() {
         // The platform retriever is already open for metadata on this worker; use
         // its closest-frame decode first and reserve Media3 for genuine MMR failures.
         if (Thread.currentThread().isInterrupted) return null
+        // The first frame is a sync sample by definition. Asking MMR for the
+        // closest arbitrary frame at t=0 needlessly enters its slower seek path on
+        // cold codec startup; use the sync-sample path for this exact boundary only.
+        // All non-zero playhead positions retain closest-frame accuracy.
+        val frameOption = if (timeMs <= 0L) {
+            MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+        } else {
+            MediaMetadataRetriever.OPTION_CLOSEST
+        }
         val platformStartedAt = SystemClock.uptimeMillis()
         val platformFrame = retriever?.let { active ->
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                 runCatching {
                     active.getScaledFrameAtTime(
                         frameTimeUs,
-                        MediaMetadataRetriever.OPTION_CLOSEST,
+                        frameOption,
                         decodeWidthPx,
                         decodeHeightPx
                     )
                 }.getOrNull()
             } else {
                 runCatching {
-                    active.getFrameAtTime(frameTimeUs, MediaMetadataRetriever.OPTION_CLOSEST)
+                    active.getFrameAtTime(frameTimeUs, frameOption)
                 }.getOrNull()
             }
         }
