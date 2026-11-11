@@ -11376,8 +11376,8 @@ class VideoEditorActivity : Activity() {
                     }
                     pausedOverlayPreviewTasks[overlayId] = task
                     try {
-                        // Overlay frames share only the secondary still lane; they
-                        // cannot occupy the filmstrip or reserved main-preview workers.
+                        // Overlay stills share the serialized secondary queue with
+                        // filmstrip work and cannot occupy the reserved main-preview worker.
                         coverThumbnailExecutor.execute(task)
                     } catch (_: java.util.concurrent.RejectedExecutionException) {
                         if (pausedOverlayPreviewTasks[overlayId] === task) {
@@ -12019,9 +12019,9 @@ class VideoEditorActivity : Activity() {
         }
         pendingTimelinePosterTasks[cacheKey] = task
         try {
-            // Poster is only a temporary placeholder. Run it on the secondary
-            // still lane, below cover/picker work and away from the two filmstrip
-            // workers and the reserved exact playhead decoder.
+            // Poster is only a temporary placeholder. Run it on the serialized
+            // background still queue so it cannot create another concurrent decoder
+            // beside the filmstrip; the exact playhead decoder remains independent.
             coverThumbnailExecutor.execute(task)
         } catch (_: java.util.concurrent.RejectedExecutionException) {
             pendingTimelinePosterTasks.remove(cacheKey, task)
