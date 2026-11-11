@@ -196,6 +196,47 @@ def verify(log_path: str, screenshot_path: str):
         )
     )
 
+    preview_timing_rows = [
+        tuple(map(int, row))
+        for row in re.findall(
+            r"TIMELINE_PREVIEW_FRAME_READY projectMs=(\d+) sourceMs=(\d+).*?"
+            r"requestId=(\d+) queueWaitMs=(\d+) decodeMs=(\d+) "
+            r"uiDispatchWaitMs=(\d+) uiApplyMs=(\d+) totalMs=(\d+)",
+            log,
+        )
+    ]
+    if preview_timing_rows:
+        preview_queue = [row[3] for row in preview_timing_rows]
+        preview_decode = [row[4] for row in preview_timing_rows]
+        preview_ui_dispatch = [row[5] for row in preview_timing_rows]
+        preview_total = [row[7] for row in preview_timing_rows]
+        print(
+            "  Playhead preview timing (n={}) queue median/max={}ms/{}ms; "
+            "decode median/max={}ms/{}ms; UI dispatch median/max={}ms/{}ms; "
+            "request-to-visible median/max={}ms/{}ms".format(
+                len(preview_timing_rows),
+                int(statistics.median(preview_queue)), max(preview_queue),
+                int(statistics.median(preview_decode)), max(preview_decode),
+                int(statistics.median(preview_ui_dispatch)), max(preview_ui_dispatch),
+                int(statistics.median(preview_total)), max(preview_total),
+            )
+        )
+    else:
+        print("  Playhead preview timing: no instrumented frame-ready samples found.")
+
+    discarded_preview = re.findall(
+        r"TIMELINE_PREVIEW_FRAME_DISCARDED requestId=(\d+) stage=([a-z-]+)"
+        r"(?: queueWaitMs=(\d+) decodeMs=(\d+))?",
+        log,
+    )
+    if discarded_preview:
+        decoded_discarded = [row for row in discarded_preview if row[2] and row[3]]
+        print(
+            "  Superseded playhead frames: {} total; {} discarded after decode.".format(
+                len(discarded_preview), len(decoded_discarded)
+            )
+        )
+
     visible_sources = {timestamp for timestamp, _ in snapshot["cells"]}
     visible_timing_rows = [row for row in timing_rows if row[0] in visible_sources]
     if len(visible_timing_rows) < 3:
