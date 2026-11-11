@@ -24,9 +24,9 @@ class TimelineThumbnailMathTest {
     }
 
     @Test
-    fun previewDecodeBoundsUseCanvasSizeWithSmallOversampling() {
-        assertEquals(529 to 941, TimelineThumbnailMath.previewDecodeBounds(423, 753))
-        assertEquals(941 to 529, TimelineThumbnailMath.previewDecodeBounds(753, 423))
+    fun previewDecodeBoundsUseTheMeasuredCanvasSizeWithoutExtraDecodePixels() {
+        assertEquals(423 to 753, TimelineThumbnailMath.previewDecodeBounds(423, 753))
+        assertEquals(753 to 423, TimelineThumbnailMath.previewDecodeBounds(753, 423))
     }
 
     @Test
