@@ -620,6 +620,10 @@ class VideoEditorActivity : Activity() {
         java.util.concurrent.ConcurrentHashMap<Long, Pair<Uri, MediaMetadataRetriever>>()
     private val timelineThumbnailExtractors =
         java.util.concurrent.ConcurrentHashMap<Long, Pair<Uri, FrameExtractor>>()
+    // A single exact-seek extractor is retained by the reserved preview worker.
+    // Rebuilding ExoPlayer/codec state for every paused frame adds avoidable latency.
+    private val previewFrameExtractors =
+        java.util.concurrent.ConcurrentHashMap<Long, Triple<Uri, Int, FrameExtractor>>()
     private val timelineThumbnailExecutor = java.util.concurrent.ThreadPoolExecutor(
         2,
         2,
@@ -667,6 +671,7 @@ class VideoEditorActivity : Activity() {
                 } finally {
                     releaseTimelineThumbnailRetriever()
                     releaseTimelineThumbnailExtractor()
+                    releasePreviewFrameExtractor()
                 }
             }, "preview-frame-decoder-${previewDecoderThreadSequence.incrementAndGet()}")
         }
@@ -11106,6 +11111,13 @@ class VideoEditorActivity : Activity() {
         }
     }
 
+    private fun releasePreviewFrameExtractor() {
+        val threadId = Thread.currentThread().id
+        previewFrameExtractors.remove(threadId)?.third?.let { extractor ->
+            runCatching { extractor.close() }
+        }
+    }
+
     private fun cancelPausedOverlayPreviewTask(overlayId: Long) {
         val task = pausedOverlayPreviewTasks.remove(overlayId) ?: return
         val wasRunning = task.isRunning()
@@ -11709,6 +11721,58 @@ class VideoEditorActivity : Activity() {
         val decodeWidthPx = minOf(maxWidthPx.coerceAtLeast(1), sourceDimensions.first)
         val decodeHeightPx = minOf(maxHeightPx.coerceAtLeast(1), sourceDimensions.second)
 
+        // The preview lane is reserved and single-threaded. Reuse one exact-seek
+        // Media3 extractor for the active source instead of constructing and tearing
+        // down a player/codec graph for every scrub request. This is the measured
+        // alternative to MMR's expensive OPTION_CLOSEST random-access decode.
+        val threadId = Thread.currentThread().id
+        var extractor = previewFrameExtractors[threadId]
+        if (extractor == null || extractor.first != uri || extractor.second != decodeHeightPx) {
+            extractor?.let { runCatching { it.third.close() } }
+            previewFrameExtractors.remove(threadId)
+            extractor = runCatching {
+                Triple(
+                    uri,
+                    decodeHeightPx,
+                    FrameExtractor.Builder(this, MediaItem.fromUri(uri))
+                        .setSeekParameters(androidx.media3.exoplayer.SeekParameters.EXACT)
+                        .setEffects(listOf(Presentation.createForHeight(decodeHeightPx)))
+                        .build()
+                )
+            }.onFailure { error ->
+                android.util.Log.w("TimelinePreviewFrame", "Could not create reusable exact preview extractor", error)
+            }.getOrNull()
+            if (extractor != null) previewFrameExtractors[threadId] = extractor
+        }
+        var frameFuture: java.util.concurrent.Future<FrameExtractor.Frame>? = null
+        val media3StartedAt = SystemClock.uptimeMillis()
+        val media3Frame = try {
+            val activeExtractor = extractor?.third ?: throw IllegalStateException("Preview extractor unavailable")
+            activeExtractor.getFrame(timeMs.coerceAtLeast(0L)).also { frameFuture = it }
+                .get(2_500L, TimeUnit.MILLISECONDS).bitmap
+        } catch (error: Exception) {
+            frameFuture?.cancel(true)
+            android.util.Log.w("TimelinePreviewFrame", "Reusable exact Media3 decode failed at ${timeMs}ms", error)
+            null
+        }
+        if (Thread.currentThread().isInterrupted) {
+            media3Frame?.let { if (!it.isRecycled) it.recycle() }
+            return null
+        }
+        if (media3Frame != null) {
+            if (timelineSyncTestEnabled) android.util.Log.i(
+                "TimelineFrameSyncTest",
+                "TIMELINE_PREVIEW_DECODER decoder=media3-exact-primary " +
+                    "decodeMs=${SystemClock.uptimeMillis() - media3StartedAt} " +
+                    "bitmap=${media3Frame.width}x${media3Frame.height}"
+            )
+            return fitPreviewFrameToBounds(media3Frame, decodeWidthPx, decodeHeightPx)
+        }
+
+        // Platform MMR remains a compatibility fallback if Media3 cannot decode
+        // the source. Do not use it as the first path: OPTION_CLOSEST may decode a
+        // long GOP from its previous sync sample for every new playhead timestamp.
+        val mmrStartedAt = SystemClock.uptimeMillis()
         val frame = retriever?.let { active ->
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                 runCatching {
@@ -11729,31 +11793,13 @@ class VideoEditorActivity : Activity() {
             frame?.let { if (!it.isRecycled) it.recycle() }
             return null
         }
-        if (frame != null) return fitPreviewFrameToBounds(frame, decodeWidthPx, decodeHeightPx)
-
-        var extractor: FrameExtractor? = null
-        var decoded: Bitmap? = null
-        var future: java.util.concurrent.Future<FrameExtractor.Frame>? = null
-        try {
-            val created = FrameExtractor.Builder(this, MediaItem.fromUri(uri))
-                .setSeekParameters(androidx.media3.exoplayer.SeekParameters.EXACT)
-                .setEffects(listOf(Presentation.createForHeight(decodeHeightPx)))
-                .build()
-            extractor = created
-            val frameFuture = created.getFrame(timeMs.coerceAtLeast(0L))
-            future = frameFuture
-            decoded = frameFuture.get(2_500L, TimeUnit.MILLISECONDS).bitmap
-        } catch (error: Exception) {
-            future?.cancel(true)
-            android.util.Log.w("TimelinePreviewFrame", "Frame decode failed at ${timeMs}ms", error)
-        } finally {
-            runCatching { extractor?.close() }
-        }
-        if (Thread.currentThread().isInterrupted) {
-            decoded?.let { if (!it.isRecycled) it.recycle() }
-            return null
-        }
-        return decoded?.let { fitPreviewFrameToBounds(it, decodeWidthPx, decodeHeightPx) }
+        if (frame != null && timelineSyncTestEnabled) android.util.Log.i(
+            "TimelineFrameSyncTest",
+            "TIMELINE_PREVIEW_DECODER decoder=platform-mmr-fallback " +
+                "decodeMs=${SystemClock.uptimeMillis() - mmrStartedAt} " +
+                "bitmap=${frame.width}x${frame.height}"
+        )
+        return frame?.let { fitPreviewFrameToBounds(it, decodeWidthPx, decodeHeightPx) }
     }
 
     private fun fitPreviewFrameToBounds(
