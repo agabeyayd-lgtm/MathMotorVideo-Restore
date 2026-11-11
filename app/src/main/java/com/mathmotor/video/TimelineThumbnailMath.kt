@@ -82,15 +82,15 @@ internal object TimelineThumbnailMath {
     }
 
     /**
-     * Decode paused preview frames close to their actual on-screen canvas size.
-     * A small 1.25x oversample keeps scaling crisp without decoding a much larger
-     * square bitmap for a portrait project. The long-edge cap protects high-density
-     * devices from allocating unnecessarily large preview bitmaps.
+     * Decode paused preview frames at the measured project-canvas pixel size.
+     * Canvas dimensions are already physical pixels, so default oversampling adds
+     * decode work and memory without increasing visible detail. Callers may opt in
+     * when they intentionally render beyond the measured canvas size.
      */
     fun previewDecodeBounds(
         canvasWidthPx: Int,
         canvasHeightPx: Int,
-        oversample: Float = 1.25f,
+        oversample: Float = 1f,
         maxDimensionPx: Int = 1_920
     ): Pair<Int, Int> {
         val width = canvasWidthPx.coerceAtLeast(1)
