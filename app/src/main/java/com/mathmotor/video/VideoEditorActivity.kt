@@ -11530,9 +11530,12 @@ class VideoEditorActivity : Activity() {
                 )
             }
         }
+        val enqueuedAtUptimeMs = SystemClock.uptimeMillis()
         if (timelineSyncTestEnabled) android.util.Log.i(
             "TimelineFrameSyncTest",
-            "TIMELINE_PREVIEW_FRAME_REQUEST projectMs=$safeProjectTimeMs sourceMs=$sourceTimeMs"
+            "TIMELINE_PREVIEW_FRAME_REQUEST projectMs=$safeProjectTimeMs sourceMs=$sourceTimeMs " +
+                "requestId=$requestId enqueuedUptimeMs=$enqueuedAtUptimeMs " +
+                "queueDepth=${previewFrameExecutor.queue.size}"
         )
         applyPreviewFrameTransform(clip)
 
@@ -11542,19 +11545,40 @@ class VideoEditorActivity : Activity() {
             timelineThumbnailTaskSequence.incrementAndGet()
         ) {
             if (task.isCancelled() || requestId != previewFrameRequestGeneration.get()) {
+                if (timelineSyncTestEnabled) android.util.Log.i(
+                    "TimelineFrameSyncTest",
+                    "TIMELINE_PREVIEW_FRAME_DISCARDED requestId=$requestId stage=before-decode"
+                )
                 return@TimelineThumbnailTask
             }
+            val decodeStartedAtUptimeMs = SystemClock.uptimeMillis()
+            val queueWaitMs = decodeStartedAtUptimeMs - enqueuedAtUptimeMs
             val decoded = decodeTimelinePreviewFrame(clip.uri, sourceTimeMs)
+            val decodedAtUptimeMs = SystemClock.uptimeMillis()
+            val decodeDurationMs = decodedAtUptimeMs - decodeStartedAtUptimeMs
             if (task.isCancelled() || requestId != previewFrameRequestGeneration.get()) {
                 decoded?.let { if (!it.isRecycled) it.recycle() }
+                if (timelineSyncTestEnabled) android.util.Log.i(
+                    "TimelineFrameSyncTest",
+                    "TIMELINE_PREVIEW_FRAME_DISCARDED requestId=$requestId stage=after-decode " +
+                        "queueWaitMs=$queueWaitMs decodeMs=$decodeDurationMs"
+                )
                 return@TimelineThumbnailTask
             }
             runOnUiThread {
+                val uiCallbackStartedAtUptimeMs = SystemClock.uptimeMillis()
                 if (requestId != previewFrameRequestGeneration.get() || isFinishing || isDestroyed) {
                     decoded?.let { if (!it.isRecycled) it.recycle() }
+                    if (timelineSyncTestEnabled) android.util.Log.i(
+                        "TimelineFrameSyncTest",
+                        "TIMELINE_PREVIEW_FRAME_DISCARDED requestId=$requestId stage=ui-dispatch " +
+                            "queueWaitMs=$queueWaitMs decodeMs=$decodeDurationMs"
+                    )
                     return@runOnUiThread
                 }
                 pendingPreviewFrameTask = null
+                val uiDispatchWaitMs = uiCallbackStartedAtUptimeMs - decodedAtUptimeMs
+                val uiApplyStartedAtUptimeMs = SystemClock.uptimeMillis()
                 if (decoded != null && !decoded.isRecycled) {
                     val previous = previewFrameBitmap
                     previewFrameBitmap = decoded
@@ -11565,9 +11589,14 @@ class VideoEditorActivity : Activity() {
                     previewFrameOverlay.visibility = View.VISIBLE
                     applyPreviewFrameTransform(clip)
                     if (timelineSyncTestEnabled) {
+                        val uiApplyMs = SystemClock.uptimeMillis() - uiApplyStartedAtUptimeMs
+                        val totalMs = SystemClock.uptimeMillis() - enqueuedAtUptimeMs
                         android.util.Log.i(
                             "TimelineFrameSyncTest",
-                            "TIMELINE_PREVIEW_FRAME_READY projectMs=$safeProjectTimeMs sourceMs=$sourceTimeMs width=${decoded.width} height=${decoded.height}"
+                            "TIMELINE_PREVIEW_FRAME_READY projectMs=$safeProjectTimeMs sourceMs=$sourceTimeMs " +
+                                "width=${decoded.width} height=${decoded.height} requestId=$requestId " +
+                                "queueWaitMs=$queueWaitMs decodeMs=$decodeDurationMs " +
+                                "uiDispatchWaitMs=$uiDispatchWaitMs uiApplyMs=$uiApplyMs totalMs=$totalMs"
                         )
                         if (keepPreviousFrame) android.util.Log.i(
                             "TimelineFrameSyncTest",
@@ -11577,7 +11606,9 @@ class VideoEditorActivity : Activity() {
                 } else {
                     if (timelineSyncTestEnabled) android.util.Log.e(
                         "TimelineFrameSyncTest",
-                        "TIMELINE_PREVIEW_FRAME_FAILED projectMs=$safeProjectTimeMs sourceMs=$sourceTimeMs"
+                        "TIMELINE_PREVIEW_FRAME_FAILED projectMs=$safeProjectTimeMs sourceMs=$sourceTimeMs " +
+                            "requestId=$requestId queueWaitMs=$queueWaitMs decodeMs=$decodeDurationMs " +
+                            "uiDispatchWaitMs=$uiDispatchWaitMs"
                     )
                     // When pausing, preserve the last rendered frame if decoding
                     // the exact still fails; never replace a valid preview with black.
