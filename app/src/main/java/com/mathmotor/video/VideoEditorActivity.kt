@@ -660,6 +660,59 @@ class VideoEditorActivity : Activity() {
             }, "preview-frame-decoder-${previewDecoderThreadSequence.incrementAndGet()}")
         }
     )
+
+    // Secondary still work (cover, poster, overlay and filmstrip frames) must not
+    // start while an exact playhead frame is being decoded. Even a background
+    // MMR worker contends for the same codec/CPU resources and made cold-start
+    // preview latency exceed the editor's interactive budget.
+    private val deferredSecondaryThumbnailLock = Any()
+    private val deferredSecondaryThumbnailTasks = java.util.ArrayDeque<TimelineThumbnailTask>()
+
+    private fun enqueueSecondaryThumbnailTask(task: TimelineThumbnailTask) {
+        val defer = synchronized(deferredSecondaryThumbnailLock) {
+            if (pendingPreviewFrameTask != null || pendingPreviewFrameDispatch != null) {
+                deferredSecondaryThumbnailTasks.addLast(task)
+                true
+            } else {
+                false
+            }
+        }
+        if (!defer) timelineThumbnailExecutor.execute(task)
+    }
+
+    private fun dispatchDeferredSecondaryThumbnailTasks() {
+        if (pendingPreviewFrameTask != null || pendingPreviewFrameDispatch != null) return
+        val tasks = synchronized(deferredSecondaryThumbnailLock) {
+            if (pendingPreviewFrameTask != null || pendingPreviewFrameDispatch != null) {
+                emptyList()
+            } else {
+                buildList {
+                    while (deferredSecondaryThumbnailTasks.isNotEmpty()) {
+                        add(deferredSecondaryThumbnailTasks.removeFirst())
+                    }
+                }
+            }
+        }
+        tasks.forEach { task ->
+            if (task.isCancelled()) return@forEach
+            try {
+                timelineThumbnailExecutor.execute(task)
+            } catch (_: java.util.concurrent.RejectedExecutionException) {
+                task.cancelForSourceInvalidation()
+            }
+        }
+    }
+
+    private fun cancelDeferredSecondaryThumbnailTasks() {
+        val tasks = synchronized(deferredSecondaryThumbnailLock) {
+            buildList {
+                while (deferredSecondaryThumbnailTasks.isNotEmpty()) {
+                    add(deferredSecondaryThumbnailTasks.removeFirst())
+                }
+            }
+        }
+        tasks.forEach { it.cancelForSourceInvalidation() }
+    }
     private lateinit var timelinePlayheadLabel: TextView
     private lateinit var timelinePlayButton: Button
     private var timelinePlayheadMs = 0L
@@ -8604,12 +8657,13 @@ class VideoEditorActivity : Activity() {
                 player?.prepare()
                 // Keep the imported clip paused so the user can align the initial frame, ruler and fixed playhead.
                 player?.playWhenReady = false
-                refreshTimelineAfterClipChange()
+                // Request the exact playhead frame before starting cover and
+                // filmstrip decoders. Their jobs are held behind this request so
+                // the first visible frame gets uncontended codec/CPU time.
+                updatePreviewEmptyStateVisibility()
+                requestPreviewFrameAt(timelinePlayheadMs)
                 loadTrimControls()
                 refreshTimelineTracks()
-                // Show the actual frame beneath the fixed playhead immediately,
-                // even while the single-clip player is still preparing.
-                requestPreviewFrameAt(timelinePlayheadMs)
                 // A debug-only signal lets CI verify clip import even when the
                 // emulator accessibility tree cannot be captured reliably.
                 if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) android.util.Log.i(
@@ -11378,7 +11432,7 @@ class VideoEditorActivity : Activity() {
                     try {
                         // Overlay stills share the serialized secondary queue with
                         // filmstrip work and cannot occupy the reserved main-preview worker.
-                        coverThumbnailExecutor.execute(task)
+                        enqueueSecondaryThumbnailTask(task)
                     } catch (_: java.util.concurrent.RejectedExecutionException) {
                         if (pausedOverlayPreviewTasks[overlayId] === task) {
                             pausedOverlayPreviewTasks.remove(overlayId)
@@ -11590,7 +11644,12 @@ class VideoEditorActivity : Activity() {
         lateinit var task: TimelineThumbnailTask
         task = TimelineThumbnailTask(
             -1L,
-            timelineThumbnailTaskSequence.incrementAndGet()
+            timelineThumbnailTaskSequence.incrementAndGet(),
+            onFinished = {
+                // The preview worker has completed its non-interruptible MMR call.
+                // Drain background still work only after the UI has applied this frame.
+                timelineHandler.post { dispatchDeferredSecondaryThumbnailTasks() }
+            }
         ) {
             if (task.isCancelled() || requestId != previewFrameRequestGeneration.get()) {
                 if (timelineSyncTestEnabled) android.util.Log.i(
@@ -12022,7 +12081,7 @@ class VideoEditorActivity : Activity() {
             // Poster is only a temporary placeholder. Run it on the serialized
             // background still queue so it cannot create another concurrent decoder
             // beside the filmstrip; the exact playhead decoder remains independent.
-            coverThumbnailExecutor.execute(task)
+            enqueueSecondaryThumbnailTask(task)
         } catch (_: java.util.concurrent.RejectedExecutionException) {
             pendingTimelinePosterTasks.remove(cacheKey, task)
             if (pendingTimelinePosterGenerations[cacheKey] == sourceGeneration) {
@@ -12325,7 +12384,7 @@ class VideoEditorActivity : Activity() {
         }
         trackTimelineThumbnailTask(sourceKey, task)
         try {
-            timelineThumbnailExecutor.execute(task)
+            enqueueSecondaryThumbnailTask(task)
         } catch (_: java.util.concurrent.RejectedExecutionException) {
             task.cancelForSourceInvalidation()
             if (pendingTimelineThumbnailGenerations[key] == sourceGeneration) {
@@ -12587,7 +12646,7 @@ class VideoEditorActivity : Activity() {
             }
         }
         try {
-            coverThumbnailExecutor.execute(task)
+            enqueueSecondaryThumbnailTask(task)
         } catch (_: java.util.concurrent.RejectedExecutionException) {
             pendingCoverThumbnailTargets.remove(key)
         }
@@ -12785,7 +12844,7 @@ class VideoEditorActivity : Activity() {
                 }
             }
             try {
-                coverThumbnailExecutor.execute(task)
+                enqueueSecondaryThumbnailTask(task)
             } catch (_: java.util.concurrent.RejectedExecutionException) {
                 timestampLabel.text = "Kapak karesi çözücü şu anda meşgul."
             }
@@ -13522,6 +13581,7 @@ class VideoEditorActivity : Activity() {
         audioWaveformCache.evictAll()
         previewFrameExecutor.queue.clear()
         previewFrameExecutor.shutdownNow()
+        cancelDeferredSecondaryThumbnailTasks()
         timelineThumbnailExecutor.queue.clear()
         timelineThumbnailExecutor.shutdownNow()
         pendingTimelinePosterTasks.values.toList().forEach { task ->
