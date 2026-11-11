@@ -513,6 +513,7 @@ class VideoEditorActivity : Activity() {
         pendingTimelinePosterLoads.remove(sourceKey)
         pendingTimelinePosterGenerations.remove(sourceKey)
         timelineVideoAspectRatios.remove(sourceKey)
+        timelineVideoAspectRatioMetadataCache.remove(sourceKey)
         if (timelineSyncTestEnabled || timelineLifecycleDiagnosticsEnabled) {
             android.util.Log.i(
                 "TimelineThumbnail",
@@ -567,18 +568,19 @@ class VideoEditorActivity : Activity() {
         }
     }
     private val timelineThumbnailTaskSequence = java.util.concurrent.atomic.AtomicLong()
-    // Three isolated workers avoid saturating API-35 frame decoding while
-    // keeping visible cells parallel. Four workers regressed measured decode
-    // latency (1712ms); the three-worker baseline previously stayed below 700ms.
-    // Each worker owns its retriever; Media3 remains a fallback for unsupported sources.
+    // Reserve one decoder thread for the playhead preview. Filmstrip work must
+    // never occupy every decoder slot while a user is scrubbing or pausing.
+    // Two filmstrip workers plus one preview worker keep total decoder concurrency
+    // at the previously measured three-worker budget instead of adding contention.
     private val timelineThumbnailWorkerSequence = java.util.concurrent.atomic.AtomicLong()
+    private val previewDecoderThreadSequence = java.util.concurrent.atomic.AtomicLong()
     private val timelineThumbnailRetrievers =
         java.util.concurrent.ConcurrentHashMap<Long, Pair<Uri, MediaMetadataRetriever>>()
     private val timelineThumbnailExtractors =
         java.util.concurrent.ConcurrentHashMap<Long, Pair<Uri, FrameExtractor>>()
     private val timelineThumbnailExecutor = java.util.concurrent.ThreadPoolExecutor(
-        3,
-        3,
+        2,
+        2,
         0L,
         java.util.concurrent.TimeUnit.MILLISECONDS,
         java.util.concurrent.PriorityBlockingQueue<Runnable>(
@@ -600,6 +602,31 @@ class VideoEditorActivity : Activity() {
                     releaseTimelineThumbnailExtractor()
                 }
             }, "timeline-thumbnail-\u0024{timelineThumbnailWorkerSequence.incrementAndGet()}")
+        }
+    )
+    // Main playhead stills and paused overlay stills have a reserved decoder lane.
+    // A priority queue lets exact playhead requests jump ahead of queued overlays.
+    private val previewFrameExecutor = java.util.concurrent.ThreadPoolExecutor(
+        1,
+        1,
+        0L,
+        java.util.concurrent.TimeUnit.MILLISECONDS,
+        java.util.concurrent.PriorityBlockingQueue<Runnable>(
+            11,
+            java.util.Comparator { first, second ->
+                (first as TimelineThumbnailTask).compareTo(second as TimelineThumbnailTask)
+            }
+        ),
+        java.util.concurrent.ThreadFactory { worker ->
+            Thread({
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_DEFAULT)
+                try {
+                    worker.run()
+                } finally {
+                    releaseTimelineThumbnailRetriever()
+                    releaseTimelineThumbnailExtractor()
+                }
+            }, "preview-frame-decoder-${previewDecoderThreadSequence.incrementAndGet()}")
         }
     )
     private lateinit var timelinePlayheadLabel: TextView
@@ -11224,7 +11251,7 @@ class VideoEditorActivity : Activity() {
                         }
                     }
                     try {
-                        timelineThumbnailExecutor.execute(task)
+                        previewFrameExecutor.execute(task)
                     } catch (_: java.util.concurrent.RejectedExecutionException) {
                         pausedOverlayPreviewPendingKeys.remove(overlay.id)
                     }
@@ -11236,7 +11263,7 @@ class VideoEditorActivity : Activity() {
     private fun hidePreviewFrameOverlay() {
         if (!::previewFrameOverlay.isInitialized) return
         previewFrameRequestGeneration.incrementAndGet()
-        pendingPreviewFrameTask?.let { timelineThumbnailExecutor.remove(it) }
+        pendingPreviewFrameTask?.let { previewFrameExecutor.remove(it) }
         pendingPreviewFrameTask = null
         previewFrameOverlay.visibility = View.GONE
         previewFrameCacheKey = null
@@ -11245,7 +11272,7 @@ class VideoEditorActivity : Activity() {
     /** Cover the player immediately while a new playhead frame is being decoded. */
     private fun showPreviewFramePending(keepPreviousFrame: Boolean = false): Long {
         val requestId = previewFrameRequestGeneration.incrementAndGet()
-        pendingPreviewFrameTask?.let { timelineThumbnailExecutor.remove(it) }
+        pendingPreviewFrameTask?.let { previewFrameExecutor.remove(it) }
         pendingPreviewFrameTask = null
         if (!::previewFrameOverlay.isInitialized) return requestId
         // Pausing playback must not blank the last frame while a still is decoded.
@@ -11407,7 +11434,7 @@ class VideoEditorActivity : Activity() {
         }
         pendingPreviewFrameTask = task
         try {
-            timelineThumbnailExecutor.execute(task)
+            previewFrameExecutor.execute(task)
         } catch (_: java.util.concurrent.RejectedExecutionException) {
             pendingPreviewFrameTask = null
         }
@@ -12384,7 +12411,7 @@ class VideoEditorActivity : Activity() {
                 }
             }
             try {
-                timelineThumbnailExecutor.execute(task)
+                previewFrameExecutor.execute(task)
             } catch (_: java.util.concurrent.RejectedExecutionException) {
                 timestampLabel.text = "Kapak karesi çözücü şu anda meşgul."
             }
@@ -13097,7 +13124,7 @@ class VideoEditorActivity : Activity() {
         timelineHandler.removeCallbacks(timelineScrubPreviewSeekTask)
         pendingTimelineScrubPreviewTargetMs = null
         previewFrameRequestGeneration.incrementAndGet()
-        pendingPreviewFrameTask?.let { timelineThumbnailExecutor.remove(it) }
+        pendingPreviewFrameTask?.let { previewFrameExecutor.remove(it) }
         pendingPreviewFrameTask = null
         if (::previewFrameOverlay.isInitialized) previewFrameOverlay.setImageDrawable(null)
         hidePausedOverlayPreviewLayers()
@@ -13119,6 +13146,8 @@ class VideoEditorActivity : Activity() {
         pendingAudioWaveforms.clear()
         audioWaveformExecutor.shutdownNow()
         audioWaveformCache.evictAll()
+        previewFrameExecutor.queue.clear()
+        previewFrameExecutor.shutdownNow()
         timelineThumbnailExecutor.queue.clear()
         timelineThumbnailExecutor.shutdownNow()
         timelinePosterExecutor.shutdownNow()
