@@ -11615,7 +11615,7 @@ class VideoEditorActivity : Activity() {
                 )
                 return@TimelineThumbnailTask
             }
-            runOnUiThread {
+            timelineHandler.postAtFrontOfQueue {
                 val uiCallbackStartedAtUptimeMs = SystemClock.uptimeMillis()
                 if (requestId != previewFrameRequestGeneration.get() || isFinishing || isDestroyed) {
                     decoded?.let { if (!it.isRecycled) it.recycle() }
@@ -11624,7 +11624,7 @@ class VideoEditorActivity : Activity() {
                         "TIMELINE_PREVIEW_FRAME_DISCARDED requestId=$requestId stage=ui-dispatch " +
                             "queueWaitMs=$queueWaitMs decodeMs=$decodeDurationMs"
                     )
-                    return@runOnUiThread
+                    return@postAtFrontOfQueue
                 }
                 pendingPreviewFrameTask = null
                 val uiDispatchWaitMs = uiCallbackStartedAtUptimeMs - decodedAtUptimeMs
