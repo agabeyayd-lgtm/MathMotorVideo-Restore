@@ -11750,6 +11750,18 @@ class VideoEditorActivity : Activity() {
             val activeExtractor = extractor?.third ?: throw IllegalStateException("Preview extractor unavailable")
             activeExtractor.getFrame(timeMs.coerceAtLeast(0L)).also { frameFuture = it }
                 .get(2_500L, TimeUnit.MILLISECONDS).bitmap
+        } catch (interrupted: InterruptedException) {
+            // A newer playhead request interrupts an obsolete decode. Future.get()
+            // clears the thread interrupt flag when it throws; restore it and return
+            // immediately so this stale request cannot fall through to the much
+            // slower MMR compatibility decoder and block the latest frame in queue.
+            frameFuture?.cancel(true)
+            Thread.currentThread().interrupt()
+            android.util.Log.i(
+                "TimelinePreviewFrame",
+                "Reusable exact Media3 decode cancelled at ${timeMs}ms; skipping MMR fallback"
+            )
+            return null
         } catch (error: Exception) {
             frameFuture?.cancel(true)
             android.util.Log.w("TimelinePreviewFrame", "Reusable exact Media3 decode failed at ${timeMs}ms", error)
