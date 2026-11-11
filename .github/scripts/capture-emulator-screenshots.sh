@@ -4136,23 +4136,31 @@ if ! timeout -k 2s 15s adb -s emulator-5554 pull "$test_drag_screenshot" \
   collect_capture_diagnostics video-split-after-drag-screenshot-missing
   exit 98
 fi
-timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineSyncTest:I \
-  > emulator-screenshots/video-split-drag-logcat.txt 2>&1 || true
+# The instrumentation test asserts VIDEO_CLIP_DROP while the gesture is live,
+# then deliberately clears logcat before reopening the autosaved project. The
+# final persistence marker is emitted only after the drop-order assertion,
+# post-drop geometry check, autosave and fresh-Activity range checks all pass.
+# Read that durable marker from the full logcat captured immediately after test.
 timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineAlignmentTest:I \
   > emulator-screenshots/video-split-after-drag-measurements.txt 2>&1 || true
-drag_marker="$(grep "VIDEO_CLIP_DROP" emulator-screenshots/video-split-drag-logcat.txt | tail -n 1 || true)"
+drag_marker="$(grep "VIDEO_CLIP_DRAG_PERSISTENCE_PASS" emulator-screenshots/video-long-press-full-logcat.txt | tail -n 1 || true)"
 
 if [ -z "$drag_marker" ]; then
-  echo "A direct one-finger horizontal clip drag did not reach the production drop handler."
-  collect_capture_diagnostics video-direct-clip-drag-not-received
+  echo "The long-press drag did not produce a successful saved-and-reopened clip-order assertion."
+  collect_capture_diagnostics video-direct-clip-drag-not-persisted
   exit 96
 fi
-# Use the measured duration of the moved segment, not a nominal 8,000ms fixture duration.
-# Container/decoder duration metadata can differ slightly from the nominal FFmpeg input.
+# Keep the shell-level assertion tied to the measured second-half duration from
+# the actual split; do not substitute the nominal fixture duration.
 expected_first_start_ms="$split_second_duration_ms"
-if ! echo "$drag_marker" | grep -Eq "ordered=1,0 .*starts=1:0,0:${expected_first_start_ms}([[:space:]]|$)"; then
-  echo "The direct drag did not place the second half at 00:00 and push the first by its own duration (${expected_first_start_ms}ms): $drag_marker"
-  collect_capture_diagnostics video-direct-clip-drag-order
+if ! echo "$drag_marker" | grep -Fq "movedDurationMs=${expected_first_start_ms}"; then
+  echo "The moved clip duration did not match the second split segment (${expected_first_start_ms}ms): $drag_marker"
+  collect_capture_diagnostics video-direct-clip-drag-duration-mismatch
+  exit 97
+fi
+if ! echo "$drag_marker" | grep -Eq "restoredRanges=0:${expected_first_start_ms},${expected_first_start_ms}:[0-9]+ gapMs=0"; then
+  echo "The saved/reopened project did not preserve the moved clip at 00:00 with no gap (${expected_first_start_ms}ms): $drag_marker"
+  collect_capture_diagnostics video-direct-clip-drag-order-not-persisted
   exit 97
 fi
 # Validate the ACTUAL post-drop Views and pixels. The earlier split check only
