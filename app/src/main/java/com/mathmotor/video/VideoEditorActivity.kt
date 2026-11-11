@@ -424,8 +424,15 @@ class VideoEditorActivity : Activity() {
     private var coverThumbnailRequestSequence = 0L
     // Cover stills use a separate decoder queue so a fixed gutter thumbnail can
     // never occupy one of the three workers that fill the scrolling filmstrip.
-    private val coverThumbnailExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { task ->
-        Thread(task, "cover-thumbnail-decoder")
+    private val coverThumbnailExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { worker ->
+        Thread({
+            try {
+                worker.run()
+            } finally {
+                releaseTimelineThumbnailRetriever()
+                releaseTimelineThumbnailExtractor()
+            }
+        }, "cover-thumbnail-decoder")
     }
     private val audioWaveformCache = object : android.util.LruCache<String, FloatArray>(256 * 1024) {
         override fun sizeOf(key: String, value: FloatArray): Int = value.size * 4
@@ -539,11 +546,15 @@ class VideoEditorActivity : Activity() {
             return if (priority != 0) priority else sequence.compareTo(other.sequence)
         }
 
-        fun cancelForSourceInvalidation() {
+        fun isRunning(): Boolean = runningThread != null
+
+        fun cancelForSupersededRequest() {
             cancelled.set(true)
             runningThread?.interrupt()
             finishOnce()
         }
+
+        fun cancelForSourceInvalidation() = cancelForSupersededRequest()
 
         fun isCancelled(): Boolean = cancelled.get()
 
@@ -11262,11 +11273,30 @@ class VideoEditorActivity : Activity() {
         }
     }
 
+    private fun cancelPendingPreviewFrameRequest(reason: String) {
+        val task = pendingPreviewFrameTask
+        if (task != null) {
+            val wasRunning = task.isRunning()
+            previewFrameExecutor.remove(task)
+            // Removing from a ThreadPoolExecutor queue does not stop a decode that
+            // already started. Interrupt the worker so obsolete requests can stop
+            // before the next playhead frame is decoded.
+            task.cancelForSupersededRequest()
+            if (timelineSyncTestEnabled || timelineLifecycleDiagnosticsEnabled) {
+                android.util.Log.i(
+                    "TimelinePreviewFrame",
+                    "TIMELINE_PREVIEW_TASK_SUPERSEDED reason=$reason running=$wasRunning " +
+                        "queueDepth=${previewFrameExecutor.queue.size}"
+                )
+            }
+        }
+        pendingPreviewFrameTask = null
+    }
+
     private fun hidePreviewFrameOverlay() {
         if (!::previewFrameOverlay.isInitialized) return
         previewFrameRequestGeneration.incrementAndGet()
-        pendingPreviewFrameTask?.let { previewFrameExecutor.remove(it) }
-        pendingPreviewFrameTask = null
+        cancelPendingPreviewFrameRequest("hide")
         previewFrameOverlay.visibility = View.GONE
         previewFrameCacheKey = null
     }
@@ -11274,8 +11304,7 @@ class VideoEditorActivity : Activity() {
     /** Cover the player immediately while a new playhead frame is being decoded. */
     private fun showPreviewFramePending(keepPreviousFrame: Boolean = false): Long {
         val requestId = previewFrameRequestGeneration.incrementAndGet()
-        pendingPreviewFrameTask?.let { previewFrameExecutor.remove(it) }
-        pendingPreviewFrameTask = null
+        cancelPendingPreviewFrameRequest("superseded")
         if (!::previewFrameOverlay.isInitialized) return requestId
         // Pausing playback must not blank the last frame while a still is decoded.
         // The PlayerView already contains the last rendered video frame; if an overlay
@@ -11388,12 +11417,19 @@ class VideoEditorActivity : Activity() {
         )
         applyPreviewFrameTransform(clip)
 
-        val task = TimelineThumbnailTask(
+        lateinit var task: TimelineThumbnailTask
+        task = TimelineThumbnailTask(
             -1L,
             timelineThumbnailTaskSequence.incrementAndGet()
         ) {
-            if (requestId != previewFrameRequestGeneration.get()) return@TimelineThumbnailTask
+            if (task.isCancelled() || requestId != previewFrameRequestGeneration.get()) {
+                return@TimelineThumbnailTask
+            }
             val decoded = decodeTimelinePreviewFrame(clip.uri, sourceTimeMs)
+            if (task.isCancelled() || requestId != previewFrameRequestGeneration.get()) {
+                decoded?.let { if (!it.isRecycled) it.recycle() }
+                return@TimelineThumbnailTask
+            }
             runOnUiThread {
                 if (requestId != previewFrameRequestGeneration.get() || isFinishing || isDestroyed) {
                     decoded?.let { if (!it.isRecycled) it.recycle() }
@@ -11444,6 +11480,7 @@ class VideoEditorActivity : Activity() {
 
     /** Uses the same source URI and project-to-source timestamp mapping as the filmstrip. */
     private fun decodeTimelinePreviewFrame(uri: Uri, timeMs: Long): Bitmap? {
+        if (Thread.currentThread().isInterrupted) return null
         val frameTimeUs = timeMs.coerceAtLeast(0L) * 1000L
         val retriever = timelineThumbnailRetrieverFor(uri, "TimelinePreviewFrame")
 
@@ -11462,6 +11499,10 @@ class VideoEditorActivity : Activity() {
                     active.getFrameAtTime(frameTimeUs, MediaMetadataRetriever.OPTION_CLOSEST)
                 }.getOrNull()
             }
+        }
+        if (Thread.currentThread().isInterrupted) {
+            frame?.let { if (!it.isRecycled) it.recycle() }
+            return null
         }
         if (frame != null) return frame
 
@@ -12413,7 +12454,7 @@ class VideoEditorActivity : Activity() {
                 }
             }
             try {
-                previewFrameExecutor.execute(task)
+                coverThumbnailExecutor.execute(task)
             } catch (_: java.util.concurrent.RejectedExecutionException) {
                 timestampLabel.text = "Kapak karesi çözücü şu anda meşgul."
             }
@@ -13126,8 +13167,7 @@ class VideoEditorActivity : Activity() {
         timelineHandler.removeCallbacks(timelineScrubPreviewSeekTask)
         pendingTimelineScrubPreviewTargetMs = null
         previewFrameRequestGeneration.incrementAndGet()
-        pendingPreviewFrameTask?.let { previewFrameExecutor.remove(it) }
-        pendingPreviewFrameTask = null
+        cancelPendingPreviewFrameRequest("destroy")
         if (::previewFrameOverlay.isInitialized) previewFrameOverlay.setImageDrawable(null)
         hidePausedOverlayPreviewLayers()
         pausedOverlayPreviewViews.values.forEach { view -> view.setImageDrawable(null) }
