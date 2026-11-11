@@ -221,8 +221,32 @@ def verify(log_path: str, screenshot_path: str):
                 int(statistics.median(preview_total)), max(preview_total),
             )
         )
+        if len(preview_timing_rows) < 3:
+            raise SystemExit(
+                "FAIL: fewer than three measured preview frames; "
+                f"only {len(preview_timing_rows)} exact preview timings were captured."
+            )
+        if max(preview_queue) > 250:
+            raise SystemExit(
+                f"FAIL: latest-frame preview waited {max(preview_queue)}ms in its queue; limit is 250ms."
+            )
+        if max(preview_decode) > 800:
+            raise SystemExit(
+                f"FAIL: exact preview frame decode reached {max(preview_decode)}ms; limit is 800ms."
+            )
+        if max(preview_total) > 1_000:
+            raise SystemExit(
+                f"FAIL: preview request-to-visible reached {max(preview_total)}ms; limit is 1000ms."
+            )
+        print(
+            "  PASS: playhead preview stayed within 250ms queue, 800ms decode, "
+            "and 1000ms request-to-visible limits."
+        )
     else:
-        print("  Playhead preview timing: no instrumented frame-ready samples found.")
+        raise SystemExit(
+            "FAIL: no measured playhead preview timing was captured; "
+            "the latency budget cannot be verified."
+        )
 
     discarded_preview = re.findall(
         r"TIMELINE_PREVIEW_FRAME_DISCARDED requestId=(\d+) stage=([a-z-]+)"
