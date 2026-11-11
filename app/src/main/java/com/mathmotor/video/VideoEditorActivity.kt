@@ -480,6 +480,9 @@ class VideoEditorActivity : Activity() {
     // the same source metadata repeatedly before the first frame reaches the UI.
     // A non-positive value is the cached "unavailable" sentinel.
     private val timelineVideoAspectRatioMetadataCache = java.util.concurrent.ConcurrentHashMap<String, Float>()
+    // Original display dimensions let the preview decoder avoid upscaling small
+    // gallery clips to a fixed 1440px square just to draw them in a much smaller canvas.
+    private val timelineVideoFrameDimensions = java.util.concurrent.ConcurrentHashMap<String, Pair<Int, Int>>()
     private fun timelineVideoAspectRatio(uri: Uri): Float =
         timelineVideoAspectRatios[uri.toString()] ?: TimelineThumbnailMath.DEFAULT_SOURCE_ASPECT_RATIO
 
@@ -548,6 +551,7 @@ class VideoEditorActivity : Activity() {
         pendingTimelinePosterGenerations.remove(sourceKey)
         timelineVideoAspectRatios.remove(sourceKey)
         timelineVideoAspectRatioMetadataCache.remove(sourceKey)
+        timelineVideoFrameDimensions.remove(sourceKey)
         if (timelineSyncTestEnabled || timelineLifecycleDiagnosticsEnabled) {
             android.util.Log.i(
                 "TimelineThumbnail",
@@ -11471,6 +11475,26 @@ class VideoEditorActivity : Activity() {
      * playhead. The cover stays black until that timestamp's own frame is ready;
      * no previous/nearby frame is shown as though it were current.
      */
+    private fun previewFrameDecodeBounds(): Pair<Int, Int> {
+        val width = if (::previewCanvas.isInitialized && previewCanvas.width > 0) {
+            previewCanvas.width
+        } else {
+            previewFrameOverlay.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
+        }
+        val height = if (::previewCanvas.isInitialized && previewCanvas.height > 0) {
+            previewCanvas.height
+        } else {
+            previewFrameOverlay.height.takeIf { it > 0 }
+                ?: (width / TimelineThumbnailMath.DEFAULT_SOURCE_ASPECT_RATIO).toInt().coerceAtLeast(1)
+        }
+        return TimelineThumbnailMath.previewDecodeBounds(width, height)
+    }
+
+    /**
+     * Decode a still for the exact project timestamp under the fixed playhead.
+     * Work is limited to the real canvas resolution and the last exact frame is
+     * reused when layout/playback callbacks request the same timestamp again.
+     */
     private fun requestPreviewFrameAt(
         projectTimeMs: Long,
         keepPreviousFrame: Boolean = false
@@ -11482,13 +11506,13 @@ class VideoEditorActivity : Activity() {
         }
         val lastFrameMs = (totalOutputDurationMs() - 1L).coerceAtLeast(0L)
         val safeProjectTimeMs = projectTimeMs.coerceIn(0L, lastFrameMs)
-        // Decode the paused main frame and paint each active overlay as its own
-        // transformable ImageView. Playback still uses the Media3 composition.
         updatePausedOverlayPreviewLayers(safeProjectTimeMs)
-        val requestId = showPreviewFramePending(keepPreviousFrame)
         val activeIndex = activeClipIndexAt(safeProjectTimeMs)
         val clip = clips.getOrNull(activeIndex ?: -1)
-        if (clip == null) return // A timeline gap is intentionally rendered as black.
+        if (clip == null) {
+            showPreviewFramePending(keepPreviousFrame)
+            return // A timeline gap is intentionally rendered as black.
+        }
 
         val segment = TimelineVideoSegment(
             clip.timelineStartMs,
@@ -11498,10 +11522,31 @@ class VideoEditorActivity : Activity() {
             clip.speed
         )
         val sourceTimeMs = TimelineVideoMath.sourceTimeAtProjectTime(segment, safeProjectTimeMs)
-            ?: return
+            ?: run {
+                showPreviewFramePending(keepPreviousFrame)
+                return
+            }
+        val (decodeWidthPx, decodeHeightPx) = previewFrameDecodeBounds()
+        val exactFrameKey = "exact:${clip.uri}#${sourceTimeMs}@${decodeWidthPx}x${decodeHeightPx}"
+
+        // Some editor/layout callbacks issue the same pause/seek twice. Keep the
+        // already-visible exact frame and invalidate any older queued request.
+        if (previewFrameCacheKey == exactFrameKey &&
+            previewFrameBitmap?.let { !it.isRecycled } == true
+        ) {
+            showPreviewFramePending(keepPreviousFrame = true)
+            previewFrameOverlay.visibility = View.VISIBLE
+            applyPreviewFrameTransform(clip)
+            if (timelineSyncTestEnabled) android.util.Log.i(
+                "TimelineFrameSyncTest",
+                "TIMELINE_PREVIEW_EXACT_CACHE_HIT projectMs=$safeProjectTimeMs sourceMs=$sourceTimeMs"
+            )
+            return
+        }
+
+        val requestId = showPreviewFramePending(keepPreviousFrame)
         // Show a nearby filmstrip frame immediately while the exact preview frame
-        // is decoded. This avoids leaving the large canvas visibly frozen behind the
-        // moving playhead. Copy cached pixels because the preview owns/recycles its bitmap.
+        // is decoded. It is a temporary visual fallback, never reported as exact.
         val sourcePrefix = "${clip.uri}#"
         val nearestCached = timelineThumbnailCache.snapshot().entries.mapNotNull { entry ->
             if (!entry.key.startsWith(sourcePrefix)) return@mapNotNull null
@@ -11535,7 +11580,8 @@ class VideoEditorActivity : Activity() {
             "TimelineFrameSyncTest",
             "TIMELINE_PREVIEW_FRAME_REQUEST projectMs=$safeProjectTimeMs sourceMs=$sourceTimeMs " +
                 "requestId=$requestId enqueuedUptimeMs=$enqueuedAtUptimeMs " +
-                "queueDepth=${previewFrameExecutor.queue.size}"
+                "canvasPx=${if (::previewCanvas.isInitialized) "${previewCanvas.width}x${previewCanvas.height}" else "unknown"} " +
+                "decodeTargetPx=${decodeWidthPx}x${decodeHeightPx} queueDepth=${previewFrameExecutor.queue.size}"
         )
         applyPreviewFrameTransform(clip)
 
@@ -11553,7 +11599,9 @@ class VideoEditorActivity : Activity() {
             }
             val decodeStartedAtUptimeMs = SystemClock.uptimeMillis()
             val queueWaitMs = decodeStartedAtUptimeMs - enqueuedAtUptimeMs
-            val decoded = decodeTimelinePreviewFrame(clip.uri, sourceTimeMs)
+            val decoded = decodeTimelinePreviewFrame(
+                clip.uri, sourceTimeMs, decodeWidthPx, decodeHeightPx
+            )
             val decodedAtUptimeMs = SystemClock.uptimeMillis()
             val decodeDurationMs = decodedAtUptimeMs - decodeStartedAtUptimeMs
             if (task.isCancelled() || requestId != previewFrameRequestGeneration.get()) {
@@ -11582,7 +11630,7 @@ class VideoEditorActivity : Activity() {
                 if (decoded != null && !decoded.isRecycled) {
                     val previous = previewFrameBitmap
                     previewFrameBitmap = decoded
-                    previewFrameCacheKey = null
+                    previewFrameCacheKey = exactFrameKey
                     previewFrameOverlay.setImageBitmap(decoded)
                     if (previous !== decoded && previous != null && !previous.isRecycled) previous.recycle()
                     previewFrameOverlay.setBackgroundColor(Color.BLACK)
@@ -11610,8 +11658,6 @@ class VideoEditorActivity : Activity() {
                             "requestId=$requestId queueWaitMs=$queueWaitMs decodeMs=$decodeDurationMs " +
                             "uiDispatchWaitMs=$uiDispatchWaitMs"
                     )
-                    // When pausing, preserve the last rendered frame if decoding
-                    // the exact still fails; never replace a valid preview with black.
                     if (!keepPreviousFrame) {
                         previewFrameOverlay.setImageDrawable(null)
                         previewFrameOverlay.setBackgroundColor(Color.BLACK)
@@ -11629,10 +11675,39 @@ class VideoEditorActivity : Activity() {
     }
 
     /** Uses the same source URI and project-to-source timestamp mapping as the filmstrip. */
-    private fun decodeTimelinePreviewFrame(uri: Uri, timeMs: Long): Bitmap? {
+    private fun decodeTimelinePreviewFrame(
+        uri: Uri,
+        timeMs: Long,
+        maxWidthPx: Int,
+        maxHeightPx: Int
+    ): Bitmap? {
         if (Thread.currentThread().isInterrupted) return null
-        val frameTimeUs = timeMs.coerceAtLeast(0L) * 1000L
+        val frameTimeUs = timeMs.coerceAtLeast(0L) * 1_000L
         val retriever = timelineThumbnailRetrieverFor(uri, "TimelinePreviewFrame")
+        val sourceDimensions = timelineVideoFrameDimensions.computeIfAbsent(uri.toString()) {
+            val sourceWidth = retriever?.let { active ->
+                runCatching {
+                    active.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull()
+                }.getOrNull()
+            } ?: maxWidthPx
+            val sourceHeight = retriever?.let { active ->
+                runCatching {
+                    active.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull()
+                }.getOrNull()
+            } ?: maxHeightPx
+            val rotation = retriever?.let { active ->
+                runCatching {
+                    active.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull()
+                }.getOrNull()
+            } ?: 0
+            if (((rotation % 360) + 360) % 180 == 90) {
+                sourceHeight.coerceAtLeast(1) to sourceWidth.coerceAtLeast(1)
+            } else {
+                sourceWidth.coerceAtLeast(1) to sourceHeight.coerceAtLeast(1)
+            }
+        }
+        val decodeWidthPx = minOf(maxWidthPx.coerceAtLeast(1), sourceDimensions.first)
+        val decodeHeightPx = minOf(maxHeightPx.coerceAtLeast(1), sourceDimensions.second)
 
         val frame = retriever?.let { active ->
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
@@ -11640,8 +11715,8 @@ class VideoEditorActivity : Activity() {
                     active.getScaledFrameAtTime(
                         frameTimeUs,
                         MediaMetadataRetriever.OPTION_CLOSEST,
-                        1440,
-                        1440
+                        decodeWidthPx,
+                        decodeHeightPx
                     )
                 }.getOrNull()
             } else {
@@ -11654,39 +11729,46 @@ class VideoEditorActivity : Activity() {
             frame?.let { if (!it.isRecycled) it.recycle() }
             return null
         }
-        if (frame != null) return frame
+        if (frame != null) return fitPreviewFrameToBounds(frame, decodeWidthPx, decodeHeightPx)
 
         var extractor: FrameExtractor? = null
         var decoded: Bitmap? = null
         var future: java.util.concurrent.Future<FrameExtractor.Frame>? = null
         try {
-            val created = FrameExtractor.Builder(this, MediaItem.fromUri(uri)).build()
+            val created = FrameExtractor.Builder(this, MediaItem.fromUri(uri))
+                .setSeekParameters(androidx.media3.exoplayer.SeekParameters.EXACT)
+                .setEffects(listOf(Presentation.createForHeight(decodeHeightPx)))
+                .build()
             extractor = created
             val frameFuture = created.getFrame(timeMs.coerceAtLeast(0L))
             future = frameFuture
-            decoded = frameFuture.get(2500L, TimeUnit.MILLISECONDS).bitmap
+            decoded = frameFuture.get(2_500L, TimeUnit.MILLISECONDS).bitmap
         } catch (error: Exception) {
             future?.cancel(true)
             android.util.Log.w("TimelinePreviewFrame", "Frame decode failed at ${timeMs}ms", error)
         } finally {
             runCatching { extractor?.close() }
         }
-        return decoded?.let { original ->
-            val maxSide = 1440
-            val largest = maxOf(original.width, original.height)
-            if (largest <= maxSide) original
-            else {
-                val scale = maxSide.toFloat() / largest.toFloat()
-                val scaled = Bitmap.createScaledBitmap(
-                    original,
-                    (original.width * scale).toInt().coerceAtLeast(1),
-                    (original.height * scale).toInt().coerceAtLeast(1),
-                    true
-                )
-                if (scaled !== original && !original.isRecycled) original.recycle()
-                scaled
-            }
+        if (Thread.currentThread().isInterrupted) {
+            decoded?.let { if (!it.isRecycled) it.recycle() }
+            return null
         }
+        return decoded?.let { fitPreviewFrameToBounds(it, decodeWidthPx, decodeHeightPx) }
+    }
+
+    private fun fitPreviewFrameToBounds(
+        original: Bitmap,
+        maxWidthPx: Int,
+        maxHeightPx: Int
+    ): Bitmap {
+        if (original.isRecycled) return original
+        val (targetWidth, targetHeight) = TimelineThumbnailMath.fitDimensions(
+            original.width, original.height, maxWidthPx, maxHeightPx
+        )
+        if (targetWidth == original.width && targetHeight == original.height) return original
+        val scaled = Bitmap.createScaledBitmap(original, targetWidth, targetHeight, true)
+        if (scaled !== original && !original.isRecycled) original.recycle()
+        return scaled
     }
 
     /** Reads the authoritative source dimensions once per source URI, before downscaling. */
