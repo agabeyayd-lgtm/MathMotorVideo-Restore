@@ -302,6 +302,10 @@ class VideoEditorActivity : Activity() {
     private val pausedOverlayPreviewTasks = mutableMapOf<Long, TimelineThumbnailTask>()
     private val previewFrameRequestGeneration = java.util.concurrent.atomic.AtomicLong()
     private var pendingPreviewFrameTask: TimelineThumbnailTask? = null
+    // Coalesce rapid paused-playhead updates before entering the non-interruptible
+    // MediaMetadataRetriever call. The newest scrub position wins the short window.
+    private var pendingPreviewFrameDispatch: Runnable? = null
+    private val previewScrubDebounceMs = 48L
     private var previewFrameBitmap: Bitmap? = null
     private var previewFrameCacheKey: String? = null
     private lateinit var previewFocusButton: Button
@@ -11409,6 +11413,10 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun cancelPendingPreviewFrameRequest(reason: String) {
+        pendingPreviewFrameDispatch?.let { dispatch ->
+            timelineHandler.removeCallbacks(dispatch)
+            pendingPreviewFrameDispatch = null
+        }
         val task = pendingPreviewFrameTask
         if (task != null) {
             val wasRunning = task.isRunning()
@@ -11556,6 +11564,7 @@ class VideoEditorActivity : Activity() {
             return
         }
 
+        val requestedAtUptimeMs = SystemClock.uptimeMillis()
         val requestId = showPreviewFramePending(keepPreviousFrame)
         // Show a nearby filmstrip frame immediately while the exact preview frame
         // is decoded. It is a temporary visual fallback, never reported as exact.
@@ -11587,11 +11596,12 @@ class VideoEditorActivity : Activity() {
                 )
             }
         }
-        val enqueuedAtUptimeMs = SystemClock.uptimeMillis()
+        var enqueuedAtUptimeMs = requestedAtUptimeMs
         if (timelineSyncTestEnabled) android.util.Log.i(
             "TimelineFrameSyncTest",
             "TIMELINE_PREVIEW_FRAME_REQUEST projectMs=$safeProjectTimeMs sourceMs=$sourceTimeMs " +
-                "requestId=$requestId enqueuedUptimeMs=$enqueuedAtUptimeMs " +
+                "requestId=$requestId requestedUptimeMs=$requestedAtUptimeMs " +
+                "deferredMs=${if (keepPreviousFrame) previewScrubDebounceMs else 0L} " +
                 "canvasPx=${if (::previewCanvas.isInitialized) "${previewCanvas.width}x${previewCanvas.height}" else "unknown"} " +
                 "decodeTargetPx=${decodeWidthPx}x${decodeHeightPx} queueDepth=${previewFrameExecutor.queue.size}"
         )
@@ -11650,7 +11660,7 @@ class VideoEditorActivity : Activity() {
                     applyPreviewFrameTransform(clip)
                     if (timelineSyncTestEnabled) {
                         val uiApplyMs = SystemClock.uptimeMillis() - uiApplyStartedAtUptimeMs
-                        val totalMs = SystemClock.uptimeMillis() - enqueuedAtUptimeMs
+                        val totalMs = SystemClock.uptimeMillis() - requestedAtUptimeMs
                         android.util.Log.i(
                             "TimelineFrameSyncTest",
                             "TIMELINE_PREVIEW_FRAME_READY projectMs=$safeProjectTimeMs sourceMs=$sourceTimeMs " +
@@ -11679,10 +11689,30 @@ class VideoEditorActivity : Activity() {
             }
         }
         pendingPreviewFrameTask = task
-        try {
-            previewFrameExecutor.execute(task)
-        } catch (_: java.util.concurrent.RejectedExecutionException) {
-            pendingPreviewFrameTask = null
+        lateinit var dispatchPreviewTask: Runnable
+        dispatchPreviewTask = Runnable {
+            if (pendingPreviewFrameDispatch === dispatchPreviewTask) {
+                pendingPreviewFrameDispatch = null
+            }
+            if (task.isCancelled() || requestId != previewFrameRequestGeneration.get()) {
+                if (timelineSyncTestEnabled) android.util.Log.i(
+                    "TimelineFrameSyncTest",
+                    "TIMELINE_PREVIEW_FRAME_DISCARDED requestId=$requestId stage=before-enqueue"
+                )
+                return@Runnable
+            }
+            enqueuedAtUptimeMs = SystemClock.uptimeMillis()
+            try {
+                previewFrameExecutor.execute(task)
+            } catch (_: java.util.concurrent.RejectedExecutionException) {
+                if (pendingPreviewFrameTask === task) pendingPreviewFrameTask = null
+            }
+        }
+        pendingPreviewFrameDispatch = dispatchPreviewTask
+        if (keepPreviousFrame) {
+            timelineHandler.postDelayed(dispatchPreviewTask, previewScrubDebounceMs)
+        } else {
+            dispatchPreviewTask.run()
         }
     }
 
