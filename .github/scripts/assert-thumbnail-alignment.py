@@ -7,6 +7,8 @@ import statistics
 import sys
 from pathlib import Path
 
+from ci_image import Image
+
 SNAPSHOT_RE = re.compile(
     r"TIMELINE_ALIGNMENT_SNAPSHOT "
     r"playheadCenterPx=(\d+) playheadCenterYpx=(\d+) lineCenterPx=(\d+) "
