@@ -11324,10 +11324,11 @@ class VideoEditorActivity : Activity() {
                     val overlayId = overlay.id
                     val requestedTimeMs = projectTimeMs
                     // The still is shown inside the preview canvas, not exported from
-                    // this bitmap. Two display pixels per canvas pixel preserve sharpness
-                    // without decoding every overlay frame at the 1440px filmstrip cap.
-                    val decodeWidthPx = (frameWidth * 2).coerceIn(1, 1440)
-                    val decodeHeightPx = (frameHeight * 2).coerceIn(1, 1440)
+                    // this bitmap. Decode at 2x the overlay's actual transformed size:
+                    // a small corner logo should not trigger a full-canvas frame decode.
+                    val decodeScale = (state.scale * 2f).coerceAtLeast(0.1f)
+                    val decodeWidthPx = (frameWidth * decodeScale).toInt().coerceIn(1, 1440)
+                    val decodeHeightPx = (frameHeight * decodeScale).toInt().coerceIn(1, 1440)
                     lateinit var task: TimelineThumbnailTask
                     task = TimelineThumbnailTask(
                         0L,
