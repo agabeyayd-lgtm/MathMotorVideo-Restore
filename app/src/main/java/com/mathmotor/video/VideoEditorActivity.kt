@@ -11647,8 +11647,12 @@ class VideoEditorActivity : Activity() {
             timelineThumbnailTaskSequence.incrementAndGet(),
             onFinished = {
                 // The preview worker has completed its non-interruptible MMR call.
-                // Drain background still work only after the UI has applied this frame.
-                timelineHandler.post { dispatchDeferredSecondaryThumbnailTasks() }
+                // Clear a stranded request if decoding failed before its UI callback,
+                // then drain background work after the frame callback has had its turn.
+                timelineHandler.post {
+                    if (pendingPreviewFrameTask === task) pendingPreviewFrameTask = null
+                    dispatchDeferredSecondaryThumbnailTasks()
+                }
             }
         ) {
             if (task.isCancelled() || requestId != previewFrameRequestGeneration.get()) {
@@ -11745,6 +11749,7 @@ class VideoEditorActivity : Activity() {
                 previewFrameExecutor.execute(task)
             } catch (_: java.util.concurrent.RejectedExecutionException) {
                 if (pendingPreviewFrameTask === task) pendingPreviewFrameTask = null
+                dispatchDeferredSecondaryThumbnailTasks()
             }
         }
         pendingPreviewFrameDispatch = dispatchPreviewTask
