@@ -407,11 +407,7 @@ if [ ! -s "$fixture" ]; then
   echo "Missing generated test fixture: $fixture"
   exit 3
 fi
-# The visual frame check samples screenshot pixels. Install Pillow only when needed.
-if ! python3 -c "from PIL import Image" >/dev/null 2>&1; then
-  sudo apt-get update
-  sudo apt-get install -y python3-pil
-fi
+# Screenshot pixel checks use the repository helper backed by the FFmpeg binary already required by this job.
 # Android's scoped-storage policy blocks shell access to another app's
 # /sdcard/Android/data directory. Stage the fixture in /data/local/tmp, then
 # copy it into this debuggable test APK's private files directory with run-as.
@@ -618,7 +614,8 @@ if ! take_screen emulator-screenshots/editor-audio-waveforms.png; then
   exit 77
 fi
 python3 - emulator-screenshots/editor-audio-waveforms.png <<'PY'
-from PIL import Image
+sys.path.insert(0, ".github/scripts")
+from ci_image import Image
 import sys
 
 image = Image.open(sys.argv[1]).convert("RGB")
@@ -753,7 +750,8 @@ for attempt in $(seq 1 25); do
 import re
 import sys
 import xml.etree.ElementTree as ET
-from PIL import Image
+sys.path.insert(0, ".github/scripts")
+from ci_image import Image
 
 try:
     root = ET.parse(sys.argv[1]).getroot()
@@ -880,7 +878,8 @@ if ! take_screen emulator-screenshots/editor-video-clip-deselected.png; then
   exit 6
 fi
 overlay_reselect_center="$(python3 - emulator-screenshots/editor-video-clip-deselected.png <<'PY'
-from PIL import Image
+sys.path.insert(0, ".github/scripts")
+from ci_image import Image
 import sys
 
 image = Image.open(sys.argv[1]).convert("RGB")
@@ -1204,7 +1203,8 @@ fi
 cp emulator-screenshots/editor.png emulator-screenshots/editor-overlay-paused.png
 magenta_center() {
   python3 - "$1" <<'PY'
-from PIL import Image
+sys.path.insert(0, ".github/scripts")
+from ci_image import Image
 import sys
 image = Image.open(sys.argv[1]).convert("RGB")
 points = []
@@ -1277,7 +1277,8 @@ read -r after_x after_y after_pixels <<< "$after_overlay"
 timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTest:I \
   > emulator-screenshots/preview-canvas-logcat-after-drag.txt 2>&1 || true
 python3 - emulator-screenshots/preview-canvas-logcat-after-drag.txt emulator-screenshots/editor-overlay-after-drag.png emulator-screenshots/preview-canvas-logcat.txt <<'PY'
-from PIL import Image
+sys.path.insert(0, ".github/scripts")
+from ci_image import Image
 import re
 import sys
 
@@ -2927,7 +2928,8 @@ detect_text_selection_bounds() {
 import re
 import sys
 import xml.etree.ElementTree as ET
-from PIL import Image
+sys.path.insert(0, ".github/scripts")
+from ci_image import Image
 
 image_path, log_path, hierarchy_path = sys.argv[1:4]
 root = ET.parse(hierarchy_path).getroot()
@@ -3344,7 +3346,8 @@ assert_preview_canvas_unchanged_from_snapshot() {
 import re
 import sys
 import xml.etree.ElementTree as ET
-from PIL import Image
+sys.path.insert(0, ".github/scripts")
+from ci_image import Image
 
 baseline_path, snapshot_path, image_path, label = sys.argv[1:5]
 baseline_root = ET.parse(baseline_path).getroot()
@@ -4244,7 +4247,8 @@ if [ "$post_drop_seam_ready" != true ]; then
   exit 98
 fi
 if ! python3 - emulator-screenshots/video-split-after-drag.png emulator-screenshots/video-split-after-drag-measurements.txt <<'PY'
-from PIL import Image
+sys.path.insert(0, ".github/scripts")
+from ci_image import Image
 import re
 import sys
 
@@ -4736,7 +4740,8 @@ for attempt in $(seq 1 15); do
   timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTest:I \
     > emulator-screenshots/initial-photo-canvas-logcat.txt 2>&1 || true
   photo_metrics="$(python3 - emulator-screenshots/editor-initial-photo-full-frame.png emulator-screenshots/initial-photo-canvas-logcat.txt <<'PY'
-from PIL import Image
+sys.path.insert(0, ".github/scripts")
+from ci_image import Image
 import re
 import sys
 
