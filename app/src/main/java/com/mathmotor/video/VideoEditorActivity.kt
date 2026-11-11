@@ -462,7 +462,8 @@ class VideoEditorActivity : Activity() {
     }
     private val pendingTimelinePosterTargets = mutableMapOf<String, MutableList<WeakReference<ImageView>>>()
     private val pendingTimelinePosterLoads = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
-    private val timelinePosterExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
+    private val pendingTimelinePosterTasks =
+        java.util.concurrent.ConcurrentHashMap<String, TimelineThumbnailTask>()
     private val pendingTimelineThumbnails = mutableMapOf<String, MutableList<WeakReference<ImageView>>>()
     private val pendingTimelineThumbnailGenerations = mutableMapOf<String, Long>()
     // Keep both queued and currently-running filmstrip tasks addressable by source.
@@ -517,6 +518,13 @@ class VideoEditorActivity : Activity() {
         }
         timelineThumbnailExecutor.queue.removeIf { task ->
             (task as? TimelineThumbnailTask)?.sourceUriKey == sourceKey
+        }
+        // The provisional first-cell poster is also a decode task. Cancel it
+        // with the rest of this URI so removed media cannot hold the secondary
+        // still decoder while a newly imported source is waiting.
+        pendingTimelinePosterTasks.remove(sourceKey)?.let { posterTask ->
+            coverThumbnailExecutor.remove(posterTask)
+            posterTask.cancelForSourceInvalidation()
         }
         if (obsoleteTasks.isNotEmpty() && (timelineSyncTestEnabled || timelineLifecycleDiagnosticsEnabled)) {
             android.util.Log.i(
@@ -11733,42 +11741,61 @@ class VideoEditorActivity : Activity() {
         pendingTimelinePosterGenerations[cacheKey] = sourceGeneration
         pendingTimelinePosterLoads.add(cacheKey)
 
-        try {
-            timelinePosterExecutor.execute {
-                val poster = runCatching { decodeTimelinePoster(uri) }.getOrNull()
-                runOnUiThread {
-                    val ownsPending = pendingTimelinePosterGenerations[cacheKey] == sourceGeneration
-                    if (ownsPending) {
-                        pendingTimelinePosterGenerations.remove(cacheKey)
-                        pendingTimelinePosterLoads.remove(cacheKey)
-                    }
-                    if (sourceGeneration != timelineThumbnailSourceGeneration(uri)) {
-                        poster?.let { if (!it.isRecycled) it.recycle() }
-                        if (ownsPending) pendingTimelinePosterTargets.remove(cacheKey)
-                        return@runOnUiThread
-                    }
-                    if (isFinishing || isDestroyed) {
-                        poster?.let { if (!it.isRecycled) it.recycle() }
-                        pendingTimelinePosterTargets.remove(cacheKey)
-                        return@runOnUiThread
-                    }
-                    if (poster == null || poster.isRecycled) {
-                        pendingTimelinePosterTargets.remove(cacheKey)
-                        android.util.Log.w("TimelineThumbnail", "Temporary poster unavailable for $cacheKey")
-                        return@runOnUiThread
-                    }
-                    timelinePosterCache.put(cacheKey, poster)
-                    pendingTimelinePosterTargets.remove(cacheKey).orEmpty().forEach { reference ->
-                        val target = reference.get() ?: return@forEach
-                        val targetKey = target.tag?.toString() ?: return@forEach
-                        if (targetKey.startsWith("$cacheKey#") && target.drawable == null) {
-                            target.setImageBitmap(poster)
-                            target.contentDescription = "Klip kapak karesi (geçici)"
-                        }
+        lateinit var task: TimelineThumbnailTask
+        task = TimelineThumbnailTask(
+            -3L,
+            timelineThumbnailTaskSequence.incrementAndGet(),
+            sourceUriKey = cacheKey,
+            sourceGeneration = sourceGeneration,
+            onFinished = { pendingTimelinePosterTasks.remove(cacheKey, task) }
+        ) {
+            val poster = runCatching { decodeTimelinePoster(uri) }.getOrNull()
+            if (task.isCancelled() || sourceGeneration != timelineThumbnailSourceGeneration(uri)) {
+                poster?.let { if (!it.isRecycled) it.recycle() }
+                return@TimelineThumbnailTask
+            }
+            runOnUiThread {
+                val ownsPending = pendingTimelinePosterGenerations[cacheKey] == sourceGeneration
+                if (ownsPending) {
+                    pendingTimelinePosterGenerations.remove(cacheKey)
+                    pendingTimelinePosterLoads.remove(cacheKey)
+                }
+                if (task.isCancelled() ||
+                    sourceGeneration != timelineThumbnailSourceGeneration(uri)
+                ) {
+                    poster?.let { if (!it.isRecycled) it.recycle() }
+                    if (ownsPending) pendingTimelinePosterTargets.remove(cacheKey)
+                    return@runOnUiThread
+                }
+                if (isFinishing || isDestroyed) {
+                    poster?.let { if (!it.isRecycled) it.recycle() }
+                    pendingTimelinePosterTargets.remove(cacheKey)
+                    return@runOnUiThread
+                }
+                if (poster == null || poster.isRecycled) {
+                    pendingTimelinePosterTargets.remove(cacheKey)
+                    android.util.Log.w("TimelineThumbnail", "Temporary poster unavailable for $cacheKey")
+                    return@runOnUiThread
+                }
+                timelinePosterCache.put(cacheKey, poster)
+                pendingTimelinePosterTargets.remove(cacheKey).orEmpty().forEach { reference ->
+                    val target = reference.get() ?: return@forEach
+                    val targetKey = target.tag?.toString() ?: return@forEach
+                    if (targetKey.startsWith("$cacheKey#") && target.drawable == null) {
+                        target.setImageBitmap(poster)
+                        target.contentDescription = "Klip kapak karesi (geçici)"
                     }
                 }
             }
+        }
+        pendingTimelinePosterTasks[cacheKey] = task
+        try {
+            // Poster is only a temporary placeholder. Run it on the secondary
+            // still lane, below cover/picker work and away from the two filmstrip
+            // workers and the reserved exact playhead decoder.
+            coverThumbnailExecutor.execute(task)
         } catch (_: java.util.concurrent.RejectedExecutionException) {
+            pendingTimelinePosterTasks.remove(cacheKey, task)
             if (pendingTimelinePosterGenerations[cacheKey] == sourceGeneration) {
                 pendingTimelinePosterGenerations.remove(cacheKey)
                 pendingTimelinePosterLoads.remove(cacheKey)
@@ -13262,7 +13289,11 @@ class VideoEditorActivity : Activity() {
         previewFrameExecutor.shutdownNow()
         timelineThumbnailExecutor.queue.clear()
         timelineThumbnailExecutor.shutdownNow()
-        timelinePosterExecutor.shutdownNow()
+        pendingTimelinePosterTasks.values.toList().forEach { task ->
+            coverThumbnailExecutor.remove(task)
+            task.cancelForSourceInvalidation()
+        }
+        pendingTimelinePosterTasks.clear()
         pendingTimelineThumbnails.clear()
         pendingTimelineThumbnailGenerations.clear()
         pendingTimelinePosterTargets.clear()
