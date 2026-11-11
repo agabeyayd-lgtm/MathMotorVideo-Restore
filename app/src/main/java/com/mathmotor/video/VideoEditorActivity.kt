@@ -11760,7 +11760,12 @@ class VideoEditorActivity : Activity() {
         if (keepPreviousFrame) {
             timelineHandler.postDelayed(dispatchPreviewTask, previewScrubDebounceMs)
         } else {
-            dispatchPreviewTask.run()
+            // Do not start the decoder inline while the caller is still rebuilding
+            // timeline views on the main thread. Let the current UI transaction
+            // finish first, then enqueue the frame from the front of the UI queue.
+            // Otherwise decoding can finish while refreshTimelineTracks() is still
+            // monopolizing the main thread and the visible-frame callback waits >1s.
+            timelineHandler.postAtFrontOfQueue(dispatchPreviewTask)
         }
     }
 
