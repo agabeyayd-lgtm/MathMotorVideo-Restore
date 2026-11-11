@@ -81,6 +81,30 @@ internal object TimelineThumbnailMath {
         }
     }
 
+    /**
+     * Decode paused preview frames close to their actual on-screen canvas size.
+     * A small 1.25x oversample keeps scaling crisp without decoding a much larger
+     * square bitmap for a portrait project. The long-edge cap protects high-density
+     * devices from allocating unnecessarily large preview bitmaps.
+     */
+    fun previewDecodeBounds(
+        canvasWidthPx: Int,
+        canvasHeightPx: Int,
+        oversample: Float = 1.25f,
+        maxDimensionPx: Int = 1_920
+    ): Pair<Int, Int> {
+        val width = canvasWidthPx.coerceAtLeast(1)
+        val height = canvasHeightPx.coerceAtLeast(1)
+        val factor = oversample.takeIf { it.isFinite() && it > 0f } ?: 1f
+        val maxDimension = maxDimensionPx.coerceAtLeast(1)
+        val scale = minOf(
+            factor,
+            maxDimension.toFloat() / maxOf(width, height).toFloat()
+        )
+        return (width * scale).roundToInt().coerceIn(1, maxDimension) to
+            (height * scale).roundToInt().coerceIn(1, maxDimension)
+    }
+
     fun thumbnailCount(widthPx: Int, cellWidthPx: Int, maxCount: Int = 256): Int {
         val safeWidth = widthPx.coerceAtLeast(1).toLong()
         val safeCellWidth = cellWidthPx.coerceAtLeast(1).toLong()
