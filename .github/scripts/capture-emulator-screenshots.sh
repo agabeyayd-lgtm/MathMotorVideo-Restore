@@ -4126,6 +4126,67 @@ if [ "$instrumentation_status" -ne 0 ] || ! grep -q "OK (1 test)" emulator-scree
   exit 96
 fi
 
+# Android stops the target package when the instrumentation runner exits
+# ("finished inst"). The following trim checks are shell-driven gestures, so
+# explicitly reopen the autosaved editor draft before resolving View bounds.
+# This is a lifecycle handoff, not a retry of a gesture against a dead Activity.
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+if ! timeout -k 2s 15s adb -s emulator-5554 shell am start \
+  -n com.mathmotor.video.next/com.mathmotor.video.EditorTestEntryActivity \
+  --es draft_id "$smoke_draft_id" \
+  --ez timeline_sync_test true \
+  | tee emulator-screenshots/video-edge-trim-editor-reopen.txt; then
+  echo "Could not relaunch the autosaved split-video draft for the real edge-trim gestures."
+  collect_capture_diagnostics video-edge-trim-editor-reopen-launch-failure
+  exit 98
+fi
+edge_trim_editor_ready=false
+for attempt in $(seq 1 20); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime \
+    -s EditorSmokeTest:I TimelineAlignmentTest:I \
+    > emulator-screenshots/video-edge-trim-editor-ready-logcat.txt 2>&1 || true
+  if grep -Fq "EDITOR_SMOKE_DRAFT_VIDEO_RESTORED id=$smoke_draft_id clips=2" \
+      emulator-screenshots/video-edge-trim-editor-ready-logcat.txt \
+      && grep -q "TIMELINE_ALIGNMENT_SNAPSHOT.*clipBoundsByIndex=" \
+      emulator-screenshots/video-edge-trim-editor-ready-logcat.txt; then
+    edge_trim_editor_ready=true
+    break
+  fi
+  sleep 1
+done
+if [ "$edge_trim_editor_ready" != true ]; then
+  echo "The saved two-clip draft did not return with fresh, measurable timeline Views before edge trim."
+  cat emulator-screenshots/video-edge-trim-editor-ready-logcat.txt || true
+  collect_capture_diagnostics video-edge-trim-editor-reopen-not-ready
+  exit 98
+fi
+if ! python3 - "$smoke_draft_id" emulator-screenshots/video-edge-trim-editor-ready-logcat.txt <<'PY'
+import re
+import sys
+
+draft_id, path = sys.argv[1:]
+expected = re.compile(
+    r"EDITOR_SMOKE_DRAFT_VIDEO_RESTORED "
+    r"id=" + re.escape(draft_id) + r" clips=2 ranges=([0-9:,]+)"
+)
+matches = [
+    expected.search(line)
+    for line in open(path, errors="replace")
+]
+matches = [match for match in matches if match]
+if not matches:
+    raise SystemExit("No fresh two-clip draft-restore marker was recorded.")
+ranges = [tuple(map(int, item.split(":"))) for item in matches[-1].group(1).split(",")]
+if len(ranges) != 2 or ranges[0][0] != 0 or ranges[0][1] != ranges[1][0]:
+    raise SystemExit(f"Reopened draft is not a gapless two-clip timeline at project zero: {ranges}")
+print(f"PASS: edge-trim test editor reopened with the saved gapless clips: {ranges}")
+PY
+then
+  collect_capture_diagnostics video-edge-trim-editor-reopen-invalid
+  exit 98
+fi
+echo "PASS: instrumentation lifecycle ended; the real editor is relaunched and ready for edge trims."
+
 # The test screenshots live under the instrumentation package's external files.
 test_drag_screenshot="/sdcard/Android/data/com.mathmotor.video.next/files/Pictures/emulator-screenshots/video-split-after-drag.png"
 if ! timeout -k 2s 15s adb -s emulator-5554 pull "$test_drag_screenshot" \
