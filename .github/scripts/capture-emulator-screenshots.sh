@@ -4127,7 +4127,7 @@ if [ "$instrumentation_status" -ne 0 ] || ! grep -q "OK (1 test)" emulator-scree
 fi
 
 # The test screenshots live under the instrumentation package's external files.
-test_drag_screenshot="/sdcard/Android/data/com.mathmotor.video.next.test/files/Pictures/emulator-screenshots/video-split-after-drag.png"
+test_drag_screenshot="/sdcard/Android/data/com.mathmotor.video.next/files/Pictures/emulator-screenshots/video-split-after-drag.png"
 if ! timeout -k 2s 15s adb -s emulator-5554 pull "$test_drag_screenshot" \
     emulator-screenshots/video-split-after-drag.png \
     > emulator-screenshots/video-split-after-drag-pull.txt 2>&1 \
