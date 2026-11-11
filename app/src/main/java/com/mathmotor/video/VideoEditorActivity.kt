@@ -614,10 +614,11 @@ class VideoEditorActivity : Activity() {
         }
     }
     private val timelineThumbnailTaskSequence = java.util.concurrent.atomic.AtomicLong()
-    // Reserve one decoder thread for the playhead preview. Filmstrip work must
-    // never occupy every decoder slot while a user is scrubbing or pausing.
-    // Two filmstrip workers plus one preview worker keep total decoder concurrency
-    // at the previously measured three-worker budget instead of adding contention.
+    // The playhead owns the highest-priority decode lane. Filmstrip decoding is
+    // deliberately serialized and background-prioritized: API-35 measurements
+    // showed two simultaneous thumbnail decodes contending with the first exact
+    // preview frame (1,359ms preview decode while thumbnails took 786/1,478ms).
+    // More decoder workers increased throughput but violated interactive latency.
     private val timelineThumbnailWorkerSequence = java.util.concurrent.atomic.AtomicLong()
     private val previewDecoderThreadSequence = java.util.concurrent.atomic.AtomicLong()
     private val timelineThumbnailRetrievers =
@@ -629,8 +630,8 @@ class VideoEditorActivity : Activity() {
     private val previewFrameExtractors =
         java.util.concurrent.ConcurrentHashMap<Long, Triple<Uri, Int, FrameExtractor>>()
     private val timelineThumbnailExecutor = java.util.concurrent.ThreadPoolExecutor(
-        2,
-        2,
+        1,
+        1,
         0L,
         java.util.concurrent.TimeUnit.MILLISECONDS,
         java.util.concurrent.PriorityBlockingQueue<Runnable>(
@@ -641,10 +642,10 @@ class VideoEditorActivity : Activity() {
         ),
         java.util.concurrent.ThreadFactory { worker ->
             Thread({
-                // Keep thumbnail decoding below Android's UI thread priority,
-                // but do not background-throttle it: visible filmstrip cells must
-                // meet the queue latency budget while playback remains responsive.
-                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_DEFAULT)
+                // Filmstrip frames are secondary to the exact playhead still.
+                // Running this worker at background priority leaves CPU/codec
+                // scheduling headroom for the reserved interactive preview lane.
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
                 try {
                     worker.run()
                 } finally {
