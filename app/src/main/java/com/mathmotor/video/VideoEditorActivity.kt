@@ -12680,11 +12680,17 @@ class VideoEditorActivity : Activity() {
         fun requestCoverPreview() {
             val requestId = ++previewRequestGeneration
             val requestedTimeMs = selectedSourceTimeMs
+            val coverDecodeBounds = TimelineThumbnailMath.previewDecodeBounds(
+                coverPreview.width.takeIf { it > 0 } ?: (resources.displayMetrics.widthPixels - dp(48)),
+                coverPreview.height.takeIf { it > 0 } ?: dp(210)
+            )
             val task = TimelineThumbnailTask(
                 -2L,
                 timelineThumbnailTaskSequence.incrementAndGet()
             ) {
-                val decoded = decodeTimelinePreviewFrame(clip.uri, requestedTimeMs)
+                val decoded = decodeTimelinePreviewFrame(
+                    clip.uri, requestedTimeMs, coverDecodeBounds.first, coverDecodeBounds.second
+                )
                 runOnUiThread {
                     if (!dialogOpen || requestId != previewRequestGeneration || isFinishing || isDestroyed) {
                         decoded?.let { if (!it.isRecycled) it.recycle() }
