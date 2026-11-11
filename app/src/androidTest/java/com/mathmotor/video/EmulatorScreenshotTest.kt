@@ -168,7 +168,10 @@ class EmulatorScreenshotTest {
         inject(MotionEvent.ACTION_MOVE, endX, endY)
         SystemClock.sleep(120L)
         inject(MotionEvent.ACTION_UP, endX, endY)
-        instrumentation.waitForIdleSync()
+        // VideoPlayer/SurfaceView may keep posting frame callbacks even while paused;
+        // Instrumentation.waitForIdleSync() can therefore wait forever on API 35.
+        // The production drop is verified below through its bounded logcat poll.
+        SystemClock.sleep(250L)
 
         fun readTimelineLog(): String =
             device.executeShellCommand("logcat -d -v threadtime -s TimelineSyncTest:I")
