@@ -701,8 +701,14 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun enqueueSecondaryThumbnailTask(task: TimelineThumbnailTask) {
+        // Once the reserved playhead worker is actually running, its high-priority
+        // decode lane owns the exact frame. Background filmstrip workers can start
+        // alongside it; keeping them parked until the UI callback added ~585ms to
+        // every cold filmstrip fill despite their lower OS thread priority.
+        val previewHasStarted = pendingPreviewFrameTask?.isRunning() == true
         val defer = synchronized(deferredSecondaryThumbnailLock) {
-            if (pendingPreviewFrameTask != null || pendingPreviewFrameDispatch != null ||
+            if ((pendingPreviewFrameTask != null && !previewHasStarted) ||
+                pendingPreviewFrameDispatch != null ||
                 deferSecondaryThumbnailWorkUntilPreviewBootstrap
             ) {
                 deferredSecondaryThumbnailTasks.addLast(task)
@@ -718,11 +724,14 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun dispatchDeferredSecondaryThumbnailTasks() {
-        if (pendingPreviewFrameTask != null || pendingPreviewFrameDispatch != null ||
+        val previewHasStarted = pendingPreviewFrameTask?.isRunning() == true
+        if ((pendingPreviewFrameTask != null && !previewHasStarted) ||
+            pendingPreviewFrameDispatch != null ||
             synchronized(deferredSecondaryThumbnailLock) { deferSecondaryThumbnailWorkUntilPreviewBootstrap }
         ) return
         val tasks = synchronized(deferredSecondaryThumbnailLock) {
-            if (pendingPreviewFrameTask != null || pendingPreviewFrameDispatch != null ||
+            if ((pendingPreviewFrameTask != null && !previewHasStarted) ||
+                pendingPreviewFrameDispatch != null ||
                 deferSecondaryThumbnailWorkUntilPreviewBootstrap
             ) {
                 emptyList()
@@ -11788,6 +11797,10 @@ class VideoEditorActivity : Activity() {
                 }
             }
         ) {
+            // TimelineThumbnailTask marks itself running before entering this block.
+            // Start low-priority filmstrip work now, in parallel with the reserved
+            // exact-frame decoder, instead of waiting for its UI callback.
+            dispatchDeferredSecondaryThumbnailTasks()
             if (task.isCancelled() || requestId != previewFrameRequestGeneration.get()) {
                 if (timelineSyncTestEnabled) android.util.Log.i(
                     "TimelineFrameSyncTest",
