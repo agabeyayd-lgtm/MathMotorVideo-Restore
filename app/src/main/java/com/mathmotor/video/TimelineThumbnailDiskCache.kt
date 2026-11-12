@@ -7,7 +7,6 @@ import java.io.FileOutputStream
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
-import java.util.concurrent.locks.ReentrantLock
 import kotlin.math.abs
 
 /**
@@ -23,11 +22,10 @@ internal class TimelineThumbnailDiskCache(
 ) {
     data class CachedFrame(val timestampMs: Long, val bitmap: Bitmap)
 
-    // Size is initialized lazily on the first background write, not in the
-    // Activity constructor. It is only used to decide when a trim is required.
-    private val cachedBytes = AtomicLong(-1L)
-    private val sizeInitializationLock = Any()
-    private val trimLock = ReentrantLock()
+    // Track bytes added during this Activity lifetime. Existing cache size is
+    // reconciled only when the soft threshold is reached, never during the first
+    // frame write on a cold import.
+    private val cachedBytes = AtomicLong(0L)
     private val trimInProgress = AtomicBoolean(false)
 
     fun getExact(
@@ -139,25 +137,15 @@ internal class TimelineThumbnailDiskCache(
             val total = addToKnownSize(destination.length())
             // Directory walking/LRU deletion is exceptional maintenance, not part
             // of every thumbnail write. In particular it never blocks cache reads.
-            if (total > maxBytes) trimToLimit()
+            // Reconcile the real on-disk size only after accumulating a meaningful
+            // amount of new data. A cold import with a handful of small frames
+            // performs no recursive cache-directory scan.
+            if (total > maxBytes / 8L) trimToLimit()
         }
     }
 
-    private fun addToKnownSize(bytes: Long): Long {
-        var current = cachedBytes.get()
-        if (current < 0L) {
-            synchronized(sizeInitializationLock) {
-                if (cachedBytes.get() < 0L) {
-                    val existingBytes = directory.walkTopDown()
-                        .filter { it.isFile && it.extension.equals("jpg", ignoreCase = true) }
-                        .sumOf { it.length() }
-                    cachedBytes.compareAndSet(-1L, existingBytes)
-                }
-                current = cachedBytes.get()
-            }
-        }
-        return cachedBytes.addAndGet(bytes.coerceAtLeast(0L))
-    }
+    private fun addToKnownSize(bytes: Long): Long =
+        cachedBytes.addAndGet(bytes.coerceAtLeast(0L))
 
     private fun decode(file: File): Bitmap? = runCatching {
         BitmapFactory.decodeFile(
@@ -193,26 +181,21 @@ internal class TimelineThumbnailDiskCache(
     private fun trimToLimit() {
         if (!trimInProgress.compareAndSet(false, true)) return
         try {
-            if (!trimLock.tryLock()) return
-            try {
-                val files = directory.walkTopDown()
-                    .filter { it.isFile && it.extension.equals("jpg", ignoreCase = true) }
-                    .toList()
-                var totalBytes = files.sumOf { it.length() }
-                if (totalBytes > maxBytes) {
-                    files.sortedBy { it.lastModified() }.forEach { file ->
-                        if (totalBytes <= maxBytes) return@forEach
-                        val size = file.length()
-                        if (file.delete()) totalBytes -= size
-                    }
+            val files = directory.walkTopDown()
+                .filter { it.isFile && it.extension.equals("jpg", ignoreCase = true) }
+                .toList()
+            var totalBytes = files.sumOf { it.length() }
+            if (totalBytes > maxBytes) {
+                files.sortedBy { it.lastModified() }.forEach { file ->
+                    if (totalBytes <= maxBytes) return@forEach
+                    val size = file.length()
+                    if (file.delete()) totalBytes -= size
                 }
-                cachedBytes.set(totalBytes)
-                directory.walkBottomUp()
-                    .filter { it.isDirectory && it != directory }
-                    .forEach { dir -> if (dir.list().isNullOrEmpty()) dir.delete() }
-            } finally {
-                trimLock.unlock()
             }
+            cachedBytes.set(0L)
+            directory.walkBottomUp()
+                .filter { it.isDirectory && it != directory }
+                .forEach { dir -> if (dir.list().isNullOrEmpty()) dir.delete() }
         } finally {
             trimInProgress.set(false)
         }
