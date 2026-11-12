@@ -202,20 +202,28 @@ def verify(log_path: str, screenshot_path: str):
         r"requestKind=(bootstrap|interactive)",
         log,
     )
+    preview_timing_matches = re.findall(
+        r"TIMELINE_PREVIEW_FRAME_READY projectMs=(\d+) sourceMs=(\d+).*?"
+        r"requestId=(\d+) queueWaitMs=(\d+) decodeMs=(\d+) "
+        r"uiDispatchWaitMs=(\d+) uiApplyMs=(\d+) totalMs=(\d+) "
+        r"requestKind=(bootstrap|interactive)",
+        log,
+    )
     preview_timing_rows = [
         (row[8], *(int(value) for value in row[:8]))
         for row in preview_timing_matches
     ]
     bootstrap_rows = [row for row in preview_timing_rows if row[0] == "bootstrap"]
     interactive_rows = [row for row in preview_timing_rows if row[0] == "interactive"]
-    if not bootstrap_rows:
+    state_ready = re.search(r"TIMELINE_PLAYER_PLAYBACK_STATE state=3", log)
+    bootstrap_executed = re.search(r"TIMELINE_INITIAL_BASE_FRAME_BOOTSTRAP executed=true", log)
+    if not bootstrap_rows or not bootstrap_executed or not state_ready:
         raise SystemExit(
-            "FAIL: no per-source cold-start bootstrap frame was confirmed after "
-            "the composed preview became READY."
+            "FAIL: cold-source preview bootstrap was not confirmed after CompositionPlayer STATE_READY."
         )
-    if not re.search(r"TIMELINE_INITIAL_BASE_FRAME_BOOTSTRAP executed=true", log):
+    if state_ready.start() > bootstrap_executed.start():
         raise SystemExit(
-            "FAIL: the initial base-frame bootstrap was not scheduled from the READY player state."
+            "FAIL: cold-source still decoding started before the composed video player reached STATE_READY."
         )
     if len(interactive_rows) < 3:
         raise SystemExit(
@@ -226,7 +234,7 @@ def verify(log_path: str, screenshot_path: str):
     bootstrap_decode = [row[5] for row in bootstrap_rows]
     print(
         "  Cold-source bootstrap (n={}) decode median/max={}ms/{}ms; "
-        "prepared PlayerView remains visible during this one-time open.".format(
+        "CompositionPlayer was READY before this one-time decoder open.".format(
             len(bootstrap_rows),
             int(statistics.median(bootstrap_decode)), max(bootstrap_decode),
         )
