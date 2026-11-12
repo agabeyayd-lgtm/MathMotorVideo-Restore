@@ -196,13 +196,6 @@ def verify(log_path: str, screenshot_path: str):
     )
 
     preview_timing_matches = re.findall(
-        r"TIMELINE_PREVIEW_FRAME_READY projectMs=(\\d+) sourceMs=(\\d+).*?"
-        r"requestId=(\\d+) queueWaitMs=(\\d+) decodeMs=(\\d+) "
-        r"uiDispatchWaitMs=(\\d+) uiApplyMs=(\\d+) totalMs=(\\d+) "
-        r"requestKind=(bootstrap|interactive)",
-        log,
-    )
-    preview_timing_matches = re.findall(
         r"TIMELINE_PREVIEW_FRAME_READY projectMs=(\d+) sourceMs=(\d+).*?"
         r"requestId=(\d+) queueWaitMs=(\d+) decodeMs=(\d+) "
         r"uiDispatchWaitMs=(\d+) uiApplyMs=(\d+) totalMs=(\d+) "
