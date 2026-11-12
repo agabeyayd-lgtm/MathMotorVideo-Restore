@@ -12418,68 +12418,35 @@ class VideoEditorActivity : Activity() {
                 // never on the main thread. A reopened project can therefore paint
                 // its cached filmstrip without blocking input or layout.
                 val diskLookupStartedAtUptimeMs = SystemClock.uptimeMillis()
+                // Only an exact timestamp may bypass source decoding. Loading a
+                // nearby JPEG here and then decoding the requested source frame did
+                // the same visible cell twice; on API 35 its JPEG lookup/decode took
+                // 380-577ms per early cell. Nearby in-memory frames were already
+                // applied above and remain visible while the exact frame is decoded.
                 val diskExact = timelineThumbnailDiskCache.getExact(
                     sourceKey, timestampMs, decodeWidthPx, decodeHeightPx
-                )
-                val diskNearest = diskExact?.let {
-                    TimelineThumbnailDiskCache.CachedFrame(timestampMs, it)
-                } ?: timelineThumbnailDiskCache.findNearest(
-                    sourceKey,
-                    timestampMs,
-                    if (cellEndMs > cellStartMs) {
-                        maxOf(750L, (cellEndMs - cellStartMs) / 2L)
-                    } else 750L
                 )
                 diskLookupDurationMs = SystemClock.uptimeMillis() - diskLookupStartedAtUptimeMs
 
                 if (Thread.currentThread().isInterrupted ||
                     sourceGeneration != timelineThumbnailSourceGeneration(uri)
                 ) {
-                    diskNearest?.bitmap?.let { if (!it.isRecycled) it.recycle() }
+                    diskExact?.let { if (!it.isRecycled) it.recycle() }
                     return@TimelineThumbnailTask
                 }
 
-                if (diskNearest != null && !diskNearest.bitmap.isRecycled) {
-                    val cachedBitmap = diskNearest.bitmap
-                    val cachedSourceMs = diskNearest.timestampMs
-                    val diskKey = "${uri}#${cachedSourceMs}"
-                    timelineThumbnailCache.put(diskKey, cachedBitmap)
+                if (diskExact != null && !diskExact.isRecycled) {
+                    timelineThumbnailCache.put(key, diskExact)
                     decodedSourceAspectRatio = TimelineThumbnailMath.sourceAspectRatio(
-                        cachedBitmap.width, cachedBitmap.height
+                        diskExact.width, diskExact.height
                     )
-                    if (cachedSourceMs == timestampMs) {
-                        // Exact timestamp hit; if dimensions differed, the ImageView
-                        // scales this complete frame without another video decode.
-                        decoded = cachedBitmap
-                        frameDecodeDurationMs = 0L
-                        diskCacheHit = true
-                        if (timelineSyncTestEnabled) android.util.Log.i(
-                            "TimelineThumbnail",
-                            "TIMELINE_THUMBNAIL_DISK_CACHE_HIT sourceMs=$timestampMs exact=true"
-                        )
-                    } else {
-                        // A nearby disk frame is only a temporary placeholder. Keep
-                        // the exact timestamp decode below and replace this image when
-                        // it is ready; never report this frame as an exact match.
-                        if (timelineSyncTestEnabled) android.util.Log.i(
-                            "TimelineThumbnail",
-                            "TIMELINE_THUMBNAIL_DISK_CACHE_NEAREST sourceMs=$cachedSourceMs targetMs=$timestampMs"
-                        )
-                        runOnUiThread {
-                            if (sourceGeneration == timelineThumbnailSourceGeneration(uri) &&
-                                pendingTimelineThumbnailGenerations[key] == sourceGeneration
-                            ) {
-                                pendingTimelineThumbnails[key].orEmpty().forEach { reference ->
-                                    val image = reference.get() ?: return@forEach
-                                    if (image.tag == key && image.drawable == null) {
-                                        image.setImageBitmap(cachedBitmap)
-                                        image.contentDescription =
-                                            "Klip karesi @${cachedSourceMs}ms (önbellek; kesin kare yükleniyor)"
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    decoded = diskExact
+                    frameDecodeDurationMs = 0L
+                    diskCacheHit = true
+                    if (timelineSyncTestEnabled) android.util.Log.i(
+                        "TimelineThumbnail",
+                        "TIMELINE_THUMBNAIL_DISK_CACHE_HIT sourceMs=$timestampMs exact=true"
+                    )
                 }
 
                 // The bitmap's dimensions provide a fallback aspect ratio on a
