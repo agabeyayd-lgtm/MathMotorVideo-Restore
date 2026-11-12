@@ -11753,6 +11753,12 @@ class VideoEditorActivity : Activity() {
                     return@postAtFrontOfQueue
                 }
                 pendingPreviewFrameTask = null
+                // Start the visible filmstrip queue immediately after the exact
+                // playhead frame is applied. Do not wait for the decoder Runnable's
+                // onFinished callback to make another main-loop round trip: that
+                // extra handoff left the entire visible strip idle for several seconds
+                // on API 35 even though the preview frame was already on screen.
+                dispatchDeferredSecondaryThumbnailTasks()
                 val uiDispatchWaitMs = uiCallbackStartedAtUptimeMs - decodedAtUptimeMs
                 val uiApplyStartedAtUptimeMs = SystemClock.uptimeMillis()
                 if (decoded != null && !decoded.isRecycled) {
