@@ -180,20 +180,18 @@ def verify(log_path: str, screenshot_path: str):
         r"decoder=([a-z0-9-]+) worker=(\d+) decodeMs=(\d+)",
         log,
     )
-    mmr_rows = [row for row in decoder_rows if row[2] == "platform-mmr-primary"]
-    media3_rows = [row for row in decoder_rows if row[2] == "media3-fallback"]
+    mmr_rows = [row for row in decoder_rows if row[2].startswith("platform-mmr-")]
+    media3_rows = [row for row in decoder_rows if row[2].startswith("media3-")]
     if not decoder_rows or len(timing_rows) < 3:
         raise SystemExit(
             "FAIL: thumbnail decode diagnostics are incomplete; "
             f"decoder records={decoder_rows[-8:]}, successful timing rows={len(timing_rows)}."
         )
-    decoder_times = [int(row[4]) for row in decoder_rows]
     print(
-        "  Decoder path: native MMR primary={} (median={}ms); "
-        "Media3 fallback={}".format(
-            len(mmr_rows),
-            int(statistics.median([int(row[4]) for row in mmr_rows])) if mmr_rows else 0,
+        "  Decoder path: Media3={} (median={}ms); native MMR fallback={}".format(
             len(media3_rows),
+            int(statistics.median([int(row[4]) for row in media3_rows])) if media3_rows else 0,
+            len(mmr_rows),
         )
     )
 
