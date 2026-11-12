@@ -12480,8 +12480,9 @@ class VideoEditorActivity : Activity() {
                     }
                     bitmapScaleDurationMs = SystemClock.uptimeMillis() - scaleStartedAtUptimeMs
                     decoded = thumbnail
-                } else {
-                    original?.let { if (!it.isRecycled) it.recycle() }
+                    } else {
+                        original?.let { if (!it.isRecycled) it.recycle() }
+                    }
                 }
             } catch (error: Exception) {
                 android.util.Log.w("TimelineThumbnail", "Thumbnail creation failed for $uri at ${timestampMs}ms", error)
