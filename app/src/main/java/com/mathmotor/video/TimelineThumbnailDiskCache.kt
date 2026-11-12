@@ -5,14 +5,18 @@ import android.graphics.BitmapFactory
 import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 import kotlin.math.abs
 
 /**
  * Small persistent cache for decoded filmstrip frames.
  *
- * Keys are derived from the source URI and the source timestamp.  Keeping each
- * source in its own hashed directory avoids leaking content URIs into filenames
- * and makes the cache reusable when an editor Activity is recreated.
+ * Keys are derived from the source URI and source timestamp. Cache reads and
+ * writes are deliberately lock-free across different frames: a disk operation
+ * for one visible cell must never serialize the other two thumbnail workers.
  */
 internal class TimelineThumbnailDiskCache(
     private val directory: File,
@@ -20,36 +24,40 @@ internal class TimelineThumbnailDiskCache(
 ) {
     data class CachedFrame(val timestampMs: Long, val bitmap: Bitmap)
 
-    private val lock = Any()
+    // Size is initialized lazily on the first background write, not in the
+    // Activity constructor. It is only used to decide when a trim is required.
+    private val cachedBytes = AtomicLong(-1L)
+    private val sizeInitializationLock = Any()
+    private val trimLock = ReentrantLock()
+    private val trimInProgress = AtomicBoolean(false)
 
     fun getExact(
         sourceKey: String,
         timestampMs: Long,
         widthPx: Int,
         heightPx: Int
-    ): Bitmap? = synchronized(lock) {
+    ): Bitmap? {
         val file = frameFile(sourceKey, timestampMs, widthPx, heightPx)
-        if (!file.isFile) return@synchronized null
+        if (!file.isFile) return null
         val bitmap = decode(file)
         if (bitmap == null) {
             file.delete()
-            null
-        } else {
-            file.setLastModified(System.currentTimeMillis())
-            bitmap
+            return null
         }
+        file.setLastModified(System.currentTimeMillis())
+        return bitmap
     }
 
     /**
-     * Returns the closest previously decoded timestamp for this source.
-     * A nearby frame may be displayed immediately while the exact timestamp is
-     * decoded; an exact timestamp at another size is reusable without decoding.
+     * Returns the closest cached timestamp. Directory enumeration and bitmap
+     * decoding happen without a shared monitor, so parallel readers do not wait
+     * behind JPEG compression or an LRU trim from another worker.
      */
     fun findNearest(
         sourceKey: String,
         timestampMs: Long,
         maxDistanceMs: Long
-    ): CachedFrame? = synchronized(lock) {
+    ): CachedFrame? {
         val sourceDirectory = sourceDirectory(sourceKey)
         val candidates = sourceDirectory.listFiles()
             ?.asSequence()
@@ -72,11 +80,11 @@ internal class TimelineThumbnailDiskCache(
             val bitmap = decode(file)
             if (bitmap != null) {
                 file.setLastModified(System.currentTimeMillis())
-                return@synchronized CachedFrame(cachedTime, bitmap)
+                return CachedFrame(cachedTime, bitmap)
             }
             file.delete()
         }
-        null
+        return null
     }
 
     fun put(
@@ -87,31 +95,70 @@ internal class TimelineThumbnailDiskCache(
         bitmap: Bitmap
     ) {
         if (bitmap.isRecycled || widthPx <= 0 || heightPx <= 0) return
-        synchronized(lock) {
-            val sourceDirectory = sourceDirectory(sourceKey)
-            if (!sourceDirectory.exists() && !sourceDirectory.mkdirs()) return
-            val destination = frameFile(sourceKey, timestampMs, widthPx, heightPx)
-            if (destination.isFile && destination.length() > 0L) {
-                destination.setLastModified(System.currentTimeMillis())
-                return
-            }
-            val temporary = File(sourceDirectory, destination.name + ".tmp")
-            val written = runCatching {
-                FileOutputStream(temporary).use { output ->
-                    if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 90, output)) {
-                        throw IllegalStateException("Thumbnail JPEG compression failed")
-                    }
-                    output.flush()
+        val sourceDirectory = sourceDirectory(sourceKey)
+        if (!sourceDirectory.exists() && !sourceDirectory.mkdirs()) return
+
+        val destination = frameFile(sourceKey, timestampMs, widthPx, heightPx)
+        if (destination.isFile && destination.length() > 0L) {
+            destination.setLastModified(System.currentTimeMillis())
+            return
+        }
+
+        // Each writer gets its own temporary file. Publishing is one same-directory
+        // rename, so readers see either no frame or the complete JPEG, never a
+        // partially written image. No global lock is held during JPEG compression.
+        val temporary = File(
+            sourceDirectory,
+            "${destination.name}.${Thread.currentThread().id}.tmp"
+        )
+        val written = runCatching {
+            FileOutputStream(temporary).use { output ->
+                if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 90, output)) {
+                    throw IllegalStateException("Thumbnail JPEG compression failed")
                 }
-                if (destination.exists()) destination.delete()
-                if (!temporary.renameTo(destination)) {
+                output.flush()
+                output.fd.sync()
+            }
+            if (destination.exists()) {
+                temporary.delete()
+                false
+            } else if (temporary.renameTo(destination)) {
+                true
+            } else {
+                if (destination.isFile && destination.length() > 0L) {
+                    temporary.delete()
+                    false
+                } else {
                     throw IllegalStateException("Could not atomically publish thumbnail cache file")
                 }
-                true
-            }.getOrDefault(false)
-            if (!written) temporary.delete()
-            if (written) trimToLimit()
+            }
+        }.getOrElse {
+            temporary.delete()
+            false
         }
+
+        if (written) {
+            val total = addToKnownSize(destination.length())
+            // Directory walking/LRU deletion is exceptional maintenance, not part
+            // of every thumbnail write. In particular it never blocks cache reads.
+            if (total > maxBytes) trimToLimit()
+        }
+    }
+
+    private fun addToKnownSize(bytes: Long): Long {
+        var current = cachedBytes.get()
+        if (current < 0L) {
+            synchronized(sizeInitializationLock) {
+                if (cachedBytes.get() < 0L) {
+                    val existingBytes = directory.walkTopDown()
+                        .filter { it.isFile && it.extension.equals("jpg", ignoreCase = true) }
+                        .sumOf { it.length() }
+                    cachedBytes.compareAndSet(-1L, existingBytes)
+                }
+                current = cachedBytes.get()
+            }
+        }
+        return cachedBytes.addAndGet(bytes.coerceAtLeast(0L))
     }
 
     private fun decode(file: File): Bitmap? = runCatching {
@@ -146,16 +193,30 @@ internal class TimelineThumbnailDiskCache(
     }
 
     private fun trimToLimit() {
-        val files = directory.walkTopDown().filter { it.isFile }.toList()
-        var totalBytes = files.sumOf { it.length() }
-        if (totalBytes <= maxBytes) return
-        files.sortedBy { it.lastModified() }.forEach { file ->
-            if (totalBytes <= maxBytes) return
-            val size = file.length()
-            if (file.delete()) totalBytes -= size
+        if (!trimInProgress.compareAndSet(false, true)) return
+        try {
+            if (!trimLock.tryLock()) return
+            try {
+                val files = directory.walkTopDown()
+                    .filter { it.isFile && it.extension.equals("jpg", ignoreCase = true) }
+                    .toList()
+                var totalBytes = files.sumOf { it.length() }
+                if (totalBytes > maxBytes) {
+                    files.sortedBy { it.lastModified() }.forEach { file ->
+                        if (totalBytes <= maxBytes) return@forEach
+                        val size = file.length()
+                        if (file.delete()) totalBytes -= size
+                    }
+                }
+                cachedBytes.set(totalBytes)
+                directory.walkBottomUp()
+                    .filter { it.isDirectory && it != directory }
+                    .forEach { dir -> if (dir.list().isNullOrEmpty()) dir.delete() }
+            } finally {
+                trimLock.unlock()
+            }
+        } finally {
+            trimInProgress.set(false)
         }
-        directory.walkBottomUp()
-            .filter { it.isDirectory && it != directory }
-            .forEach { dir -> if (dir.list().isNullOrEmpty()) dir.delete() }
     }
 }
