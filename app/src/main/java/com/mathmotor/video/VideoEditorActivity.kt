@@ -422,6 +422,11 @@ class VideoEditorActivity : Activity() {
     private val timelineThumbnailCache = object : android.util.LruCache<String, Bitmap>(32 * 1024 * 1024) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount.coerceAtLeast(1)
     }
+    // Keep low-resolution filmstrip frames on disk across Activity recreation and
+    // app restarts. The in-memory LruCache remains the fastest first-level cache.
+    private val timelineThumbnailDiskCache by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        TimelineThumbnailDiskCache(java.io.File(filesDir, "timeline-thumbnails"))
+    }
     // Provider-generated poster appears only in the first cell while its exact frame is decoding.
     private val timelinePosterCache = object : android.util.LruCache<String, Bitmap>(4 * 1024 * 1024) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount.coerceAtLeast(1)
@@ -553,6 +558,8 @@ class VideoEditorActivity : Activity() {
         val sourceUriKey: String? = null,
         val sourceGeneration: Long? = null,
         private val onFinished: (() -> Unit)? = null,
+        private val onEnqueued: (() -> Unit)? = null,
+        private val taskPriority: Int = 1,
         private val work: () -> Unit
     ) : Runnable, Comparable<TimelineThumbnailTask> {
         private val cancelled = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -560,8 +567,14 @@ class VideoEditorActivity : Activity() {
         @Volatile private var runningThread: Thread? = null
 
         override fun compareTo(other: TimelineThumbnailTask): Int {
-            val priority = distanceFromPlayheadMs.compareTo(other.distanceFromPlayheadMs)
-            return if (priority != 0) priority else sequence.compareTo(other.sequence)
+            val classPriority = taskPriority.compareTo(other.taskPriority)
+            if (classPriority != 0) return classPriority
+            val distancePriority = distanceFromPlayheadMs.compareTo(other.distanceFromPlayheadMs)
+            return if (distancePriority != 0) distancePriority else sequence.compareTo(other.sequence)
+        }
+
+        fun markEnqueued() {
+            onEnqueued?.invoke()
         }
 
         fun isRunning(): Boolean = runningThread != null
@@ -597,11 +610,10 @@ class VideoEditorActivity : Activity() {
         }
     }
     private val timelineThumbnailTaskSequence = java.util.concurrent.atomic.AtomicLong()
-    // The playhead owns the highest-priority decode lane. Filmstrip decoding is
-    // deliberately serialized and background-prioritized: API-35 measurements
-    // showed two simultaneous thumbnail decodes contending with the first exact
-    // preview frame (1,359ms preview decode while thumbnails took 786/1,478ms).
-    // More decoder workers increased throughput but violated interactive latency.
+    // The exact playhead owns a separate, normal-priority decoder lane. Once its
+    // first frame is visible, three background workers fill the filmstrip in
+    // parallel. Keeping this work deferred during cold preview preparation avoids
+    // the codec contention measured when thumbnail decodes overlapped that bootstrap.
     private val timelineThumbnailWorkerSequence = java.util.concurrent.atomic.AtomicLong()
     private val previewDecoderThreadSequence = java.util.concurrent.atomic.AtomicLong()
     private val timelineThumbnailRetrievers =
@@ -613,8 +625,8 @@ class VideoEditorActivity : Activity() {
     private val previewFrameExtractors =
         java.util.concurrent.ConcurrentHashMap<Long, Triple<Uri, Int, FrameExtractor>>()
     private val timelineThumbnailExecutor = java.util.concurrent.ThreadPoolExecutor(
-        1,
-        1,
+        3,
+        3,
         0L,
         java.util.concurrent.TimeUnit.MILLISECONDS,
         java.util.concurrent.PriorityBlockingQueue<Runnable>(
@@ -699,7 +711,10 @@ class VideoEditorActivity : Activity() {
                 false
             }
         }
-        if (!defer) timelineThumbnailExecutor.execute(task)
+        if (!defer) {
+            task.markEnqueued()
+            timelineThumbnailExecutor.execute(task)
+        }
     }
 
     private fun dispatchDeferredSecondaryThumbnailTasks() {
@@ -722,6 +737,7 @@ class VideoEditorActivity : Activity() {
         tasks.forEach { task ->
             if (task.isCancelled()) return@forEach
             try {
+                task.markEnqueued()
                 timelineThumbnailExecutor.execute(task)
             } catch (_: java.util.concurrent.RejectedExecutionException) {
                 task.cancelForSourceInvalidation()
@@ -11658,6 +11674,11 @@ class VideoEditorActivity : Activity() {
                 "TimelineFrameSyncTest",
                 "TIMELINE_PREVIEW_EXACT_CACHE_HIT projectMs=$safeProjectTimeMs sourceMs=$sourceTimeMs"
             )
+            // STATE_READY can arrive after the exact still was decoded by the
+            // single-clip preview. In that case this early cache return is the
+            // bootstrap completion event; release thumbnails rather than leaving
+            // them parked in the deferred deque until the next user interaction.
+            releaseSecondaryThumbnailWorkAfterPreviewBootstrap()
             return
         }
 
@@ -12308,7 +12329,72 @@ class VideoEditorActivity : Activity() {
             targetCellHeightPx,
             timelineVideoAspectRatio(uri)
         )
-        val enqueuedAtUptimeMs = SystemClock.uptimeMillis()
+
+        // Second-level cache: exact disk hits bypass codec startup entirely. If the
+        // exact size is absent, show the nearest timestamp already on disk while
+        // the requested frame is decoded; an exact timestamp at another size is
+        // reusable immediately because ImageView fits the complete source frame.
+        val diskExact = timelineThumbnailDiskCache.getExact(
+            sourceKey, timestampMs, decodeWidthPx, decodeHeightPx
+        )
+        if (diskExact != null && !diskExact.isRecycled) {
+            timelineThumbnailCache.put(key, diskExact)
+            pendingTimelineThumbnailGenerations.remove(key)
+            pendingTimelineThumbnails.remove(key)
+            target.setImageBitmap(diskExact)
+            target.contentDescription = "Klip karesi @${timestampMs}ms"
+            if (timelineSyncTestEnabled) {
+                android.util.Log.i(
+                    "TimelineThumbnail",
+                    "TIMELINE_THUMBNAIL_DISK_CACHE_HIT sourceMs=$timestampMs exact=true"
+                )
+                android.util.Log.i(
+                    "TimelineFrameSyncTest",
+                    "TIMELINE_THUMBNAIL_READY sourceMs=$timestampMs width=${diskExact.width} " +
+                        "height=${diskExact.height} cached=disk"
+                )
+            }
+            return
+        }
+        val diskReuseDistanceMs = if (cellEndMs > cellStartMs) {
+            maxOf(750L, (cellEndMs - cellStartMs) / 2L)
+        } else {
+            750L
+        }
+        val diskNearest = timelineThumbnailDiskCache.findNearest(
+            sourceKey, timestampMs, diskReuseDistanceMs
+        )
+        if (diskNearest != null && !diskNearest.bitmap.isRecycled) {
+            val diskKey = "${uri}#${diskNearest.timestampMs}"
+            timelineThumbnailCache.put(diskKey, diskNearest.bitmap)
+            if (target.drawable == null || diskNearest.timestampMs == timestampMs) {
+                target.setImageBitmap(diskNearest.bitmap)
+                target.contentDescription = if (diskNearest.timestampMs == timestampMs) {
+                    "Klip karesi @${timestampMs}ms"
+                } else {
+                    "Klip karesi @${diskNearest.timestampMs}ms (önbellek; kesin kare yükleniyor)"
+                }
+            }
+            if (diskNearest.timestampMs == timestampMs) {
+                timelineThumbnailCache.put(key, diskNearest.bitmap)
+                pendingTimelineThumbnailGenerations.remove(key)
+                pendingTimelineThumbnails.remove(key)
+                if (timelineSyncTestEnabled) {
+                    android.util.Log.i(
+                        "TimelineThumbnail",
+                        "TIMELINE_THUMBNAIL_DISK_CACHE_HIT sourceMs=$timestampMs exact=true sizeReuse=true"
+                    )
+                    android.util.Log.i(
+                        "TimelineFrameSyncTest",
+                        "TIMELINE_THUMBNAIL_READY sourceMs=$timestampMs width=${diskNearest.bitmap.width} " +
+                            "height=${diskNearest.bitmap.height} cached=disk"
+                    )
+                }
+                return
+            }
+        }
+
+        var enqueuedAtUptimeMs = 0L
         if (timelineLifecycleDiagnosticsEnabled) android.util.Log.i(
             "TimelineThumbnail",
             "TIMELINE_THUMBNAIL_CACHE_MISS sourceMs=$timestampMs queueDepth=${timelineThumbnailExecutor.queue.size} " +
@@ -12320,10 +12406,12 @@ class VideoEditorActivity : Activity() {
             timelineThumbnailTaskSequence.incrementAndGet(),
             sourceUriKey = sourceKey,
             sourceGeneration = sourceGeneration,
-            onFinished = { untrackTimelineThumbnailTask(sourceKey, task) }
+            onFinished = { untrackTimelineThumbnailTask(sourceKey, task) },
+            onEnqueued = { enqueuedAtUptimeMs = SystemClock.uptimeMillis() },
+            taskPriority = 0
         ) {
             val taskStartedAtUptimeMs = SystemClock.uptimeMillis()
-            val queueWaitMs = taskStartedAtUptimeMs - enqueuedAtUptimeMs
+            val queueWaitMs = taskStartedAtUptimeMs - enqueuedAtUptimeMs.coerceAtLeast(taskStartedAtUptimeMs)
             if (Thread.currentThread().isInterrupted ||
                 sourceGeneration != timelineThumbnailSourceGeneration(uri)
             ) return@TimelineThumbnailTask
@@ -12382,6 +12470,21 @@ class VideoEditorActivity : Activity() {
             }
 
             val result = decoded
+            if (result != null && !result.isRecycled) {
+                runCatching {
+                    timelineThumbnailDiskCache.put(
+                        sourceKey, timestampMs, decodeWidthPx, decodeHeightPx, result
+                    )
+                }.onFailure { error ->
+                    if (timelineLifecycleDiagnosticsEnabled) {
+                        android.util.Log.w(
+                            "TimelineThumbnail",
+                            "TIMELINE_THUMBNAIL_DISK_CACHE_WRITE_FAILED sourceMs=$timestampMs",
+                            error
+                        )
+                    }
+                }
+            }
             val workerCompletedAtUptimeMs = SystemClock.uptimeMillis()
             runOnUiThread {
                 val uiCallbackStartedAtUptimeMs = SystemClock.uptimeMillis()
