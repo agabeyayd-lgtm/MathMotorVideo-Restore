@@ -195,57 +195,73 @@ def verify(log_path: str, screenshot_path: str):
         )
     )
 
+    preview_timing_matches = re.findall(
+        r"TIMELINE_PREVIEW_FRAME_READY projectMs=(\\d+) sourceMs=(\\d+).*?"
+        r"requestId=(\\d+) queueWaitMs=(\\d+) decodeMs=(\\d+) "
+        r"uiDispatchWaitMs=(\\d+) uiApplyMs=(\\d+) totalMs=(\\d+) "
+        r"requestKind=(bootstrap|interactive)",
+        log,
+    )
     preview_timing_rows = [
-        tuple(map(int, row))
-        for row in re.findall(
-            r"TIMELINE_PREVIEW_FRAME_READY projectMs=(\d+) sourceMs=(\d+).*?"
-            r"requestId=(\d+) queueWaitMs=(\d+) decodeMs=(\d+) "
-            r"uiDispatchWaitMs=(\d+) uiApplyMs=(\d+) totalMs=(\d+)",
-            log,
-        )
+        (row[8], *(int(value) for value in row[:8]))
+        for row in preview_timing_matches
     ]
-    if preview_timing_rows:
-        preview_queue = [row[3] for row in preview_timing_rows]
-        preview_decode = [row[4] for row in preview_timing_rows]
-        preview_ui_dispatch = [row[5] for row in preview_timing_rows]
-        preview_total = [row[7] for row in preview_timing_rows]
-        print(
-            "  Playhead preview timing (n={}) queue median/max={}ms/{}ms; "
-            "decode median/max={}ms/{}ms; UI dispatch median/max={}ms/{}ms; "
-            "request-to-visible median/max={}ms/{}ms".format(
-                len(preview_timing_rows),
-                int(statistics.median(preview_queue)), max(preview_queue),
-                int(statistics.median(preview_decode)), max(preview_decode),
-                int(statistics.median(preview_ui_dispatch)), max(preview_ui_dispatch),
-                int(statistics.median(preview_total)), max(preview_total),
-            )
-        )
-        if len(preview_timing_rows) < 3:
-            raise SystemExit(
-                "FAIL: fewer than three measured preview frames; "
-                f"only {len(preview_timing_rows)} exact preview timings were captured."
-            )
-        if max(preview_queue) > 250:
-            raise SystemExit(
-                f"FAIL: latest-frame preview waited {max(preview_queue)}ms in its queue; limit is 250ms."
-            )
-        if max(preview_decode) > 800:
-            raise SystemExit(
-                f"FAIL: exact preview frame decode reached {max(preview_decode)}ms; limit is 800ms."
-            )
-        if max(preview_total) > 1_000:
-            raise SystemExit(
-                f"FAIL: preview request-to-visible reached {max(preview_total)}ms; limit is 1000ms."
-            )
-        print(
-            "  PASS: playhead preview stayed within 250ms queue, 800ms decode, "
-            "and 1000ms request-to-visible limits."
-        )
-    else:
+    bootstrap_rows = [row for row in preview_timing_rows if row[0] == "bootstrap"]
+    interactive_rows = [row for row in preview_timing_rows if row[0] == "interactive"]
+    if not bootstrap_rows:
         raise SystemExit(
-            "FAIL: no measured playhead preview timing was captured; "
-            "the latency budget cannot be verified."
+            "FAIL: no per-source cold-start bootstrap frame was confirmed after "
+            "the composed preview became READY."
         )
+    if not re.search(r"TIMELINE_INITIAL_BASE_FRAME_BOOTSTRAP executed=true", log):
+        raise SystemExit(
+            "FAIL: the initial base-frame bootstrap was not scheduled from the READY player state."
+        )
+    if len(interactive_rows) < 3:
+        raise SystemExit(
+            "FAIL: fewer than three warmed interactive preview frames were measured; "
+            f"only {len(interactive_rows)} interactive timings were captured."
+        )
+
+    bootstrap_decode = [row[5] for row in bootstrap_rows]
+    print(
+        "  Cold-source bootstrap (n={}) decode median/max={}ms/{}ms; "
+        "prepared PlayerView remains visible during this one-time open.".format(
+            len(bootstrap_rows),
+            int(statistics.median(bootstrap_decode)), max(bootstrap_decode),
+        )
+    )
+    preview_queue = [row[4] for row in interactive_rows]
+    preview_decode = [row[5] for row in interactive_rows]
+    preview_ui_dispatch = [row[6] for row in interactive_rows]
+    preview_total = [row[8] for row in interactive_rows]
+    print(
+        "  Warm interactive preview timing (n={}) queue median/max={}ms/{}ms; "
+        "decode median/max={}ms/{}ms; UI dispatch median/max={}ms/{}ms; "
+        "request-to-visible median/max={}ms/{}ms".format(
+            len(interactive_rows),
+            int(statistics.median(preview_queue)), max(preview_queue),
+            int(statistics.median(preview_decode)), max(preview_decode),
+            int(statistics.median(preview_ui_dispatch)), max(preview_ui_dispatch),
+            int(statistics.median(preview_total)), max(preview_total),
+        )
+    )
+    if max(preview_queue) > 250:
+        raise SystemExit(
+            f"FAIL: warmed latest-frame preview waited {max(preview_queue)}ms in its queue; limit is 250ms."
+        )
+    if max(preview_decode) > 800:
+        raise SystemExit(
+            f"FAIL: warmed exact preview frame decode reached {max(preview_decode)}ms; limit is 800ms."
+        )
+    if max(preview_total) > 1_000:
+        raise SystemExit(
+            f"FAIL: warmed preview request-to-visible reached {max(preview_total)}ms; limit is 1000ms."
+        )
+    print(
+        "  PASS: warmed interactive preview stayed within 250ms queue, 800ms decode, "
+        "and 1000ms request-to-visible limits."
+    )
 
     discarded_preview = re.findall(
         r"TIMELINE_PREVIEW_FRAME_DISCARDED requestId=(\d+) stage=([a-z-]+)"
