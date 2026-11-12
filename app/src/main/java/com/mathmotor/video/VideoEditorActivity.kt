@@ -12334,70 +12334,6 @@ class VideoEditorActivity : Activity() {
             timelineVideoAspectRatio(uri)
         )
 
-        // Second-level cache: exact disk hits bypass codec startup entirely. If the
-        // exact size is absent, show the nearest timestamp already on disk while
-        // the requested frame is decoded; an exact timestamp at another size is
-        // reusable immediately because ImageView fits the complete source frame.
-        val diskExact = timelineThumbnailDiskCache.getExact(
-            sourceKey, timestampMs, decodeWidthPx, decodeHeightPx
-        )
-        if (diskExact != null && !diskExact.isRecycled) {
-            timelineThumbnailCache.put(key, diskExact)
-            pendingTimelineThumbnailGenerations.remove(key)
-            pendingTimelineThumbnails.remove(key)
-            target.setImageBitmap(diskExact)
-            target.contentDescription = "Klip karesi @${timestampMs}ms"
-            if (timelineSyncTestEnabled) {
-                android.util.Log.i(
-                    "TimelineThumbnail",
-                    "TIMELINE_THUMBNAIL_DISK_CACHE_HIT sourceMs=$timestampMs exact=true"
-                )
-                android.util.Log.i(
-                    "TimelineFrameSyncTest",
-                    "TIMELINE_THUMBNAIL_READY sourceMs=$timestampMs width=${diskExact.width} " +
-                        "height=${diskExact.height} cached=disk"
-                )
-            }
-            return
-        }
-        val diskReuseDistanceMs = if (cellEndMs > cellStartMs) {
-            maxOf(750L, (cellEndMs - cellStartMs) / 2L)
-        } else {
-            750L
-        }
-        val diskNearest = timelineThumbnailDiskCache.findNearest(
-            sourceKey, timestampMs, diskReuseDistanceMs
-        )
-        if (diskNearest != null && !diskNearest.bitmap.isRecycled) {
-            val diskKey = "${uri}#${diskNearest.timestampMs}"
-            timelineThumbnailCache.put(diskKey, diskNearest.bitmap)
-            if (target.drawable == null || diskNearest.timestampMs == timestampMs) {
-                target.setImageBitmap(diskNearest.bitmap)
-                target.contentDescription = if (diskNearest.timestampMs == timestampMs) {
-                    "Klip karesi @${timestampMs}ms"
-                } else {
-                    "Klip karesi @${diskNearest.timestampMs}ms (önbellek; kesin kare yükleniyor)"
-                }
-            }
-            if (diskNearest.timestampMs == timestampMs) {
-                timelineThumbnailCache.put(key, diskNearest.bitmap)
-                pendingTimelineThumbnailGenerations.remove(key)
-                pendingTimelineThumbnails.remove(key)
-                if (timelineSyncTestEnabled) {
-                    android.util.Log.i(
-                        "TimelineThumbnail",
-                        "TIMELINE_THUMBNAIL_DISK_CACHE_HIT sourceMs=$timestampMs exact=true sizeReuse=true"
-                    )
-                    android.util.Log.i(
-                        "TimelineFrameSyncTest",
-                        "TIMELINE_THUMBNAIL_READY sourceMs=$timestampMs width=${diskNearest.bitmap.width} " +
-                            "height=${diskNearest.bitmap.height} cached=disk"
-                    )
-                }
-                return
-            }
-        }
-
         var submittedAtUptimeMs = 0L
         if (timelineLifecycleDiagnosticsEnabled) android.util.Log.i(
             "TimelineThumbnail",
@@ -12422,30 +12358,105 @@ class VideoEditorActivity : Activity() {
             if (Thread.currentThread().isInterrupted ||
                 sourceGeneration != timelineThumbnailSourceGeneration(uri)
             ) return@TimelineThumbnailTask
+            var diskLookupDurationMs = 0L
             var frameDecodeDurationMs = -1L
             var bitmapScaleDurationMs = 0L
+            var diskCacheHit = false
             var decoded: Bitmap? = null
             var decodedSourceAspectRatio: Float? = null
             try {
-                // The scaled filmstrip bitmap can lose aspect precision through integer rounding.
-                // Always learn the project framing from original video metadata instead.
-                decodedSourceAspectRatio = readTimelineSourceAspectRatioFromMetadata(uri)
-                if (Thread.currentThread().isInterrupted ||
-                    sourceGeneration != timelineThumbnailSourceGeneration(uri)
-                ) return@TimelineThumbnailTask
-                val frameDecodeStartedAtUptimeMs = SystemClock.uptimeMillis()
-                val original = decodeTimelineFrame(uri, timestampMs, decodeWidthPx, decodeHeightPx)
-                val frameDecodedAtUptimeMs = SystemClock.uptimeMillis()
+                // Persistent cache reads run on the background thumbnail workers,
+                // never on the main thread. A reopened project can therefore paint
+                // its cached filmstrip without blocking input or layout.
+                val diskLookupStartedAtUptimeMs = SystemClock.uptimeMillis()
+                val diskExact = timelineThumbnailDiskCache.getExact(
+                    sourceKey, timestampMs, decodeWidthPx, decodeHeightPx
+                )
+                val diskNearest = diskExact?.let {
+                    TimelineThumbnailDiskCache.CachedFrame(timestampMs, it)
+                } ?: timelineThumbnailDiskCache.findNearest(
+                    sourceKey,
+                    timestampMs,
+                    if (cellEndMs > cellStartMs) {
+                        maxOf(750L, (cellEndMs - cellStartMs) / 2L)
+                    } else 750L
+                )
+                diskLookupDurationMs = SystemClock.uptimeMillis() - diskLookupStartedAtUptimeMs
+
                 if (Thread.currentThread().isInterrupted ||
                     sourceGeneration != timelineThumbnailSourceGeneration(uri)
                 ) {
-                    original?.let { if (!it.isRecycled) it.recycle() }
+                    diskNearest?.bitmap?.let { if (!it.isRecycled) it.recycle() }
                     return@TimelineThumbnailTask
                 }
-                frameDecodeDurationMs = frameDecodedAtUptimeMs - frameDecodeStartedAtUptimeMs
-                if (original != null && !original.isRecycled &&
-                    original.width > 0 && original.height > 0
-                ) {
+
+                if (diskNearest != null && !diskNearest.bitmap.isRecycled) {
+                    val cachedBitmap = diskNearest.bitmap
+                    val cachedSourceMs = diskNearest.timestampMs
+                    val diskKey = "${uri}#${cachedSourceMs}"
+                    timelineThumbnailCache.put(diskKey, cachedBitmap)
+                    decodedSourceAspectRatio = TimelineThumbnailMath.sourceAspectRatio(
+                        cachedBitmap.width, cachedBitmap.height
+                    )
+                    if (cachedSourceMs == timestampMs) {
+                        // Exact timestamp hit; if dimensions differed, the ImageView
+                        // scales this complete frame without another video decode.
+                        decoded = cachedBitmap
+                        frameDecodeDurationMs = 0L
+                        diskCacheHit = true
+                        if (timelineSyncTestEnabled) android.util.Log.i(
+                            "TimelineThumbnail",
+                            "TIMELINE_THUMBNAIL_DISK_CACHE_HIT sourceMs=$timestampMs exact=true"
+                        )
+                    } else {
+                        // A nearby disk frame is only a temporary placeholder. Keep
+                        // the exact timestamp decode below and replace this image when
+                        // it is ready; never report this frame as an exact match.
+                        if (timelineSyncTestEnabled) android.util.Log.i(
+                            "TimelineThumbnail",
+                            "TIMELINE_THUMBNAIL_DISK_CACHE_NEAREST sourceMs=$cachedSourceMs targetMs=$timestampMs"
+                        )
+                        runOnUiThread {
+                            if (sourceGeneration == timelineThumbnailSourceGeneration(uri) &&
+                                pendingTimelineThumbnailGenerations[key] == sourceGeneration
+                            ) {
+                                pendingTimelineThumbnails[key].orEmpty().forEach { reference ->
+                                    val image = reference.get() ?: return@forEach
+                                    if (image.tag == key && image.drawable == null) {
+                                        image.setImageBitmap(cachedBitmap)
+                                        image.contentDescription =
+                                            "Klip karesi @${cachedSourceMs}ms (önbellek; kesin kare yükleniyor)"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // The bitmap's dimensions provide a fallback aspect ratio on a
+                // disk hit. On a video decode, authoritative source metadata wins.
+                if (!diskCacheHit) {
+                    val metadataAspect = readTimelineSourceAspectRatioFromMetadata(uri)
+                    if (metadataAspect != null) decodedSourceAspectRatio = metadataAspect
+                    if (Thread.currentThread().isInterrupted ||
+                        sourceGeneration != timelineThumbnailSourceGeneration(uri)
+                    ) return@TimelineThumbnailTask
+                }
+
+                if (!diskCacheHit) {
+                    val frameDecodeStartedAtUptimeMs = SystemClock.uptimeMillis()
+                    val original = decodeTimelineFrame(uri, timestampMs, decodeWidthPx, decodeHeightPx)
+                    val frameDecodedAtUptimeMs = SystemClock.uptimeMillis()
+                    if (Thread.currentThread().isInterrupted ||
+                        sourceGeneration != timelineThumbnailSourceGeneration(uri)
+                    ) {
+                        original?.let { if (!it.isRecycled) it.recycle() }
+                        return@TimelineThumbnailTask
+                    }
+                    frameDecodeDurationMs = frameDecodedAtUptimeMs - frameDecodeStartedAtUptimeMs
+                    if (original != null && !original.isRecycled &&
+                        original.width > 0 && original.height > 0
+                    ) {
                     // Reduce the complete source frame to thumbnail bounds. Keep its
                     // original aspect ratio; never crop, pad with bars, or stretch it.
                     val scaleStartedAtUptimeMs = SystemClock.uptimeMillis()
@@ -12477,7 +12488,7 @@ class VideoEditorActivity : Activity() {
             }
 
             val result = decoded
-            if (result != null && !result.isRecycled) {
+            if (!diskCacheHit && result != null && !result.isRecycled) {
                 runCatching {
                     timelineThumbnailDiskCache.put(
                         sourceKey, timestampMs, decodeWidthPx, decodeHeightPx, result
@@ -12530,7 +12541,7 @@ class VideoEditorActivity : Activity() {
                     }
                     if (timelineSyncTestEnabled) android.util.Log.i(
                         "TimelineFrameSyncTest",
-                        "TIMELINE_THUMBNAIL_READY sourceMs=$timestampMs width=${result.width} height=${result.height} cached=false"
+                        "TIMELINE_THUMBNAIL_READY sourceMs=$timestampMs width=${result.width} height=${result.height} cached=${if (diskCacheHit) "disk" else "false"}"
                     )
                     targets.forEach { ref ->
                         val image = ref.get()
@@ -12570,7 +12581,8 @@ class VideoEditorActivity : Activity() {
                         "TimelineThumbnail",
                         "TIMELINE_THUMBNAIL_TIMING sourceMs=$timestampMs success=${result != null} " +
                             "queueWaitMs=$queueWaitMs deferredWaitMs=$deferredWaitMs " +
-                            "frameDecodeMs=$frameDecodeDurationMs bitmapScaleMs=$bitmapScaleDurationMs " +
+                            "diskLookupMs=$diskLookupDurationMs frameDecodeMs=$frameDecodeDurationMs " +
+                            "bitmapScaleMs=$bitmapScaleDurationMs " +
                             "uiDispatchWaitMs=$uiDispatchWaitMs " +
                             "uiApplyMs=${SystemClock.uptimeMillis() - uiCallbackStartedAtUptimeMs} " +
                             "enqueuedUptimeMs=$requestedAtUptimeMs submittedUptimeMs=$queueSubmittedAtUptimeMs " +
