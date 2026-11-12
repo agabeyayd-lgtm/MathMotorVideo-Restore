@@ -11011,8 +11011,11 @@ class VideoEditorActivity : Activity() {
                 setBackgroundColor(Color.TRANSPARENT)
                 elevation = dp(TouchPriority.TIMELINE_EDGE_HANDLE_DP).toFloat()
                 contentDescription = if (isStart) "Sol beyaz tutamaç: klibin başlangıcını sürükleyerek kısalt veya uzat" else "Sağ beyaz tutamaç: klibin bitişini sürükleyerek kısalt veya uzat"
-                // The visible white grip is part of the selected outline. This
-                // view stays transparent and exists only as its larger touch target.
+                // Explicitly keep this transparent child as the touch owner. The
+                // clip body and horizontal scroller must not steal an edge drag.
+                isClickable = true
+                isFocusable = true
+                isLongClickable = true
                 var downRawX = 0f
                 var initialStartMs = clip.startMs
                 var initialEndMs = clip.endMs
@@ -11027,6 +11030,13 @@ class VideoEditorActivity : Activity() {
                             activeProjectHistorySnapshot = beginProjectHistoryGesture()
                             player?.playWhenReady = false
                             view.parent?.requestDisallowInterceptTouchEvent(true)
+                            if (timelineSyncTestEnabled) android.util.Log.i(
+                                "EditorTouchTest",
+                                "VIDEO_EDGE_TOUCH action=down edge=${if (isStart) "start" else "end"} " +
+                                    "clipIndex=$index rawX=${event.rawX} rawY=${event.rawY} " +
+                                    "handleWidth=${view.width} handleHeight=${view.height} " +
+                                    "clipStartMs=${clip.startMs} clipEndMs=${clip.endMs}"
+                            )
                             true
                         }
                         android.view.MotionEvent.ACTION_MOVE -> {
@@ -11051,6 +11061,12 @@ class VideoEditorActivity : Activity() {
                             val deltaMs = TimelineScaleMath.millisecondsForPixels(deltaPx, timelinePixelsPerSecond())
                             view.translationX = 0f
                             view.parent?.requestDisallowInterceptTouchEvent(false)
+                            if (timelineSyncTestEnabled) android.util.Log.i(
+                                "EditorTouchTest",
+                                "VIDEO_EDGE_TOUCH action=up edge=${if (isStart) "start" else "end"} " +
+                                    "clipIndex=$index moved=$moved deltaPx=$deltaPx deltaMs=$deltaMs " +
+                                    "initialStartMs=$initialStartMs initialEndMs=$initialEndMs"
+                            )
                             if (moved) {
                                 val initial=TimelineVideoSegment(clip.timelineStartMs,initialStartMs,initialEndMs,clip.durationMs,clip.speed)
                                 val sourceDeltaMs = ClipSpeedMath.sourceOffsetMs(kotlin.math.abs(deltaMs), clip.speed) *
@@ -11093,6 +11109,11 @@ class VideoEditorActivity : Activity() {
                             true
                         }
                         android.view.MotionEvent.ACTION_CANCEL -> {
+                            if (timelineSyncTestEnabled) android.util.Log.w(
+                                "EditorTouchTest",
+                                "VIDEO_EDGE_TOUCH action=cancel edge=${if (isStart) "start" else "end"} " +
+                                    "clipIndex=$index rawX=${event.rawX} rawY=${event.rawY}"
+                            )
                             view.translationX = 0f
                             activeProjectHistorySnapshot = null
                             view.parent?.requestDisallowInterceptTouchEvent(false)
