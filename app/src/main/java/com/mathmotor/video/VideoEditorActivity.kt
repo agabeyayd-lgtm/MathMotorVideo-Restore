@@ -6803,6 +6803,12 @@ class VideoEditorActivity : Activity() {
                             "TimelineSyncTest",
                             "TIMELINE_INITIAL_BASE_FRAME_BOOTSTRAP scheduled=true"
                         )
+                        // CompositionPlayer is now STATE_READY. Release the queued
+                        // filmstrip batch during the existing 180ms surface-settle
+                        // window, rather than making every visible cell wait for the
+                        // exact still decode to finish. This does not overlap MMR with
+                        // player preparation; the live preview is already READY.
+                        releaseSecondaryThumbnailWorkAfterPreviewBootstrap()
                         playerView.postDelayed({
                             if (timelineCompositionPlayer === comp) {
                                 // Release the startup gate even if playback began during
