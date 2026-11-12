@@ -11262,7 +11262,7 @@ class VideoEditorActivity : Activity() {
             // Seeking to sync samples avoids decoding every inter-frame from the
             // previous keyframe for each separate thumbnail request.
             .setSeekParameters(androidx.media3.exoplayer.SeekParameters.CLOSEST_SYNC)
-                .setEffects(listOf(Presentation.createForHeight(288)))
+                .setEffects(listOf(Presentation.createForHeight(144)))
                 .build()
                 .also { timelineThumbnailExtractors[threadId] = uri to it }
         } catch (error: Exception) {
@@ -12114,12 +12114,50 @@ class VideoEditorActivity : Activity() {
         maxWidthPx: Int,
         maxHeightPx: Int
     ): Bitmap? {
-        // Filmstrip thumbnails are representative frames, not the paused-preview
-        // frame. Prefer the nearest sync sample: Android documents that OPTION_CLOSEST
-        // can have larger overhead when the requested timestamp is between sync
-        // samples. The preview path continues to use the more accurate seek mode.
-        // Decode only near the actual cell bounds; Media3 is the compatibility fallback.
-        val frameTimeUs = timeMs.coerceAtLeast(0L) * 1000L
+        // FrameExtractorInternal is shared by Media3 and serializes requests through
+        // one reusable ExoPlayer/MediaCodec pipeline. Using it as the primary filmstrip
+        // decoder avoids opening three cold MediaMetadataRetriever codecs at once.
+        // CLOSEST_SYNC and the Presentation effect keep this representative thumbnail
+        // path fast and small; the playhead preview continues to use its exact decoder.
+        val requestedTimeMs = timeMs.coerceAtLeast(0L)
+        val extractor = timelineThumbnailExtractorFor(uri)
+        var frameFuture: java.util.concurrent.Future<FrameExtractor.Frame>? = null
+        if (extractor != null) {
+            val startedAt = SystemClock.uptimeMillis()
+            try {
+                val future = extractor.getFrame(requestedTimeMs)
+                frameFuture = future
+                val frame = future.get(2_500L, TimeUnit.MILLISECONDS)
+                if (Thread.currentThread().isInterrupted) {
+                    if (!frame.bitmap.isRecycled) frame.bitmap.recycle()
+                    return null
+                }
+                if (timelineSyncTestEnabled) android.util.Log.i(
+                    "TimelineFrameSyncTest",
+                    "TIMELINE_THUMBNAIL_DECODED requestedMs=$requestedTimeMs " +
+                        "actualFrameMs=${frame.presentationTimeMs} decoder=media3-primary " +
+                        "worker=${Thread.currentThread().id} " +
+                        "decodeMs=${SystemClock.uptimeMillis() - startedAt} " +
+                        "bitmap=${frame.bitmap.width}x${frame.bitmap.height}"
+                )
+                return frame.bitmap
+            } catch (error: Exception) {
+                frameFuture?.cancel(true)
+                android.util.Log.w(
+                    "TimelineThumbnail",
+                    "Media3 primary frame extraction failed for $uri at ${requestedTimeMs}ms; " +
+                        "trying the platform fallback",
+                    error
+                )
+            }
+        }
+
+        if (Thread.currentThread().isInterrupted) return null
+
+        // Keep MMR as a compatibility fallback for unusual codecs/containers.
+        // It is no longer the normal path because concurrent cold MMR instances
+        // were measured at 1.9-2.8s each and delayed the visible filmstrip.
+        val frameTimeUs = requestedTimeMs * 1000L
         val platformStartedAt = SystemClock.uptimeMillis()
         val retriever = timelineThumbnailRetrieverFor(uri, "TimelineThumbnail")
         var platformDecodePath = "unavailable"
@@ -12146,43 +12184,21 @@ class VideoEditorActivity : Activity() {
                     "full-frame-legacy"
                 }
                 runCatching {
-                    activeRetriever.getFrameAtTime(frameTimeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                    activeRetriever.getFrameAtTime(
+                        frameTimeUs,
+                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+                    )
                 }.getOrNull()
             }
         }
-        if (platformFrame != null) {
-            if (timelineSyncTestEnabled) android.util.Log.i(
-                "TimelineFrameSyncTest",
-                "TIMELINE_THUMBNAIL_DECODED requestedMs=$timeMs decoder=platform-mmr-primary " +
-                    "worker=${Thread.currentThread().id} decodeMs=${SystemClock.uptimeMillis() - platformStartedAt} " +
-                    "path=$platformDecodePath bitmap=${platformFrame.width}x${platformFrame.height}"
-            )
-            return platformFrame
-        }
-
-        val extractor = timelineThumbnailExtractorFor(uri) ?: return null
-        var frameFuture: java.util.concurrent.Future<FrameExtractor.Frame>? = null
-        return try {
-            val startedAt = SystemClock.uptimeMillis()
-            val future = extractor.getFrame(timeMs.coerceAtLeast(0L))
-            frameFuture = future
-            val frame = future.get(2_500L, TimeUnit.MILLISECONDS)
-            if (timelineSyncTestEnabled) android.util.Log.i(
-                "TimelineFrameSyncTest",
-                "TIMELINE_THUMBNAIL_DECODED requestedMs=$timeMs actualFrameMs=${frame.presentationTimeMs} " +
-                    "decoder=media3-fallback worker=${Thread.currentThread().id} " +
-                    "decodeMs=${SystemClock.uptimeMillis() - startedAt}"
-            )
-            frame.bitmap
-        } catch (error: Exception) {
-            frameFuture?.cancel(true)
-            android.util.Log.w(
-                "TimelineThumbnail",
-                "Media3 fallback frame extraction failed for $uri at ${timeMs}ms",
-                error
-            )
-            null
-        }
+        if (platformFrame != null && timelineSyncTestEnabled) android.util.Log.i(
+            "TimelineFrameSyncTest",
+            "TIMELINE_THUMBNAIL_DECODED requestedMs=$requestedTimeMs " +
+                "decoder=platform-mmr-fallback worker=${Thread.currentThread().id} " +
+                "decodeMs=${SystemClock.uptimeMillis() - platformStartedAt} " +
+                "path=$platformDecodePath bitmap=${platformFrame.width}x${platformFrame.height}"
+        )
+        return platformFrame
     }
 
     private fun requestTimelinePoster(uri: Uri) {
