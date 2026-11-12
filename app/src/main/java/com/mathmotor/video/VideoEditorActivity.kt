@@ -8679,6 +8679,7 @@ class VideoEditorActivity : Activity() {
         status.text = "Video bilgileri okunuyor…"
         Thread {
             var sourceFrameRate: Double? = null
+            var sourceAspectRatio: Float? = null
             val duration = runCatching {
                 val retriever = MediaMetadataRetriever()
                 try {
@@ -8686,6 +8687,18 @@ class VideoEditorActivity : Activity() {
                     sourceFrameRate = retriever.extractMetadata(
                         MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE
                     )?.toDoubleOrNull()?.takeIf { it.isFinite() && it in 1.0..240.0 }
+                    val sourceWidth = retriever.extractMetadata(
+                        MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH
+                    )?.toIntOrNull() ?: 0
+                    val sourceHeight = retriever.extractMetadata(
+                        MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT
+                    )?.toIntOrNull() ?: 0
+                    val rotationDegrees = retriever.extractMetadata(
+                        MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION
+                    )?.toIntOrNull() ?: 0
+                    sourceAspectRatio = TimelineThumbnailMath.sourceAspectRatio(
+                        sourceWidth, sourceHeight, rotationDegrees
+                    )
                     retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
                 } finally {
                     retriever.release()
@@ -8719,6 +8732,17 @@ class VideoEditorActivity : Activity() {
                     timelineHorizontalScrollX = 0
                     pendingTimelineScrollX = 0
                     timelinePlayheadMs = 0L
+                }
+                // The import retriever already read dimensions and rotation for
+                // this source. Seed the filmstrip aspect cache now so its workers
+                // do not reopen the same media just to discover the source ratio.
+                sourceAspectRatio?.let { ratio ->
+                    timelineVideoAspectRatios[uri.toString()] = ratio
+                    timelineVideoAspectRatioMetadataCache[uri.toString()] = ratio
+                    if (timelineSyncTestEnabled) android.util.Log.i(
+                        "TimelineThumbnail",
+                        "TIMELINE_METADATA_ASPECT source=$uri cacheHit=import durationMs=0 ratio=$ratio"
+                    )
                 }
                 timelinePreviewLoaded = false
                 previewSingleClip = true
@@ -10286,6 +10310,7 @@ class VideoEditorActivity : Activity() {
         if (uris.isEmpty()) return
         status.text = "Seçilen ${uris.size} video sırayla hazırlanıyor…"
         Thread {
+            val sourceAspectRatios = mutableMapOf<Uri, Float>()
             val ready = uris.mapNotNull { uri ->
                 try {
                     contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -10298,6 +10323,18 @@ class VideoEditorActivity : Activity() {
                         frameRate = retriever.extractMetadata(
                             MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE
                         )?.toDoubleOrNull()?.takeIf { it.isFinite() && it in 1.0..240.0 }
+                        val sourceWidth = retriever.extractMetadata(
+                            MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH
+                        )?.toIntOrNull() ?: 0
+                        val sourceHeight = retriever.extractMetadata(
+                            MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT
+                        )?.toIntOrNull() ?: 0
+                        val rotationDegrees = retriever.extractMetadata(
+                            MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION
+                        )?.toIntOrNull() ?: 0
+                        TimelineThumbnailMath.sourceAspectRatio(
+                            sourceWidth, sourceHeight, rotationDegrees
+                        )?.let { sourceAspectRatios[uri] = it }
                         retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
                     } finally {
                         retriever.release()
@@ -10334,6 +10371,14 @@ class VideoEditorActivity : Activity() {
                     timelineHorizontalScrollX = 0
                     pendingTimelineScrollX = 0
                     timelinePlayheadMs = 0L
+                }
+                sourceAspectRatios.forEach { (sourceUri, ratio) ->
+                    timelineVideoAspectRatios[sourceUri.toString()] = ratio
+                    timelineVideoAspectRatioMetadataCache[sourceUri.toString()] = ratio
+                    if (timelineSyncTestEnabled) android.util.Log.i(
+                        "TimelineThumbnail",
+                        "TIMELINE_METADATA_ASPECT source=$sourceUri cacheHit=import durationMs=0 ratio=$ratio"
+                    )
                 }
                 // Match the single-clip import path: append after the furthest main-video
                 // segment only. A longer independent overlay/text/audio lane must not
