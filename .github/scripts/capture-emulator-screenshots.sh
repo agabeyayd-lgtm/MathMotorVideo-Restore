@@ -3671,8 +3671,6 @@ fi
 timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime \
   -s TimelineAlignmentTest:I TimelineSyncTest:I TimelineFrameSyncTest:I TimelineThumbnail:I \
   > emulator-screenshots/thumbnail-alignment-logcat.txt 2>&1
-  emulator-screenshots/thumbnail-alignment-combined-logcat.txt \
-  emulator-screenshots/editor-frame-aligned.png
 
 echo "Step 10/12: swipe directly on the filmstrip and verify every timeline lane stays synchronized"
 clip_bounds="$(python3 - emulator-screenshots/thumbnail-alignment-logcat.txt <<'PY'
