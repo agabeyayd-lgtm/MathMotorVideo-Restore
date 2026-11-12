@@ -12394,7 +12394,8 @@ class VideoEditorActivity : Activity() {
             }
         }
 
-        var enqueuedAtUptimeMs = 0L
+        val requestedAtUptimeMs = SystemClock.uptimeMillis()
+        var submittedAtUptimeMs = 0L
         if (timelineLifecycleDiagnosticsEnabled) android.util.Log.i(
             "TimelineThumbnail",
             "TIMELINE_THUMBNAIL_CACHE_MISS sourceMs=$timestampMs queueDepth=${timelineThumbnailExecutor.queue.size} " +
@@ -12407,13 +12408,14 @@ class VideoEditorActivity : Activity() {
             sourceUriKey = sourceKey,
             sourceGeneration = sourceGeneration,
             onFinished = { untrackTimelineThumbnailTask(sourceKey, task) },
-            onEnqueued = { enqueuedAtUptimeMs = SystemClock.uptimeMillis() },
+            onEnqueued = { submittedAtUptimeMs = SystemClock.uptimeMillis() },
             taskPriority = 0
         ) {
             val taskStartedAtUptimeMs = SystemClock.uptimeMillis()
-            val queueEnqueuedAtUptimeMs = enqueuedAtUptimeMs.takeIf { it > 0L }
+            val queueSubmittedAtUptimeMs = submittedAtUptimeMs.takeIf { it > 0L }
                 ?: taskStartedAtUptimeMs
-            val queueWaitMs = (taskStartedAtUptimeMs - queueEnqueuedAtUptimeMs).coerceAtLeast(0L)
+            val queueWaitMs = (taskStartedAtUptimeMs - queueSubmittedAtUptimeMs).coerceAtLeast(0L)
+            val deferredWaitMs = (queueSubmittedAtUptimeMs - requestedAtUptimeMs).coerceAtLeast(0L)
             if (Thread.currentThread().isInterrupted ||
                 sourceGeneration != timelineThumbnailSourceGeneration(uri)
             ) return@TimelineThumbnailTask
@@ -12564,10 +12566,12 @@ class VideoEditorActivity : Activity() {
                     android.util.Log.i(
                         "TimelineThumbnail",
                         "TIMELINE_THUMBNAIL_TIMING sourceMs=$timestampMs success=${result != null} " +
-                            "queueWaitMs=$queueWaitMs frameDecodeMs=$frameDecodeDurationMs " +
-                            "bitmapScaleMs=$bitmapScaleDurationMs uiDispatchWaitMs=$uiDispatchWaitMs " +
+                            "queueWaitMs=$queueWaitMs deferredWaitMs=$deferredWaitMs " +
+                            "frameDecodeMs=$frameDecodeDurationMs bitmapScaleMs=$bitmapScaleDurationMs " +
+                            "uiDispatchWaitMs=$uiDispatchWaitMs " +
                             "uiApplyMs=${SystemClock.uptimeMillis() - uiCallbackStartedAtUptimeMs} " +
-                            "enqueuedUptimeMs=$queueEnqueuedAtUptimeMs uiAppliedUptimeMs=${SystemClock.uptimeMillis()} " +
+                            "enqueuedUptimeMs=$requestedAtUptimeMs submittedUptimeMs=$queueSubmittedAtUptimeMs " +
+                            "uiAppliedUptimeMs=${SystemClock.uptimeMillis()} " +
                             "targets=${targets.size} applied=$appliedTargets " +
                             "cacheBytes=${timelineThumbnailCache.size()} queueDepth=${timelineThumbnailExecutor.queue.size}"
                     )
