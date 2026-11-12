@@ -12411,7 +12411,9 @@ class VideoEditorActivity : Activity() {
             taskPriority = 0
         ) {
             val taskStartedAtUptimeMs = SystemClock.uptimeMillis()
-            val queueWaitMs = taskStartedAtUptimeMs - enqueuedAtUptimeMs.coerceAtLeast(taskStartedAtUptimeMs)
+            val queueEnqueuedAtUptimeMs = enqueuedAtUptimeMs.takeIf { it > 0L }
+                ?: taskStartedAtUptimeMs
+            val queueWaitMs = (taskStartedAtUptimeMs - queueEnqueuedAtUptimeMs).coerceAtLeast(0L)
             if (Thread.currentThread().isInterrupted ||
                 sourceGeneration != timelineThumbnailSourceGeneration(uri)
             ) return@TimelineThumbnailTask
@@ -12565,7 +12567,7 @@ class VideoEditorActivity : Activity() {
                             "queueWaitMs=$queueWaitMs frameDecodeMs=$frameDecodeDurationMs " +
                             "bitmapScaleMs=$bitmapScaleDurationMs uiDispatchWaitMs=$uiDispatchWaitMs " +
                             "uiApplyMs=${SystemClock.uptimeMillis() - uiCallbackStartedAtUptimeMs} " +
-                            "enqueuedUptimeMs=$enqueuedAtUptimeMs uiAppliedUptimeMs=${SystemClock.uptimeMillis()} " +
+                            "enqueuedUptimeMs=$queueEnqueuedAtUptimeMs uiAppliedUptimeMs=${SystemClock.uptimeMillis()} " +
                             "targets=${targets.size} applied=$appliedTargets " +
                             "cacheBytes=${timelineThumbnailCache.size()} queueDepth=${timelineThumbnailExecutor.queue.size}"
                     )
