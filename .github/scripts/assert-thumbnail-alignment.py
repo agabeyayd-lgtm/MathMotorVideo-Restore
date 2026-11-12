@@ -167,9 +167,11 @@ def verify(log_path: str, screenshot_path: str):
         tuple(map(int, row))
         for row in re.findall(
             r"TIMELINE_THUMBNAIL_TIMING sourceMs=(\d+) success=true "
-            r"queueWaitMs=(\d+) frameDecodeMs=(\d+) bitmapScaleMs=(\d+) "
+            r"queueWaitMs=(\d+) deferredWaitMs=(\d+) "
+            r"frameDecodeMs=(\d+) bitmapScaleMs=(\d+) "
             r"uiDispatchWaitMs=(\d+) uiApplyMs=(\d+) "
-            r"enqueuedUptimeMs=(\d+) uiAppliedUptimeMs=(\d+)",
+            r"enqueuedUptimeMs=(\d+) submittedUptimeMs=(\d+) "
+            r"uiAppliedUptimeMs=(\d+)",
             log,
         )
     ]
@@ -286,27 +288,35 @@ def verify(log_path: str, screenshot_path: str):
         )
 
     queue_waits = [row[1] for row in visible_timing_rows]
-    decode_times = [row[2] for row in visible_timing_rows]
-    total_times = [row[1] + row[2] + row[3] + row[4] + row[5] for row in visible_timing_rows]
-    visible_fill_ms = max(row[7] for row in visible_timing_rows) - min(row[6] for row in visible_timing_rows)
+    deferred_waits = [row[2] for row in visible_timing_rows]
+    decode_times = [row[3] for row in visible_timing_rows]
+    total_times = [
+        row[1] + row[2] + row[3] + row[4] + row[5] + row[6]
+        for row in visible_timing_rows
+    ]
+    # The end-to-end fill includes time held behind preview bootstrap.
+    # submittedUptimeMs is diagnostic only: visible work is owed from its request.
+    visible_fill_ms = max(row[9] for row in visible_timing_rows) - min(row[7] for row in visible_timing_rows)
     print(
-        "  Visible thumbnail timing (n={}) queue median/max={}ms/{}ms; "
-        "decode median/max={}ms/{}ms; enqueue-to-display median/max={}ms/{}ms; "
+        "  Visible thumbnail timing (n={}) executor-queue median/max={}ms/{}ms; "
+        "preview-deferred median/max={}ms/{}ms; "
+        "decode median/max={}ms/{}ms; request-to-display median/max={}ms/{}ms; "
         "visible-strip fill={}ms".format(
             len(visible_timing_rows),
             int(statistics.median(queue_waits)), max(queue_waits),
+            int(statistics.median(deferred_waits)), max(deferred_waits),
             int(statistics.median(decode_times)), max(decode_times),
             int(statistics.median(total_times)), max(total_times),
             visible_fill_ms,
         )
     )
-    # With eight visible cells and three independent workers, the final queued
-    # cell can legitimately wait across multiple decode waves. The user-visible
-    # responsiveness gate is the complete strip-fill time below, not a 1s
-    # per-task queue cap that ignores concurrent batch size.
     if max(queue_waits) > 2_000:
         raise SystemExit(
-            f"FAIL: visible thumbnail queue wait reached {max(queue_waits)}ms; limit is 2000ms."
+            f"FAIL: visible thumbnail executor-queue wait reached {max(queue_waits)}ms; limit is 2000ms."
+        )
+    if max(deferred_waits) > 2_000:
+        raise SystemExit(
+            f"FAIL: visible thumbnail work was held behind preview bootstrap for {max(deferred_waits)}ms; limit is 2000ms."
         )
     if max(decode_times) > 1_500:
         raise SystemExit(
