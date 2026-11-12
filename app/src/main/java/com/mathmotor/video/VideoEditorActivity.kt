@@ -559,7 +559,8 @@ class VideoEditorActivity : Activity() {
         val sourceGeneration: Long? = null,
         private val onFinished: (() -> Unit)? = null,
         private val onEnqueued: (() -> Unit)? = null,
-        private val taskPriority: Int = 1,
+        val taskPriority: Int = 1,
+        private val afterRun: (() -> Unit)? = null,
         private val work: () -> Unit
     ) : Runnable, Comparable<TimelineThumbnailTask> {
         private val cancelled = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -606,6 +607,7 @@ class VideoEditorActivity : Activity() {
                 // Do not let cancellation's interrupt flag poison the next pooled task.
                 if (cancelled.get()) Thread.interrupted()
                 finishOnce()
+                afterRun?.invoke()
             }
         }
     }
@@ -683,6 +685,9 @@ class VideoEditorActivity : Activity() {
     // preview latency exceed the editor's interactive budget.
     private val deferredSecondaryThumbnailLock = Any()
     private val deferredSecondaryThumbnailTasks = java.util.ArrayDeque<TimelineThumbnailTask>()
+    // At most one filmstrip decoder may overlap the cold exact-preview bootstrap.
+    // It is retired before the normal two-worker secondary batch is released.
+    private var previewBootstrapPrefetchTask: TimelineThumbnailTask? = null
     // Hold filmstrip/poster decodes while a newly imported composition prepares.
     // The first playhead task releases this hold only after it owns the preview lane.
     private var deferSecondaryThumbnailWorkUntilPreviewBootstrap = false
@@ -719,21 +724,50 @@ class VideoEditorActivity : Activity() {
         if (!defer) {
             task.markEnqueued()
             timelineThumbnailExecutor.execute(task)
+        } else {
+            dispatchDeferredSecondaryThumbnailTasks()
         }
     }
 
     private fun dispatchDeferredSecondaryThumbnailTasks() {
-        if (pendingPreviewFrameTask != null ||
-            pendingPreviewFrameDispatch != null ||
+        if (pendingPreviewFrameDispatch != null ||
             synchronized(deferredSecondaryThumbnailLock) { deferSecondaryThumbnailWorkUntilPreviewBootstrap }
         ) return
+
+        val previewIsRunning = pendingPreviewFrameTask?.isRunning() == true
+        if (pendingPreviewFrameTask != null && !previewIsRunning) return
+
         val tasks = synchronized(deferredSecondaryThumbnailLock) {
-            if (pendingPreviewFrameTask != null ||
-                pendingPreviewFrameDispatch != null ||
+            if (pendingPreviewFrameDispatch != null ||
                 deferSecondaryThumbnailWorkUntilPreviewBootstrap
             ) {
                 emptyList()
+            } else if (pendingPreviewFrameTask != null) {
+                // The preview owns its decoder. Permit only one visible filmstrip
+                // task alongside it, then submit the next one only after that task
+                // has actually left its worker. This avoids the three-cold-MMR
+                // contention seen in the earlier unrestricted overlap experiment.
+                if (!pendingPreviewFrameTask!!.isRunning() ||
+                    previewBootstrapPrefetchTask != null
+                ) {
+                    emptyList()
+                } else {
+                    val nextVisible = deferredSecondaryThumbnailTasks
+                        .asSequence()
+                        .filter { it.taskPriority == 0 }
+                        .sorted()
+                        .firstOrNull()
+                    if (nextVisible == null) {
+                        emptyList()
+                    } else {
+                        deferredSecondaryThumbnailTasks.remove(nextVisible)
+                        previewBootstrapPrefetchTask = nextVisible
+                        listOf(nextVisible)
+                    }
+                }
             } else {
+                // The exact playhead frame is applied. Release every remaining
+                // secondary task to the normal two-worker priority queue.
                 buildList {
                     while (deferredSecondaryThumbnailTasks.isNotEmpty()) {
                         add(deferredSecondaryThumbnailTasks.removeFirst())
@@ -741,10 +775,10 @@ class VideoEditorActivity : Activity() {
                 }
             }
         }
+
         // ThreadPoolExecutor starts core workers immediately, before later
         // submissions can be reordered by its PriorityBlockingQueue. Sort the
-        // whole deferred batch first so visible filmstrip frames claim the first
-        // two decoder slots; cover/poster/overlay stills remain behind them.
+        // whole normal batch before submitting it.
         tasks.sorted().forEach { task ->
             if (task.isCancelled()) return@forEach
             try {
@@ -754,6 +788,15 @@ class VideoEditorActivity : Activity() {
                 task.cancelForSourceInvalidation()
             }
         }
+    }
+
+    private fun finishPreviewBootstrapPrefetchTask(task: TimelineThumbnailTask) {
+        synchronized(deferredSecondaryThumbnailLock) {
+            if (previewBootstrapPrefetchTask === task) {
+                previewBootstrapPrefetchTask = null
+            }
+        }
+        dispatchDeferredSecondaryThumbnailTasks()
     }
 
     private fun cancelDeferredSecondaryThumbnailTasks() {
@@ -11795,7 +11838,10 @@ class VideoEditorActivity : Activity() {
                 }
             }
         ) {
-            // Secondary decoders remain deferred until this exact frame is applied.
+            // The exact preview has now entered its reserved decoder worker. Start
+            // at most one visible filmstrip decode beside it; never fan out all cold
+            // MMR workers while this first exact frame is still being produced.
+            dispatchDeferredSecondaryThumbnailTasks()
             if (task.isCancelled() || requestId != previewFrameRequestGeneration.get()) {
                 if (timelineSyncTestEnabled) android.util.Log.i(
                     "TimelineFrameSyncTest",
@@ -12417,9 +12463,17 @@ class VideoEditorActivity : Activity() {
             timelineThumbnailTaskSequence.incrementAndGet(),
             sourceUriKey = sourceKey,
             sourceGeneration = sourceGeneration,
-            onFinished = { untrackTimelineThumbnailTask(sourceKey, task) },
+            onFinished = {
+                untrackTimelineThumbnailTask(sourceKey, task)
+                if (task.isCancelled() && !task.isRunning()) {
+                    timelineHandler.post { finishPreviewBootstrapPrefetchTask(task) }
+                }
+            },
             onEnqueued = { submittedAtUptimeMs = SystemClock.uptimeMillis() },
-            taskPriority = 0
+            taskPriority = 0,
+            afterRun = {
+                timelineHandler.post { finishPreviewBootstrapPrefetchTask(task) }
+            }
         ) {
             val taskStartedAtUptimeMs = SystemClock.uptimeMillis()
             val queueSubmittedAtUptimeMs = submittedAtUptimeMs.takeIf { it > 0L }
