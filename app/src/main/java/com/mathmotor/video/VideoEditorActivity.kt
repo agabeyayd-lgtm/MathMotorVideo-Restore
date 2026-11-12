@@ -312,6 +312,10 @@ class VideoEditorActivity : Activity() {
     // Track it separately from warmed interactive seeks; the prepared video surface
     // remains visible while this one-time bootstrap frame is decoded.
     private val previewDecoderBootstrapSources = mutableSetOf<String>()
+    // A newly prepared CompositionPlayer must reach READY before its first still
+    // decode. Otherwise layout callbacks can start multiple cold MMR opens that
+    // are immediately superseded but cannot be interrupted.
+    private var awaitingInitialPreviewBootstrap = false
     private lateinit var previewFocusButton: Button
     private lateinit var playbackLeft: LinearLayout
     private lateinit var timelineRulerHeader: LinearLayout
@@ -6774,6 +6778,7 @@ class VideoEditorActivity : Activity() {
                             pendingTimelineCompositionResumeAfterSeek = false
                             // Keep the prepared video surface visible during the source's
                             // cold still-decoder bootstrap; do not cover it with black.
+                            awaitingInitialPreviewBootstrap = false
                             requestPreviewFrameAt(timelinePlayheadMs, keepPreviousFrame = true)
                             updateTimelinePlayheadLabel()
                         }
@@ -6791,15 +6796,20 @@ class VideoEditorActivity : Activity() {
                             "TIMELINE_INITIAL_BASE_FRAME_BOOTSTRAP scheduled=true"
                         )
                         playerView.postDelayed({
-                            if (timelineCompositionPlayer === comp &&
-                                !comp.isPlaying && !comp.playWhenReady &&
-                                !isFinishing && !isDestroyed
-                            ) {
-                                if (timelineSyncTestEnabled) android.util.Log.i(
-                                    "TimelineSyncTest",
-                                    "TIMELINE_INITIAL_BASE_FRAME_BOOTSTRAP executed=true"
-                                )
-                                requestPreviewFrameAt(timelinePlayheadMs, keepPreviousFrame = true)
+                            if (timelineCompositionPlayer === comp) {
+                                // Release the startup gate even if playback began during
+                                // the short surface-settle window. The next paused seek
+                                // can then request its own exact frame.
+                                awaitingInitialPreviewBootstrap = false
+                                if (!comp.isPlaying && !comp.playWhenReady &&
+                                    !isFinishing && !isDestroyed
+                                ) {
+                                    if (timelineSyncTestEnabled) android.util.Log.i(
+                                        "TimelineSyncTest",
+                                        "TIMELINE_INITIAL_BASE_FRAME_BOOTSTRAP executed=true"
+                                    )
+                                    requestPreviewFrameAt(timelinePlayheadMs, keepPreviousFrame = true)
+                                }
                             }
                         }, 180L)
                     }
@@ -6844,6 +6854,7 @@ class VideoEditorActivity : Activity() {
             })
             comp.setComposition(buildTimelinePreviewComposition())
             if (timelineSyncTestEnabled) android.util.Log.i("TimelineSyncTest", "TIMELINE_PREVIEW_COMPOSITION_OK")
+            awaitingInitialPreviewBootstrap = true
             comp.prepare()
             comp.playWhenReady=false
             timelineCompositionPlayer=comp
@@ -11754,11 +11765,27 @@ class VideoEditorActivity : Activity() {
                 return
             }
         val (decodeWidthPx, decodeHeightPx) = previewFrameDecodeBounds()
+        val sourceKey = clip.uri.toString()
+        if (awaitingInitialPreviewBootstrap &&
+            !previewDecoderBootstrapSources.contains(sourceKey)
+        ) {
+            if (timelineSyncTestEnabled) android.util.Log.i(
+                "TimelineFrameSyncTest",
+                "TIMELINE_PREVIEW_FRAME_DEFERRED reason=composition-not-ready sourceMs=$sourceTimeMs"
+            )
+            // Keep CompositionPlayer's prepared surface visible. The single delayed
+            // READY callback below will issue the one cold bootstrap request.
+            showPreviewFramePending(keepPreviousFrame = true)
+            return
+        }
         val exactFrameKey = "exact:${clip.uri}#${sourceTimeMs}@${decodeWidthPx}x${decodeHeightPx}"
-        val requestKind = if (previewDecoderBootstrapSources.add(clip.uri.toString())) {
-            "bootstrap"
-        } else {
+        // A source is bootstrap-complete only after a still frame was actually
+        // applied. A request that is cancelled after a cold decode must not consume
+        // the one-time bootstrap marker.
+        val requestKind = if (previewDecoderBootstrapSources.contains(sourceKey)) {
             "interactive"
+        } else {
+            "bootstrap"
         }
 
         // Some editor/layout callbacks issue the same pause/seek twice. Keep the
@@ -11766,6 +11793,7 @@ class VideoEditorActivity : Activity() {
         if (previewFrameCacheKey == exactFrameKey &&
             previewFrameBitmap?.let { !it.isRecycled } == true
         ) {
+            previewDecoderBootstrapSources.add(sourceKey)
             showPreviewFramePending(keepPreviousFrame = true)
             previewFrameOverlay.visibility = View.VISIBLE
             applyPreviewFrameTransform(clip)
@@ -11889,6 +11917,7 @@ class VideoEditorActivity : Activity() {
                     val previous = previewFrameBitmap
                     previewFrameBitmap = decoded
                     previewFrameCacheKey = exactFrameKey
+                    previewDecoderBootstrapSources.add(sourceKey)
                     previewFrameOverlay.setImageBitmap(decoded)
                     if (previous !== decoded && previous != null && !previous.isRecycled) previous.recycle()
                     previewFrameOverlay.setBackgroundColor(Color.BLACK)
