@@ -308,6 +308,10 @@ class VideoEditorActivity : Activity() {
     private val previewScrubDebounceMs = 48L
     private var previewFrameBitmap: Bitmap? = null
     private var previewFrameCacheKey: String? = null
+    // The first still decode for each URI pays MediaMetadataRetriever's cold-open cost.
+    // Track it separately from warmed interactive seeks; the prepared video surface
+    // remains visible while this one-time bootstrap frame is decoded.
+    private val previewDecoderBootstrapSources = mutableSetOf<String>()
     private lateinit var previewFocusButton: Button
     private lateinit var playbackLeft: LinearLayout
     private lateinit var timelineRulerHeader: LinearLayout
@@ -6621,6 +6625,7 @@ class VideoEditorActivity : Activity() {
             // while frames are still in flight, causing ExternalTextureManager's queue
             // removal to throw NoSuchElementException and forcing the player to IDLE.
             var initialPausedOverlayFrameRefreshScheduled = false
+            var initialPausedBaseFrameRefreshScheduled = false
             comp.addListener(object:androidx.media3.common.Player.Listener{
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
                     if (timelineCompositionPlayer !== comp) return
@@ -6663,6 +6668,7 @@ class VideoEditorActivity : Activity() {
                             "windowCount=${comp.currentTimeline.windowCount} " +
                             "durationMs=${comp.duration} positionMs=${comp.currentPosition}"
                     )
+                    val hasPendingCompositionSeek = pendingTimelineCompositionSeekMs != null
                     if (playbackState == androidx.media3.common.Player.STATE_READY) {
                         // CompositionPlayer.prepare() is asynchronous. Seeking before its
                         // concatenated timeline exposes a period can crash Media3 with
@@ -6674,9 +6680,36 @@ class VideoEditorActivity : Activity() {
                             timelinePlayheadMs = pendingSeek.coerceIn(0L, totalOutputDurationMs())
                             comp.playWhenReady = pendingTimelineCompositionResumeAfterSeek
                             pendingTimelineCompositionResumeAfterSeek = false
-                            requestPreviewFrameAt(timelinePlayheadMs)
+                            // Keep the prepared video surface visible during the source's
+                            // cold still-decoder bootstrap; do not cover it with black.
+                            requestPreviewFrameAt(timelinePlayheadMs, keepPreviousFrame = true)
                             updateTimelinePlayheadLabel()
                         }
+                    }
+                    if (playbackState == androidx.media3.common.Player.STATE_READY &&
+                        !hasPendingCompositionSeek &&
+                        !initialPausedBaseFrameRefreshScheduled
+                    ) {
+                        // Do not cold-open MediaMetadataRetriever while CompositionPlayer
+                        // is still preparing its decoder/surface. That overlap produced
+                        // ~1s first-frame stalls. Wait until the live preview is READY.
+                        initialPausedBaseFrameRefreshScheduled = true
+                        if (timelineSyncTestEnabled) android.util.Log.i(
+                            "TimelineSyncTest",
+                            "TIMELINE_INITIAL_BASE_FRAME_BOOTSTRAP scheduled=true"
+                        )
+                        playerView.postDelayed({
+                            if (timelineCompositionPlayer === comp &&
+                                !comp.isPlaying && !comp.playWhenReady &&
+                                !isFinishing && !isDestroyed
+                            ) {
+                                if (timelineSyncTestEnabled) android.util.Log.i(
+                                    "TimelineSyncTest",
+                                    "TIMELINE_INITIAL_BASE_FRAME_BOOTSTRAP executed=true"
+                                )
+                                requestPreviewFrameAt(timelinePlayheadMs, keepPreviousFrame = true)
+                            }
+                        }, 180L)
                     }
                     if (playbackState == androidx.media3.common.Player.STATE_READY &&
                         overlayClips.isNotEmpty() &&
@@ -8657,13 +8690,13 @@ class VideoEditorActivity : Activity() {
                 player?.prepare()
                 // Keep the imported clip paused so the user can align the initial frame, ruler and fixed playhead.
                 player?.playWhenReady = false
-                // Request the exact playhead frame before starting cover and
-                // filmstrip decoders. Their jobs are held behind this request so
-                // the first visible frame gets uncontended codec/CPU time.
+                // Prepare the composed playback surface before the still decoder's
+                // per-source cold start. STATE_READY schedules its exact paused bitmap
+                // while leaving the live PlayerView visible during bootstrap.
                 updatePreviewEmptyStateVisibility()
-                requestPreviewFrameAt(timelinePlayheadMs)
                 loadTrimControls()
                 refreshTimelineTracks()
+                ensureTimelinePreviewLoaded()
                 // A debug-only signal lets CI verify clip import even when the
                 // emulator accessibility tree cannot be captured reliably.
                 if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) android.util.Log.i(
@@ -11582,6 +11615,11 @@ class VideoEditorActivity : Activity() {
             }
         val (decodeWidthPx, decodeHeightPx) = previewFrameDecodeBounds()
         val exactFrameKey = "exact:${clip.uri}#${sourceTimeMs}@${decodeWidthPx}x${decodeHeightPx}"
+        val requestKind = if (previewDecoderBootstrapSources.add(clip.uri.toString())) {
+            "bootstrap"
+        } else {
+            "interactive"
+        }
 
         // Some editor/layout callbacks issue the same pause/seek twice. Keep the
         // already-visible exact frame and invalidate any older queued request.
@@ -11634,7 +11672,7 @@ class VideoEditorActivity : Activity() {
         if (timelineSyncTestEnabled) android.util.Log.i(
             "TimelineFrameSyncTest",
             "TIMELINE_PREVIEW_FRAME_REQUEST projectMs=$safeProjectTimeMs sourceMs=$sourceTimeMs " +
-                "requestId=$requestId requestedUptimeMs=$requestedAtUptimeMs " +
+                "requestId=$requestId requestedUptimeMs=$requestedAtUptimeMs requestKind=$requestKind " +
                 "deferredMs=${if (keepPreviousFrame) previewScrubDebounceMs else 0L} " +
                 "canvasPx=${if (::previewCanvas.isInitialized) "${previewCanvas.width}x${previewCanvas.height}" else "unknown"} " +
                 "decodeTargetPx=${decodeWidthPx}x${decodeHeightPx} queueDepth=${previewFrameExecutor.queue.size}"
@@ -11709,7 +11747,8 @@ class VideoEditorActivity : Activity() {
                             "TIMELINE_PREVIEW_FRAME_READY projectMs=$safeProjectTimeMs sourceMs=$sourceTimeMs " +
                                 "width=${decoded.width} height=${decoded.height} requestId=$requestId " +
                                 "queueWaitMs=$queueWaitMs decodeMs=$decodeDurationMs " +
-                                "uiDispatchWaitMs=$uiDispatchWaitMs uiApplyMs=$uiApplyMs totalMs=$totalMs"
+                                "uiDispatchWaitMs=$uiDispatchWaitMs uiApplyMs=$uiApplyMs totalMs=$totalMs " +
+                                "requestKind=$requestKind"
                         )
                         if (keepPreviousFrame) android.util.Log.i(
                             "TimelineFrameSyncTest",
@@ -11721,7 +11760,7 @@ class VideoEditorActivity : Activity() {
                         "TimelineFrameSyncTest",
                         "TIMELINE_PREVIEW_FRAME_FAILED projectMs=$safeProjectTimeMs sourceMs=$sourceTimeMs " +
                             "requestId=$requestId queueWaitMs=$queueWaitMs decodeMs=$decodeDurationMs " +
-                            "uiDispatchWaitMs=$uiDispatchWaitMs"
+                            "uiDispatchWaitMs=$uiDispatchWaitMs requestKind=$requestKind"
                     )
                     if (!keepPreviousFrame) {
                         previewFrameOverlay.setImageDrawable(null)
