@@ -800,7 +800,14 @@ class VideoEditorActivity : Activity() {
                 previewBootstrapPrefetchTask = null
             }
         }
-        dispatchDeferredSecondaryThumbnailTasks()
+        // This was the single thumbnail allowed to overlap the cold preview.
+        // Do not turn its completion into a serial parade of more thumbnail
+        // decodes: that kept every later visible cell deferred for ~2.8s.
+        // The preview task's own completion callback drains the full batch to
+        // the two measured filmstrip workers once the reserved decoder is free.
+        if (pendingPreviewFrameTask?.isRunning() != true) {
+            dispatchDeferredSecondaryThumbnailTasks()
+        }
     }
 
     private fun cancelDeferredSecondaryThumbnailTasks() {
