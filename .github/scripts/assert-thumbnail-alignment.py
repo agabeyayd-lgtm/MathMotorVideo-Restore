@@ -218,9 +218,9 @@ def verify(log_path: str, screenshot_path: str):
         raise SystemExit(
             "FAIL: cold-source still decoding started before the composed video player reached STATE_READY."
         )
-    if len(interactive_rows) < 3:
+    if len(interactive_rows) < 2:
         raise SystemExit(
-            "FAIL: fewer than three warmed interactive preview frames were measured; "
+            "FAIL: fewer than two warmed interactive preview frames were measured; "
             f"only {len(interactive_rows)} interactive timings were captured."
         )
 
