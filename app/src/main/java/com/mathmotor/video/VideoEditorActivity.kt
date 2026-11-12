@@ -671,10 +671,28 @@ class VideoEditorActivity : Activity() {
     // preview latency exceed the editor's interactive budget.
     private val deferredSecondaryThumbnailLock = Any()
     private val deferredSecondaryThumbnailTasks = java.util.ArrayDeque<TimelineThumbnailTask>()
+    // Hold filmstrip/poster decodes while a newly imported composition prepares.
+    // The first playhead task releases this hold only after it owns the preview lane.
+    private var deferSecondaryThumbnailWorkUntilPreviewBootstrap = false
+
+    private fun holdSecondaryThumbnailWorkForPreviewBootstrap() {
+        synchronized(deferredSecondaryThumbnailLock) {
+            deferSecondaryThumbnailWorkUntilPreviewBootstrap = true
+        }
+    }
+
+    private fun releaseSecondaryThumbnailWorkAfterPreviewBootstrap() {
+        synchronized(deferredSecondaryThumbnailLock) {
+            deferSecondaryThumbnailWorkUntilPreviewBootstrap = false
+        }
+        dispatchDeferredSecondaryThumbnailTasks()
+    }
 
     private fun enqueueSecondaryThumbnailTask(task: TimelineThumbnailTask) {
         val defer = synchronized(deferredSecondaryThumbnailLock) {
-            if (pendingPreviewFrameTask != null || pendingPreviewFrameDispatch != null) {
+            if (pendingPreviewFrameTask != null || pendingPreviewFrameDispatch != null ||
+                deferSecondaryThumbnailWorkUntilPreviewBootstrap
+            ) {
                 deferredSecondaryThumbnailTasks.addLast(task)
                 true
             } else {
@@ -685,9 +703,13 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun dispatchDeferredSecondaryThumbnailTasks() {
-        if (pendingPreviewFrameTask != null || pendingPreviewFrameDispatch != null) return
+        if (pendingPreviewFrameTask != null || pendingPreviewFrameDispatch != null ||
+            synchronized(deferredSecondaryThumbnailLock) { deferSecondaryThumbnailWorkUntilPreviewBootstrap }
+        ) return
         val tasks = synchronized(deferredSecondaryThumbnailLock) {
-            if (pendingPreviewFrameTask != null || pendingPreviewFrameDispatch != null) {
+            if (pendingPreviewFrameTask != null || pendingPreviewFrameDispatch != null ||
+                deferSecondaryThumbnailWorkUntilPreviewBootstrap
+            ) {
                 emptyList()
             } else {
                 buildList {
@@ -6764,6 +6786,7 @@ class VideoEditorActivity : Activity() {
             if (timelineSyncTestEnabled) android.util.Log.e("TimelineSyncTest",
                 "TIMELINE_PREVIEW_FAILED type=${error.javaClass.name} message=${error.message}", error)
             releaseTimelineCompositionPlayer()
+            releaseSecondaryThumbnailWorkAfterPreviewBootstrap()
             playerView.player=player
             status.text="Zaman çizelgesi önizlemesi kurulamadı: ${error.message ?: error.javaClass.simpleName}"
         }
@@ -8694,6 +8717,7 @@ class VideoEditorActivity : Activity() {
                 // per-source cold start. STATE_READY schedules its exact paused bitmap
                 // while leaving the live PlayerView visible during bootstrap.
                 updatePreviewEmptyStateVisibility()
+                holdSecondaryThumbnailWorkForPreviewBootstrap()
                 loadTrimControls()
                 refreshTimelineTracks()
                 ensureTimelinePreviewLoaded()
@@ -11507,6 +11531,7 @@ class VideoEditorActivity : Activity() {
         if (!::previewFrameOverlay.isInitialized) return
         previewFrameRequestGeneration.incrementAndGet()
         cancelPendingPreviewFrameRequest("hide")
+        releaseSecondaryThumbnailWorkAfterPreviewBootstrap()
         previewFrameOverlay.visibility = View.GONE
         previewFrameCacheKey = null
     }
@@ -11771,6 +11796,9 @@ class VideoEditorActivity : Activity() {
             }
         }
         pendingPreviewFrameTask = task
+        // The exact base-frame request now owns the reserved decoder lane. Secondary
+        // thumbnails may be queued again, but dispatch waits until this task completes.
+        releaseSecondaryThumbnailWorkAfterPreviewBootstrap()
         // Overlay decoders use the same secondary still lane as filmstrip and
         // cover frames. Queue them only after the exact base-frame request owns
         // the interactive decoder slot.
