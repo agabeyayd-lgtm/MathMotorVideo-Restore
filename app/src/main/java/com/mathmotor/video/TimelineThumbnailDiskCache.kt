@@ -8,7 +8,6 @@ import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantLock
-import kotlin.concurrent.withLock
 import kotlin.math.abs
 
 /**
@@ -117,7 +116,6 @@ internal class TimelineThumbnailDiskCache(
                     throw IllegalStateException("Thumbnail JPEG compression failed")
                 }
                 output.flush()
-                output.fd.sync()
             }
             if (destination.exists()) {
                 temporary.delete()
