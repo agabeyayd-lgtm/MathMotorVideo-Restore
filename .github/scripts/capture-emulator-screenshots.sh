@@ -3671,10 +3671,6 @@ fi
 timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime \
   -s TimelineAlignmentTest:I TimelineSyncTest:I TimelineFrameSyncTest:I TimelineThumbnail:I \
   > emulator-screenshots/thumbnail-alignment-logcat.txt 2>&1
-cat emulator-screenshots/video-replacement-logcat.txt \
-  emulator-screenshots/thumbnail-alignment-logcat.txt \
-  > emulator-screenshots/thumbnail-alignment-combined-logcat.txt
-python3 .github/scripts/assert-thumbnail-alignment.py verify \
   emulator-screenshots/thumbnail-alignment-combined-logcat.txt \
   emulator-screenshots/editor-frame-aligned.png
 
@@ -3776,7 +3772,7 @@ if [ -z "$forward_scrolls" ] || [ "$(echo "$forward_scrolls" | tr ',' '\n' | sor
 fi
 
 timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime \
-  -s TimelineAlignmentTest:I TimelineSyncTest:I \
+  -s TimelineAlignmentTest:I TimelineSyncTest:I TimelineFrameSyncTest:I TimelineThumbnail:I \
   > emulator-screenshots/filmstrip-scrub-forward-logcat.txt 2>&1
 reverse_bounds="$(python3 - emulator-screenshots/filmstrip-scrub-forward-logcat.txt <<'PY'
 import re
@@ -3839,7 +3835,20 @@ if [ -z "$reverse_ms" ] || [ "$reverse_ms" -ge "$forward_ms" ]; then
   collect_capture_diagnostics filmstrip-scrub-reverse-not-reversed
   exit 22
 fi
-echo "PASS: filmstrip left advanced to \${forward_ms}ms; right returned to \${reverse_ms}ms"
+echo "PASS: filmstrip left advanced to ${forward_ms}ms; right returned to ${reverse_ms}ms"
+# Verify warmed preview performance only after the real forward and reverse filmstrip
+# gestures have run. Previously this assertion ran before either scrub was exercised.
+timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime \
+  -s TimelineAlignmentTest:I TimelineSyncTest:I TimelineFrameSyncTest:I TimelineThumbnail:I \
+  > emulator-screenshots/filmstrip-scrub-reverse-logcat.txt 2>&1
+cat emulator-screenshots/video-replacement-logcat.txt \
+  emulator-screenshots/filmstrip-scrub-forward-logcat.txt \
+  emulator-screenshots/filmstrip-scrub-reverse-logcat.txt \
+  emulator-screenshots/thumbnail-alignment-logcat.txt \
+  > emulator-screenshots/thumbnail-alignment-combined-logcat.txt
+python3 .github/scripts/assert-thumbnail-alignment.py verify \
+  emulator-screenshots/thumbnail-alignment-combined-logcat.txt \
+  emulator-screenshots/editor-frame-aligned.png
 
 echo "Step 11/12: exercise live playback and validate ruler/filmstrip synchronization"
 
