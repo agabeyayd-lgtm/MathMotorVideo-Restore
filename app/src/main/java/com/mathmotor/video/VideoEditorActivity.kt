@@ -611,10 +611,10 @@ class VideoEditorActivity : Activity() {
     }
     private val timelineThumbnailTaskSequence = java.util.concurrent.atomic.AtomicLong()
     // The exact playhead owns a separate, normal-priority decoder lane. Filmstrip
-    // decoding deliberately uses one persistent background worker: FrameExtractor
-    // owns an ExoPlayer/MediaCodec pipeline, so one extractor reused across requests
-    // avoids three cold codec startups and prevents concurrent codec contention.
-    // Work remains deferred until the first exact preview frame is visible.
+    // decoding uses two persistent background workers: one worker removed codec
+    // contention but serialized visible cells behind a single cold frame. Two lanes
+    // bound startup contention while halving the visible queue; each retains its
+    // own FrameExtractor for subsequent requests.
     private val timelineThumbnailWorkerSequence = java.util.concurrent.atomic.AtomicLong()
     private val previewDecoderThreadSequence = java.util.concurrent.atomic.AtomicLong()
     private val timelineThumbnailRetrievers =
@@ -626,8 +626,8 @@ class VideoEditorActivity : Activity() {
     private val previewFrameExtractors =
         java.util.concurrent.ConcurrentHashMap<Long, Triple<Uri, Int, FrameExtractor>>()
     private val timelineThumbnailExecutor = java.util.concurrent.ThreadPoolExecutor(
-        1,
-        1,
+        2,
+        2,
         0L,
         java.util.concurrent.TimeUnit.MILLISECONDS,
         java.util.concurrent.PriorityBlockingQueue<Runnable>(
