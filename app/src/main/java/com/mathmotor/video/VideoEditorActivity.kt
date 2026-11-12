@@ -6680,6 +6680,7 @@ class VideoEditorActivity : Activity() {
         val previous = timelineCompositionPlayer
         timelineCompositionPlayer = null
         timelinePreviewLoaded = false
+        awaitingInitialPreviewBootstrap = false
         if (previous == null) return
 
         runCatching { previous.playWhenReady = false }
