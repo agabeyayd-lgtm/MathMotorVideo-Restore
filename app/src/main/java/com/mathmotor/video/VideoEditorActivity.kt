@@ -734,7 +734,11 @@ class VideoEditorActivity : Activity() {
                 }
             }
         }
-        tasks.forEach { task ->
+        // ThreadPoolExecutor starts core workers immediately, before later
+        // submissions can be reordered by its PriorityBlockingQueue. Sort the
+        // whole deferred batch first so visible filmstrip frames claim the first
+        // three decoder slots; cover/poster/overlay stills remain behind them.
+        tasks.sorted().forEach { task ->
             if (task.isCancelled()) return@forEach
             try {
                 task.markEnqueued()
