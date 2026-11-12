@@ -12261,6 +12261,10 @@ class VideoEditorActivity : Activity() {
             return
         }
 
+        // Start end-to-end timing as soon as the in-memory exact cache misses.
+        // Disk lookup, poster handoff and preview-bootstrap deferral all count as
+        // user-visible wait, even though only executor submission starts queueWaitMs.
+        val requestedAtUptimeMs = SystemClock.uptimeMillis()
         val showTemporaryPoster = usePosterPlaceholder && priorityDistanceMs <= 2_000L
         if (showTemporaryPoster) {
             requestTimelinePoster(uri)
@@ -12394,7 +12398,6 @@ class VideoEditorActivity : Activity() {
             }
         }
 
-        val requestedAtUptimeMs = SystemClock.uptimeMillis()
         var submittedAtUptimeMs = 0L
         if (timelineLifecycleDiagnosticsEnabled) android.util.Log.i(
             "TimelineThumbnail",
