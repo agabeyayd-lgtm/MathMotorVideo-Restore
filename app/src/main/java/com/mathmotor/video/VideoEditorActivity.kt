@@ -431,6 +431,16 @@ class VideoEditorActivity : Activity() {
     private val timelineThumbnailDiskCache by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         TimelineThumbnailDiskCache(java.io.File(filesDir, "timeline-thumbnails"))
     }
+    // JPEG persistence must never sit on the critical path between frame decode
+    // and painting a visible filmstrip cell. Copy the tiny fitted bitmap and let
+    // a background writer persist it after the UI callback has been posted.
+    private val timelineThumbnailDiskWriter =
+        java.util.concurrent.Executors.newSingleThreadExecutor { task ->
+            Thread({
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
+                task.run()
+            }, "timeline-thumbnail-cache-writer")
+        }
     // Provider-generated poster appears only in the first cell while its exact frame is decoding.
     private val timelinePosterCache = object : android.util.LruCache<String, Bitmap>(4 * 1024 * 1024) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount.coerceAtLeast(1)
@@ -12479,17 +12489,41 @@ class VideoEditorActivity : Activity() {
 
             val result = decoded
             if (!diskCacheHit && result != null && !result.isRecycled) {
-                runCatching {
-                    timelineThumbnailDiskCache.put(
-                        sourceKey, timestampMs, decodeWidthPx, decodeHeightPx, result
-                    )
-                }.onFailure { error ->
-                    if (timelineLifecycleDiagnosticsEnabled) {
-                        android.util.Log.w(
-                            "TimelineThumbnail",
-                            "TIMELINE_THUMBNAIL_DISK_CACHE_WRITE_FAILED sourceMs=$timestampMs",
-                            error
-                        )
+                // Keep JPEG compression and filesystem latency off both the
+                // two measured MMR decode workers and the first-visible callback.
+                // The bounded-size thumbnail copy remains valid if the LRU later
+                // evicts/recycles the UI bitmap before persistence completes.
+                val cacheCopy = runCatching {
+                    result.copy(Bitmap.Config.ARGB_8888, false)
+                }.getOrNull()
+                if (cacheCopy != null) {
+                    runCatching {
+                        timelineThumbnailDiskWriter.execute {
+                            try {
+                                timelineThumbnailDiskCache.put(
+                                    sourceKey, timestampMs, decodeWidthPx, decodeHeightPx, cacheCopy
+                                )
+                            } catch (error: Exception) {
+                                if (timelineLifecycleDiagnosticsEnabled) {
+                                    android.util.Log.w(
+                                        "TimelineThumbnail",
+                                        "TIMELINE_THUMBNAIL_DISK_CACHE_WRITE_FAILED sourceMs=$timestampMs",
+                                        error
+                                    )
+                                }
+                            } finally {
+                                if (!cacheCopy.isRecycled) cacheCopy.recycle()
+                            }
+                        }
+                    }.onFailure { error ->
+                        if (!cacheCopy.isRecycled) cacheCopy.recycle()
+                        if (timelineLifecycleDiagnosticsEnabled) {
+                            android.util.Log.w(
+                                "TimelineThumbnail",
+                                "TIMELINE_THUMBNAIL_DISK_CACHE_QUEUE_FAILED sourceMs=$timestampMs",
+                                error
+                            )
+                        }
                     }
                 }
             }
@@ -13775,6 +13809,7 @@ class VideoEditorActivity : Activity() {
         // Drop queued thumbnail work. Each decoder worker releases its own retriever
         // in the worker-thread finally block when the executor shuts down.
         pendingCoverThumbnailTargets.clear()
+        timelineThumbnailDiskWriter.shutdown()
         coverThumbnailExecutor.shutdownNow()
         coverThumbnailCache.evictAll()
         pendingAudioWaveforms.clear()
