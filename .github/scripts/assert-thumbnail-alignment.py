@@ -168,7 +168,7 @@ def verify(log_path: str, screenshot_path: str):
         for row in re.findall(
             r"TIMELINE_THUMBNAIL_TIMING sourceMs=(\d+) success=true "
             r"queueWaitMs=(\d+) deferredWaitMs=(\d+) "
-            r"frameDecodeMs=(\d+) bitmapScaleMs=(\d+) "
+            r"diskLookupMs=(\d+) frameDecodeMs=(\d+) bitmapScaleMs=(\d+) "
             r"uiDispatchWaitMs=(\d+) uiApplyMs=(\d+) "
             r"enqueuedUptimeMs=(\d+) submittedUptimeMs=(\d+) "
             r"uiAppliedUptimeMs=(\d+)",
@@ -289,22 +289,24 @@ def verify(log_path: str, screenshot_path: str):
 
     queue_waits = [row[1] for row in visible_timing_rows]
     deferred_waits = [row[2] for row in visible_timing_rows]
-    decode_times = [row[3] for row in visible_timing_rows]
+    disk_lookup_times = [row[3] for row in visible_timing_rows]
+    decode_times = [row[4] for row in visible_timing_rows]
     total_times = [
-        row[1] + row[2] + row[3] + row[4] + row[5] + row[6]
+        row[1] + row[2] + row[3] + row[4] + row[5] + row[6] + row[7]
         for row in visible_timing_rows
     ]
-    # The end-to-end fill includes time held behind preview bootstrap.
+    # The end-to-end fill includes time held behind preview bootstrap and disk IO.
     # submittedUptimeMs is diagnostic only: visible work is owed from its request.
-    visible_fill_ms = max(row[9] for row in visible_timing_rows) - min(row[7] for row in visible_timing_rows)
+    visible_fill_ms = max(row[10] for row in visible_timing_rows) - min(row[8] for row in visible_timing_rows)
     print(
         "  Visible thumbnail timing (n={}) executor-queue median/max={}ms/{}ms; "
-        "preview-deferred median/max={}ms/{}ms; "
+        "preview-deferred median/max={}ms/{}ms; disk lookup median/max={}ms/{}ms; "
         "decode median/max={}ms/{}ms; request-to-display median/max={}ms/{}ms; "
         "visible-strip fill={}ms".format(
             len(visible_timing_rows),
             int(statistics.median(queue_waits)), max(queue_waits),
             int(statistics.median(deferred_waits)), max(deferred_waits),
+            int(statistics.median(disk_lookup_times)), max(disk_lookup_times),
             int(statistics.median(decode_times)), max(decode_times),
             int(statistics.median(total_times)), max(total_times),
             visible_fill_ms,
