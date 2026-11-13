@@ -13,3 +13,5 @@ Signed editor update 8.36 / versionCode 403. Publish the signed installable APK 
 Signed editor update 8.37 / versionCode 404. Publish after PR #35 merged with all three exact-head checks green; includes first-visible filmstrip decode optimization and media-identical Undo/Redo preview reuse.
 
 Signed editor update 8.38 / versionCode 405. Publish the latest verified two-worker filmstrip decoder and decoder-path diagnostics after unit/build, API 35 emulator and signing-continuity checks pass.
+
+Signed editor update 8.39 / versionCode 406. Publish after PR #36 merged with all three exact-head checks green; includes fixed project cover binding, synchronized playback scrolling, and CapCut-style text composer with optional backgrounds and persistent font families.
