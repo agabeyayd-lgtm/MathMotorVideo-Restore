@@ -2285,10 +2285,22 @@ PY
 }
 timeout -k 2s 8s adb -s emulator-5554 logcat -c
 timeout -k 2s 8s adb -s emulator-5554 shell input tap $history_audio_redo
-sleep 1
-timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-sound-trim-redo.txt 2>&1 || true
-if ! grep -Eq "PROJECT_HISTORY_APPLIED action=redo .*beforeSoundDurationMs=$sound_before_duration afterSoundDurationMs=$sound_after_duration" emulator-screenshots/project-history-sound-trim-redo.txt; then
-  echo "Redo did not reapply the sound-effect trim from $sound_before_duration to $sound_after_duration."
+# Restoring an audio edit rebuilds the composed preview player. Do not assume
+# that the synchronous button tap and Media3/player refresh finish inside 1s.
+# Poll the actual model-transition marker; a missing/incorrect Redo still fails.
+redo_history_verified=false
+for attempt in $(seq 1 15); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I \
+    > emulator-screenshots/project-history-sound-trim-redo.txt 2>&1 || true
+  if grep -Eq "PROJECT_HISTORY_APPLIED action=redo .*beforeSoundDurationMs=$sound_before_duration afterSoundDurationMs=$sound_after_duration" \
+      emulator-screenshots/project-history-sound-trim-redo.txt; then
+    redo_history_verified=true
+    break
+  fi
+  sleep 1
+done
+if [ "$redo_history_verified" != true ]; then
+  echo "Redo did not reapply the sound-effect trim from $sound_before_duration to $sound_after_duration within 15 seconds."
   cat emulator-screenshots/project-history-sound-trim-redo.txt || true
   collect_capture_diagnostics project-history-sound-trim-redo-failed
   exit 90
