@@ -3068,38 +3068,7 @@ fi
 read -r text_frame_left text_frame_top text_frame_right text_frame_bottom text_before_x text_before_y <<< "$text_selection_bounds"
 echo "PASS: new text and its white selection frame are visible inside the measured project canvas at ($text_before_x,$text_before_y)."
 
-# The text detail panel normally opens with direct editing already enabled.
-# Only toggle it on if the accessibility state says it is currently closed.
-text_edit_toggle_info="$(python3 - emulator-screenshots/editor-text-panel.xml <<'PY'
-import re
-import sys
-import xml.etree.ElementTree as ET
-root = ET.parse(sys.argv[1]).getroot()
-for node in root.iter("node"):
-    label = node.attrib.get("content-desc", "")
-    if "Önizleme üzerindeki yazıyı sürükleme" not in label:
-        continue
-    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
-    if match:
-        x1, y1, x2, y2 = map(int, match.groups())
-        state = "kapalı" if "kapalı" in label.casefold() else "açık"
-        print((x1 + x2) // 2, (y1 + y2) // 2, state)
-        break
-PY
-)"
-if [ -z "$text_edit_toggle_info" ]; then
-  echo "The text panel did not expose its shared preview-gesture toggle."
-  collect_capture_diagnostics text-canvas-edit-toggle-missing
-  exit 61
-fi
-read -r text_toggle_x text_toggle_y text_toggle_state <<< "$text_edit_toggle_info"
-text_edit_toggle_changed=false
-if [ "$text_toggle_state" = "kapalı" ]; then
-  timeout -k 2s 8s adb -s emulator-5554 shell input tap "$text_toggle_x" "$text_toggle_y"
-  sleep 1
-  text_edit_toggle_changed=true
-fi
-
+# Preview text manipulation is now always available while the text composer is open.
 # The default text fixture is bottom-centred and nearly fills the canvas
 # width. Drag right/up so the full selection outline remains inside the project
 # canvas; a right/down swipe moves the box beyond the canvas edge and clips the
@@ -3353,11 +3322,6 @@ if [ "$((text_group_redo_y - text_after_y))" -lt -8 ] || [ "$((text_group_redo_y
   exit 65
 fi
 echo "PASS: one Redo restored the complete text session and the next Redo restored its separate drag."
-
-if [ "$text_edit_toggle_changed" = true ]; then
-  timeout -k 2s 8s adb -s emulator-5554 shell input tap "$text_toggle_x" "$text_toggle_y"
-  sleep 1
-fi
 
 assert_preview_canvas_unchanged_from_snapshot() {
   python3 - "$1" "$2" "$3" "$4" <<'PY'
