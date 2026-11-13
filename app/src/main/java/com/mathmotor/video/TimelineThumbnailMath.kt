@@ -81,6 +81,30 @@ internal object TimelineThumbnailMath {
         }
     }
 
+    /**
+     * Decode paused preview frames at the measured project-canvas pixel size.
+     * Canvas dimensions are already physical pixels, so default oversampling adds
+     * decode work and memory without increasing visible detail. Callers may opt in
+     * when they intentionally render beyond the measured canvas size.
+     */
+    fun previewDecodeBounds(
+        canvasWidthPx: Int,
+        canvasHeightPx: Int,
+        oversample: Float = 1f,
+        maxDimensionPx: Int = 1_920
+    ): Pair<Int, Int> {
+        val width = canvasWidthPx.coerceAtLeast(1)
+        val height = canvasHeightPx.coerceAtLeast(1)
+        val factor = oversample.takeIf { it.isFinite() && it > 0f } ?: 1f
+        val maxDimension = maxDimensionPx.coerceAtLeast(1)
+        val scale = minOf(
+            factor,
+            maxDimension.toFloat() / maxOf(width, height).toFloat()
+        )
+        return (width * scale).roundToInt().coerceIn(1, maxDimension) to
+            (height * scale).roundToInt().coerceIn(1, maxDimension)
+    }
+
     fun thumbnailCount(widthPx: Int, cellWidthPx: Int, maxCount: Int = 256): Int {
         val safeWidth = widthPx.coerceAtLeast(1).toLong()
         val safeCellWidth = cellWidthPx.coerceAtLeast(1).toLong()

@@ -501,6 +501,21 @@ class TimelineVideoMathTest {
     }
 
     @Test
+    fun capcutPrimaryLanePackingMovesASingleStaleClipBackToZero() {
+        val segments = listOf(
+            TimelineVideoSegment(12_500L, 2_000L, 6_000L, 8_000L, 1.25f)
+        )
+
+        val plan = TimelineVideoMath.packSequentially(segments)!!
+
+        assertEquals(listOf(0), plan.orderedClipIndices)
+        assertEquals(0L, plan.timelineStartByClipIndex[0])
+        assertEquals(3_200L, segments[0].durationMs)
+        assertEquals(2_000L, segments[0].sourceStartMs)
+        assertEquals(6_000L, segments[0].sourceEndMs)
+    }
+
+    @Test
     fun capcutPrimaryLanePackingSortsDroppedClipsAndStartsAtZero() {
         val segments = listOf(
             TimelineVideoSegment(8_000L, 0L, 2_000L, 2_000L),
@@ -515,7 +530,7 @@ class TimelineVideoMathTest {
     }
 
     @Test
-    fun overlapRepairPreservesExistingGapsButPushesOnlyTheCollidingClip() {
+    fun primaryLaneRepairClosesEveryGapAndAnchorsAtZero() {
         val segments = listOf(
             TimelineVideoSegment(0L, 0L, 2_000L, 2_000L),
             TimelineVideoSegment(1_500L, 300L, 3_000L, 3_000L),
@@ -527,7 +542,7 @@ class TimelineVideoMathTest {
         assertEquals(listOf(0, 1, 2), plan.orderedClipIndices)
         assertEquals(0L, plan.timelineStartByClipIndex[0])
         assertEquals(2_000L, plan.timelineStartByClipIndex[1])
-        assertEquals(7_000L, plan.timelineStartByClipIndex[2])
+        assertEquals(4_700L, plan.timelineStartByClipIndex[2])
     }
 
     @Test
@@ -562,7 +577,7 @@ class TimelineVideoMathTest {
     }
 
     @Test
-    fun droppingInsideAnEmptyVideoLaneGapPreservesTheGap() {
+    fun droppingInsideAnEmptyVideoLaneGapClosesTheGap() {
         val segments = listOf(
             TimelineVideoSegment(0L, 0L, 2_000L, 2_000L),
             TimelineVideoSegment(5_000L, 0L, 2_000L, 2_000L)

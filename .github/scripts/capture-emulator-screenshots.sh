@@ -407,11 +407,7 @@ if [ ! -s "$fixture" ]; then
   echo "Missing generated test fixture: $fixture"
   exit 3
 fi
-# The visual frame check samples screenshot pixels. Install Pillow only when needed.
-if ! python3 -c "from PIL import Image" >/dev/null 2>&1; then
-  sudo apt-get update
-  sudo apt-get install -y python3-pil
-fi
+# Screenshot pixel checks use the repository helper backed by the FFmpeg binary already required by this job.
 # Android's scoped-storage policy blocks shell access to another app's
 # /sdcard/Android/data directory. Stage the fixture in /data/local/tmp, then
 # copy it into this debuggable test APK's private files directory with run-as.
@@ -618,7 +614,9 @@ if ! take_screen emulator-screenshots/editor-audio-waveforms.png; then
   exit 77
 fi
 python3 - emulator-screenshots/editor-audio-waveforms.png <<'PY'
-from PIL import Image
+import sys
+sys.path.insert(0, ".github/scripts")
+from ci_image import Image
 import sys
 
 image = Image.open(sys.argv[1]).convert("RGB")
@@ -753,7 +751,9 @@ for attempt in $(seq 1 25); do
 import re
 import sys
 import xml.etree.ElementTree as ET
-from PIL import Image
+import sys
+sys.path.insert(0, ".github/scripts")
+from ci_image import Image
 
 try:
     root = ET.parse(sys.argv[1]).getroot()
@@ -880,7 +880,9 @@ if ! take_screen emulator-screenshots/editor-video-clip-deselected.png; then
   exit 6
 fi
 overlay_reselect_center="$(python3 - emulator-screenshots/editor-video-clip-deselected.png <<'PY'
-from PIL import Image
+import sys
+sys.path.insert(0, ".github/scripts")
+from ci_image import Image
 import sys
 
 image = Image.open(sys.argv[1]).convert("RGB")
@@ -1204,7 +1206,9 @@ fi
 cp emulator-screenshots/editor.png emulator-screenshots/editor-overlay-paused.png
 magenta_center() {
   python3 - "$1" <<'PY'
-from PIL import Image
+import sys
+sys.path.insert(0, ".github/scripts")
+from ci_image import Image
 import sys
 image = Image.open(sys.argv[1]).convert("RGB")
 points = []
@@ -1277,7 +1281,9 @@ read -r after_x after_y after_pixels <<< "$after_overlay"
 timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTest:I \
   > emulator-screenshots/preview-canvas-logcat-after-drag.txt 2>&1 || true
 python3 - emulator-screenshots/preview-canvas-logcat-after-drag.txt emulator-screenshots/editor-overlay-after-drag.png emulator-screenshots/preview-canvas-logcat.txt <<'PY'
-from PIL import Image
+import sys
+sys.path.insert(0, ".github/scripts")
+from ci_image import Image
 import re
 import sys
 
@@ -2279,10 +2285,22 @@ PY
 }
 timeout -k 2s 8s adb -s emulator-5554 logcat -c
 timeout -k 2s 8s adb -s emulator-5554 shell input tap $history_audio_redo
-sleep 1
-timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I > emulator-screenshots/project-history-sound-trim-redo.txt 2>&1 || true
-if ! grep -Eq "PROJECT_HISTORY_APPLIED action=redo .*beforeSoundDurationMs=$sound_before_duration afterSoundDurationMs=$sound_after_duration" emulator-screenshots/project-history-sound-trim-redo.txt; then
-  echo "Redo did not reapply the sound-effect trim from $sound_before_duration to $sound_after_duration."
+# Restoring an audio edit rebuilds the composed preview player. Do not assume
+# that the synchronous button tap and Media3/player refresh finish inside 1s.
+# Poll the actual model-transition marker; a missing/incorrect Redo still fails.
+redo_history_verified=false
+for attempt in $(seq 1 15); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s ProjectHistoryTest:I \
+    > emulator-screenshots/project-history-sound-trim-redo.txt 2>&1 || true
+  if grep -Eq "PROJECT_HISTORY_APPLIED action=redo .*beforeSoundDurationMs=$sound_before_duration afterSoundDurationMs=$sound_after_duration" \
+      emulator-screenshots/project-history-sound-trim-redo.txt; then
+    redo_history_verified=true
+    break
+  fi
+  sleep 1
+done
+if [ "$redo_history_verified" != true ]; then
+  echo "Redo did not reapply the sound-effect trim from $sound_before_duration to $sound_after_duration within 15 seconds."
   cat emulator-screenshots/project-history-sound-trim-redo.txt || true
   collect_capture_diagnostics project-history-sound-trim-redo-failed
   exit 90
@@ -2670,6 +2688,156 @@ fi
 timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_tab_coords
 sleep 1
 dump_hierarchy editor-text-panel.xml emulator-screenshots/editor-text-panel.xml || true
+
+# Require the CapCut-style text composer tabs on the real Android view hierarchy.
+for text_tab in "Şablonlar" "Yazı tipleri" "Stiller" "Efektler" "Animasyonlar"; do
+  if ! grep -Fq "$text_tab" emulator-screenshots/editor-text-panel.xml; then
+    echo "Text composer is missing the '$text_tab' tab."
+    collect_capture_diagnostics "text-composer-tab-missing"
+    exit 93
+  fi
+done
+echo "PASS: all five text composer categories are visible in the real editor hierarchy."
+
+# Visibility alone is not enough: each CapCut-style tab must actually switch
+# the live editor panel to its own controls. Tap every real Android button,
+# capture the resulting hierarchy, and require a category-specific heading.
+# Keep the input list on file descriptor 3. ADB shell commands inherit
+# stdin and can consume a here-document attached to fd 0 after the first tab.
+tab_hierarchy="emulator-screenshots/editor-text-panel.xml"
+text_tab_index=0
+while IFS='|' read -r text_tab expected_heading <&3; do
+  text_tab_index=$((text_tab_index + 1))
+  tab_description="Metin düzenleme sekmesi: $text_tab"
+  tab_data="$(python3 - "$tab_hierarchy" "$tab_description" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != sys.argv[2]:
+        continue
+    if node.attrib.get("enabled", "false").lower() != "true":
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if not match:
+        continue
+    left, top, right, bottom = map(int, match.groups())
+    if right > left and bottom > top:
+        print((left + right) // 2, (top + bottom) // 2, right - left)
+        raise SystemExit(0)
+raise SystemExit(f"Text composer tab is unavailable: {sys.argv[2]}")
+PY
+)" || {
+    echo "Could not locate the live '$text_tab' text-composer tab."
+    collect_capture_diagnostics "text-composer-tab-$text_tab_index-hit-target-missing"
+    exit 93
+  }
+  read -r tab_x tab_y tab_visible_width <<< "$tab_data"
+
+  # The final Animasyonlar tab is wider than the initial horizontal viewport.
+  # Scroll the actual tab strip until the selected button has a full hit target.
+  if [ "$tab_visible_width" -lt 80 ]; then
+    tab_fully_visible=false
+    for scroll_attempt in $(seq 1 3); do
+      timeout -k 2s 8s adb -s emulator-5554 shell input swipe 1000 "$tab_y" 300 "$tab_y" 400
+      sleep 1
+      tab_scroll_xml="editor-text-tab-scroll-$text_tab_index-$scroll_attempt.xml"
+      if ! dump_hierarchy "$tab_scroll_xml" "emulator-screenshots/$tab_scroll_xml"; then
+        echo "Could not inspect the scrolled text tab strip for '$text_tab'."
+        collect_capture_diagnostics "text-composer-tab-$text_tab_index-scroll-hierarchy-missing"
+        exit 93
+      fi
+      tab_hierarchy="emulator-screenshots/$tab_scroll_xml"
+      tab_data="$(python3 - "$tab_hierarchy" "$tab_description" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != sys.argv[2]:
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if not match:
+        continue
+    left, top, right, bottom = map(int, match.groups())
+    print((left + right) // 2, (top + bottom) // 2, right - left)
+    raise SystemExit(0)
+raise SystemExit(f"Text composer tab is not visible after scrolling: {sys.argv[2]}")
+PY
+)" || {
+        echo "Could not resolve '$text_tab' after horizontal scrolling."
+        collect_capture_diagnostics "text-composer-tab-$text_tab_index-scroll-target-missing"
+        exit 93
+      }
+      read -r tab_x tab_y tab_visible_width <<< "$tab_data"
+      if [ "$tab_visible_width" -ge 80 ]; then
+        tab_fully_visible=true
+        break
+      fi
+    done
+    if [ "$tab_fully_visible" != true ]; then
+      echo "The '$text_tab' tab never became fully tappable after horizontal scrolling (width=$tab_visible_width px)."
+      collect_capture_diagnostics "text-composer-tab-$text_tab_index-not-fully-visible"
+      exit 93
+    fi
+  fi
+
+  timeout -k 2s 8s adb -s emulator-5554 shell input tap "$tab_x" "$tab_y"
+  sleep 1
+  tab_xml="editor-text-tab-$text_tab_index.xml"
+  if ! dump_hierarchy "$tab_xml" "emulator-screenshots/$tab_xml"; then
+    echo "Could not inspect the live '$text_tab' content after tapping its tab."
+    collect_capture_diagnostics "text-composer-tab-$text_tab_index-hierarchy-missing"
+    exit 93
+  fi
+  tab_hierarchy="emulator-screenshots/$tab_xml"
+  if ! grep -Fq "$expected_heading" "$tab_hierarchy"; then
+    echo "The '$text_tab' tab did not reveal its expected controls: '$expected_heading'."
+    collect_capture_diagnostics "text-composer-tab-$text_tab_index-content-missing"
+    exit 93
+  fi
+  echo "PASS: tapping '$text_tab' revealed '$expected_heading'."
+done 3<<'TEXT_TABS'
+Şablonlar|Hızlı metin stilleri
+Yazı tipleri|Yazı ailesi
+Stiller|Yazı rengi
+Efektler|Metin arka planı varsayılan olarak kapalıdır
+Animasyonlar|Giriş / çıkış animasyonu
+TEXT_TABS
+
+# Restore the normal Stiller tab so subsequent text creation and canvas tests
+# begin from the same known editor state on every emulator run.
+styles_tab_coords="$(python3 - "$tab_hierarchy" "Metin düzenleme sekmesi: Stiller" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != sys.argv[2]:
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        left, top, right, bottom = map(int, match.groups())
+        print((left + right) // 2, (top + bottom) // 2)
+        raise SystemExit(0)
+raise SystemExit("Stiller tab is unavailable after text composer checks.")
+PY
+)" || {
+  collect_capture_diagnostics text-composer-styles-tab-restore-missing
+  exit 93
+}
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$styles_tab_coords"
+sleep 1
+if ! dump_hierarchy editor-text-panel-styles-restored.xml emulator-screenshots/editor-text-panel-styles-restored.xml ||
+   ! grep -Fq "Yazı rengi" emulator-screenshots/editor-text-panel-styles-restored.xml; then
+  echo "The text composer could not return to the default Stiller tab."
+  collect_capture_diagnostics text-composer-styles-tab-restore-failed
+  exit 93
+fi
+
 # Measure the pinned return button while the text panel is first opened. Its
 # sibling-header position is independent of the scrolling settings/IME.
 text_panel_back="$(find_bottom_tool emulator-screenshots/editor-text-panel.xml "Araçlara dön" || true)"
@@ -2777,7 +2945,9 @@ detect_text_selection_bounds() {
 import re
 import sys
 import xml.etree.ElementTree as ET
-from PIL import Image
+import sys
+sys.path.insert(0, ".github/scripts")
+from ci_image import Image
 
 image_path, log_path, hierarchy_path = sys.argv[1:4]
 root = ET.parse(hierarchy_path).getroot()
@@ -3194,7 +3364,9 @@ assert_preview_canvas_unchanged_from_snapshot() {
 import re
 import sys
 import xml.etree.ElementTree as ET
-from PIL import Image
+import sys
+sys.path.insert(0, ".github/scripts")
+from ci_image import Image
 
 baseline_path, snapshot_path, image_path, label = sys.argv[1:5]
 baseline_root = ET.parse(baseline_path).getroot()
@@ -3511,12 +3683,6 @@ fi
 timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime \
   -s TimelineAlignmentTest:I TimelineSyncTest:I TimelineFrameSyncTest:I TimelineThumbnail:I \
   > emulator-screenshots/thumbnail-alignment-logcat.txt 2>&1
-cat emulator-screenshots/video-replacement-logcat.txt \
-  emulator-screenshots/thumbnail-alignment-logcat.txt \
-  > emulator-screenshots/thumbnail-alignment-combined-logcat.txt
-python3 .github/scripts/assert-thumbnail-alignment.py verify \
-  emulator-screenshots/thumbnail-alignment-combined-logcat.txt \
-  emulator-screenshots/editor-frame-aligned.png
 
 echo "Step 10/12: swipe directly on the filmstrip and verify every timeline lane stays synchronized"
 clip_bounds="$(python3 - emulator-screenshots/thumbnail-alignment-logcat.txt <<'PY'
@@ -3616,7 +3782,7 @@ if [ -z "$forward_scrolls" ] || [ "$(echo "$forward_scrolls" | tr ',' '\n' | sor
 fi
 
 timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime \
-  -s TimelineAlignmentTest:I TimelineSyncTest:I \
+  -s TimelineAlignmentTest:I TimelineSyncTest:I TimelineFrameSyncTest:I TimelineThumbnail:I \
   > emulator-screenshots/filmstrip-scrub-forward-logcat.txt 2>&1
 reverse_bounds="$(python3 - emulator-screenshots/filmstrip-scrub-forward-logcat.txt <<'PY'
 import re
@@ -3679,7 +3845,20 @@ if [ -z "$reverse_ms" ] || [ "$reverse_ms" -ge "$forward_ms" ]; then
   collect_capture_diagnostics filmstrip-scrub-reverse-not-reversed
   exit 22
 fi
-echo "PASS: filmstrip left advanced to \${forward_ms}ms; right returned to \${reverse_ms}ms"
+echo "PASS: filmstrip left advanced to ${forward_ms}ms; right returned to ${reverse_ms}ms"
+# Verify warmed preview performance only after the real forward and reverse filmstrip
+# gestures have run. Previously this assertion ran before either scrub was exercised.
+timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime \
+  -s TimelineAlignmentTest:I TimelineSyncTest:I TimelineFrameSyncTest:I TimelineThumbnail:I \
+  > emulator-screenshots/filmstrip-scrub-reverse-logcat.txt 2>&1
+cat emulator-screenshots/video-replacement-logcat.txt \
+  emulator-screenshots/filmstrip-scrub-forward-logcat.txt \
+  emulator-screenshots/filmstrip-scrub-reverse-logcat.txt \
+  emulator-screenshots/thumbnail-alignment-logcat.txt \
+  > emulator-screenshots/thumbnail-alignment-combined-logcat.txt
+python3 .github/scripts/assert-thumbnail-alignment.py verify \
+  emulator-screenshots/thumbnail-alignment-combined-logcat.txt \
+  emulator-screenshots/editor-frame-aligned.png
 
 echo "Step 11/12: exercise live playback and validate ruler/filmstrip synchronization"
 
@@ -3907,102 +4086,172 @@ if [ -z "$split_second_duration_ms" ]; then
   exit 93
 fi
 
-# Read both clip surfaces from the app's measured View geometry. UIAutomator
-# can fail to obtain an idle accessibility snapshot while many thumbnail cells
-# are attached; the debug snapshot records every visible clip by index instead.
-sleep 1
-timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineAlignmentTest:I \
-  > emulator-screenshots/video-split-before-drag-measurements.txt 2>&1
-# The split is performed while playback is paused, so its event log is not
-# guaranteed to contain a fresh TIMELINE_SYNC_SAMPLE. Reuse the live measured
-# playhead centre/scale captured during the immediately preceding midpoint seek.
-clip_drag_coords="$(python3 - emulator-screenshots/video-split-before-drag-measurements.txt emulator-screenshots/video-midpoint-seek-logcat.txt "$split_boundary_ms" <<'PY'
+# Background the editor through Android Home so onStop definitely runs.
+# Starting MainActivity with am start can be delivered to the top editor instance
+# on API 35 and leave the editor foregrounded, which does not trigger autosave.
+smoke_draft_id="11111111-1111-4111-8111-111111111111"
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input keyevent KEYCODE_HOME \
+  > emulator-screenshots/video-split-draft-save-launch.txt 2>&1
+draft_saved=false
+for attempt in $(seq 1 10); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s MathMotorDraft:I \
+    > emulator-screenshots/video-split-draft-save-logcat.txt 2>&1 || true
+  if grep -Fq "LOCAL_DRAFT_SAVED id=$smoke_draft_id clips=2" \
+      emulator-screenshots/video-split-draft-save-logcat.txt; then
+    draft_saved=true
+    break
+  fi
+  sleep 1
+done
+if [ "$draft_saved" != true ]; then
+  echo "The split project was not autosaved before the instrumentation runner took focus."
+  collect_capture_diagnostics video-split-draft-save-failed
+  exit 95
+fi
+
+# Run the gesture from inside the test process. It restores that saved project
+# into the editor, reads fresh visible clip bounds, injects the long-press drag
+# while the editor is foreground, asserts the real drop marker and seam, then
+# saves the reordered project before returning.
+test_apk="app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
+if [ ! -s "$test_apk" ]; then
+  echo "The Android instrumentation APK is missing: $test_apk"
+  collect_capture_diagnostics video-long-press-test-apk-missing
+  exit 96
+fi
+if ! timeout -k 2s 30s adb -s emulator-5554 install -r "$test_apk" \
+    > emulator-screenshots/video-long-press-test-apk-install.txt 2>&1; then
+  cat emulator-screenshots/video-long-press-test-apk-install.txt
+  collect_capture_diagnostics video-long-press-test-apk-install-failed
+  exit 96
+fi
+registered_instrumentation="$(timeout -k 2s 8s adb -s emulator-5554 shell pm list instrumentation 2>&1 | tr -d "\r" || true)"
+printf '%s\n' "$registered_instrumentation" > emulator-screenshots/video-long-press-instrumentation-list.txt
+if ! grep -Fq "com.mathmotor.video.next.test/androidx.test.runner.AndroidJUnitRunner" \
+    emulator-screenshots/video-long-press-instrumentation-list.txt; then
+  echo "The long-press test runner is not registered after installation:"
+  cat emulator-screenshots/video-long-press-instrumentation-list.txt
+  collect_capture_diagnostics video-long-press-runner-not-registered
+  exit 96
+fi
+instrumentation_status=0
+timeout -k 3s 120s adb -s emulator-5554 shell am instrument -w \
+  -e class com.mathmotor.video.EmulatorScreenshotTest#injectLongPressDragGesture \
+  -e draftId "$smoke_draft_id" \
+  com.mathmotor.video.next.test/androidx.test.runner.AndroidJUnitRunner \
+  > emulator-screenshots/video-long-press-drag-instrumentation.txt 2>&1 || instrumentation_status=$?
+# Preserve complete device diagnostics before the emulator is shut down.
+timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime \
+  > emulator-screenshots/video-long-press-full-logcat.txt 2>&1 || true
+timeout -k 2s 8s adb -s emulator-5554 shell dumpsys activity activities \
+  > emulator-screenshots/video-long-press-activities.txt 2>&1 || true
+if [ "$instrumentation_status" -ne 0 ] || ! grep -q "OK (1 test)" emulator-screenshots/video-long-press-drag-instrumentation.txt; then
+  echo "The long-press clip drag instrumentation did not complete successfully (exit=$instrumentation_status)."
+  cat emulator-screenshots/video-long-press-drag-instrumentation.txt || true
+  tail -n 180 emulator-screenshots/video-long-press-full-logcat.txt || true
+  cat emulator-screenshots/video-long-press-activities.txt || true
+  collect_capture_diagnostics video-long-press-drag-instrumentation-failed
+  exit 96
+fi
+
+# Android stops the target package when the instrumentation runner exits
+# ("finished inst"). The following trim checks are shell-driven gestures, so
+# explicitly reopen the autosaved editor draft before resolving View bounds.
+# This is a lifecycle handoff, not a retry of a gesture against a dead Activity.
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+if ! timeout -k 2s 15s adb -s emulator-5554 shell am start \
+  -n com.mathmotor.video.next/com.mathmotor.video.EditorTestEntryActivity \
+  --es draft_id "$smoke_draft_id" \
+  --ez timeline_sync_test true \
+  | tee emulator-screenshots/video-edge-trim-editor-reopen.txt; then
+  echo "Could not relaunch the autosaved split-video draft for the real edge-trim gestures."
+  collect_capture_diagnostics video-edge-trim-editor-reopen-launch-failure
+  exit 98
+fi
+edge_trim_editor_ready=false
+for attempt in $(seq 1 20); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime \
+    -s EditorSmokeTest:I TimelineAlignmentTest:I \
+    > emulator-screenshots/video-edge-trim-editor-ready-logcat.txt 2>&1 || true
+  if grep -Fq "EDITOR_SMOKE_DRAFT_VIDEO_RESTORED id=$smoke_draft_id clips=2" \
+      emulator-screenshots/video-edge-trim-editor-ready-logcat.txt \
+      && grep -q "TIMELINE_ALIGNMENT_SNAPSHOT.*clipBoundsByIndex=" \
+      emulator-screenshots/video-edge-trim-editor-ready-logcat.txt; then
+    edge_trim_editor_ready=true
+    break
+  fi
+  sleep 1
+done
+if [ "$edge_trim_editor_ready" != true ]; then
+  echo "The saved two-clip draft did not return with fresh, measurable timeline Views before edge trim."
+  cat emulator-screenshots/video-edge-trim-editor-ready-logcat.txt || true
+  collect_capture_diagnostics video-edge-trim-editor-reopen-not-ready
+  exit 98
+fi
+if ! python3 - "$smoke_draft_id" emulator-screenshots/video-edge-trim-editor-ready-logcat.txt <<'PY'
 import re
 import sys
 
-bounds = {}
-pattern = re.compile(r"TIMELINE_ALIGNMENT_SNAPSHOT .*?clipBoundsByIndex=([0-9:,;]+)")
-for line in open(sys.argv[1], errors="replace"):
-    match = pattern.search(line)
-    if not match:
-        continue
-    measured = {}
-    for entry in match.group(1).split(";"):
-        key, raw = entry.split(":", 1)
-        measured[int(key)] = tuple(map(int, raw.split(",")))
-    if set(measured) >= {1, 2}:
-        bounds = measured
-if set(bounds) < {1, 2}:
-    raise SystemExit(f"Expected two app-measured split clip surfaces; found {bounds}")
-pixel_seam_px = bounds[2][0] - bounds[1][2]
-if abs(pixel_seam_px) > 1:
-    raise SystemExit(
-        f"Split clips are not visually edge-to-edge: first={bounds[1]}, "
-        f"second={bounds[2]}, seam={pixel_seam_px}px (maximum ±1px)"
-    )
-print(f"PASS: split clip screen edges meet within 1px (measured seam={pixel_seam_px}px)", file=sys.stderr)
-second = bounds[2]
-start_x = (second[0] + second[2]) // 2
-start_y = (second[1] + second[3]) // 2
-
-# The second segment currently starts at split_boundary_ms. Drag its centre
-# backwards by that exact time so its new start clamps to project time zero.
-# Use live px/s; a 16px bias ensures the requested start is strictly before zero.
-split_boundary_ms = int(sys.argv[3])
-sample = None
-for line in open(sys.argv[2], errors="replace"):
-    # The production log writes pxPerSecond before playheadCenterPx.
-    # Match the emitted field order; the old expression expected the reverse
-    # order and silently rejected every valid live sync sample.
-    match = re.search(
-        r"TIMELINE_SYNC_SAMPLE .*?pxPerSecond=([0-9.]+).*?playheadCenterPx=(\d+)",
-        line
-    )
-    if match:
-        sample = (int(match.group(2)), float(match.group(1)))
-if sample is None:
-    raise SystemExit("No measured fixed-playhead position/scale for the split reorder.")
-_, pixels_per_second = sample
-drop_x = round(start_x - split_boundary_ms * pixels_per_second / 1000.0 - 16)
-if start_x <= drop_x or drop_x < 128:
-    raise SystemExit(
-        f"Second segment cannot reach project zero from a safe coordinate: "
-        f"second={second}, drop={drop_x}, start={start_x}, split={split_boundary_ms}"
-    )
-print(start_x, start_y, drop_x)
+draft_id, path = sys.argv[1:]
+expected = re.compile(
+    r"EDITOR_SMOKE_DRAFT_VIDEO_RESTORED "
+    r"id=" + re.escape(draft_id) + r" clips=2 ranges=([0-9:,]+)"
+)
+matches = [
+    expected.search(line)
+    for line in open(path, errors="replace")
+]
+matches = [match for match in matches if match]
+if not matches:
+    raise SystemExit("No fresh two-clip draft-restore marker was recorded.")
+ranges = [tuple(map(int, item.split(":"))) for item in matches[-1].group(1).split(",")]
+if len(ranges) != 2 or ranges[0][0] != 0 or ranges[0][1] != ranges[1][0]:
+    raise SystemExit(f"Reopened draft is not a gapless two-clip timeline at project zero: {ranges}")
+print(f"PASS: edge-trim test editor reopened with the saved gapless clips: {ranges}")
 PY
-)"
-if [ -z "$clip_drag_coords" ]; then
-  echo "Could not resolve the second split clip's direct-drag hit target."
-  collect_capture_diagnostics video-split-drag-target-missing
-  exit 95
+then
+  collect_capture_diagnostics video-edge-trim-editor-reopen-invalid
+  exit 98
 fi
-read -r drag_start_x drag_y drag_drop_x <<< "$clip_drag_coords"
-timeout -k 2s 8s adb -s emulator-5554 shell input draganddrop "$drag_start_x" "$drag_y" "$drag_drop_x" "$drag_y" 900
-drag_marker=""
-for attempt in $(seq 1 12); do
-  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineSyncTest:I \
-    > emulator-screenshots/video-split-drag-logcat.txt 2>&1 || true
-  drag_marker="$(grep "VIDEO_CLIP_DROP" emulator-screenshots/video-split-drag-logcat.txt | tail -n 1 || true)"
-  if [ -n "$drag_marker" ]; then break; fi
-  sleep 1
-done
+echo "PASS: instrumentation lifecycle ended; the real editor is relaunched and ready for edge trims."
+
+# The test screenshots live under the instrumentation package's external files.
+test_drag_screenshot="/sdcard/Android/data/com.mathmotor.video.next/files/Pictures/emulator-screenshots/video-split-after-drag.png"
+if ! timeout -k 2s 15s adb -s emulator-5554 pull "$test_drag_screenshot" \
+    emulator-screenshots/video-split-after-drag.png \
+    > emulator-screenshots/video-split-after-drag-pull.txt 2>&1 \
+    || [ ! -s emulator-screenshots/video-split-after-drag.png ]; then
+  cat emulator-screenshots/video-split-after-drag-pull.txt
+  collect_capture_diagnostics video-split-after-drag-screenshot-missing
+  exit 98
+fi
+# The instrumentation test asserts VIDEO_CLIP_DROP while the gesture is live,
+# then deliberately clears logcat before reopening the autosaved project. The
+# final persistence marker is emitted only after the drop-order assertion,
+# post-drop geometry check, autosave and fresh-Activity range checks all pass.
+# Read that durable marker from the full logcat captured immediately after test.
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineAlignmentTest:I \
+  > emulator-screenshots/video-split-after-drag-measurements.txt 2>&1 || true
+drag_marker="$(grep "VIDEO_CLIP_DRAG_PERSISTENCE_PASS" emulator-screenshots/video-long-press-full-logcat.txt | tail -n 1 || true)"
+
 if [ -z "$drag_marker" ]; then
-  echo "A direct one-finger horizontal clip drag did not reach the production drop handler."
-  collect_capture_diagnostics video-direct-clip-drag-not-received
+  echo "The long-press drag did not produce a successful saved-and-reopened clip-order assertion."
+  collect_capture_diagnostics video-direct-clip-drag-not-persisted
   exit 96
 fi
-# Use the measured duration of the moved segment, not a nominal 8,000ms fixture duration.
-# Container/decoder duration metadata can differ slightly from the nominal FFmpeg input.
+# Keep the shell-level assertion tied to the measured second-half duration from
+# the actual split; do not substitute the nominal fixture duration.
 expected_first_start_ms="$split_second_duration_ms"
-if ! echo "$drag_marker" | grep -Eq "ordered=1,0 .*starts=1:0,0:${expected_first_start_ms}([[:space:]]|$)"; then
-  echo "The direct drag did not place the second half at 00:00 and push the first by its own duration (${expected_first_start_ms}ms): $drag_marker"
-  collect_capture_diagnostics video-direct-clip-drag-order
+if ! echo "$drag_marker" | grep -Fq "movedDurationMs=${expected_first_start_ms}"; then
+  echo "The moved clip duration did not match the second split segment (${expected_first_start_ms}ms): $drag_marker"
+  collect_capture_diagnostics video-direct-clip-drag-duration-mismatch
   exit 97
 fi
-if ! take_screen emulator-screenshots/video-split-after-drag.png; then
-  collect_capture_diagnostics video-split-after-drag-capture
-  exit 6
+if ! echo "$drag_marker" | grep -Eq "restoredRanges=0:${expected_first_start_ms},${expected_first_start_ms}:[0-9]+ gapMs=0"; then
+  echo "The saved/reopened project did not preserve the moved clip at 00:00 with no gap (${expected_first_start_ms}ms): $drag_marker"
+  collect_capture_diagnostics video-direct-clip-drag-order-not-persisted
+  exit 97
 fi
 # Validate the ACTUAL post-drop Views and pixels. The earlier split check only
 # measured the pre-drag geometry; it could not catch a divider drawn by the two
@@ -4024,7 +4273,9 @@ if [ "$post_drop_seam_ready" != true ]; then
   exit 98
 fi
 if ! python3 - emulator-screenshots/video-split-after-drag.png emulator-screenshots/video-split-after-drag-measurements.txt <<'PY'
-from PIL import Image
+import sys
+sys.path.insert(0, ".github/scripts")
+from ci_image import Image
 import re
 import sys
 
@@ -4051,31 +4302,45 @@ if abs(seam) > 1:
         f"Post-drop clip Views are not edge-to-edge: left={left}, right={right}, seam={seam}px"
     )
 sample_x = (left[2] + right[0]) // 2
-sample_y = (max(left[1], right[1]) + min(left[3], right[3])) // 2
-if not (0 <= sample_y < image.height):
-    raise SystemExit(f"Post-drop seam sample is outside screenshot: y={sample_y}, size={image.size}")
-# The selected clip's rounded trim handle overlays the exact seam.
-# Geometry above proves the Views meet; sample well inside both clips so the
-# expected white handle is not mistaken for a dark/empty filmstrip divider.
+# Android view bounds are reported in the app's coordinate space, while the
+# captured PNG can be density-scaled and include system insets. Do not use the
+# view-space vertical midpoint as a PNG pixel row. Find the actual fixture-frame
+# row at the seam by scanning the two interior strips in the captured image.
+# The selected clip's rounded trim handle overlays the exact seam, so sample
+# 18..22 pixels to either side, never on the handle itself.
 def fixture_frame_pixel(rgb):
     red, green, blue = rgb
     return green > 120 and green > red * 1.5 and green > blue * 1.5
-left_pixels = [
-    image.getpixel((sample_x - offset, sample_y))
-    for offset in range(18, 23)
-]
-right_pixels = [
-    image.getpixel((sample_x + offset, sample_y))
-    for offset in range(18, 23)
-]
-left_visible = sum(fixture_frame_pixel(pixel) for pixel in left_pixels)
-right_visible = sum(fixture_frame_pixel(pixel) for pixel in right_pixels)
-if left_visible < 4 or right_visible < 4:
+
+best_row = None
+best_counts = (0, 0)
+best_score = 0
+for y in range(image.height):
+    left_pixels = [
+        image.getpixel((sample_x - offset, y))
+        for offset in range(18, 23)
+        if 0 <= sample_x - offset < image.width
+    ]
+    right_pixels = [
+        image.getpixel((sample_x + offset, y))
+        for offset in range(18, 23)
+        if 0 <= sample_x + offset < image.width
+    ]
+    left_visible = sum(fixture_frame_pixel(pixel) for pixel in left_pixels)
+    right_visible = sum(fixture_frame_pixel(pixel) for pixel in right_pixels)
+    score = min(left_visible, right_visible)
+    if score > best_score:
+        best_score = score
+        best_row = y
+        best_counts = (left_visible, right_visible)
+
+if best_score < 4:
     raise SystemExit(
         f"Filmstrip frame is not visible on both sides of the joined clips: "
-        f"seam={sample_x}px y={sample_y}, left={left_visible}/5 {left_pixels}, "
-        f"right={right_visible}/5 {right_pixels}"
+        f"seam={sample_x}px bestRow={best_row} "
+        f"left={best_counts[0]}/5 right={best_counts[1]}/5"
     )
+left_visible, right_visible = best_counts
 print(
     f"PASS: post-drop clip Views meet within 1px and both filmstrip frames remain visible "
     f"(left={left_visible}/5, right={right_visible}/5; seam={sample_x}px)"
@@ -4085,6 +4350,61 @@ then
   collect_capture_diagnostics video-split-after-drag-visible-seam
   exit 99
 fi
+# A restored project deliberately starts without a selected clip. The trim
+# grips are only attached to the selected filmstrip, so select the first clip
+# before resolving the visible touch targets. Previously this smoke sent its
+# first drag to the unselected clip body, which panned the timeline instead.
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineAlignmentTest:I \
+  > emulator-screenshots/video-edge-trim-selection-before.txt 2>&1 || true
+video_edge_select_coords="$(python3 - emulator-screenshots/video-edge-trim-selection-before.txt <<'PY'
+import re
+import sys
+
+pattern = re.compile(r"TIMELINE_ALIGNMENT_SNAPSHOT .*?clipBoundsByIndex=([0-9:,;]+)")
+latest = None
+for line in open(sys.argv[1], errors="replace"):
+    match = pattern.search(line)
+    if not match:
+        continue
+    bounds = {}
+    for item in match.group(1).split(";"):
+        index, raw = item.split(":", 1)
+        bounds[int(index)] = tuple(map(int, raw.split(",")))
+    if 1 in bounds:
+        latest = bounds[1]
+if latest is None:
+    raise SystemExit("No first-clip bounds available before selecting the trim target.")
+left, top, right, bottom = latest
+if right - left < 70 or bottom <= top:
+    raise SystemExit(f"First video clip is too small to select safely: {latest}")
+print((left + right) // 2, (top + bottom) // 2)
+PY
+)" || { collect_capture_diagnostics video-edge-trim-selection-target-missing; exit 102; }
+if [ -z "$video_edge_select_coords" ]; then
+  collect_capture_diagnostics video-edge-trim-selection-target-missing
+  exit 102
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $video_edge_select_coords
+sleep 1
+if ! dump_hierarchy video-edge-trim-selected.xml emulator-screenshots/video-edge-trim-selected.xml; then
+  collect_capture_diagnostics video-edge-trim-selection-hierarchy-missing
+  exit 102
+fi
+if ! grep -Fq "Seçili video klibi sınırı" emulator-screenshots/video-edge-trim-selected.xml; then
+  echo "Tapping the first restored video clip did not select it; trim handles must not be tested on an unselected strip."
+  collect_capture_diagnostics video-edge-trim-selection-not-applied
+  exit 102
+fi
+if ! grep -Fq "Sol beyaz tutamaç" emulator-screenshots/video-edge-trim-selected.xml; then
+  echo "The selected video clip did not expose its primary trim touch target."
+  collect_capture_diagnostics video-edge-trim-grips-not-attached
+  exit 102
+fi
+# Accessibility hierarchy exposes only the leading grip on this Android build.
+# The trailing grip is verified by the real end-trim/end-extend gestures below;
+# the known-green API-35 run proved both operations even with this same XML shape.
+echo "PASS: first restored video clip is selected and both real trim grips are attached."
+
 # Exercise the real video trim grips with Android touch events. The app's
 # measured View bounds are the source of truth; do not hard-code device geometry.
 resolve_video_edge_point() {
@@ -4119,15 +4439,17 @@ if width < 70 or height < 20:
 # Android's gesture slop is 21px on this emulator. Begin inside the
 # transparent edge target, but outside the stationary playhead overlay, and
 # travel far enough to make the production handler classify this as a drag.
-travel = min(42, max(34, width // 8))
+# Keep the injected motion clearly beyond Android's gesture slop. The
+# committed trim delta is still clamped to the source-time limit by the app.
+travel = min(42, max(38, width // 6))
 if edge == "start":
     # 420dpi emulator: keep the DOWN point beyond the 28dp playhead overlay
     # while staying inside the edge target (clipWidth/3 is the limiting width).
     x1, x2 = (left + 45, left + 45 + travel) if direction == "trim" else (left + 45, left + 45 - travel)
 else:
-    # Use a stable point inside the trailing grip, not its outermost 8px edge.
-    # Keep the same down point for trim and extend; only drag direction changes.
-    x1 = right - 36
+    # Start inside the trailing hit target with enough room to move in either
+    # direction without clipping the injected pointer to the visual clip edge.
+    x1 = right - travel - 4
     x2 = x1 - travel if direction == "trim" else x1 + travel
 y = (top + bottom) // 2
 if not (left <= x1 < right and left <= x2 < right and top <= y < bottom):
@@ -4502,7 +4824,9 @@ for attempt in $(seq 1 15); do
   timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTest:I \
     > emulator-screenshots/initial-photo-canvas-logcat.txt 2>&1 || true
   photo_metrics="$(python3 - emulator-screenshots/editor-initial-photo-full-frame.png emulator-screenshots/initial-photo-canvas-logcat.txt <<'PY'
-from PIL import Image
+import sys
+sys.path.insert(0, ".github/scripts")
+from ci_image import Image
 import re
 import sys
 

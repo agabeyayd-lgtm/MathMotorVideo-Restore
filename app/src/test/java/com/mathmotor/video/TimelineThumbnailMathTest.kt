@@ -24,6 +24,25 @@ class TimelineThumbnailMathTest {
     }
 
     @Test
+    fun previewDecodeBoundsUseTheMeasuredCanvasSizeWithoutExtraDecodePixels() {
+        assertEquals(423 to 753, TimelineThumbnailMath.previewDecodeBounds(423, 753))
+        assertEquals(753 to 423, TimelineThumbnailMath.previewDecodeBounds(753, 423))
+    }
+
+    @Test
+    fun previewDecodeBoundsNeverUpscaleBeyondTheConfiguredLongEdge() {
+        assertEquals(1080 to 1920, TimelineThumbnailMath.previewDecodeBounds(1080, 1920))
+        assertEquals(1080 to 1920, TimelineThumbnailMath.previewDecodeBounds(1440, 2560))
+    }
+
+    @Test
+    fun previewDecodeBoundsHandleInvalidDimensionsAndNonPositiveOversampling() {
+        assertEquals(1 to 753, TimelineThumbnailMath.previewDecodeBounds(0, 753))
+        assertEquals(423 to 753, TimelineThumbnailMath.previewDecodeBounds(423, 753, Float.NaN))
+        assertEquals(423 to 753, TimelineThumbnailMath.previewDecodeBounds(423, 753, 0f))
+    }
+
+    @Test
     fun sourceAspectRatioUsesOriginalDimensionsWithoutThumbnailRounding() {
         assertEquals(9f / 16f, TimelineThumbnailMath.sourceAspectRatio(360, 640)!!, 0.000001f)
         assertEquals(16f / 9f, TimelineThumbnailMath.sourceAspectRatio(640, 360)!!, 0.000001f)

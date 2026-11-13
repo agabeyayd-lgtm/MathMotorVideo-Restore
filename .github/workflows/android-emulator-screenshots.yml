@@ -28,15 +28,15 @@ permissions:
   contents: read
 
 concurrency:
-  # Isolate each source revision so a wedged emulator run from an older commit
-  # cannot hold the lock for the latest PR head. Duplicate runs of one SHA replace each other.
-  group: android-emulator-screenshots-${{ github.ref }}-${{ github.sha }}
+  # Keep one emulator run per PR. A new commit cancels an older run for the same
+  # PR instead of allowing stale API-35 emulators to consume parallel runners.
+  group: android-emulator-screenshots-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   emulator-ui:
     runs-on: ubuntu-24.04
-    timeout-minutes: 70
+    timeout-minutes: 35
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -115,11 +115,19 @@ jobs:
           # through their own deterministic WAV fixtures later in the timeline
           # smoke test. Omitting the synthetic AAC stream avoids emulator-only
           # Codec2 AAC decoder failures during the separate MP4 export smoke.
+          # Use H.264 with a normal one-second GOP, matching common phone footage.
+          # The old MPEG-4 Part 2 fixture forced API-35's native retriever through
+          # slow software random-access decoding and made the thumbnail benchmark
+          # measure the fixture codec rather than the editor's real-world path.
           ffmpeg -hide_banner -loglevel error -y \
             -f lavfi -i "color=c=red:s=360x640:r=24" \
-            -t 8 -vf "hue=h='t*90':s=1" -an -c:v mpeg4 -q:v 5 -pix_fmt yuv420p \
+            -t 8 -vf "hue=h='t*90':s=1" -an \
+            -c:v libx264 -preset ultrafast -tune zerolatency \
+            -g 24 -keyint_min 24 -sc_threshold 0 -pix_fmt yuv420p \
             app/build/test-fixtures/editor-test-video.mp4
           test -s app/build/test-fixtures/editor-test-video.mp4
+          test "$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of csv=p=0 app/build/test-fixtures/editor-test-video.mp4)" = "h264"
+          test "$(ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate -of csv=p=0 app/build/test-fixtures/editor-test-video.mp4)" = "24/1"
           ffmpeg -hide_banner -loglevel error -y -f lavfi -i "color=c=magenta:s=256x128" -frames:v 1 app/build/test-fixtures/editor-test-overlay.png
           test -s app/build/test-fixtures/editor-test-overlay.png
           # Portrait sample matches the default 9:16 project canvas and is used
@@ -132,13 +140,14 @@ jobs:
           # it occupies <1% of the frame, so the green-pixel replacement check remains valid.
           ffmpeg -hide_banner -loglevel error -y \
             -f lavfi -i "color=c=lime:s=360x640:r=24" \
-            -f lavfi -i "sine=frequency=660:sample_rate=44100" \
             -t 8 \
             -vf "drawbox=x=52:y=108:w=40:h=40:color=red:t=fill:enable='between(t,0.25,0.65)',drawbox=x=160:y=108:w=40:h=40:color=red:t=fill:enable='between(t,1.14,1.54)',drawbox=x=268:y=108:w=40:h=40:color=red:t=fill:enable='between(t,2.03,2.43)',drawbox=x=52:y=300:w=40:h=40:color=red:t=fill:enable='between(t,2.92,3.32)',drawbox=x=160:y=300:w=40:h=40:color=red:t=fill:enable='between(t,3.82,4.22)',drawbox=x=268:y=300:w=40:h=40:color=red:t=fill:enable='between(t,4.71,5.11)',drawbox=x=52:y=492:w=40:h=40:color=red:t=fill:enable='between(t,5.60,6.00)',drawbox=x=160:y=492:w=40:h=40:color=red:t=fill:enable='between(t,6.49,6.89)' " \
-            -c:v mpeg4 -q:v 5 -pix_fmt yuv420p \
-            -c:a aac -b:a 64k -shortest \
+            -an -c:v libx264 -preset ultrafast -tune zerolatency \
+            -g 24 -keyint_min 24 -sc_threshold 0 -pix_fmt yuv420p \
             app/build/test-fixtures/editor-test-video-replacement.mp4
           test -s app/build/test-fixtures/editor-test-video-replacement.mp4
+          test "$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of csv=p=0 app/build/test-fixtures/editor-test-video-replacement.mp4)" = "h264"
+          test -z "$(ffprobe -v error -select_streams a:0 -show_entries stream=codec_name -of csv=p=0 app/build/test-fixtures/editor-test-video-replacement.mp4)"
           # Two deterministic PCM fixtures feed the production audio-import path
           # so the timeline smoke can drag music and sound-effect edge targets.
           ffmpeg -hide_banner -loglevel error -y \

@@ -7,6 +7,8 @@ import statistics
 import sys
 from pathlib import Path
 
+from ci_image import Image
+
 SNAPSHOT_RE = re.compile(
     r"TIMELINE_ALIGNMENT_SNAPSHOT "
     r"playheadCenterPx=(\d+) playheadCenterYpx=(\d+) lineCenterPx=(\d+) "
@@ -103,10 +105,7 @@ def pixel_mean(image, x, y, radius=2):
     return tuple(round(statistics.mean(pixel[channel] for pixel in values)) for channel in range(3))
 
 def verify(log_path: str, screenshot_path: str):
-    try:
-        from PIL import Image
-    except ImportError as exc:
-        raise SystemExit("FAIL: Pillow is required for the preview/thumbnail pixel check.") from exc
+    # Screenshot decoding is provided by ci_image.py through the already-installed FFmpeg binary.
 
     log = Path(log_path).read_text(encoding="utf-8", errors="replace")
     snapshot = latest_snapshot(log_path)
@@ -168,9 +167,11 @@ def verify(log_path: str, screenshot_path: str):
         tuple(map(int, row))
         for row in re.findall(
             r"TIMELINE_THUMBNAIL_TIMING sourceMs=(\d+) success=true "
-            r"queueWaitMs=(\d+) frameDecodeMs=(\d+) bitmapScaleMs=(\d+) "
+            r"queueWaitMs=(\d+) deferredWaitMs=(\d+) "
+            r"diskLookupMs=(\d+) frameDecodeMs=(\d+) bitmapScaleMs=(\d+) "
             r"uiDispatchWaitMs=(\d+) uiApplyMs=(\d+) "
-            r"enqueuedUptimeMs=(\d+) uiAppliedUptimeMs=(\d+)",
+            r"enqueuedUptimeMs=(\d+) submittedUptimeMs=(\d+) "
+            r"uiAppliedUptimeMs=(\d+)",
             log,
         )
     ]
@@ -179,25 +180,117 @@ def verify(log_path: str, screenshot_path: str):
         r"decoder=([a-z0-9-]+) worker=(\d+) decodeMs=(\d+)",
         log,
     )
-    mmr_rows = [row for row in decoder_rows if row[2] == "platform-mmr-primary"]
-    media3_rows = [row for row in decoder_rows if row[2] == "media3-fallback"]
+    mmr_rows = [row for row in decoder_rows if row[2].startswith("platform-mmr-")]
+    media3_rows = [row for row in decoder_rows if row[2].startswith("media3-")]
     if not decoder_rows or len(timing_rows) < 3:
         raise SystemExit(
             "FAIL: thumbnail decode diagnostics are incomplete; "
             f"decoder records={decoder_rows[-8:]}, successful timing rows={len(timing_rows)}."
         )
-    decoder_times = [int(row[4]) for row in decoder_rows]
     print(
-        "  Decoder path: native MMR primary={} (median={}ms); "
-        "Media3 fallback={}".format(
-            len(mmr_rows),
-            int(statistics.median([int(row[4]) for row in mmr_rows])) if mmr_rows else 0,
+        "  Decoder path: Media3={} (median={}ms); native MMR fallback={}".format(
             len(media3_rows),
+            int(statistics.median([int(row[4]) for row in media3_rows])) if media3_rows else 0,
+            len(mmr_rows),
         )
     )
 
+    preview_timing_matches = re.findall(
+        r"TIMELINE_PREVIEW_FRAME_READY projectMs=(\d+) sourceMs=(\d+).*?"
+        r"requestId=(\d+) queueWaitMs=(\d+) decodeMs=(\d+) "
+        r"uiDispatchWaitMs=(\d+) uiApplyMs=(\d+) totalMs=(\d+) "
+        r"requestKind=(bootstrap|interactive)",
+        log,
+    )
+    preview_timing_rows = [
+        (row[8], *(int(value) for value in row[:8]))
+        for row in preview_timing_matches
+    ]
+    bootstrap_rows = [row for row in preview_timing_rows if row[0] == "bootstrap"]
+    interactive_rows = [row for row in preview_timing_rows if row[0] == "interactive"]
+    state_ready = re.search(r"TIMELINE_PLAYER_PLAYBACK_STATE state=3", log)
+    bootstrap_executed = re.search(r"TIMELINE_INITIAL_BASE_FRAME_BOOTSTRAP executed=true", log)
+    if not bootstrap_rows or not bootstrap_executed or not state_ready:
+        raise SystemExit(
+            "FAIL: cold-source preview bootstrap was not confirmed after CompositionPlayer STATE_READY."
+        )
+    if state_ready.start() > bootstrap_executed.start():
+        raise SystemExit(
+            "FAIL: cold-source still decoding started before the composed video player reached STATE_READY."
+        )
+    if len(interactive_rows) < 2:
+        raise SystemExit(
+            "FAIL: fewer than two warmed interactive preview frames were measured; "
+            f"only {len(interactive_rows)} interactive timings were captured."
+        )
+
+    bootstrap_decode = [row[5] for row in bootstrap_rows]
+    print(
+        "  Cold-source bootstrap (n={}) decode median/max={}ms/{}ms; "
+        "CompositionPlayer was READY before this one-time decoder open.".format(
+            len(bootstrap_rows),
+            int(statistics.median(bootstrap_decode)), max(bootstrap_decode),
+        )
+    )
+    preview_queue = [row[4] for row in interactive_rows]
+    preview_decode = [row[5] for row in interactive_rows]
+    preview_ui_dispatch = [row[6] for row in interactive_rows]
+    preview_total = [row[8] for row in interactive_rows]
+    print(
+        "  Warm interactive preview timing (n={}) queue median/max={}ms/{}ms; "
+        "decode median/max={}ms/{}ms; UI dispatch median/max={}ms/{}ms; "
+        "request-to-visible median/max={}ms/{}ms".format(
+            len(interactive_rows),
+            int(statistics.median(preview_queue)), max(preview_queue),
+            int(statistics.median(preview_decode)), max(preview_decode),
+            int(statistics.median(preview_ui_dispatch)), max(preview_ui_dispatch),
+            int(statistics.median(preview_total)), max(preview_total),
+        )
+    )
+    if max(preview_queue) > 250:
+        raise SystemExit(
+            f"FAIL: warmed latest-frame preview waited {max(preview_queue)}ms in its queue; limit is 250ms."
+        )
+    if max(preview_decode) > 800:
+        raise SystemExit(
+            f"FAIL: warmed exact preview frame decode reached {max(preview_decode)}ms; limit is 800ms."
+        )
+    if max(preview_total) > 1_000:
+        raise SystemExit(
+            f"FAIL: warmed preview request-to-visible reached {max(preview_total)}ms; limit is 1000ms."
+        )
+    print(
+        "  PASS: warmed interactive preview stayed within 250ms queue, 800ms decode, "
+        "and 1000ms request-to-visible limits."
+    )
+
+    discarded_preview = re.findall(
+        r"TIMELINE_PREVIEW_FRAME_DISCARDED requestId=(\d+) stage=([a-z-]+)"
+        r"(?: queueWaitMs=(\d+) decodeMs=(\d+))?",
+        log,
+    )
+    if discarded_preview:
+        decoded_discarded = [row for row in discarded_preview if row[2] and row[3]]
+        print(
+            "  Superseded playhead frames: {} total; {} discarded after decode.".format(
+                len(discarded_preview), len(decoded_discarded)
+            )
+        )
+
     visible_sources = {timestamp for timestamp, _ in snapshot["cells"]}
-    visible_timing_rows = [row for row in timing_rows if row[0] in visible_sources]
+    # The combined logcat contains multiple editor layouts from the same run.
+    # A source timestamp can therefore have more than one successful timing row
+    # (for example, an early partial strip and the later settled strip). Keep the
+    # latest measurement for each timestamp in the final measured layout. Mixing
+    # an early enqueue with a later layout's final display falsely inflates the
+    # end-to-end fill interval even though every final-layout thumbnail is ready.
+    latest_visible_timing_by_source = {
+        row[0]: row for row in timing_rows if row[0] in visible_sources
+    }
+    visible_timing_rows = [
+        latest_visible_timing_by_source[timestamp]
+        for timestamp in sorted(latest_visible_timing_by_source)
+    ]
     if len(visible_timing_rows) < 3:
         raise SystemExit(
             "FAIL: fewer than three visible timeline cells have measured decode/display timing; "
@@ -205,27 +298,37 @@ def verify(log_path: str, screenshot_path: str):
         )
 
     queue_waits = [row[1] for row in visible_timing_rows]
-    decode_times = [row[2] for row in visible_timing_rows]
-    total_times = [row[1] + row[2] + row[3] + row[4] + row[5] for row in visible_timing_rows]
-    visible_fill_ms = max(row[7] for row in visible_timing_rows) - min(row[6] for row in visible_timing_rows)
+    deferred_waits = [row[2] for row in visible_timing_rows]
+    disk_lookup_times = [row[3] for row in visible_timing_rows]
+    decode_times = [row[4] for row in visible_timing_rows]
+    total_times = [
+        row[1] + row[2] + row[3] + row[4] + row[5] + row[6] + row[7]
+        for row in visible_timing_rows
+    ]
+    # The end-to-end fill includes time held behind preview bootstrap and disk IO.
+    # submittedUptimeMs is diagnostic only: visible work is owed from its request.
+    visible_fill_ms = max(row[10] for row in visible_timing_rows) - min(row[8] for row in visible_timing_rows)
     print(
-        "  Visible thumbnail timing (n={}) queue median/max={}ms/{}ms; "
-        "decode median/max={}ms/{}ms; enqueue-to-display median/max={}ms/{}ms; "
+        "  Visible thumbnail timing (n={}) executor-queue median/max={}ms/{}ms; "
+        "preview-deferred median/max={}ms/{}ms; disk lookup median/max={}ms/{}ms; "
+        "decode median/max={}ms/{}ms; request-to-display median/max={}ms/{}ms; "
         "visible-strip fill={}ms".format(
             len(visible_timing_rows),
             int(statistics.median(queue_waits)), max(queue_waits),
+            int(statistics.median(deferred_waits)), max(deferred_waits),
+            int(statistics.median(disk_lookup_times)), max(disk_lookup_times),
             int(statistics.median(decode_times)), max(decode_times),
             int(statistics.median(total_times)), max(total_times),
             visible_fill_ms,
         )
     )
-    # With eight visible cells and three independent workers, the final queued
-    # cell can legitimately wait across multiple decode waves. The user-visible
-    # responsiveness gate is the complete strip-fill time below, not a 1s
-    # per-task queue cap that ignores concurrent batch size.
     if max(queue_waits) > 2_000:
         raise SystemExit(
-            f"FAIL: visible thumbnail queue wait reached {max(queue_waits)}ms; limit is 2000ms."
+            f"FAIL: visible thumbnail executor-queue wait reached {max(queue_waits)}ms; limit is 2000ms."
+        )
+    if max(deferred_waits) > 2_000:
+        raise SystemExit(
+            f"FAIL: visible thumbnail work was held behind preview bootstrap for {max(deferred_waits)}ms; limit is 2000ms."
         )
     if max(decode_times) > 1_500:
         raise SystemExit(
