@@ -3034,9 +3034,14 @@ for i, (top_y, x1, x2) in enumerate(rows):
         # occlusion rather than rejecting a real frame with CapCut-style grips.
         if height < 35 or abs(x1 - bx1) > 24 or abs(x2 - bx2) > 8:
             continue
+        # The horizontal edge can begin well inside the frame because the
+        # corner grips cover its leftmost section. Measure the exposed vertical
+        # border independently across the full grip footprint (about 56 px),
+        # rather than assuming it sits directly below the first white pixel
+        # on the top/bottom edge.
         left_strength = max(
             sum(is_white(image.getpixel((x, y))) for y in range(top_y + 2, bottom_y - 1))
-            for x in range(max(left, x1 - 5), min(right, x1 + 5) + 1)
+            for x in range(max(left, x1 - 56), min(right, x1 + 5) + 1)
         )
         right_strength = max(
             sum(is_white(image.getpixel((x, y))) for y in range(top_y + 2, bottom_y - 1))
