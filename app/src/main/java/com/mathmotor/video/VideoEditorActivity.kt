@@ -1261,7 +1261,7 @@ class VideoEditorActivity : Activity() {
             val grip = TextView(this).apply {
                 text = symbol
                 textSize = 18f
-                gravity = Gravity.CENTER
+                this.gravity = Gravity.CENTER
                 setTextColor(Color.WHITE)
                 contentDescription = description
                 isClickable = true
