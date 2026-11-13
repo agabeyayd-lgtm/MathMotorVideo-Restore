@@ -4439,15 +4439,17 @@ if width < 70 or height < 20:
 # Android's gesture slop is 21px on this emulator. Begin inside the
 # transparent edge target, but outside the stationary playhead overlay, and
 # travel far enough to make the production handler classify this as a drag.
-travel = min(42, max(34, width // 8))
+# Keep the injected motion clearly beyond Android's gesture slop. The
+# committed trim delta is still clamped to the source-time limit by the app.
+travel = min(42, max(38, width // 6))
 if edge == "start":
     # 420dpi emulator: keep the DOWN point beyond the 28dp playhead overlay
     # while staying inside the edge target (clipWidth/3 is the limiting width).
     x1, x2 = (left + 45, left + 45 + travel) if direction == "trim" else (left + 45, left + 45 - travel)
 else:
-    # Use a stable point inside the trailing grip, not its outermost 8px edge.
-    # Keep the same down point for trim and extend; only drag direction changes.
-    x1 = right - 36
+    # Start inside the trailing hit target with enough room to move in either
+    # direction without clipping the injected pointer to the visual clip edge.
+    x1 = right - travel - 4
     x2 = x1 - travel if direction == "trim" else x1 + travel
 y = (top + bottom) // 2
 if not (left <= x1 < right and left <= x2 < right and top <= y < bottom):
