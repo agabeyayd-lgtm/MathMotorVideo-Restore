@@ -1819,23 +1819,19 @@ class VideoEditorActivity : Activity() {
         textPanel.addView(tabScroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(42)))
         textPanel.addView(tabFrame, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(190)))
 
-        // Keep preview gesture editing accessible above the tab drawer content.
-        // The emulator flow must be able to toggle direct manipulation without
-        // scrolling past the five category tabs.
+        // Direct manipulation is part of text selection, not a separate mode.
+        // Keep the legacy toggle object detached from the sheet; the selected
+        // text itself remains draggable and pinch-transformable on the canvas.
         textPanel.removeView(textOverlayEditToggle)
-        textPanel.addView(textOverlayEditToggle, 2)
 
-        // Keep the five CapCut-style text categories directly below the text
-        // input. The old edit toggle/actions/layer list pushed these controls
-        // below the visible drawer fold, so UI automation and users could not
-        // reach them without scrolling the whole panel.
+        // Match CapCut's second-stage composer: text field, category tabs, then
+        // the active category's controls. Secondary layer-list/actions remain
+        // available below the main editing surface instead of interrupting it.
         textPanel.removeView(tabScroll)
         textPanel.removeView(tabFrame)
         textPanel.getChildAt(0)?.visibility = View.GONE // legacy METİN heading
-        // The gesture toggle must remain directly below the input row; insert
-        // the category strip and its content after it, not in front of it.
-        textPanel.addView(tabScroll, 3)
-        textPanel.addView(tabFrame, 4)
+        textPanel.addView(tabScroll, 2)
+        textPanel.addView(tabFrame, 3)
 
         tabScrolls["Stiller"]?.visibility = View.VISIBLE
         tabButtons["Stiller"]?.apply {
@@ -3374,6 +3370,10 @@ class VideoEditorActivity : Activity() {
         // is open. Closing the sheet returns to the same track tools; it must not
         // silently replace them with the global editor tabs.
         activeEditorPanel = name
+        // CapCut does not require an extra "preview text edit" switch. Selecting
+        // text and opening its composer keeps the canvas manipulation surface live.
+        textOverlayEditingEnabled = name == "text"
+        updateTextOverlayEditToggle()
         applyPreviewStageSizing()
         setTimelinePanelMode(panelOpen = true)
         // Detail controls replace the global dock while the project preview
@@ -3400,7 +3400,7 @@ class VideoEditorActivity : Activity() {
                     // Keep a usable project preview visible while text controls
                     // remain in this scrollable detail panel.
                     // Room for the composer tabs without resizing the project preview canvas.
-                    "text" -> if (keyboardLayoutActive) 226 else 242
+                    "text" -> if (keyboardLayoutActive) 238 else 320
                     else -> if (keyboardLayoutActive) 124 else 196
                 }
                 val stickyHeaderHeight = 40
