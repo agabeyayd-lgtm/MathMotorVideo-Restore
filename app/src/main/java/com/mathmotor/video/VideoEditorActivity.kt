@@ -6630,7 +6630,6 @@ class VideoEditorActivity : Activity() {
                             "windowCount=${comp.currentTimeline.windowCount} " +
                             "durationMs=${comp.duration} positionMs=${comp.currentPosition}"
                     )
-                    val hasPendingCompositionSeek = pendingTimelineCompositionSeekMs != null
                     if (playbackState == androidx.media3.common.Player.STATE_READY) {
                         // CompositionPlayer.prepare() is asynchronous. Seeking before its
                         // concatenated timeline exposes a period can crash Media3 with
@@ -6650,7 +6649,7 @@ class VideoEditorActivity : Activity() {
                         }
                     }
                     if (playbackState == androidx.media3.common.Player.STATE_READY &&
-                        !hasPendingCompositionSeek &&
+                        pendingTimelineCompositionSeekMs == null &&
                         !initialPausedBaseFrameRefreshScheduled
                     ) {
                         // Do not cold-open MediaMetadataRetriever while CompositionPlayer
