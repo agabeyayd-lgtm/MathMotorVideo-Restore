@@ -3060,7 +3060,7 @@ for i, (top_y, x1, x2) in enumerate(rows):
         )
         if interior_white < 40:
             continue
-        matches.append((width * height, x1, top_y, x2, bottom_y))
+        matches.append(((x2 - x1 + 1) * height, x1, top_y, x2, bottom_y))
 
 if not matches:
     raise SystemExit("A complete white text-selection rectangle with visible text was not found inside the project canvas.")
