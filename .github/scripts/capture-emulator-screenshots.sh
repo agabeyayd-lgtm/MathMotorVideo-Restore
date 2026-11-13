@@ -3028,10 +3028,11 @@ matches = []
 for i, (top_y, x1, x2) in enumerate(rows):
     for bottom_y, bx1, bx2 in rows[i + 1:]:
         height = bottom_y - top_y + 1
-        if height < 35 or abs(x1 - bx1) > 8 or abs(x2 - bx2) > 8:
-            continue
-        width = x2 - x1 + 1
-        if abs(width - (bx2 - bx1 + 1)) > 10:
+        # Selection grips overlap the left border at both corners, so the
+        # visible start of the top and bottom horizontal edges can differ.
+        # Keep the right edge tightly aligned; allow up to 24 px of left-edge
+        # occlusion rather than rejecting a real frame with CapCut-style grips.
+        if height < 35 or abs(x1 - bx1) > 24 or abs(x2 - bx2) > 8:
             continue
         left_strength = max(
             sum(is_white(image.getpixel((x, y))) for y in range(top_y + 2, bottom_y - 1))
