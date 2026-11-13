@@ -11065,8 +11065,18 @@ class VideoEditorActivity : Activity() {
                             true
                         }
                         android.view.MotionEvent.ACTION_UP -> {
+                            // Some devices coalesce the last move into ACTION_UP. Classify
+                            // the completed pointer displacement as a drag as well, or a
+                            // valid short edge gesture can be mistaken for a tap.
+                            val finalPointerDeltaPx = event.rawX - downRawX
+                            if (!moved &&
+                                kotlin.math.abs(finalPointerDeltaPx) >
+                                android.view.ViewConfiguration.get(this@VideoEditorActivity).scaledTouchSlop
+                            ) {
+                                moved = true
+                            }
                             val (minimumDeltaPx, maximumDeltaPx) = allowedDeltaPx(initialStartMs, initialEndMs)
-                            val deltaPx = (event.rawX - downRawX).coerceIn(minimumDeltaPx, maximumDeltaPx)
+                            val deltaPx = finalPointerDeltaPx.coerceIn(minimumDeltaPx, maximumDeltaPx)
                             val deltaMs = TimelineScaleMath.millisecondsForPixels(deltaPx, timelinePixelsPerSecond())
                             view.translationX = 0f
                             view.parent?.requestDisallowInterceptTouchEvent(false)
