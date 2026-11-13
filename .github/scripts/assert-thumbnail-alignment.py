@@ -278,7 +278,19 @@ def verify(log_path: str, screenshot_path: str):
         )
 
     visible_sources = {timestamp for timestamp, _ in snapshot["cells"]}
-    visible_timing_rows = [row for row in timing_rows if row[0] in visible_sources]
+    # The combined logcat contains multiple editor layouts from the same run.
+    # A source timestamp can therefore have more than one successful timing row
+    # (for example, an early partial strip and the later settled strip). Keep the
+    # latest measurement for each timestamp in the final measured layout. Mixing
+    # an early enqueue with a later layout's final display falsely inflates the
+    # end-to-end fill interval even though every final-layout thumbnail is ready.
+    latest_visible_timing_by_source = {
+        row[0]: row for row in timing_rows if row[0] in visible_sources
+    }
+    visible_timing_rows = [
+        latest_visible_timing_by_source[timestamp]
+        for timestamp in sorted(latest_visible_timing_by_source)
+    ]
     if len(visible_timing_rows) < 3:
         raise SystemExit(
             "FAIL: fewer than three visible timeline cells have measured decode/display timing; "
