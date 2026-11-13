@@ -328,7 +328,7 @@ class VideoEditorActivity : Activity() {
     private var previewFocusMode = false
     private val previewFocusOriginalVisibility = linkedMapOf<View, Int>()
     private lateinit var previewTextOverlay: TextView
-    private lateinit var textSelectionFrame: View
+    private lateinit var textSelectionFrame: FrameLayout
     private lateinit var clipTransformTouchOverlay: View
     private lateinit var clipSelectionFrame: View
     private lateinit var overlayTransformTouchOverlay: View
@@ -1235,10 +1235,12 @@ class VideoEditorActivity : Activity() {
         )
         previewTextOverlays.add(previewTextOverlay)
         installPreviewTextTouch(previewTextOverlay)
-        textSelectionFrame = View(this).apply {
+        textSelectionFrame = FrameLayout(this).apply {
             visibility = View.GONE
             isClickable = false
             isFocusable = false
+            clipChildren = false
+            clipToPadding = false
             background = android.graphics.drawable.GradientDrawable().apply {
                 setColor(Color.TRANSPARENT)
                 cornerRadius = dp(2).toFloat()
@@ -1246,6 +1248,46 @@ class VideoEditorActivity : Activity() {
             }
             elevation = dp(TouchPriority.SELECTION_CHROME_DP).toFloat()
             contentDescription = "Seçili metin katmanı sınırı"
+        }
+        // CapCut-style text grips: delete at the upper-left and duplicate at
+        // the lower-left. They are anchored to the selection bounds, not to
+        // the screen, so moving/scaling/rotating the text keeps them attached.
+        fun addTextSelectionGrip(
+            symbol: String,
+            description: String,
+            gravity: Int,
+            action: () -> Unit
+        ) {
+            val grip = TextView(this).apply {
+                text = symbol
+                textSize = 18f
+                gravity = Gravity.CENTER
+                setTextColor(Color.WHITE)
+                contentDescription = description
+                isClickable = true
+                isFocusable = true
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.OVAL
+                    setColor(Color.rgb(49, 51, 55))
+                    setStroke(dp(1), Color.rgb(205, 210, 216))
+                }
+                elevation = dp(2).toFloat()
+                setOnClickListener { action() }
+            }
+            textSelectionFrame.addView(
+                grip,
+                FrameLayout.LayoutParams(dp(30), dp(30), gravity).apply {
+                    leftMargin = -dp(15)
+                    if (gravity == (Gravity.TOP or Gravity.LEFT)) topMargin = -dp(15)
+                    else bottomMargin = -dp(15)
+                }
+            )
+        }
+        addTextSelectionGrip("×", "Seçili metni sil", Gravity.TOP or Gravity.LEFT) {
+            removeSelectedTextLayer()
+        }
+        addTextSelectionGrip("▢", "Seçili metni kopyala", Gravity.BOTTOM or Gravity.LEFT) {
+            duplicateSelectedTextLayer()
         }
         previewCanvas.addView(
             textSelectionFrame,
