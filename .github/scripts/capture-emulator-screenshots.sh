@@ -3041,7 +3041,10 @@ for i, (top_y, x1, x2) in enumerate(rows):
             sum(is_white(image.getpixel((x, y))) for y in range(top_y + 2, bottom_y - 1))
             for x in range(max(left, x2 - 5), min(right, x2 + 5) + 1)
         )
-        if left_strength < height * 0.70 or right_strength < height * 0.70:
+        # The CapCut delete/duplicate grips intentionally cover parts of the left
+        # selection edge. Require the exposed border to remain measurable, but do
+        # not demand the old uninterrupted 70% edge from the pre-grip frame.
+        if left_strength < height * 0.45 or right_strength < height * 0.70:
             continue
         interior_white = sum(
             1
