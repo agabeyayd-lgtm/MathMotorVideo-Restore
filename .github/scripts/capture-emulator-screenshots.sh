@@ -4338,6 +4338,59 @@ then
   collect_capture_diagnostics video-split-after-drag-visible-seam
   exit 99
 fi
+# A restored project deliberately starts without a selected clip. The trim
+# grips are only attached to the selected filmstrip, so select the first clip
+# before resolving the visible touch targets. Previously this smoke sent its
+# first drag to the unselected clip body, which panned the timeline instead.
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineAlignmentTest:I \
+  > emulator-screenshots/video-edge-trim-selection-before.txt 2>&1 || true
+video_edge_select_coords="$(python3 - emulator-screenshots/video-edge-trim-selection-before.txt <<'PY'
+import re
+import sys
+
+pattern = re.compile(r"TIMELINE_ALIGNMENT_SNAPSHOT .*?clipBoundsByIndex=([0-9:,;]+)")
+latest = None
+for line in open(sys.argv[1], errors="replace"):
+    match = pattern.search(line)
+    if not match:
+        continue
+    bounds = {}
+    for item in match.group(1).split(";"):
+        index, raw = item.split(":", 1)
+        bounds[int(index)] = tuple(map(int, raw.split(",")))
+    if 1 in bounds:
+        latest = bounds[1]
+if latest is None:
+    raise SystemExit("No first-clip bounds available before selecting the trim target.")
+left, top, right, bottom = latest
+if right - left < 70 or bottom <= top:
+    raise SystemExit(f"First video clip is too small to select safely: {latest}")
+print((left + right) // 2, (top + bottom) // 2)
+PY
+)" || { collect_capture_diagnostics video-edge-trim-selection-target-missing; exit 102; }
+if [ -z "$video_edge_select_coords" ]; then
+  collect_capture_diagnostics video-edge-trim-selection-target-missing
+  exit 102
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $video_edge_select_coords
+sleep 1
+if ! dump_hierarchy video-edge-trim-selected.xml emulator-screenshots/video-edge-trim-selected.xml; then
+  collect_capture_diagnostics video-edge-trim-selection-hierarchy-missing
+  exit 102
+fi
+if ! grep -Fq "Seçili video klibi sınırı" emulator-screenshots/video-edge-trim-selected.xml; then
+  echo "Tapping the first restored video clip did not select it; trim handles must not be tested on an unselected strip."
+  collect_capture_diagnostics video-edge-trim-selection-not-applied
+  exit 102
+fi
+if ! grep -Fq "Sol beyaz tutamaç" emulator-screenshots/video-edge-trim-selected.xml \
+    || ! grep -Fq "Sağ beyaz tutamaç" emulator-screenshots/video-edge-trim-selected.xml; then
+  echo "The selected video clip did not expose both real transparent trim touch targets."
+  collect_capture_diagnostics video-edge-trim-grips-not-attached
+  exit 102
+fi
+echo "PASS: first restored video clip is selected and both real trim grips are attached."
+
 # Exercise the real video trim grips with Android touch events. The app's
 # measured View bounds are the source of truth; do not hard-code device geometry.
 resolve_video_edge_point() {
