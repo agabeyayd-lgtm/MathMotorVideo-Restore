@@ -11898,6 +11898,47 @@ class VideoEditorActivity : Activity() {
             return
         }
 
+        // The filmstrip already owns decoded frames at exact source timestamps.
+        // Reuse an exact timestamp match for the paused preview instead of asking
+        // MediaMetadataRetriever to decode the same frame a second time. This is
+        // especially important on API 35, where a warmed MMR seek can still take
+        // close to a second even though the exact thumbnail is already in memory.
+        val exactThumbnailKey = "${clip.uri}#${sourceTimeMs}"
+        val exactThumbnail = timelineThumbnailCache.get(exactThumbnailKey)
+        if (exactThumbnail != null && !exactThumbnail.isRecycled) {
+            val requestedAtUptimeMs = SystemClock.uptimeMillis()
+            val requestId = showPreviewFramePending(keepPreviousFrame = true)
+            val cachedCopy = runCatching {
+                exactThumbnail.copy(Bitmap.Config.ARGB_8888, false)
+            }.getOrNull()
+            if (cachedCopy != null && !cachedCopy.isRecycled) {
+                val previous = previewFrameBitmap
+                previewFrameBitmap = cachedCopy
+                previewFrameCacheKey = exactFrameKey
+                previewDecoderBootstrapSources.add(sourceKey)
+                previewFrameOverlay.setImageBitmap(cachedCopy)
+                previewFrameOverlay.setBackgroundColor(Color.BLACK)
+                previewFrameOverlay.visibility = View.VISIBLE
+                if (previous != null && previous !== cachedCopy && !previous.isRecycled) previous.recycle()
+                applyPreviewFrameTransform(clip)
+                if (timelineSyncTestEnabled) {
+                    val totalMs = SystemClock.uptimeMillis() - requestedAtUptimeMs
+                    android.util.Log.i(
+                        "TimelineFrameSyncTest",
+                        "TIMELINE_PREVIEW_FRAME_READY projectMs=$safeProjectTimeMs sourceMs=$sourceTimeMs " +
+                            "width=${cachedCopy.width} height=${cachedCopy.height} requestId=$requestId " +
+                            "queueWaitMs=0 decodeMs=0 uiDispatchWaitMs=0 uiApplyMs=$totalMs totalMs=$totalMs " +
+                            "requestKind=$requestKind exactFilmstripCache=true"
+                    )
+                    if (keepPreviousFrame) android.util.Log.i(
+                        "TimelineFrameSyncTest",
+                        "TIMELINE_SCRUB_PREVIEW_FRAME_READY projectMs=$safeProjectTimeMs sourceMs=$sourceTimeMs"
+                    )
+                }
+                return
+            }
+        }
+
         val requestedAtUptimeMs = SystemClock.uptimeMillis()
         val requestId = showPreviewFramePending(keepPreviousFrame)
         // Show a nearby filmstrip frame immediately while the exact preview frame
