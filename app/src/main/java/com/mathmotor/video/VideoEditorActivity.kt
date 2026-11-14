@@ -2885,6 +2885,9 @@ class VideoEditorActivity : Activity() {
         root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
             if (activeEditorPanel == "text") fitTextCategoryFrameToVisiblePanel()
         }
+        editorPanelScroll.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            if (activeEditorPanel == "text") fitTextCategoryFrameToVisiblePanel()
+        }
         previewFrame.post { logEditorPanelGeometry("closed-initial") }
     }
 
@@ -3638,18 +3641,21 @@ class VideoEditorActivity : Activity() {
      * panel on compact devices, leaving the last controls permanently clipped.
      */
     private fun fitTextCategoryFrameToVisiblePanel() {
-        if (!::textCategoryFrame.isInitialized || !::editorBottomSheet.isInitialized) return
-        val workspaceRoot = editorBottomSheet.parent as? View ?: return
+        if (!::textCategoryFrame.isInitialized || !::editorPanelScroll.isInitialized) return
         textCategoryFrame.post {
             if (activeEditorPanel != "text" || textCategoryFrame.parent == null ||
-                workspaceRoot.height <= 0 || textCategoryFrame.height <= 0
+                editorPanelScroll.visibility != View.VISIBLE ||
+                editorPanelScroll.height <= 0 || textCategoryFrame.height <= 0
             ) return@post
 
-            val rootLocation = IntArray(2)
+            val panelLocation = IntArray(2)
             val frameLocation = IntArray(2)
-            workspaceRoot.getLocationOnScreen(rootLocation)
+            editorPanelScroll.getLocationOnScreen(panelLocation)
             textCategoryFrame.getLocationOnScreen(frameLocation)
-            val visibleBottom = rootLocation[1] + workspaceRoot.height - workspaceRoot.paddingBottom
+            // The active detail panel is the true clipping viewport. The full
+            // workspace extends below it (sticky back action / bottom dock), so
+            // using the root's bottom would leave the inner scroll too tall.
+            val visibleBottom = panelLocation[1] + editorPanelScroll.height - editorPanelScroll.paddingBottom
             val availableHeight = (visibleBottom - frameLocation[1] - dp(8)).coerceAtLeast(dp(64))
             val desiredHeight = minOf(dp(190), availableHeight)
             val params = textCategoryFrame.layoutParams as? LinearLayout.LayoutParams
