@@ -2803,6 +2803,40 @@ PY
     collect_capture_diagnostics "text-composer-tab-$text_tab_index-content-missing"
     exit 93
   fi
+  if [ "$text_tab" = "Efektler" ]; then
+    python3 - "$tab_hierarchy" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+required = {
+    "Yazı konturunu aç veya kapat",
+    "Metin kontur kalınlığı",
+    "Metin gölgesini aç veya kapat",
+    "Metin gölgesi yumuşaklığı",
+    "Metin opaklığı",
+}
+root = ET.parse(sys.argv[1]).getroot()
+found = set()
+for node in root.iter("node"):
+    description = node.attrib.get("content-desc", "").strip()
+    if description not in required:
+        continue
+    bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if bounds:
+        left, top, right, bottom = map(int, bounds.groups())
+        if right > left and bottom > top:
+            found.add(description)
+missing = sorted(required - found)
+if missing:
+    raise SystemExit("Text effect controls are not reachable in the real editor hierarchy: " + ", ".join(missing))
+print("PASS: outline, outline width, shadow, shadow softness and opacity controls are present with real hit bounds.")
+PY
+    if ! take_screen emulator-screenshots/editor-text-effects.png; then
+      collect_capture_diagnostics text-effects-screenshot-failed
+      exit 93
+    fi
+  fi
   echo "PASS: tapping '$text_tab' revealed '$expected_heading'."
 done 3<<'TEXT_TABS'
 Şablonlar|Hızlı metin stilleri
