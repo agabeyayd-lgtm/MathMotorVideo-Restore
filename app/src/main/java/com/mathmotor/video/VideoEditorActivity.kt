@@ -300,10 +300,10 @@ class VideoEditorActivity : Activity() {
 
     private inner class StyledPreviewTextView : TextView(this@VideoEditorActivity) {
         var outlineEnabled = false
-        var outlineColor = Color.BLACK
+        var outlineStrokeColor = Color.BLACK
         var outlineWidthPx = 0f
         var shadowEnabled = true
-        var shadowColor = Color.BLACK
+        var dropShadowColor = Color.BLACK
         var shadowBlurPx = 2f
         var shadowOffsetXPx = 1f
         var shadowOffsetYPx = 1f
@@ -320,14 +320,14 @@ class VideoEditorActivity : Activity() {
                     textPaint.style = Paint.Style.STROKE
                     textPaint.strokeJoin = Paint.Join.ROUND
                     textPaint.strokeWidth = outlineWidthPx
-                    textPaint.color = outlineColor
+                    textPaint.color = outlineStrokeColor
                     textPaint.clearShadowLayer()
                     super.onDraw(canvas)
                 }
                 textPaint.style = Paint.Style.FILL
                 textPaint.color = fillColor
                 if (shadowEnabled && shadowBlurPx > 0f) {
-                    textPaint.setShadowLayer(shadowBlurPx, shadowOffsetXPx, shadowOffsetYPx, shadowColor)
+                    textPaint.setShadowLayer(shadowBlurPx, shadowOffsetXPx, shadowOffsetYPx, dropShadowColor)
                 } else {
                     textPaint.clearShadowLayer()
                 }
@@ -8495,10 +8495,10 @@ class VideoEditorActivity : Activity() {
             }
             (overlay as? StyledPreviewTextView)?.apply {
                 outlineEnabled = layer.kind != TextLayerKind.STICKER && layer.outlineEnabled
-                outlineColor = layer.outlineColor
+                outlineStrokeColor = layer.outlineColor
                 outlineWidthPx = layer.outlineWidthDp * resources.displayMetrics.density * previewScale
                 shadowEnabled = layer.shadowEnabled
-                shadowColor = layer.shadowColor
+                dropShadowColor = layer.shadowColor
                 shadowBlurPx = (if (layer.kind == TextLayerKind.STICKER) 4f else layer.shadowBlurDp.toFloat()) *
                     resources.displayMetrics.density * previewScale
                 shadowOffsetXPx = (if (layer.kind == TextLayerKind.STICKER) 0f else 1f) *
