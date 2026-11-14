@@ -2873,7 +2873,9 @@ for node in viewport.iter("node"):
     left, top, right, bottom = rect
     visible_top = max(top, view_top)
     visible_bottom = min(bottom, view_bottom)
-    if right - left >= 180 and visible_bottom - visible_top >= 32:
+    # A partially clipped heading still provides a valid ACTION_DOWN target once
+    # at least 16px is visible; the ScrollView takes over as the upward drag moves.
+    if right - left >= 180 and visible_bottom - visible_top >= 16:
         labels.append((visible_bottom, (left + right) // 2, (visible_top + visible_bottom) // 2))
 if not labels:
     raise SystemExit("No visible non-clickable label is available for a safe Efektler swipe.")
