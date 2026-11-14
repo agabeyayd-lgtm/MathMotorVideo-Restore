@@ -2409,14 +2409,11 @@ PY
     collect_capture_diagnostics "overlay-$edge-target-undersized"
     exit 83
   fi
-  if [ "$edge" = "end" ]; then
-    timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I > emulator-screenshots/overlay-end-target-logcat.txt 2>&1 || true
-    if ! grep -Fq "OVERLAY_EDGE_TARGET edge=end" emulator-screenshots/overlay-end-target-logcat.txt ||
-       ! grep -F "OVERLAY_EDGE_TARGET edge=end" emulator-screenshots/overlay-end-target-logcat.txt | tail -n 1 | grep -Fq "gestureExclusion=true"; then
-      echo "The trailing trim handle did not register its Android gesture-navigation exclusion."
-      collect_capture_diagnostics overlay-end-gesture-exclusion-missing
-      exit 87
-    fi
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I > "emulator-screenshots/overlay-$edge-target-logcat.txt" 2>&1 || true
+  if ! grep -F "OVERLAY_EDGE_TARGET edge=$edge" "emulator-screenshots/overlay-$edge-target-logcat.txt" | tail -n 1 | grep -Fq "gestureExclusion=true"; then
+    echo "The overlay $edge trim handle did not register its Android gesture-navigation exclusion."
+    collect_capture_diagnostics "overlay-$edge-gesture-exclusion-missing"
+    exit 87
   fi
   delta=42
   if [ "$direction" = "left" ]; then delta=-42; fi
@@ -4492,9 +4489,9 @@ if ! grep -Fq "Sol beyaz tutamaç" emulator-screenshots/video-edge-trim-selected
 fi
 timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I \
   > emulator-screenshots/video-edge-trim-targets.txt 2>&1 || true
-if ! grep -Fq "VIDEO_EDGE_TARGET edge=start" emulator-screenshots/video-edge-trim-targets.txt ||
+if ! grep -F "VIDEO_EDGE_TARGET edge=start" emulator-screenshots/video-edge-trim-targets.txt | tail -n 1 | grep -Fq "gestureExclusion=true" ||
    ! grep -F "VIDEO_EDGE_TARGET edge=end" emulator-screenshots/video-edge-trim-targets.txt | tail -n 1 | grep -Fq "gestureExclusion=true"; then
-  echo "The video edge targets were not both measured, or the trailing handle lacks gesture-navigation exclusion."
+  echo "The video start or end trim handle lacks Android gesture-navigation exclusion."
   cat emulator-screenshots/video-edge-trim-targets.txt || true
   collect_capture_diagnostics video-edge-trim-targets-invalid
   exit 102
