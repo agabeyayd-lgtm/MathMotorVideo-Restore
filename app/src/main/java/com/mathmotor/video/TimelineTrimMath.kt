@@ -541,18 +541,15 @@ internal object TimelineVideoMath {
 /**
  * Sizes timeline edge hit targets so normal clips get a generous 48dp grip,
  * while narrow items split the available width between their two edges.
- * The minimum is a fallback for extremely short items; it never changes the
- * visible clip width or the trim math.
+ * Each hit target is at most half its block width, so opposite edges can never
+ * overlap or steal one another's drag even on extremely short timeline items.
  */
 internal object TimelineEdgeHandleMath {
     fun targetWidthPx(
         blockWidthPx: Int,
-        minTargetPx: Int,
         maxTargetPx: Int
     ): Int {
-        val minimum = minTargetPx.coerceAtLeast(1)
-        val maximum = maxTargetPx.coerceAtLeast(minimum)
         val halfBlock = (blockWidthPx.coerceAtLeast(1) / 2).coerceAtLeast(1)
-        return halfBlock.coerceIn(minimum, maximum)
+        return halfBlock.coerceAtMost(maxTargetPx.coerceAtLeast(1))
     }
 }
