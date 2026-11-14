@@ -14092,7 +14092,7 @@ class VideoEditorActivity : Activity() {
         val exportTextLayers = textLayers.filter { it.text.isNotBlank() && it.endMs > it.startMs }
         if (exportTextLayers.isNotEmpty()) {
             val positionCounts = mutableMapOf<TextPosition, Int>()
-            val overlays = mutableListOf<TextOverlay>()
+            val overlays = mutableListOf<androidx.media3.effect.TextureOverlay>()
             exportTextLayers.forEach { layer ->
                 val samePositionIndex = positionCounts[layer.position] ?: 0
                 positionCounts[layer.position] = samePositionIndex + 1
