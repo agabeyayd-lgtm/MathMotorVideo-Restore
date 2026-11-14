@@ -2164,6 +2164,13 @@ run_audio_edge_smoke() {
     collect_capture_diagnostics "audio-$kind-$edge-target-undersized"
     exit 72
   fi
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I \
+    > "emulator-screenshots/audio-$kind-$edge-target-logcat.txt" 2>&1 || true
+  if ! grep -F "TIMELINE_EDGE_GESTURE_EXCLUSION description=$description" "emulator-screenshots/audio-$kind-$edge-target-logcat.txt" | tail -n 1 | grep -Fq "gestureExclusion=true"; then
+    echo "The $kind $edge trim handle is not protected from system edge gestures."
+    collect_capture_diagnostics "audio-$kind-$edge-gesture-exclusion-missing"
+    exit 72
+  fi
   delta=42
   if [ "$direction" = "left" ]; then
     delta=-42
@@ -3597,6 +3604,13 @@ PY
   if [ "$target_w" -lt 40 ] || [ "$target_h" -lt 20 ]; then
     echo "Text $edge trim target is undersized: ${target_w}x${target_h}px bounds=[${x1},${y1}][${x2},${y2}]."
     collect_capture_diagnostics "text-$edge-edge-target-undersized"
+    exit 57
+  fi
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I \
+    > "emulator-screenshots/text-$edge-edge-target-logcat.txt" 2>&1 || true
+  if ! grep -F "TIMELINE_EDGE_GESTURE_EXCLUSION description=$description" "emulator-screenshots/text-$edge-edge-target-logcat.txt" | tail -n 1 | grep -Fq "gestureExclusion=true"; then
+    echo "The text $edge trim handle is not protected from system edge gestures."
+    collect_capture_diagnostics "text-$edge-edge-gesture-exclusion-missing"
     exit 57
   fi
   delta=42
