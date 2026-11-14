@@ -251,6 +251,9 @@ jobs:
           adb -s emulator-5554 shell settings put global transition_animation_scale 0
           adb -s emulator-5554 shell settings put global animator_duration_scale 0
           gradle --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.mathmotor.video.VideoProjectDraftBackupTest
+          # Exercise the real text editor and assert that outline, shadow,
+          # opacity and their controls are reachable before the full timeline smoke.
+          gradle --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.mathmotor.video.EmulatorScreenshotTest#captureHomeEditorAndTextPanel
           bash .github/scripts/capture-emulator-screenshots.sh
 
       - name: Upload emulator screenshots and diagnostics
