@@ -2937,11 +2937,44 @@ for node in viewport.iter("node"):
         node.attrib.get("text", "")
     ))
 
-if not candidates:
-    raise SystemExit("No non-clickable text row has a navigation-safe swipe path free of clickable controls.")
+if candidates:
+    _, center_x, start_y, end_y, lane_size, label_text = max(candidates, key=lambda item: (item[0], item[4]))
+    print(center_x, start_y, end_y)
+    raise SystemExit(0)
 
-_, center_x, start_y, end_y, lane_size, label_text = max(candidates, key=lambda item: (item[0], item[4]))
-print(center_x, start_y, end_y)
+# At the bottom of a long effects list, the remaining non-clickable label
+# can sit inside the 32px touch-slop boundary near the viewport's top edge.
+# Fall back to a genuinely empty vertical lane (commonly the right gutter
+# beside the color radio buttons), checking the entire swipe path against
+# clickable controls rather than requiring a TextView anchor.
+start_y = safe_bottom - 8
+end_y = safe_top + 8
+if start_y - end_y < 32:
+    raise SystemExit("The Efektler viewport has no safe vertical swipe distance.")
+blocked_lanes = []
+for node in viewport.iter("node"):
+    if node.attrib.get("clickable") != "true":
+        continue
+    rect = bounds(node)
+    if not rect:
+        continue
+    left, top, right, bottom = rect
+    if bottom >= end_y and top <= start_y:
+        blocked_lanes.append((max(left, safe_left), min(right, safe_right)))
+blocked_lanes.sort()
+free_lanes = []
+cursor = safe_left
+for left, right in blocked_lanes:
+    if left > cursor:
+        free_lanes.append((cursor, left))
+    cursor = max(cursor, right)
+if cursor < safe_right:
+    free_lanes.append((cursor, safe_right))
+free_lanes = [(left, right) for left, right in free_lanes if right - left >= 24]
+if not free_lanes:
+    raise SystemExit("No empty vertical lane is available for a navigation-safe Efektler swipe.")
+left, right = max(free_lanes, key=lambda lane: lane[1] - lane[0])
+print((left + right) // 2, start_y, end_y)
 PY
 )"
           if [ -z "$effect_scroll_gesture" ]; then
