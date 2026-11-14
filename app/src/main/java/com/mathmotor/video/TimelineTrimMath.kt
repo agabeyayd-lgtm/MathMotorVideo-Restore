@@ -539,21 +539,20 @@ internal object TimelineVideoMath {
 
 
 /**
- * Returns the full transparent touch-target width for a timeline edge grip.
- *
- * Each target is centred on its own clip boundary by the layout helper. Do not
- * shrink it to half the clip width: short clips still need a usable minimum
- * touch target, and the two visual grip centres remain anchored to opposite
- * edges so users can start a trim at either end.
+ * Sizes both edge hit targets without letting short clips collapse them to a
+ * nearly untappable sliver. The 40px floor matches the emulator's measured
+ * minimum; wider clips grow up to the configured 48dp cap. Each hit target is
+ * centred on its clip boundary, outside the visible grip artwork.
  */
 internal object TimelineEdgeHandleMath {
     fun targetWidthPx(
         blockWidthPx: Int,
-        maxTargetPx: Int
+        maxTargetPx: Int,
+        minimumTargetPx: Int = 40
     ): Int {
-        // Keep the parameter in the API because the layout is boundary-relative;
-        // clamp invalid geometry defensively without reducing the touch target.
-        blockWidthPx.coerceAtLeast(1)
-        return maxTargetPx.coerceAtLeast(1)
+        val halfBlock = (blockWidthPx.coerceAtLeast(1) / 2).coerceAtLeast(1)
+        val maximum = maxTargetPx.coerceAtLeast(1)
+        val minimum = minimumTargetPx.coerceAtLeast(1).coerceAtMost(maximum)
+        return maxOf(minimum, halfBlock.coerceAtMost(maximum))
     }
 }
