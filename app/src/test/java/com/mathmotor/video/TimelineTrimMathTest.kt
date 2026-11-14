@@ -648,3 +648,21 @@ class TimelineEdgeHandleMathTest {
         }
     }
 }
+
+
+class TimelineEdgeHandlePlacementMathTest {
+    @Test
+    fun startTargetStaysFullyInsideClipFrame() {
+        assertEquals(0, TimelineEdgeHandleMath.targetLeftMarginPx(125, 60, true))
+    }
+
+    @Test
+    fun endTargetStaysFullyInsideClipFrame() {
+        assertEquals(65, TimelineEdgeHandleMath.targetLeftMarginPx(125, 60, false))
+    }
+
+    @Test
+    fun narrowClipDoesNotCreateNegativeMargin() {
+        assertEquals(0, TimelineEdgeHandleMath.targetLeftMarginPx(38, 40, false))
+    }
+}
