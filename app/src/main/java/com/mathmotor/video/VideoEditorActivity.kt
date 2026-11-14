@@ -92,6 +92,7 @@ class VideoEditorActivity : Activity() {
         const val SELECTION_CHROME_DP = 20
         const val TIMELINE_EDGE_HANDLE_DP = 12
         const val TIMELINE_EDGE_TARGET_DP = 48
+        const val TIMELINE_EDGE_MIN_TARGET_DP = 12
     }
 
     private data class Clip(
@@ -4077,7 +4078,16 @@ class VideoEditorActivity : Activity() {
                             true
                         }
                         MotionEvent.ACTION_UP -> {
-                            val delta = TimelineScaleMath.millisecondsForPixels(event.rawX - downX, timelinePixelsPerSecond())
+                            val finalPointerDeltaPx = event.rawX - downX
+                            if (!moved &&
+                                kotlin.math.abs(finalPointerDeltaPx) >
+                                android.view.ViewConfiguration.get(this).scaledTouchSlop
+                            ) {
+                                moved = true
+                            }
+                            val delta = TimelineScaleMath.millisecondsForPixels(
+                                finalPointerDeltaPx, timelinePixelsPerSecond()
+                            )
                             view.translationX = 0f
                             view.parent?.requestDisallowInterceptTouchEvent(false)
                             callback(if (moved) delta else 0L)
@@ -4323,10 +4333,19 @@ class VideoEditorActivity : Activity() {
                             true
                         }
                         android.view.MotionEvent.ACTION_UP -> {
-                            val deltaPx = event.rawX - downRawX
+                            val finalPointerDeltaPx = event.rawX - downRawX
+                            if (!moved &&
+                                kotlin.math.abs(finalPointerDeltaPx) >
+                                android.view.ViewConfiguration.get(this).scaledTouchSlop
+                            ) {
+                                moved = true
+                            }
+                            val deltaPx = finalPointerDeltaPx
                             view.translationX = 0f
                             view.parent?.requestDisallowInterceptTouchEvent(false)
                             if (moved) {
+                                val beforeStartMs = initialStartMs
+                                val beforeEndMs = initialEndMs
                                 val deltaMs = TimelineScaleMath.millisecondsForPixels(
                                     deltaPx, timelinePixelsPerSecond()
                                 )
@@ -4342,6 +4361,15 @@ class VideoEditorActivity : Activity() {
                                     )
                                 }
                                 layer.timingCustomized = true
+                                if (timelineSyncTestEnabled) {
+                                    android.util.Log.i(
+                                        "EditorTouchTest",
+                                        "TEXT_EDGE_TRIM edge=${if (isStart) "start" else "end"} " +
+                                            "beforeStartMs=$beforeStartMs beforeEndMs=$beforeEndMs " +
+                                            "afterStartMs=${layer.startMs} afterEndMs=${layer.endMs} " +
+                                            "deltaPx=$deltaPx"
+                                    )
+                                }
                                 selectedTextLayerId = layer.id
                                 loadTextLayerIntoControls(layer)
                                 finishProjectHistoryGesture()
@@ -5421,7 +5449,14 @@ class VideoEditorActivity : Activity() {
                         true
                     }
                     android.view.MotionEvent.ACTION_UP -> {
-                        val deltaPx = event.rawX - downRawX
+                        val finalPointerDeltaPx = event.rawX - downRawX
+                        if (!moved &&
+                            kotlin.math.abs(finalPointerDeltaPx) >
+                            android.view.ViewConfiguration.get(this).scaledTouchSlop
+                        ) {
+                            moved = true
+                        }
+                        val deltaPx = finalPointerDeltaPx
                         val deltaMs = TimelineScaleMath.millisecondsForPixels(deltaPx, pixelsPerSecond)
                         view.translationX = 0f
                         view.parent?.requestDisallowInterceptTouchEvent(false)
@@ -5451,7 +5486,7 @@ class VideoEditorActivity : Activity() {
                         true
                     }
                     android.view.MotionEvent.ACTION_CANCEL -> {
-                        finishProjectHistoryGesture()
+                        activeProjectHistorySnapshot = null
                         view.translationX = 0f
                         view.parent?.requestDisallowInterceptTouchEvent(false)
                         true
@@ -5682,7 +5717,14 @@ class VideoEditorActivity : Activity() {
                         true
                     }
                     android.view.MotionEvent.ACTION_UP -> {
-                        val deltaPx = event.rawX - downRawX
+                        val finalPointerDeltaPx = event.rawX - downRawX
+                        if (!moved &&
+                            kotlin.math.abs(finalPointerDeltaPx) >
+                            android.view.ViewConfiguration.get(this).scaledTouchSlop
+                        ) {
+                            moved = true
+                        }
+                        val deltaPx = finalPointerDeltaPx
                         val deltaMs = TimelineScaleMath.millisecondsForPixels(deltaPx, pixelsPerSecond)
                         view.translationX = 0f
                         view.parent?.requestDisallowInterceptTouchEvent(false)
@@ -5717,7 +5759,7 @@ class VideoEditorActivity : Activity() {
                         true
                     }
                     android.view.MotionEvent.ACTION_CANCEL -> {
-                        finishProjectHistoryGesture()
+                        activeProjectHistorySnapshot = null
                         view.translationX = 0f
                         view.parent?.requestDisallowInterceptTouchEvent(false)
                         true
@@ -6939,10 +6981,12 @@ class VideoEditorActivity : Activity() {
     }
 
     /** Shared touch width for timeline trim targets. Even short clips need a usable touch area. */
-    private fun timelineEdgeTouchWidth(blockWidth: Int): Int = minOf(
-        dp(TouchPriority.TIMELINE_EDGE_TARGET_DP),
-        maxOf(dp(48), (blockWidth / 2).coerceAtLeast(1))
-    )
+    private fun timelineEdgeTouchWidth(blockWidth: Int): Int =
+        TimelineEdgeHandleMath.targetWidthPx(
+            blockWidthPx = blockWidth,
+            minTargetPx = dp(TouchPriority.TIMELINE_EDGE_MIN_TARGET_DP),
+            maxTargetPx = dp(TouchPriority.TIMELINE_EDGE_TARGET_DP)
+        )
 
     /**
      * Centre each edge hit target on the clip boundary. Half of the target may
@@ -10722,33 +10766,6 @@ class VideoEditorActivity : Activity() {
                         dp(4).toFloat(),
                         borderPaint
                     )
-                    // CapCut-style trim grips are painted into the same selection
-                    // frame. Their transparent hit areas below only handle gestures.
-                    val gripWidth = dp(6).toFloat()
-                    val gripHeight = dp(28).toFloat().coerceAtMost(outline.height())
-                    val gripRadius = gripWidth / 2f
-                    val gripTop = outline.centerY() - gripHeight / 2f
-                    val gripsPaint = android.graphics.Paint(
-                        android.graphics.Paint.ANTI_ALIAS_FLAG
-                    ).apply { color = Color.WHITE }
-                    canvas.drawRoundRect(
-                        android.graphics.RectF(
-                            outline.left,
-                            gripTop,
-                            outline.left + gripWidth,
-                            gripTop + gripHeight
-                        ),
-                        gripRadius, gripRadius, gripsPaint
-                    )
-                    canvas.drawRoundRect(
-                        android.graphics.RectF(
-                            outline.right - gripWidth,
-                            gripTop,
-                            outline.right,
-                            gripTop + gripHeight
-                        ),
-                        gripRadius, gripRadius, gripsPaint
-                    )
                 }
 
                 override fun setAlpha(alpha: Int) {
@@ -11032,7 +11049,7 @@ class VideoEditorActivity : Activity() {
             // Otherwise short trimmed clips cannot be expanded back toward the source boundaries.
             // Keep a clear central drag area even on very short split fragments.
             // Each transparent edge target takes at most one third of the clip width.
-            val handleWidth = minOf(dp(40), (width / 3).coerceAtLeast(1))
+            val handleWidth = timelineEdgeTouchWidth(width)
             fun allowedDeltaPx(startMs:Long,endMs:Long):Pair<Float,Float>{
                 // Handle travel is measured on the project timeline, while clip in/out
                 // values remain source timestamps. Convert source bounds through speed
@@ -11062,6 +11079,22 @@ class VideoEditorActivity : Activity() {
                 setBackgroundColor(Color.TRANSPARENT)
                 elevation = dp(TouchPriority.TIMELINE_EDGE_HANDLE_DP).toFloat()
                 contentDescription = if (isStart) "Sol beyaz tutamaç: klibin başlangıcını sürükleyerek kısalt veya uzat" else "Sağ beyaz tutamaç: klibin bitişini sürükleyerek kısalt veya uzat"
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+                // The visible white pill belongs to the moving hit target. It follows
+                // the finger during trim instead of leaving a stationary marker behind.
+                addView(View(this@VideoEditorActivity).apply {
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        setColor(Color.WHITE)
+                        cornerRadius = dp(4).toFloat()
+                    }
+                    isClickable = false
+                    isFocusable = false
+                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                }, FrameLayout.LayoutParams(
+                    dp(6),
+                    dp(28).coerceAtMost(height.coerceAtLeast(1)),
+                    Gravity.CENTER_VERTICAL or (if (isStart) Gravity.LEFT else Gravity.RIGHT)
+                ))
                 // Explicitly keep this transparent child as the touch owner. The
                 // clip body and horizontal scroller must not steal an edge drag.
                 isClickable = true
@@ -11193,6 +11226,23 @@ class VideoEditorActivity : Activity() {
                     if (isStart) Gravity.START else Gravity.END
                 )
             )
+            applyTrailingTimelineGestureExclusion(handle, isStart)
+            handle.post {
+                if (timelineSyncTestEnabled) {
+                    val hasGestureExclusion =
+                        !isStart &&
+                            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+                            handle.systemGestureExclusionRects.isNotEmpty()
+                    android.util.Log.i(
+                        "EditorTouchTest",
+                        "VIDEO_EDGE_TARGET edge=${if (isStart) "start" else "end"} " +
+                            "width=${handle.width} left=${handle.left} right=${handle.right} " +
+                            "parentWidth=${container.width} shown=${handle.isShown} " +
+                            "accessibility=${handle.importantForAccessibility} " +
+                            "gestureExclusion=$hasGestureExclusion"
+                    )
+                }
+            }
         }
         addTrimHandle(isStart = true)
         addTrimHandle(isStart = false)
