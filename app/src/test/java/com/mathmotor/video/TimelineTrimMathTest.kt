@@ -600,84 +600,35 @@ class TimelineVideoMathTest {
 
 class TimelineEdgeHandleMathTest {
     @Test
-    fun wideClipUsesTheConfiguredMaximumTouchTarget() {
-        assertEquals(
-            144,
-            TimelineEdgeHandleMath.targetWidthPx(
-                blockWidthPx = 600,
-                maxTargetPx = 144
-            )
-        )
+    fun wideClipUsesTheConfiguredTouchTarget() {
+        assertEquals(144, TimelineEdgeHandleMath.targetWidthPx(600, 144))
     }
 
     @Test
-    fun narrowClipSharesItsWidthBetweenTheTwoEdgeTargets() {
-        assertEquals(
-            50,
-            TimelineEdgeHandleMath.targetWidthPx(
-                blockWidthPx = 100,
-                maxTargetPx = 144
-            )
-        )
+    fun shortAudioClipStillGetsAFullMinimumTouchTarget() {
+        assertEquals(120, TimelineEdgeHandleMath.targetWidthPx(62, 120))
     }
 
     @Test
-    fun extremelyShortClipKeepsOppositeEdgeTargetsSeparate() {
-        assertEquals(
-            10,
-            TimelineEdgeHandleMath.targetWidthPx(
-                blockWidthPx = 20,
-                maxTargetPx = 144
-            )
-        )
+    fun extremelyShortClipDoesNotCollapseItsEdgeTargets() {
+        assertEquals(120, TimelineEdgeHandleMath.targetWidthPx(20, 120))
     }
 
     @Test
     fun invalidBoundsNeverReturnAZeroWidthTarget() {
-        assertEquals(
-            1,
-            TimelineEdgeHandleMath.targetWidthPx(
-                blockWidthPx = 0,
-                maxTargetPx = 0
-            )
-        )
-        assertEquals(
-            50,
-            TimelineEdgeHandleMath.targetWidthPx(
-                blockWidthPx = 100,
-                maxTargetPx = 50
-            )
-        )
+        assertEquals(1, TimelineEdgeHandleMath.targetWidthPx(0, 0))
+        assertEquals(50, TimelineEdgeHandleMath.targetWidthPx(100, 50))
     }
 
     @Test
-    fun timelineEdgeTargetsPreserveSeparateHitRegionsForShortAndNormalClips() {
-        val maxTarget = 48
-        val cases = listOf(
-            1 to 1,
-            8 to 4,
-            20 to 10,
-            39 to 19,
-            40 to 20,
-            48 to 24,
-            50 to 25,
-            80 to 40,
-            120 to 48
-        )
-
-        cases.forEach { (clipWidth, expectedTarget) ->
-            val target = TimelineEdgeHandleMath.targetWidthPx(clipWidth, maxTarget)
-            assertEquals(expectedTarget, target)
-            assertTrue("Each edge target must stay within half of clip width $clipWidth", target * 2 <= clipWidth + 1)
-            assertTrue("Target must respect configured maximum $maxTarget", target <= maxTarget)
+    fun everyClipKeepsTheConfiguredMinimumHitTarget() {
+        val minimumTarget = 120 // 40dp on the API 35 emulator density.
+        listOf(1, 8, 20, 39, 40, 48, 50, 80, 120).forEach { clipWidth ->
+            assertEquals(
+                "Clip width $clipWidth must not shrink the 40dp edge target",
+                minimumTarget,
+                TimelineEdgeHandleMath.targetWidthPx(clipWidth, minimumTarget)
+            )
         }
-    }
-
-    @Test
-    fun timelineEdgeTargetsRemainValidForInvalidOrTinyDimensions() {
-        assertEquals(1, TimelineEdgeHandleMath.targetWidthPx(0, 48))
-        assertEquals(1, TimelineEdgeHandleMath.targetWidthPx(-20, 48))
-        assertEquals(1, TimelineEdgeHandleMath.targetWidthPx(10, 0))
-        assertEquals(1, TimelineEdgeHandleMath.targetWidthPx(10, -4))
     }
 }
