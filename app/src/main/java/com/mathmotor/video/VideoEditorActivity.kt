@@ -2132,6 +2132,8 @@ class VideoEditorActivity : Activity() {
             }
         }
         effects.addView(textOutlineColorGroup, matchWrap())
+        textOutlineWidthSeek.isEnabled = textOutlineEnabled
+        textOutlineColorGroup.childrenEnabled(textOutlineEnabled)
 
         effects.addView(label("Gölge / Parıltı", 12f, Color.WHITE, true))
         textShadowCheck = CheckBox(this).apply {
@@ -2187,6 +2189,8 @@ class VideoEditorActivity : Activity() {
             }
         }
         effects.addView(textShadowColorGroup, matchWrap())
+        textShadowBlurSeek.isEnabled = textShadowEnabled
+        textShadowColorGroup.childrenEnabled(textShadowEnabled)
 
         textOpacityLabel = label("Opaklık: 100%", 12f, Color.WHITE, true)
         effects.addView(textOpacityLabel)
@@ -13918,10 +13922,14 @@ class VideoEditorActivity : Activity() {
         }
         val x = PreviewCanvasMath.media3AnchorForFraction(layer.xFraction)
         val y = PreviewCanvasMath.media3AnchorForFraction(layer.yFraction, invertY = true)
+        val invisibleText = SpannableString("")
         return object : TextOverlay() {
             override fun getText(presentationTimeUs: Long): SpannableString {
                 val timeMs = presentationTimeUs / 1000L
-                return if (timeMs >= startMs && timeMs < endMs) SpannableString(styled) else SpannableString("")
+                // TextOverlay caches its bitmap by the returned text object. Reuse
+                // immutable styled/empty instances across frames instead of allocating
+                // identical SpannableStrings and rasterizing every video frame.
+                return if (timeMs >= startMs && timeMs < endMs) styled else invisibleText
             }
 
             override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings {
