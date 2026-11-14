@@ -2892,7 +2892,7 @@ for node in viewport.iter("node"):
         left, top, right, bottom = rect
         visible_top = max(top, view_top)
         visible_bottom = min(bottom, view_bottom)
-        if right - left >= 180 and visible_bottom - visible_top >= 32:
+        if right - left >= 180 and visible_bottom - visible_top >= 16:
             label_rects.append((visible_bottom, (left + right) // 2, visible_top, visible_bottom))
 _, _, label_top, label_bottom = max(label_rects)
 start_y = min(label_bottom - 8, view_bottom - 36)
