@@ -4658,7 +4658,10 @@ class VideoEditorActivity : Activity() {
                         }
                         isClickable = false
                         isFocusable = false
-                    }, FrameLayout.LayoutParams(dp(5), dp(24), Gravity.CENTER))
+                    }, FrameLayout.LayoutParams(
+                    dp(5), dp(24),
+                    (if (isStart) Gravity.LEFT else Gravity.RIGHT) or Gravity.CENTER_VERTICAL
+                ))
                     setOnClickListener { /* The transparent edge target is primarily a drag control. */ }
                 }
                 var downRawX = 0f
@@ -5773,7 +5776,10 @@ class VideoEditorActivity : Activity() {
                     }
                     isClickable = false
                     isFocusable = false
-                }, FrameLayout.LayoutParams(dp(5), dp(24), Gravity.CENTER))
+                }, FrameLayout.LayoutParams(
+                    dp(5), dp(24),
+                    (if (isStart) Gravity.LEFT else Gravity.RIGHT) or Gravity.CENTER_VERTICAL
+                ))
                 setOnClickListener { /* The transparent edge target is primarily a drag control. */ }
             }
             var downRawX = 0f
@@ -6038,7 +6044,10 @@ class VideoEditorActivity : Activity() {
                     }
                     isClickable = false
                     isFocusable = false
-                }, FrameLayout.LayoutParams(dp(5), dp(24), Gravity.CENTER))
+                }, FrameLayout.LayoutParams(
+                    dp(5), dp(24),
+                    (if (isStart) Gravity.LEFT else Gravity.RIGHT) or Gravity.CENTER_VERTICAL
+                ))
                 setOnClickListener { /* The transparent edge target is primarily a drag control. */ }
             }
             var downRawX = 0f
@@ -7350,16 +7359,22 @@ class VideoEditorActivity : Activity() {
      * narrower than that. The visual grip remains unchanged; only its
      * transparent touch target grows around the clip boundary.
      */
-    private fun timelineEdgeTouchWidth(blockWidth: Int): Int =
-        TimelineEdgeHandleMath.targetWidthPx(
+    private fun timelineEdgeTouchWidth(blockWidth: Int): Int {
+        val requestedWidth = TimelineEdgeHandleMath.targetWidthPx(
             blockWidthPx = blockWidth,
             maxTargetPx = maxOf(dp(40), dp(TouchPriority.TIMELINE_EDGE_TARGET_DP))
         )
+        // Keep the complete hit target inside its clip frame. The parent timeline
+        // viewport clips children at the scroll boundary, so a centered target
+        // loses part of its width on the first/last visible clip.
+        return requestedWidth.coerceAtMost(blockWidth.coerceAtLeast(dp(40)))
+    }
 
     /**
-     * Centre each edge hit target on the clip boundary. Half of the target may
-     * extend into the adjacent empty timeline area, so short clips still have
-     * independent start/end hit regions without widening their visual duration.
+     * Place each complete edge hit target inside the clip frame. Extending it
+     * beyond the frame is clipped by the horizontal timeline viewport at the
+     * first/last item and makes the actual accessible target narrower than its
+     * measured layout width.
      */
     private fun timelineEdgeHandleLayoutParams(
         edgeWidth: Int,
@@ -7370,7 +7385,7 @@ class VideoEditorActivity : Activity() {
         ViewGroup.LayoutParams.MATCH_PARENT,
         Gravity.LEFT
     ).apply {
-        leftMargin = if (isStart) -edgeWidth / 2 else blockWidth - edgeWidth / 2
+        leftMargin = TimelineEdgeHandleMath.targetLeftMarginPx(blockWidth, edgeWidth, isStart)
     }
 
     /** Protect both timeline trim edges from Android back gestures on gesture-navigation devices. */
