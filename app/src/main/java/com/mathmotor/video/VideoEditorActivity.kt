@@ -7407,6 +7407,19 @@ class VideoEditorActivity : Activity() {
         }
     }
 
+    /** A canceled preview gesture must restore its pre-gesture model, not commit a partial transform. */
+    private fun cancelProjectHistoryGesture() {
+        val before = activeProjectHistorySnapshot ?: return
+        activeProjectHistorySnapshot = null
+        if (timelineSyncTestEnabled) {
+            android.util.Log.i(
+                "ProjectHistoryTest",
+                "PROJECT_HISTORY_GESTURE_CANCELLED restoringSnapshot=true"
+            )
+        }
+        restoreProjectEditSnapshot(before)
+    }
+
     private fun beginTextHistoryEdit() {
         if (activeTextHistorySnapshot == null) {
             activeTextHistorySnapshot = captureProjectEditSnapshot()
@@ -7419,6 +7432,19 @@ class VideoEditorActivity : Activity() {
         if (hasProjectContentChanged(before, captureProjectEditSnapshot())) {
             pushProjectUndoSnapshot(before)
         }
+    }
+
+    /** Discard a canceled text drag/pinch and restore the exact selection/model snapshot. */
+    private fun cancelTextHistoryEdit() {
+        val before = activeTextHistorySnapshot ?: return
+        activeTextHistorySnapshot = null
+        if (timelineSyncTestEnabled) {
+            android.util.Log.i(
+                "ProjectHistoryTest",
+                "TEXT_GESTURE_CANCELLED restoringSnapshot=true"
+            )
+        }
+        restoreProjectEditSnapshot(before)
     }
 
     private fun clearProjectHistory() {
@@ -7877,8 +7903,15 @@ class VideoEditorActivity : Activity() {
         }
         recordProjectEdit()
         val copy = source.copy(id = nextTextLayerId++, text = source.text)
+        val beforeCount = textLayers.size
         textLayers.add(textLayers.indexOf(source) + 1, copy)
         selectedTextLayerId = copy.id
+        if (timelineSyncTestEnabled) {
+            android.util.Log.i(
+                "EditorTouchTest",
+                "TEXT_GRIP_ACTION action=duplicate beforeCount=$beforeCount afterCount=${textLayers.size} selectedId=${copy.id}"
+            )
+        }
         loadTextLayerIntoControls(copy)
         refreshTextLayerList()
         updatePreviewTextOverlay()
@@ -7894,7 +7927,14 @@ class VideoEditorActivity : Activity() {
             return
         }
         recordProjectEdit()
+        val beforeCount = textLayers.size
         textLayers.removeAt(index)
+        if (timelineSyncTestEnabled) {
+            android.util.Log.i(
+                "EditorTouchTest",
+                "TEXT_GRIP_ACTION action=delete beforeCount=$beforeCount afterCount=${textLayers.size}"
+            )
+        }
         val next = textLayers.getOrNull(index.coerceAtMost(textLayers.lastIndex))
         selectedTextLayerId = next?.id
         loadTextLayerIntoControls(next)
@@ -8466,7 +8506,7 @@ class VideoEditorActivity : Activity() {
                 }
                 android.view.MotionEvent.ACTION_CANCEL -> {
                     view.parent?.requestDisallowInterceptTouchEvent(false)
-                    finishTextHistoryEdit()
+                    cancelTextHistoryEdit()
                     startDistance = 0f
                     true
                 }
@@ -9890,20 +9930,34 @@ class VideoEditorActivity : Activity() {
                 }
                 android.view.MotionEvent.ACTION_UP,
                 android.view.MotionEvent.ACTION_CANCEL -> {
+                    val cancelled = event.actionMasked == android.view.MotionEvent.ACTION_CANCEL
                     val overlay = gestureOverlay
                     gestureOverlay = null
                     view.parent?.requestDisallowInterceptTouchEvent(false)
                     if (overlay != null) {
-                        finishProjectHistoryGesture()
-                        loadOverlayControls()
-                        refreshTimelineTracks()
-                        // The Media3 composition already owns this mutable OverlayClip.
-                        // Rebuilding it on ACTION_UP tears down the video surface and leaves
-                        // the paused canvas black until another playback prepare. Keep the
-                        // current graph alive and request its final frame at the playhead.
-                        refreshPausedOverlayCompositionFrame(force = true)
-                        requestPreviewFrameAt(timelinePlayheadMs)
-                        updateOverlayTransformTouchAvailability()
+                        if (cancelled) {
+                            // A canceled pointer sequence is not a completed edit.
+                            // Restore the playhead transform instead of saving the
+                            // partial movement emitted by the preceding MOVE events.
+                            cancelProjectHistoryGesture()
+                        } else {
+                            finishProjectHistoryGesture()
+                        }
+                        if (cancelled) {
+                            updateOverlayTransformTouchAvailability()
+                            refreshPausedOverlayCompositionFrame(force = true)
+                            requestPreviewFrameAt(timelinePlayheadMs)
+                        } else {
+                            loadOverlayControls()
+                            refreshTimelineTracks()
+                            // The Media3 composition already owns this mutable OverlayClip.
+                            // Rebuilding it on ACTION_UP tears down the video surface and leaves
+                            // the paused canvas black until another playback prepare. Keep the
+                            // current graph alive and request its final frame at the playhead.
+                            refreshPausedOverlayCompositionFrame(force = true)
+                            requestPreviewFrameAt(timelinePlayheadMs)
+                            updateOverlayTransformTouchAvailability()
+                        }
                     }
                     true
                 }
