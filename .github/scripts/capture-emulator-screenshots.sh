@@ -2867,19 +2867,29 @@ for node in viewport.iter("node"):
     if not rect:
         continue
     left, top, right, bottom = rect
-    center_y = (top + bottom) // 2
     if right <= view_left or left >= view_right:
         continue
-    if center_y < view_top + 72 or center_y > view_bottom - 18:
+    # UiAutomator reports the full TextView bounds even when the bottom of a
+    # row is clipped by its parent. Use the actual intersection with this
+    # nested effects viewport, not a fixed centre-Y margin: on the API 35
+    # layout the explanatory row is safely visible but its centre sits only
+    # 59px below the viewport top (the old +72px cutoff rejected it).
+    visible_top = max(top, view_top)
+    visible_bottom = min(bottom, view_bottom)
+    if visible_bottom - visible_top < 24:
         continue
-    labels.append((center_y, (left + right) // 2))
+    # Begin near the lower part of the non-clickable label, then move upward
+    # within the same ScrollView. This avoids swiping the adjacent checkbox
+    # while still providing enough travel to cross Android's drag slop.
+    start_y = visible_bottom - 10
+    end_y = max(view_top + 16, start_y - min(140, (view_bottom - view_top) // 2))
+    if start_y - end_y < 50:
+        continue
+    labels.append((visible_bottom, (left + right) // 2, start_y, end_y))
 if not labels:
-    raise SystemExit("No safe, non-interactive text row is visible for scrolling the Efektler panel.")
+    raise SystemExit("No safe, non-interactive text row intersects the Efektler scroll viewport.")
 
-start_y, center_x = max(labels)
-end_y = max(view_top + 12, start_y - 150)
-if start_y - end_y < 55:
-    raise SystemExit("The visible text row is too close to the scroll viewport edge for a safe drag.")
+_, center_x, start_y, end_y = max(labels)
 print(center_x, start_y, end_y)
 PY
 )"
