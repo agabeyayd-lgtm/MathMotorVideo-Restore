@@ -1228,3 +1228,43 @@ The selected main-video clip exposes independent left/right edge grips: drag the
 - The test already confirmed SeekBar start/progress/stop callbacks and a completed history-gesture callback; the failure indicates the history snapshot was not committed as a changed project edit, or the gesture did not actually change the model. The prior harness discarded the most useful callback values on this failure path.
 - Added failure-only output of the captured `VOLUME_SEEK_START/PROGRESS/STOP` and `PROJECT_HISTORY_GESTURE_BEGIN/END/COMMITTED` records. This does not weaken assertions or alter production behavior. Next API 35 run will expose exact start/end progress and before/after model values so the underlying cause can be fixed rather than guessed.
 - Current branch commit: `083ed26373f59d590ecd19217da14f7b1fa9ace2`. No app version change, release APK, signing, or merge.
+
+
+## 2026-11-14 — PR #37 text-effects scroll target correction (validation pending)
+
+- Exact failing API 35 artifact from run `43599836034` confirms the Efektler tab opened and exposed its nested vertical ScrollView at `[52,1637][1028,1847]`. The explanatory, non-clickable TextView was visibly present at `[57,1647][1023,1746]`; its centre Y was 1696, only 59px below the viewport top.
+- The smoke helper incorrectly required a safe TextView centre at least 72px below the viewport top, so it rejected that visible row and stopped before touching the off-screen contour control. This was a test-harness geometry cutoff, not evidence that the app's contour control was broken.
+- Updated `.github/scripts/capture-emulator-screenshots.sh` on the PR branch to select a non-clickable TextView by its actual intersection with the nested ScrollView, then swipe upward from within that label while staying inside the measured viewport. The clickable background checkbox is excluded from the gesture target. The control visibility and touch-target assertions remain intact; no test is skipped or weakened.
+- Fix commit: `38b66f0e6b890be88a0f228ef129a2c1955b352c`. Awaiting fresh unit/build, debug APK packaging and API 35 emulator results on this exact head. The video and text grip tests later in the same smoke script have not yet been reached on the failed run and remain unverified.
+- PR #37 remains open and unmerged. No main-branch update, version-code change, signing, or release was made.
+
+
+## 2026-11-14 — PR #37 Efektler scroll follow-up (navigation-edge diagnosis; validation pending)
+
+- Run `43601821042` / emulator job `132468058279` failed at `Metin gölgesini aç veya kapat`, not at the original contour-control lookup. The contour toggle and contour-width seekbar were both found in the live hierarchy.
+- Downloaded and inspected artifact `14116947793`. The repeated scroll snapshots show the inner effects viewport at `[52,1637][1028,1847]`; the prior helper selected the lowest visible label and began swipes at y=1831–1837, only 83–89px above the 1920px display bottom. The final captured hierarchy `editor-text-effects-scroll-3-5.xml` belongs to the Android launcher, while the app logcat has no app fatal exception/ANR. This is consistent with the swipe entering Android's bottom system-navigation gesture region, not a missing shadow control.
+- Updated the helper to keep the swipe start at least 48px above the measured inner ScrollView bottom while remaining inside the visible non-clickable label; endpoint remains inside the measured viewport. This specifically addresses the observed navigation-edge exit rather than repeating the earlier safe-row cutoff fix.
+- Follow-up commit: `f193198eb7cffd5c5dd6f38d7bd1c86ab18c28da`. Awaiting a fresh emulator run. Do not mark the effects sequence green until all seven listed controls are found; video/text grip checks remain unverified because this run exits before reaching them.
+- PR #37 remains open and unmerged. No main-branch update or version bump.
+
+
+### Follow-up to the navigation-edge fix
+
+- Refined the swipe target once more using the archived API 35 hierarchies: the lowest-label strategy could still choose a row too close to the system navigation region. The helper now swipes in the measured inner ScrollView's right-side gutter, 80px above its bottom edge, with a minimum viewport-size/travel check. This avoids tapping the radio-button row and avoids beginning at the bottom edge.
+- Current helper commit: `024aac07de4dd3562f1c74cabad7ef7181e64a93`. This is a source change only; no new Actions run has yet been returned for this head. The fix is therefore pending emulator proof, not marked green.
+
+
+## 2026-11-14 — PR #37 short-strip trim-target overlap correction (validation pending)
+
+- Code review found a real edge-hitbox collision not covered by the previous width-only tests: the shared hit-width helper enforced a fixed 40px minimum even when a strip was narrower than 80px. The start and end hit areas therefore overlapped; because the end handle is added last, it could receive touches intended for the start edge.
+- Changed the shared geometry so each edge target is at most half the clip width, while still growing to the configured 48dp maximum on wide clips. Very short clips necessarily use narrower targets, but both edges stay inside the clip and remain disjoint.
+- Replaced the old minimum-width assertions with boundary coverage from 1px through 600px and explicit tests that opposing hit regions never overlap or extend beyond the clip.
+- This correction is a source/test change only. It does not change visible grip artwork, trim timing, versionCode, signing, or release behavior. A fresh exact-head unit/build and API 35 emulator run is required.
+
+
+## 2026-11-14 — PR #37 text-effects scroll content measurement correction (validation pending)
+
+- The `bc7d001` emulator run reached the end of the Efektler panel's scroll range, but the final controls remained below the viewport. Logcat showed the real views were attached: `Gölge dikey kayması` at y=1856 and its SeekBar at y=1921, while the inner viewport ended at y=1847. Repeated swipes did not advance beyond the horizontal-offset row.
+- Corrected the Efektler tab activation path to reassert `WRAP_CONTENT` for its ScrollView content, calculate the deepest laid-out child bottom including bottom margins/padding, and expand the content minimum height when the measured height truncates trailing controls. Added a `TextEffectsLayout` measurement log to preserve evidence on the next emulator run.
+- The trim-handle source comment was also aligned with the tested half-width non-overlap rule. No visible trim artwork, project values, versionCode, signing, or release behavior changed.
+- This change remains validation-pending until the exact commit passes the emulator effects controls and continues into the text/video grip interaction checks.

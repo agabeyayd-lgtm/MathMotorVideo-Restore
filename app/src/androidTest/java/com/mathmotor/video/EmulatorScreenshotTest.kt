@@ -60,6 +60,26 @@ class EmulatorScreenshotTest {
             device.wait(Until.hasObject(By.text("METİN KATMANLARI")), 8_000)
         )
         takeScreenshot(device, "editor-text-panel.png")
+
+        val effectsTab = device.findObject(By.text("Efektler"))
+            ?: device.findObject(By.clazz("android.widget.Button").textContains("Efektler"))
+            ?: throw AssertionError("Could not find the Efektler tab in the text editor")
+        effectsTab.click()
+        device.waitForIdle()
+        val effectControls = listOf(
+            "Yazı konturunu aç veya kapat",
+            "Metin kontur kalınlığı",
+            "Metin gölgesini aç veya kapat",
+            "Metin gölgesi yumuşaklığı",
+            "Metin opaklığı"
+        )
+        effectControls.forEach { description ->
+            assertTrue(
+                "Text effect control is missing from the real editor UI: $description",
+                device.wait(Until.hasObject(By.desc(description)), 5_000)
+            )
+        }
+        takeScreenshot(device, "editor-text-effects.png")
     }
 
 

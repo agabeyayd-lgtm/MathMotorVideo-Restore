@@ -536,3 +536,21 @@ internal object TimelineVideoMath {
         )
     }
 }
+
+
+/**
+ * Sizes opposing edge hit areas so the start and end controls remain independent.
+ * Each target occupies at most half of its clip frame; on very short clips it
+ * must become narrower than 40px rather than overlap and make one edge unreachable.
+ */
+internal object TimelineEdgeHandleMath {
+    fun targetWidthPx(blockWidthPx: Int, maxTargetPx: Int): Int {
+        val halfBlock = blockWidthPx.coerceAtLeast(0) / 2
+        val maximum = maxTargetPx.coerceAtLeast(0)
+        return halfBlock.coerceAtMost(maximum)
+    }
+
+    /** Place the hit target flush with the requested clip edge, never outside its frame. */
+    fun targetLeftMarginPx(blockWidthPx: Int, targetWidthPx: Int, isStart: Boolean): Int =
+        if (isStart) 0 else (blockWidthPx - targetWidthPx).coerceAtLeast(0)
+}
