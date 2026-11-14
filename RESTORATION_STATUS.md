@@ -1576,3 +1576,9 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Updated the helper to keep the swipe start at least 48px above the measured inner ScrollView bottom while remaining inside the visible non-clickable label; endpoint remains inside the measured viewport. This specifically addresses the observed navigation-edge exit rather than repeating the earlier safe-row cutoff fix.
 - Follow-up commit: `f193198eb7cffd5c5dd6f38d7bd1c86ab18c28da`. Awaiting a fresh emulator run. Do not mark the effects sequence green until all seven listed controls are found; video/text grip checks remain unverified because this run exits before reaching them.
 - PR #37 remains open and unmerged. No main-branch update or version bump.
+
+
+### Follow-up to the navigation-edge fix
+
+- Refined the swipe target once more using the archived API 35 hierarchies: the lowest-label strategy could still choose a row too close to the system navigation region. The helper now swipes in the measured inner ScrollView's right-side gutter, 80px above its bottom edge, with a minimum viewport-size/travel check. This avoids tapping the radio-button row and avoids beginning at the bottom edge.
+- Current helper commit: `024aac07de4dd3562f1c74cabad7ef7181e64a93`. This is a source change only; no new Actions run has yet been returned for this head. The fix is therefore pending emulator proof, not marked green.
