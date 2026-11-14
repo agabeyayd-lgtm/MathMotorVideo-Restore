@@ -4108,22 +4108,15 @@ class VideoEditorActivity : Activity() {
                     edge,
                     timelineEdgeHandleLayoutParams(edgeWidth, width, isStart)
                 )
+                applyTimelineGestureExclusion(edge)
                 edge.post {
-                    // The trailing trim handle can sit against the physical right
-                    // edge of the display when the clip end is scrolled into view.
-                    // Android's gesture-navigation back edge otherwise steals a
-                    // leftward drag before it reaches this view. Exclude only this
-                    // narrow interactive handle from system gestures; keep the
-                    // rest of the editor available to normal system navigation.
-                    if (!isStart && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                        edge.systemGestureExclusionRects = listOf(
-                            android.graphics.Rect(0, 0, edge.width, edge.height)
-                        )
-                    }
                     if (timelineSyncTestEnabled) {
+                        val hasGestureExclusion =
+                            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+                                edge.systemGestureExclusionRects.isNotEmpty()
                         android.util.Log.i(
                             "EditorTouchTest",
-                            "OVERLAY_EDGE_TARGET edge=${if (isStart) "start" else "end"} width=${edge.width} left=${edge.left} right=${edge.right} parentWidth=${frame.width} shown=${edge.isShown} accessibility=${edge.importantForAccessibility} gestureExclusion=${!isStart && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q}"
+                            "OVERLAY_EDGE_TARGET edge=${if (isStart) "start" else "end"} width=${edge.width} left=${edge.left} right=${edge.right} parentWidth=${frame.width} shown=${edge.isShown} accessibility=${edge.importantForAccessibility} gestureExclusion=$hasGestureExclusion"
                         )
                     }
                 }
@@ -4399,7 +4392,7 @@ class VideoEditorActivity : Activity() {
                     handle,
                     timelineEdgeHandleLayoutParams(handleWidth, blockWidth, isStart)
                 )
-                applyTrailingTimelineGestureExclusion(handle, isStart)
+                applyTimelineGestureExclusion(handle)
             }
 
             addTextTrimHandle(isStart = true)
@@ -5497,7 +5490,7 @@ class VideoEditorActivity : Activity() {
                 handle,
                 timelineEdgeHandleLayoutParams(handleWidth, blockWidth, isStart)
             )
-            applyTrailingTimelineGestureExclusion(handle, isStart)
+            applyTimelineGestureExclusion(handle)
         }
 
         addMusicTrimHandle(isStart = true)
@@ -5770,7 +5763,7 @@ class VideoEditorActivity : Activity() {
                 handle,
                 timelineEdgeHandleLayoutParams(handleWidth, blockWidth, isStart)
             )
-            applyTrailingTimelineGestureExclusion(handle, isStart)
+            applyTimelineGestureExclusion(handle)
         }
 
         addTrimHandle(isStart = true)
@@ -7003,9 +6996,9 @@ class VideoEditorActivity : Activity() {
         leftMargin = if (isStart) -edgeWidth / 2 else blockWidth - edgeWidth / 2
     }
 
-    /** Keep leftward drags on a trailing trim handle out of Android's back gesture. */
-    private fun applyTrailingTimelineGestureExclusion(handle: View, isStart: Boolean) {
-        if (isStart || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+    /** Protect both timeline trim edges from Android back gestures on gesture-navigation devices. */
+    private fun applyTimelineGestureExclusion(handle: View) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
         handle.post {
             if (handle.width > 0 && handle.height > 0) {
                 handle.systemGestureExclusionRects = listOf(
@@ -11224,12 +11217,11 @@ class VideoEditorActivity : Activity() {
                     if (isStart) Gravity.START else Gravity.END
                 )
             )
-            applyTrailingTimelineGestureExclusion(handle, isStart)
+            applyTimelineGestureExclusion(handle)
             handle.post {
                 if (timelineSyncTestEnabled) {
                     val hasGestureExclusion =
-                        !isStart &&
-                            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
                             handle.systemGestureExclusionRects.isNotEmpty()
                     android.util.Log.i(
                         "EditorTouchTest",
