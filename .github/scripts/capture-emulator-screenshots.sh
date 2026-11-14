@@ -2818,7 +2818,7 @@ PY
         fi
         if [ "$scroll_attempt" -lt 6 ]; then
           echo "Scrolling the Efektler panel to reveal '$effect_description' (attempt $((scroll_attempt + 1))/6)."
-          timeout -k 2s 8s adb -s emulator-5554 shell input swipe 930 1850 930 1665 400
+          timeout -k 2s 8s adb -s emulator-5554 shell input swipe 930 1810 930 1660 400
           sleep 1
           effect_hierarchy="editor-text-effects-scroll-$effect_control_index-$scroll_attempt.xml"
           if ! dump_hierarchy "$effect_hierarchy" "emulator-screenshots/$effect_hierarchy"; then
