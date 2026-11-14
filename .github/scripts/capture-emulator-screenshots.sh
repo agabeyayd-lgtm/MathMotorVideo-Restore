@@ -2855,51 +2855,52 @@ if not scrolls:
 (view_left, view_top, view_right, view_bottom), viewport = max(
     scrolls, key=lambda item: item[0][1]
 )
-# Choose an actually non-clickable TextView inside the inner viewport.
-# The previous "right gutter" assumption was false: the horizontal color
-# RadioGroup spans almost the full panel width, so x near the right edge is
-# not a neutral lane. A visible label is the safe drag surface.
+# Select a start point that is safe for both the app and Android navigation:
+# - keep it 48px above the measured ScrollView bottom (the system navigation
+#   region is immediately below this panel on the API 35 emulator);
+# - derive a horizontal lane from the actual clickable child bounds at that Y.
+# This does not assume that the right gutter is always empty.
 lane_width = view_right - view_left
 lane_height = view_bottom - view_top
 if lane_width < 120 or lane_height < 100:
     raise SystemExit("The Efektler scroll viewport is too small for a safe drag.")
-labels = []
+
+start_y = view_bottom - 48
+end_y = max(view_top + 16, start_y - min(160, lane_height - 32))
+if start_y - end_y < 50:
+    raise SystemExit("The Efektler viewport has insufficient safe vertical travel.")
+
+safe_left = view_left + 16
+safe_right = view_right - 16
+blocked = []
 for node in viewport.iter("node"):
-    if node.attrib.get("class") != "android.widget.TextView" or node.attrib.get("clickable") != "false":
+    if node.attrib.get("clickable") != "true":
         continue
     rect = bounds(node)
     if not rect:
         continue
     left, top, right, bottom = rect
-    visible_top = max(top, view_top)
-    visible_bottom = min(bottom, view_bottom)
-    # A partially clipped heading still provides a valid ACTION_DOWN target once
-    # at least 16px is visible; the ScrollView takes over as the upward drag moves.
-    if right - left >= 180 and visible_bottom - visible_top >= 16:
-        labels.append((visible_bottom, (left + right) // 2, (visible_top + visible_bottom) // 2))
-if not labels:
-    raise SystemExit("No visible non-clickable label is available for a safe Efektler swipe.")
-_, center_x, label_center_y = max(labels)
-# Start near the lower edge of the same verified non-clickable label.
-# Its center can leave less than 50px of travel when the label sits high in
-# the viewport, even though the lower part of that label is a safe touch area.
-label_rects = []
-for node in viewport.iter("node"):
-    if node.attrib.get("class") != "android.widget.TextView" or node.attrib.get("clickable") != "false":
-        continue
-    rect = bounds(node)
-    if rect:
-        left, top, right, bottom = rect
-        visible_top = max(top, view_top)
-        visible_bottom = min(bottom, view_bottom)
-        if right - left >= 180 and visible_bottom - visible_top >= 16:
-            label_rects.append((visible_bottom, (left + right) // 2, visible_top, visible_bottom))
-_, _, label_top, label_bottom = max(label_rects)
-start_y = min(label_bottom - 8, view_bottom - 36)
-start_y = max(start_y, label_top + 8)
-end_y = max(view_top + 16, start_y - min(120, lane_height // 2))
-if start_y - end_y < 50:
-    raise SystemExit("The Efektler viewport has insufficient safe vertical travel.")
+    if top <= start_y <= bottom:
+        left = max(left, safe_left)
+        right = min(right, safe_right)
+        if right - left > 0:
+            blocked.append((left, right))
+
+blocked.sort()
+free_lanes = []
+cursor = safe_left
+for left, right in blocked:
+    if left > cursor:
+        free_lanes.append((cursor, left))
+    cursor = max(cursor, right)
+if cursor < safe_right:
+    free_lanes.append((cursor, safe_right))
+free_lanes = [(left, right) for left, right in free_lanes if right - left >= 24]
+
+if not free_lanes:
+    raise SystemExit("No horizontal lane is clear of clickable Efektler controls at the safe start Y.")
+lane_left, lane_right = max(free_lanes, key=lambda lane: lane[1] - lane[0])
+center_x = (lane_left + lane_right) // 2
 print(center_x, start_y, end_y)
 PY
 )"
