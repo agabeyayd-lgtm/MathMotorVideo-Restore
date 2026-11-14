@@ -2804,34 +2804,44 @@ PY
     exit 93
   fi
   if [ "$text_tab" = "Efektler" ]; then
-    python3 - "$tab_hierarchy" <<'PY'
-import re
-import sys
-import xml.etree.ElementTree as ET
-
-required = {
-    "Yazı konturunu aç veya kapat",
-    "Metin kontur kalınlığı",
-    "Metin gölgesini aç veya kapat",
-    "Metin gölgesi yumuşaklığı",
-    "Metin opaklığı",
-}
-root = ET.parse(sys.argv[1]).getroot()
-found = set()
-for node in root.iter("node"):
-    description = node.attrib.get("content-desc", "").strip()
-    if description not in required:
-        continue
-    bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
-    if bounds:
-        left, top, right, bottom = map(int, bounds.groups())
-        if right > left and bottom > top:
-            found.add(description)
-missing = sorted(required - found)
-if missing:
-    raise SystemExit("Text effect controls are not reachable in the real editor hierarchy: " + ", ".join(missing))
-print("PASS: outline, outline width, shadow, shadow softness and opacity controls are present with real hit bounds.")
-PY
+    # The Efektler content lives in its own vertical ScrollView. Only the first
+    # row is visible on entry; inspect each real control as it scrolls into the
+    # viewport instead of requiring off-screen controls to have hit bounds.
+    effect_control_index=0
+    while IFS= read -r effect_description; do
+      effect_control_index=$((effect_control_index + 1))
+      effect_control_bounds=""
+      for scroll_attempt in $(seq 0 6); do
+        effect_control_bounds="$(find_content_description_bounds "$tab_hierarchy" "$effect_description" || true)"
+        if [ -n "$effect_control_bounds" ]; then
+          break
+        fi
+        if [ "$scroll_attempt" -lt 6 ]; then
+          echo "Scrolling the Efektler panel to reveal '$effect_description' (attempt $((scroll_attempt + 1))/6)."
+          timeout -k 2s 8s adb -s emulator-5554 shell input swipe 930 1850 930 1665 400
+          sleep 1
+          effect_hierarchy="editor-text-effects-scroll-$effect_control_index-$scroll_attempt.xml"
+          if ! dump_hierarchy "$effect_hierarchy" "emulator-screenshots/$effect_hierarchy"; then
+            echo "Could not inspect the Efektler panel after scrolling for '$effect_description'."
+            collect_capture_diagnostics text-effects-scroll-hierarchy-missing
+            exit 93
+          fi
+          tab_hierarchy="emulator-screenshots/$effect_hierarchy"
+        fi
+      done
+      if [ -z "$effect_control_bounds" ]; then
+        echo "Text effect control is not reachable after scrolling the real editor panel: $effect_description"
+        collect_capture_diagnostics "text-effect-control-missing"
+        exit 93
+      fi
+      echo "PASS: '$effect_description' is visible and has a real touch target: $effect_control_bounds"
+    done <<'TEXT_EFFECT_CONTROLS'
+Yazı konturunu aç veya kapat
+Metin kontur kalınlığı
+Metin gölgesini aç veya kapat
+Metin gölgesi yumuşaklığı
+Metin opaklığı
+TEXT_EFFECT_CONTROLS
     if ! take_screen emulator-screenshots/editor-text-effects.png; then
       collect_capture_diagnostics text-effects-screenshot-failed
       exit 93
