@@ -7355,20 +7355,15 @@ class VideoEditorActivity : Activity() {
     /**
      * Shared touch width for every timeline trim target.
      *
-     * Keep the hit area at least 40dp even when a short audio/text clip is
-     * narrower than that. The visual grip remains unchanged; only its
-     * transparent touch target grows around the clip boundary.
+     * Normal/wide clips use up to the configured 48dp target. A narrow clip
+     * gives each edge at most half its width, so the start and end hit areas
+     * never overlap and neither trim direction steals the other's gesture.
      */
-    private fun timelineEdgeTouchWidth(blockWidth: Int): Int {
-        val requestedWidth = TimelineEdgeHandleMath.targetWidthPx(
+    private fun timelineEdgeTouchWidth(blockWidth: Int): Int =
+        TimelineEdgeHandleMath.targetWidthPx(
             blockWidthPx = blockWidth,
             maxTargetPx = maxOf(dp(40), dp(TouchPriority.TIMELINE_EDGE_TARGET_DP))
         )
-        // Keep the complete hit target inside its clip frame. The parent timeline
-        // viewport clips children at the scroll boundary, so a centered target
-        // loses part of its width on the first/last visible clip.
-        return requestedWidth.coerceAtMost(blockWidth.coerceAtLeast(dp(40)))
-    }
 
     /**
      * Place each complete edge hit target inside the clip frame. Extending it

@@ -605,50 +605,72 @@ class TimelineEdgeHandleMathTest {
     }
 
     @Test
-    fun shortAudioClipKeepsTheMeasuredMinimumTouchTarget() {
-        assertEquals(40, TimelineEdgeHandleMath.targetWidthPx(62, 144))
+    fun shortClipUsesHalfItsWidthInsteadOfOverlappingTheOppositeEdge() {
+        assertEquals(31, TimelineEdgeHandleMath.targetWidthPx(62, 144))
     }
 
     @Test
-    fun narrowClipUsesHalfItsWidthWhenThatExceedsTheMinimum() {
+    fun mediumClipUsesHalfItsWidthWhenThatIsBelowTheConfiguredMaximum() {
         assertEquals(50, TimelineEdgeHandleMath.targetWidthPx(100, 144))
     }
 
     @Test
-    fun extremelyShortClipNeverCollapsesBelowTheMinimum() {
-        assertEquals(40, TimelineEdgeHandleMath.targetWidthPx(20, 144))
+    fun extremelyShortClipKeepsBothEdgesIndependentlyReachable() {
+        assertEquals(10, TimelineEdgeHandleMath.targetWidthPx(20, 144))
     }
 
     @Test
-    fun invalidBoundsNeverReturnAZeroWidthTarget() {
-        assertEquals(1, TimelineEdgeHandleMath.targetWidthPx(0, 0))
-        assertEquals(1, TimelineEdgeHandleMath.targetWidthPx(100, 0))
+    fun onePixelClipHasNoPossibleNonOverlappingTouchTarget() {
+        assertEquals(0, TimelineEdgeHandleMath.targetWidthPx(1, 144))
+        assertEquals(0, TimelineEdgeHandleMath.targetWidthPx(0, 144))
+        assertEquals(0, TimelineEdgeHandleMath.targetWidthPx(100, 0))
     }
 
     @Test
-    fun targetRespectsBothConfiguredMinimumAndMaximum() {
+    fun targetNeverExceedsHalfTheClipOrTheConfiguredMaximum() {
         val cases = listOf(
-            1 to 40,
-            8 to 40,
-            20 to 40,
-            39 to 40,
-            40 to 40,
-            48 to 40,
-            50 to 40,
+            1 to 0,
+            2 to 1,
+            8 to 4,
+            20 to 10,
+            39 to 19,
+            40 to 20,
+            48 to 24,
+            50 to 25,
+            62 to 31,
+            79 to 39,
             80 to 40,
             120 to 60,
             600 to 144
         )
         cases.forEach { (clipWidth, expected) ->
+            val target = TimelineEdgeHandleMath.targetWidthPx(clipWidth, 144)
             assertEquals(
                 "Unexpected hit width for clip width $clipWidth",
                 expected,
-                TimelineEdgeHandleMath.targetWidthPx(clipWidth, 144)
+                target
+            )
+            assertTrue("Hit target exceeds half of clip width $clipWidth", target * 2 <= clipWidth)
+        }
+    }
+
+    @Test
+    fun opposingTargetsNeverOverlapAcrossNarrowAndWideClips() {
+        listOf(1, 2, 20, 39, 62, 79, 80, 81, 100, 600).forEach { clipWidth ->
+            val targetWidth = TimelineEdgeHandleMath.targetWidthPx(clipWidth, 144)
+            val startLeft = TimelineEdgeHandleMath.targetLeftMarginPx(clipWidth, targetWidth, true)
+            val endLeft = TimelineEdgeHandleMath.targetLeftMarginPx(clipWidth, targetWidth, false)
+            assertTrue(
+                "Start/end touch targets overlap for clip width $clipWidth",
+                startLeft + targetWidth <= endLeft
+            )
+            assertTrue(
+                "End touch target exceeds clip width $clipWidth",
+                endLeft + targetWidth <= clipWidth
             )
         }
     }
 }
-
 
 class TimelineEdgeHandlePlacementMathTest {
     @Test

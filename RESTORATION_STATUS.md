@@ -1582,3 +1582,11 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 
 - Refined the swipe target once more using the archived API 35 hierarchies: the lowest-label strategy could still choose a row too close to the system navigation region. The helper now swipes in the measured inner ScrollView's right-side gutter, 80px above its bottom edge, with a minimum viewport-size/travel check. This avoids tapping the radio-button row and avoids beginning at the bottom edge.
 - Current helper commit: `024aac07de4dd3562f1c74cabad7ef7181e64a93`. This is a source change only; no new Actions run has yet been returned for this head. The fix is therefore pending emulator proof, not marked green.
+
+
+## 2026-11-14 — PR #37 short-strip trim-target overlap correction (validation pending)
+
+- Code review found a real edge-hitbox collision not covered by the previous width-only tests: the shared hit-width helper enforced a fixed 40px minimum even when a strip was narrower than 80px. The start and end hit areas therefore overlapped; because the end handle is added last, it could receive touches intended for the start edge.
+- Changed the shared geometry so each edge target is at most half the clip width, while still growing to the configured 48dp maximum on wide clips. Very short clips necessarily use narrower targets, but both edges stay inside the clip and remain disjoint.
+- Replaced the old minimum-width assertions with boundary coverage from 1px through 600px and explicit tests that opposing hit regions never overlap or extend beyond the clip.
+- This correction is a source/test change only. It does not change visible grip artwork, trim timing, versionCode, signing, or release behavior. A fresh exact-head unit/build and API 35 emulator run is required.
