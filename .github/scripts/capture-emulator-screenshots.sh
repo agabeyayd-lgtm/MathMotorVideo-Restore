@@ -2855,18 +2855,31 @@ if not scrolls:
 (view_left, view_top, view_right, view_bottom), viewport = max(
     scrolls, key=lambda item: item[0][1]
 )
-# Use the measured inner panel's right-side gutter as a neutral drag lane.
-# Starting from the bottom-most label repeatedly landed in Android's system
-# navigation edge on the 1920px emulator. A fixed lane 80px above the inner
-# viewport bottom stays inside the panel, away from the bottom gesture area;
-# the right gutter is outside the visible radio-button row.
+# Choose an actually non-clickable TextView inside the inner viewport.
+# The previous "right gutter" assumption was false: the horizontal color
+# RadioGroup spans almost the full panel width, so x near the right edge is
+# not a neutral lane. A visible label is the safe drag surface.
 lane_width = view_right - view_left
 lane_height = view_bottom - view_top
 if lane_width < 120 or lane_height < 100:
     raise SystemExit("The Efektler scroll viewport is too small for a safe drag.")
-center_x = view_right - min(24, lane_width // 12)
-start_y = view_bottom - 80
-end_y = max(view_top + 16, start_y - min(140, lane_height // 2))
+labels = []
+for node in viewport.iter("node"):
+    if node.attrib.get("class") != "android.widget.TextView" or node.attrib.get("clickable") != "false":
+        continue
+    rect = bounds(node)
+    if not rect:
+        continue
+    left, top, right, bottom = rect
+    visible_top = max(top, view_top)
+    visible_bottom = min(bottom, view_bottom)
+    if right - left >= 180 and visible_bottom - visible_top >= 32:
+        labels.append((visible_bottom, (left + right) // 2, (visible_top + visible_bottom) // 2))
+if not labels:
+    raise SystemExit("No visible non-clickable label is available for a safe Efektler swipe.")
+_, center_x, start_y = max(labels)
+start_y = min(start_y, view_bottom - 36)
+end_y = max(view_top + 16, start_y - min(120, lane_height // 2))
 if start_y - end_y < 50:
     raise SystemExit("The Efektler viewport has insufficient safe vertical travel.")
 print(center_x, start_y, end_y)
