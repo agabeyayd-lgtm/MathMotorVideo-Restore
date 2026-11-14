@@ -2855,52 +2855,86 @@ if not scrolls:
 (view_left, view_top, view_right, view_bottom), viewport = max(
     scrolls, key=lambda item: item[0][1]
 )
-# Select a start point that is safe for both the app and Android navigation:
-# - keep it 48px above the measured ScrollView bottom (the system navigation
-#   region is immediately below this panel on the API 35 emulator);
-# - derive a horizontal lane from the actual clickable child bounds at that Y.
-# This does not assume that the right gutter is always empty.
+# Start on a real, non-clickable text row within the safe portion of
+# the viewport. Never choose a Y that overlaps a full-width CheckBox/SeekBar.
+# The bottom 48px of the ScrollView is reserved to avoid Android navigation.
 lane_width = view_right - view_left
 lane_height = view_bottom - view_top
 if lane_width < 120 or lane_height < 100:
     raise SystemExit("The Efektler scroll viewport is too small for a safe drag.")
 
-start_y = view_bottom - 48
-end_y = max(view_top + 16, start_y - min(160, lane_height - 32))
-if start_y - end_y < 50:
-    raise SystemExit("The Efektler viewport has insufficient safe vertical travel.")
-
 safe_left = view_left + 16
 safe_right = view_right - 16
-blocked = []
+safe_top = view_top + 16
+safe_bottom = view_bottom - 48
+
+blocked_nodes = []
 for node in viewport.iter("node"):
     if node.attrib.get("clickable") != "true":
+        continue
+    rect = bounds(node)
+    if rect:
+        blocked_nodes.append(rect)
+
+candidates = []
+for node in viewport.iter("node"):
+    if node.attrib.get("class") != "android.widget.TextView" or node.attrib.get("clickable") != "false":
         continue
     rect = bounds(node)
     if not rect:
         continue
     left, top, right, bottom = rect
-    if top <= start_y <= bottom:
-        left = max(left, safe_left)
-        right = min(right, safe_right)
-        if right - left > 0:
-            blocked.append((left, right))
+    visible_top = max(top, safe_top)
+    visible_bottom = min(bottom, safe_bottom)
+    if right - left < 180 or visible_bottom - visible_top < 16:
+        continue
 
-blocked.sort()
-free_lanes = []
-cursor = safe_left
-for left, right in blocked:
-    if left > cursor:
-        free_lanes.append((cursor, left))
-    cursor = max(cursor, right)
-if cursor < safe_right:
-    free_lanes.append((cursor, safe_right))
-free_lanes = [(left, right) for left, right in free_lanes if right - left >= 24]
+    # Use the lower safe part of this non-clickable row, not its centre.
+    candidate_y = min(visible_bottom - 8, safe_bottom)
+    candidate_y = max(candidate_y, visible_top + 8)
+    candidate_end_y = max(safe_top, candidate_y - min(120, lane_height // 2))
+    if candidate_y - candidate_end_y < 50:
+        continue
 
-if not free_lanes:
-    raise SystemExit("No horizontal lane is clear of clickable Efektler controls at the safe start Y.")
-lane_left, lane_right = max(free_lanes, key=lambda lane: lane[1] - lane[0])
-center_x = (lane_left + lane_right) // 2
+    # Intersect this label's horizontal bounds with the viewport, then remove
+    # every clickable child's horizontal interval at the chosen start Y.
+    label_left = max(left, safe_left)
+    label_right = min(right, safe_right)
+    blocked = []
+    for click_left, click_top, click_right, click_bottom in blocked_nodes:
+        if click_top <= candidate_y <= click_bottom:
+            clip_left = max(click_left, label_left)
+            clip_right = min(click_right, label_right)
+            if clip_right > clip_left:
+                blocked.append((clip_left, clip_right))
+    blocked.sort()
+
+    free_lanes = []
+    cursor = label_left
+    for block_left, block_right in blocked:
+        if block_left > cursor:
+            free_lanes.append((cursor, block_left))
+        cursor = max(cursor, block_right)
+    if cursor < label_right:
+        free_lanes.append((cursor, label_right))
+    free_lanes = [(x1, x2) for x1, x2 in free_lanes if x2 - x1 >= 24]
+    if not free_lanes:
+        continue
+
+    lane_left, lane_right = max(free_lanes, key=lambda lane: lane[1] - lane[0])
+    candidates.append((
+        visible_bottom,
+        (lane_left + lane_right) // 2,
+        candidate_y,
+        candidate_end_y,
+        lane_right - lane_left,
+        node.attrib.get("text", "")
+    ))
+
+if not candidates:
+    raise SystemExit("No non-clickable text row has a navigation-safe swipe path free of clickable controls.")
+
+_, center_x, start_y, end_y, lane_size, label_text = max(candidates, key=lambda item: (item[0], item[4]))
 print(center_x, start_y, end_y)
 PY
 )"
