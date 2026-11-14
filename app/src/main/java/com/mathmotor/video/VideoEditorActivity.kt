@@ -6975,11 +6975,20 @@ class VideoEditorActivity : Activity() {
         }
     }
 
-    /** Shared touch width for timeline trim targets. Even short clips need a usable touch area. */
+    /**
+     * Shared touch width for every timeline trim target.
+     *
+     * Keep the hit area at least 40dp even when a short audio/text clip is
+     * narrower than that. The visual grip remains unchanged; only its
+     * transparent touch target grows around the clip boundary.
+     */
     private fun timelineEdgeTouchWidth(blockWidth: Int): Int =
-        TimelineEdgeHandleMath.targetWidthPx(
-            blockWidthPx = blockWidth,
-            maxTargetPx = dp(TouchPriority.TIMELINE_EDGE_TARGET_DP)
+        maxOf(
+            dp(40),
+            TimelineEdgeHandleMath.targetWidthPx(
+                blockWidthPx = blockWidth,
+                maxTargetPx = dp(TouchPriority.TIMELINE_EDGE_TARGET_DP)
+            )
         )
 
     /**
