@@ -2818,7 +2818,68 @@ PY
         fi
         if [ "$scroll_attempt" -lt 6 ]; then
           echo "Scrolling the Efektler panel to reveal '$effect_description' (attempt $((scroll_attempt + 1))/6)."
-          timeout -k 2s 8s adb -s emulator-5554 shell input swipe 930 1810 930 1660 400
+          effect_scroll_gesture="$(python3 - "$tab_hierarchy" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+
+def bounds(node):
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    return tuple(map(int, match.groups())) if match else None
+
+scrolls = []
+for node in root.iter("node"):
+    if not node.attrib.get("class", "").endswith("ScrollView"):
+        continue
+    if node.attrib.get("scrollable") != "true":
+        continue
+    rect = bounds(node)
+    if rect and rect[1] > 1200 and rect[3] - rect[1] >= 60:
+        scrolls.append((rect, node))
+if not scrolls:
+    raise SystemExit("The inner Efektler ScrollView has no visible scroll viewport.")
+
+(view_left, view_top, view_right, view_bottom), viewport = max(
+    scrolls, key=lambda item: item[0][1]
+)
+labels = []
+for node in viewport.iter("node"):
+    if node.attrib.get("class") != "android.widget.TextView":
+        continue
+    if node.attrib.get("clickable") == "true":
+        continue
+    if not node.attrib.get("text", "").strip():
+        continue
+    rect = bounds(node)
+    if not rect:
+        continue
+    left, top, right, bottom = rect
+    center_y = (top + bottom) // 2
+    if right <= view_left or left >= view_right:
+        continue
+    if center_y < view_top + 72 or center_y > view_bottom - 18:
+        continue
+    labels.append((center_y, (left + right) // 2))
+if not labels:
+    raise SystemExit("No safe, non-interactive text row is visible for scrolling the Efektler panel.")
+
+start_y, center_x = max(labels)
+end_y = max(view_top + 12, start_y - 150)
+if start_y - end_y < 55:
+    raise SystemExit("The visible text row is too close to the scroll viewport edge for a safe drag.")
+print(center_x, start_y, end_y)
+PY
+)"
+          if [ -z "$effect_scroll_gesture" ]; then
+            echo "Could not locate a safe text row to scroll the Efektler panel."
+            collect_capture_diagnostics text-effects-no-safe-scroll-target
+            exit 93
+          fi
+          read -r effect_scroll_x effect_scroll_start_y effect_scroll_end_y <<< "$effect_scroll_gesture"
+          echo "Using non-interactive label row at x=$effect_scroll_x, y=$effect_scroll_start_y->$effect_scroll_end_y."
+          timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$effect_scroll_x" "$effect_scroll_start_y" "$effect_scroll_x" "$effect_scroll_end_y" 450
           sleep 1
           effect_hierarchy="editor-text-effects-scroll-$effect_control_index-$scroll_attempt.xml"
           if ! dump_hierarchy "$effect_hierarchy" "emulator-screenshots/$effect_hierarchy"; then
@@ -2840,6 +2901,8 @@ Yazı konturunu aç veya kapat
 Metin kontur kalınlığı
 Metin gölgesini aç veya kapat
 Metin gölgesi yumuşaklığı
+Metin gölgesi yatay kayması
+Metin gölgesi dikey kayması
 Metin opaklığı
 TEXT_EFFECT_CONTROLS
     if ! take_screen emulator-screenshots/editor-text-effects.png; then

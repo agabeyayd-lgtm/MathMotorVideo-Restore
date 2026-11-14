@@ -2218,7 +2218,57 @@ class VideoEditorActivity : Activity() {
             }
         }
         effects.addView(textShadowColorGroup, matchWrap())
+        textShadowOffsetXLabel = label("Gölge yatay kayması: +1", 11f, Color.WHITE, true)
+        effects.addView(textShadowOffsetXLabel)
+        textShadowOffsetXSeek = SeekBar(this).apply {
+            max = 32
+            progress = (textShadowOffsetXDp + 16).coerceIn(0, 32)
+            contentDescription = "Metin gölgesi yatay kayması"
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                    if (!fromUser || loadingTextLayerControls) return
+                    textShadowOffsetXDp = (progress - 16).coerceIn(-16, 16)
+                    val value = textShadowOffsetXDp
+                    val shown = if (value > 0) "+$value" else value.toString()
+                    textShadowOffsetXLabel.text = "Gölge yatay kayması: $shown"
+                    selectedTextLayer()?.shadowOffsetXDp = value
+                    updatePreviewTextOverlay()
+                }
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                    if (!loadingTextLayerControls) activeProjectHistorySnapshot = beginProjectHistoryGesture()
+                }
+                override fun onStopTrackingTouch(seekBar: SeekBar?) { finishProjectHistoryGesture() }
+            })
+        }
+        effects.addView(textShadowOffsetXSeek, matchWrap())
+
+        textShadowOffsetYLabel = label("Gölge dikey kayması: +1", 11f, Color.WHITE, true)
+        effects.addView(textShadowOffsetYLabel)
+        textShadowOffsetYSeek = SeekBar(this).apply {
+            max = 32
+            progress = (textShadowOffsetYDp + 16).coerceIn(0, 32)
+            contentDescription = "Metin gölgesi dikey kayması"
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                    if (!fromUser || loadingTextLayerControls) return
+                    textShadowOffsetYDp = (progress - 16).coerceIn(-16, 16)
+                    val value = textShadowOffsetYDp
+                    val shown = if (value > 0) "+$value" else value.toString()
+                    textShadowOffsetYLabel.text = "Gölge dikey kayması: $shown"
+                    selectedTextLayer()?.shadowOffsetYDp = value
+                    updatePreviewTextOverlay()
+                }
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                    if (!loadingTextLayerControls) activeProjectHistorySnapshot = beginProjectHistoryGesture()
+                }
+                override fun onStopTrackingTouch(seekBar: SeekBar?) { finishProjectHistoryGesture() }
+            })
+        }
+        effects.addView(textShadowOffsetYSeek, matchWrap())
+
         textShadowBlurSeek.isEnabled = textShadowEnabled
+        textShadowOffsetXSeek.isEnabled = textShadowEnabled
+        textShadowOffsetYSeek.isEnabled = textShadowEnabled
         textShadowColorGroup.childrenEnabled(textShadowEnabled)
 
         textOpacityLabel = label("Opaklık: 100%", 12f, Color.WHITE, true)
@@ -3097,7 +3147,7 @@ class VideoEditorActivity : Activity() {
                     if (panelParams != null) {
                         val basePanelHeight = when {
                             activeEditorPanel == "clipVolume" -> if (imeVisible) 112 else 150
-                            activeEditorPanel == "text" && imeVisible -> 68
+                            activeEditorPanel == "text" -> if (imeVisible) 68 else 320
                             else -> if (imeVisible) 124 else 196
                         }
                         val stickyHeaderHeight = if (!imeVisible && activeEditorPanel != null &&
@@ -3656,7 +3706,7 @@ class VideoEditorActivity : Activity() {
             // workspace extends below it (sticky back action / bottom dock), so
             // using the root's bottom would leave the inner scroll too tall.
             val visibleBottom = panelLocation[1] + editorPanelScroll.height - editorPanelScroll.paddingBottom
-            val availableHeight = (visibleBottom - frameLocation[1] - dp(8)).coerceAtLeast(dp(64))
+            val availableHeight = (visibleBottom - frameLocation[1] - dp(8)).coerceAtLeast(dp(1))
             val desiredHeight = minOf(dp(190), availableHeight)
             val params = textCategoryFrame.layoutParams as? LinearLayout.LayoutParams
                 ?: return@post
@@ -7295,12 +7345,9 @@ class VideoEditorActivity : Activity() {
      * transparent touch target grows around the clip boundary.
      */
     private fun timelineEdgeTouchWidth(blockWidth: Int): Int =
-        maxOf(
-            dp(40),
-            TimelineEdgeHandleMath.targetWidthPx(
-                blockWidthPx = blockWidth,
-                maxTargetPx = dp(TouchPriority.TIMELINE_EDGE_TARGET_DP)
-            )
+        TimelineEdgeHandleMath.targetWidthPx(
+            blockWidthPx = blockWidth,
+            maxTargetPx = maxOf(dp(40), dp(TouchPriority.TIMELINE_EDGE_TARGET_DP))
         )
 
     /**
@@ -8081,6 +8128,8 @@ class VideoEditorActivity : Activity() {
         layer.shadowEnabled = textShadowEnabled
         layer.shadowColor = textShadowColor
         layer.shadowBlurDp = textShadowBlurDp.coerceIn(0, 16)
+        layer.shadowOffsetXDp = textShadowOffsetXDp.coerceIn(-16, 16)
+        layer.shadowOffsetYDp = textShadowOffsetYDp.coerceIn(-16, 16)
     }
 
     private fun refreshTextLayerList() {
@@ -8414,6 +8463,8 @@ class VideoEditorActivity : Activity() {
             textShadowEnabled = layer?.shadowEnabled ?: true
             textShadowColor = layer?.shadowColor ?: Color.BLACK
             textShadowBlurDp = layer?.shadowBlurDp?.coerceIn(0, 16) ?: 2
+            textShadowOffsetXDp = layer?.shadowOffsetXDp?.coerceIn(-16, 16) ?: 1
+            textShadowOffsetYDp = layer?.shadowOffsetYDp?.coerceIn(-16, 16) ?: 1
             // Discard any stale composing span before reflecting a restored
             // project value in the editor. The project model remains authoritative.
             textInput.clearComposingText()
@@ -8441,8 +8492,14 @@ class VideoEditorActivity : Activity() {
             textShadowCheck.isChecked = textShadowEnabled
             textShadowBlurSeek.progress = textShadowBlurDp
             textShadowBlurLabel.text = "Gölge yumuşaklığı: $textShadowBlurDp"
+            textShadowOffsetXSeek.progress = textShadowOffsetXDp + 16
+            textShadowOffsetYSeek.progress = textShadowOffsetYDp + 16
+            textShadowOffsetXLabel.text = "Gölge yatay kayması: ${if (textShadowOffsetXDp > 0) "+$textShadowOffsetXDp" else textShadowOffsetXDp.toString()}"
+            textShadowOffsetYLabel.text = "Gölge dikey kayması: ${if (textShadowOffsetYDp > 0) "+$textShadowOffsetYDp" else textShadowOffsetYDp.toString()}"
             textShadowColorGroup.check(71 + textEffectColors.indexOfFirst { it.second == textShadowColor }.coerceAtLeast(0))
             textShadowBlurSeek.isEnabled = textShadowEnabled
+            textShadowOffsetXSeek.isEnabled = textShadowEnabled
+            textShadowOffsetYSeek.isEnabled = textShadowEnabled
             textShadowColorGroup.childrenEnabled(textShadowEnabled)
             textAnimationGroup.check(
                 31 + TextAnimationPreset.values().indexOf(textAnimationPreset).coerceAtLeast(0)
@@ -8575,9 +8632,9 @@ class VideoEditorActivity : Activity() {
                 dropShadowColor = layer.shadowColor
                 shadowBlurPx = (if (layer.kind == TextLayerKind.STICKER) 4f else layer.shadowBlurDp.toFloat()) *
                     resources.displayMetrics.density * previewScale
-                shadowOffsetXPx = (if (layer.kind == TextLayerKind.STICKER) 0f else 1f) *
+                shadowOffsetXPx = (if (layer.kind == TextLayerKind.STICKER) 0f else layer.shadowOffsetXDp.toFloat()) *
                     resources.displayMetrics.density * previewScale
-                shadowOffsetYPx = (if (layer.kind == TextLayerKind.STICKER) 2f else 1f) *
+                shadowOffsetYPx = (if (layer.kind == TextLayerKind.STICKER) 2f else layer.shadowOffsetYDp.toFloat()) *
                     resources.displayMetrics.density * previewScale
                 invalidate()
             }
