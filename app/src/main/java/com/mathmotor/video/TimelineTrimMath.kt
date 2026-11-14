@@ -539,16 +539,17 @@ internal object TimelineVideoMath {
 
 
 /**
- * Sizes timeline edge hit targets as generously as possible without allowing
- * the start and end regions to overlap. Each target is centred on its clip
- * boundary, so its width must never exceed the clip's full rendered width.
- * Normal clips keep the configured 48dp target; short clips use the full
- * available width and remain independently draggable.
+ * Sizes timeline edge hit targets so both ends remain independently draggable.
+ * The transparent regions are centred on opposite clip boundaries and each
+ * stays at or below half the clip width, preserving a clear gap between them.
+ * Normal clips use the configured 48dp target whenever the geometry permits.
  */
 internal object TimelineEdgeHandleMath {
     fun targetWidthPx(
         blockWidthPx: Int,
         maxTargetPx: Int
-    ): Int =
-        blockWidthPx.coerceAtLeast(1).coerceAtMost(maxTargetPx.coerceAtLeast(1))
+    ): Int {
+        val halfBlock = (blockWidthPx.coerceAtLeast(1) / 2).coerceAtLeast(1)
+        return halfBlock.coerceAtMost(maxTargetPx.coerceAtLeast(1))
+    }
 }

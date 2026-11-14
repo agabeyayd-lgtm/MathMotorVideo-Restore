@@ -651,23 +651,24 @@ class TimelineEdgeHandleMathTest {
     }
 
     @Test
-    fun timelineEdgeTargetsNeverOverlapAndUseTheWidestSafeHitArea() {
+    fun timelineEdgeTargetsPreserveSeparateHitRegionsForShortAndNormalClips() {
         val maxTarget = 48
         val cases = listOf(
             1 to 1,
-            8 to 8,
-            20 to 20,
-            39 to 39,
-            40 to 40,
-            48 to 48,
-            50 to 48,
-            80 to 48
+            8 to 4,
+            20 to 10,
+            39 to 19,
+            40 to 20,
+            48 to 24,
+            50 to 25,
+            80 to 40,
+            120 to 48
         )
 
         cases.forEach { (clipWidth, expectedTarget) ->
             val target = TimelineEdgeHandleMath.targetWidthPx(clipWidth, maxTarget)
             assertEquals(expectedTarget, target)
-            assertTrue("Target must fit within clip width $clipWidth", target <= clipWidth)
+            assertTrue("Each edge target must stay within half of clip width $clipWidth", target * 2 <= clipWidth + 1)
             assertTrue("Target must respect configured maximum $maxTarget", target <= maxTarget)
         }
     }
