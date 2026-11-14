@@ -5370,11 +5370,11 @@ class VideoEditorActivity : Activity() {
                 )
             }
             val cellWidth = width.toFloat() / barCount
-            val barWidth = minOf(dp(3).toFloat(), cellWidth * 0.84f).coerceAtLeast(1f)
-            // Keep the title in the upper half and the waveform in a distinct
-            // lower band, matching compact editor lanes without crossing the label.
-            val centerY = height * 0.82f
-            val maximumHalfHeight = height * 0.14f
+            val barWidth = minOf(dp(2).toFloat(), cellWidth * 0.72f).coerceAtLeast(1f)
+            // Use a broad lower-middle band so short audio clips still expose
+            // enough peak pixels at phone density; the title remains legible above it.
+            val centerY = height * 0.72f
+            val maximumHalfHeight = height * 0.22f
             for (index in 0 until barCount) {
                 val sampleIndex = (index.toLong() * values.size / barCount).toInt().coerceIn(0, values.lastIndex)
                 val amplitude = values[sampleIndex].coerceIn(0.035f, 1f)
