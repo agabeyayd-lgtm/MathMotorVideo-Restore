@@ -222,6 +222,8 @@ class VideoEditorActivity : Activity() {
     private var textShadowEnabled = true
     private var textShadowColor = Color.BLACK
     private var textShadowBlurDp = 2
+    private var textShadowOffsetXDp = 1
+    private var textShadowOffsetYDp = 1
     private lateinit var textOutlineCheck: CheckBox
     private lateinit var textOutlineWidthLabel: TextView
     private lateinit var textOutlineWidthSeek: SeekBar
@@ -230,6 +232,10 @@ class VideoEditorActivity : Activity() {
     private lateinit var textShadowBlurLabel: TextView
     private lateinit var textShadowBlurSeek: SeekBar
     private lateinit var textShadowColorGroup: android.widget.RadioGroup
+    private lateinit var textShadowOffsetXLabel: TextView
+    private lateinit var textShadowOffsetXSeek: SeekBar
+    private lateinit var textShadowOffsetYLabel: TextView
+    private lateinit var textShadowOffsetYSeek: SeekBar
     private val textEffectColors = listOf(
         "Siyah" to Color.BLACK,
         "Beyaz" to Color.WHITE,
