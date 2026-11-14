@@ -3528,6 +3528,122 @@ if ! grep -Fq "TEXT_TOOLS_DOCK_VISIBLE childCount=3" emulator-screenshots/text-p
 fi
 echo "PASS: tapping the preview text restored its three-action text dock and selection frame at $text_reselected_bounds."
 
+# Exercise both text-timeline trim edges on a real selected text layer. The
+# final ACTION_UP displacement must count as a drag even when Android coalesces
+# the last MOVE event. Re-measure each target after the previous trim rebuilds
+# the timeline so the test never relies on stale coordinates.
+run_text_edge_smoke() {
+  local edge="$1" description="$2" direction="$3"
+  local before_xml="editor-text-edge-$edge-before.xml"
+  local coords cx cy target_w target_h x1 y1 x2 y2 delta marker
+  if ! dump_hierarchy "$before_xml" "emulator-screenshots/$before_xml"; then
+    echo "Could not inspect text $edge trim target."
+    collect_capture_diagnostics "text-$edge-edge-before-hierarchy-failed"
+    exit 57
+  fi
+
+  if [ "$edge" = "end" ] && [ -z "$(find_content_description_bounds "emulator-screenshots/$before_xml" "$description")" ]; then
+    ruler_bounds="$(python3 - "emulator-screenshots/$before_xml" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+def walk(node):
+    if node.attrib.get("class") == "android.widget.HorizontalScrollView" and node.attrib.get("scrollable") == "true":
+        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+        if match:
+            left, top, right, bottom = map(int, match.groups())
+            if right - left > 500 and 0 < bottom - top <= 100 and top < 1150:
+                print(left, top, right, bottom)
+                return True
+    for child in node:
+        if walk(child):
+            return True
+    return False
+walk(root)
+PY
+)"
+    if [ -z "$ruler_bounds" ]; then
+      echo "Could not locate the horizontally scrollable ruler to reveal the text end handle."
+      collect_capture_diagnostics text-end-ruler-not-found
+      exit 57
+    fi
+    read -r ruler_left ruler_top ruler_right ruler_bottom <<< "$ruler_bounds"
+    ruler_y=$(((ruler_top + ruler_bottom) / 2))
+    ruler_width=$((ruler_right - ruler_left))
+    scroll_start=$((ruler_left + ruler_width * 3 / 4))
+    scroll_end=$((ruler_left + ruler_width / 4))
+    for scroll_attempt in $(seq 1 8); do
+      visible_bounds="$(find_content_description_bounds "emulator-screenshots/$before_xml" "$description")"
+      if [ -n "$visible_bounds" ]; then
+        read -r _ _ visible_width visible_height _ <<< "$visible_bounds"
+        if [ "$visible_width" -ge 40 ] && [ "$visible_height" -ge 20 ]; then
+          break
+        fi
+        ruler_center=$(((ruler_left + ruler_right) / 2))
+        scroll_start=$((ruler_center + 20))
+        scroll_end=$((ruler_center - 20))
+      fi
+      timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$scroll_start" "$ruler_y" "$scroll_end" "$ruler_y" 450
+      sleep 0.4
+      dump_hierarchy "$before_xml" "emulator-screenshots/$before_xml" || true
+    done
+  fi
+
+  coords="$(find_content_description_bounds "emulator-screenshots/$before_xml" "$description")"
+  if [ -z "$coords" ]; then
+    echo "Text $edge trim handle is not visible: $description"
+    collect_capture_diagnostics "text-$edge-edge-target-missing"
+    exit 57
+  fi
+  read -r cx cy target_w target_h x1 y1 x2 y2 <<< "$coords"
+  if [ "$target_w" -lt 40 ] || [ "$target_h" -lt 20 ]; then
+    echo "Text $edge trim target is undersized: ${target_w}x${target_h}px bounds=[${x1},${y1}][${x2},${y2}]."
+    collect_capture_diagnostics "text-$edge-edge-target-undersized"
+    exit 57
+  fi
+  delta=42
+  if [ "$direction" = "left" ]; then delta=-42; fi
+  timeout -k 2s 8s adb -s emulator-5554 logcat -c
+  echo "Dragging text $edge trim handle from ($cx,$cy) by ${delta}px; hit area=${target_w}x${target_h}px."
+  timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$cx" "$cy" "$((cx + delta))" "$cy" 500
+  sleep 1
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I \
+    > "emulator-screenshots/text-$edge-edge-touch-logcat.txt" 2>&1 || true
+  marker="$(grep -F "TEXT_EDGE_TRIM edge=$edge " "emulator-screenshots/text-$edge-edge-touch-logcat.txt" | tail -n 1 || true)"
+  if [ -z "$marker" ]; then
+    echo "Text $edge trim drag did not reach its production edge handler."
+    cat "emulator-screenshots/text-$edge-edge-touch-logcat.txt" || true
+    collect_capture_diagnostics "text-$edge-edge-gesture-not-received"
+    exit 58
+  fi
+  python3 - "$marker" "$edge" <<'PY'
+import re
+import sys
+line, edge = sys.argv[1:]
+fields = dict(re.findall(r"([A-Za-z][A-Za-z0-9]*)=([^ ]+)", line))
+required = ("beforeStartMs", "beforeEndMs", "afterStartMs", "afterEndMs", "deltaPx")
+missing = [key for key in required if key not in fields]
+if missing:
+    raise SystemExit(f"Text edge marker is missing {missing}: {line}")
+before_start, before_end, after_start, after_end = (
+    int(fields[key]) for key in required[:4]
+)
+if after_end - after_start < 500:
+    raise SystemExit(f"Text trim violated the 500ms minimum duration: {line}")
+if edge == "start":
+    valid = after_start > before_start and after_end == before_end
+else:
+    valid = after_start == before_start and after_end < before_end
+if not valid:
+    raise SystemExit(f"Text {edge} trim changed the wrong edge or did not move: {line}")
+print(f"PASS: text {edge} grip changed only its intended time edge ({before_start}:{before_end} -> {after_start}:{after_end}).")
+PY
+}
+
+run_text_edge_smoke start "Yazı başlangıcını sürükle" right
+run_text_edge_smoke end "Yazı bitişini sürükle" left
+
 # UIAutomator can time out on this large panel even after the direct interaction
 # has succeeded. The app-side dock marker plus the full-canvas screenshot and
 # pixel-verified selection frame are authoritative; hierarchy-based cleanup is
@@ -4368,15 +4484,22 @@ if ! grep -Fq "Seçili video klibi sınırı" emulator-screenshots/video-edge-tr
   collect_capture_diagnostics video-edge-trim-selection-not-applied
   exit 102
 fi
-if ! grep -Fq "Sol beyaz tutamaç" emulator-screenshots/video-edge-trim-selected.xml; then
-  echo "The selected video clip did not expose its primary trim touch target."
+if ! grep -Fq "Sol beyaz tutamaç" emulator-screenshots/video-edge-trim-selected.xml ||
+   ! grep -Fq "Sağ beyaz tutamaç" emulator-screenshots/video-edge-trim-selected.xml; then
+  echo "The selected video clip did not expose both accessible white trim handles."
   collect_capture_diagnostics video-edge-trim-grips-not-attached
   exit 102
 fi
-# Accessibility hierarchy exposes only the leading grip on this Android build.
-# The trailing grip is verified by the real end-trim/end-extend gestures below;
-# the known-green API-35 run proved both operations even with this same XML shape.
-echo "PASS: first restored video clip is selected and both real trim grips are attached."
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I \
+  > emulator-screenshots/video-edge-trim-targets.txt 2>&1 || true
+if ! grep -Fq "VIDEO_EDGE_TARGET edge=start" emulator-screenshots/video-edge-trim-targets.txt ||
+   ! grep -F "VIDEO_EDGE_TARGET edge=end" emulator-screenshots/video-edge-trim-targets.txt | tail -n 1 | grep -Fq "gestureExclusion=true"; then
+  echo "The video edge targets were not both measured, or the trailing handle lacks gesture-navigation exclusion."
+  cat emulator-screenshots/video-edge-trim-targets.txt || true
+  collect_capture_diagnostics video-edge-trim-targets-invalid
+  exit 102
+fi
+echo "PASS: selected video clip exposes both accessible white trim handles; trailing edge is protected from system-back gestures."
 
 # Exercise the real video trim grips with Android touch events. The app's
 # measured View bounds are the source of truth; do not hard-code device geometry.
