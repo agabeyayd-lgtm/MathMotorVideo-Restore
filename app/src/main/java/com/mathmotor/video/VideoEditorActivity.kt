@@ -212,6 +212,9 @@ class VideoEditorActivity : Activity() {
     private var textBold = true
     private var textFontPreset = TextFontPreset.SYSTEM
     private var textBackgroundEnabled = false
+    private var textOpacityPercent = 100
+    private lateinit var textOpacityLabel: TextView
+    private lateinit var textOpacitySeek: SeekBar
     private var textAnimationPreset = TextAnimationPreset.NONE
     private var textAnimationDurationMs = 350L
     private lateinit var textAnimationGroup: android.widget.RadioGroup
@@ -259,7 +262,8 @@ class VideoEditorActivity : Activity() {
         var animationPreset: TextAnimationPreset = TextAnimationPreset.NONE,
         var animationDurationMs: Long = 350L,
         var fontPreset: TextFontPreset = TextFontPreset.SYSTEM,
-        var backgroundEnabled: Boolean = false
+        var backgroundEnabled: Boolean = false,
+        var opacityPercent: Int = 100
     )
 
     private val textLayers = mutableListOf<TextLayer>()
@@ -1973,6 +1977,29 @@ class VideoEditorActivity : Activity() {
             }
         }
         effects.addView(textBackgroundCheck, matchWrap())
+        textOpacityLabel = label("Opaklık: 100%", 12f, Color.WHITE, true)
+        effects.addView(textOpacityLabel)
+        textOpacitySeek = SeekBar(this).apply {
+            max = 100
+            progress = 100
+            contentDescription = "Metin opaklığı"
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                    if (!fromUser || loadingTextLayerControls) return
+                    textOpacityPercent = progress.coerceIn(0, 100)
+                    textOpacityLabel.text = "Opaklık: $textOpacityPercent%"
+                    selectedTextLayer()?.opacityPercent = textOpacityPercent
+                    updatePreviewTextOverlay()
+                }
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                    if (!loadingTextLayerControls) activeProjectHistorySnapshot = beginProjectHistoryGesture()
+                }
+                override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                    finishProjectHistoryGesture()
+                }
+            })
+        }
+        effects.addView(textOpacitySeek, matchWrap())
 
         val animations = tabPanels.getValue("Animasyonlar")
         animations.addView(label("Giriş / çıkış animasyonu", 11f, Color.rgb(154, 171, 190), false))
@@ -7762,6 +7789,7 @@ class VideoEditorActivity : Activity() {
         layer.animationDurationMs = textAnimationDurationMs.coerceIn(100L, 1_500L)
         layer.fontPreset = textFontPreset
         layer.backgroundEnabled = textBackgroundEnabled
+        layer.opacityPercent = textOpacityPercent.coerceIn(0, 100)
     }
 
     private fun refreshTextLayerList() {
@@ -8088,6 +8116,7 @@ class VideoEditorActivity : Activity() {
             textAnimationDurationMs = layer?.animationDurationMs?.coerceIn(100L, 1_500L) ?: 350L
             textFontPreset = layer?.fontPreset ?: TextFontPreset.SYSTEM
             textBackgroundEnabled = layer?.backgroundEnabled ?: false
+            textOpacityPercent = layer?.opacityPercent?.coerceIn(0, 100) ?: 100
             // Discard any stale composing span before reflecting a restored
             // project value in the editor. The project model remains authoritative.
             textInput.clearComposingText()
@@ -8104,6 +8133,8 @@ class VideoEditorActivity : Activity() {
             textBoldCheck.isChecked = textBold
             textFontGroup.check(51 + TextFontPreset.values().indexOf(textFontPreset).coerceAtLeast(0))
             textBackgroundCheck.isChecked = textBackgroundEnabled
+            textOpacitySeek.progress = textOpacityPercent
+            textOpacityLabel.text = "Opaklık: $textOpacityPercent%"
             textAnimationGroup.check(
                 31 + TextAnimationPreset.values().indexOf(textAnimationPreset).coerceAtLeast(0)
             )
@@ -8199,7 +8230,8 @@ class VideoEditorActivity : Activity() {
                 layer.endMs - timelinePlayheadMs,
                 layer.animationDurationMs
             )
-            if (overlay.alpha != animationState.alpha) overlay.alpha = animationState.alpha
+            val combinedAlpha = animationState.alpha * (layer.opacityPercent.coerceIn(0, 100) / 100f)
+            if (overlay.alpha != combinedAlpha) overlay.alpha = combinedAlpha
             if (overlay.scaleX != animationState.scale) overlay.scaleX = animationState.scale
             if (overlay.scaleY != animationState.scale) overlay.scaleY = animationState.scale
             val desiredRotation = PreviewCanvasMath.normalizeRotationDegrees(layer.rotationDegrees)
@@ -8907,6 +8939,7 @@ class VideoEditorActivity : Activity() {
                 put("isBold", layer.isBold)
                 put("fontPreset", layer.fontPreset.name)
                 put("backgroundEnabled", layer.backgroundEnabled)
+                put("opacityPercent", layer.opacityPercent.coerceIn(0, 100))
                 put("kind", layer.kind.name)
                 put("animationPreset", layer.animationPreset.key)
                 put("animationDurationMs", layer.animationDurationMs)
@@ -9293,6 +9326,7 @@ class VideoEditorActivity : Activity() {
                     isBold = item.optBoolean("isBold", true),
                     fontPreset = runCatching { TextFontPreset.valueOf(item.optString("fontPreset", "SYSTEM")) }.getOrDefault(TextFontPreset.SYSTEM),
                     backgroundEnabled = item.optBoolean("backgroundEnabled", false),
+                    opacityPercent = item.optInt("opacityPercent", 100).coerceIn(0, 100),
                     kind = runCatching {
                         TextLayerKind.valueOf(item.optString("kind", "TEXT"))
                     }.getOrDefault(TextLayerKind.TEXT),
@@ -13569,7 +13603,7 @@ class VideoEditorActivity : Activity() {
                     layer.animationDurationMs
                 )
                 return StaticOverlaySettings.Builder()
-                    .setAlphaScale(animation.alpha)
+                    .setAlphaScale(animation.alpha * (layer.opacityPercent.coerceIn(0, 100) / 100f))
                     .setScale(animation.scale, animation.scale)
                     .setBackgroundFrameAnchor(
                         x + animation.offsetXFraction * 2f,
