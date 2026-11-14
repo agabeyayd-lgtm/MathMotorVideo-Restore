@@ -2878,10 +2878,15 @@ for node in viewport.iter("node"):
     visible_bottom = min(bottom, view_bottom)
     if visible_bottom - visible_top < 24:
         continue
-    # Begin near the lower part of the non-clickable label, then move upward
-    # within the same ScrollView. This avoids swiping the adjacent checkbox
-    # while still providing enough travel to cross Android's drag slop.
-    start_y = visible_bottom - 10
+    # Keep the gesture away from Android's bottom system-navigation edge.
+    # The previous visible_bottom-10 target could start at y=1837 on a
+    # 1920px emulator; repeated upward swipes there occasionally invoked
+    # Home instead of scrolling the nested effects panel. Anchor inside the
+    # visible label, but cap the start at least 48px above this ScrollView's
+    # bottom. The endpoint remains inside the same measured viewport.
+    start_y = min(visible_bottom - 12, view_bottom - 48)
+    if start_y < visible_top + 6:
+        start_y = visible_top + min(12, (visible_bottom - visible_top) // 3)
     end_y = max(view_top + 16, start_y - min(140, (view_bottom - view_top) // 2))
     if start_y - end_y < 50:
         continue
