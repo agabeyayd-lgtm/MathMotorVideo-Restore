@@ -1598,3 +1598,11 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Corrected the Efektler tab activation path to reassert `WRAP_CONTENT` for its ScrollView content, calculate the deepest laid-out child bottom including bottom margins/padding, and expand the content minimum height when the measured height truncates trailing controls. Added a `TextEffectsLayout` measurement log to preserve evidence on the next emulator run.
 - The trim-handle source comment was also aligned with the tested half-width non-overlap rule. No visible trim artwork, project values, versionCode, signing, or release behavior changed.
 - This change remains validation-pending until the exact commit passes the emulator effects controls and continues into the text/video grip interaction checks.
+
+## 2026-11-14 — Efektler scroll smoke: partial-row cutoff root cause
+
+- Exact emulator run `43611781473` at `cebad89507c9b4f95c4e13a8a1fc018dd88cdf56` passed the first two required Efektler controls and completed two real panel swipes before the helper stopped.
+- The final captured hierarchy `editor-text-effects-scroll-3-1.xml` shows the inner Efektler viewport at `[52,1637][1028,1847]`. The lowest visible non-clickable row, “Gölge / Parıltı”, has a valid 26px visible intersection at `[57,1821][1023,1847]`. The helper's duplicated label filters both required 32px, rejected that usable row, selected the higher “Kontur kalınlığı” label, and then calculated only 29px of safe travel. It exited before issuing the third swipe. This is a test-helper geometry cutoff; the run did not show an app crash at this failure.
+- Corrected both duplicated visibility filters to accept a non-clickable text row with at least 16px visible. Replaying the exact archived hierarchy now selects “Gölge / Parıltı” and calculates a 105px upward swipe (`x=540, y=1829→1724`) inside the measured viewport. No assertion was removed or skipped.
+- Fix commits: `c334e43b87401cc80cf93382663fd009e7927aec` and `264683321f16c1ff16fd11bb6084b8471fd58f66`. Exact-head unit/build, APK packaging and API 35 emulator reruns are pending; do not mark the text-effects sequence or subsequent text/video grip checks verified until the new emulator run completes successfully.
+- PR #37 remains open and unmerged. No main-branch update, app version change, signing, or release.
