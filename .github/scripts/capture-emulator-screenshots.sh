@@ -3890,8 +3890,17 @@ forward_start="$((clip_x2 - swipe_inset))"
 if [ "$forward_start" -gt "$right_edge_safe_x" ]; then
   forward_start="$right_edge_safe_x"
 fi
-forward_end="$((clip_x1 + swipe_inset))"
-forward_distance="$((forward_start - forward_end))"
+# Do not scrub the entire clip to its end here. The reverse gesture must
+# still have real filmstrip pixels to the right of the fixed playhead; driving
+# all the way to the 8s endpoint leaves the clip entirely left of that overlay
+# and makes a reverse-on-filmstrip gesture physically impossible.
+full_forward_end="$((clip_x1 + swipe_inset))"
+full_forward_distance="$((forward_start - full_forward_end))"
+forward_distance="$((full_forward_distance / 5))"
+if [ "$forward_distance" -lt 80 ]; then
+  forward_distance="$full_forward_distance"
+fi
+forward_end="$((forward_start - forward_distance))"
 if [ "$forward_distance" -lt 80 ]; then
   echo "The visible filmstrip range is too small for a meaningful scrub (${clip_width}px wide; ${forward_distance}px usable after ${swipe_inset}px insets)."
   collect_capture_diagnostics filmstrip-scrub-distance-too-small
