@@ -1237,3 +1237,12 @@ The selected main-video clip exposes independent left/right edge grips: drag the
 - Updated `.github/scripts/capture-emulator-screenshots.sh` on the PR branch to select a non-clickable TextView by its actual intersection with the nested ScrollView, then swipe upward from within that label while staying inside the measured viewport. The clickable background checkbox is excluded from the gesture target. The control visibility and touch-target assertions remain intact; no test is skipped or weakened.
 - Fix commit: `38b66f0e6b890be88a0f228ef129a2c1955b352c`. Awaiting fresh unit/build, debug APK packaging and API 35 emulator results on this exact head. The video and text grip tests later in the same smoke script have not yet been reached on the failed run and remain unverified.
 - PR #37 remains open and unmerged. No main-branch update, version-code change, signing, or release was made.
+
+
+## 2026-11-14 — PR #37 Efektler scroll follow-up (navigation-edge diagnosis; validation pending)
+
+- Run `43601821042` / emulator job `132468058279` failed at `Metin gölgesini aç veya kapat`, not at the original contour-control lookup. The contour toggle and contour-width seekbar were both found in the live hierarchy.
+- Downloaded and inspected artifact `14116947793`. The repeated scroll snapshots show the inner effects viewport at `[52,1637][1028,1847]`; the prior helper selected the lowest visible label and began swipes at y=1831–1837, only 83–89px above the 1920px display bottom. The final captured hierarchy `editor-text-effects-scroll-3-5.xml` belongs to the Android launcher, while the app logcat has no app fatal exception/ANR. This is consistent with the swipe entering Android's bottom system-navigation gesture region, not a missing shadow control.
+- Updated the helper to keep the swipe start at least 48px above the measured inner ScrollView bottom while remaining inside the visible non-clickable label; endpoint remains inside the measured viewport. This specifically addresses the observed navigation-edge exit rather than repeating the earlier safe-row cutoff fix.
+- Follow-up commit: `f193198eb7cffd5c5dd6f38d7bd1c86ab18c28da`. Awaiting a fresh emulator run. Do not mark the effects sequence green until all seven listed controls are found; video/text grip checks remain unverified because this run exits before reaching them.
+- PR #37 remains open and unmerged. No main-branch update or version bump.
