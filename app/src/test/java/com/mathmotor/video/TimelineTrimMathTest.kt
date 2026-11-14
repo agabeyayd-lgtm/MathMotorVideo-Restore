@@ -600,34 +600,50 @@ class TimelineVideoMathTest {
 
 class TimelineEdgeHandleMathTest {
     @Test
-    fun wideClipUsesTheConfiguredTouchTarget() {
+    fun wideClipUsesTheConfiguredMaximumTouchTarget() {
         assertEquals(144, TimelineEdgeHandleMath.targetWidthPx(600, 144))
     }
 
     @Test
-    fun shortAudioClipStillGetsAFullMinimumTouchTarget() {
-        assertEquals(120, TimelineEdgeHandleMath.targetWidthPx(62, 120))
+    fun shortAudioClipKeepsTheMeasuredMinimumTouchTarget() {
+        assertEquals(40, TimelineEdgeHandleMath.targetWidthPx(62, 144))
     }
 
     @Test
-    fun extremelyShortClipDoesNotCollapseItsEdgeTargets() {
-        assertEquals(120, TimelineEdgeHandleMath.targetWidthPx(20, 120))
+    fun narrowClipUsesHalfItsWidthWhenThatExceedsTheMinimum() {
+        assertEquals(50, TimelineEdgeHandleMath.targetWidthPx(100, 144))
+    }
+
+    @Test
+    fun extremelyShortClipNeverCollapsesBelowTheMinimum() {
+        assertEquals(40, TimelineEdgeHandleMath.targetWidthPx(20, 144))
     }
 
     @Test
     fun invalidBoundsNeverReturnAZeroWidthTarget() {
         assertEquals(1, TimelineEdgeHandleMath.targetWidthPx(0, 0))
-        assertEquals(50, TimelineEdgeHandleMath.targetWidthPx(100, 50))
+        assertEquals(40, TimelineEdgeHandleMath.targetWidthPx(100, 0))
     }
 
     @Test
-    fun everyClipKeepsTheConfiguredMinimumHitTarget() {
-        val minimumTarget = 120 // 40dp on the API 35 emulator density.
-        listOf(1, 8, 20, 39, 40, 48, 50, 80, 120).forEach { clipWidth ->
+    fun targetRespectsBothConfiguredMinimumAndMaximum() {
+        val cases = listOf(
+            1 to 40,
+            8 to 40,
+            20 to 40,
+            39 to 40,
+            40 to 40,
+            48 to 40,
+            50 to 40,
+            80 to 40,
+            120 to 60,
+            600 to 144
+        )
+        cases.forEach { (clipWidth, expected) ->
             assertEquals(
-                "Clip width $clipWidth must not shrink the 40dp edge target",
-                minimumTarget,
-                TimelineEdgeHandleMath.targetWidthPx(clipWidth, minimumTarget)
+                "Unexpected hit width for clip width $clipWidth",
+                expected,
+                TimelineEdgeHandleMath.targetWidthPx(clipWidth, 144)
             )
         }
     }
