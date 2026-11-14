@@ -2855,46 +2855,20 @@ if not scrolls:
 (view_left, view_top, view_right, view_bottom), viewport = max(
     scrolls, key=lambda item: item[0][1]
 )
-labels = []
-for node in viewport.iter("node"):
-    if node.attrib.get("class") != "android.widget.TextView":
-        continue
-    if node.attrib.get("clickable") == "true":
-        continue
-    if not node.attrib.get("text", "").strip():
-        continue
-    rect = bounds(node)
-    if not rect:
-        continue
-    left, top, right, bottom = rect
-    if right <= view_left or left >= view_right:
-        continue
-    # UiAutomator reports the full TextView bounds even when the bottom of a
-    # row is clipped by its parent. Use the actual intersection with this
-    # nested effects viewport, not a fixed centre-Y margin: on the API 35
-    # layout the explanatory row is safely visible but its centre sits only
-    # 59px below the viewport top (the old +72px cutoff rejected it).
-    visible_top = max(top, view_top)
-    visible_bottom = min(bottom, view_bottom)
-    if visible_bottom - visible_top < 24:
-        continue
-    # Keep the gesture away from Android's bottom system-navigation edge.
-    # The previous visible_bottom-10 target could start at y=1837 on a
-    # 1920px emulator; repeated upward swipes there occasionally invoked
-    # Home instead of scrolling the nested effects panel. Anchor inside the
-    # visible label, but cap the start at least 48px above this ScrollView's
-    # bottom. The endpoint remains inside the same measured viewport.
-    start_y = min(visible_bottom - 12, view_bottom - 48)
-    if start_y < visible_top + 6:
-        start_y = visible_top + min(12, (visible_bottom - visible_top) // 3)
-    end_y = max(view_top + 16, start_y - min(140, (view_bottom - view_top) // 2))
-    if start_y - end_y < 50:
-        continue
-    labels.append((visible_bottom, (left + right) // 2, start_y, end_y))
-if not labels:
-    raise SystemExit("No safe, non-interactive text row intersects the Efektler scroll viewport.")
-
-_, center_x, start_y, end_y = max(labels)
+# Use the measured inner panel's right-side gutter as a neutral drag lane.
+# Starting from the bottom-most label repeatedly landed in Android's system
+# navigation edge on the 1920px emulator. A fixed lane 80px above the inner
+# viewport bottom stays inside the panel, away from the bottom gesture area;
+# the right gutter is outside the visible radio-button row.
+lane_width = view_right - view_left
+lane_height = view_bottom - view_top
+if lane_width < 120 or lane_height < 100:
+    raise SystemExit("The Efektler scroll viewport is too small for a safe drag.")
+center_x = view_right - min(24, lane_width // 12)
+start_y = view_bottom - 80
+end_y = max(view_top + 16, start_y - min(140, lane_height // 2))
+if start_y - end_y < 50:
+    raise SystemExit("The Efektler viewport has insufficient safe vertical travel.")
 print(center_x, start_y, end_y)
 PY
 )"
