@@ -2164,6 +2164,13 @@ run_audio_edge_smoke() {
     collect_capture_diagnostics "audio-$kind-$edge-target-undersized"
     exit 72
   fi
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I \
+    > "emulator-screenshots/audio-$kind-$edge-target-logcat.txt" 2>&1 || true
+  if ! grep -F "TIMELINE_EDGE_GESTURE_EXCLUSION description=$description" "emulator-screenshots/audio-$kind-$edge-target-logcat.txt" | tail -n 1 | grep -Fq "gestureExclusion=true"; then
+    echo "The $kind $edge trim handle is not protected from system edge gestures."
+    collect_capture_diagnostics "audio-$kind-$edge-gesture-exclusion-missing"
+    exit 72
+  fi
   delta=42
   if [ "$direction" = "left" ]; then
     delta=-42
@@ -2409,14 +2416,11 @@ PY
     collect_capture_diagnostics "overlay-$edge-target-undersized"
     exit 83
   fi
-  if [ "$edge" = "end" ]; then
-    timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I > emulator-screenshots/overlay-end-target-logcat.txt 2>&1 || true
-    if ! grep -Fq "OVERLAY_EDGE_TARGET edge=end" emulator-screenshots/overlay-end-target-logcat.txt ||
-       ! grep -F "OVERLAY_EDGE_TARGET edge=end" emulator-screenshots/overlay-end-target-logcat.txt | tail -n 1 | grep -Fq "gestureExclusion=true"; then
-      echo "The trailing trim handle did not register its Android gesture-navigation exclusion."
-      collect_capture_diagnostics overlay-end-gesture-exclusion-missing
-      exit 87
-    fi
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I > "emulator-screenshots/overlay-$edge-target-logcat.txt" 2>&1 || true
+  if ! grep -F "OVERLAY_EDGE_TARGET edge=$edge" "emulator-screenshots/overlay-$edge-target-logcat.txt" | tail -n 1 | grep -Fq "gestureExclusion=true"; then
+    echo "The overlay $edge trim handle did not register its Android gesture-navigation exclusion."
+    collect_capture_diagnostics "overlay-$edge-gesture-exclusion-missing"
+    exit 87
   fi
   delta=42
   if [ "$direction" = "left" ]; then delta=-42; fi
@@ -2799,6 +2803,113 @@ PY
     collect_capture_diagnostics "text-composer-tab-$text_tab_index-content-missing"
     exit 93
   fi
+  if [ "$text_tab" = "Efektler" ]; then
+    # The Efektler content lives in its own vertical ScrollView. Only the first
+    # row is visible on entry; inspect each real control as it scrolls into the
+    # viewport instead of requiring off-screen controls to have hit bounds.
+    effect_control_index=0
+    while IFS= read -r effect_description <&3; do
+      effect_control_index=$((effect_control_index + 1))
+      effect_control_bounds=""
+      for scroll_attempt in $(seq 0 6); do
+        effect_control_bounds="$(find_content_description_bounds "$tab_hierarchy" "$effect_description" || true)"
+        if [ -n "$effect_control_bounds" ]; then
+          break
+        fi
+        if [ "$scroll_attempt" -lt 6 ]; then
+          echo "Scrolling the Efektler panel to reveal '$effect_description' (attempt $((scroll_attempt + 1))/6)."
+          effect_scroll_gesture="$(python3 - "$tab_hierarchy" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+
+def bounds(node):
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    return tuple(map(int, match.groups())) if match else None
+
+scrolls = []
+for node in root.iter("node"):
+    if not node.attrib.get("class", "").endswith("ScrollView"):
+        continue
+    if node.attrib.get("scrollable") != "true":
+        continue
+    rect = bounds(node)
+    if rect and rect[1] > 1200 and rect[3] - rect[1] >= 60:
+        scrolls.append((rect, node))
+if not scrolls:
+    raise SystemExit("The inner Efektler ScrollView has no visible scroll viewport.")
+
+(view_left, view_top, view_right, view_bottom), viewport = max(
+    scrolls, key=lambda item: item[0][1]
+)
+labels = []
+for node in viewport.iter("node"):
+    if node.attrib.get("class") != "android.widget.TextView":
+        continue
+    if node.attrib.get("clickable") == "true":
+        continue
+    if not node.attrib.get("text", "").strip():
+        continue
+    rect = bounds(node)
+    if not rect:
+        continue
+    left, top, right, bottom = rect
+    center_y = (top + bottom) // 2
+    if right <= view_left or left >= view_right:
+        continue
+    if center_y < view_top + 72 or center_y > view_bottom - 18:
+        continue
+    labels.append((center_y, (left + right) // 2))
+if not labels:
+    raise SystemExit("No safe, non-interactive text row is visible for scrolling the Efektler panel.")
+
+start_y, center_x = max(labels)
+end_y = max(view_top + 12, start_y - 150)
+if start_y - end_y < 55:
+    raise SystemExit("The visible text row is too close to the scroll viewport edge for a safe drag.")
+print(center_x, start_y, end_y)
+PY
+)"
+          if [ -z "$effect_scroll_gesture" ]; then
+            echo "Could not locate a safe text row to scroll the Efektler panel."
+            collect_capture_diagnostics text-effects-no-safe-scroll-target
+            exit 93
+          fi
+          read -r effect_scroll_x effect_scroll_start_y effect_scroll_end_y <<< "$effect_scroll_gesture"
+          echo "Using non-interactive label row at x=$effect_scroll_x, y=$effect_scroll_start_y->$effect_scroll_end_y."
+          timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$effect_scroll_x" "$effect_scroll_start_y" "$effect_scroll_x" "$effect_scroll_end_y" 450
+          sleep 1
+          effect_hierarchy="editor-text-effects-scroll-$effect_control_index-$scroll_attempt.xml"
+          if ! dump_hierarchy "$effect_hierarchy" "emulator-screenshots/$effect_hierarchy"; then
+            echo "Could not inspect the Efektler panel after scrolling for '$effect_description'."
+            collect_capture_diagnostics text-effects-scroll-hierarchy-missing
+            exit 93
+          fi
+          tab_hierarchy="emulator-screenshots/$effect_hierarchy"
+        fi
+      done
+      if [ -z "$effect_control_bounds" ]; then
+        echo "Text effect control is not reachable after scrolling the real editor panel: $effect_description"
+        collect_capture_diagnostics "text-effect-control-missing"
+        exit 93
+      fi
+      echo "PASS: '$effect_description' is visible and has a real touch target: $effect_control_bounds"
+    done 3<<'TEXT_EFFECT_CONTROLS'
+Yazı konturunu aç veya kapat
+Metin kontur kalınlığı
+Metin gölgesini aç veya kapat
+Metin gölgesi yumuşaklığı
+Metin gölgesi yatay kayması
+Metin gölgesi dikey kayması
+Metin opaklığı
+TEXT_EFFECT_CONTROLS
+    if ! take_screen emulator-screenshots/editor-text-effects.png; then
+      collect_capture_diagnostics text-effects-screenshot-failed
+      exit 93
+    fi
+  fi
   echo "PASS: tapping '$text_tab' revealed '$expected_heading'."
 done 3<<'TEXT_TABS'
 Şablonlar|Hızlı metin stilleri
@@ -2831,12 +2942,61 @@ PY
 }
 timeout -k 2s 8s adb -s emulator-5554 shell input tap "$styles_tab_coords"
 sleep 1
-if ! dump_hierarchy editor-text-panel-styles-restored.xml emulator-screenshots/editor-text-panel-styles-restored.xml ||
-   ! grep -Fq "Yazı rengi" emulator-screenshots/editor-text-panel-styles-restored.xml; then
-  echo "The text composer could not return to the default Stiller tab."
+if ! dump_hierarchy editor-text-panel-styles-restored.xml emulator-screenshots/editor-text-panel-styles-restored.xml; then
+  echo "The text composer could not be inspected after restoring Stiller."
   collect_capture_diagnostics text-composer-styles-tab-restore-failed
   exit 93
 fi
+# The hidden Stiller controls remain in the hierarchy even while another tab
+# is active. Require the selected-state accessibility marker plus the actual
+# input and add hit targets, so a parent-scroll regression cannot be mistaken
+# for a successful return to the text editor.
+python3 - emulator-screenshots/editor-text-panel-styles-restored.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+selected = [
+    node for node in root.iter("node")
+    if node.attrib.get("content-desc", "").strip()
+    == "Metin düzenleme sekmesi: Stiller, seçili"
+]
+if len(selected) != 1:
+    raise SystemExit(f"Stiller is not the active text tab (selected marker count={len(selected)}).")
+
+def find_node(predicate, label):
+    matches = [node for node in root.iter("node") if predicate(node)]
+    if len(matches) != 1:
+        raise SystemExit(f"Expected one visible {label}, found {len(matches)}.")
+    node = matches[0]
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if not match:
+        raise SystemExit(f"{label} has no valid on-screen bounds: {node.attrib.get('bounds')}")
+    left, top, right, bottom = map(int, match.groups())
+    height = bottom - top
+    if height < 40 or right <= left:
+        raise SystemExit(f"{label} hit target is clipped/undersized: {right-left}x{height}px.")
+    if node.attrib.get("enabled") != "true" or node.attrib.get("clickable") != "true":
+        raise SystemExit(f"{label} is not enabled and clickable.")
+    return (left, top, right, bottom)
+
+edit = find_node(
+    lambda n: n.attrib.get("class") == "android.widget.EditText"
+    and n.attrib.get("text") == "Metin girin",
+    "text input"
+)
+add = find_node(
+    lambda n: n.attrib.get("class") == "android.widget.Button"
+    and n.attrib.get("text") == "＋ Yeni",
+    "new text button"
+)
+print(
+    "PASS: Stiller is selected and both fixed composer actions remain fully tappable: "
+    f"input={edit}, new={add}."
+)
+PY
+
 
 # Measure the pinned return button while the text panel is first opened. Its
 # sibling-header position is independent of the scrolling settings/IME.
@@ -2846,7 +3006,7 @@ if [ -z "$text_panel_back" ]; then
   collect_capture_diagnostics text-canvas-panel-return-missing-on-open
   exit 52
 fi
-new_text_coords="$(find_bottom_tool emulator-screenshots/editor-text-panel.xml "＋ Yeni" || true)"
+new_text_coords="$(find_bottom_tool emulator-screenshots/editor-text-panel-styles-restored.xml "＋ Yeni" || true)"
 if [ -z "$new_text_coords" ]; then
   echo "The Metin panel did not expose its Yeni text-layer action."
   collect_capture_diagnostics text-canvas-add-action-missing
@@ -3028,20 +3188,29 @@ matches = []
 for i, (top_y, x1, x2) in enumerate(rows):
     for bottom_y, bx1, bx2 in rows[i + 1:]:
         height = bottom_y - top_y + 1
-        if height < 35 or abs(x1 - bx1) > 8 or abs(x2 - bx2) > 8:
+        # Selection grips overlap the left border at both corners, so the
+        # visible start of the top and bottom horizontal edges can differ.
+        # Keep the right edge tightly aligned; allow up to 24 px of left-edge
+        # occlusion rather than rejecting a real frame with CapCut-style grips.
+        if height < 35 or abs(x1 - bx1) > 24 or abs(x2 - bx2) > 8:
             continue
-        width = x2 - x1 + 1
-        if abs(width - (bx2 - bx1 + 1)) > 10:
-            continue
+        # The horizontal edge can begin well inside the frame because the
+        # corner grips cover its leftmost section. Measure the exposed vertical
+        # border independently across the full grip footprint (about 56 px),
+        # rather than assuming it sits directly below the first white pixel
+        # on the top/bottom edge.
         left_strength = max(
             sum(is_white(image.getpixel((x, y))) for y in range(top_y + 2, bottom_y - 1))
-            for x in range(max(left, x1 - 5), min(right, x1 + 5) + 1)
+            for x in range(max(left, x1 - 56), min(right, x1 + 5) + 1)
         )
         right_strength = max(
             sum(is_white(image.getpixel((x, y))) for y in range(top_y + 2, bottom_y - 1))
             for x in range(max(left, x2 - 5), min(right, x2 + 5) + 1)
         )
-        if left_strength < height * 0.70 or right_strength < height * 0.70:
+        # The CapCut delete/duplicate grips intentionally cover parts of the left
+        # selection edge. Require the exposed border to remain measurable, but do
+        # not demand the old uninterrupted 70% edge from the pre-grip frame.
+        if left_strength < height * 0.45 or right_strength < height * 0.70:
             continue
         interior_white = sum(
             1
@@ -3051,7 +3220,7 @@ for i, (top_y, x1, x2) in enumerate(rows):
         )
         if interior_white < 40:
             continue
-        matches.append((width * height, x1, top_y, x2, bottom_y))
+        matches.append(((x2 - x1 + 1) * height, x1, top_y, x2, bottom_y))
 
 if not matches:
     raise SystemExit("A complete white text-selection rectangle with visible text was not found inside the project canvas.")
@@ -3068,38 +3237,7 @@ fi
 read -r text_frame_left text_frame_top text_frame_right text_frame_bottom text_before_x text_before_y <<< "$text_selection_bounds"
 echo "PASS: new text and its white selection frame are visible inside the measured project canvas at ($text_before_x,$text_before_y)."
 
-# The text detail panel normally opens with direct editing already enabled.
-# Only toggle it on if the accessibility state says it is currently closed.
-text_edit_toggle_info="$(python3 - emulator-screenshots/editor-text-panel.xml <<'PY'
-import re
-import sys
-import xml.etree.ElementTree as ET
-root = ET.parse(sys.argv[1]).getroot()
-for node in root.iter("node"):
-    label = node.attrib.get("content-desc", "")
-    if "Önizleme üzerindeki yazıyı sürükleme" not in label:
-        continue
-    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
-    if match:
-        x1, y1, x2, y2 = map(int, match.groups())
-        state = "kapalı" if "kapalı" in label.casefold() else "açık"
-        print((x1 + x2) // 2, (y1 + y2) // 2, state)
-        break
-PY
-)"
-if [ -z "$text_edit_toggle_info" ]; then
-  echo "The text panel did not expose its shared preview-gesture toggle."
-  collect_capture_diagnostics text-canvas-edit-toggle-missing
-  exit 61
-fi
-read -r text_toggle_x text_toggle_y text_toggle_state <<< "$text_edit_toggle_info"
-text_edit_toggle_changed=false
-if [ "$text_toggle_state" = "kapalı" ]; then
-  timeout -k 2s 8s adb -s emulator-5554 shell input tap "$text_toggle_x" "$text_toggle_y"
-  sleep 1
-  text_edit_toggle_changed=true
-fi
-
+# Preview text manipulation is now always available while the text composer is open.
 # The default text fixture is bottom-centred and nearly fills the canvas
 # width. Drag right/up so the full selection outline remains inside the project
 # canvas; a right/down swipe moves the box beyond the canvas edge and clips the
@@ -3354,11 +3492,6 @@ if [ "$((text_group_redo_y - text_after_y))" -lt -8 ] || [ "$((text_group_redo_y
 fi
 echo "PASS: one Redo restored the complete text session and the next Redo restored its separate drag."
 
-if [ "$text_edit_toggle_changed" = true ]; then
-  timeout -k 2s 8s adb -s emulator-5554 shell input tap "$text_toggle_x" "$text_toggle_y"
-  sleep 1
-fi
-
 assert_preview_canvas_unchanged_from_snapshot() {
   python3 - "$1" "$2" "$3" "$4" <<'PY'
 import re
@@ -3555,6 +3688,185 @@ if ! grep -Fq "TEXT_TOOLS_DOCK_VISIBLE childCount=3" emulator-screenshots/text-p
 fi
 echo "PASS: tapping the preview text restored its three-action text dock and selection frame at $text_reselected_bounds."
 
+# Exercise the two actual CapCut-style preview selection grips, not only the
+# bottom toolbar actions. Copy must create an independent layer; the delete
+# grip must then remove only that selected copy and leave the original intact.
+if ! dump_hierarchy editor-text-grips-before.xml emulator-screenshots/editor-text-grips-before.xml; then
+  echo "Could not inspect the selected text preview grips."
+  collect_capture_diagnostics text-preview-grips-hierarchy-missing
+  exit 56
+fi
+text_copy_grip_coords="$(find_content_description_bounds emulator-screenshots/editor-text-grips-before.xml "Seçili metni kopyala")"
+if [ -z "$text_copy_grip_coords" ]; then
+  echo "The selected text preview did not expose its duplicate grip."
+  collect_capture_diagnostics text-preview-duplicate-grip-missing
+  exit 56
+fi
+read -r text_copy_x text_copy_y _ _ _ _ _ _ <<< "$text_copy_grip_coords"
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$text_copy_x" "$text_copy_y"
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I \
+  > emulator-screenshots/text-preview-duplicate-grip-logcat.txt 2>&1 || true
+if ! grep -Eq "TEXT_GRIP_ACTION action=duplicate beforeCount=1 afterCount=2 " emulator-screenshots/text-preview-duplicate-grip-logcat.txt; then
+  echo "Tapping the text preview duplicate grip did not create exactly one additional text layer."
+  cat emulator-screenshots/text-preview-duplicate-grip-logcat.txt || true
+  collect_capture_diagnostics text-preview-duplicate-grip-action-failed
+  exit 56
+fi
+echo "PASS: the preview duplicate grip created an independent second text layer."
+
+# Dismiss the keyboard opened by duplication before measuring the delete grip.
+timeout -k 2s 8s adb -s emulator-5554 shell input keyevent 4
+sleep 1
+if ! dump_hierarchy editor-text-grips-copy-selected.xml emulator-screenshots/editor-text-grips-copy-selected.xml; then
+  echo "Could not inspect the duplicated text selection after keyboard dismissal."
+  collect_capture_diagnostics text-preview-delete-grip-hierarchy-missing
+  exit 56
+fi
+text_delete_grip_coords="$(find_content_description_bounds emulator-screenshots/editor-text-grips-copy-selected.xml "Seçili metni sil")"
+if [ -z "$text_delete_grip_coords" ]; then
+  echo "The duplicated selected text did not expose its delete grip."
+  collect_capture_diagnostics text-preview-delete-grip-missing
+  exit 56
+fi
+read -r text_delete_x text_delete_y _ _ _ _ _ _ <<< "$text_delete_grip_coords"
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$text_delete_x" "$text_delete_y"
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I \
+  > emulator-screenshots/text-preview-delete-grip-logcat.txt 2>&1 || true
+if ! grep -Eq "TEXT_GRIP_ACTION action=delete beforeCount=2 afterCount=1" emulator-screenshots/text-preview-delete-grip-logcat.txt; then
+  echo "Tapping the text preview delete grip did not remove only the selected duplicate."
+  cat emulator-screenshots/text-preview-delete-grip-logcat.txt || true
+  collect_capture_diagnostics text-preview-delete-grip-action-failed
+  exit 56
+fi
+echo "PASS: the preview delete grip removed the selected duplicate and preserved the original text layer."
+
+# Exercise both text-timeline trim edges on a real selected text layer. The
+# final ACTION_UP displacement must count as a drag even when Android coalesces
+# the last MOVE event. Re-measure each target after the previous trim rebuilds
+# the timeline so the test never relies on stale coordinates.
+run_text_edge_smoke() {
+  local edge="$1" description="$2" direction="$3"
+  local before_xml="editor-text-edge-$edge-before.xml"
+  local coords cx cy target_w target_h x1 y1 x2 y2 delta marker
+  if ! dump_hierarchy "$before_xml" "emulator-screenshots/$before_xml"; then
+    echo "Could not inspect text $edge trim target."
+    collect_capture_diagnostics "text-$edge-edge-before-hierarchy-failed"
+    exit 57
+  fi
+
+  if [ "$edge" = "end" ] && [ -z "$(find_content_description_bounds "emulator-screenshots/$before_xml" "$description")" ]; then
+    ruler_bounds="$(python3 - "emulator-screenshots/$before_xml" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+def walk(node):
+    if node.attrib.get("class") == "android.widget.HorizontalScrollView" and node.attrib.get("scrollable") == "true":
+        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+        if match:
+            left, top, right, bottom = map(int, match.groups())
+            if right - left > 500 and 0 < bottom - top <= 100 and top < 1150:
+                print(left, top, right, bottom)
+                return True
+    for child in node:
+        if walk(child):
+            return True
+    return False
+walk(root)
+PY
+)"
+    if [ -z "$ruler_bounds" ]; then
+      echo "Could not locate the horizontally scrollable ruler to reveal the text end handle."
+      collect_capture_diagnostics text-end-ruler-not-found
+      exit 57
+    fi
+    read -r ruler_left ruler_top ruler_right ruler_bottom <<< "$ruler_bounds"
+    ruler_y=$(((ruler_top + ruler_bottom) / 2))
+    ruler_width=$((ruler_right - ruler_left))
+    scroll_start=$((ruler_left + ruler_width * 3 / 4))
+    scroll_end=$((ruler_left + ruler_width / 4))
+    for scroll_attempt in $(seq 1 8); do
+      visible_bounds="$(find_content_description_bounds "emulator-screenshots/$before_xml" "$description")"
+      if [ -n "$visible_bounds" ]; then
+        read -r _ _ visible_width visible_height _ <<< "$visible_bounds"
+        if [ "$visible_width" -ge 40 ] && [ "$visible_height" -ge 20 ]; then
+          break
+        fi
+        ruler_center=$(((ruler_left + ruler_right) / 2))
+        scroll_start=$((ruler_center + 20))
+        scroll_end=$((ruler_center - 20))
+      fi
+      timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$scroll_start" "$ruler_y" "$scroll_end" "$ruler_y" 450
+      sleep 0.4
+      dump_hierarchy "$before_xml" "emulator-screenshots/$before_xml" || true
+    done
+  fi
+
+  coords="$(find_content_description_bounds "emulator-screenshots/$before_xml" "$description")"
+  if [ -z "$coords" ]; then
+    echo "Text $edge trim handle is not visible: $description"
+    collect_capture_diagnostics "text-$edge-edge-target-missing"
+    exit 57
+  fi
+  read -r cx cy target_w target_h x1 y1 x2 y2 <<< "$coords"
+  if [ "$target_w" -lt 40 ] || [ "$target_h" -lt 20 ]; then
+    echo "Text $edge trim target is undersized: ${target_w}x${target_h}px bounds=[${x1},${y1}][${x2},${y2}]."
+    collect_capture_diagnostics "text-$edge-edge-target-undersized"
+    exit 57
+  fi
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I \
+    > "emulator-screenshots/text-$edge-edge-target-logcat.txt" 2>&1 || true
+  if ! grep -F "TIMELINE_EDGE_GESTURE_EXCLUSION description=$description" "emulator-screenshots/text-$edge-edge-target-logcat.txt" | tail -n 1 | grep -Fq "gestureExclusion=true"; then
+    echo "The text $edge trim handle is not protected from system edge gestures."
+    collect_capture_diagnostics "text-$edge-edge-gesture-exclusion-missing"
+    exit 57
+  fi
+  delta=42
+  if [ "$direction" = "left" ]; then delta=-42; fi
+  timeout -k 2s 8s adb -s emulator-5554 logcat -c
+  echo "Dragging text $edge trim handle from ($cx,$cy) by ${delta}px; hit area=${target_w}x${target_h}px."
+  timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$cx" "$cy" "$((cx + delta))" "$cy" 500
+  sleep 1
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I \
+    > "emulator-screenshots/text-$edge-edge-touch-logcat.txt" 2>&1 || true
+  marker="$(grep -F "TEXT_EDGE_TRIM edge=$edge " "emulator-screenshots/text-$edge-edge-touch-logcat.txt" | tail -n 1 || true)"
+  if [ -z "$marker" ]; then
+    echo "Text $edge trim drag did not reach its production edge handler."
+    cat "emulator-screenshots/text-$edge-edge-touch-logcat.txt" || true
+    collect_capture_diagnostics "text-$edge-edge-gesture-not-received"
+    exit 58
+  fi
+  python3 - "$marker" "$edge" <<'PY'
+import re
+import sys
+line, edge = sys.argv[1:]
+fields = dict(re.findall(r"([A-Za-z][A-Za-z0-9]*)=([^ ]+)", line))
+required = ("beforeStartMs", "beforeEndMs", "afterStartMs", "afterEndMs", "deltaPx")
+missing = [key for key in required if key not in fields]
+if missing:
+    raise SystemExit(f"Text edge marker is missing {missing}: {line}")
+before_start, before_end, after_start, after_end = (
+    int(fields[key]) for key in required[:4]
+)
+if after_end - after_start < 500:
+    raise SystemExit(f"Text trim violated the 500ms minimum duration: {line}")
+if edge == "start":
+    valid = after_start > before_start and after_end == before_end
+else:
+    valid = after_start == before_start and after_end < before_end
+if not valid:
+    raise SystemExit(f"Text {edge} trim changed the wrong edge or did not move: {line}")
+print(f"PASS: text {edge} grip changed only its intended time edge ({before_start}:{before_end} -> {after_start}:{after_end}).")
+PY
+}
+
+run_text_edge_smoke start "Yazı başlangıcını sürükle" right
+run_text_edge_smoke end "Yazı bitişini sürükle" left
+
 # UIAutomator can time out on this large panel even after the direct interaction
 # has succeeded. The app-side dock marker plus the full-canvas screenshot and
 # pixel-verified selection frame are authoritative; hierarchy-based cleanup is
@@ -3734,8 +4046,17 @@ forward_start="$((clip_x2 - swipe_inset))"
 if [ "$forward_start" -gt "$right_edge_safe_x" ]; then
   forward_start="$right_edge_safe_x"
 fi
-forward_end="$((clip_x1 + swipe_inset))"
-forward_distance="$((forward_start - forward_end))"
+# Do not scrub the entire clip to its end here. The reverse gesture must
+# still have real filmstrip pixels to the right of the fixed playhead; driving
+# all the way to the 8s endpoint leaves the clip entirely left of that overlay
+# and makes a reverse-on-filmstrip gesture physically impossible.
+full_forward_end="$((clip_x1 + swipe_inset))"
+full_forward_distance="$((forward_start - full_forward_end))"
+forward_distance="$((full_forward_distance / 5))"
+if [ "$forward_distance" -lt 80 ]; then
+  forward_distance="$full_forward_distance"
+fi
+forward_end="$((forward_start - forward_distance))"
 if [ "$forward_distance" -lt 80 ]; then
   echo "The visible filmstrip range is too small for a meaningful scrub (${clip_width}px wide; ${forward_distance}px usable after ${swipe_inset}px insets)."
   collect_capture_diagnostics filmstrip-scrub-distance-too-small
@@ -4395,15 +4716,22 @@ if ! grep -Fq "Seçili video klibi sınırı" emulator-screenshots/video-edge-tr
   collect_capture_diagnostics video-edge-trim-selection-not-applied
   exit 102
 fi
-if ! grep -Fq "Sol beyaz tutamaç" emulator-screenshots/video-edge-trim-selected.xml; then
-  echo "The selected video clip did not expose its primary trim touch target."
+if ! grep -Fq "Sol beyaz tutamaç" emulator-screenshots/video-edge-trim-selected.xml ||
+   ! grep -Fq "Sağ beyaz tutamaç" emulator-screenshots/video-edge-trim-selected.xml; then
+  echo "The selected video clip did not expose both accessible white trim handles."
   collect_capture_diagnostics video-edge-trim-grips-not-attached
   exit 102
 fi
-# Accessibility hierarchy exposes only the leading grip on this Android build.
-# The trailing grip is verified by the real end-trim/end-extend gestures below;
-# the known-green API-35 run proved both operations even with this same XML shape.
-echo "PASS: first restored video clip is selected and both real trim grips are attached."
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I \
+  > emulator-screenshots/video-edge-trim-targets.txt 2>&1 || true
+if ! grep -F "VIDEO_EDGE_TARGET edge=start" emulator-screenshots/video-edge-trim-targets.txt | tail -n 1 | grep -Fq "gestureExclusion=true" ||
+   ! grep -F "VIDEO_EDGE_TARGET edge=end" emulator-screenshots/video-edge-trim-targets.txt | tail -n 1 | grep -Fq "gestureExclusion=true"; then
+  echo "The video start or end trim handle lacks Android gesture-navigation exclusion."
+  cat emulator-screenshots/video-edge-trim-targets.txt || true
+  collect_capture_diagnostics video-edge-trim-targets-invalid
+  exit 102
+fi
+echo "PASS: selected video clip exposes both accessible white trim handles; trailing edge is protected from system-back gestures."
 
 # Exercise the real video trim grips with Android touch events. The app's
 # measured View bounds are the source of truth; do not hard-code device geometry.

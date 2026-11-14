@@ -536,3 +536,23 @@ internal object TimelineVideoMath {
         )
     }
 }
+
+
+/**
+ * Sizes both edge hit targets without letting short clips collapse them to a
+ * nearly untappable sliver. The 40px floor matches the emulator's measured
+ * minimum; wider clips grow up to the configured 48dp cap. Each hit target is
+ * centred on its clip boundary, outside the visible grip artwork.
+ */
+internal object TimelineEdgeHandleMath {
+    fun targetWidthPx(
+        blockWidthPx: Int,
+        maxTargetPx: Int,
+        minimumTargetPx: Int = 40
+    ): Int {
+        val halfBlock = (blockWidthPx.coerceAtLeast(1) / 2).coerceAtLeast(1)
+        val maximum = maxTargetPx.coerceAtLeast(1)
+        val minimum = minimumTargetPx.coerceAtLeast(1).coerceAtMost(maximum)
+        return maxOf(minimum, halfBlock.coerceAtMost(maximum))
+    }
+}

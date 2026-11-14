@@ -9,6 +9,7 @@ import android.database.Cursor
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Matrix
+import android.graphics.Paint
 import android.graphics.Typeface
 import android.media.MediaMetadataRetriever
 import android.net.Uri
@@ -22,6 +23,8 @@ import android.os.SystemClock
 import android.provider.MediaStore
 import android.text.SpannableString
 import android.text.Spanned
+import android.text.TextPaint
+import android.text.style.CharacterStyle
 import android.text.style.AbsoluteSizeSpan
 import android.text.style.BackgroundColorSpan
 import android.text.style.ForegroundColorSpan
@@ -212,6 +215,37 @@ class VideoEditorActivity : Activity() {
     private var textBold = true
     private var textFontPreset = TextFontPreset.SYSTEM
     private var textBackgroundEnabled = false
+    private var textOpacityPercent = 100
+    private var textOutlineEnabled = false
+    private var textOutlineColor = Color.BLACK
+    private var textOutlineWidthDp = 2
+    private var textShadowEnabled = true
+    private var textShadowColor = Color.BLACK
+    private var textShadowBlurDp = 2
+    private var textShadowOffsetXDp = 1
+    private var textShadowOffsetYDp = 1
+    private lateinit var textOutlineCheck: CheckBox
+    private lateinit var textOutlineWidthLabel: TextView
+    private lateinit var textOutlineWidthSeek: SeekBar
+    private lateinit var textOutlineColorGroup: android.widget.RadioGroup
+    private lateinit var textShadowCheck: CheckBox
+    private lateinit var textShadowBlurLabel: TextView
+    private lateinit var textShadowBlurSeek: SeekBar
+    private lateinit var textShadowColorGroup: android.widget.RadioGroup
+    private lateinit var textShadowOffsetXLabel: TextView
+    private lateinit var textShadowOffsetXSeek: SeekBar
+    private lateinit var textShadowOffsetYLabel: TextView
+    private lateinit var textShadowOffsetYSeek: SeekBar
+    private val textEffectColors = listOf(
+        "Siyah" to Color.BLACK,
+        "Beyaz" to Color.WHITE,
+        "Kırmızı" to Color.rgb(244, 67, 54),
+        "Mavi" to Color.rgb(33, 150, 243),
+        "Sarı" to Color.rgb(255, 193, 7)
+    )
+    private lateinit var textOpacityLabel: TextView
+    private lateinit var textOpacitySeek: SeekBar
+    private lateinit var textCategoryFrame: FrameLayout
     private var textAnimationPreset = TextAnimationPreset.NONE
     private var textAnimationDurationMs = 350L
     private lateinit var textAnimationGroup: android.widget.RadioGroup
@@ -259,8 +293,85 @@ class VideoEditorActivity : Activity() {
         var animationPreset: TextAnimationPreset = TextAnimationPreset.NONE,
         var animationDurationMs: Long = 350L,
         var fontPreset: TextFontPreset = TextFontPreset.SYSTEM,
-        var backgroundEnabled: Boolean = false
+        var backgroundEnabled: Boolean = false,
+        var opacityPercent: Int = 100,
+        var outlineEnabled: Boolean = false,
+        var outlineColor: Int = Color.BLACK,
+        var outlineWidthDp: Int = 2,
+        var shadowEnabled: Boolean = true,
+        var shadowColor: Int = Color.BLACK,
+        var shadowBlurDp: Int = 2,
+        var shadowOffsetXDp: Int = 1,
+        var shadowOffsetYDp: Int = 1
     )
+
+    private inner class StyledPreviewTextView : TextView(this@VideoEditorActivity) {
+        var outlineEnabled = false
+        var outlineStrokeColor = Color.BLACK
+        var outlineWidthPx = 0f
+        var shadowEnabled = true
+        var dropShadowColor = Color.BLACK
+        var shadowBlurPx = 2f
+        var shadowOffsetXPx = 1f
+        var shadowOffsetYPx = 1f
+
+        override fun onDraw(canvas: android.graphics.Canvas) {
+            val textPaint = paint
+            val fillColor = currentTextColor
+            val originalStyle = textPaint.style
+            val originalColor = textPaint.color
+            val originalStrokeWidth = textPaint.strokeWidth
+            val originalStrokeJoin = textPaint.strokeJoin
+            try {
+                if (outlineEnabled && outlineWidthPx > 0f) {
+                    textPaint.style = Paint.Style.STROKE
+                    textPaint.strokeJoin = Paint.Join.ROUND
+                    textPaint.strokeWidth = outlineWidthPx
+                    textPaint.color = outlineStrokeColor
+                    textPaint.clearShadowLayer()
+                    super.onDraw(canvas)
+                }
+                textPaint.style = Paint.Style.FILL
+                textPaint.color = fillColor
+                if (shadowEnabled && shadowBlurPx > 0f) {
+                    textPaint.setShadowLayer(shadowBlurPx, shadowOffsetXPx, shadowOffsetYPx, dropShadowColor)
+                } else {
+                    textPaint.clearShadowLayer()
+                }
+                super.onDraw(canvas)
+            } finally {
+                textPaint.style = originalStyle
+                textPaint.color = originalColor
+                textPaint.strokeWidth = originalStrokeWidth
+                textPaint.strokeJoin = originalStrokeJoin
+                textPaint.clearShadowLayer()
+            }
+        }
+    }
+
+    private class TextOutlineSpan(
+        private val color: Int,
+        private val widthPx: Float
+    ) : CharacterStyle() {
+        override fun updateDrawState(tp: TextPaint) {
+            tp.style = Paint.Style.STROKE
+            tp.strokeJoin = Paint.Join.ROUND
+            tp.strokeWidth = widthPx
+            tp.color = color
+            tp.clearShadowLayer()
+        }
+    }
+
+    private class TextShadowSpan(
+        private val color: Int,
+        private val blurPx: Float,
+        private val offsetXPx: Float,
+        private val offsetYPx: Float
+    ) : CharacterStyle() {
+        override fun updateDrawState(tp: TextPaint) {
+            tp.setShadowLayer(blurPx, offsetXPx, offsetYPx, color)
+        }
+    }
 
     private val textLayers = mutableListOf<TextLayer>()
     private var selectedTextLayerId: Long? = null
@@ -328,7 +439,7 @@ class VideoEditorActivity : Activity() {
     private var previewFocusMode = false
     private val previewFocusOriginalVisibility = linkedMapOf<View, Int>()
     private lateinit var previewTextOverlay: TextView
-    private lateinit var textSelectionFrame: View
+    private lateinit var textSelectionFrame: FrameLayout
     private lateinit var clipTransformTouchOverlay: View
     private lateinit var clipSelectionFrame: View
     private lateinit var overlayTransformTouchOverlay: View
@@ -1235,10 +1346,12 @@ class VideoEditorActivity : Activity() {
         )
         previewTextOverlays.add(previewTextOverlay)
         installPreviewTextTouch(previewTextOverlay)
-        textSelectionFrame = View(this).apply {
+        textSelectionFrame = FrameLayout(this).apply {
             visibility = View.GONE
             isClickable = false
             isFocusable = false
+            clipChildren = false
+            clipToPadding = false
             background = android.graphics.drawable.GradientDrawable().apply {
                 setColor(Color.TRANSPARENT)
                 cornerRadius = dp(2).toFloat()
@@ -1246,6 +1359,46 @@ class VideoEditorActivity : Activity() {
             }
             elevation = dp(TouchPriority.SELECTION_CHROME_DP).toFloat()
             contentDescription = "Seçili metin katmanı sınırı"
+        }
+        // CapCut-style text grips: delete at the upper-left and duplicate at
+        // the lower-left. They are anchored to the selection bounds, not to
+        // the screen, so moving/scaling/rotating the text keeps them attached.
+        fun addTextSelectionGrip(
+            symbol: String,
+            description: String,
+            gravity: Int,
+            action: () -> Unit
+        ) {
+            val grip = TextView(this).apply {
+                text = symbol
+                textSize = 18f
+                this.gravity = Gravity.CENTER
+                setTextColor(Color.WHITE)
+                contentDescription = description
+                isClickable = true
+                isFocusable = true
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.OVAL
+                    setColor(Color.rgb(49, 51, 55))
+                    setStroke(dp(1), Color.rgb(205, 210, 216))
+                }
+                elevation = dp(2).toFloat()
+                setOnClickListener { action() }
+            }
+            textSelectionFrame.addView(
+                grip,
+                FrameLayout.LayoutParams(dp(30), dp(30), gravity).apply {
+                    leftMargin = -dp(15)
+                    if (gravity == (Gravity.TOP or Gravity.LEFT)) topMargin = -dp(15)
+                    else bottomMargin = -dp(15)
+                }
+            )
+        }
+        addTextSelectionGrip("×", "Seçili metni sil", Gravity.TOP or Gravity.LEFT) {
+            removeSelectedTextLayer()
+        }
+        addTextSelectionGrip("▢", "Seçili metni kopyala", Gravity.BOTTOM or Gravity.LEFT) {
+            duplicateSelectedTextLayer()
         }
         previewCanvas.addView(
             textSelectionFrame,
@@ -1746,11 +1899,33 @@ class VideoEditorActivity : Activity() {
         val tabPanels = linkedMapOf<String, LinearLayout>()
         val tabScrolls = linkedMapOf<String, ScrollView>()
         val tabFrame = FrameLayout(this)
+        textCategoryFrame = tabFrame
         tabNames.forEach { name ->
             val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(2), dp(4), dp(2), dp(8)) }
-            val scroll = ScrollView(this).apply {
-                isFillViewport = true; isVerticalScrollBarEnabled = false; overScrollMode = View.OVER_SCROLL_NEVER
-                addView(content, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            val scroll = object : ScrollView(this@VideoEditorActivity) {
+                override fun onInterceptTouchEvent(event: android.view.MotionEvent): Boolean {
+                    // This editor sheet is itself a ScrollView. Once a gesture
+                    // starts inside a category's own content, keep vertical
+                    // movement with that inner panel so the text field, add
+                    // button and category tabs above it do not slide away.
+                    when (event.actionMasked) {
+                        android.view.MotionEvent.ACTION_DOWN,
+                        android.view.MotionEvent.ACTION_MOVE ->
+                            parent?.requestDisallowInterceptTouchEvent(true)
+                        android.view.MotionEvent.ACTION_UP,
+                        android.view.MotionEvent.ACTION_CANCEL ->
+                            parent?.requestDisallowInterceptTouchEvent(false)
+                    }
+                    return super.onInterceptTouchEvent(event)
+                }
+            }.apply {
+                isFillViewport = true
+                isVerticalScrollBarEnabled = false
+                overScrollMode = View.OVER_SCROLL_NEVER
+                addView(content, ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ))
                 visibility = View.GONE
             }
             tabPanels[name] = content; tabScrolls[name] = scroll
@@ -1768,6 +1943,11 @@ class VideoEditorActivity : Activity() {
                         setStroke(dp(if (selected) 1 else 0), if (selected) Color.rgb(57, 220, 190) else Color.TRANSPARENT)
                     }
                     button.setTextColor(if (selected) Color.rgb(86, 231, 200) else Color.WHITE)
+                    button.contentDescription = if (selected) {
+                        "Metin düzenleme sekmesi: $key, seçili"
+                    } else {
+                        "Metin düzenleme sekmesi: $key"
+                    }
                 }
             }.apply { textSize = 11f; minHeight = dp(38); setPadding(dp(9), 0, dp(9), 0); contentDescription = "Metin düzenleme sekmesi: $name" }
             tabButtons[name] = tab
@@ -1777,26 +1957,23 @@ class VideoEditorActivity : Activity() {
         textPanel.addView(tabScroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(42)))
         textPanel.addView(tabFrame, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(190)))
 
-        // Keep preview gesture editing accessible above the tab drawer content.
-        // The emulator flow must be able to toggle direct manipulation without
-        // scrolling past the five category tabs.
+        // Direct manipulation is part of text selection, not a separate mode.
+        // Keep the legacy toggle object detached from the sheet; the selected
+        // text itself remains draggable and pinch-transformable on the canvas.
         textPanel.removeView(textOverlayEditToggle)
-        textPanel.addView(textOverlayEditToggle, 2)
 
-        // Keep the five CapCut-style text categories directly below the text
-        // input. The old edit toggle/actions/layer list pushed these controls
-        // below the visible drawer fold, so UI automation and users could not
-        // reach them without scrolling the whole panel.
+        // Match CapCut's second-stage composer: text field, category tabs, then
+        // the active category's controls. Secondary layer-list/actions remain
+        // available below the main editing surface instead of interrupting it.
         textPanel.removeView(tabScroll)
         textPanel.removeView(tabFrame)
         textPanel.getChildAt(0)?.visibility = View.GONE // legacy METİN heading
-        // The gesture toggle must remain directly below the input row; insert
-        // the category strip and its content after it, not in front of it.
-        textPanel.addView(tabScroll, 3)
-        textPanel.addView(tabFrame, 4)
+        textPanel.addView(tabScroll, 2)
+        textPanel.addView(tabFrame, 3)
 
         tabScrolls["Stiller"]?.visibility = View.VISIBLE
         tabButtons["Stiller"]?.apply {
+            contentDescription = "Metin düzenleme sekmesi: Stiller, seçili"
             setTextColor(Color.rgb(86, 231, 200))
             background = android.graphics.drawable.GradientDrawable().apply { setColor(Color.rgb(35, 53, 67)); cornerRadius = dp(8).toFloat(); setStroke(dp(1), Color.rgb(57, 220, 190)) }
         }
@@ -1935,6 +2112,194 @@ class VideoEditorActivity : Activity() {
             }
         }
         effects.addView(textBackgroundCheck, matchWrap())
+
+        effects.addView(label("Kontur", 12f, Color.WHITE, true))
+        textOutlineCheck = CheckBox(this).apply {
+            text = "Yazı kenarlığı"; contentDescription = "Yazı konturunu aç veya kapat"
+            textSize = 12f; setTextColor(Color.WHITE)
+            buttonTintList = android.content.res.ColorStateList.valueOf(Color.rgb(57, 220, 190))
+            isChecked = textOutlineEnabled
+            setOnCheckedChangeListener { _, checked ->
+                if (loadingTextLayerControls) return@setOnCheckedChangeListener
+                recordProjectEdit()
+                textOutlineEnabled = checked
+                selectedTextLayer()?.outlineEnabled = checked
+                textOutlineWidthSeek.isEnabled = checked
+                textOutlineColorGroup.childrenEnabled(checked)
+                updatePreviewTextOverlay()
+            }
+        }
+        effects.addView(textOutlineCheck, matchWrap())
+        textOutlineWidthLabel = label("Kontur kalınlığı: 2", 11f, Color.WHITE, true)
+        effects.addView(textOutlineWidthLabel)
+        textOutlineWidthSeek = SeekBar(this).apply {
+            max = 8; progress = 2; contentDescription = "Metin kontur kalınlığı"
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                    if (!fromUser || loadingTextLayerControls) return
+                    textOutlineWidthDp = progress.coerceIn(0, 8)
+                    textOutlineWidthLabel.text = "Kontur kalınlığı: $textOutlineWidthDp"
+                    selectedTextLayer()?.outlineWidthDp = textOutlineWidthDp
+                    updatePreviewTextOverlay()
+                }
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                    if (!loadingTextLayerControls) activeProjectHistorySnapshot = beginProjectHistoryGesture()
+                }
+                override fun onStopTrackingTouch(seekBar: SeekBar?) { finishProjectHistoryGesture() }
+            })
+        }
+        effects.addView(textOutlineWidthSeek, matchWrap())
+        textOutlineColorGroup = android.widget.RadioGroup(this).apply {
+            orientation = android.widget.RadioGroup.HORIZONTAL
+            textEffectColors.forEachIndexed { index, (name, color) ->
+                addView(android.widget.RadioButton(this@VideoEditorActivity).apply {
+                    id = 61 + index; text = name; textSize = 10f; setTextColor(color)
+                    buttonTintList = android.content.res.ColorStateList.valueOf(color)
+                })
+            }
+            check(61)
+            setOnCheckedChangeListener { _, checkedId ->
+                if (loadingTextLayerControls || checkedId !in 61..65) return@setOnCheckedChangeListener
+                recordProjectEdit()
+                textOutlineColor = textEffectColors[checkedId - 61].second
+                selectedTextLayer()?.outlineColor = textOutlineColor
+                updatePreviewTextOverlay()
+            }
+        }
+        effects.addView(textOutlineColorGroup, matchWrap())
+        textOutlineWidthSeek.isEnabled = textOutlineEnabled
+        textOutlineColorGroup.childrenEnabled(textOutlineEnabled)
+
+        effects.addView(label("Gölge / Parıltı", 12f, Color.WHITE, true))
+        textShadowCheck = CheckBox(this).apply {
+            text = "Metin gölgesi"; contentDescription = "Metin gölgesini aç veya kapat"
+            textSize = 12f; setTextColor(Color.WHITE)
+            buttonTintList = android.content.res.ColorStateList.valueOf(Color.rgb(57, 220, 190))
+            isChecked = textShadowEnabled
+            setOnCheckedChangeListener { _, checked ->
+                if (loadingTextLayerControls) return@setOnCheckedChangeListener
+                recordProjectEdit()
+                textShadowEnabled = checked
+                selectedTextLayer()?.shadowEnabled = checked
+                textShadowBlurSeek.isEnabled = checked
+                textShadowColorGroup.childrenEnabled(checked)
+                updatePreviewTextOverlay()
+            }
+        }
+        effects.addView(textShadowCheck, matchWrap())
+        textShadowBlurLabel = label("Gölge yumuşaklığı: 2", 11f, Color.WHITE, true)
+        effects.addView(textShadowBlurLabel)
+        textShadowBlurSeek = SeekBar(this).apply {
+            max = 16; progress = 2; contentDescription = "Metin gölgesi yumuşaklığı"
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                    if (!fromUser || loadingTextLayerControls) return
+                    textShadowBlurDp = progress.coerceIn(0, 16)
+                    textShadowBlurLabel.text = "Gölge yumuşaklığı: $textShadowBlurDp"
+                    selectedTextLayer()?.shadowBlurDp = textShadowBlurDp
+                    updatePreviewTextOverlay()
+                }
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                    if (!loadingTextLayerControls) activeProjectHistorySnapshot = beginProjectHistoryGesture()
+                }
+                override fun onStopTrackingTouch(seekBar: SeekBar?) { finishProjectHistoryGesture() }
+            })
+        }
+        effects.addView(textShadowBlurSeek, matchWrap())
+        textShadowColorGroup = android.widget.RadioGroup(this).apply {
+            orientation = android.widget.RadioGroup.HORIZONTAL
+            textEffectColors.forEachIndexed { index, (name, color) ->
+                addView(android.widget.RadioButton(this@VideoEditorActivity).apply {
+                    id = 71 + index; text = name; textSize = 10f; setTextColor(color)
+                    buttonTintList = android.content.res.ColorStateList.valueOf(color)
+                })
+            }
+            check(71)
+            setOnCheckedChangeListener { _, checkedId ->
+                if (loadingTextLayerControls || checkedId !in 71..75) return@setOnCheckedChangeListener
+                recordProjectEdit()
+                textShadowColor = textEffectColors[checkedId - 71].second
+                selectedTextLayer()?.shadowColor = textShadowColor
+                updatePreviewTextOverlay()
+            }
+        }
+        effects.addView(textShadowColorGroup, matchWrap())
+        textShadowOffsetXLabel = label("Gölge yatay kayması: +1", 11f, Color.WHITE, true)
+        effects.addView(textShadowOffsetXLabel)
+        textShadowOffsetXSeek = SeekBar(this).apply {
+            max = 32
+            progress = (textShadowOffsetXDp + 16).coerceIn(0, 32)
+            contentDescription = "Metin gölgesi yatay kayması"
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                    if (!fromUser || loadingTextLayerControls) return
+                    textShadowOffsetXDp = (progress - 16).coerceIn(-16, 16)
+                    val value = textShadowOffsetXDp
+                    val shown = if (value > 0) "+$value" else value.toString()
+                    textShadowOffsetXLabel.text = "Gölge yatay kayması: $shown"
+                    selectedTextLayer()?.shadowOffsetXDp = value
+                    updatePreviewTextOverlay()
+                }
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                    if (!loadingTextLayerControls) activeProjectHistorySnapshot = beginProjectHistoryGesture()
+                }
+                override fun onStopTrackingTouch(seekBar: SeekBar?) { finishProjectHistoryGesture() }
+            })
+        }
+        effects.addView(textShadowOffsetXSeek, matchWrap())
+
+        textShadowOffsetYLabel = label("Gölge dikey kayması: +1", 11f, Color.WHITE, true)
+        effects.addView(textShadowOffsetYLabel)
+        textShadowOffsetYSeek = SeekBar(this).apply {
+            max = 32
+            progress = (textShadowOffsetYDp + 16).coerceIn(0, 32)
+            contentDescription = "Metin gölgesi dikey kayması"
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                    if (!fromUser || loadingTextLayerControls) return
+                    textShadowOffsetYDp = (progress - 16).coerceIn(-16, 16)
+                    val value = textShadowOffsetYDp
+                    val shown = if (value > 0) "+$value" else value.toString()
+                    textShadowOffsetYLabel.text = "Gölge dikey kayması: $shown"
+                    selectedTextLayer()?.shadowOffsetYDp = value
+                    updatePreviewTextOverlay()
+                }
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                    if (!loadingTextLayerControls) activeProjectHistorySnapshot = beginProjectHistoryGesture()
+                }
+                override fun onStopTrackingTouch(seekBar: SeekBar?) { finishProjectHistoryGesture() }
+            })
+        }
+        effects.addView(textShadowOffsetYSeek, matchWrap())
+
+        textShadowBlurSeek.isEnabled = textShadowEnabled
+        textShadowOffsetXSeek.isEnabled = textShadowEnabled
+        textShadowOffsetYSeek.isEnabled = textShadowEnabled
+        textShadowColorGroup.childrenEnabled(textShadowEnabled)
+
+        textOpacityLabel = label("Opaklık: 100%", 12f, Color.WHITE, true)
+        effects.addView(textOpacityLabel)
+        textOpacitySeek = SeekBar(this).apply {
+            max = 100
+            progress = 100
+            contentDescription = "Metin opaklığı"
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                    if (!fromUser || loadingTextLayerControls) return
+                    textOpacityPercent = progress.coerceIn(0, 100)
+                    textOpacityLabel.text = "Opaklık: $textOpacityPercent%"
+                    selectedTextLayer()?.opacityPercent = textOpacityPercent
+                    updatePreviewTextOverlay()
+                }
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                    if (!loadingTextLayerControls) activeProjectHistorySnapshot = beginProjectHistoryGesture()
+                }
+                override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                    finishProjectHistoryGesture()
+                }
+            })
+        }
+        effects.addView(textOpacitySeek, matchWrap())
 
         val animations = tabPanels.getValue("Animasyonlar")
         animations.addView(label("Giriş / çıkış animasyonu", 11f, Color.rgb(154, 171, 190), false))
@@ -2573,6 +2938,12 @@ class VideoEditorActivity : Activity() {
             topBar = topBar,
             rulerAwareTimelineRefresh = { refreshTimelineTracks() }
         )
+        root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            if (activeEditorPanel == "text") fitTextCategoryFrameToVisiblePanel()
+        }
+        editorPanelScroll.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            if (activeEditorPanel == "text") fitTextCategoryFrameToVisiblePanel()
+        }
         previewFrame.post { logEditorPanelGeometry("closed-initial") }
     }
 
@@ -2782,7 +3153,7 @@ class VideoEditorActivity : Activity() {
                     if (panelParams != null) {
                         val basePanelHeight = when {
                             activeEditorPanel == "clipVolume" -> if (imeVisible) 112 else 150
-                            activeEditorPanel == "text" && imeVisible -> 68
+                            activeEditorPanel == "text" -> if (imeVisible) 68 else 320
                             else -> if (imeVisible) 124 else 196
                         }
                         val stickyHeaderHeight = if (!imeVisible && activeEditorPanel != null &&
@@ -3319,6 +3690,40 @@ class VideoEditorActivity : Activity() {
         logEditorPanelGeometry("closed")
     }
 
+    /**
+     * The text composer keeps its input and category tabs fixed while the active
+     * category scrolls. Size that scrolling viewport to the part of the workspace
+     * that is actually on-screen; a fixed 190dp frame can extend below the parent
+     * panel on compact devices, leaving the last controls permanently clipped.
+     */
+    private fun fitTextCategoryFrameToVisiblePanel() {
+        if (!::textCategoryFrame.isInitialized || !::editorPanelScroll.isInitialized) return
+        textCategoryFrame.post {
+            if (activeEditorPanel != "text" || textCategoryFrame.parent == null ||
+                editorPanelScroll.visibility != View.VISIBLE ||
+                editorPanelScroll.height <= 0 || textCategoryFrame.height <= 0
+            ) return@post
+
+            val panelLocation = IntArray(2)
+            val frameLocation = IntArray(2)
+            editorPanelScroll.getLocationOnScreen(panelLocation)
+            textCategoryFrame.getLocationOnScreen(frameLocation)
+            // The active detail panel is the true clipping viewport. The full
+            // workspace extends below it (sticky back action / bottom dock), so
+            // using the root's bottom would leave the inner scroll too tall.
+            val visibleBottom = panelLocation[1] + editorPanelScroll.height - editorPanelScroll.paddingBottom
+            val availableHeight = (visibleBottom - frameLocation[1] - dp(8)).coerceAtLeast(dp(1))
+            val desiredHeight = minOf(dp(190), availableHeight)
+            val params = textCategoryFrame.layoutParams as? LinearLayout.LayoutParams
+                ?: return@post
+            if (params.height != desiredHeight) {
+                params.height = desiredHeight
+                textCategoryFrame.layoutParams = params
+                textCategoryFrame.requestLayout()
+            }
+        }
+    }
+
     private fun showEditorPanel(name: String) {
         if (activeEditorPanel != name) finishTextHistoryEdit()
         // Capture the real pre-panel geometry before panel mode changes timeline
@@ -3332,6 +3737,10 @@ class VideoEditorActivity : Activity() {
         // is open. Closing the sheet returns to the same track tools; it must not
         // silently replace them with the global editor tabs.
         activeEditorPanel = name
+        // CapCut does not require an extra "preview text edit" switch. Selecting
+        // text and opening its composer keeps the canvas manipulation surface live.
+        textOverlayEditingEnabled = name == "text"
+        updateTextOverlayEditToggle()
         applyPreviewStageSizing()
         setTimelinePanelMode(panelOpen = true)
         // Detail controls replace the global dock while the project preview
@@ -3358,7 +3767,7 @@ class VideoEditorActivity : Activity() {
                     // Keep a usable project preview visible while text controls
                     // remain in this scrollable detail panel.
                     // Room for the composer tabs without resizing the project preview canvas.
-                    "text" -> if (keyboardLayoutActive) 226 else 242
+                    "text" -> if (keyboardLayoutActive) 238 else 320
                     else -> if (keyboardLayoutActive) 124 else 196
                 }
                 val stickyHeaderHeight = 40
@@ -3409,6 +3818,7 @@ class VideoEditorActivity : Activity() {
             }
             button.setTextColor(if (selected) Color.rgb(86, 231, 200) else Color.rgb(205, 216, 228))
         }
+        if (name == "text") fitTextCategoryFrameToVisiblePanel()
         if (name == "export") status.text = "Projeyi kaydedebilir veya MP4 olarak dışa aktarabilirsin."
     }
 
@@ -4035,7 +4445,16 @@ class VideoEditorActivity : Activity() {
                             true
                         }
                         MotionEvent.ACTION_UP -> {
-                            val delta = TimelineScaleMath.millisecondsForPixels(event.rawX - downX, timelinePixelsPerSecond())
+                            val finalPointerDeltaPx = event.rawX - downX
+                            if (!moved &&
+                                kotlin.math.abs(finalPointerDeltaPx) >
+                                android.view.ViewConfiguration.get(this).scaledTouchSlop
+                            ) {
+                                moved = true
+                            }
+                            val delta = TimelineScaleMath.millisecondsForPixels(
+                                finalPointerDeltaPx, timelinePixelsPerSecond()
+                            )
                             view.translationX = 0f
                             view.parent?.requestDisallowInterceptTouchEvent(false)
                             callback(if (moved) delta else 0L)
@@ -4057,22 +4476,15 @@ class VideoEditorActivity : Activity() {
                     edge,
                     timelineEdgeHandleLayoutParams(edgeWidth, width, isStart)
                 )
+                applyTimelineGestureExclusion(edge)
                 edge.post {
-                    // The trailing trim handle can sit against the physical right
-                    // edge of the display when the clip end is scrolled into view.
-                    // Android's gesture-navigation back edge otherwise steals a
-                    // leftward drag before it reaches this view. Exclude only this
-                    // narrow interactive handle from system gestures; keep the
-                    // rest of the editor available to normal system navigation.
-                    if (!isStart && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                        edge.systemGestureExclusionRects = listOf(
-                            android.graphics.Rect(0, 0, edge.width, edge.height)
-                        )
-                    }
                     if (timelineSyncTestEnabled) {
+                        val hasGestureExclusion =
+                            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+                                edge.systemGestureExclusionRects.isNotEmpty()
                         android.util.Log.i(
                             "EditorTouchTest",
-                            "OVERLAY_EDGE_TARGET edge=${if (isStart) "start" else "end"} width=${edge.width} left=${edge.left} right=${edge.right} parentWidth=${frame.width} shown=${edge.isShown} accessibility=${edge.importantForAccessibility} gestureExclusion=${!isStart && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q}"
+                            "OVERLAY_EDGE_TARGET edge=${if (isStart) "start" else "end"} width=${edge.width} left=${edge.left} right=${edge.right} parentWidth=${frame.width} shown=${edge.isShown} accessibility=${edge.importantForAccessibility} gestureExclusion=$hasGestureExclusion"
                         )
                     }
                 }
@@ -4238,6 +4650,7 @@ class VideoEditorActivity : Activity() {
                     contentDescription = if (isStart) "Yazı başlangıcını sürükle" else "Yazı bitişini sürükle"
                     isClickable = true
                     isFocusable = true
+                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
                     addView(View(this@VideoEditorActivity).apply {
                         background = android.graphics.drawable.GradientDrawable().apply {
                             setColor(Color.rgb(0, 164, 146))
@@ -4281,10 +4694,19 @@ class VideoEditorActivity : Activity() {
                             true
                         }
                         android.view.MotionEvent.ACTION_UP -> {
-                            val deltaPx = event.rawX - downRawX
+                            val finalPointerDeltaPx = event.rawX - downRawX
+                            if (!moved &&
+                                kotlin.math.abs(finalPointerDeltaPx) >
+                                android.view.ViewConfiguration.get(this).scaledTouchSlop
+                            ) {
+                                moved = true
+                            }
+                            val deltaPx = finalPointerDeltaPx
                             view.translationX = 0f
                             view.parent?.requestDisallowInterceptTouchEvent(false)
                             if (moved) {
+                                val beforeStartMs = initialStartMs
+                                val beforeEndMs = initialEndMs
                                 val deltaMs = TimelineScaleMath.millisecondsForPixels(
                                     deltaPx, timelinePixelsPerSecond()
                                 )
@@ -4300,6 +4722,15 @@ class VideoEditorActivity : Activity() {
                                     )
                                 }
                                 layer.timingCustomized = true
+                                if (timelineSyncTestEnabled) {
+                                    android.util.Log.i(
+                                        "EditorTouchTest",
+                                        "TEXT_EDGE_TRIM edge=${if (isStart) "start" else "end"} " +
+                                            "beforeStartMs=$beforeStartMs beforeEndMs=$beforeEndMs " +
+                                            "afterStartMs=${layer.startMs} afterEndMs=${layer.endMs} " +
+                                            "deltaPx=$deltaPx"
+                                    )
+                                }
                                 selectedTextLayerId = layer.id
                                 loadTextLayerIntoControls(layer)
                                 finishProjectHistoryGesture()
@@ -4330,7 +4761,7 @@ class VideoEditorActivity : Activity() {
                     handle,
                     timelineEdgeHandleLayoutParams(handleWidth, blockWidth, isStart)
                 )
-                applyTrailingTimelineGestureExclusion(handle, isStart)
+                applyTimelineGestureExclusion(handle)
             }
 
             addTextTrimHandle(isStart = true)
@@ -5334,6 +5765,7 @@ class VideoEditorActivity : Activity() {
                 contentDescription = if (isStart) "Müzik başlangıç tutamacı" else "Müzik bitiş tutamacı"
                 isClickable = true
                 isFocusable = true
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
                 addView(View(this@VideoEditorActivity).apply {
                     background = android.graphics.drawable.GradientDrawable().apply {
                         setColor(Color.rgb(27, 91, 57))
@@ -5379,7 +5811,14 @@ class VideoEditorActivity : Activity() {
                         true
                     }
                     android.view.MotionEvent.ACTION_UP -> {
-                        val deltaPx = event.rawX - downRawX
+                        val finalPointerDeltaPx = event.rawX - downRawX
+                        if (!moved &&
+                            kotlin.math.abs(finalPointerDeltaPx) >
+                            android.view.ViewConfiguration.get(this).scaledTouchSlop
+                        ) {
+                            moved = true
+                        }
+                        val deltaPx = finalPointerDeltaPx
                         val deltaMs = TimelineScaleMath.millisecondsForPixels(deltaPx, pixelsPerSecond)
                         view.translationX = 0f
                         view.parent?.requestDisallowInterceptTouchEvent(false)
@@ -5409,7 +5848,7 @@ class VideoEditorActivity : Activity() {
                         true
                     }
                     android.view.MotionEvent.ACTION_CANCEL -> {
-                        finishProjectHistoryGesture()
+                        activeProjectHistorySnapshot = null
                         view.translationX = 0f
                         view.parent?.requestDisallowInterceptTouchEvent(false)
                         true
@@ -5421,7 +5860,7 @@ class VideoEditorActivity : Activity() {
                 handle,
                 timelineEdgeHandleLayoutParams(handleWidth, blockWidth, isStart)
             )
-            applyTrailingTimelineGestureExclusion(handle, isStart)
+            applyTimelineGestureExclusion(handle)
         }
 
         addMusicTrimHandle(isStart = true)
@@ -5591,6 +6030,7 @@ class VideoEditorActivity : Activity() {
                 contentDescription = if (isStart) "Efekt başlangıç tutamacı" else "Efekt bitiş tutamacı"
                 isClickable = true
                 isFocusable = true
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
                 addView(View(this@VideoEditorActivity).apply {
                     background = android.graphics.drawable.GradientDrawable().apply {
                         setColor(Color.rgb(116, 65, 25))
@@ -5640,7 +6080,14 @@ class VideoEditorActivity : Activity() {
                         true
                     }
                     android.view.MotionEvent.ACTION_UP -> {
-                        val deltaPx = event.rawX - downRawX
+                        val finalPointerDeltaPx = event.rawX - downRawX
+                        if (!moved &&
+                            kotlin.math.abs(finalPointerDeltaPx) >
+                            android.view.ViewConfiguration.get(this).scaledTouchSlop
+                        ) {
+                            moved = true
+                        }
+                        val deltaPx = finalPointerDeltaPx
                         val deltaMs = TimelineScaleMath.millisecondsForPixels(deltaPx, pixelsPerSecond)
                         view.translationX = 0f
                         view.parent?.requestDisallowInterceptTouchEvent(false)
@@ -5675,7 +6122,7 @@ class VideoEditorActivity : Activity() {
                         true
                     }
                     android.view.MotionEvent.ACTION_CANCEL -> {
-                        finishProjectHistoryGesture()
+                        activeProjectHistorySnapshot = null
                         view.translationX = 0f
                         view.parent?.requestDisallowInterceptTouchEvent(false)
                         true
@@ -5687,7 +6134,7 @@ class VideoEditorActivity : Activity() {
                 handle,
                 timelineEdgeHandleLayoutParams(handleWidth, blockWidth, isStart)
             )
-            applyTrailingTimelineGestureExclusion(handle, isStart)
+            applyTimelineGestureExclusion(handle)
         }
 
         addTrimHandle(isStart = true)
@@ -6896,11 +7343,18 @@ class VideoEditorActivity : Activity() {
         }
     }
 
-    /** Shared touch width for timeline trim targets. Even short clips need a usable touch area. */
-    private fun timelineEdgeTouchWidth(blockWidth: Int): Int = minOf(
-        dp(TouchPriority.TIMELINE_EDGE_TARGET_DP),
-        maxOf(dp(48), (blockWidth / 2).coerceAtLeast(1))
-    )
+    /**
+     * Shared touch width for every timeline trim target.
+     *
+     * Keep the hit area at least 40dp even when a short audio/text clip is
+     * narrower than that. The visual grip remains unchanged; only its
+     * transparent touch target grows around the clip boundary.
+     */
+    private fun timelineEdgeTouchWidth(blockWidth: Int): Int =
+        TimelineEdgeHandleMath.targetWidthPx(
+            blockWidthPx = blockWidth,
+            maxTargetPx = maxOf(dp(40), dp(TouchPriority.TIMELINE_EDGE_TARGET_DP))
+        )
 
     /**
      * Centre each edge hit target on the clip boundary. Half of the target may
@@ -6919,13 +7373,23 @@ class VideoEditorActivity : Activity() {
         leftMargin = if (isStart) -edgeWidth / 2 else blockWidth - edgeWidth / 2
     }
 
-    /** Keep leftward drags on a trailing trim handle out of Android's back gesture. */
-    private fun applyTrailingTimelineGestureExclusion(handle: View, isStart: Boolean) {
-        if (isStart || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+    /** Protect both timeline trim edges from Android back gestures on gesture-navigation devices. */
+    private fun applyTimelineGestureExclusion(handle: View) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
         handle.post {
             if (handle.width > 0 && handle.height > 0) {
                 handle.systemGestureExclusionRects = listOf(
                     android.graphics.Rect(0, 0, handle.width, handle.height)
+                )
+            }
+            if (timelineSyncTestEnabled) {
+                val hasGestureExclusion = handle.systemGestureExclusionRects.isNotEmpty()
+                android.util.Log.i(
+                    "EditorTouchTest",
+                    "TIMELINE_EDGE_GESTURE_EXCLUSION description=${handle.contentDescription} " +
+                        "width=${handle.width} height=${handle.height} " +
+                        "accessibility=${handle.importantForAccessibility} " +
+                        "gestureExclusion=$hasGestureExclusion"
                 )
             }
         }
@@ -7317,6 +7781,19 @@ class VideoEditorActivity : Activity() {
         }
     }
 
+    /** A canceled preview gesture must restore its pre-gesture model, not commit a partial transform. */
+    private fun cancelProjectHistoryGesture() {
+        val before = activeProjectHistorySnapshot ?: return
+        activeProjectHistorySnapshot = null
+        if (timelineSyncTestEnabled) {
+            android.util.Log.i(
+                "ProjectHistoryTest",
+                "PROJECT_HISTORY_GESTURE_CANCELLED restoringSnapshot=true"
+            )
+        }
+        restoreProjectEditSnapshot(before)
+    }
+
     private fun beginTextHistoryEdit() {
         if (activeTextHistorySnapshot == null) {
             activeTextHistorySnapshot = captureProjectEditSnapshot()
@@ -7329,6 +7806,19 @@ class VideoEditorActivity : Activity() {
         if (hasProjectContentChanged(before, captureProjectEditSnapshot())) {
             pushProjectUndoSnapshot(before)
         }
+    }
+
+    /** Discard a canceled text drag/pinch and restore the exact selection/model snapshot. */
+    private fun cancelTextHistoryEdit() {
+        val before = activeTextHistorySnapshot ?: return
+        activeTextHistorySnapshot = null
+        if (timelineSyncTestEnabled) {
+            android.util.Log.i(
+                "ProjectHistoryTest",
+                "TEXT_GESTURE_CANCELLED restoringSnapshot=true"
+            )
+        }
+        restoreProjectEditSnapshot(before)
     }
 
     private fun clearProjectHistory() {
@@ -7637,6 +8127,15 @@ class VideoEditorActivity : Activity() {
         layer.animationDurationMs = textAnimationDurationMs.coerceIn(100L, 1_500L)
         layer.fontPreset = textFontPreset
         layer.backgroundEnabled = textBackgroundEnabled
+        layer.opacityPercent = textOpacityPercent.coerceIn(0, 100)
+        layer.outlineEnabled = textOutlineEnabled
+        layer.outlineColor = textOutlineColor
+        layer.outlineWidthDp = textOutlineWidthDp.coerceIn(0, 8)
+        layer.shadowEnabled = textShadowEnabled
+        layer.shadowColor = textShadowColor
+        layer.shadowBlurDp = textShadowBlurDp.coerceIn(0, 16)
+        layer.shadowOffsetXDp = textShadowOffsetXDp.coerceIn(-16, 16)
+        layer.shadowOffsetYDp = textShadowOffsetYDp.coerceIn(-16, 16)
     }
 
     private fun refreshTextLayerList() {
@@ -7787,8 +8286,15 @@ class VideoEditorActivity : Activity() {
         }
         recordProjectEdit()
         val copy = source.copy(id = nextTextLayerId++, text = source.text)
+        val beforeCount = textLayers.size
         textLayers.add(textLayers.indexOf(source) + 1, copy)
         selectedTextLayerId = copy.id
+        if (timelineSyncTestEnabled) {
+            android.util.Log.i(
+                "EditorTouchTest",
+                "TEXT_GRIP_ACTION action=duplicate beforeCount=$beforeCount afterCount=${textLayers.size} selectedId=${copy.id}"
+            )
+        }
         loadTextLayerIntoControls(copy)
         refreshTextLayerList()
         updatePreviewTextOverlay()
@@ -7804,7 +8310,14 @@ class VideoEditorActivity : Activity() {
             return
         }
         recordProjectEdit()
+        val beforeCount = textLayers.size
         textLayers.removeAt(index)
+        if (timelineSyncTestEnabled) {
+            android.util.Log.i(
+                "EditorTouchTest",
+                "TEXT_GRIP_ACTION action=delete beforeCount=$beforeCount afterCount=${textLayers.size}"
+            )
+        }
         val next = textLayers.getOrNull(index.coerceAtMost(textLayers.lastIndex))
         selectedTextLayerId = next?.id
         loadTextLayerIntoControls(next)
@@ -7949,6 +8462,15 @@ class VideoEditorActivity : Activity() {
             textAnimationDurationMs = layer?.animationDurationMs?.coerceIn(100L, 1_500L) ?: 350L
             textFontPreset = layer?.fontPreset ?: TextFontPreset.SYSTEM
             textBackgroundEnabled = layer?.backgroundEnabled ?: false
+            textOpacityPercent = layer?.opacityPercent?.coerceIn(0, 100) ?: 100
+            textOutlineEnabled = layer?.outlineEnabled ?: false
+            textOutlineColor = layer?.outlineColor ?: Color.BLACK
+            textOutlineWidthDp = layer?.outlineWidthDp?.coerceIn(0, 8) ?: 2
+            textShadowEnabled = layer?.shadowEnabled ?: true
+            textShadowColor = layer?.shadowColor ?: Color.BLACK
+            textShadowBlurDp = layer?.shadowBlurDp?.coerceIn(0, 16) ?: 2
+            textShadowOffsetXDp = layer?.shadowOffsetXDp?.coerceIn(-16, 16) ?: 1
+            textShadowOffsetYDp = layer?.shadowOffsetYDp?.coerceIn(-16, 16) ?: 1
             // Discard any stale composing span before reflecting a restored
             // project value in the editor. The project model remains authoritative.
             textInput.clearComposingText()
@@ -7965,6 +8487,26 @@ class VideoEditorActivity : Activity() {
             textBoldCheck.isChecked = textBold
             textFontGroup.check(51 + TextFontPreset.values().indexOf(textFontPreset).coerceAtLeast(0))
             textBackgroundCheck.isChecked = textBackgroundEnabled
+            textOpacitySeek.progress = textOpacityPercent
+            textOpacityLabel.text = "Opaklık: $textOpacityPercent%"
+            textOutlineCheck.isChecked = textOutlineEnabled
+            textOutlineWidthSeek.progress = textOutlineWidthDp
+            textOutlineWidthLabel.text = "Kontur kalınlığı: $textOutlineWidthDp"
+            textOutlineColorGroup.check(61 + textEffectColors.indexOfFirst { it.second == textOutlineColor }.coerceAtLeast(0))
+            textOutlineWidthSeek.isEnabled = textOutlineEnabled
+            textOutlineColorGroup.childrenEnabled(textOutlineEnabled)
+            textShadowCheck.isChecked = textShadowEnabled
+            textShadowBlurSeek.progress = textShadowBlurDp
+            textShadowBlurLabel.text = "Gölge yumuşaklığı: $textShadowBlurDp"
+            textShadowOffsetXSeek.progress = textShadowOffsetXDp + 16
+            textShadowOffsetYSeek.progress = textShadowOffsetYDp + 16
+            textShadowOffsetXLabel.text = "Gölge yatay kayması: ${if (textShadowOffsetXDp > 0) "+$textShadowOffsetXDp" else textShadowOffsetXDp.toString()}"
+            textShadowOffsetYLabel.text = "Gölge dikey kayması: ${if (textShadowOffsetYDp > 0) "+$textShadowOffsetYDp" else textShadowOffsetYDp.toString()}"
+            textShadowColorGroup.check(71 + textEffectColors.indexOfFirst { it.second == textShadowColor }.coerceAtLeast(0))
+            textShadowBlurSeek.isEnabled = textShadowEnabled
+            textShadowOffsetXSeek.isEnabled = textShadowEnabled
+            textShadowOffsetYSeek.isEnabled = textShadowEnabled
+            textShadowColorGroup.childrenEnabled(textShadowEnabled)
             textAnimationGroup.check(
                 31 + TextAnimationPreset.values().indexOf(textAnimationPreset).coerceAtLeast(0)
             )
@@ -8060,7 +8602,8 @@ class VideoEditorActivity : Activity() {
                 layer.endMs - timelinePlayheadMs,
                 layer.animationDurationMs
             )
-            if (overlay.alpha != animationState.alpha) overlay.alpha = animationState.alpha
+            val combinedAlpha = animationState.alpha * (layer.opacityPercent.coerceIn(0, 100) / 100f)
+            if (overlay.alpha != combinedAlpha) overlay.alpha = combinedAlpha
             if (overlay.scaleX != animationState.scale) overlay.scaleX = animationState.scale
             if (overlay.scaleY != animationState.scale) overlay.scaleY = animationState.scale
             val desiredRotation = PreviewCanvasMath.normalizeRotationDegrees(layer.rotationDegrees)
@@ -8070,7 +8613,6 @@ class VideoEditorActivity : Activity() {
                     overlay.paddingRight != 0 || overlay.paddingBottom != 0
                 ) overlay.setPadding(0, 0, 0, 0)
                 if (overlay.background != null) overlay.background = null
-                overlay.setShadowLayer(4f, 0f, 2f, Color.BLACK)
             } else {
                 if (layer.backgroundEnabled) {
                     val hInset = dp((10f * previewScale).toInt().coerceAtLeast(1))
@@ -8087,7 +8629,24 @@ class VideoEditorActivity : Activity() {
                     if (overlay.paddingLeft != 0 || overlay.paddingTop != 0 || overlay.paddingRight != 0 || overlay.paddingBottom != 0) overlay.setPadding(0, 0, 0, 0)
                     if (overlay.background != null) overlay.background = null
                 }
-                overlay.setShadowLayer(2f * previewScale, previewScale, previewScale, Color.BLACK)
+            }
+            // Match the export compositor: opacity applies to the complete
+            // text layer, including its fill, outline, shadow and background.
+            val previewOpacity = layer.opacityPercent.coerceIn(0, 100) / 100f
+            if (overlay.alpha != previewOpacity) overlay.alpha = previewOpacity
+            (overlay as? StyledPreviewTextView)?.apply {
+                outlineEnabled = layer.kind != TextLayerKind.STICKER && layer.outlineEnabled
+                outlineStrokeColor = layer.outlineColor
+                outlineWidthPx = layer.outlineWidthDp * resources.displayMetrics.density * previewScale
+                shadowEnabled = layer.shadowEnabled
+                dropShadowColor = layer.shadowColor
+                shadowBlurPx = (if (layer.kind == TextLayerKind.STICKER) 4f else layer.shadowBlurDp.toFloat()) *
+                    resources.displayMetrics.density * previewScale
+                shadowOffsetXPx = (if (layer.kind == TextLayerKind.STICKER) 0f else layer.shadowOffsetXDp.toFloat()) *
+                    resources.displayMetrics.density * previewScale
+                shadowOffsetYPx = (if (layer.kind == TextLayerKind.STICKER) 2f else layer.shadowOffsetYDp.toFloat()) *
+                    resources.displayMetrics.density * previewScale
+                invalidate()
             }
             if (overlay.visibility != View.VISIBLE) overlay.visibility = View.VISIBLE
             val params = overlay.layoutParams as? FrameLayout.LayoutParams ?: return@forEachIndexed
@@ -8182,7 +8741,7 @@ class VideoEditorActivity : Activity() {
         applyPreviewTouchPriority()
     }
 
-    private fun createPreviewTextOverlayView(): TextView = TextView(this).apply {
+    private fun createPreviewTextOverlayView(): TextView = StyledPreviewTextView().apply {
         textSize = 24f
         gravity = Gravity.CENTER
         maxLines = 2
@@ -8192,7 +8751,6 @@ class VideoEditorActivity : Activity() {
         setTextColor(Color.WHITE)
         setTypeface(Typeface.DEFAULT, Typeface.BOLD)
         setPadding(0, 0, 0, 0)
-        setShadowLayer(2f, 1f, 1f, Color.BLACK)
         background = null
         visibility = View.GONE
         isClickable = true
@@ -8376,7 +8934,7 @@ class VideoEditorActivity : Activity() {
                 }
                 android.view.MotionEvent.ACTION_CANCEL -> {
                     view.parent?.requestDisallowInterceptTouchEvent(false)
-                    finishTextHistoryEdit()
+                    cancelTextHistoryEdit()
                     startDistance = 0f
                     true
                 }
@@ -8768,6 +9326,15 @@ class VideoEditorActivity : Activity() {
                 put("isBold", layer.isBold)
                 put("fontPreset", layer.fontPreset.name)
                 put("backgroundEnabled", layer.backgroundEnabled)
+                put("opacityPercent", layer.opacityPercent.coerceIn(0, 100))
+                put("outlineEnabled", layer.outlineEnabled)
+                put("outlineColor", layer.outlineColor)
+                put("outlineWidthDp", layer.outlineWidthDp.coerceIn(0, 8))
+                put("shadowEnabled", layer.shadowEnabled)
+                put("shadowColor", layer.shadowColor)
+                put("shadowBlurDp", layer.shadowBlurDp.coerceIn(0, 16))
+                put("shadowOffsetXDp", layer.shadowOffsetXDp)
+                put("shadowOffsetYDp", layer.shadowOffsetYDp)
                 put("kind", layer.kind.name)
                 put("animationPreset", layer.animationPreset.key)
                 put("animationDurationMs", layer.animationDurationMs)
@@ -9154,6 +9721,15 @@ class VideoEditorActivity : Activity() {
                     isBold = item.optBoolean("isBold", true),
                     fontPreset = runCatching { TextFontPreset.valueOf(item.optString("fontPreset", "SYSTEM")) }.getOrDefault(TextFontPreset.SYSTEM),
                     backgroundEnabled = item.optBoolean("backgroundEnabled", false),
+                    opacityPercent = item.optInt("opacityPercent", 100).coerceIn(0, 100),
+                    outlineEnabled = item.optBoolean("outlineEnabled", false),
+                    outlineColor = item.optInt("outlineColor", Color.BLACK),
+                    outlineWidthDp = item.optInt("outlineWidthDp", 2).coerceIn(0, 8),
+                    shadowEnabled = item.optBoolean("shadowEnabled", true),
+                    shadowColor = item.optInt("shadowColor", Color.BLACK),
+                    shadowBlurDp = item.optInt("shadowBlurDp", 2).coerceIn(0, 16),
+                    shadowOffsetXDp = item.optInt("shadowOffsetXDp", 1).coerceIn(-16, 16),
+                    shadowOffsetYDp = item.optInt("shadowOffsetYDp", 1).coerceIn(-16, 16),
                     kind = runCatching {
                         TextLayerKind.valueOf(item.optString("kind", "TEXT"))
                     }.getOrDefault(TextLayerKind.TEXT),
@@ -9800,20 +10376,34 @@ class VideoEditorActivity : Activity() {
                 }
                 android.view.MotionEvent.ACTION_UP,
                 android.view.MotionEvent.ACTION_CANCEL -> {
+                    val cancelled = event.actionMasked == android.view.MotionEvent.ACTION_CANCEL
                     val overlay = gestureOverlay
                     gestureOverlay = null
                     view.parent?.requestDisallowInterceptTouchEvent(false)
                     if (overlay != null) {
-                        finishProjectHistoryGesture()
-                        loadOverlayControls()
-                        refreshTimelineTracks()
-                        // The Media3 composition already owns this mutable OverlayClip.
-                        // Rebuilding it on ACTION_UP tears down the video surface and leaves
-                        // the paused canvas black until another playback prepare. Keep the
-                        // current graph alive and request its final frame at the playhead.
-                        refreshPausedOverlayCompositionFrame(force = true)
-                        requestPreviewFrameAt(timelinePlayheadMs)
-                        updateOverlayTransformTouchAvailability()
+                        if (cancelled) {
+                            // A canceled pointer sequence is not a completed edit.
+                            // Restore the playhead transform instead of saving the
+                            // partial movement emitted by the preceding MOVE events.
+                            cancelProjectHistoryGesture()
+                        } else {
+                            finishProjectHistoryGesture()
+                        }
+                        if (cancelled) {
+                            updateOverlayTransformTouchAvailability()
+                            refreshPausedOverlayCompositionFrame(force = true)
+                            requestPreviewFrameAt(timelinePlayheadMs)
+                        } else {
+                            loadOverlayControls()
+                            refreshTimelineTracks()
+                            // The Media3 composition already owns this mutable OverlayClip.
+                            // Rebuilding it on ACTION_UP tears down the video surface and leaves
+                            // the paused canvas black until another playback prepare. Keep the
+                            // current graph alive and request its final frame at the playhead.
+                            refreshPausedOverlayCompositionFrame(force = true)
+                            requestPreviewFrameAt(timelinePlayheadMs)
+                            updateOverlayTransformTouchAvailability()
+                        }
                     }
                     true
                 }
@@ -10680,33 +11270,6 @@ class VideoEditorActivity : Activity() {
                         dp(4).toFloat(),
                         borderPaint
                     )
-                    // CapCut-style trim grips are painted into the same selection
-                    // frame. Their transparent hit areas below only handle gestures.
-                    val gripWidth = dp(6).toFloat()
-                    val gripHeight = dp(28).toFloat().coerceAtMost(outline.height())
-                    val gripRadius = gripWidth / 2f
-                    val gripTop = outline.centerY() - gripHeight / 2f
-                    val gripsPaint = android.graphics.Paint(
-                        android.graphics.Paint.ANTI_ALIAS_FLAG
-                    ).apply { color = Color.WHITE }
-                    canvas.drawRoundRect(
-                        android.graphics.RectF(
-                            outline.left,
-                            gripTop,
-                            outline.left + gripWidth,
-                            gripTop + gripHeight
-                        ),
-                        gripRadius, gripRadius, gripsPaint
-                    )
-                    canvas.drawRoundRect(
-                        android.graphics.RectF(
-                            outline.right - gripWidth,
-                            gripTop,
-                            outline.right,
-                            gripTop + gripHeight
-                        ),
-                        gripRadius, gripRadius, gripsPaint
-                    )
                 }
 
                 override fun setAlpha(alpha: Int) {
@@ -10990,7 +11553,7 @@ class VideoEditorActivity : Activity() {
             // Otherwise short trimmed clips cannot be expanded back toward the source boundaries.
             // Keep a clear central drag area even on very short split fragments.
             // Each transparent edge target takes at most one third of the clip width.
-            val handleWidth = minOf(dp(40), (width / 3).coerceAtLeast(1))
+            val handleWidth = timelineEdgeTouchWidth(width)
             fun allowedDeltaPx(startMs:Long,endMs:Long):Pair<Float,Float>{
                 // Handle travel is measured on the project timeline, while clip in/out
                 // values remain source timestamps. Convert source bounds through speed
@@ -11020,6 +11583,22 @@ class VideoEditorActivity : Activity() {
                 setBackgroundColor(Color.TRANSPARENT)
                 elevation = dp(TouchPriority.TIMELINE_EDGE_HANDLE_DP).toFloat()
                 contentDescription = if (isStart) "Sol beyaz tutamaç: klibin başlangıcını sürükleyerek kısalt veya uzat" else "Sağ beyaz tutamaç: klibin bitişini sürükleyerek kısalt veya uzat"
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+                // The visible white pill belongs to the moving hit target. It follows
+                // the finger during trim instead of leaving a stationary marker behind.
+                addView(View(this@VideoEditorActivity).apply {
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        setColor(Color.WHITE)
+                        cornerRadius = dp(4).toFloat()
+                    }
+                    isClickable = false
+                    isFocusable = false
+                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                }, FrameLayout.LayoutParams(
+                    dp(6),
+                    dp(28).coerceAtMost(height.coerceAtLeast(1)),
+                    Gravity.CENTER_VERTICAL or (if (isStart) Gravity.LEFT else Gravity.RIGHT)
+                ))
                 // Explicitly keep this transparent child as the touch owner. The
                 // clip body and horizontal scroller must not steal an edge drag.
                 isClickable = true
@@ -11151,6 +11730,22 @@ class VideoEditorActivity : Activity() {
                     if (isStart) Gravity.START else Gravity.END
                 )
             )
+            applyTimelineGestureExclusion(handle)
+            handle.post {
+                if (timelineSyncTestEnabled) {
+                    val hasGestureExclusion =
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+                            handle.systemGestureExclusionRects.isNotEmpty()
+                    android.util.Log.i(
+                        "EditorTouchTest",
+                        "VIDEO_EDGE_TARGET edge=${if (isStart) "start" else "end"} " +
+                            "width=${handle.width} left=${handle.left} right=${handle.right} " +
+                            "parentWidth=${container.width} shown=${handle.isShown} " +
+                            "accessibility=${handle.importantForAccessibility} " +
+                            "gestureExclusion=$hasGestureExclusion"
+                    )
+                }
+            }
         }
         addTrimHandle(isStart = true)
         addTrimHandle(isStart = false)
@@ -11704,6 +12299,47 @@ class VideoEditorActivity : Activity() {
             // bootstrap completion event; release thumbnails rather than leaving
             // them parked in the deferred deque until the next user interaction.
             return
+        }
+
+        // The filmstrip already owns decoded frames at exact source timestamps.
+        // Reuse an exact timestamp match for the paused preview instead of asking
+        // MediaMetadataRetriever to decode the same frame a second time. This is
+        // especially important on API 35, where a warmed MMR seek can still take
+        // close to a second even though the exact thumbnail is already in memory.
+        val exactThumbnailKey = "${clip.uri}#${sourceTimeMs}"
+        val exactThumbnail = timelineThumbnailCache.get(exactThumbnailKey)
+        if (exactThumbnail != null && !exactThumbnail.isRecycled) {
+            val requestedAtUptimeMs = SystemClock.uptimeMillis()
+            val requestId = showPreviewFramePending(keepPreviousFrame = true)
+            val cachedCopy = runCatching {
+                exactThumbnail.copy(Bitmap.Config.ARGB_8888, false)
+            }.getOrNull()
+            if (cachedCopy != null && !cachedCopy.isRecycled) {
+                val previous = previewFrameBitmap
+                previewFrameBitmap = cachedCopy
+                previewFrameCacheKey = exactFrameKey
+                previewDecoderBootstrapSources.add(sourceKey)
+                previewFrameOverlay.setImageBitmap(cachedCopy)
+                previewFrameOverlay.setBackgroundColor(Color.BLACK)
+                previewFrameOverlay.visibility = View.VISIBLE
+                if (previous != null && previous !== cachedCopy && !previous.isRecycled) previous.recycle()
+                applyPreviewFrameTransform(clip)
+                if (timelineSyncTestEnabled) {
+                    val totalMs = SystemClock.uptimeMillis() - requestedAtUptimeMs
+                    android.util.Log.i(
+                        "TimelineFrameSyncTest",
+                        "TIMELINE_PREVIEW_FRAME_READY projectMs=$safeProjectTimeMs sourceMs=$sourceTimeMs " +
+                            "width=${cachedCopy.width} height=${cachedCopy.height} requestId=$requestId " +
+                            "queueWaitMs=0 decodeMs=0 uiDispatchWaitMs=0 uiApplyMs=$totalMs totalMs=$totalMs " +
+                            "requestKind=$requestKind exactFilmstripCache=true"
+                    )
+                    if (keepPreviousFrame) android.util.Log.i(
+                        "TimelineFrameSyncTest",
+                        "TIMELINE_SCRUB_PREVIEW_FRAME_READY projectMs=$safeProjectTimeMs sourceMs=$sourceTimeMs"
+                    )
+                }
+                return
+            }
         }
 
         val requestedAtUptimeMs = SystemClock.uptimeMillis()
@@ -13374,14 +14010,27 @@ class VideoEditorActivity : Activity() {
             .build()
     }
 
-    private fun buildTimedTextOverlay(layer: TextLayer, samePositionIndex: Int): TextOverlay {
+    private fun android.widget.RadioGroup.childrenEnabled(enabled: Boolean) {
+        for (index in 0 until childCount) getChildAt(index).isEnabled = enabled
+    }
+
+    private fun buildTimedTextOverlay(layer: TextLayer, samePositionIndex: Int, outlinePass: Boolean = false): TextOverlay {
         val overlayText = layer.text
         val startMs = layer.startMs
         val endMs = layer.endMs
         val styled = SpannableString(overlayText).apply {
-            setSpan(ForegroundColorSpan(layer.colorPreset.colorInt), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            if (!outlinePass) {
+                setSpan(ForegroundColorSpan(layer.colorPreset.colorInt), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            } else {
+                setSpan(
+                    TextOutlineSpan(layer.outlineColor, layer.outlineWidthDp * resources.displayMetrics.density),
+                    0,
+                    length,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+            }
             setSpan(TypefaceSpan(layer.fontPreset.familyName), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            if (layer.kind != TextLayerKind.STICKER && layer.backgroundEnabled) {
+            if (!outlinePass && layer.kind != TextLayerKind.STICKER && layer.backgroundEnabled) {
                 setSpan(BackgroundColorSpan(Color.argb(190, 0, 0, 0)), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
             if (layer.isBold) {
@@ -13393,13 +14042,31 @@ class VideoEditorActivity : Activity() {
                 length,
                 Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
             )
+            if (!outlinePass && layer.shadowEnabled && layer.shadowBlurDp > 0) {
+                val density = resources.displayMetrics.density
+                setSpan(
+                    TextShadowSpan(
+                        layer.shadowColor,
+                        layer.shadowBlurDp * density,
+                        layer.shadowOffsetXDp * density,
+                        layer.shadowOffsetYDp * density
+                    ),
+                    0,
+                    length,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+            }
         }
         val x = PreviewCanvasMath.media3AnchorForFraction(layer.xFraction)
         val y = PreviewCanvasMath.media3AnchorForFraction(layer.yFraction, invertY = true)
+        val invisibleText = SpannableString("")
         return object : TextOverlay() {
             override fun getText(presentationTimeUs: Long): SpannableString {
                 val timeMs = presentationTimeUs / 1000L
-                return if (timeMs >= startMs && timeMs < endMs) SpannableString(styled) else SpannableString("")
+                // TextOverlay caches its bitmap by the returned text object. Reuse
+                // immutable styled/empty instances across frames instead of allocating
+                // identical SpannableStrings and rasterizing every video frame.
+                return if (timeMs >= startMs && timeMs < endMs) styled else invisibleText
             }
 
             override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings {
@@ -13411,7 +14078,7 @@ class VideoEditorActivity : Activity() {
                     layer.animationDurationMs
                 )
                 return StaticOverlaySettings.Builder()
-                    .setAlphaScale(animation.alpha)
+                    .setAlphaScale(animation.alpha * (layer.opacityPercent.coerceIn(0, 100) / 100f))
                     .setScale(animation.scale, animation.scale)
                     .setBackgroundFrameAnchor(
                         x + animation.offsetXFraction * 2f,
@@ -13570,10 +14237,15 @@ class VideoEditorActivity : Activity() {
         val exportTextLayers = textLayers.filter { it.text.isNotBlank() && it.endMs > it.startMs }
         if (exportTextLayers.isNotEmpty()) {
             val positionCounts = mutableMapOf<TextPosition, Int>()
-            val overlays = exportTextLayers.map { layer ->
+            val overlays = mutableListOf<androidx.media3.effect.TextureOverlay>()
+            exportTextLayers.forEach { layer ->
                 val samePositionIndex = positionCounts[layer.position] ?: 0
                 positionCounts[layer.position] = samePositionIndex + 1
-                buildTimedTextOverlay(layer, samePositionIndex)
+                // Draw the outline first; the filled glyph is composited above it.
+                if (layer.outlineEnabled && layer.outlineWidthDp > 0) {
+                    overlays.add(buildTimedTextOverlay(layer, samePositionIndex, outlinePass = true))
+                }
+                overlays.add(buildTimedTextOverlay(layer, samePositionIndex))
             }
             outputVideoEffects.add(OverlayEffect(overlays))
         }

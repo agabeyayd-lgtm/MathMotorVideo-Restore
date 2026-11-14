@@ -596,3 +596,55 @@ class TimelineVideoMathTest {
         )
     }
 }
+
+
+class TimelineEdgeHandleMathTest {
+    @Test
+    fun wideClipUsesTheConfiguredMaximumTouchTarget() {
+        assertEquals(144, TimelineEdgeHandleMath.targetWidthPx(600, 144))
+    }
+
+    @Test
+    fun shortAudioClipKeepsTheMeasuredMinimumTouchTarget() {
+        assertEquals(40, TimelineEdgeHandleMath.targetWidthPx(62, 144))
+    }
+
+    @Test
+    fun narrowClipUsesHalfItsWidthWhenThatExceedsTheMinimum() {
+        assertEquals(50, TimelineEdgeHandleMath.targetWidthPx(100, 144))
+    }
+
+    @Test
+    fun extremelyShortClipNeverCollapsesBelowTheMinimum() {
+        assertEquals(40, TimelineEdgeHandleMath.targetWidthPx(20, 144))
+    }
+
+    @Test
+    fun invalidBoundsNeverReturnAZeroWidthTarget() {
+        assertEquals(1, TimelineEdgeHandleMath.targetWidthPx(0, 0))
+        assertEquals(1, TimelineEdgeHandleMath.targetWidthPx(100, 0))
+    }
+
+    @Test
+    fun targetRespectsBothConfiguredMinimumAndMaximum() {
+        val cases = listOf(
+            1 to 40,
+            8 to 40,
+            20 to 40,
+            39 to 40,
+            40 to 40,
+            48 to 40,
+            50 to 40,
+            80 to 40,
+            120 to 60,
+            600 to 144
+        )
+        cases.forEach { (clipWidth, expected) ->
+            assertEquals(
+                "Unexpected hit width for clip width $clipWidth",
+                expected,
+                TimelineEdgeHandleMath.targetWidthPx(clipWidth, 144)
+            )
+        }
+    }
+}
