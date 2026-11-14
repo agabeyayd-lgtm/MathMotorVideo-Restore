@@ -92,7 +92,6 @@ class VideoEditorActivity : Activity() {
         const val SELECTION_CHROME_DP = 20
         const val TIMELINE_EDGE_HANDLE_DP = 12
         const val TIMELINE_EDGE_TARGET_DP = 48
-        const val TIMELINE_EDGE_MIN_TARGET_DP = 12
     }
 
     private data class Clip(
@@ -6984,7 +6983,6 @@ class VideoEditorActivity : Activity() {
     private fun timelineEdgeTouchWidth(blockWidth: Int): Int =
         TimelineEdgeHandleMath.targetWidthPx(
             blockWidthPx = blockWidth,
-            minTargetPx = dp(TouchPriority.TIMELINE_EDGE_MIN_TARGET_DP),
             maxTargetPx = dp(TouchPriority.TIMELINE_EDGE_TARGET_DP)
         )
 
