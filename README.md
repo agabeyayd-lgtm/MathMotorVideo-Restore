@@ -1228,3 +1228,12 @@ The selected main-video clip exposes independent left/right edge grips: drag the
 - The test already confirmed SeekBar start/progress/stop callbacks and a completed history-gesture callback; the failure indicates the history snapshot was not committed as a changed project edit, or the gesture did not actually change the model. The prior harness discarded the most useful callback values on this failure path.
 - Added failure-only output of the captured `VOLUME_SEEK_START/PROGRESS/STOP` and `PROJECT_HISTORY_GESTURE_BEGIN/END/COMMITTED` records. This does not weaken assertions or alter production behavior. Next API 35 run will expose exact start/end progress and before/after model values so the underlying cause can be fixed rather than guessed.
 - Current branch commit: `083ed26373f59d590ecd19217da14f7b1fa9ace2`. No app version change, release APK, signing, or merge.
+
+
+## 2026-11-15 — Anchor timeline zero to the measured Play control
+
+- The previous implementation placed the fixed playhead from the timeline-frame midpoint and derived each lane's zero spacer from that same assumed midpoint, while logging the actual Play-control center as a separate diagnostic. If the frame and Play row differed after layout/insets, every lane could share the same constant horizontal offset.
+- The repair uses the measured on-screen center of the actual Play button as the single authoritative anchor for both the visible playhead and each lane's time-zero spacer. The lane/header gutter is measured from the real frame and lane positions after layout; 87dp remains only the initial-layout fallback.
+- The transparent leading spacer is preserved. It remains required so project time zero can sit beneath the fixed playhead; it is not clip content and must not be removed or painted as a visible gray block.
+- The API 35 timeline-sync validator now compares every lane's spacer right edge plus its scroll offset against the actual Play-control center with the existing 1px tolerance. Frame-container center is retained as a diagnostic delta, not as the source of truth.
+- **Validation:** draft PR [#38](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/pull/38) contains the source and validator changes. Exact-head unit/build and API 35 emulator results are pending. Do not call this fixed or publish an APK until those checks pass. No version metadata, release signing, or updater behavior changed.
