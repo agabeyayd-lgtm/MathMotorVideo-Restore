@@ -605,7 +605,6 @@ class TimelineEdgeHandleMathTest {
             144,
             TimelineEdgeHandleMath.targetWidthPx(
                 blockWidthPx = 600,
-                minTargetPx = 36,
                 maxTargetPx = 144
             )
         )
@@ -617,40 +616,36 @@ class TimelineEdgeHandleMathTest {
             50,
             TimelineEdgeHandleMath.targetWidthPx(
                 blockWidthPx = 100,
-                minTargetPx = 24,
                 maxTargetPx = 144
             )
         )
     }
 
     @Test
-    fun extremelyShortClipKeepsTheMinimumUsableTarget() {
+    fun extremelyShortClipKeepsOppositeEdgeTargetsSeparate() {
         assertEquals(
-            24,
+            10,
             TimelineEdgeHandleMath.targetWidthPx(
                 blockWidthPx = 20,
-                minTargetPx = 24,
                 maxTargetPx = 144
             )
         )
     }
 
     @Test
-    fun invalidBoundsAreNormalizedWithoutReturningAZeroWidthTarget() {
+    fun invalidBoundsNeverReturnAZeroWidthTarget() {
         assertEquals(
             1,
             TimelineEdgeHandleMath.targetWidthPx(
                 blockWidthPx = 0,
-                minTargetPx = 0,
                 maxTargetPx = 0
             )
         )
         assertEquals(
-            40,
+            50,
             TimelineEdgeHandleMath.targetWidthPx(
                 blockWidthPx = 100,
-                minTargetPx = 40,
-                maxTargetPx = 12
+                maxTargetPx = 50
             )
         )
     }
