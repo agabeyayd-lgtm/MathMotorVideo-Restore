@@ -2865,7 +2865,10 @@ if lane_width < 120 or lane_height < 100:
 
 safe_left = view_left + 16
 safe_right = view_right - 16
-safe_top = view_top + 16
+# Keep the whole gesture inside the inner ScrollView and well above the
+# Android bottom-navigation edge. The first visible label can be short, so
+# the top inset is small while the bottom reserve remains unchanged.
+safe_top = view_top + 8
 safe_bottom = view_bottom - 48
 
 blocked_nodes = []
@@ -2890,10 +2893,13 @@ for node in viewport.iter("node"):
         continue
 
     # Use the lower safe part of this non-clickable row, not its centre.
-    candidate_y = min(visible_bottom - 8, safe_bottom)
-    candidate_y = max(candidate_y, visible_top + 8)
+    candidate_y = min(visible_bottom - 4, safe_bottom)
+    candidate_y = max(candidate_y, visible_top + 4)
+    # A short 32px drag is enough to cross Android touch slop on the API 35
+    # emulator. Repeated measured drags are safer than forcing the start into
+    # a clickable control or into the bottom system-navigation inset.
     candidate_end_y = max(safe_top, candidate_y - min(120, lane_height // 2))
-    if candidate_y - candidate_end_y < 50:
+    if candidate_y - candidate_end_y < 32:
         continue
 
     # Intersect this label's horizontal bounds with the viewport, then remove
