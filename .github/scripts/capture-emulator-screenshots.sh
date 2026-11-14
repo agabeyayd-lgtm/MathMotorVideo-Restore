@@ -3532,6 +3532,62 @@ if ! grep -Fq "TEXT_TOOLS_DOCK_VISIBLE childCount=3" emulator-screenshots/text-p
 fi
 echo "PASS: tapping the preview text restored its three-action text dock and selection frame at $text_reselected_bounds."
 
+# Exercise the two actual CapCut-style preview selection grips, not only the
+# bottom toolbar actions. Copy must create an independent layer; the delete
+# grip must then remove only that selected copy and leave the original intact.
+if ! dump_hierarchy editor-text-grips-before.xml emulator-screenshots/editor-text-grips-before.xml; then
+  echo "Could not inspect the selected text preview grips."
+  collect_capture_diagnostics text-preview-grips-hierarchy-missing
+  exit 56
+fi
+text_copy_grip_coords="$(find_content_description_bounds emulator-screenshots/editor-text-grips-before.xml "Seçili metni kopyala")"
+if [ -z "$text_copy_grip_coords" ]; then
+  echo "The selected text preview did not expose its duplicate grip."
+  collect_capture_diagnostics text-preview-duplicate-grip-missing
+  exit 56
+fi
+read -r text_copy_x text_copy_y _ _ _ _ _ _ <<< "$text_copy_grip_coords"
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$text_copy_x" "$text_copy_y"
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I \
+  > emulator-screenshots/text-preview-duplicate-grip-logcat.txt 2>&1 || true
+if ! grep -Eq "TEXT_GRIP_ACTION action=duplicate beforeCount=1 afterCount=2 " emulator-screenshots/text-preview-duplicate-grip-logcat.txt; then
+  echo "Tapping the text preview duplicate grip did not create exactly one additional text layer."
+  cat emulator-screenshots/text-preview-duplicate-grip-logcat.txt || true
+  collect_capture_diagnostics text-preview-duplicate-grip-action-failed
+  exit 56
+fi
+echo "PASS: the preview duplicate grip created an independent second text layer."
+
+# Dismiss the keyboard opened by duplication before measuring the delete grip.
+timeout -k 2s 8s adb -s emulator-5554 shell input keyevent 4
+sleep 1
+if ! dump_hierarchy editor-text-grips-copy-selected.xml emulator-screenshots/editor-text-grips-copy-selected.xml; then
+  echo "Could not inspect the duplicated text selection after keyboard dismissal."
+  collect_capture_diagnostics text-preview-delete-grip-hierarchy-missing
+  exit 56
+fi
+text_delete_grip_coords="$(find_content_description_bounds emulator-screenshots/editor-text-grips-copy-selected.xml "Seçili metni sil")"
+if [ -z "$text_delete_grip_coords" ]; then
+  echo "The duplicated selected text did not expose its delete grip."
+  collect_capture_diagnostics text-preview-delete-grip-missing
+  exit 56
+fi
+read -r text_delete_x text_delete_y _ _ _ _ _ _ <<< "$text_delete_grip_coords"
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$text_delete_x" "$text_delete_y"
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I \
+  > emulator-screenshots/text-preview-delete-grip-logcat.txt 2>&1 || true
+if ! grep -Eq "TEXT_GRIP_ACTION action=delete beforeCount=2 afterCount=1" emulator-screenshots/text-preview-delete-grip-logcat.txt; then
+  echo "Tapping the text preview delete grip did not remove only the selected duplicate."
+  cat emulator-screenshots/text-preview-delete-grip-logcat.txt || true
+  collect_capture_diagnostics text-preview-delete-grip-action-failed
+  exit 56
+fi
+echo "PASS: the preview delete grip removed the selected duplicate and preserved the original text layer."
+
 # Exercise both text-timeline trim edges on a real selected text layer. The
 # final ACTION_UP displacement must count as a drag even when Android coalesces
 # the last MOVE event. Re-measure each target after the previous trim rebuilds
