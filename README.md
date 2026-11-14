@@ -1228,3 +1228,12 @@ The selected main-video clip exposes independent left/right edge grips: drag the
 - The test already confirmed SeekBar start/progress/stop callbacks and a completed history-gesture callback; the failure indicates the history snapshot was not committed as a changed project edit, or the gesture did not actually change the model. The prior harness discarded the most useful callback values on this failure path.
 - Added failure-only output of the captured `VOLUME_SEEK_START/PROGRESS/STOP` and `PROJECT_HISTORY_GESTURE_BEGIN/END/COMMITTED` records. This does not weaken assertions or alter production behavior. Next API 35 run will expose exact start/end progress and before/after model values so the underlying cause can be fixed rather than guessed.
 - Current branch commit: `083ed26373f59d590ecd19217da14f7b1fa9ace2`. No app version change, release APK, signing, or merge.
+
+
+## 2026-11-14 — PR #37 text-effects scroll target correction (validation pending)
+
+- Exact failing API 35 artifact from run `43599836034` confirms the Efektler tab opened and exposed its nested vertical ScrollView at `[52,1637][1028,1847]`. The explanatory, non-clickable TextView was visibly present at `[57,1647][1023,1746]`; its centre Y was 1696, only 59px below the viewport top.
+- The smoke helper incorrectly required a safe TextView centre at least 72px below the viewport top, so it rejected that visible row and stopped before touching the off-screen contour control. This was a test-harness geometry cutoff, not evidence that the app's contour control was broken.
+- Updated `.github/scripts/capture-emulator-screenshots.sh` on the PR branch to select a non-clickable TextView by its actual intersection with the nested ScrollView, then swipe upward from within that label while staying inside the measured viewport. The clickable background checkbox is excluded from the gesture target. The control visibility and touch-target assertions remain intact; no test is skipped or weakened.
+- Fix commit: `38b66f0e6b890be88a0f228ef129a2c1955b352c`. Awaiting fresh unit/build, debug APK packaging and API 35 emulator results on this exact head. The video and text grip tests later in the same smoke script have not yet been reached on the failed run and remain unverified.
+- PR #37 remains open and unmerged. No main-branch update, version-code change, signing, or release was made.
