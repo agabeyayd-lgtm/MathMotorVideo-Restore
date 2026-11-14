@@ -2808,7 +2808,7 @@ PY
     # row is visible on entry; inspect each real control as it scrolls into the
     # viewport instead of requiring off-screen controls to have hit bounds.
     effect_control_index=0
-    while IFS= read -r effect_description; do
+    while IFS= read -r effect_description <&3; do
       effect_control_index=$((effect_control_index + 1))
       effect_control_bounds=""
       for scroll_attempt in $(seq 0 6); do
@@ -2835,7 +2835,7 @@ PY
         exit 93
       fi
       echo "PASS: '$effect_description' is visible and has a real touch target: $effect_control_bounds"
-    done <<'TEXT_EFFECT_CONTROLS'
+    done 3<<'TEXT_EFFECT_CONTROLS'
 Yazı konturunu aç veya kapat
 Metin kontur kalınlığı
 Metin gölgesini aç veya kapat
@@ -2879,12 +2879,61 @@ PY
 }
 timeout -k 2s 8s adb -s emulator-5554 shell input tap "$styles_tab_coords"
 sleep 1
-if ! dump_hierarchy editor-text-panel-styles-restored.xml emulator-screenshots/editor-text-panel-styles-restored.xml ||
-   ! grep -Fq "Yazı rengi" emulator-screenshots/editor-text-panel-styles-restored.xml; then
-  echo "The text composer could not return to the default Stiller tab."
+if ! dump_hierarchy editor-text-panel-styles-restored.xml emulator-screenshots/editor-text-panel-styles-restored.xml; then
+  echo "The text composer could not be inspected after restoring Stiller."
   collect_capture_diagnostics text-composer-styles-tab-restore-failed
   exit 93
 fi
+# The hidden Stiller controls remain in the hierarchy even while another tab
+# is active. Require the selected-state accessibility marker plus the actual
+# input and add hit targets, so a parent-scroll regression cannot be mistaken
+# for a successful return to the text editor.
+python3 - emulator-screenshots/editor-text-panel-styles-restored.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+selected = [
+    node for node in root.iter("node")
+    if node.attrib.get("content-desc", "").strip()
+    == "Metin düzenleme sekmesi: Stiller, seçili"
+]
+if len(selected) != 1:
+    raise SystemExit(f"Stiller is not the active text tab (selected marker count={len(selected)}).")
+
+def find_node(predicate, label):
+    matches = [node for node in root.iter("node") if predicate(node)]
+    if len(matches) != 1:
+        raise SystemExit(f"Expected one visible {label}, found {len(matches)}.")
+    node = matches[0]
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if not match:
+        raise SystemExit(f"{label} has no valid on-screen bounds: {node.attrib.get('bounds')}")
+    left, top, right, bottom = map(int, match.groups())
+    height = bottom - top
+    if height < 40 or right <= left:
+        raise SystemExit(f"{label} hit target is clipped/undersized: {right-left}x{height}px.")
+    if node.attrib.get("enabled") != "true" or node.attrib.get("clickable") != "true":
+        raise SystemExit(f"{label} is not enabled and clickable.")
+    return (left, top, right, bottom)
+
+edit = find_node(
+    lambda n: n.attrib.get("class") == "android.widget.EditText"
+    and n.attrib.get("text") == "Metin girin",
+    "text input"
+)
+add = find_node(
+    lambda n: n.attrib.get("class") == "android.widget.Button"
+    and n.attrib.get("text") == "＋ Yeni",
+    "new text button"
+)
+print(
+    "PASS: Stiller is selected and both fixed composer actions remain fully tappable: "
+    f"input={edit}, new={add}."
+)
+PY
+
 
 # Measure the pinned return button while the text panel is first opened. Its
 # sibling-header position is independent of the scrolling settings/IME.
@@ -2894,7 +2943,7 @@ if [ -z "$text_panel_back" ]; then
   collect_capture_diagnostics text-canvas-panel-return-missing-on-open
   exit 52
 fi
-new_text_coords="$(find_bottom_tool emulator-screenshots/editor-text-panel.xml "＋ Yeni" || true)"
+new_text_coords="$(find_bottom_tool emulator-screenshots/editor-text-panel-styles-restored.xml "＋ Yeni" || true)"
 if [ -z "$new_text_coords" ]; then
   echo "The Metin panel did not expose its Yeni text-layer action."
   collect_capture_diagnostics text-canvas-add-action-missing
