@@ -2328,7 +2328,18 @@ run_overlay_edge_smoke() {
   # overlay row is consumed by the clip gesture instead of its parent scroller.
   # All timeline rows share the ruler's horizontal scroll position; swipe the
   # ruler viewport to reveal the far edge without touching the selected clip.
-  if [ "$edge" = "end" ] && [ -z "$(find_content_description_bounds "emulator-screenshots/$before_xml" "$description")" ]; then
+  initial_end_bounds=""
+  initial_end_width=0
+  if [ "$edge" = "end" ]; then
+    initial_end_bounds="$(find_content_description_bounds "emulator-screenshots/$before_xml" "$description")"
+    if [ -n "$initial_end_bounds" ]; then
+      read -r _ _ initial_end_width _ _ <<< "$initial_end_bounds"
+    fi
+  fi
+  # A partially clipped accessibility node still has bounds, but it is not
+  # touchable. Enter the same ruler-scroll recovery for missing OR undersized
+  # targets; otherwise a 1px sliver at the viewport edge skips the recovery.
+  if [ "$edge" = "end" ] && { [ -z "$initial_end_bounds" ] || [ "$initial_end_width" -lt 40 ]; }; then
     ruler_bounds="$(python3 - "emulator-screenshots/$before_xml" <<'PY'
 import re
 import sys
