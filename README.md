@@ -1260,3 +1260,11 @@ The selected main-video clip exposes independent left/right edge grips: drag the
 - Changed the shared geometry so each edge target is at most half the clip width, while still growing to the configured 48dp maximum on wide clips. Very short clips necessarily use narrower targets, but both edges stay inside the clip and remain disjoint.
 - Replaced the old minimum-width assertions with boundary coverage from 1px through 600px and explicit tests that opposing hit regions never overlap or extend beyond the clip.
 - This correction is a source/test change only. It does not change visible grip artwork, trim timing, versionCode, signing, or release behavior. A fresh exact-head unit/build and API 35 emulator run is required.
+
+
+## 2026-11-14 — PR #37 text-effects scroll content measurement correction (validation pending)
+
+- The `bc7d001` emulator run reached the end of the Efektler panel's scroll range, but the final controls remained below the viewport. Logcat showed the real views were attached: `Gölge dikey kayması` at y=1856 and its SeekBar at y=1921, while the inner viewport ended at y=1847. Repeated swipes did not advance beyond the horizontal-offset row.
+- Corrected the Efektler tab activation path to reassert `WRAP_CONTENT` for its ScrollView content, calculate the deepest laid-out child bottom including bottom margins/padding, and expand the content minimum height when the measured height truncates trailing controls. Added a `TextEffectsLayout` measurement log to preserve evidence on the next emulator run.
+- The trim-handle source comment was also aligned with the tested half-width non-overlap rule. No visible trim artwork, project values, versionCode, signing, or release behavior changed.
+- This change remains validation-pending until the exact commit passes the emulator effects controls and continues into the text/video grip interaction checks.

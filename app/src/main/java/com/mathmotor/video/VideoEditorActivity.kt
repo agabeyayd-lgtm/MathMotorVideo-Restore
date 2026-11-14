@@ -1935,6 +1935,47 @@ class VideoEditorActivity : Activity() {
         tabNames.forEach { name ->
             val tab = miniButton(name) {
                 tabScrolls.forEach { (key, view) -> view.visibility = if (key == name) View.VISIBLE else View.GONE }
+                if (name == "Efektler") {
+                    val effectsScroll = tabScrolls.getValue(name)
+                    if (effectsScroll.viewTreeObserver.isAlive) {
+                        effectsScroll.viewTreeObserver.addOnGlobalLayoutListener(
+                            object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
+                                override fun onGlobalLayout() {
+                                    if (effectsScroll.visibility != View.VISIBLE || effectsScroll.height <= 0) return
+                                    val observer = effectsScroll.viewTreeObserver
+                                    if (observer.isAlive) observer.removeOnGlobalLayoutListener(this)
+                                    val effectsContent = effectsScroll.getChildAt(0) as? LinearLayout ?: return
+                                    val contentParams = effectsContent.layoutParams
+                                    if (contentParams.height != ViewGroup.LayoutParams.WRAP_CONTENT) {
+                                        contentParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
+                                        effectsContent.layoutParams = contentParams
+                                    }
+                                    val lastChildBottom = (0 until effectsContent.childCount).maxOfOrNull { index ->
+                                        val child = effectsContent.getChildAt(index)
+                                        val params = child.layoutParams as? LinearLayout.LayoutParams
+                                        child.bottom + (params?.bottomMargin ?: 0)
+                                    } ?: 0
+                                    val requiredContentHeight = lastChildBottom + effectsContent.paddingBottom
+                                    val measuredContentHeight = effectsContent.height
+                                    if (requiredContentHeight > measuredContentHeight) {
+                                        effectsContent.minimumHeight = maxOf(
+                                            effectsContent.minimumHeight,
+                                            requiredContentHeight
+                                        )
+                                        effectsContent.requestLayout()
+                                        effectsScroll.requestLayout()
+                                    }
+                                    android.util.Log.i(
+                                        "TextEffectsLayout",
+                                        "SCROLL_CONTENT_MEASURED viewport=${effectsScroll.height} " +
+                                            "content=$measuredContentHeight required=$requiredContentHeight " +
+                                            "minHeight=${effectsContent.minimumHeight} childCount=${effectsContent.childCount}"
+                                    )
+                                }
+                            }
+                        )
+                    }
+                }
                 tabButtons.forEach { (key, button) ->
                     val selected = key == name
                     button.background = android.graphics.drawable.GradientDrawable().apply {
@@ -11562,7 +11603,7 @@ class VideoEditorActivity : Activity() {
             // Bound handle travel by source-time limits, not rendered clip width.
             // Otherwise short trimmed clips cannot be expanded back toward the source boundaries.
             // Keep a clear central drag area even on very short split fragments.
-            // Each transparent edge target takes at most one third of the clip width.
+            // Opposing transparent edge targets each occupy at most half the clip width.
             val handleWidth = timelineEdgeTouchWidth(width)
             fun allowedDeltaPx(startMs:Long,endMs:Long):Pair<Float,Float>{
                 // Handle travel is measured on the project timeline, while clip in/out
