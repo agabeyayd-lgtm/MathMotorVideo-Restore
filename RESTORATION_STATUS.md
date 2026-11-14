@@ -1606,3 +1606,10 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Corrected both duplicated visibility filters to accept a non-clickable text row with at least 16px visible. Replaying the exact archived hierarchy now selects “Gölge / Parıltı” and calculates a 105px upward swipe (`x=540, y=1829→1724`) inside the measured viewport. No assertion was removed or skipped.
 - Fix commits: `c334e43b87401cc80cf93382663fd009e7927aec` and `264683321f16c1ff16fd11bb6084b8471fd58f66`. Exact-head unit/build, APK packaging and API 35 emulator reruns are pending; do not mark the text-effects sequence or subsequent text/video grip checks verified until the new emulator run completes successfully.
 - PR #37 remains open and unmerged. No main-branch update, app version change, signing, or release.
+
+### Follow-up — keep the new scroll anchor clear of Android navigation gestures
+
+- The 16px partial-row correction explains and removes the original 29px-travel cutoff, but the archived failures also show that bottom-edge starts near y=1835 can enter Android's navigation gesture area. The latest helper therefore no longer starts on the clipped bottom heading.
+- It now starts 48px above the measured inner ScrollView bottom and calculates a horizontal start lane from the actual clickable child bounds at that Y. This is not a hard-coded right-gutter assumption: the lane is selected only where no clickable accessibility child covers the start point.
+- Replaying the same failing `editor-text-effects-scroll-3-1.xml` yields viewport `[52,1637][1028,1847]`, safe start/end `y=1799→1653` (146px travel), and a clear lane `x=786..1012` (selected `x=899`). The clickable radio buttons end at x=786, so the chosen ACTION_DOWN point is outside their hit bounds and 121px above the physical display bottom.
+- Implementation commit: `85376d83af1d518c58491f2e9082c2e35e9f10bf`. This exact-head change needs fresh Android build and API 35 emulator verification; the previous run remains failed and is not reclassified.
