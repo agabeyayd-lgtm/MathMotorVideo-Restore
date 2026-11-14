@@ -1894,9 +1894,30 @@ class VideoEditorActivity : Activity() {
         val tabFrame = FrameLayout(this)
         tabNames.forEach { name ->
             val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(2), dp(4), dp(2), dp(8)) }
-            val scroll = ScrollView(this).apply {
-                isFillViewport = true; isVerticalScrollBarEnabled = false; overScrollMode = View.OVER_SCROLL_NEVER
-                addView(content, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            val scroll = object : ScrollView(this@VideoEditorActivity) {
+                override fun onInterceptTouchEvent(event: android.view.MotionEvent): Boolean {
+                    // This editor sheet is itself a ScrollView. Once a gesture
+                    // starts inside a category's own content, keep vertical
+                    // movement with that inner panel so the text field, add
+                    // button and category tabs above it do not slide away.
+                    when (event.actionMasked) {
+                        android.view.MotionEvent.ACTION_DOWN,
+                        android.view.MotionEvent.ACTION_MOVE ->
+                            parent?.requestDisallowInterceptTouchEvent(true)
+                        android.view.MotionEvent.ACTION_UP,
+                        android.view.MotionEvent.ACTION_CANCEL ->
+                            parent?.requestDisallowInterceptTouchEvent(false)
+                    }
+                    return super.onInterceptTouchEvent(event)
+                }
+            }.apply {
+                isFillViewport = true
+                isVerticalScrollBarEnabled = false
+                overScrollMode = View.OVER_SCROLL_NEVER
+                addView(content, ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ))
                 visibility = View.GONE
             }
             tabPanels[name] = content; tabScrolls[name] = scroll
@@ -1914,6 +1935,11 @@ class VideoEditorActivity : Activity() {
                         setStroke(dp(if (selected) 1 else 0), if (selected) Color.rgb(57, 220, 190) else Color.TRANSPARENT)
                     }
                     button.setTextColor(if (selected) Color.rgb(86, 231, 200) else Color.WHITE)
+                    button.contentDescription = if (selected) {
+                        "Metin düzenleme sekmesi: $key, seçili"
+                    } else {
+                        "Metin düzenleme sekmesi: $key"
+                    }
                 }
             }.apply { textSize = 11f; minHeight = dp(38); setPadding(dp(9), 0, dp(9), 0); contentDescription = "Metin düzenleme sekmesi: $name" }
             tabButtons[name] = tab
@@ -1939,6 +1965,7 @@ class VideoEditorActivity : Activity() {
 
         tabScrolls["Stiller"]?.visibility = View.VISIBLE
         tabButtons["Stiller"]?.apply {
+            contentDescription = "Metin düzenleme sekmesi: Stiller, seçili"
             setTextColor(Color.rgb(86, 231, 200))
             background = android.graphics.drawable.GradientDrawable().apply { setColor(Color.rgb(35, 53, 67)); cornerRadius = dp(8).toFloat(); setStroke(dp(1), Color.rgb(57, 220, 190)) }
         }
