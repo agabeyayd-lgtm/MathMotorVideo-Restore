@@ -9,6 +9,7 @@ import android.database.Cursor
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Matrix
+import android.graphics.Paint
 import android.graphics.Typeface
 import android.media.MediaMetadataRetriever
 import android.net.Uri
@@ -22,6 +23,8 @@ import android.os.SystemClock
 import android.provider.MediaStore
 import android.text.SpannableString
 import android.text.Spanned
+import android.text.TextPaint
+import android.text.style.CharacterStyle
 import android.text.style.AbsoluteSizeSpan
 import android.text.style.BackgroundColorSpan
 import android.text.style.ForegroundColorSpan
@@ -213,6 +216,27 @@ class VideoEditorActivity : Activity() {
     private var textFontPreset = TextFontPreset.SYSTEM
     private var textBackgroundEnabled = false
     private var textOpacityPercent = 100
+    private var textOutlineEnabled = false
+    private var textOutlineColor = Color.BLACK
+    private var textOutlineWidthDp = 2
+    private var textShadowEnabled = true
+    private var textShadowColor = Color.BLACK
+    private var textShadowBlurDp = 2
+    private lateinit var textOutlineCheck: CheckBox
+    private lateinit var textOutlineWidthLabel: TextView
+    private lateinit var textOutlineWidthSeek: SeekBar
+    private lateinit var textOutlineColorGroup: android.widget.RadioGroup
+    private lateinit var textShadowCheck: CheckBox
+    private lateinit var textShadowBlurLabel: TextView
+    private lateinit var textShadowBlurSeek: SeekBar
+    private lateinit var textShadowColorGroup: android.widget.RadioGroup
+    private val textEffectColors = listOf(
+        "Siyah" to Color.BLACK,
+        "Beyaz" to Color.WHITE,
+        "Kırmızı" to Color.rgb(244, 67, 54),
+        "Mavi" to Color.rgb(33, 150, 243),
+        "Sarı" to Color.rgb(255, 193, 7)
+    )
     private lateinit var textOpacityLabel: TextView
     private lateinit var textOpacitySeek: SeekBar
     private var textAnimationPreset = TextAnimationPreset.NONE
@@ -263,8 +287,84 @@ class VideoEditorActivity : Activity() {
         var animationDurationMs: Long = 350L,
         var fontPreset: TextFontPreset = TextFontPreset.SYSTEM,
         var backgroundEnabled: Boolean = false,
-        var opacityPercent: Int = 100
+        var opacityPercent: Int = 100,
+        var outlineEnabled: Boolean = false,
+        var outlineColor: Int = Color.BLACK,
+        var outlineWidthDp: Int = 2,
+        var shadowEnabled: Boolean = true,
+        var shadowColor: Int = Color.BLACK,
+        var shadowBlurDp: Int = 2,
+        var shadowOffsetXDp: Int = 1,
+        var shadowOffsetYDp: Int = 1
     )
+
+    private inner class StyledPreviewTextView : TextView(this@VideoEditorActivity) {
+        var outlineEnabled = false
+        var outlineColor = Color.BLACK
+        var outlineWidthPx = 0f
+        var shadowEnabled = true
+        var shadowColor = Color.BLACK
+        var shadowBlurPx = 2f
+        var shadowOffsetXPx = 1f
+        var shadowOffsetYPx = 1f
+
+        override fun onDraw(canvas: android.graphics.Canvas) {
+            val textPaint = paint
+            val fillColor = currentTextColor
+            val originalStyle = textPaint.style
+            val originalColor = textPaint.color
+            val originalStrokeWidth = textPaint.strokeWidth
+            val originalStrokeJoin = textPaint.strokeJoin
+            try {
+                if (outlineEnabled && outlineWidthPx > 0f) {
+                    textPaint.style = Paint.Style.STROKE
+                    textPaint.strokeJoin = Paint.Join.ROUND
+                    textPaint.strokeWidth = outlineWidthPx
+                    textPaint.color = outlineColor
+                    textPaint.clearShadowLayer()
+                    super.onDraw(canvas)
+                }
+                textPaint.style = Paint.Style.FILL
+                textPaint.color = fillColor
+                if (shadowEnabled && shadowBlurPx > 0f) {
+                    textPaint.setShadowLayer(shadowBlurPx, shadowOffsetXPx, shadowOffsetYPx, shadowColor)
+                } else {
+                    textPaint.clearShadowLayer()
+                }
+                super.onDraw(canvas)
+            } finally {
+                textPaint.style = originalStyle
+                textPaint.color = originalColor
+                textPaint.strokeWidth = originalStrokeWidth
+                textPaint.strokeJoin = originalStrokeJoin
+                textPaint.clearShadowLayer()
+            }
+        }
+    }
+
+    private class TextOutlineSpan(
+        private val color: Int,
+        private val widthPx: Float
+    ) : CharacterStyle() {
+        override fun updateDrawState(tp: TextPaint) {
+            tp.style = Paint.Style.STROKE
+            tp.strokeJoin = Paint.Join.ROUND
+            tp.strokeWidth = widthPx
+            tp.color = color
+            tp.clearShadowLayer()
+        }
+    }
+
+    private class TextShadowSpan(
+        private val color: Int,
+        private val blurPx: Float,
+        private val offsetXPx: Float,
+        private val offsetYPx: Float
+    ) : CharacterStyle() {
+        override fun updateDrawState(tp: TextPaint) {
+            tp.setShadowLayer(blurPx, offsetXPx, offsetYPx, color)
+        }
+    }
 
     private val textLayers = mutableListOf<TextLayer>()
     private var selectedTextLayerId: Long? = null
@@ -1977,6 +2077,117 @@ class VideoEditorActivity : Activity() {
             }
         }
         effects.addView(textBackgroundCheck, matchWrap())
+
+        effects.addView(label("Kontur", 12f, Color.WHITE, true))
+        textOutlineCheck = CheckBox(this).apply {
+            text = "Yazı kenarlığı"; contentDescription = "Yazı konturunu aç veya kapat"
+            textSize = 12f; setTextColor(Color.WHITE)
+            buttonTintList = android.content.res.ColorStateList.valueOf(Color.rgb(57, 220, 190))
+            isChecked = textOutlineEnabled
+            setOnCheckedChangeListener { _, checked ->
+                if (loadingTextLayerControls) return@setOnCheckedChangeListener
+                recordProjectEdit()
+                textOutlineEnabled = checked
+                selectedTextLayer()?.outlineEnabled = checked
+                textOutlineWidthSeek.isEnabled = checked
+                textOutlineColorGroup.childrenEnabled(checked)
+                updatePreviewTextOverlay()
+            }
+        }
+        effects.addView(textOutlineCheck, matchWrap())
+        textOutlineWidthLabel = label("Kontur kalınlığı: 2", 11f, Color.WHITE, true)
+        effects.addView(textOutlineWidthLabel)
+        textOutlineWidthSeek = SeekBar(this).apply {
+            max = 8; progress = 2; contentDescription = "Metin kontur kalınlığı"
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                    if (!fromUser || loadingTextLayerControls) return
+                    textOutlineWidthDp = progress.coerceIn(0, 8)
+                    textOutlineWidthLabel.text = "Kontur kalınlığı: $textOutlineWidthDp"
+                    selectedTextLayer()?.outlineWidthDp = textOutlineWidthDp
+                    updatePreviewTextOverlay()
+                }
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                    if (!loadingTextLayerControls) activeProjectHistorySnapshot = beginProjectHistoryGesture()
+                }
+                override fun onStopTrackingTouch(seekBar: SeekBar?) { finishProjectHistoryGesture() }
+            })
+        }
+        effects.addView(textOutlineWidthSeek, matchWrap())
+        textOutlineColorGroup = android.widget.RadioGroup(this).apply {
+            orientation = android.widget.RadioGroup.HORIZONTAL
+            textEffectColors.forEachIndexed { index, (name, color) ->
+                addView(android.widget.RadioButton(this@VideoEditorActivity).apply {
+                    id = 61 + index; text = name; textSize = 10f; setTextColor(color)
+                    buttonTintList = android.content.res.ColorStateList.valueOf(color)
+                })
+            }
+            check(61)
+            setOnCheckedChangeListener { _, checkedId ->
+                if (loadingTextLayerControls || checkedId !in 61..65) return@setOnCheckedChangeListener
+                recordProjectEdit()
+                textOutlineColor = textEffectColors[checkedId - 61].second
+                selectedTextLayer()?.outlineColor = textOutlineColor
+                updatePreviewTextOverlay()
+            }
+        }
+        effects.addView(textOutlineColorGroup, matchWrap())
+
+        effects.addView(label("Gölge / Parıltı", 12f, Color.WHITE, true))
+        textShadowCheck = CheckBox(this).apply {
+            text = "Metin gölgesi"; contentDescription = "Metin gölgesini aç veya kapat"
+            textSize = 12f; setTextColor(Color.WHITE)
+            buttonTintList = android.content.res.ColorStateList.valueOf(Color.rgb(57, 220, 190))
+            isChecked = textShadowEnabled
+            setOnCheckedChangeListener { _, checked ->
+                if (loadingTextLayerControls) return@setOnCheckedChangeListener
+                recordProjectEdit()
+                textShadowEnabled = checked
+                selectedTextLayer()?.shadowEnabled = checked
+                textShadowBlurSeek.isEnabled = checked
+                textShadowColorGroup.childrenEnabled(checked)
+                updatePreviewTextOverlay()
+            }
+        }
+        effects.addView(textShadowCheck, matchWrap())
+        textShadowBlurLabel = label("Gölge yumuşaklığı: 2", 11f, Color.WHITE, true)
+        effects.addView(textShadowBlurLabel)
+        textShadowBlurSeek = SeekBar(this).apply {
+            max = 16; progress = 2; contentDescription = "Metin gölgesi yumuşaklığı"
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                    if (!fromUser || loadingTextLayerControls) return
+                    textShadowBlurDp = progress.coerceIn(0, 16)
+                    textShadowBlurLabel.text = "Gölge yumuşaklığı: $textShadowBlurDp"
+                    selectedTextLayer()?.shadowBlurDp = textShadowBlurDp
+                    updatePreviewTextOverlay()
+                }
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                    if (!loadingTextLayerControls) activeProjectHistorySnapshot = beginProjectHistoryGesture()
+                }
+                override fun onStopTrackingTouch(seekBar: SeekBar?) { finishProjectHistoryGesture() }
+            })
+        }
+        effects.addView(textShadowBlurSeek, matchWrap())
+        textShadowColorGroup = android.widget.RadioGroup(this).apply {
+            orientation = android.widget.RadioGroup.HORIZONTAL
+            textEffectColors.forEachIndexed { index, (name, color) ->
+                addView(android.widget.RadioButton(this@VideoEditorActivity).apply {
+                    id = 71 + index; text = name; textSize = 10f; setTextColor(color)
+                    buttonTintList = android.content.res.ColorStateList.valueOf(color)
+                })
+            }
+            check(71)
+            setOnCheckedChangeListener { _, checkedId ->
+                if (loadingTextLayerControls || checkedId !in 71..75) return@setOnCheckedChangeListener
+                recordProjectEdit()
+                textShadowColor = textEffectColors[checkedId - 71].second
+                selectedTextLayer()?.shadowColor = textShadowColor
+                updatePreviewTextOverlay()
+            }
+        }
+        effects.addView(textShadowColorGroup, matchWrap())
+
         textOpacityLabel = label("Opaklık: 100%", 12f, Color.WHITE, true)
         effects.addView(textOpacityLabel)
         textOpacitySeek = SeekBar(this).apply {
@@ -7790,6 +8001,12 @@ class VideoEditorActivity : Activity() {
         layer.fontPreset = textFontPreset
         layer.backgroundEnabled = textBackgroundEnabled
         layer.opacityPercent = textOpacityPercent.coerceIn(0, 100)
+        layer.outlineEnabled = textOutlineEnabled
+        layer.outlineColor = textOutlineColor
+        layer.outlineWidthDp = textOutlineWidthDp.coerceIn(0, 8)
+        layer.shadowEnabled = textShadowEnabled
+        layer.shadowColor = textShadowColor
+        layer.shadowBlurDp = textShadowBlurDp.coerceIn(0, 16)
     }
 
     private fun refreshTextLayerList() {
@@ -8117,6 +8334,12 @@ class VideoEditorActivity : Activity() {
             textFontPreset = layer?.fontPreset ?: TextFontPreset.SYSTEM
             textBackgroundEnabled = layer?.backgroundEnabled ?: false
             textOpacityPercent = layer?.opacityPercent?.coerceIn(0, 100) ?: 100
+            textOutlineEnabled = layer?.outlineEnabled ?: false
+            textOutlineColor = layer?.outlineColor ?: Color.BLACK
+            textOutlineWidthDp = layer?.outlineWidthDp?.coerceIn(0, 8) ?: 2
+            textShadowEnabled = layer?.shadowEnabled ?: true
+            textShadowColor = layer?.shadowColor ?: Color.BLACK
+            textShadowBlurDp = layer?.shadowBlurDp?.coerceIn(0, 16) ?: 2
             // Discard any stale composing span before reflecting a restored
             // project value in the editor. The project model remains authoritative.
             textInput.clearComposingText()
@@ -8135,6 +8358,18 @@ class VideoEditorActivity : Activity() {
             textBackgroundCheck.isChecked = textBackgroundEnabled
             textOpacitySeek.progress = textOpacityPercent
             textOpacityLabel.text = "Opaklık: $textOpacityPercent%"
+            textOutlineCheck.isChecked = textOutlineEnabled
+            textOutlineWidthSeek.progress = textOutlineWidthDp
+            textOutlineWidthLabel.text = "Kontur kalınlığı: $textOutlineWidthDp"
+            textOutlineColorGroup.check(61 + textEffectColors.indexOfFirst { it.second == textOutlineColor }.coerceAtLeast(0))
+            textOutlineWidthSeek.isEnabled = textOutlineEnabled
+            textOutlineColorGroup.childrenEnabled(textOutlineEnabled)
+            textShadowCheck.isChecked = textShadowEnabled
+            textShadowBlurSeek.progress = textShadowBlurDp
+            textShadowBlurLabel.text = "Gölge yumuşaklığı: $textShadowBlurDp"
+            textShadowColorGroup.check(71 + textEffectColors.indexOfFirst { it.second == textShadowColor }.coerceAtLeast(0))
+            textShadowBlurSeek.isEnabled = textShadowEnabled
+            textShadowColorGroup.childrenEnabled(textShadowEnabled)
             textAnimationGroup.check(
                 31 + TextAnimationPreset.values().indexOf(textAnimationPreset).coerceAtLeast(0)
             )
@@ -8241,7 +8476,6 @@ class VideoEditorActivity : Activity() {
                     overlay.paddingRight != 0 || overlay.paddingBottom != 0
                 ) overlay.setPadding(0, 0, 0, 0)
                 if (overlay.background != null) overlay.background = null
-                overlay.setShadowLayer(4f, 0f, 2f, Color.BLACK)
             } else {
                 if (layer.backgroundEnabled) {
                     val hInset = dp((10f * previewScale).toInt().coerceAtLeast(1))
@@ -8258,7 +8492,20 @@ class VideoEditorActivity : Activity() {
                     if (overlay.paddingLeft != 0 || overlay.paddingTop != 0 || overlay.paddingRight != 0 || overlay.paddingBottom != 0) overlay.setPadding(0, 0, 0, 0)
                     if (overlay.background != null) overlay.background = null
                 }
-                overlay.setShadowLayer(2f * previewScale, previewScale, previewScale, Color.BLACK)
+            }
+            (overlay as? StyledPreviewTextView)?.apply {
+                outlineEnabled = layer.kind != TextLayerKind.STICKER && layer.outlineEnabled
+                outlineColor = layer.outlineColor
+                outlineWidthPx = layer.outlineWidthDp * resources.displayMetrics.density * previewScale
+                shadowEnabled = layer.shadowEnabled
+                shadowColor = layer.shadowColor
+                shadowBlurPx = (if (layer.kind == TextLayerKind.STICKER) 4f else layer.shadowBlurDp.toFloat()) *
+                    resources.displayMetrics.density * previewScale
+                shadowOffsetXPx = (if (layer.kind == TextLayerKind.STICKER) 0f else 1f) *
+                    resources.displayMetrics.density * previewScale
+                shadowOffsetYPx = (if (layer.kind == TextLayerKind.STICKER) 2f else 1f) *
+                    resources.displayMetrics.density * previewScale
+                invalidate()
             }
             if (overlay.visibility != View.VISIBLE) overlay.visibility = View.VISIBLE
             val params = overlay.layoutParams as? FrameLayout.LayoutParams ?: return@forEachIndexed
@@ -8353,7 +8600,7 @@ class VideoEditorActivity : Activity() {
         applyPreviewTouchPriority()
     }
 
-    private fun createPreviewTextOverlayView(): TextView = TextView(this).apply {
+    private fun createPreviewTextOverlayView(): TextView = StyledPreviewTextView().apply {
         textSize = 24f
         gravity = Gravity.CENTER
         maxLines = 2
@@ -8363,7 +8610,6 @@ class VideoEditorActivity : Activity() {
         setTextColor(Color.WHITE)
         setTypeface(Typeface.DEFAULT, Typeface.BOLD)
         setPadding(0, 0, 0, 0)
-        setShadowLayer(2f, 1f, 1f, Color.BLACK)
         background = null
         visibility = View.GONE
         isClickable = true
@@ -8940,6 +9186,14 @@ class VideoEditorActivity : Activity() {
                 put("fontPreset", layer.fontPreset.name)
                 put("backgroundEnabled", layer.backgroundEnabled)
                 put("opacityPercent", layer.opacityPercent.coerceIn(0, 100))
+                put("outlineEnabled", layer.outlineEnabled)
+                put("outlineColor", layer.outlineColor)
+                put("outlineWidthDp", layer.outlineWidthDp.coerceIn(0, 8))
+                put("shadowEnabled", layer.shadowEnabled)
+                put("shadowColor", layer.shadowColor)
+                put("shadowBlurDp", layer.shadowBlurDp.coerceIn(0, 16))
+                put("shadowOffsetXDp", layer.shadowOffsetXDp)
+                put("shadowOffsetYDp", layer.shadowOffsetYDp)
                 put("kind", layer.kind.name)
                 put("animationPreset", layer.animationPreset.key)
                 put("animationDurationMs", layer.animationDurationMs)
@@ -9327,6 +9581,14 @@ class VideoEditorActivity : Activity() {
                     fontPreset = runCatching { TextFontPreset.valueOf(item.optString("fontPreset", "SYSTEM")) }.getOrDefault(TextFontPreset.SYSTEM),
                     backgroundEnabled = item.optBoolean("backgroundEnabled", false),
                     opacityPercent = item.optInt("opacityPercent", 100).coerceIn(0, 100),
+                    outlineEnabled = item.optBoolean("outlineEnabled", false),
+                    outlineColor = item.optInt("outlineColor", Color.BLACK),
+                    outlineWidthDp = item.optInt("outlineWidthDp", 2).coerceIn(0, 8),
+                    shadowEnabled = item.optBoolean("shadowEnabled", true),
+                    shadowColor = item.optInt("shadowColor", Color.BLACK),
+                    shadowBlurDp = item.optInt("shadowBlurDp", 2).coerceIn(0, 16),
+                    shadowOffsetXDp = item.optInt("shadowOffsetXDp", 1).coerceIn(-16, 16),
+                    shadowOffsetYDp = item.optInt("shadowOffsetYDp", 1).coerceIn(-16, 16),
                     kind = runCatching {
                         TextLayerKind.valueOf(item.optString("kind", "TEXT"))
                     }.getOrDefault(TextLayerKind.TEXT),
@@ -13607,14 +13869,27 @@ class VideoEditorActivity : Activity() {
             .build()
     }
 
-    private fun buildTimedTextOverlay(layer: TextLayer, samePositionIndex: Int): TextOverlay {
+    private fun android.widget.RadioGroup.childrenEnabled(enabled: Boolean) {
+        for (index in 0 until childCount) getChildAt(index).isEnabled = enabled
+    }
+
+    private fun buildTimedTextOverlay(layer: TextLayer, samePositionIndex: Int, outlinePass: Boolean = false): TextOverlay {
         val overlayText = layer.text
         val startMs = layer.startMs
         val endMs = layer.endMs
         val styled = SpannableString(overlayText).apply {
-            setSpan(ForegroundColorSpan(layer.colorPreset.colorInt), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            if (!outlinePass) {
+                setSpan(ForegroundColorSpan(layer.colorPreset.colorInt), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            } else {
+                setSpan(
+                    TextOutlineSpan(layer.outlineColor, layer.outlineWidthDp * resources.displayMetrics.density),
+                    0,
+                    length,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+            }
             setSpan(TypefaceSpan(layer.fontPreset.familyName), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            if (layer.kind != TextLayerKind.STICKER && layer.backgroundEnabled) {
+            if (!outlinePass && layer.kind != TextLayerKind.STICKER && layer.backgroundEnabled) {
                 setSpan(BackgroundColorSpan(Color.argb(190, 0, 0, 0)), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
             if (layer.isBold) {
@@ -13626,6 +13901,20 @@ class VideoEditorActivity : Activity() {
                 length,
                 Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
             )
+            if (!outlinePass && layer.shadowEnabled && layer.shadowBlurDp > 0) {
+                val density = resources.displayMetrics.density
+                setSpan(
+                    TextShadowSpan(
+                        layer.shadowColor,
+                        layer.shadowBlurDp * density,
+                        layer.shadowOffsetXDp * density,
+                        layer.shadowOffsetYDp * density
+                    ),
+                    0,
+                    length,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+            }
         }
         val x = PreviewCanvasMath.media3AnchorForFraction(layer.xFraction)
         val y = PreviewCanvasMath.media3AnchorForFraction(layer.yFraction, invertY = true)
@@ -13803,10 +14092,15 @@ class VideoEditorActivity : Activity() {
         val exportTextLayers = textLayers.filter { it.text.isNotBlank() && it.endMs > it.startMs }
         if (exportTextLayers.isNotEmpty()) {
             val positionCounts = mutableMapOf<TextPosition, Int>()
-            val overlays = exportTextLayers.map { layer ->
+            val overlays = mutableListOf<TextOverlay>()
+            exportTextLayers.forEach { layer ->
                 val samePositionIndex = positionCounts[layer.position] ?: 0
                 positionCounts[layer.position] = samePositionIndex + 1
-                buildTimedTextOverlay(layer, samePositionIndex)
+                // Draw the outline first; the filled glyph is composited above it.
+                if (layer.outlineEnabled && layer.outlineWidthDp > 0) {
+                    overlays.add(buildTimedTextOverlay(layer, samePositionIndex, outlinePass = true))
+                }
+                overlays.add(buildTimedTextOverlay(layer, samePositionIndex))
             }
             outputVideoEffects.add(OverlayEffect(overlays))
         }
