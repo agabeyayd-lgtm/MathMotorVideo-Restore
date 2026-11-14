@@ -4282,6 +4282,7 @@ class VideoEditorActivity : Activity() {
                     contentDescription = if (isStart) "Yazı başlangıcını sürükle" else "Yazı bitişini sürükle"
                     isClickable = true
                     isFocusable = true
+                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
                     addView(View(this@VideoEditorActivity).apply {
                         background = android.graphics.drawable.GradientDrawable().apply {
                             setColor(Color.rgb(0, 164, 146))
@@ -5396,6 +5397,7 @@ class VideoEditorActivity : Activity() {
                 contentDescription = if (isStart) "Müzik başlangıç tutamacı" else "Müzik bitiş tutamacı"
                 isClickable = true
                 isFocusable = true
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
                 addView(View(this@VideoEditorActivity).apply {
                     background = android.graphics.drawable.GradientDrawable().apply {
                         setColor(Color.rgb(27, 91, 57))
@@ -5660,6 +5662,7 @@ class VideoEditorActivity : Activity() {
                 contentDescription = if (isStart) "Efekt başlangıç tutamacı" else "Efekt bitiş tutamacı"
                 isClickable = true
                 isFocusable = true
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
                 addView(View(this@VideoEditorActivity).apply {
                     background = android.graphics.drawable.GradientDrawable().apply {
                         setColor(Color.rgb(116, 65, 25))
@@ -7003,6 +7006,16 @@ class VideoEditorActivity : Activity() {
             if (handle.width > 0 && handle.height > 0) {
                 handle.systemGestureExclusionRects = listOf(
                     android.graphics.Rect(0, 0, handle.width, handle.height)
+                )
+            }
+            if (timelineSyncTestEnabled) {
+                val hasGestureExclusion = handle.systemGestureExclusionRects.isNotEmpty()
+                android.util.Log.i(
+                    "EditorTouchTest",
+                    "TIMELINE_EDGE_GESTURE_EXCLUSION description=${handle.contentDescription} " +
+                        "width=${handle.width} height=${handle.height} " +
+                        "accessibility=${handle.importantForAccessibility} " +
+                        "gestureExclusion=$hasGestureExclusion"
                 )
             }
         }
