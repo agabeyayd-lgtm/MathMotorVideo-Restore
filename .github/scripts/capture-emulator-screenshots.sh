@@ -2877,8 +2877,24 @@ for node in viewport.iter("node"):
         labels.append((visible_bottom, (left + right) // 2, (visible_top + visible_bottom) // 2))
 if not labels:
     raise SystemExit("No visible non-clickable label is available for a safe Efektler swipe.")
-_, center_x, start_y = max(labels)
-start_y = min(start_y, view_bottom - 36)
+_, center_x, label_center_y = max(labels)
+# Start near the lower edge of the same verified non-clickable label.
+# Its center can leave less than 50px of travel when the label sits high in
+# the viewport, even though the lower part of that label is a safe touch area.
+label_rects = []
+for node in viewport.iter("node"):
+    if node.attrib.get("class") != "android.widget.TextView" or node.attrib.get("clickable") != "false":
+        continue
+    rect = bounds(node)
+    if rect:
+        left, top, right, bottom = rect
+        visible_top = max(top, view_top)
+        visible_bottom = min(bottom, view_bottom)
+        if right - left >= 180 and visible_bottom - visible_top >= 32:
+            label_rects.append((visible_bottom, (left + right) // 2, visible_top, visible_bottom))
+_, _, label_top, label_bottom = max(label_rects)
+start_y = min(label_bottom - 8, view_bottom - 36)
+start_y = max(start_y, label_top + 8)
 end_y = max(view_top + 16, start_y - min(120, lane_height // 2))
 if start_y - end_y < 50:
     raise SystemExit("The Efektler viewport has insufficient safe vertical travel.")
