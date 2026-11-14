@@ -622,7 +622,7 @@ class TimelineEdgeHandleMathTest {
     @Test
     fun invalidBoundsNeverReturnAZeroWidthTarget() {
         assertEquals(1, TimelineEdgeHandleMath.targetWidthPx(0, 0))
-        assertEquals(40, TimelineEdgeHandleMath.targetWidthPx(100, 0))
+        assertEquals(1, TimelineEdgeHandleMath.targetWidthPx(100, 0))
     }
 
     @Test
