@@ -239,6 +239,7 @@ class VideoEditorActivity : Activity() {
     )
     private lateinit var textOpacityLabel: TextView
     private lateinit var textOpacitySeek: SeekBar
+    private lateinit var textCategoryFrame: FrameLayout
     private var textAnimationPreset = TextAnimationPreset.NONE
     private var textAnimationDurationMs = 350L
     private lateinit var textAnimationGroup: android.widget.RadioGroup
@@ -1892,6 +1893,7 @@ class VideoEditorActivity : Activity() {
         val tabPanels = linkedMapOf<String, LinearLayout>()
         val tabScrolls = linkedMapOf<String, ScrollView>()
         val tabFrame = FrameLayout(this)
+        textCategoryFrame = tabFrame
         tabNames.forEach { name ->
             val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(2), dp(4), dp(2), dp(8)) }
             val scroll = object : ScrollView(this@VideoEditorActivity) {
@@ -2880,6 +2882,9 @@ class VideoEditorActivity : Activity() {
             topBar = topBar,
             rulerAwareTimelineRefresh = { refreshTimelineTracks() }
         )
+        root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            if (activeEditorPanel == "text") fitTextCategoryFrameToVisiblePanel()
+        }
         previewFrame.post { logEditorPanelGeometry("closed-initial") }
     }
 
@@ -3626,6 +3631,37 @@ class VideoEditorActivity : Activity() {
         logEditorPanelGeometry("closed")
     }
 
+    /**
+     * The text composer keeps its input and category tabs fixed while the active
+     * category scrolls. Size that scrolling viewport to the part of the workspace
+     * that is actually on-screen; a fixed 190dp frame can extend below the parent
+     * panel on compact devices, leaving the last controls permanently clipped.
+     */
+    private fun fitTextCategoryFrameToVisiblePanel() {
+        if (!::textCategoryFrame.isInitialized || !::editorBottomSheet.isInitialized) return
+        val workspaceRoot = editorBottomSheet.parent as? View ?: return
+        textCategoryFrame.post {
+            if (activeEditorPanel != "text" || textCategoryFrame.parent == null ||
+                workspaceRoot.height <= 0 || textCategoryFrame.height <= 0
+            ) return@post
+
+            val rootLocation = IntArray(2)
+            val frameLocation = IntArray(2)
+            workspaceRoot.getLocationOnScreen(rootLocation)
+            textCategoryFrame.getLocationOnScreen(frameLocation)
+            val visibleBottom = rootLocation[1] + workspaceRoot.height - workspaceRoot.paddingBottom
+            val availableHeight = (visibleBottom - frameLocation[1] - dp(8)).coerceAtLeast(dp(64))
+            val desiredHeight = minOf(dp(190), availableHeight)
+            val params = textCategoryFrame.layoutParams as? LinearLayout.LayoutParams
+                ?: return@post
+            if (params.height != desiredHeight) {
+                params.height = desiredHeight
+                textCategoryFrame.layoutParams = params
+                textCategoryFrame.requestLayout()
+            }
+        }
+    }
+
     private fun showEditorPanel(name: String) {
         if (activeEditorPanel != name) finishTextHistoryEdit()
         // Capture the real pre-panel geometry before panel mode changes timeline
@@ -3720,6 +3756,7 @@ class VideoEditorActivity : Activity() {
             }
             button.setTextColor(if (selected) Color.rgb(86, 231, 200) else Color.rgb(205, 216, 228))
         }
+        if (name == "text") fitTextCategoryFrameToVisiblePanel()
         if (name == "export") status.text = "Projeyi kaydedebilir veya MP4 olarak dışa aktarabilirsin."
     }
 
