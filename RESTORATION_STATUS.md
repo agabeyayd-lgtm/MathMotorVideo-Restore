@@ -1558,3 +1558,12 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Root cause: the editor learned source aspect from the already downscaled thumbnail bitmap. At small dimensions, integer rounding in the decoded bitmap can make a true 9:16 source look slightly wider/narrower, and that approximate ratio then incorrectly changes the project canvas.
 - The timeline now reads source width, height and rotation from `MediaMetadataRetriever` before downscaling the frame. Thumbnail dimensions are used only for display, never to redefine project framing. Added pure tests for portrait, landscape, 90/270-degree rotation and invalid metadata.
 - The emulator's 9:16 ratio threshold is unchanged. Exact-head unit/build and API 35 emulator verification are required before considering this fixed; no app version bump, release or merge.
+
+
+## 2026-11-14 — PR #37 text-effects scroll target correction (validation pending)
+
+- Exact failing API 35 artifact from run `43599836034` confirms the Efektler tab opened and exposed its nested vertical ScrollView at `[52,1637][1028,1847]`. The explanatory, non-clickable TextView was visibly present at `[57,1647][1023,1746]`; its centre Y was 1696, only 59px below the viewport top.
+- The smoke helper incorrectly required a safe TextView centre at least 72px below the viewport top, so it rejected that visible row and stopped before touching the off-screen contour control. This was a test-harness geometry cutoff, not evidence that the app's contour control was broken.
+- Updated `.github/scripts/capture-emulator-screenshots.sh` on the PR branch to select a non-clickable TextView by its actual intersection with the nested ScrollView, then swipe upward from within that label while staying inside the measured viewport. The clickable background checkbox is excluded from the gesture target. The control visibility and touch-target assertions remain intact; no test is skipped or weakened.
+- Fix commit: `38b66f0e6b890be88a0f228ef129a2c1955b352c`. Awaiting fresh unit/build, debug APK packaging and API 35 emulator results on this exact head. The video and text grip tests later in the same smoke script have not yet been reached on the failed run and remain unverified.
+- PR #37 remains open and unmerged. No main-branch update, version-code change, signing, or release was made.
