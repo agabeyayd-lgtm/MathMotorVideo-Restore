@@ -596,3 +596,62 @@ class TimelineVideoMathTest {
         )
     }
 }
+
+
+class TimelineEdgeHandleMathTest {
+    @Test
+    fun wideClipUsesTheConfiguredMaximumTouchTarget() {
+        assertEquals(
+            144,
+            TimelineEdgeHandleMath.targetWidthPx(
+                blockWidthPx = 600,
+                minTargetPx = 36,
+                maxTargetPx = 144
+            )
+        )
+    }
+
+    @Test
+    fun narrowClipSharesItsWidthBetweenTheTwoEdgeTargets() {
+        assertEquals(
+            50,
+            TimelineEdgeHandleMath.targetWidthPx(
+                blockWidthPx = 100,
+                minTargetPx = 24,
+                maxTargetPx = 144
+            )
+        )
+    }
+
+    @Test
+    fun extremelyShortClipKeepsTheMinimumUsableTarget() {
+        assertEquals(
+            24,
+            TimelineEdgeHandleMath.targetWidthPx(
+                blockWidthPx = 20,
+                minTargetPx = 24,
+                maxTargetPx = 144
+            )
+        )
+    }
+
+    @Test
+    fun invalidBoundsAreNormalizedWithoutReturningAZeroWidthTarget() {
+        assertEquals(
+            1,
+            TimelineEdgeHandleMath.targetWidthPx(
+                blockWidthPx = 0,
+                minTargetPx = 0,
+                maxTargetPx = 0
+            )
+        )
+        assertEquals(
+            40,
+            TimelineEdgeHandleMath.targetWidthPx(
+                blockWidthPx = 100,
+                minTargetPx = 40,
+                maxTargetPx = 12
+            )
+        )
+    }
+}
