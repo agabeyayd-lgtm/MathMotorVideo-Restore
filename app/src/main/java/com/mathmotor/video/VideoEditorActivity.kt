@@ -8630,6 +8630,10 @@ class VideoEditorActivity : Activity() {
                     if (overlay.background != null) overlay.background = null
                 }
             }
+            // Match the export compositor: opacity applies to the complete
+            // text layer, including its fill, outline, shadow and background.
+            val previewOpacity = layer.opacityPercent.coerceIn(0, 100) / 100f
+            if (overlay.alpha != previewOpacity) overlay.alpha = previewOpacity
             (overlay as? StyledPreviewTextView)?.apply {
                 outlineEnabled = layer.kind != TextLayerKind.STICKER && layer.outlineEnabled
                 outlineStrokeColor = layer.outlineColor
