@@ -29,13 +29,14 @@ sample_pattern = re.compile(
     r"expectedScrollPx=(\d+) "
     r"playheadCenterPx=(-?\d+) "
     r"playButtonCenterPx=(-?\d+) "
-    r"expectedCenterPx=(-?\d+)"
+    r"expectedCenterPx=(-?\d+) "
+    r"frameCenterPx=(-?\d+)"
 )
 
 samples: list[dict[str, object]] = []
 for match in sample_pattern.finditer(log):
     (playing, player_ms, playhead_ms, raw_scrolls, raw_origins, raw_pps,
-     expected_scroll, center, play_button_center, expected_center) = match.groups()
+     expected_scroll, center, play_button_center, expected_center, frame_center) = match.groups()
     if playing != "true":
         continue
     scrolls = [int(value) for value in raw_scrolls.split(",") if value]
@@ -52,6 +53,7 @@ for match in sample_pattern.finditer(log):
         "center": int(center),
         "play_button_center": int(play_button_center),
         "expected_center": int(expected_center),
+        "frame_center": int(frame_center),
     })
 
 if len(samples) < 5:
@@ -127,8 +129,8 @@ for index, sample in enumerate(samples):
         )
     if abs(center - expected_center) > 1:
         raise SystemExit(
-            f"FAIL: playhead is not at the calculated timeline center: "
-            f"actual={center}px, expected={expected_center}px."
+            f"FAIL: playhead is not anchored to the actual Play control center: "
+            f"actual={center}px, expected Play center={expected_center}px."
         )
     if abs(center - int(sample["play_button_center"])) > 1:
         raise SystemExit(
@@ -158,4 +160,9 @@ print(f"  Player position: {first_player} -> {last_player} ms")
 print(f"  Timeline lanes synchronized: {lane_count}")
 print(f"  Shared ruler/filmstrip scroll follows playhead time; no negative scroll")
 print(f"  Fixed playhead/Play center: {baseline_center}px")
-print("  Ruler and first-video-frame zero edges share the same screen coordinate")
+frame_deltas = [int(sample["frame_center"]) - int(sample["play_button_center"]) for sample in samples]
+print(
+    "  Timeline frame-center delta from Play anchor: "
+    f"min={min(frame_deltas)}px max={max(frame_deltas)}px (diagnostic)"
+)
+print("  Every ruler/media time-zero edge maps to the actual Play-control center")
