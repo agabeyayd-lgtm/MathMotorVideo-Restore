@@ -2944,7 +2944,7 @@ PY
             exit 93
           fi
           read -r effect_scroll_x effect_scroll_start_y effect_scroll_end_y <<< "$effect_scroll_gesture"
-          echo "Using measured clear lane at x=$effect_scroll_x, safe y=$effect_scroll_start_y->$effect_scroll_end_y."
+          echo "Using non-clickable text row as safe swipe anchor: x=$effect_scroll_x, y=$effect_scroll_start_y->$effect_scroll_end_y."
           timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$effect_scroll_x" "$effect_scroll_start_y" "$effect_scroll_x" "$effect_scroll_end_y" 450
           sleep 1
           effect_hierarchy="editor-text-effects-scroll-$effect_control_index-$scroll_attempt.xml"
