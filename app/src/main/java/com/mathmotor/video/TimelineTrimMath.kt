@@ -539,17 +539,21 @@ internal object TimelineVideoMath {
 
 
 /**
- * Sizes timeline edge hit targets so both ends remain independently draggable.
- * The transparent regions are centred on opposite clip boundaries and each
- * stays at or below half the clip width, preserving a clear gap between them.
- * Normal clips use the configured 48dp target whenever the geometry permits.
+ * Returns the full transparent touch-target width for a timeline edge grip.
+ *
+ * Each target is centred on its own clip boundary by the layout helper. Do not
+ * shrink it to half the clip width: short clips still need a usable minimum
+ * touch target, and the two visual grip centres remain anchored to opposite
+ * edges so users can start a trim at either end.
  */
 internal object TimelineEdgeHandleMath {
     fun targetWidthPx(
         blockWidthPx: Int,
         maxTargetPx: Int
     ): Int {
-        val halfBlock = (blockWidthPx.coerceAtLeast(1) / 2).coerceAtLeast(1)
-        return halfBlock.coerceAtMost(maxTargetPx.coerceAtLeast(1))
+        // Keep the parameter in the API because the layout is boundary-relative;
+        // clamp invalid geometry defensively without reducing the touch target.
+        blockWidthPx.coerceAtLeast(1)
+        return maxTargetPx.coerceAtLeast(1)
     }
 }
