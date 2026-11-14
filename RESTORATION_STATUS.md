@@ -1558,3 +1558,12 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Root cause: the editor learned source aspect from the already downscaled thumbnail bitmap. At small dimensions, integer rounding in the decoded bitmap can make a true 9:16 source look slightly wider/narrower, and that approximate ratio then incorrectly changes the project canvas.
 - The timeline now reads source width, height and rotation from `MediaMetadataRetriever` before downscaling the frame. Thumbnail dimensions are used only for display, never to redefine project framing. Added pure tests for portrait, landscape, 90/270-degree rotation and invalid metadata.
 - The emulator's 9:16 ratio threshold is unchanged. Exact-head unit/build and API 35 emulator verification are required before considering this fixed; no app version bump, release or merge.
+
+
+## 2026-11-15 — Single measured anchor for timeline zero/playhead
+
+- Source review found that the fixed guide and time-zero spacer both used the timeline frame midpoint, while the actual Play-button center was calculated separately only for diagnostics. This duplicated coordinate assumption could yield a common offset across all synchronized lanes if the frame and playback row diverged after layout/inset measurement.
+- The repair makes the actual on-screen Play-button center authoritative for the visible playhead line and every lane's leading zero spacer. Header gutter width is now measured from the actual lane/frame positions after layout; 87dp is retained only as a pre-layout fallback.
+- The time-zero spacer remains transparent and present. It is required timeline geometry, not clip media; deleting or painting it would reintroduce a zero-time alignment defect.
+- The API 35 sync log/validator now reports the frame-center difference and requires each lane's zero-edge screen coordinate plus its shared scroll offset to match the actual Play-button center within the existing 1px tolerance. Player/playhead time and pixel-scale assertions are unchanged.
+- **Verification boundary:** implementation and validator are in draft PR #38. Exact-head unit/build and emulator results are pending; no pass is claimed. Keep the PR unmerged and do not change app version metadata, sign/publish an APK, or activate the updater until verification succeeds.
