@@ -4385,15 +4385,17 @@ reverse_width="$((reverse_x2 - reverse_x1))"
 reverse_inset="$((reverse_width / 10))"
 if [ "$reverse_inset" -lt 10 ]; then reverse_inset=10; fi
 if [ "$reverse_inset" -gt 24 ]; then reverse_inset=24; fi
-# Keep the reverse gesture entirely to the right of the fixed playhead's
-# 28dp touch target. Crossing that overlay hands the gesture to playhead seeking
-# instead of the HorizontalScrollView and can falsely look like reverse scrub.
+# Keep the reverse gesture entirely to the left of the fixed playhead's
+# 28dp touch target. After a forward scrub the clip may be mostly off-screen
+# to the left, leaving no usable area on the playhead's right. A rightward swipe
+# ending just before the playhead still reverses time without crossing its
+# overlay hit region or handing the gesture to playhead seeking.
 reverse_start="$((reverse_x1 + reverse_inset))"
-playhead_safe_start="$((playhead_center + 20))"
-if [ "$reverse_start" -lt "$playhead_safe_start" ]; then
-  reverse_start="$playhead_safe_start"
-fi
 reverse_end="$((reverse_x2 - reverse_inset))"
+playhead_safe_end="$((playhead_center - 20))"
+if [ "$reverse_end" -gt "$playhead_safe_end" ]; then
+  reverse_end="$playhead_safe_end"
+fi
 reverse_distance="$((reverse_end - reverse_start))"
 if [ "$reverse_distance" -lt 80 ]; then
   echo "The visible filmstrip range became too small for the reverse scrub (${reverse_width}px wide; ${reverse_distance}px usable after ${reverse_inset}px insets)."
