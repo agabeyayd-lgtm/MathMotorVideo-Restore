@@ -7494,11 +7494,18 @@ class VideoEditorActivity : Activity() {
         activeProjectHistorySnapshot = null
         val after = captureProjectEditSnapshot()
         val changed = hasProjectContentChanged(before, after)
+        fun selectedTextRange(snapshot: ProjectEditSnapshot): String {
+            val id = snapshot.selectedTextLayerId ?: return "none"
+            val layer = snapshot.textLayers.firstOrNull { it.id == id } ?: return "missing"
+            return "${layer.startMs}:${layer.endMs}"
+        }
         if (timelineSyncTestEnabled) {
             android.util.Log.i(
                 "ProjectHistoryTest",
                 "PROJECT_HISTORY_GESTURE_END beforeSoundVolume=${before.soundVolume} " +
-                    "afterSoundVolume=${after.soundVolume} changed=$changed undoCountBefore=${undoProjectHistory.size}"
+                    "afterSoundVolume=${after.soundVolume} changed=$changed undoCountBefore=${undoProjectHistory.size} " +
+                    "beforeTextId=${before.selectedTextLayerId} afterTextId=${after.selectedTextLayerId} " +
+                    "beforeTextRange=${selectedTextRange(before)} afterTextRange=${selectedTextRange(after)}"
             )
         }
         if (changed) {
@@ -7508,7 +7515,8 @@ class VideoEditorActivity : Activity() {
             android.util.Log.i(
                 "ProjectHistoryTest",
                 "PROJECT_HISTORY_GESTURE_COMMITTED soundVolume=${after.soundVolume} " +
-                    "undoCountAfter=${undoProjectHistory.size} undoEnabled=${undoProjectButton?.isEnabled}"
+                    "undoCountAfter=${undoProjectHistory.size} undoEnabled=${undoProjectButton?.isEnabled} " +
+                    "selectedTextId=${after.selectedTextLayerId} selectedTextRange=${selectedTextRange(after)}"
             )
         }
     }
@@ -7559,6 +7567,13 @@ class VideoEditorActivity : Activity() {
         }
         val beforeClipRanges = videoHistoryValue(current.clips)
         val afterClipRanges = videoHistoryValue(restored.clips)
+        fun selectedTextRange(snapshot: ProjectEditSnapshot): String {
+            val id = snapshot.selectedTextLayerId ?: return "none"
+            val layer = snapshot.textLayers.firstOrNull { it.id == id } ?: return "missing"
+            return "${layer.startMs}:${layer.endMs}"
+        }
+        val beforeSelectedTextRange = selectedTextRange(current)
+        val afterSelectedTextRange = selectedTextRange(restored)
         val beforeSelectedOverlay = current.selectedOverlayId?.let { id -> current.overlays.firstOrNull { it.id == id } }
         val afterSelectedOverlay = restored.selectedOverlayId?.let { id -> restored.overlays.firstOrNull { it.id == id } }
         fun overlayHistoryValue(overlay: OverlayClip?): String = overlay?.let {
@@ -7578,6 +7593,8 @@ class VideoEditorActivity : Activity() {
                 "beforeOverlays=${current.overlays.size} afterOverlays=${restored.overlays.size} " +
                 "beforeTexts=${current.textLayers.size} afterTexts=${restored.textLayers.size} " +
                 "beforeTextChars=$beforeTextChars afterTextChars=$afterTextChars " +
+                "beforeSelectedTextId=${current.selectedTextLayerId} afterSelectedTextId=${restored.selectedTextLayerId} " +
+                "beforeSelectedTextRange=$beforeSelectedTextRange afterSelectedTextRange=$afterSelectedTextRange " +
                 "beforeMusic=${current.musicUri != null} afterMusic=${restored.musicUri != null} " +
                 "beforeMusicStartMs=${current.musicStartMs} afterMusicStartMs=${restored.musicStartMs} " +
                 "beforeMusicDurationMs=${current.musicDurationMs} afterMusicDurationMs=${restored.musicDurationMs} " +
@@ -7616,8 +7633,22 @@ class VideoEditorActivity : Activity() {
 
     private fun undoProjectEdit() {
         dismissTextInputForHistoryRestore()
+        if (timelineSyncTestEnabled) {
+            android.util.Log.i(
+                "ProjectHistoryTest",
+                "PROJECT_HISTORY_UNDO_REQUEST undoBeforeFinish=${undoProjectHistory.size} " +
+                    "activeText=${activeTextHistorySnapshot != null} activeGesture=${activeProjectHistorySnapshot != null}"
+            )
+        }
         finishTextHistoryEdit()
         finishProjectHistoryGesture()
+        if (timelineSyncTestEnabled) {
+            android.util.Log.i(
+                "ProjectHistoryTest",
+                "PROJECT_HISTORY_UNDO_READY undoAfterFinish=${undoProjectHistory.size} " +
+                    "activeText=${activeTextHistorySnapshot != null} activeGesture=${activeProjectHistorySnapshot != null}"
+            )
+        }
         if (undoProjectHistory.isEmpty()) {
             status.text = "Geri alınacak proje işlemi yok."
             return
