@@ -83,6 +83,28 @@ class TimelineVideoEffectMathTest {
     }
 
     @Test
+    fun extremeDragDeltasClampWithoutOverflow() {
+        val original = effect(1L, 2_000L, 3_000L)
+
+        assertEquals(
+            effect(1L, 7_000L, 3_000L),
+            TimelineVideoEffectMath.move(original, Long.MAX_VALUE, 10_000L)
+        )
+        assertEquals(
+            effect(1L, 0L, 3_000L),
+            TimelineVideoEffectMath.move(original, Long.MIN_VALUE, 10_000L)
+        )
+        assertEquals(
+            effect(1L, 4_750L, 250L),
+            TimelineVideoEffectMath.trimStart(original, Long.MAX_VALUE, 10_000L)
+        )
+        assertEquals(
+            effect(1L, 2_000L, 250L),
+            TimelineVideoEffectMath.trimEnd(original, Long.MIN_VALUE, 10_000L)
+        )
+    }
+
+    @Test
     fun endTrimClampsAtProjectBoundary() {
         assertEquals(
             effect(1L, 8_000L, 2_000L),
