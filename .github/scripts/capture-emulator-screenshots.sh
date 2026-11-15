@@ -3640,54 +3640,6 @@ if not commits:
         f"No independent text-edge Undo entry recorded {expected_before}->{expected_after}."
     )
 print(commits[-1])
-PY}
-
-assert_text_edge_commit() {
-  local log_file="$1"
-  local edge="$2"
-  python3 - "$log_file" "$edge" <<'PY'
-import re
-import sys
-path, edge = sys.argv[1:]
-pattern = re.compile(
-    r"TEXT_EDGE_TRIM_COMMIT edge=(start|end) layerId=([^ ]+) "
-    r"beforeStartMs=(\d+) beforeEndMs=(\d+) "
-    r"afterStartMs=(\d+) afterEndMs=(\d+) deltaPx=(-?\d+(?:\.\d+)?) deltaMs=(-?\d+)"
-)
-matches = []
-for line in open(path, errors="replace"):
-    match = pattern.search(line)
-    if match and match.group(1) == edge:
-        matches.append(match)
-if not matches:
-    raise SystemExit(f"No physical text {edge}-edge trim commit marker was recorded.")
-m = matches[-1]
-layer, before_start, before_end, after_start, after_end, delta_px, delta_ms = m.groups()[1:]
-before_start, before_end, after_start, after_end, delta_ms = map(
-    int, (before_start, before_end, after_start, after_end, delta_ms)
-)
-delta_px = float(delta_px)
-if abs(delta_px) < 15 or delta_ms == 0:
-    raise SystemExit(f"The text {edge} handle did not register a real drag: {m.group(0)}")
-if edge == "start":
-    if after_start <= before_start or after_end != before_end:
-        raise SystemExit(
-            f"Text left handle must change only startMs: before={before_start},{before_end} "
-            f"after={after_start},{after_end}"
-        )
-else:
-    if after_start != before_start or after_end >= before_end:
-        raise SystemExit(
-            f"Text right handle must change only endMs: before={before_start},{before_end} "
-            f"after={after_start},{after_end}"
-        )
-if after_end - after_start < 500:
-    raise SystemExit(f"Text trim violated the 500ms minimum span: {m.group(0)}")
-print(before_start, before_end, after_start, after_end, layer)
-print(
-    f"PASS: physical text {edge} trim changed only its own boundary: "
-    f"{before_start}-{before_end}ms -> {after_start}-{after_end}ms"
-)
 PY
 }
 
