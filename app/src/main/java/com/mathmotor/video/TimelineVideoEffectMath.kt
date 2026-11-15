@@ -83,10 +83,10 @@ internal object TimelineVideoEffectMath {
         totalDurationMs: Long
     ): TimelineVideoEffectClip? {
         val normalized = normalize(clip, totalDurationMs) ?: return null
-        val start = (normalized.timelineStartMs + deltaMs).coerceIn(
-            0L, (totalDurationMs - normalized.durationMs).coerceAtLeast(0L)
-        )
-        return normalized.copy(timelineStartMs = start)
+        val maxStart = (totalDurationMs - normalized.durationMs).coerceAtLeast(0L)
+        val baseStart = normalized.timelineStartMs.coerceAtMost(maxStart)
+        val safeDelta = deltaMs.coerceIn(-baseStart, maxStart - baseStart)
+        return normalized.copy(timelineStartMs = baseStart + safeDelta)
     }
 
     fun trimStart(
@@ -95,9 +95,9 @@ internal object TimelineVideoEffectMath {
         totalDurationMs: Long
     ): TimelineVideoEffectClip? {
         val normalized = normalize(clip, totalDurationMs) ?: return null
-        val start = (normalized.timelineStartMs + deltaMs).coerceIn(
-            0L, normalized.endMs - MIN_DURATION_MS
-        )
+        val maximumStart = normalized.endMs - MIN_DURATION_MS
+        val safeDelta = deltaMs.coerceIn(-normalized.timelineStartMs, maximumStart - normalized.timelineStartMs)
+        val start = normalized.timelineStartMs + safeDelta
         return normalized.copy(
             timelineStartMs = start,
             durationMs = normalized.endMs - start
@@ -110,9 +110,11 @@ internal object TimelineVideoEffectMath {
         totalDurationMs: Long
     ): TimelineVideoEffectClip? {
         val normalized = normalize(clip, totalDurationMs) ?: return null
-        val end = (normalized.endMs + deltaMs).coerceIn(
-            normalized.timelineStartMs + MIN_DURATION_MS, totalDurationMs
-        )
+        val minimumEnd = normalized.timelineStartMs + MIN_DURATION_MS
+        val minimumDelta = minimumEnd - normalized.endMs
+        val maximumDelta = totalDurationMs - normalized.endMs
+        val safeDelta = deltaMs.coerceIn(minimumDelta, maximumDelta)
+        val end = normalized.endMs + safeDelta
         return normalized.copy(durationMs = end - normalized.timelineStartMs)
     }
 }
