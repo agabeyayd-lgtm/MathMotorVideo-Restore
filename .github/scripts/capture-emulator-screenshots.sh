@@ -4287,16 +4287,18 @@ for attempt in $(seq 1 12); do
     -s TimelineAlignmentTest:I TimelineSyncTest:I TimelineFrameSyncTest:I TimelineThumbnail:I \
     > emulator-screenshots/thumbnail-alignment-measurements.txt 2>&1 || true
   alignment="$(python3 .github/scripts/assert-thumbnail-alignment.py prepare emulator-screenshots/thumbnail-alignment-measurements.txt)"
-  read -r thumb_center_x thumb_center_y play_center_x thumb_sample_ms <<< "$alignment"
-  delta_x="$((play_center_x - thumb_center_x))"
-  absolute_delta="$((delta_x < 0 ? -delta_x : delta_x))"
-  echo "Alignment attempt $attempt: sample=${thumb_sample_ms}ms center=${thumb_center_x}px playhead=${play_center_x}px delta=${delta_x}px"
-  # Integer View bounds can round geometrically centered half-pixel
-  # positions to adjacent pixels. Treat <=2px as visually centered.
-  if [ "$absolute_delta" -le 2 ]; then
+  read -r thumb_center_x2 thumb_center_y play_center_x2 thumb_sample_ms <<< "$alignment"
+  delta_x2="$((play_center_x2 - thumb_center_x2))"
+  absolute_delta_x2="$((delta_x2 < 0 ? -delta_x2 : delta_x2))"
+  echo "Alignment attempt $attempt: sample=${thumb_sample_ms}ms thumbnailCenter2x=${thumb_center_x2} playheadCenter2x=${play_center_x2} delta=${delta_x2}/2px"
+  # Exact doubled coordinates retain half-pixel centers. Only a <=0.5px
+  # representation difference passes; any full-pixel offset must be corrected.
+  if [ "$absolute_delta_x2" -le 1 ]; then
     thumbnail_aligned=true
     break
   fi
+  # Convert the measured half-pixel delta to the nearest whole-pixel gesture.
+  delta_x="$((delta_x2 >= 0 ? (delta_x2 + 1) / 2 : -(((-delta_x2) + 1) / 2)))"
   gesture_delta="$((delta_x + (delta_x < 0 ? -alignment_gesture_slop_px : alignment_gesture_slop_px)))"
   # Start outside the fixed playhead overlay hit region. The centre guide is
   # intentionally visual-only, but keeping the gesture origin clear of it also
@@ -4312,7 +4314,7 @@ for attempt in $(seq 1 12); do
   sleep 1
 done
 if [ "$thumbnail_aligned" != true ]; then
-  echo "Could not align a filmstrip thumbnail within 2px of the fixed playhead after 12 measured drags."
+  echo "Could not align a filmstrip thumbnail within 0.5px of the fixed playhead after 12 measured drags."
   collect_capture_diagnostics thumbnail-alignment-not-centered
   exit 24
 fi
