@@ -4385,23 +4385,70 @@ reverse_width="$((reverse_x2 - reverse_x1))"
 reverse_inset="$((reverse_width / 10))"
 if [ "$reverse_inset" -lt 10 ]; then reverse_inset=10; fi
 if [ "$reverse_inset" -gt 24 ]; then reverse_inset=24; fi
-# Keep the reverse gesture entirely to the left of the fixed playhead's
-# 28dp touch target. After a forward scrub the clip may be mostly off-screen
-# to the left, leaving no usable area on the playhead's right. A rightward swipe
-# ending just before the playhead still reverses time without crossing its
-# overlay hit region or handing the gesture to playhead seeking.
-reverse_start="$((reverse_x1 + reverse_inset))"
-# Android's left-edge system-back gesture owns the first ~24dp. Start at
-# least 32dp inside the screen so the reverse scrub reaches the timeline.
-left_gesture_safe_start="$((32 * density_dpi / 160))"
-if [ "$reverse_start" -lt "$left_gesture_safe_start" ]; then
-  reverse_start="$left_gesture_safe_start"
+# The measured clip bounds describe the full content child and can extend
+# beyond the HorizontalScrollView's visible viewport after a long forward scrub.
+# Read a fresh hierarchy and use the actual video-lane viewport intersection;
+# otherwise a reverse swipe can start in the left tool gutter, outside the lane.
+if ! dump_hierarchy filmstrip-reverse-target.xml emulator-screenshots/filmstrip-reverse-target.xml; then
+  echo "Could not inspect the live video-lane viewport before reverse scrubbing."
+  collect_capture_diagnostics filmstrip-reverse-viewport-hierarchy-missing
+  exit 21
 fi
-reverse_end="$((reverse_x2 - reverse_inset))"
+filmstrip_viewport_bounds="$(python3 - emulator-screenshots/filmstrip-reverse-target.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+candidates = []
+for node in root.iter("node"):
+    if node.attrib.get("class") != "android.widget.HorizontalScrollView":
+        continue
+    if node.attrib.get("scrollable") != "true":
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if not match:
+        continue
+    left, top, right, bottom = map(int, match.groups())
+    width, height = right - left, bottom - top
+    # The ruler is the first short row. The next tall horizontal viewport is
+    # the video filmstrip; overlay/text/audio lanes follow below it.
+    if width > 500 and 90 <= height <= 140 and 1000 <= top < 1400:
+        candidates.append((top, left, right, bottom))
+if not candidates:
+    raise SystemExit("Could not locate the live video-filmstrip HorizontalScrollView.")
+top, left, right, bottom = min(candidates)
+print(left, top, right, bottom)
+PY
+)"
+if [ -z "$filmstrip_viewport_bounds" ]; then
+  echo "Could not resolve the live video-filmstrip viewport bounds."
+  collect_capture_diagnostics filmstrip-reverse-viewport-bounds-missing
+  exit 21
+fi
+read -r filmstrip_viewport_left filmstrip_viewport_top filmstrip_viewport_right filmstrip_viewport_bottom <<< "$filmstrip_viewport_bounds"
+visible_clip_left="$reverse_x1"
+if [ "$visible_clip_left" -lt "$filmstrip_viewport_left" ]; then
+  visible_clip_left="$filmstrip_viewport_left"
+fi
+visible_clip_right="$reverse_x2"
+if [ "$visible_clip_right" -gt "$filmstrip_viewport_right" ]; then
+  visible_clip_right="$filmstrip_viewport_right"
+fi
+visible_clip_width="$((visible_clip_right - visible_clip_left))"
+reverse_inset="$((visible_clip_width / 10))"
+if [ "$reverse_inset" -lt 10 ]; then reverse_inset=10; fi
+if [ "$reverse_inset" -gt 24 ]; then reverse_inset=24; fi
+# Keep the rightward drag on visible thumbnail pixels and end before the
+# fixed playhead's 28dp hit target. The content child's off-screen coordinates
+# are never used as touch points.
+reverse_start="$((visible_clip_left + reverse_inset))"
+reverse_end="$((visible_clip_right - reverse_inset))"
 playhead_safe_end="$((playhead_center - 20))"
 if [ "$reverse_end" -gt "$playhead_safe_end" ]; then
   reverse_end="$playhead_safe_end"
 fi
+echo "Reverse filmstrip swipe uses visible lane intersection [$visible_clip_left,$visible_clip_right] within viewport [$filmstrip_viewport_left,$filmstrip_viewport_right]: x=$reverse_start->$reverse_end y=$reverse_y."
 reverse_distance="$((reverse_end - reverse_start))"
 if [ "$reverse_distance" -lt 80 ]; then
   echo "The visible filmstrip range became too small for the reverse scrub (${reverse_width}px wide; ${reverse_distance}px usable after ${reverse_inset}px insets)."
