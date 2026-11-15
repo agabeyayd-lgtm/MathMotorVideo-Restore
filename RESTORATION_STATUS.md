@@ -1,3 +1,13 @@
+## 2026-11-15 — Use live clip bounds for the trim-grip emulator gestures
+
+- PR #40's first emulator run passed the Android build, unit tests, APK packaging and clip split/reorder persistence checks, then stopped before trim-grip measurement because the test tapped outside the first clip.
+- Root cause was stale geometry: the last rate-limited timeline log snapshot placed the clip at y=1223–1349, while the immediately-following live UI hierarchy placed the same clickable clip at y=1155–1281. The scripted tap therefore landed 5px below the live clip.
+- Updated the smoke test to take a fresh UIAutomator hierarchy before selecting the restored first clip and before each trim gesture. It now calculates tap/swipe coordinates from the live clickable clip View bounds rather than a possibly stale timeline snapshot.
+- No production trim math, gesture handling, clip timing, selection UI or history behavior was changed. The full-height white tab design and its measured alignment/height assertions remain intact.
+- Exact-head unit/build/emulator validation is pending on the corrected test driver. PR #40 remains open; no version bump, merge, release or APK delivery.
+
+---
+
 ## 2026-11-15 — CapCut-style full-height video trim handle appearance
 
 - The user's CapCut reference shows a broad white rounded edge tab spanning the complete clip-strip height, with a small centred grip mark; a short narrow pill floating mid-strip is not visually equivalent.
