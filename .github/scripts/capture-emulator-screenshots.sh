@@ -3617,6 +3617,43 @@ print(left, top, right, bottom, center_x, center_y, scroll_right)
 PY
 }
 
+assert_text_history_commit() {
+  local log_file="$1"
+  local expected_before="$2"
+  local expected_after="$3"
+  python3 - "$log_file" "$expected_before" "$expected_after" <<'PY'
+import re
+import sys
+path, expected_before, expected_after = sys.argv[1:]
+gesture = re.compile(
+    r"PROJECT_HISTORY_GESTURE_END .*?changed=true .*?"
+    r"beforeTextRange=(\d+:\d+) afterTextRange=(\d+:\d+)"
+)
+commit = re.compile(
+    r"PROJECT_HISTORY_GESTURE_COMMITTED .*?undoCountAfter=(\d+) .*?selectedTextRange=(\d+:\d+)"
+)
+gestures = []
+for line in open(path, errors="replace"):
+    m = gesture.search(line)
+    if m and m.group(1) == expected_before and m.group(2) == expected_after:
+        gestures.append(m)
+if not gestures:
+    raise SystemExit(
+        f"No independent text-history gesture committed {expected_before}->{expected_after}."
+    )
+commits = []
+for line in open(path, errors="replace"):
+    m = commit.search(line)
+    if m and m.group(2) == expected_after:
+        commits.append(int(m.group(1)))
+if not commits:
+    raise SystemExit(
+        f"Text range changed {expected_before}->{expected_after}, but no history push recorded."
+    )
+print(commits[-1])
+PY
+}
+
 assert_text_edge_commit() {
   local log_file="$1"
   local edge="$2"
@@ -3719,7 +3756,8 @@ timeout -k 2s 8s adb -s emulator-5554 logcat -c
 timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$text_start_x" "$text_start_y" "$((text_start_x + 48))" "$text_start_y" 700
 text_start_committed=false
 for attempt in $(seq 1 12); do
-  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I \
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime \
+    -s EditorTouchTest:I ProjectHistoryTest:I \
     > emulator-screenshots/text-edge-start-trim-logcat.txt 2>&1 || true
   if grep -Fq "TEXT_EDGE_TRIM_COMMIT edge=start" emulator-screenshots/text-edge-start-trim-logcat.txt; then
     text_start_committed=true
@@ -3732,6 +3770,11 @@ if [ "$text_start_committed" != true ]; then
   collect_capture_diagnostics text-trim-start-gesture-not-committed
   exit 95
 fi
+text_start_history_count="$(assert_text_history_commit emulator-screenshots/text-edge-start-trim-logcat.txt 0:8000 615:8000)" || {
+  collect_capture_diagnostics text-trim-start-history-not-committed
+  exit 95
+}
+echo "PASS: first text trim created its own Undo entry (depth=$text_start_history_count)."
 text_start_values="$(assert_text_edge_commit emulator-screenshots/text-edge-start-trim-logcat.txt start)" || {
   collect_capture_diagnostics text-trim-start-changed-wrong-boundary
   exit 95
@@ -3886,7 +3929,8 @@ timeout -k 2s 8s adb -s emulator-5554 logcat -c
 timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$text_end_x" "$text_end_y" "$((text_end_x - 48))" "$text_end_y" 700
 text_end_committed=false
 for attempt in $(seq 1 12); do
-  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I \
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime \
+    -s EditorTouchTest:I ProjectHistoryTest:I \
     > emulator-screenshots/text-edge-end-trim-logcat.txt 2>&1 || true
   if grep -Fq "TEXT_EDGE_TRIM_COMMIT edge=end" emulator-screenshots/text-edge-end-trim-logcat.txt; then
     text_end_committed=true
@@ -3899,6 +3943,16 @@ if [ "$text_end_committed" != true ]; then
   collect_capture_diagnostics text-trim-end-gesture-not-committed
   exit 96
 fi
+text_end_history_count="$(assert_text_history_commit emulator-screenshots/text-edge-end-trim-logcat.txt 615:8000 615:7385)" || {
+  collect_capture_diagnostics text-trim-end-history-not-committed
+  exit 96
+}
+if [ "$text_end_history_count" -le "$text_start_history_count" ]; then
+  echo "The second text trim did not create a new, separate Undo entry: start=$text_start_history_count end=$text_end_history_count."
+  collect_capture_diagnostics text-trim-history-depth-did-not-increase
+  exit 96
+fi
+echo "PASS: second text trim created a separate Undo entry (depth=$text_end_history_count)."
 text_end_values="$(assert_text_edge_commit emulator-screenshots/text-edge-end-trim-logcat.txt end)" || {
   collect_capture_diagnostics text-trim-end-changed-wrong-boundary
   exit 96
@@ -3965,6 +4019,11 @@ if [ "$text_trim_undo_ready" != true ]; then
   collect_capture_diagnostics text-trim-undo-not-applied
   exit 97
 fi
+if ! grep -Fq "beforeSelectedTextRange=615:7385 afterSelectedTextRange=615:8000" emulator-screenshots/text-edge-undo-logcat.txt; then
+  echo "One Undo did not restore only the most recent right-edge trim: expected 615:8000."
+  collect_capture_diagnostics text-trim-undo-wrong-range
+  exit 97
+fi
 assert_text_grip_layout_and_state emulator-screenshots/text-edge-undo-logcat.txt \
   "$text_start_after_start" "$text_end_before_end" || {
   collect_capture_diagnostics text-trim-undo-wrong-range
@@ -3995,6 +4054,11 @@ done
 if [ "$text_trim_redo_ready" != true ]; then
   echo "Global Redo did not reapply and re-render the text timing edit."
   collect_capture_diagnostics text-trim-redo-not-applied
+  exit 98
+fi
+if ! grep -Fq "beforeSelectedTextRange=615:8000 afterSelectedTextRange=615:7385" emulator-screenshots/text-edge-redo-logcat.txt; then
+  echo "One Redo did not reapply only the right-edge trim: expected 615:7385."
+  collect_capture_diagnostics text-trim-redo-wrong-range
   exit 98
 fi
 assert_text_grip_layout_and_state emulator-screenshots/text-edge-redo-logcat.txt \
