@@ -4110,8 +4110,8 @@ for edge in ("start", "end"):
     if abs(offset) > 1 or width <= 0 or height != measured_strip_height:
         raise SystemExit(f"Invalid {edge} grip geometry: {latest[edge]}")
     x = round((center - win_left) * scale_x)
-    y1 = round((strip_top + (strip_bottom - strip_top) * 0.27 - win_top) * scale_y)
-    y2 = round((strip_top + (strip_bottom - strip_top) * 0.73 - win_top) * scale_y)
+    y1 = round((strip_top + (strip_bottom - strip_top) * 0.12 - win_top) * scale_y)
+    y2 = round((strip_top + (strip_bottom - strip_top) * 0.88 - win_top) * scale_y)
     for y in (y1, y2):
         white = 0
         total = 0
