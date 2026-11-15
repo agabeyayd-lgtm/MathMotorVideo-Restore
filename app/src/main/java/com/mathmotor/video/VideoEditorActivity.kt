@@ -4464,8 +4464,11 @@ class VideoEditorActivity : Activity() {
             val strip = FrameLayout(this).apply {
                 setBackgroundColor(Color.rgb(16, 25, 36))
                 layoutDirection = View.LAYOUT_DIRECTION_LTR
-                clipChildren = true
-                clipToPadding = true
+                // Let the selected edge grips extend half their width beyond the
+                // first/last clip boundary; the containing lane/viewport still clips
+                // at its own bounds, not at this inner filmstrip surface.
+                clipChildren = false
+                clipToPadding = false
                 isClickable = true
                 setOnClickListener { clearTimelineClipSelection() }
             }
