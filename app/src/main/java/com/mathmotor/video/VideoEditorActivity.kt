@@ -4100,18 +4100,15 @@ class VideoEditorActivity : Activity() {
                 else -> 32
             })
             val frame = FrameLayout(this).apply {
+                // CapCut-style text strip: solid orange body with white edge tabs.
+                // Keep child drawing outside the frame so each visible tab is
+                // centred on the exact start/end boundary.
                 clipChildren = false
                 clipToPadding = false
                 background = android.graphics.drawable.GradientDrawable().apply {
-                    setColor(Color.rgb(110, 74, 154))
-                    cornerRadius = dp(5).toFloat()
-                    setStroke(
-                        dp(if (layer.id == selectedTextLayerId) 2 else 1),
-                        if (layer.id == selectedTextLayerId) Color.rgb(117, 240, 221)
-                        else Color.rgb(61, 79, 99)
-                    )
+                    setColor(Color.rgb(245, 137, 0))
+                    cornerRadius = dp(2).toFloat()
                 }
-                // Edge hit targets straddle the block boundary into the spacer.
                 clipToOutline = false
                 contentDescription = "Yazı katmanı ${layerIndex + 1}: ortasından sürükleyerek taşı, kenarlarından sürükleyerek süresini değiştir"
             }
@@ -4335,6 +4332,59 @@ class VideoEditorActivity : Activity() {
 
             addTextTrimHandle(isStart = true)
             addTextTrimHandle(isStart = false)
+
+            // Visible CapCut grips are separate from the transparent drag targets:
+            // white rounded tabs span the full text-strip height and sit exactly
+            // on the cut boundaries. The underlying touch targets and trim math
+            // remain unchanged.
+            val visibleGripWidth = dp(10).coerceAtLeast(1)
+            val visibleGripMarkWidth = dp(2).coerceAtLeast(1)
+            val visibleGripMarkHeight = dp(14).coerceAtLeast(1)
+            fun addVisibleTextTrimGrip(isStart: Boolean) {
+                val grip = FrameLayout(this).apply {
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        setColor(Color.WHITE)
+                        cornerRadius = dp(5).toFloat()
+                    }
+                    isClickable = false
+                    isFocusable = false
+                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                    elevation = dp(14).toFloat()
+                }
+                grip.addView(View(this).apply {
+                    setBackgroundColor(Color.rgb(150, 150, 150))
+                    isClickable = false
+                    isFocusable = false
+                }, FrameLayout.LayoutParams(
+                    visibleGripMarkWidth, visibleGripMarkHeight, Gravity.CENTER
+                ))
+                frame.addView(grip, FrameLayout.LayoutParams(
+                    visibleGripWidth, blockHeight
+                ).apply {
+                    leftMargin = if (isStart) -visibleGripWidth / 2
+                    else blockWidth - visibleGripWidth / 2
+                    topMargin = 0
+                    gravity = Gravity.TOP or Gravity.LEFT
+                })
+                grip.post {
+                    if (!timelineSyncTestEnabled || grip.width <= 0) return@post
+                    val frameLocation = IntArray(2)
+                    val gripLocation = IntArray(2)
+                    frame.getLocationOnScreen(frameLocation)
+                    grip.getLocationOnScreen(gripLocation)
+                    val boundaryPx = frameLocation[0] + if (isStart) 0 else frame.width
+                    val gripCenterPx = gripLocation[0] + grip.width / 2
+                    android.util.Log.i(
+                        "EditorTouchTest",
+                        "TEXT_EDGE_GRIP_LAYOUT edge=${if (isStart) "start" else "end"} " +
+                            "layerId=${layer.id} boundaryPx=$boundaryPx centerPx=$gripCenterPx " +
+                            "offsetPx=${gripCenterPx - boundaryPx} gripWidthPx=${grip.width} " +
+                            "gripHeightPx=${grip.height} stripHeightPx=${frame.height}"
+                    )
+                }
+            }
+            addVisibleTextTrimGrip(isStart = true)
+            addVisibleTextTrimGrip(isStart = false)
             track.addView(frame, LinearLayout.LayoutParams(blockWidth, blockHeight))
             if (endMs < totalMs) addSpacer(track, endMs, totalMs)
         }
