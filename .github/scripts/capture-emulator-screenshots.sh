@@ -3555,12 +3555,408 @@ if ! grep -Fq "TEXT_TOOLS_DOCK_VISIBLE childCount=3" emulator-screenshots/text-p
 fi
 echo "PASS: tapping the preview text restored its three-action text dock and selection frame at $text_reselected_bounds."
 
+echo "Step 8c1: physically drag both text timeline edge handles and verify isolated timing changes"
+if ! dump_hierarchy editor-text-trim-before-start.xml emulator-screenshots/editor-text-trim-before-start.xml; then
+  collect_capture_diagnostics text-trim-initial-hierarchy-missing
+  exit 94
+fi
+
+read_text_edge_target() {
+  python3 - "$1" "$2" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+path, wanted = sys.argv[1:]
+root = ET.parse(path).getroot()
+bounds = None
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != wanted:
+        continue
+    if node.attrib.get("clickable", "false").lower() != "true":
+        continue
+    if node.attrib.get("enabled", "false").lower() != "true":
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        bounds = tuple(map(int, match.groups()))
+        break
+if bounds is None:
+    raise SystemExit(f"Missing live clickable text edge target: {wanted}")
+left, top, right, bottom = bounds
+center_y = (top + bottom) // 2
+scroll_right = None
+scroll_candidates = []
+for node in root.iter("node"):
+    if node.attrib.get("class") != "android.widget.HorizontalScrollView":
+        continue
+    if node.attrib.get("scrollable", "false").lower() != "true":
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if not match:
+        continue
+    sx1, sy1, sx2, sy2 = map(int, match.groups())
+    if sx2 - sx1 > 300 and sy1 <= center_y <= sy2:
+        scroll_candidates.append((abs(center_y - (sy1 + sy2) // 2), sx2))
+if scroll_candidates:
+    scroll_right = min(scroll_candidates)[1]
+else:
+    root_node = root.find("node")
+    root_match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", root_node.attrib.get("bounds", ""))
+    if root_match:
+        scroll_right = int(root_match.groups()[2])
+if scroll_right is None:
+    raise SystemExit("Could not resolve the text lane's live horizontal viewport.")
+center_x = (left + right) // 2
+# Start the trailing-handle gesture inside the visible portion of the touch
+# target; once ACTION_DOWN is accepted, Android continues the full swipe.
+if wanted == "Yazı bitişini sürükle":
+    center_x = min(center_x, scroll_right - 5)
+if not (left <= center_x < right):
+    raise SystemExit(f"Resolved point is outside {wanted}: bounds={bounds}, x={center_x}")
+print(left, top, right, bottom, center_x, center_y, scroll_right)
+PY
+}
+
+assert_text_edge_commit() {
+  local log_file="$1"
+  local edge="$2"
+  python3 - "$log_file" "$edge" <<'PY'
+import re
+import sys
+path, edge = sys.argv[1:]
+pattern = re.compile(
+    r"TEXT_EDGE_TRIM_COMMIT edge=(start|end) layerId=([^ ]+) "
+    r"beforeStartMs=(\d+) beforeEndMs=(\d+) "
+    r"afterStartMs=(\d+) afterEndMs=(\d+) deltaPx=(-?\d+) deltaMs=(-?\d+)"
+)
+matches = []
+for line in open(path, errors="replace"):
+    match = pattern.search(line)
+    if match and match.group(1) == edge:
+        matches.append(match)
+if not matches:
+    raise SystemExit(f"No physical text {edge}-edge trim commit marker was recorded.")
+m = matches[-1]
+layer, before_start, before_end, after_start, after_end, delta_px, delta_ms = m.groups()[1:]
+before_start, before_end, after_start, after_end, delta_px, delta_ms = map(
+    int, (before_start, before_end, after_start, after_end, delta_px, delta_ms)
+)
+if abs(delta_px) < 15 or delta_ms == 0:
+    raise SystemExit(f"The text {edge} handle did not register a real drag: {m.group(0)}")
+if edge == "start":
+    if after_start <= before_start or after_end != before_end:
+        raise SystemExit(
+            f"Text left handle must change only startMs: before={before_start},{before_end} "
+            f"after={after_start},{after_end}"
+        )
+else:
+    if after_start != before_start or after_end >= before_end:
+        raise SystemExit(
+            f"Text right handle must change only endMs: before={before_start},{before_end} "
+            f"after={after_start},{after_end}"
+        )
+if after_end - after_start < 500:
+    raise SystemExit(f"Text trim violated the 500ms minimum span: {m.group(0)}")
+print(before_start, before_end, after_start, after_end, layer)
+print(
+    f"PASS: physical text {edge} trim changed only its own boundary: "
+    f"{before_start}-{before_end}ms -> {after_start}-{after_end}ms"
+)
+PY
+}
+
+assert_text_grip_layout_and_state() {
+  local log_file="$1"
+  local expected_start="$2"
+  local expected_end="$3"
+  python3 - "$log_file" "$expected_start" "$expected_end" <<'PY'
+import re
+import sys
+path, expected_start, expected_end = sys.argv[1:]
+expected_start, expected_end = int(expected_start), int(expected_end)
+pattern = re.compile(
+    r"TEXT_EDGE_GRIP_LAYOUT edge=(start|end) layerId=([^ ]+) "
+    r"boundaryPx=(-?\d+) centerPx=(-?\d+) offsetPx=(-?\d+) "
+    r"gripWidthPx=(\d+) gripHeightPx=(\d+) stripHeightPx=(\d+) "
+    r"startMs=(\d+) endMs=(\d+)"
+)
+latest = {}
+for line in open(path, errors="replace"):
+    m = pattern.search(line)
+    if m:
+        latest[m.group(1)] = tuple(map(int, m.groups()[2:]))
+for edge in ("start", "end"):
+    if edge not in latest:
+        raise SystemExit(f"Missing measured visible text {edge} grip layout.")
+    boundary, center, offset, width, height, strip_height, start_ms, end_ms = latest[edge]
+    if abs(offset) > 1:
+        raise SystemExit(f"Text {edge} grip is not centred on its own boundary: {latest[edge]}")
+    if width <= 0 or height != strip_height:
+        raise SystemExit(
+            f"Text {edge} grip does not span the full strip height: grip={width}x{height}, strip={strip_height}"
+        )
+    if (start_ms, end_ms) != (expected_start, expected_end):
+        raise SystemExit(
+            f"Text {edge} visual grip was rendered for stale timing {(start_ms, end_ms)}; "
+            f"expected {(expected_start, expected_end)}"
+        )
+print(
+    f"PASS: both visible text tabs are full-height, edge-centred and show "
+    f"the same live range {expected_start}-{expected_end}ms."
+)
+PY
+}
+
+# The left target is measured from the current Android hierarchy rather than a
+# cached timeline snapshot. Move it right to shorten only the text IN point.
+text_start_target="$(read_text_edge_target emulator-screenshots/editor-text-trim-before-start.xml "Yazı başlangıcını sürükle")" || {
+  collect_capture_diagnostics text-trim-start-target-missing
+  exit 94
+}
+read -r text_start_left text_start_top text_start_right text_start_bottom text_start_x text_start_y text_lane_right <<< "$text_start_target"
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$text_start_x" "$text_start_y" "$((text_start_x + 48))" "$text_start_y" 700
+text_start_committed=false
+for attempt in $(seq 1 12); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I \
+    > emulator-screenshots/text-edge-start-trim-logcat.txt 2>&1 || true
+  if grep -Fq "TEXT_EDGE_TRIM_COMMIT edge=start" emulator-screenshots/text-edge-start-trim-logcat.txt; then
+    text_start_committed=true
+    break
+  fi
+  sleep 1
+done
+if [ "$text_start_committed" != true ]; then
+  echo "The left text handle did not emit a committed physical trim event."
+  collect_capture_diagnostics text-trim-start-gesture-not-committed
+  exit 95
+fi
+text_start_values="$(assert_text_edge_commit emulator-screenshots/text-edge-start-trim-logcat.txt start)" || {
+  collect_capture_diagnostics text-trim-start-changed-wrong-boundary
+  exit 95
+}
+read -r text_start_before_start text_start_before_end text_start_after_start text_start_after_end text_start_layer <<< "$(printf '%s\n' "$text_start_values" | head -n 1)"
+assert_text_grip_layout_and_state emulator-screenshots/text-edge-start-trim-logcat.txt \
+  "$text_start_after_start" "$text_start_after_end" || {
+  collect_capture_diagnostics text-trim-start-grip-layout-invalid
+  exit 95
+}
+echo "PASS: text start handle changed only the start time; end time stayed fixed."
+
+# Re-read the entire hierarchy because the first trim rebuilds the timeline.
+if ! dump_hierarchy editor-text-trim-before-end.xml emulator-screenshots/editor-text-trim-before-end.xml; then
+  collect_capture_diagnostics text-trim-end-hierarchy-missing
+  exit 96
+fi
+text_end_target="$(read_text_edge_target emulator-screenshots/editor-text-trim-before-end.xml "Yazı bitişini sürükle")" || {
+  collect_capture_diagnostics text-trim-end-target-missing
+  exit 96
+}
+read -r text_end_left text_end_top text_end_right text_end_bottom text_end_x text_end_y text_lane_right <<< "$text_end_target"
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$text_end_x" "$text_end_y" "$((text_end_x - 48))" "$text_end_y" 700
+text_end_committed=false
+for attempt in $(seq 1 12); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I \
+    > emulator-screenshots/text-edge-end-trim-logcat.txt 2>&1 || true
+  if grep -Fq "TEXT_EDGE_TRIM_COMMIT edge=end" emulator-screenshots/text-edge-end-trim-logcat.txt; then
+    text_end_committed=true
+    break
+  fi
+  sleep 1
+done
+if [ "$text_end_committed" != true ]; then
+  echo "The right text handle did not emit a committed physical trim event."
+  collect_capture_diagnostics text-trim-end-gesture-not-committed
+  exit 96
+fi
+text_end_values="$(assert_text_edge_commit emulator-screenshots/text-edge-end-trim-logcat.txt end)" || {
+  collect_capture_diagnostics text-trim-end-changed-wrong-boundary
+  exit 96
+}
+read -r text_end_before_start text_end_before_end text_end_after_start text_end_after_end text_end_layer <<< "$(printf '%s\n' "$text_end_values" | head -n 1)"
+if [ "$text_end_after_start" -ne "$text_start_after_start" ] ||
+   [ "$text_end_before_end" -ne "$text_start_after_end" ]; then
+  echo "The two text-edge operations did not preserve the opposite edge between gestures."
+  collect_capture_diagnostics text-trim-edge-independence-failed
+  exit 96
+fi
+assert_text_grip_layout_and_state emulator-screenshots/text-edge-end-trim-logcat.txt \
+  "$text_end_after_start" "$text_end_after_end" || {
+  collect_capture_diagnostics text-trim-end-grip-layout-invalid
+  exit 96
+}
+echo "PASS: text right handle changed only the end time; the previously trimmed start stayed fixed."
+
+# Verify project-wide Undo/Redo restores/reapplies the exact text timing edit.
+if ! dump_hierarchy editor-text-trim-history-before-undo.xml emulator-screenshots/editor-text-trim-history-before-undo.xml; then
+  collect_capture_diagnostics text-trim-history-hierarchy-missing
+  exit 97
+fi
+find_text_history_button() {
+  python3 - "$1" "$2" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+wanted = sys.argv[2]
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != wanted:
+        continue
+    if node.attrib.get("enabled", "false").lower() != "true":
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        left, top, right, bottom = map(int, match.groups())
+        print((left + right) // 2, (top + bottom) // 2)
+        raise SystemExit(0)
+raise SystemExit(f"Enabled history button is unavailable: {wanted}")
+PY
+}
+text_trim_undo_coords="$(find_text_history_button emulator-screenshots/editor-text-trim-history-before-undo.xml "Proje işlemini geri al")" || {
+  collect_capture_diagnostics text-trim-undo-button-unavailable
+  exit 97
+}
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_trim_undo_coords
+text_trim_undo_ready=false
+for attempt in $(seq 1 12); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime \
+    -s ProjectHistoryTest:I EditorTouchTest:I \
+    > emulator-screenshots/text-edge-undo-logcat.txt 2>&1 || true
+  if grep -Fq "PROJECT_HISTORY_APPLIED action=undo" emulator-screenshots/text-edge-undo-logcat.txt &&
+     grep -Fq "TEXT_EDGE_GRIP_LAYOUT edge=end" emulator-screenshots/text-edge-undo-logcat.txt; then
+    text_trim_undo_ready=true
+    break
+  fi
+  sleep 1
+done
+if [ "$text_trim_undo_ready" != true ]; then
+  echo "Global Undo did not restore and re-render the text timing lane."
+  collect_capture_diagnostics text-trim-undo-not-applied
+  exit 97
+fi
+assert_text_grip_layout_and_state emulator-screenshots/text-edge-undo-logcat.txt \
+  "$text_start_after_start" "$text_end_before_end" || {
+  collect_capture_diagnostics text-trim-undo-wrong-range
+  exit 97
+}
+if ! dump_hierarchy editor-text-trim-history-before-redo.xml emulator-screenshots/editor-text-trim-history-before-redo.xml; then
+  collect_capture_diagnostics text-trim-redo-hierarchy-missing
+  exit 98
+fi
+text_trim_redo_coords="$(find_text_history_button emulator-screenshots/editor-text-trim-history-before-redo.xml "Proje işlemini yinele")" || {
+  collect_capture_diagnostics text-trim-redo-button-unavailable
+  exit 98
+}
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_trim_redo_coords
+text_trim_redo_ready=false
+for attempt in $(seq 1 12); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime \
+    -s ProjectHistoryTest:I EditorTouchTest:I \
+    > emulator-screenshots/text-edge-redo-logcat.txt 2>&1 || true
+  if grep -Fq "PROJECT_HISTORY_APPLIED action=redo" emulator-screenshots/text-edge-redo-logcat.txt &&
+     grep -Fq "TEXT_EDGE_GRIP_LAYOUT edge=end" emulator-screenshots/text-edge-redo-logcat.txt; then
+    text_trim_redo_ready=true
+    break
+  fi
+  sleep 1
+done
+if [ "$text_trim_redo_ready" != true ]; then
+  echo "Global Redo did not reapply and re-render the text timing edit."
+  collect_capture_diagnostics text-trim-redo-not-applied
+  exit 98
+fi
+assert_text_grip_layout_and_state emulator-screenshots/text-edge-redo-logcat.txt \
+  "$text_end_after_start" "$text_end_after_end" || {
+  collect_capture_diagnostics text-trim-redo-wrong-range
+  exit 98
+}
+if ! dump_hierarchy editor-text-after-trim-redo.xml emulator-screenshots/editor-text-after-trim-redo.xml; then
+  collect_capture_diagnostics text-trim-final-hierarchy-missing
+  exit 98
+fi
+if ! take_screen emulator-screenshots/editor-text-timeline-grips.png; then
+  collect_capture_diagnostics text-trim-final-capture-failure
+  exit 6
+fi
+
+# Pixel-check the actual screenshot at both measured grip centres. Accessibility
+# and layout logs alone cannot prove the white tabs escaped ancestor clipping.
+python3 - emulator-screenshots/editor-text-timeline-grips.png \
+  emulator-screenshots/editor-text-after-trim-redo.xml \
+  emulator-screenshots/text-edge-redo-logcat.txt <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+sys.path.insert(0, ".github/scripts")
+from ci_image import Image
+image_path, xml_path, log_path = sys.argv[1:]
+image = Image.open(image_path).convert("RGB")
+root = ET.parse(xml_path).getroot()
+root_node = root.find("node")
+root_match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", root_node.attrib.get("bounds", ""))
+if not root_match:
+    raise SystemExit("Could not map Android screen coordinates to the final text-grip screenshot.")
+win_left, win_top, win_right, win_bottom = map(int, root_match.groups())
+scale_x = image.width / (win_right - win_left)
+scale_y = image.height / (win_bottom - win_top)
+strip = None
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").startswith("Yazı katmanı 1:"):
+        m = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+        if m:
+            strip = tuple(map(int, m.groups()))
+            break
+if strip is None:
+    raise SystemExit("The final screenshot hierarchy does not expose the text strip bounds.")
+_, strip_top, _, strip_bottom = strip
+pattern = re.compile(
+    r"TEXT_EDGE_GRIP_LAYOUT edge=(start|end).*?boundaryPx=(-?\d+) centerPx=(-?\d+) "
+    r"offsetPx=(-?\d+) gripWidthPx=(\d+) gripHeightPx=(\d+) stripHeightPx=(\d+)"
+)
+latest = {}
+for line in open(log_path, errors="replace"):
+    m = pattern.search(line)
+    if m:
+        latest[m.group(1)] = tuple(map(int, m.groups()[1:]))
+for edge in ("start", "end"):
+    if edge not in latest:
+        raise SystemExit(f"No measured {edge} grip layout is available for screenshot pixel validation.")
+    boundary, center, offset, width, height, measured_strip_height = latest[edge]
+    if abs(offset) > 1 or width <= 0 or height != measured_strip_height:
+        raise SystemExit(f"Invalid {edge} grip geometry: {latest[edge]}")
+    x = round((center - win_left) * scale_x)
+    y1 = round((strip_top + (strip_bottom - strip_top) * 0.27 - win_top) * scale_y)
+    y2 = round((strip_top + (strip_bottom - strip_top) * 0.73 - win_top) * scale_y)
+    for y in (y1, y2):
+        white = 0
+        total = 0
+        for dy in range(-2, 3):
+            for dx in range(-2, 3):
+                px, py = x + dx, y + dy
+                if 0 <= px < image.width and 0 <= py < image.height:
+                    red, green, blue = image.getpixel((px, py))
+                    total += 1
+                    if min(red, green, blue) >= 215 and max(red, green, blue) - min(red, green, blue) <= 45:
+                        white += 1
+        if total < 20 or white < 18:
+            raise SystemExit(
+                f"The {edge} white tab is clipped or missing in the actual screenshot: "
+                f"centre=({x},{y}), white={white}/{total}."
+            )
+    print(f"PASS: screenshot contains the full-height white {edge} text tab at its measured boundary.")
+PY
+echo "PASS: both text edge handles were physically dragged; each changed only its own time boundary; Undo/Redo restored the exact ranges; both white tabs are visible in the captured screenshot."
+
+
 # UIAutomator can time out on this large panel even after the direct interaction
 # has succeeded. The app-side dock marker plus the full-canvas screenshot and
 # pixel-verified selection frame are authoritative; hierarchy-based cleanup is
 # best-effort so a slow accessibility dump cannot turn a valid editor state red.
-if dump_hierarchy editor-text-reselected.xml emulator-screenshots/editor-text-reselected.xml; then
-  text_delete_coords="$(find_bottom_tool emulator-screenshots/editor-text-reselected.xml "Sil" || true)"
+if dump_hierarchy editor-text-after-trim-redo.xml emulator-screenshots/editor-text-after-trim-redo.xml; then
+  text_delete_coords="$(find_bottom_tool emulator-screenshots/editor-text-after-trim-redo.xml "Sil" || true)"
   if [ -n "$text_delete_coords" ]; then
     timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_delete_coords
     sleep 1
