@@ -113,7 +113,10 @@ def verify(log_path: str, screenshot_path: str):
     sample_ms = None
     for timestamp, box in snapshot["cells"]:
         x = (box[0] + box[2]) // 2
-        if x == snapshot["playhead_x"]:
+        # View bounds are integer pixels. A one-pixel difference is normal
+        # when the centered playhead and thumbnail cell have half-pixel
+        # geometric centers that round in opposite directions.
+        if abs(x - snapshot["playhead_x"]) <= 2:
             cell = box
             sample_ms = timestamp
             break
