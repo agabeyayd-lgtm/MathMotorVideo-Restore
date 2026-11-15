@@ -3696,22 +3696,28 @@ assert_text_grip_layout_and_state() {
   local log_file="$1"
   local expected_start="$2"
   local expected_end="$3"
-  python3 - "$log_file" "$expected_start" "$expected_end" <<'PY'
+  shift 3
+  # Each trim/Undo/Redo captures a fresh logcat window. The untouched opposite
+  # grip is not necessarily re-laid out, so combine earlier measured geometry
+  # with the current operation's log before validating both visible tabs.
+  python3 - "$log_file" "$expected_start" "$expected_end" "$@" <<'PY'
 import re
 import sys
-path, expected_start, expected_end = sys.argv[1:]
+current_log, expected_start, expected_end, *prior_logs = sys.argv[1:]
 expected_start, expected_end = int(expected_start), int(expected_end)
 pattern = re.compile(
     r"TEXT_EDGE_GRIP_LAYOUT edge=(start|end) layerId=([^ ]+) "
-    r"boundaryPx=(-?\d+) centerPx=(-?\d+) offsetPx=(-?\d+) "
-    r"gripWidthPx=(\d+) gripHeightPx=(\d+) stripHeightPx=(\d+) "
-    r"startMs=(\d+) endMs=(\d+)"
+    r"boundaryPx=(-?\\d+) centerPx=(-?\\d+) offsetPx=(-?\\d+) "
+    r"gripWidthPx=(\\d+) gripHeightPx=(\\d+) stripHeightPx=(\\d+) "
+    r"startMs=(\\d+) endMs=(\\d+)"
 )
 latest = {}
-for line in open(path, errors="replace"):
-    m = pattern.search(line)
-    if m:
-        latest[m.group(1)] = tuple(map(int, m.groups()[2:]))
+for path in [*prior_logs, current_log]:
+    with open(path, errors="replace") as stream:
+        for line in stream:
+            m = pattern.search(line)
+            if m:
+                latest[m.group(1)] = tuple(map(int, m.groups()[2:]))
 for edge in ("start", "end"):
     if edge not in latest:
         raise SystemExit(f"Missing measured visible text {edge} grip layout.")
@@ -3733,6 +3739,7 @@ print(
 )
 PY
 }
+
 
 assert_text_grip_screenshot() {
   local edge="$1"
@@ -4057,7 +4064,8 @@ if [ "$text_end_after_start" -ne "$text_start_after_start" ] ||
   exit 96
 fi
 assert_text_grip_layout_and_state emulator-screenshots/text-edge-end-trim-logcat.txt \
-  "$text_end_after_start" "$text_end_after_end" || {
+  "$text_end_after_start" "$text_end_after_end" \
+  emulator-screenshots/text-edge-start-trim-logcat.txt || {
   collect_capture_diagnostics text-trim-end-grip-layout-invalid
   exit 96
 }
@@ -4117,7 +4125,9 @@ if ! grep -Fq "beforeSelectedTextRange=615:7385 afterSelectedTextRange=615:8000"
   exit 97
 fi
 assert_text_grip_layout_and_state emulator-screenshots/text-edge-undo-logcat.txt \
-  "$text_start_after_start" "$text_end_before_end" || {
+  "$text_start_after_start" "$text_end_before_end" \
+  emulator-screenshots/text-edge-start-trim-logcat.txt \
+  emulator-screenshots/text-edge-end-trim-logcat.txt || {
   collect_capture_diagnostics text-trim-undo-wrong-range
   exit 97
 }
@@ -4154,7 +4164,9 @@ if ! grep -Fq "beforeSelectedTextRange=615:8000 afterSelectedTextRange=615:7385"
   exit 98
 fi
 assert_text_grip_layout_and_state emulator-screenshots/text-edge-redo-logcat.txt \
-  "$text_end_after_start" "$text_end_after_end" || {
+  "$text_end_after_start" "$text_end_after_end" \
+  emulator-screenshots/text-edge-start-trim-logcat.txt \
+  emulator-screenshots/text-edge-end-trim-logcat.txt || {
   collect_capture_diagnostics text-trim-redo-wrong-range
   exit 98
 }
