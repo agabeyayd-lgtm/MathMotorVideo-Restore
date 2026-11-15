@@ -3743,6 +3743,59 @@ assert_text_grip_layout_and_state emulator-screenshots/text-edge-start-trim-logc
 }
 echo "PASS: text start handle changed only the start time; end time stayed fixed."
 
+# The right boundary may be beyond the initial viewport. Move the shared
+# timeline through the ruler until UIAutomator exposes the real trailing edge.
+# Do not swipe on the orange text body: that is reserved for layer movement.
+scroll_timeline_until_text_end_visible() {
+  local hierarchy="$1"
+  for attempt in $(seq 1 6); do
+    if ! dump_hierarchy "editor-text-trim-scroll-end-$attempt.xml" "$hierarchy"; then
+      echo "Could not inspect the timeline while locating the text end handle."
+      return 1
+    fi
+    if grep -Fq 'content-desc="Yazı bitişini sürükle"' "$hierarchy"; then
+      echo "The trailing text edge became visible after $((attempt - 1)) ruler scroll gesture(s)."
+      return 0
+    fi
+    local ruler_y
+    ruler_y="$(python3 - "$hierarchy" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+candidates = []
+for node in root.iter("node"):
+    if node.attrib.get("class") != "android.widget.HorizontalScrollView":
+        continue
+    if node.attrib.get("scrollable", "false").lower() != "true":
+        continue
+    m = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if not m:
+        continue
+    left, top, right, bottom = map(int, m.groups())
+    height, width = bottom - top, right - left
+    if width > 500 and 20 <= height <= 100 and 0 < top < 1350:
+        candidates.append((top, bottom, (top + bottom) // 2))
+if not candidates:
+    raise SystemExit("No visible shared timeline ruler/scroll lane was found.")
+print(min(candidates)[2])
+PY
+)" || return 1
+    echo "Scrolling the shared timeline toward the text layer's trailing edge (attempt $attempt/6)."
+    timeout -k 2s 8s adb -s emulator-5554 shell input swipe 930 "$ruler_y" 270 "$ruler_y" 420
+    sleep 1
+  done
+  dump_hierarchy editor-text-trim-scroll-end-final.xml "$hierarchy" || return 1
+  if ! grep -Fq 'content-desc="Yazı bitişini sürükle"' "$hierarchy"; then
+    echo "The right text edge is still outside the timeline viewport after six measured ruler swipes."
+    return 1
+  fi
+}
+if ! scroll_timeline_until_text_end_visible emulator-screenshots/editor-text-trim-before-end.xml; then
+  collect_capture_diagnostics text-trim-end-not-reachable-after-scroll
+  exit 96
+fi
+
 # Re-read the entire hierarchy because the first trim rebuilds the timeline.
 if ! dump_hierarchy editor-text-trim-before-end.xml emulator-screenshots/editor-text-trim-before-end.xml; then
   collect_capture_diagnostics text-trim-end-hierarchy-missing
