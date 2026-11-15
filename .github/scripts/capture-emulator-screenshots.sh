@@ -4372,7 +4372,7 @@ for node in root.iter("node"):
         continue
     if node.attrib.get("enabled", "false").lower() != "true":
         continue
-    match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
     if match:
         latest = tuple(map(int, match.groups()))
         break
@@ -4485,7 +4485,7 @@ for node in root.iter("node"):
         continue
     if node.attrib.get("clickable", "false").lower() != "true":
         continue
-    match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
     if match:
         latest = tuple(map(int, match.groups()))
         break
