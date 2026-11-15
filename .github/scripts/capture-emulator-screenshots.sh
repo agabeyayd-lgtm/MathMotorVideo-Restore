@@ -3583,8 +3583,9 @@ for node in root.iter("node"):
 if bounds is None:
     raise SystemExit(f"Missing live clickable text edge target: {wanted}")
 left, top, right, bottom = bounds
+if right <= left or bottom <= top:
+    raise SystemExit(f"Text edge target is outside the visible screen: {wanted} bounds={bounds}")
 center_y = (top + bottom) // 2
-scroll_right = None
 scroll_candidates = []
 for node in root.iter("node"):
     if node.attrib.get("class") != "android.widget.HorizontalScrollView":
@@ -3596,23 +3597,22 @@ for node in root.iter("node"):
         continue
     sx1, sy1, sx2, sy2 = map(int, match.groups())
     if sx2 - sx1 > 300 and sy1 <= center_y <= sy2:
-        scroll_candidates.append((abs(center_y - (sy1 + sy2) // 2), sx2))
-if scroll_candidates:
-    scroll_right = min(scroll_candidates)[1]
-else:
-    root_node = root.find("node")
-    root_match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", root_node.attrib.get("bounds", ""))
-    if root_match:
-        scroll_right = int(root_match.groups()[2])
-if scroll_right is None:
+        scroll_candidates.append((abs(center_y - (sy1 + sy2) // 2), sx1, sx2))
+if not scroll_candidates:
     raise SystemExit("Could not resolve the text lane's live horizontal viewport.")
-center_x = (left + right) // 2
-# Start the trailing-handle gesture inside the visible portion of the touch
-# target; once ACTION_DOWN is accepted, Android continues the full swipe.
-if wanted == "Yazı bitişini sürükle":
-    center_x = min(center_x, scroll_right - 5)
-if not (left <= center_x < right):
-    raise SystemExit(f"Resolved point is outside {wanted}: bounds={bounds}, x={center_x}")
+_, scroll_left, scroll_right = min(scroll_candidates)
+visible_left = max(left, scroll_left)
+visible_right = min(right, scroll_right)
+visible_width = visible_right - visible_left
+if visible_width < min(28, right - left):
+    raise SystemExit(
+        f"Text edge target is not sufficiently visible in its own horizontal viewport: "
+        f"bounds={bounds}, viewport={scroll_left}..{scroll_right}, visibleWidth={visible_width}"
+    )
+# Tap inside the visible intersection, not at the off-screen centre of the view.
+center_x = (visible_left + visible_right) // 2
+if not (left <= center_x < right and scroll_left <= center_x < scroll_right):
+    raise SystemExit(f"Resolved point is outside the visible {wanted} target: bounds={bounds}")
 print(left, top, right, bottom, center_x, center_y, scroll_right)
 PY
 }
@@ -3627,7 +3627,7 @@ path, edge = sys.argv[1:]
 pattern = re.compile(
     r"TEXT_EDGE_TRIM_COMMIT edge=(start|end) layerId=([^ ]+) "
     r"beforeStartMs=(\d+) beforeEndMs=(\d+) "
-    r"afterStartMs=(\d+) afterEndMs=(\d+) deltaPx=(-?\d+) deltaMs=(-?\d+)"
+    r"afterStartMs=(\d+) afterEndMs=(\d+) deltaPx=(-?\d+(?:\.\d+)?) deltaMs=(-?\d+)"
 )
 matches = []
 for line in open(path, errors="replace"):
@@ -3638,9 +3638,10 @@ if not matches:
     raise SystemExit(f"No physical text {edge}-edge trim commit marker was recorded.")
 m = matches[-1]
 layer, before_start, before_end, after_start, after_end, delta_px, delta_ms = m.groups()[1:]
-before_start, before_end, after_start, after_end, delta_px, delta_ms = map(
-    int, (before_start, before_end, after_start, after_end, delta_px, delta_ms)
+before_start, before_end, after_start, after_end, delta_ms = map(
+    int, (before_start, before_end, after_start, after_end, delta_ms)
 )
+delta_px = float(delta_px)
 if abs(delta_px) < 15 or delta_ms == 0:
     raise SystemExit(f"The text {edge} handle did not register a real drag: {m.group(0)}")
 if edge == "start":
@@ -3753,8 +3754,47 @@ scroll_timeline_until_text_end_visible() {
       echo "Could not inspect the timeline while locating the text end handle."
       return 1
     fi
-    if grep -Fq 'content-desc="Yazı bitişini sürükle"' "$hierarchy"; then
-      echo "The trailing text edge became visible after $((attempt - 1)) ruler scroll gesture(s)."
+    if python3 - "$hierarchy" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+target = None
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != "Yazı bitişini sürükle":
+        continue
+    if node.attrib.get("clickable", "false").lower() != "true":
+        continue
+    m = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if m:
+        target = tuple(map(int, m.groups()))
+        break
+if target is None:
+    raise SystemExit(1)
+left, top, right, bottom = target
+if right <= left or bottom <= top:
+    raise SystemExit(1)
+center_y = (top + bottom) // 2
+viewports = []
+for node in root.iter("node"):
+    if node.attrib.get("class") != "android.widget.HorizontalScrollView" or node.attrib.get("scrollable", "false").lower() != "true":
+        continue
+    m = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if not m:
+        continue
+    sx1, sy1, sx2, sy2 = map(int, m.groups())
+    if sx2 - sx1 > 300 and sy1 <= center_y <= sy2:
+        viewports.append((abs(center_y - (sy1 + sy2) // 2), sx1, sx2))
+if not viewports:
+    raise SystemExit(1)
+_, sx1, sx2 = min(viewports)
+visible = min(right, sx2) - max(left, sx1)
+if visible < min(28, right - left):
+    raise SystemExit(1)
+print(f"Visible trailing text target bounds={target}, viewport={sx1}..{sx2}, visibleWidth={visible}px")
+PY
+    then
+      echo "The trailing text edge is genuinely inside the timeline viewport after $((attempt - 1)) ruler scroll gesture(s)."
       return 0
     fi
     local ruler_y
@@ -3786,8 +3826,44 @@ PY
     sleep 1
   done
   dump_hierarchy editor-text-trim-scroll-end-final.xml "$hierarchy" || return 1
-  if ! grep -Fq 'content-desc="Yazı bitişini sürükle"' "$hierarchy"; then
-    echo "The right text edge is still outside the timeline viewport after six measured ruler swipes."
+  if ! python3 - "$hierarchy" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+target = None
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != "Yazı bitişini sürükle":
+        continue
+    m = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if m:
+        target = tuple(map(int, m.groups()))
+        break
+if target is None:
+    raise SystemExit(1)
+left, top, right, bottom = target
+if right <= left or bottom <= top:
+    raise SystemExit(1)
+center_y = (top + bottom) // 2
+viewports = []
+for node in root.iter("node"):
+    if node.attrib.get("class") != "android.widget.HorizontalScrollView" or node.attrib.get("scrollable", "false").lower() != "true":
+        continue
+    m = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if not m:
+        continue
+    sx1, sy1, sx2, sy2 = map(int, m.groups())
+    if sx2 - sx1 > 300 and sy1 <= center_y <= sy2:
+        viewports.append((abs(center_y - (sy1 + sy2) // 2), sx1, sx2))
+if not viewports:
+    raise SystemExit(1)
+_, sx1, sx2 = min(viewports)
+visible = min(right, sx2) - max(left, sx1)
+if visible < min(28, right - left):
+    raise SystemExit(1)
+PY
+  then
+    echo "The right text edge is still outside or clipped by the timeline viewport after six measured ruler swipes."
     return 1
   fi
 }
