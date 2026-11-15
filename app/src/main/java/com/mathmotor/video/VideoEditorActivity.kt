@@ -3773,7 +3773,9 @@ class VideoEditorActivity : Activity() {
             val scroll = android.widget.HorizontalScrollView(this).apply {
                 isHorizontalScrollBarEnabled = false
                 overScrollMode = View.OVER_SCROLL_NEVER
-                if (tag.startsWith("Metin")) {
+                if (tag.startsWith("Metin") || tag == "Video") {
+                    // Video trim tabs, like text tabs, are centred on strip edges
+                    // and must be allowed to draw into the lane's side gutter.
                     clipChildren = false
                     clipToPadding = false
                 }
@@ -3851,11 +3853,10 @@ class VideoEditorActivity : Activity() {
                 dp(responsiveLaneHeightDp)
             }
             row.addView(scroll, LinearLayout.LayoutParams(0, responsiveLaneHeightPx, 1f))
-            if (tag.startsWith("Metin")) {
-                // The text edge tabs are centred on the strip boundary, so half
-                // of the trailing tab can extend beyond the HorizontalScrollView.
-                // The editor leaves a side gutter inside its content root; disable
-                // ancestor child clipping so that gutter can display the full tab.
+            if (tag.startsWith("Metin") || tag == "Video") {
+                // Text and video trim tabs are centred on their strip boundaries.
+                // The leading video tab needs the same left-gutter drawing path as
+                // text tabs; otherwise the viewport/row clips half of the white tab.
                 row.post {
                     val contentRoot = findViewById<ViewGroup>(android.R.id.content)
                     var ancestor: android.view.ViewParent? = row
