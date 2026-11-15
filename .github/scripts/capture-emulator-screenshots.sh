@@ -3625,34 +3625,22 @@ assert_text_history_commit() {
 import re
 import sys
 path, expected_before, expected_after = sys.argv[1:]
-gesture = re.compile(
-    r"PROJECT_HISTORY_GESTURE_END .*?changed=true .*?"
-    r"beforeTextRange=(\d+:\d+) afterTextRange=(\d+:\d+)"
-)
 commit = re.compile(
-    r"PROJECT_HISTORY_GESTURE_COMMITTED .*?undoCountAfter=(\d+) .*?selectedTextRange=(\d+:\d+)"
+    r"PROJECT_HISTORY_TEXT_EDGE_COMMITTED edge=(?:start|end) "
+    r"beforeTextRange=(\d+:\d+) afterTextRange=(\d+:\d+) "
+    r"undoCountAfter=(\d+)"
 )
-gestures = []
-for line in open(path, errors="replace"):
-    m = gesture.search(line)
-    if m and m.group(1) == expected_before and m.group(2) == expected_after:
-        gestures.append(m)
-if not gestures:
-    raise SystemExit(
-        f"No independent text-history gesture committed {expected_before}->{expected_after}."
-    )
 commits = []
 for line in open(path, errors="replace"):
     m = commit.search(line)
-    if m and m.group(2) == expected_after:
-        commits.append(int(m.group(1)))
+    if m and m.group(1) == expected_before and m.group(2) == expected_after:
+        commits.append(int(m.group(3)))
 if not commits:
     raise SystemExit(
-        f"Text range changed {expected_before}->{expected_after}, but no history push recorded."
+        f"No independent text-edge Undo entry recorded {expected_before}->{expected_after}."
     )
 print(commits[-1])
-PY
-}
+PY}
 
 assert_text_edge_commit() {
   local log_file="$1"
