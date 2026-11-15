@@ -4239,9 +4239,11 @@ echo "Step 9/12: align a thumbnail cell with the playhead and compare the render
 # dump becomes unreliable after repeated panel/keyboard operations.
 echo "Using startup-captured Android ViewConfiguration touch slop: ${touch_slop_px}px"
 # ADB-injected HorizontalScrollView gestures on API 35 showed a 3px dead zone
-# beyond ViewConfiguration’s measured touch slop (21px): 24px swipes could
-# leave scrollX unchanged, while 27px moved it by 3px. Include that measured
-# input-dispatch margin so the final 2–4px alignment correction is not a no-op.
+# beyond ViewConfiguration’s measured touch slop (21px): short correction
+# gestures can be consumed without moving scrollX. Include the measured input
+# dispatch margin so even a one-pixel alignment correction reaches the ruler.
+# Exact pixel alignment matters: at 24fps, a one-pixel offset can cross the
+# half-frame snap boundary and select a neighbouring decoded frame.
 alignment_gesture_slop_px="$((touch_slop_px + 3))"
 
 # Timeline geometry can settle after the first activity sync callback on slower
@@ -4277,7 +4279,7 @@ for attempt in $(seq 1 12); do
   delta_x="$((play_center_x - thumb_center_x))"
   absolute_delta="$((delta_x < 0 ? -delta_x : delta_x))"
   echo "Alignment attempt $attempt: sample=${thumb_sample_ms}ms center=${thumb_center_x}px playhead=${play_center_x}px delta=${delta_x}px"
-  if [ "$absolute_delta" -le 2 ]; then
+  if [ "$absolute_delta" -eq 0 ]; then
     thumbnail_aligned=true
     break
   fi
@@ -4296,7 +4298,7 @@ for attempt in $(seq 1 12); do
   sleep 1
 done
 if [ "$thumbnail_aligned" != true ]; then
-  echo "Could not center any filmstrip thumbnail under the fixed playhead after 12 measured drags."
+  echo "Could not align a filmstrip thumbnail to the exact fixed-playhead pixel after 12 measured drags."
   collect_capture_diagnostics thumbnail-alignment-not-centered
   exit 24
 fi
