@@ -3728,8 +3728,92 @@ for edge in ("start", "end"):
             f"expected {(expected_start, expected_end)}"
         )
 print(
-    f"PASS: both visible text tabs are full-height, edge-centred and show "
+    f"PASS: both text tabs are full-height, edge-centred and show "
     f"the same live range {expected_start}-{expected_end}ms."
+)
+PY
+}
+
+assert_text_grip_screenshot() {
+  local edge="$1"
+  local image_file="$2"
+  local hierarchy_file="$3"
+  local log_file="$4"
+  python3 - "$edge" "$image_file" "$hierarchy_file" "$log_file" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+sys.path.insert(0, ".github/scripts")
+from ci_image import Image
+
+edge, image_path, xml_path, log_path = sys.argv[1:]
+if edge not in ("start", "end"):
+    raise SystemExit(f"Unsupported text grip edge: {edge}")
+image = Image.open(image_path).convert("RGB")
+root = ET.parse(xml_path).getroot()
+root_node = root.find("node")
+root_match = re.fullmatch(
+    r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",
+    root_node.attrib.get("bounds", "")
+)
+if not root_match:
+    raise SystemExit("Could not map Android screen coordinates to the text-grip screenshot.")
+win_left, win_top, win_right, win_bottom = map(int, root_match.groups())
+if win_right <= win_left or win_bottom <= win_top:
+    raise SystemExit("Invalid Android root bounds for text-grip screenshot.")
+scale_x = image.width / (win_right - win_left)
+scale_y = image.height / (win_bottom - win_top)
+strip = None
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").startswith("Yazı katmanı 1:"):
+        match = re.fullmatch(
+            r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",
+            node.attrib.get("bounds", "")
+        )
+        if match:
+            strip = tuple(map(int, match.groups()))
+            break
+if strip is None:
+    raise SystemExit("The screenshot hierarchy does not expose the text strip bounds.")
+_, strip_top, _, strip_bottom = strip
+pattern = re.compile(
+    r"TEXT_EDGE_GRIP_LAYOUT edge=(start|end).*?boundaryPx=(-?\d+) centerPx=(-?\d+) "
+    r"offsetPx=(-?\d+) gripWidthPx=(\d+) gripHeightPx=(\d+) stripHeightPx=(\d+)"
+)
+latest = {}
+for line in open(log_path, errors="replace"):
+    match = pattern.search(line)
+    if match:
+        latest[match.group(1)] = tuple(map(int, match.groups()[1:]))
+if edge not in latest:
+    raise SystemExit(f"No measured {edge} text grip layout is available.")
+boundary, center, offset, width, height, strip_height = latest[edge]
+if abs(offset) > 1 or width <= 0 or height != strip_height:
+    raise SystemExit(f"Invalid {edge} text grip geometry: {latest[edge]}")
+x = round((center - win_left) * scale_x)
+y_values = (
+    round((strip_top + (strip_bottom - strip_top) * 0.12 - win_top) * scale_y),
+    round((strip_top + (strip_bottom - strip_top) * 0.88 - win_top) * scale_y),
+)
+for y in y_values:
+    white = 0
+    total = 0
+    for dy in range(-2, 3):
+        for dx in range(-2, 3):
+            px, py = x + dx, y + dy
+            if 0 <= px < image.width and 0 <= py < image.height:
+                red, green, blue = image.getpixel((px, py))
+                total += 1
+                if min(red, green, blue) >= 215 and max(red, green, blue) - min(red, green, blue) <= 45:
+                    white += 1
+    if total < 20 or white < 18:
+        raise SystemExit(
+            f"The visible {edge} white tab is clipped or missing in its own viewport screenshot: "
+            f"centre=({x},{y}), white={white}/{total}."
+        )
+print(
+    f"PASS: the {edge} white text tab is visible in its own viewport screenshot "
+    f"at the measured boundary (centre={center}px, full-height={height}px)."
 )
 PY
 }
@@ -3775,6 +3859,25 @@ assert_text_grip_layout_and_state emulator-screenshots/text-edge-start-trim-logc
   exit 95
 }
 echo "PASS: text start handle changed only the start time; end time stayed fixed."
+
+# The text layer is longer than the viewport. Capture its leading grip while
+# the timeline is still positioned at the start; the trailing grip is checked
+# later after scrolling to the end. They cannot both be on-screen at once.
+if ! dump_hierarchy editor-text-start-grip-visible.xml emulator-screenshots/editor-text-start-grip-visible.xml; then
+  collect_capture_diagnostics text-start-grip-hierarchy-missing
+  exit 95
+fi
+if ! take_screen emulator-screenshots/text-start-grip-visible.png; then
+  collect_capture_diagnostics text-start-grip-capture-failure
+  exit 95
+fi
+assert_text_grip_screenshot start \
+  emulator-screenshots/text-start-grip-visible.png \
+  emulator-screenshots/editor-text-start-grip-visible.xml \
+  emulator-screenshots/text-edge-start-trim-logcat.txt || {
+  collect_capture_diagnostics text-start-grip-pixel-check-failed
+  exit 95
+}
 
 # The right boundary may be beyond the initial viewport. Move the shared
 # timeline through the ruler until UIAutomator exposes the real trailing edge.
@@ -4064,73 +4167,17 @@ if ! take_screen emulator-screenshots/editor-text-timeline-grips.png; then
   exit 6
 fi
 
-# Pixel-check the actual screenshot at both measured grip centres. Accessibility
-# and layout logs alone cannot prove the white tabs escaped ancestor clipping.
-python3 - emulator-screenshots/editor-text-timeline-grips.png \
+# The timeline remains scrolled to the trailing edge after testing Undo/Redo.
+# Validate that edge in this viewport; the leading edge was pixel-checked in its
+# own start-position screenshot above instead of expecting off-screen pixels.
+assert_text_grip_screenshot end \
+  emulator-screenshots/editor-text-timeline-grips.png \
   emulator-screenshots/editor-text-after-trim-redo.xml \
-  emulator-screenshots/text-edge-redo-logcat.txt <<'PY'
-import re
-import sys
-import xml.etree.ElementTree as ET
-sys.path.insert(0, ".github/scripts")
-from ci_image import Image
-image_path, xml_path, log_path = sys.argv[1:]
-image = Image.open(image_path).convert("RGB")
-root = ET.parse(xml_path).getroot()
-root_node = root.find("node")
-root_match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", root_node.attrib.get("bounds", ""))
-if not root_match:
-    raise SystemExit("Could not map Android screen coordinates to the final text-grip screenshot.")
-win_left, win_top, win_right, win_bottom = map(int, root_match.groups())
-scale_x = image.width / (win_right - win_left)
-scale_y = image.height / (win_bottom - win_top)
-strip = None
-for node in root.iter("node"):
-    if node.attrib.get("content-desc", "").startswith("Yazı katmanı 1:"):
-        m = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
-        if m:
-            strip = tuple(map(int, m.groups()))
-            break
-if strip is None:
-    raise SystemExit("The final screenshot hierarchy does not expose the text strip bounds.")
-_, strip_top, _, strip_bottom = strip
-pattern = re.compile(
-    r"TEXT_EDGE_GRIP_LAYOUT edge=(start|end).*?boundaryPx=(-?\d+) centerPx=(-?\d+) "
-    r"offsetPx=(-?\d+) gripWidthPx=(\d+) gripHeightPx=(\d+) stripHeightPx=(\d+)"
-)
-latest = {}
-for line in open(log_path, errors="replace"):
-    m = pattern.search(line)
-    if m:
-        latest[m.group(1)] = tuple(map(int, m.groups()[1:]))
-for edge in ("start", "end"):
-    if edge not in latest:
-        raise SystemExit(f"No measured {edge} grip layout is available for screenshot pixel validation.")
-    boundary, center, offset, width, height, measured_strip_height = latest[edge]
-    if abs(offset) > 1 or width <= 0 or height != measured_strip_height:
-        raise SystemExit(f"Invalid {edge} grip geometry: {latest[edge]}")
-    x = round((center - win_left) * scale_x)
-    y1 = round((strip_top + (strip_bottom - strip_top) * 0.12 - win_top) * scale_y)
-    y2 = round((strip_top + (strip_bottom - strip_top) * 0.88 - win_top) * scale_y)
-    for y in (y1, y2):
-        white = 0
-        total = 0
-        for dy in range(-2, 3):
-            for dx in range(-2, 3):
-                px, py = x + dx, y + dy
-                if 0 <= px < image.width and 0 <= py < image.height:
-                    red, green, blue = image.getpixel((px, py))
-                    total += 1
-                    if min(red, green, blue) >= 215 and max(red, green, blue) - min(red, green, blue) <= 45:
-                        white += 1
-        if total < 20 or white < 18:
-            raise SystemExit(
-                f"The {edge} white tab is clipped or missing in the actual screenshot: "
-                f"centre=({x},{y}), white={white}/{total}."
-            )
-    print(f"PASS: screenshot contains the full-height white {edge} text tab at its measured boundary.")
-PY
-echo "PASS: both text edge handles were physically dragged; each changed only its own time boundary; Undo/Redo restored the exact ranges; both white tabs are visible in the captured screenshot."
+  emulator-screenshots/text-edge-redo-logcat.txt || {
+  collect_capture_diagnostics text-end-grip-pixel-check-failed
+  exit 98
+}
+echo "PASS: both text trim tabs were pixel-verified independently in their visible timeline positions; physical trim and exact Undo/Redo ranges passed."
 
 
 # UIAutomator can time out on this large panel even after the direct interaction
