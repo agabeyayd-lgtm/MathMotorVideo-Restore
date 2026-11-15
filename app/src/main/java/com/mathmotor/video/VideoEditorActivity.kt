@@ -4275,13 +4275,18 @@ class VideoEditorActivity : Activity() {
                 var initialStartMs = startMs
                 var initialEndMs = endMs
                 var moved = false
+                // Keep this text-edge gesture's history baseline local to the
+                // touch target. The shared field is also used by other editor
+                // controls and may be cleared/replaced while this gesture is active.
+                var textEdgeHistorySnapshot: ProjectEditSnapshot? = null
                 handle.setOnTouchListener { view, event ->
                     when (event.actionMasked) {
                         android.view.MotionEvent.ACTION_DOWN -> {
                             downRawX = event.rawX
                             initialStartMs = layer.startMs
                             initialEndMs = layer.endMs
-                            activeProjectHistorySnapshot = beginProjectHistoryGesture()
+                            textEdgeHistorySnapshot = beginProjectHistoryGesture()
+                            activeProjectHistorySnapshot = textEdgeHistorySnapshot
                             moved = false
                             player?.playWhenReady = false
                             view.parent?.requestDisallowInterceptTouchEvent(true)
@@ -4334,7 +4339,8 @@ class VideoEditorActivity : Activity() {
                                 layer.timingCustomized = true
                                 selectedTextLayerId = layer.id
                                 loadTextLayerIntoControls(layer)
-                                finishProjectHistoryGesture()
+                                finishProjectHistoryGesture(textEdgeHistorySnapshot)
+                                textEdgeHistorySnapshot = null
                                 status.text = if (isStart) {
                                     "Yazı başlangıcı: ${formatTimelineMs(layer.startMs)}"
                                 } else {
@@ -4342,7 +4348,10 @@ class VideoEditorActivity : Activity() {
                                 }
                                 enterTextTools()
                             } else {
-                                activeProjectHistorySnapshot = null
+                                if (activeProjectHistorySnapshot === textEdgeHistorySnapshot) {
+                                    activeProjectHistorySnapshot = null
+                                }
+                                textEdgeHistorySnapshot = null
                                 selectTextLayer(layer.id)
                             }
                             refreshTimelineTracks()
@@ -4350,7 +4359,10 @@ class VideoEditorActivity : Activity() {
                             true
                         }
                         android.view.MotionEvent.ACTION_CANCEL -> {
-                            activeProjectHistorySnapshot = null
+                            if (activeProjectHistorySnapshot === textEdgeHistorySnapshot) {
+                                activeProjectHistorySnapshot = null
+                            }
+                            textEdgeHistorySnapshot = null
                             view.translationX = 0f
                             view.parent?.requestDisallowInterceptTouchEvent(false)
                             true
@@ -7489,9 +7501,16 @@ class VideoEditorActivity : Activity() {
         }
     }
 
-    private fun finishProjectHistoryGesture() {
-        val before = activeProjectHistorySnapshot ?: return
-        activeProjectHistorySnapshot = null
+    private fun finishProjectHistoryGesture(
+        snapshotOverride: ProjectEditSnapshot? = activeProjectHistorySnapshot
+    ) {
+        val before = snapshotOverride ?: return
+        // A gesture may retain its own snapshot even when a shared control has
+        // cleared/replaced the global active slot. Only clear the slot when it
+        // still belongs to this exact transaction.
+        if (activeProjectHistorySnapshot === before) {
+            activeProjectHistorySnapshot = null
+        }
         val after = captureProjectEditSnapshot()
         val changed = hasProjectContentChanged(before, after)
         fun selectedTextRange(snapshot: ProjectEditSnapshot): String {
