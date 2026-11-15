@@ -4350,32 +4350,36 @@ then
   collect_capture_diagnostics video-split-after-drag-visible-seam
   exit 99
 fi
-# A restored project deliberately starts without a selected clip. The trim
-# grips are only attached to the selected filmstrip, so select the first clip
-# before resolving the visible touch targets. Previously this smoke sent its
-# first drag to the unselected clip body, which panned the timeline instead.
-timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineAlignmentTest:I \
-  > emulator-screenshots/video-edge-trim-selection-before.txt 2>&1 || true
-video_edge_select_coords="$(python3 - emulator-screenshots/video-edge-trim-selection-before.txt <<'PY'
+# The rate-limited timeline snapshot can become stale after the restored editor
+# finishes its follow-up layout pass. Use a fresh accessibility hierarchy for the
+# actual tap coordinates; its bounds describe the clip at the moment of input.
+if ! dump_hierarchy video-edge-trim-selection-before.xml emulator-screenshots/video-edge-trim-selection-before.xml; then
+  collect_capture_diagnostics video-edge-trim-selection-hierarchy-missing
+  exit 102
+fi
+video_edge_select_coords="$(python3 - emulator-screenshots/video-edge-trim-selection-before.xml <<'PY'
 import re
 import sys
+import xml.etree.ElementTree as ET
 
-pattern = re.compile(r"TIMELINE_ALIGNMENT_SNAPSHOT .*?clipBoundsByIndex=([0-9:,;]+)")
+root = ET.parse(sys.argv[1]).getroot()
 latest = None
-for line in open(sys.argv[1], errors="replace"):
-    match = pattern.search(line)
-    if not match:
+for node in root.iter("node"):
+    description = node.attrib.get("content-desc", "")
+    if not description.startswith("Klip 1:"):
         continue
-    bounds = {}
-    for item in match.group(1).split(";"):
-        index, raw = item.split(":", 1)
-        bounds[int(index)] = tuple(map(int, raw.split(",")))
-    if 1 in bounds:
-        latest = bounds[1]
+    if node.attrib.get("clickable", "false").lower() != "true":
+        continue
+    if node.attrib.get("enabled", "false").lower() != "true":
+        continue
+    match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+    if match:
+        latest = tuple(map(int, match.groups()))
+        break
 if latest is None:
-    raise SystemExit("No first-clip bounds available before selecting the trim target.")
+    raise SystemExit("No current clickable bounds for the first restored video clip.")
 left, top, right, bottom = latest
-if right - left < 70 or bottom <= top:
+if right - left < 70 or bottom - top < 20:
     raise SystemExit(f"First video clip is too small to select safely: {latest}")
 print((left + right) // 2, (top + bottom) // 2)
 PY
@@ -4460,28 +4464,33 @@ echo "PASS: selected video trim grips are centred on both measured clip boundari
 resolve_video_edge_point() {
   local edge="$1"
   local direction="$2"
-  local bounds_file="emulator-screenshots/video-edge-trim-measurements.txt"
-  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineAlignmentTest:I \
-    > "$bounds_file" 2>&1 || true
+  local bounds_file="emulator-screenshots/video-edge-trim-touch-bounds.xml"
+  # Timeline log snapshots are rate-limited and may predate a final layout pass.
+  # Re-read the clickable clip View before every physical gesture so both X/Y
+  # coordinates match the current screen geometry.
+  if ! dump_hierarchy video-edge-trim-touch-bounds.xml "$bounds_file"; then
+    echo "Could not capture current clip bounds before the $edge $direction gesture." >&2
+    return 1
+  fi
   python3 - "$bounds_file" "$edge" "$direction" <<'PY'
 import re
 import sys
+import xml.etree.ElementTree as ET
 
 path, edge, direction = sys.argv[1:]
-pattern = re.compile(r"TIMELINE_ALIGNMENT_SNAPSHOT .*?clipBoundsByIndex=([0-9:,;]+)")
+root = ET.parse(path).getroot()
 latest = None
-for line in open(path, errors="replace"):
-    match = pattern.search(line)
-    if not match:
+for node in root.iter("node"):
+    if not node.attrib.get("content-desc", "").startswith("Klip 1:"):
         continue
-    measured = {}
-    for item in match.group(1).split(";"):
-        index, raw = item.split(":", 1)
-        measured[int(index)] = tuple(map(int, raw.split(",")))
-    if 1 in measured:
-        latest = measured[1]
+    if node.attrib.get("clickable", "false").lower() != "true":
+        continue
+    match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+    if match:
+        latest = tuple(map(int, match.groups()))
+        break
 if latest is None:
-    raise SystemExit("No measured bounds for the selected first video clip (UI clip ids are 1-based).")
+    raise SystemExit("No current clickable bounds for the selected first video clip.")
 left, top, right, bottom = latest
 width, height = right - left, bottom - top
 if width < 70 or height < 20:
@@ -4503,8 +4512,8 @@ else:
     x2 = x1 - travel if direction == "trim" else x1 + travel
 y = (top + bottom) // 2
 if not (left <= x1 < right and left <= x2 < right and top <= y < bottom):
-    raise SystemExit(f"Resolved touch is outside the measured clip: bounds={latest}, points={x1},{x2},{y}")
-print(f"PASS: {edge} {direction} touch uses measured clip bounds {latest}", file=sys.stderr)
+    raise SystemExit(f"Resolved touch is outside the current clip bounds: bounds={latest}, points={x1},{x2},{y}")
+print(f"PASS: {edge} {direction} touch uses fresh accessibility clip bounds {latest}", file=sys.stderr)
 print(x1, y, x2)
 PY
 }
