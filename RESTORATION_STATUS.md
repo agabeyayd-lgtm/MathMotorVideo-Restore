@@ -1,3 +1,13 @@
+## 2026-11-15 — Start reverse filmstrip swipes inside the live video viewport
+
+- The exact-head emulator run passed build, unit tests, clip/text/overlay/audio interactions, and the forward filmstrip swipe, then failed the reverse filmstrip check because playhead time remained at 7,167ms.
+- Root cause: `TIMELINE_ALIGNMENT_SNAPSHOT` reports the full clip content child's screen bounds. After a long forward swipe that child extends left of its `HorizontalScrollView`; the test incorrectly used the child's off-screen left coordinate as the reverse gesture start. The touch began in the tool gutter, not on a visible thumbnail, so the app received no reverse filmstrip touch.
+- The previous 32dp-from-screen-left adjustment did not address that geometry. The smoke test now takes a fresh accessibility hierarchy after the forward swipe, identifies the live video-lane `HorizontalScrollView`, intersects its viewport with the measured clip bounds, and places both reverse-swipe endpoints inside the visible thumbnail intersection and before the fixed playhead hit area.
+- This changes only test gesture targeting; no production playback, timeline, clip-drag, trim, or handle behavior is modified.
+- New exact-head CI validation is pending. PR #40 remains open; no version bump, merge, release, or APK delivery.
+
+---
+
 ## 2026-11-15 — Keep playback sync assertions valid at the composition end
 
 - A docs-only exact-HEAD emulator rerun passed the editor interactions through filmstrip scrubbing, then failed the later playback check at the final sample: Media3 reported 8,116ms while the project playhead correctly stayed at the 8,000ms composition end. The player then reached its ENDED state at 8,252ms.
