@@ -1,3 +1,13 @@
+## 2026-11-15 — Keep playback sync assertions valid at the composition end
+
+- A docs-only exact-HEAD emulator rerun passed the editor interactions through filmstrip scrubbing, then failed the later playback check at the final sample: Media3 reported 8,116ms while the project playhead correctly stayed at the 8,000ms composition end. The player then reached its ENDED state at 8,252ms.
+- This is an end-of-media callback overrun, not mid-timeline drift. All in-range playback samples stayed within the existing 100ms synchronization limit; timeline lane scroll, time-zero origins and fixed playhead geometry remained aligned at the end.
+- Updated `.github/scripts/assert-timeline-sync.py` to compare the player clock against the playhead only before the known composition end. At the terminal boundary it compares the player clamped to composition duration, while retaining every scroll/origin/center assertion. The 100ms in-range tolerance is unchanged.
+- No production playback, timeline, trim, or gesture behavior changed. The assertion logic was checked against the captured failing log: 8,000ms duration, all in-range samples within 100ms, and the 230ms terminal overrun correctly clamped.
+- Exact-head CI validation after this assertion correction is pending. PR #40 remains open; no version bump, merge, release, or APK delivery.
+
+---
+
 ## 2026-11-15 — Use live clip bounds for the trim-grip emulator gestures
 
 - PR #40's first emulator run passed the Android build, unit tests, APK packaging and clip split/reorder persistence checks, then stopped before trim-grip measurement because the test tapped outside the first clip.
