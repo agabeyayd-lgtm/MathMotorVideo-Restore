@@ -23,7 +23,7 @@ if "TIMELINE_SYNC_TEST_ENABLED" not in log:
 # visible playhead to the project end during this short interval. Compare the
 # raw player/playhead clocks only before that terminal boundary.
 duration_matches = re.findall(
-    r"TIMELINE_PLAYER_PLAYBACK_STATE .*?durationMs=(\\d+)", log
+    r"TIMELINE_PLAYER_PLAYBACK_STATE .*?durationMs=(\d+)", log
 )
 timeline_duration_ms = int(duration_matches[-1]) if duration_matches else None
 terminal_player_overshoots: list[int] = []
