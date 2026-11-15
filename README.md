@@ -1,9 +1,9 @@
-## Current work — 2026-11-15: video trim grips at clip boundaries
+## Current work — 2026-11-15: CapCut-style full-height video trim handles
 
-- The selected video's left and right white grips are now separate lane-level views centred on the measured start/end edges of the filmstrip. They no longer sit inside the strip.
-- The existing trim touch handlers, source-time math, selection outline and four-direction trim/extend behavior are preserved.
-- The API 35 emulator now measures both grip centres against the real clip View bounds and requires no more than 1px offset before running the existing physical trim gestures and Undo/Redo checks.
-- Work is on `fix/video-trim-grips-at-clip-edges`. Verification is pending; no versionCode change or release APK is included.
+- The selected video's white left/right handles now span the full filmstrip height, use a wider rounded edge-tab shape with a subtle centred grip mark, and remain centred exactly on the clip's measured start/end boundaries.
+- The handles are lane-level siblings; existing transparent gesture targets, trim source-time calculations, selection outline, four-direction trim/extend behavior and project-history Undo/Redo remain unchanged.
+- API 35 validation checks both edge-centre alignment (<=1px) and full-height coverage before exercising the real trim gestures.
+- Work is on `fix/capcut-trim-grip-visual-parity`. Exact-head build/unit/emulator checks are required; no version bump, signed APK, release, or updater change.
 
 ## Current verified baseline — 2026-11-10
 

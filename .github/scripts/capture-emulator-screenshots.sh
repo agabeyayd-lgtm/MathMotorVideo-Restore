@@ -4414,20 +4414,30 @@ import sys
 latest = {}
 pattern = re.compile(
     r"VIDEO_EDGE_GRIP_LAYOUT edge=(start|end) clipIndex=(\d+) "
-    r"boundaryPx=(-?\d+) centerPx=(-?\d+) offsetPx=(-?\d+)"
+    r"boundaryPx=(-?\d+) centerPx=(-?\d+) offsetPx=(-?\d+) "
+    r"gripWidthPx=(\d+) gripHeightPx=(\d+) stripHeightPx=(\d+)"
 )
 for line in open(sys.argv[1], errors="replace"):
     match = pattern.search(line)
     if match:
-        edge, clip_index, boundary, center, offset = match.groups()
-        latest[edge] = tuple(map(int, (clip_index, boundary, center, offset)))
+        edge, clip_index, boundary, center, offset, grip_width, grip_height, strip_height = match.groups()
+        latest[edge] = tuple(map(int, (
+            clip_index, boundary, center, offset, grip_width, grip_height, strip_height
+        )))
 
 for edge in ("start", "end"):
     if edge not in latest:
         raise SystemExit(f"Missing measured {edge} visual trim grip placement.")
-    clip_index, boundary, center, offset = latest[edge]
+    clip_index, boundary, center, offset, grip_width, grip_height, strip_height = latest[edge]
     if clip_index != 0:
         raise SystemExit(f"{edge} visual grip belongs to unexpected clip {clip_index}.")
+    if grip_height != strip_height:
+        raise SystemExit(
+            f"{edge} grip height={grip_height}px does not span the full "
+            f"filmstrip height={strip_height}px."
+        )
+    if grip_width <= 0:
+        raise SystemExit(f"{edge} grip has invalid width={grip_width}px.")
     if abs(offset) > 1:
         raise SystemExit(
             f"{edge} grip is inset from its clip boundary: "
@@ -4435,7 +4445,8 @@ for edge in ("start", "end"):
         )
     print(
         f"PASS: {edge} white grip centre={center}px matches "
-        f"clip boundary={boundary}px (offset={offset}px)."
+        f"clip boundary={boundary}px (offset={offset}px); "
+        f"full-height grip={grip_width}x{grip_height}px."
     )
 PY
 then

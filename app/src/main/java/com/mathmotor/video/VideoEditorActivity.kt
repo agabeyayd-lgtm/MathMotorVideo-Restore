@@ -4501,24 +4501,34 @@ class VideoEditorActivity : Activity() {
             // Draw them as siblings in the lane, not inside the filmstrip's clipped
             // foreground, so each 6dp grip is centered on the exact clip edge.
             selectedClipViewForGrips?.let { selectedView ->
-                val gripWidth = dp(6).coerceAtLeast(1)
-                val gripHeight = dp(28).coerceAtMost(stripHeight).coerceAtLeast(1)
+                // CapCut's trim handle is a full-height white edge tab, not a
+                // short pill floating inside the filmstrip. Keep its centre on the
+                // cut boundary while allowing half the tab to sit outside the clip.
+                val gripWidth = dp(10).coerceAtLeast(1)
+                val gripHeight = stripHeight.coerceAtLeast(1)
                 fun addVisibleTrimGrip(isStart: Boolean) {
                     val boundaryInStrip = selectedClipLeftForGrips +
                         if (isStart) 0 else selectedClipWidthForGrips
-                    val grip = View(this).apply {
+                    val grip = FrameLayout(this).apply {
                         background = android.graphics.drawable.GradientDrawable().apply {
                             setColor(Color.WHITE)
-                            cornerRadius = gripWidth / 2f
+                            cornerRadius = dp(5).toFloat()
                         }
                         isClickable = false
                         isFocusable = false
                         importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
                         elevation = dp(14).toFloat()
                     }
+                    val innerHandle = View(this).apply {
+                        setBackgroundColor(Color.rgb(150, 150, 150))
+                    }
+                    grip.addView(innerHandle, FrameLayout.LayoutParams(
+                        dp(2).coerceAtLeast(1), dp(14).coerceAtLeast(1),
+                        Gravity.CENTER
+                    ))
                     strip.addView(grip, FrameLayout.LayoutParams(gripWidth, gripHeight).apply {
                         leftMargin = boundaryInStrip - gripWidth / 2
-                        topMargin = (stripHeight - gripHeight) / 2
+                        topMargin = 0
                         gravity = Gravity.TOP or Gravity.LEFT
                     })
                     grip.post {
@@ -4534,7 +4544,8 @@ class VideoEditorActivity : Activity() {
                             "EditorTouchTest",
                             "VIDEO_EDGE_GRIP_LAYOUT edge=${if (isStart) "start" else "end"} " +
                                 "clipIndex=$selectedClipIndex boundaryPx=$boundaryPx " +
-                                "centerPx=$gripCenterPx offsetPx=${gripCenterPx - boundaryPx}"
+                                "centerPx=$gripCenterPx offsetPx=${gripCenterPx - boundaryPx} " +
+                                "gripWidthPx=${grip.width} gripHeightPx=${grip.height} stripHeightPx=$stripHeight"
                         )
                     }
                 }
