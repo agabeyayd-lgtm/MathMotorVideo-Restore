@@ -4,7 +4,10 @@
 - Root cause was stale geometry: the last rate-limited timeline log snapshot placed the clip at y=1223–1349, while the immediately-following live UI hierarchy placed the same clickable clip at y=1155–1281. The scripted tap therefore landed 5px below the live clip.
 - Updated the smoke test to take a fresh UIAutomator hierarchy before selecting the restored first clip and before each trim gesture. It now calculates tap/swipe coordinates from the live clickable clip View bounds rather than a possibly stale timeline snapshot.
 - No production trim math, gesture handling, clip timing, selection UI or history behavior was changed. The full-height white tab design and its measured alignment/height assertions remain intact.
-- Exact-head unit/build/emulator validation is pending on the corrected test driver. PR #40 remains open; no version bump, merge, release or APK delivery.
+- Exact implementation HEAD `1f482ce8e81890a037a870d84a50daa12a09c66d` passed all three checks: [Build MathMotorVideo APK #1361](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/43700600496), [Verify Android build #1459](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/43700600472), and [Android emulator screenshots #1600](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/43700600499).
+- Emulator measured the start grip at boundary/centre 540px and the end grip at 802px; both had 0px centre offset and measured 26×126px against the 126px filmstrip height. All four physical trim/extend gestures passed, each changed only its intended source edge, the second clip reflowed gaplessly, and one global Undo/Redo restored/reapplied the exact arrangement.
+- The failed selection step was a test-driver stale-coordinate bug, not a production trim bug: the rate-limited timeline snapshot was vertically 68px stale. Selection and every trim gesture now read fresh clickable clip bounds from UIAutomator. No production trim math or gesture handling changed.
+- PR #40 remains open. No versionCode bump, merge, signed release or updater change; no APK was delivered.
 
 ---
 
