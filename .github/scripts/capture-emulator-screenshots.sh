@@ -4468,7 +4468,7 @@ resolve_video_edge_point() {
   # Timeline log snapshots are rate-limited and may predate a final layout pass.
   # Re-read the clickable clip View before every physical gesture so both X/Y
   # coordinates match the current screen geometry.
-  if ! dump_hierarchy video-edge-trim-touch-bounds.xml "$bounds_file"; then
+  if ! dump_hierarchy video-edge-trim-touch-bounds.xml "$bounds_file" >&2; then
     echo "Could not capture current clip bounds before the $edge $direction gesture." >&2
     return 1
   fi
