@@ -4464,14 +4464,20 @@ class VideoEditorActivity : Activity() {
             val strip = FrameLayout(this).apply {
                 setBackgroundColor(Color.rgb(16, 25, 36))
                 layoutDirection = View.LAYOUT_DIRECTION_LTR
-                clipChildren = true
-                clipToPadding = true
+                // Let the selected edge grips extend half their width beyond the
+                // first/last clip boundary; the containing lane/viewport still clips
+                // at its own bounds, not at this inner filmstrip surface.
+                clipChildren = false
+                clipToPadding = false
                 isClickable = true
                 setOnClickListener { clearTimelineClipSelection() }
             }
 
             // Placement order is layer order: later clips draw above earlier ones,
             // matching activeSegmentIndexAt() and the flattened preview/export.
+            var selectedClipViewForGrips: View? = null
+            var selectedClipLeftForGrips = 0
+            var selectedClipWidthForGrips = 0
             placements.forEach { placement ->
                 val index = placement.clipIndex
                 val clip = clips.getOrNull(index) ?: return@forEach
@@ -4485,6 +4491,55 @@ class VideoEditorActivity : Activity() {
                     leftMargin = left
                     gravity = Gravity.TOP or Gravity.LEFT
                 })
+                if (index == selectedClipIndex && clipHandlesVisible) {
+                    selectedClipViewForGrips = clipView
+                    selectedClipLeftForGrips = left
+                    selectedClipWidthForGrips = width
+                }
+            }
+            // CapCut puts the white trim grips on the clip's two cut boundaries.
+            // Draw them as siblings in the lane, not inside the filmstrip's clipped
+            // foreground, so each 6dp grip is centered on the exact clip edge.
+            selectedClipViewForGrips?.let { selectedView ->
+                val gripWidth = dp(6).coerceAtLeast(1)
+                val gripHeight = dp(28).coerceAtMost(stripHeight).coerceAtLeast(1)
+                fun addVisibleTrimGrip(isStart: Boolean) {
+                    val boundaryInStrip = selectedClipLeftForGrips +
+                        if (isStart) 0 else selectedClipWidthForGrips
+                    val grip = View(this).apply {
+                        background = android.graphics.drawable.GradientDrawable().apply {
+                            setColor(Color.WHITE)
+                            cornerRadius = gripWidth / 2f
+                        }
+                        isClickable = false
+                        isFocusable = false
+                        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                        elevation = dp(14).toFloat()
+                    }
+                    strip.addView(grip, FrameLayout.LayoutParams(gripWidth, gripHeight).apply {
+                        leftMargin = boundaryInStrip - gripWidth / 2
+                        topMargin = (stripHeight - gripHeight) / 2
+                        gravity = Gravity.TOP or Gravity.LEFT
+                    })
+                    grip.post {
+                        if (!timelineSyncTestEnabled || grip.width <= 0) return@post
+                        val clipLocation = IntArray(2)
+                        val gripLocation = IntArray(2)
+                        selectedView.getLocationOnScreen(clipLocation)
+                        grip.getLocationOnScreen(gripLocation)
+                        val boundaryPx = clipLocation[0] +
+                            if (isStart) 0 else selectedView.width
+                        val gripCenterPx = gripLocation[0] + grip.width / 2
+                        android.util.Log.i(
+                            "EditorTouchTest",
+                            "VIDEO_EDGE_GRIP_LAYOUT edge=${if (isStart) "start" else "end"} " +
+                                "clipIndex=$selectedClipIndex boundaryPx=$boundaryPx " +
+                                "centerPx=$gripCenterPx offsetPx=${gripCenterPx - boundaryPx}"
+                        )
+                    }
+                }
+                addVisibleTrimGrip(isStart = true)
+                addVisibleTrimGrip(isStart = false)
             }
             val addVideoButton = TextView(this).apply {
                 text = "＋"
@@ -10724,33 +10779,9 @@ class VideoEditorActivity : Activity() {
                         dp(4).toFloat(),
                         borderPaint
                     )
-                    // CapCut-style trim grips are painted into the same selection
-                    // frame. Their transparent hit areas below only handle gestures.
-                    val gripWidth = dp(6).toFloat()
-                    val gripHeight = dp(28).toFloat().coerceAtMost(outline.height())
-                    val gripRadius = gripWidth / 2f
-                    val gripTop = outline.centerY() - gripHeight / 2f
-                    val gripsPaint = android.graphics.Paint(
-                        android.graphics.Paint.ANTI_ALIAS_FLAG
-                    ).apply { color = Color.WHITE }
-                    canvas.drawRoundRect(
-                        android.graphics.RectF(
-                            outline.left,
-                            gripTop,
-                            outline.left + gripWidth,
-                            gripTop + gripHeight
-                        ),
-                        gripRadius, gripRadius, gripsPaint
-                    )
-                    canvas.drawRoundRect(
-                        android.graphics.RectF(
-                            outline.right - gripWidth,
-                            gripTop,
-                            outline.right,
-                            gripTop + gripHeight
-                        ),
-                        gripRadius, gripRadius, gripsPaint
-                    )
+                    // Visible trim grips are separate lane-level views. This
+                    // outline stays on the clip edge; the grips are centered on the
+                    // same measured boundaries instead of being inset into the strip.
                 }
 
                 override fun setAlpha(alpha: Int) {

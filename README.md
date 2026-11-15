@@ -1,3 +1,10 @@
+## Current work — 2026-11-15: video trim grips at clip boundaries
+
+- The selected video's left and right white grips are now separate lane-level views centred on the measured start/end edges of the filmstrip. They no longer sit inside the strip.
+- The existing trim touch handlers, source-time math, selection outline and four-direction trim/extend behavior are preserved.
+- The API 35 emulator now measures both grip centres against the real clip View bounds and requires no more than 1px offset before running the existing physical trim gestures and Undo/Redo checks.
+- Work is on `fix/video-trim-grips-at-clip-edges`. Verification is pending; no versionCode change or release APK is included.
+
 ## Current verified baseline — 2026-11-10
 
 - PR #35 is merged into `main` (merge commit `4bae7412f8c330247f983b150c2dc1bd951142df`). The application change is on `48b1ef097a4ac3ce0231e98dd0021ed9e5a5684a`; later release metadata and workflow commits do not alter editor code.

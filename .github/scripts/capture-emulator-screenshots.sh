@@ -4400,10 +4400,49 @@ if ! grep -Fq "Sol beyaz tutamaç" emulator-screenshots/video-edge-trim-selected
   collect_capture_diagnostics video-edge-trim-grips-not-attached
   exit 102
 fi
-# Accessibility hierarchy exposes only the leading grip on this Android build.
-# The trailing grip is verified by the real end-trim/end-extend gestures below;
-# the known-green API-35 run proved both operations even with this same XML shape.
-echo "PASS: first restored video clip is selected and both real trim grips are attached."
+# Verify the actual rendered white grip centres against the selected clip's
+# measured screen-space start/end boundaries. The visual grips must sit on the
+# cut edges (not several pixels inside the filmstrip); allow only integer-pixel
+# rounding, and keep the existing real drag tests below unchanged.
+video_edge_grip_layout_file="emulator-screenshots/video-edge-grip-layout.txt"
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I \
+  > "$video_edge_grip_layout_file" 2>&1 || true
+if ! python3 - "$video_edge_grip_layout_file" <<'PY'
+import re
+import sys
+
+latest = {}
+pattern = re.compile(
+    r"VIDEO_EDGE_GRIP_LAYOUT edge=(start|end) clipIndex=(\d+) "
+    r"boundaryPx=(-?\d+) centerPx=(-?\d+) offsetPx=(-?\d+)"
+)
+for line in open(sys.argv[1], errors="replace"):
+    match = pattern.search(line)
+    if match:
+        edge, clip_index, boundary, center, offset = match.groups()
+        latest[edge] = tuple(map(int, (clip_index, boundary, center, offset)))
+
+for edge in ("start", "end"):
+    if edge not in latest:
+        raise SystemExit(f"Missing measured {edge} visual trim grip placement.")
+    clip_index, boundary, center, offset = latest[edge]
+    if clip_index != 0:
+        raise SystemExit(f"{edge} visual grip belongs to unexpected clip {clip_index}.")
+    if abs(offset) > 1:
+        raise SystemExit(
+            f"{edge} grip is inset from its clip boundary: "
+            f"boundary={boundary}px center={center}px offset={offset}px."
+        )
+    print(
+        f"PASS: {edge} white grip centre={center}px matches "
+        f"clip boundary={boundary}px (offset={offset}px)."
+    )
+PY
+then
+  collect_capture_diagnostics video-edge-grip-boundary-misaligned
+  exit 102
+fi
+echo "PASS: selected video trim grips are centred on both measured clip boundaries."
 
 # Exercise the real video trim grips with Android touch events. The app's
 # measured View bounds are the source of truth; do not hard-code device geometry.
