@@ -4391,6 +4391,12 @@ if [ "$reverse_inset" -gt 24 ]; then reverse_inset=24; fi
 # ending just before the playhead still reverses time without crossing its
 # overlay hit region or handing the gesture to playhead seeking.
 reverse_start="$((reverse_x1 + reverse_inset))"
+# Android's left-edge system-back gesture owns the first ~24dp. Start at
+# least 32dp inside the screen so the reverse scrub reaches the timeline.
+left_gesture_safe_start="$((32 * density_dpi / 160))"
+if [ "$reverse_start" -lt "$left_gesture_safe_start" ]; then
+  reverse_start="$left_gesture_safe_start"
+fi
 reverse_end="$((reverse_x2 - reverse_inset))"
 playhead_safe_end="$((playhead_center - 20))"
 if [ "$reverse_end" -gt "$playhead_safe_end" ]; then
