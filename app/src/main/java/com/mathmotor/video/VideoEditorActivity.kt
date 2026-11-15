@@ -4805,7 +4805,6 @@ class VideoEditorActivity : Activity() {
             }
         }
 
-        val videoDurationMs = TimelineVideoMath.totalDuration(videoTimelineSegments())
         if (timelineVideoEffectClips.isEmpty()) {
             makeLane("Efekt", 30, "effects")
         } else {
@@ -4837,7 +4836,7 @@ class VideoEditorActivity : Activity() {
                     startMs = effect.timelineStartMs,
                     onMove = { deltaMs ->
                         val updated = TimelineVideoEffectMath.move(effect, deltaMs, videoDurationMs)
-                        replaceTimelineVideoEffect(updated)
+                        replaceTimelineVideoEffect(effect.id, updated)
                         selectedTimelineVideoEffectId = effect.id
                         timelinePlayheadMs = updated?.timelineStartMs ?: effect.timelineStartMs
                         refreshColorGradePreview()
@@ -4845,14 +4844,14 @@ class VideoEditorActivity : Activity() {
                     },
                     onTrimStart = { deltaMs ->
                         val updated = TimelineVideoEffectMath.trimStart(effect, deltaMs, videoDurationMs)
-                        replaceTimelineVideoEffect(updated)
+                        replaceTimelineVideoEffect(effect.id, updated)
                         selectedTimelineVideoEffectId = effect.id
                         refreshColorGradePreview()
                         updateTimelineVideoEffectSummary()
                     },
                     onTrimEnd = { deltaMs ->
                         val updated = TimelineVideoEffectMath.trimEnd(effect, deltaMs, videoDurationMs)
-                        replaceTimelineVideoEffect(updated)
+                        replaceTimelineVideoEffect(effect.id, updated)
                         selectedTimelineVideoEffectId = effect.id
                         refreshColorGradePreview()
                         updateTimelineVideoEffectSummary()
@@ -6804,11 +6803,15 @@ class VideoEditorActivity : Activity() {
         } ?: "Seçili efekt yok."
     }
 
-    private fun replaceTimelineVideoEffect(updated: TimelineVideoEffectClip?) {
-        val selectedId = selectedTimelineVideoEffectId
-        if (selectedId != null) {
-            timelineVideoEffectClips.removeAll { it.id == selectedId }
-            if (updated != null) timelineVideoEffectClips.add(updated)
+    private fun replaceTimelineVideoEffect(
+        effectId: Long,
+        updated: TimelineVideoEffectClip?
+    ) {
+        timelineVideoEffectClips.removeAll { it.id == effectId }
+        if (updated != null) {
+            timelineVideoEffectClips.add(updated)
+        } else if (selectedTimelineVideoEffectId == effectId) {
+            selectedTimelineVideoEffectId = null
         }
     }
 
@@ -6821,12 +6824,14 @@ class VideoEditorActivity : Activity() {
         val startMs = timelinePlayheadMs.coerceIn(0L, videoDurationMs - TimelineVideoEffectMath.MIN_DURATION_MS)
         val durationMs = minOf(TimelineVideoEffectMath.DEFAULT_DURATION_MS, videoDurationMs - startMs)
         val effect = TimelineVideoEffectClip(
-            id = nextTimelineVideoEffectId++,
+            id = nextTimelineVideoEffectId,
             preset = preset,
             timelineStartMs = startMs,
             durationMs = durationMs
         )
         recordProjectEdit()
+        nextTimelineVideoEffectId = effect.id + 1L
+        timelineLaneOrder.remove("effects")
         timelineVideoEffectClips.add(effect)
         selectedTimelineVideoEffectId = effect.id
         refreshTimelineTracks()
@@ -6844,6 +6849,9 @@ class VideoEditorActivity : Activity() {
         recordProjectEdit()
         timelineVideoEffectClips.removeAll { it.id == selectedId }
         timelineLaneOrder.remove("effect:$selectedId")
+        if (timelineVideoEffectClips.isEmpty()) {
+            timelineLaneOrder.removeAll { it.startsWith("effect:") }
+        }
         selectedTimelineVideoEffectId = null
         refreshTimelineTracks()
         refreshColorGradePreview()
