@@ -35,7 +35,7 @@ class TimelineVideoEffectMathTest {
             listOf(
                 effect(1L, 1_000L, 3_000L),
                 effect(2L, 2_000L, 2_000L),
-                effect(3L, 20_000L, 1_000L)
+                effect(3L, 4_000L, 1_000L)
             )
         )
 
