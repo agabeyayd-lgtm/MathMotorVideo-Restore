@@ -4291,7 +4291,9 @@ for attempt in $(seq 1 12); do
   delta_x="$((play_center_x - thumb_center_x))"
   absolute_delta="$((delta_x < 0 ? -delta_x : delta_x))"
   echo "Alignment attempt $attempt: sample=${thumb_sample_ms}ms center=${thumb_center_x}px playhead=${play_center_x}px delta=${delta_x}px"
-  if [ "$absolute_delta" -eq 0 ]; then
+  # Integer View bounds can round geometrically centered half-pixel
+  # positions to adjacent pixels. Treat <=2px as visually centered.
+  if [ "$absolute_delta" -le 2 ]; then
     thumbnail_aligned=true
     break
   fi
@@ -4310,7 +4312,7 @@ for attempt in $(seq 1 12); do
   sleep 1
 done
 if [ "$thumbnail_aligned" != true ]; then
-  echo "Could not align a filmstrip thumbnail to the exact fixed-playhead pixel after 12 measured drags."
+  echo "Could not align a filmstrip thumbnail within 2px of the fixed playhead after 12 measured drags."
   collect_capture_diagnostics thumbnail-alignment-not-centered
   exit 24
 fi
