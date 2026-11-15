@@ -1,3 +1,12 @@
+## 2026-11-15 — Place video trim grips on the actual clip boundaries
+
+- Root cause: the selected filmstrip's foreground painted its visible 6dp white grips from the inside edge of the clip rectangle. The transparent gesture targets were a separate implementation, so existing trim gesture passes did not verify the visible grip geometry.
+- Correction: leave the selected white outline on the filmstrip, remove its inset grip painting, and render the two white grip pills as lane-level siblings. Each pill's centre is aligned with the selected clip View's measured left or right edge; it extends equally on both sides of that boundary.
+- Added measured screen-space diagnostics for both grip centres. The API 35 smoke requires the left and right offsets to be within 1px, then continues through the existing four real trim/extend gestures and project-history Undo/Redo checks. Existing touch handlers and trim math are not rewritten.
+- Branch: `fix/video-trim-grips-at-clip-edges`. Exact-head unit/build and emulator verification are pending. No version bump, signed APK, release, or updater change.
+
+---
+
 ## 2026-11-10 — PR #35 merged; signed editor update 405 published
 
 - PR #35 merged to `main` as `4bae7412f8c330247f983b150c2dc1bd951142df`. The editor source commit with the two-worker filmstrip decoder is `48b1ef097a4ac3ce0231e98dd0021ed9e5a5684a`.
