@@ -5695,20 +5695,44 @@ class VideoEditorActivity : Activity() {
         track.addView(frame, LinearLayout.LayoutParams(blockWidth, dp(24)))
     }
 
+    /** The real Play control is the single horizontal anchor for the timeline zero point. */
+    private fun timelinePlayheadCenterOnScreen(): Int? {
+        if (::timelinePlayButton.isInitialized &&
+            timelinePlayButton.isLaidOut &&
+            timelinePlayButton.width > 0
+        ) {
+            val buttonLocation = IntArray(2)
+            timelinePlayButton.getLocationOnScreen(buttonLocation)
+            return buttonLocation[0] + timelinePlayButton.width / 2
+        }
+        if (::timelineTracksFrame.isInitialized &&
+            timelineTracksFrame.isLaidOut &&
+            timelineTracksFrame.width > 0
+        ) {
+            val frameLocation = IntArray(2)
+            timelineTracksFrame.getLocationOnScreen(frameLocation)
+            return frameLocation[0] + timelineTracksFrame.width / 2
+        }
+        return null
+    }
+
     private fun updateTimelinePlayheadLine() {
         if (!::timelinePlayheadLine.isInitialized || !::timelineTracksFrame.isInitialized) return
-        // Match the Play control's center in the full editor content area. Do not
-        // center relative to the narrower scroll viewport after its 57dp grip gutter.
-        val centerX = timelineTracksFrame.width / 2
+        val frameLocation = IntArray(2)
+        timelineTracksFrame.getLocationOnScreen(frameLocation)
+        val centerOnScreen = timelinePlayheadCenterOnScreen()
+        val centerX = if (centerOnScreen != null && timelineTracksFrame.isLaidOut) {
+            centerOnScreen - frameLocation[0]
+        } else {
+            timelineTracksFrame.width / 2
+        }
         timelinePlayheadLine.visibility = View.VISIBLE
         val params = timelinePlayheadLine.layoutParams as? FrameLayout.LayoutParams ?: return
-        // The guide is visual-only: keep its hit-test bounds as narrow as the
-        // visible 2dp line. A wide transparent 28dp wrapper can sit over the
-        // selected clip's trim grip at project time zero and steal edge gestures.
-        params.width = dp(2)
-        params.leftMargin = centerX - dp(1)
+        // Keep the hit target as narrow as the visible guide; derive its exact
+        // placement from the actual Play button instead of a second center formula.
+        params.width = dp(2).coerceAtLeast(1)
+        params.leftMargin = centerX - params.width / 2
         timelinePlayheadLine.layoutParams = params
-        // Playback and the white playhead remain fixed while the time readout updates.
         timelinePlayheadLine.bringToFront()
     }
 
@@ -5880,7 +5904,22 @@ class VideoEditorActivity : Activity() {
      * ruler/media header plus the row's 3dp leading inset. Keep this in sync
      * with makeLane(), otherwise the fixed playhead maps to the wrong project time.
      */
-    private fun timelineHeaderGutterWidthPx(): Int = dp(87)
+    private fun timelineHeaderGutterWidthPx(): Int {
+        // Prefer the measured lane/header boundary. The dp value is only an
+        // initial-layout fallback before the ruler/media rows have been measured.
+        val lane = timelineScrollViews.firstOrNull()
+        if (lane != null && lane.isLaidOut &&
+            ::timelineTracksFrame.isInitialized && timelineTracksFrame.isLaidOut
+        ) {
+            val laneLocation = IntArray(2)
+            val frameLocation = IntArray(2)
+            lane.getLocationOnScreen(laneLocation)
+            timelineTracksFrame.getLocationOnScreen(frameLocation)
+            val measuredGutter = laneLocation[0] - frameLocation[0]
+            if (measuredGutter > 0) return measuredGutter
+        }
+        return dp(87)
+    }
 
     /** Width of the leading blank time-zero spacer inside each horizontally scrolling lane. */
     private fun timelineFrameWidth(viewportWidth: Int): Int {
@@ -5891,13 +5930,15 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun timelineOriginSpacerWidth(lane: View): Int {
-        if (lane.width > 0 && timelineTracksFrame.width > 0) {
+        if (lane.width > 0 && lane.isLaidOut &&
+            ::timelineTracksFrame.isInitialized && timelineTracksFrame.isLaidOut
+        ) {
             val laneLocation = IntArray(2)
-            val frameLocation = IntArray(2)
             lane.getLocationOnScreen(laneLocation)
-            timelineTracksFrame.getLocationOnScreen(frameLocation)
-            val playheadCenterOnScreen = frameLocation[0] + timelineTracksFrame.width / 2
-            return (playheadCenterOnScreen - laneLocation[0]).coerceIn(1, lane.width)
+            val playheadCenter = timelinePlayheadCenterOnScreen()
+            if (playheadCenter != null) {
+                return (playheadCenter - laneLocation[0]).coerceIn(1, lane.width)
+            }
         }
         return timelineOriginSpacerWidthFallback(lane.width)
     }
@@ -6139,7 +6180,9 @@ class VideoEditorActivity : Activity() {
         timelineTracksFrame.getLocationOnScreen(frameLocation)
         val playheadCenterPx = playheadLocation[0] + timelinePlayheadLine.width / 2
         val playButtonCenterPx = playButtonLocation[0] + timelinePlayButton.width / 2
-        val expectedCenterPx = frameLocation[0] + timelineTracksFrame.width / 2
+        // The Play control is authoritative; frameCenterPx remains a diagnostic only.
+        val expectedCenterPx = playButtonCenterPx
+        val frameCenterPx = frameLocation[0] + timelineTracksFrame.width / 2
         val expectedScrollPx = TimelineScaleMath.pixelsForTime(timelinePlayheadMs, pixelsPerSecond)
         val laneScrolls = timelineScrollViews.joinToString(",") { it.scrollX.toString() }
         // The time-zero point is the RIGHT edge of the leading spacer, not its left edge.
@@ -6159,7 +6202,8 @@ class VideoEditorActivity : Activity() {
                 "playerMs=$playerPositionMs playheadMs=$timelinePlayheadMs " +
                 "scrollXs=$laneScrolls originRightXs=$originRightScreenXs pxPerSecond=$pixelsPerSecond " +
                 "expectedScrollPx=$expectedScrollPx playheadCenterPx=$playheadCenterPx " +
-                "playButtonCenterPx=$playButtonCenterPx expectedCenterPx=$expectedCenterPx"
+                "playButtonCenterPx=$playButtonCenterPx expectedCenterPx=$expectedCenterPx " +
+                "frameCenterPx=$frameCenterPx"
         )
     }
 
