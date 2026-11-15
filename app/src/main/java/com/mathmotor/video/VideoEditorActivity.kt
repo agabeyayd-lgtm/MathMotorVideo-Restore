@@ -3572,6 +3572,12 @@ class VideoEditorActivity : Activity() {
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
+                // Text trim tabs intentionally straddle their exact time boundary.
+                // Let only the narrow edge tabs draw into the timeline's side gutter.
+                if (tag.startsWith("Metin")) {
+                    clipChildren = false
+                    clipToPadding = false
+                }
                 setPadding(dp(3), dp(1), dp(3), dp(1))
                 this.tag = if (reorderable) laneKey else "__ruler__"
                 isClickable = true
@@ -3767,6 +3773,12 @@ class VideoEditorActivity : Activity() {
             val scroll = android.widget.HorizontalScrollView(this).apply {
                 isHorizontalScrollBarEnabled = false
                 overScrollMode = View.OVER_SCROLL_NEVER
+                if (tag.startsWith("Metin") || tag == "Video") {
+                    // Video trim tabs, like text tabs, are centred on strip edges
+                    // and must be allowed to draw into the lane's side gutter.
+                    clipChildren = false
+                    clipToPadding = false
+                }
                 isClickable = true
                 setOnClickListener { clearTimelineClipSelection() }
             }
@@ -3841,6 +3853,21 @@ class VideoEditorActivity : Activity() {
                 dp(responsiveLaneHeightDp)
             }
             row.addView(scroll, LinearLayout.LayoutParams(0, responsiveLaneHeightPx, 1f))
+            if (tag.startsWith("Metin") || tag == "Video") {
+                // Text and video trim tabs are centred on their strip boundaries.
+                // The leading video tab needs the same left-gutter drawing path as
+                // text tabs; otherwise the viewport/row clips half of the white tab.
+                row.post {
+                    val contentRoot = findViewById<ViewGroup>(android.R.id.content)
+                    var ancestor: android.view.ViewParent? = row
+                    while (ancestor is ViewGroup) {
+                        ancestor.clipChildren = false
+                        ancestor.clipToPadding = false
+                        if (ancestor === contentRoot) break
+                        ancestor = ancestor.parent
+                    }
+                }
+            }
 
             if (!reorderable) {
                 timelineTracks.addView(row, 0)
@@ -4100,18 +4127,15 @@ class VideoEditorActivity : Activity() {
                 else -> 32
             })
             val frame = FrameLayout(this).apply {
+                // CapCut-style text strip: solid orange body with white edge tabs.
+                // Keep child drawing outside the frame so each visible tab is
+                // centred on the exact start/end boundary.
                 clipChildren = false
                 clipToPadding = false
                 background = android.graphics.drawable.GradientDrawable().apply {
-                    setColor(Color.rgb(110, 74, 154))
-                    cornerRadius = dp(5).toFloat()
-                    setStroke(
-                        dp(if (layer.id == selectedTextLayerId) 2 else 1),
-                        if (layer.id == selectedTextLayerId) Color.rgb(117, 240, 221)
-                        else Color.rgb(61, 79, 99)
-                    )
+                    setColor(Color.rgb(245, 137, 0))
+                    cornerRadius = dp(2).toFloat()
                 }
-                // Edge hit targets straddle the block boundary into the spacer.
                 clipToOutline = false
                 contentDescription = "Yazı katmanı ${layerIndex + 1}: ortasından sürükleyerek taşı, kenarlarından sürükleyerek süresini değiştir"
             }
@@ -4258,7 +4282,10 @@ class VideoEditorActivity : Activity() {
                             downRawX = event.rawX
                             initialStartMs = layer.startMs
                             initialEndMs = layer.endMs
-                            activeProjectHistorySnapshot = beginProjectHistoryGesture()
+                            // The trim changes the model only on ACTION_UP. Capture
+                            // the history snapshot immediately before that atomic
+                            // model change rather than keeping a gesture-wide slot
+                            // that can be reset by a view/layout refresh.
                             moved = false
                             player?.playWhenReady = false
                             view.parent?.requestDisallowInterceptTouchEvent(true)
@@ -4285,6 +4312,8 @@ class VideoEditorActivity : Activity() {
                             view.translationX = 0f
                             view.parent?.requestDisallowInterceptTouchEvent(false)
                             if (moved) {
+                                recordProjectEdit()
+                                val beforeTextRange = "${initialStartMs}:${initialEndMs}"
                                 val deltaMs = TimelineScaleMath.millisecondsForPixels(
                                     deltaPx, timelinePixelsPerSecond()
                                 )
@@ -4299,10 +4328,26 @@ class VideoEditorActivity : Activity() {
                                         totalMs
                                     )
                                 }
+                                if (timelineSyncTestEnabled) {
+                                    android.util.Log.i(
+                                        "EditorTouchTest",
+                                        "TEXT_EDGE_TRIM_COMMIT edge=${if (isStart) "start" else "end"} " +
+                                            "layerId=${layer.id} beforeStartMs=$initialStartMs " +
+                                            "beforeEndMs=$initialEndMs afterStartMs=${layer.startMs} " +
+                                            "afterEndMs=${layer.endMs} deltaPx=$deltaPx deltaMs=$deltaMs"
+                                    )
+                                }
                                 layer.timingCustomized = true
                                 selectedTextLayerId = layer.id
                                 loadTextLayerIntoControls(layer)
-                                finishProjectHistoryGesture()
+                                if (timelineSyncTestEnabled) {
+                                    android.util.Log.i(
+                                        "ProjectHistoryTest",
+                                        "PROJECT_HISTORY_TEXT_EDGE_COMMITTED edge=${if (isStart) "start" else "end"} " +
+                                            "beforeTextRange=$beforeTextRange afterTextRange=${layer.startMs}:${layer.endMs} " +
+                                            "undoCountAfter=${undoProjectHistory.size}"
+                                    )
+                                }
                                 status.text = if (isStart) {
                                     "Yazı başlangıcı: ${formatTimelineMs(layer.startMs)}"
                                 } else {
@@ -4310,7 +4355,6 @@ class VideoEditorActivity : Activity() {
                                 }
                                 enterTextTools()
                             } else {
-                                activeProjectHistorySnapshot = null
                                 selectTextLayer(layer.id)
                             }
                             refreshTimelineTracks()
@@ -4318,7 +4362,6 @@ class VideoEditorActivity : Activity() {
                             true
                         }
                         android.view.MotionEvent.ACTION_CANCEL -> {
-                            activeProjectHistorySnapshot = null
                             view.translationX = 0f
                             view.parent?.requestDisallowInterceptTouchEvent(false)
                             true
@@ -4335,6 +4378,58 @@ class VideoEditorActivity : Activity() {
 
             addTextTrimHandle(isStart = true)
             addTextTrimHandle(isStart = false)
+
+            // Visible CapCut grips are separate from the transparent drag targets:
+            // white rounded tabs span the full text-strip height and sit exactly
+            // on the cut boundaries. The underlying touch targets and trim math
+            // remain unchanged.
+            val visibleGripWidth = dp(10).coerceAtLeast(1)
+            val visibleGripMarkWidth = dp(2).coerceAtLeast(1)
+            val visibleGripMarkHeight = dp(14).coerceAtLeast(1)
+            fun addVisibleTextTrimGrip(isStart: Boolean) {
+                val grip = FrameLayout(this).apply {
+                    // Match the square-cornered CapCut trim tab.
+                    setBackgroundColor(Color.WHITE)
+                    isClickable = false
+                    isFocusable = false
+                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                    elevation = dp(14).toFloat()
+                }
+                grip.addView(View(this).apply {
+                    setBackgroundColor(Color.rgb(150, 150, 150))
+                    isClickable = false
+                    isFocusable = false
+                }, FrameLayout.LayoutParams(
+                    visibleGripMarkWidth, visibleGripMarkHeight, Gravity.CENTER
+                ))
+                frame.addView(grip, FrameLayout.LayoutParams(
+                    visibleGripWidth, blockHeight
+                ).apply {
+                    leftMargin = if (isStart) -visibleGripWidth / 2
+                    else blockWidth - visibleGripWidth / 2
+                    topMargin = 0
+                    gravity = Gravity.TOP or Gravity.LEFT
+                })
+                grip.post {
+                    if (!timelineSyncTestEnabled || grip.width <= 0) return@post
+                    val frameLocation = IntArray(2)
+                    val gripLocation = IntArray(2)
+                    frame.getLocationOnScreen(frameLocation)
+                    grip.getLocationOnScreen(gripLocation)
+                    val boundaryPx = frameLocation[0] + if (isStart) 0 else frame.width
+                    val gripCenterPx = gripLocation[0] + grip.width / 2
+                    android.util.Log.i(
+                        "EditorTouchTest",
+                        "TEXT_EDGE_GRIP_LAYOUT edge=${if (isStart) "start" else "end"} " +
+                            "layerId=${layer.id} boundaryPx=$boundaryPx centerPx=$gripCenterPx " +
+                            "offsetPx=${gripCenterPx - boundaryPx} gripWidthPx=${grip.width} " +
+                            "gripHeightPx=${grip.height} stripHeightPx=${frame.height} " +
+                            "startMs=${layer.startMs} endMs=${layer.endMs}"
+                    )
+                }
+            }
+            addVisibleTextTrimGrip(isStart = true)
+            addVisibleTextTrimGrip(isStart = false)
             track.addView(frame, LinearLayout.LayoutParams(blockWidth, blockHeight))
             if (endMs < totalMs) addSpacer(track, endMs, totalMs)
         }
@@ -4501,24 +4596,32 @@ class VideoEditorActivity : Activity() {
             // Draw them as siblings in the lane, not inside the filmstrip's clipped
             // foreground, so each 6dp grip is centered on the exact clip edge.
             selectedClipViewForGrips?.let { selectedView ->
-                val gripWidth = dp(6).coerceAtLeast(1)
-                val gripHeight = dp(28).coerceAtMost(stripHeight).coerceAtLeast(1)
+                // CapCut's trim handle is a full-height white edge tab, not a
+                // short pill floating inside the filmstrip. Keep its centre on the
+                // cut boundary while allowing half the tab to sit outside the clip.
+                val gripWidth = dp(10).coerceAtLeast(1)
+                val gripHeight = stripHeight.coerceAtLeast(1)
                 fun addVisibleTrimGrip(isStart: Boolean) {
                     val boundaryInStrip = selectedClipLeftForGrips +
                         if (isStart) 0 else selectedClipWidthForGrips
-                    val grip = View(this).apply {
-                        background = android.graphics.drawable.GradientDrawable().apply {
-                            setColor(Color.WHITE)
-                            cornerRadius = gripWidth / 2f
-                        }
+                    val grip = FrameLayout(this).apply {
+                        // CapCut reference: square-cornered white trim tab.
+                        setBackgroundColor(Color.WHITE)
                         isClickable = false
                         isFocusable = false
                         importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
                         elevation = dp(14).toFloat()
                     }
+                    val innerHandle = View(this).apply {
+                        setBackgroundColor(Color.rgb(150, 150, 150))
+                    }
+                    grip.addView(innerHandle, FrameLayout.LayoutParams(
+                        dp(2).coerceAtLeast(1), dp(14).coerceAtLeast(1),
+                        Gravity.CENTER
+                    ))
                     strip.addView(grip, FrameLayout.LayoutParams(gripWidth, gripHeight).apply {
                         leftMargin = boundaryInStrip - gripWidth / 2
-                        topMargin = (stripHeight - gripHeight) / 2
+                        topMargin = 0
                         gravity = Gravity.TOP or Gravity.LEFT
                     })
                     grip.post {
@@ -4534,7 +4637,8 @@ class VideoEditorActivity : Activity() {
                             "EditorTouchTest",
                             "VIDEO_EDGE_GRIP_LAYOUT edge=${if (isStart) "start" else "end"} " +
                                 "clipIndex=$selectedClipIndex boundaryPx=$boundaryPx " +
-                                "centerPx=$gripCenterPx offsetPx=${gripCenterPx - boundaryPx}"
+                                "centerPx=$gripCenterPx offsetPx=${gripCenterPx - boundaryPx} " +
+                                "gripWidthPx=${grip.width} gripHeightPx=${grip.height} stripHeightPx=$stripHeight"
                         )
                     }
                 }
@@ -7392,16 +7496,30 @@ class VideoEditorActivity : Activity() {
         }
     }
 
-    private fun finishProjectHistoryGesture() {
-        val before = activeProjectHistorySnapshot ?: return
-        activeProjectHistorySnapshot = null
+    private fun finishProjectHistoryGesture(
+        snapshotOverride: ProjectEditSnapshot? = activeProjectHistorySnapshot
+    ) {
+        val before = snapshotOverride ?: return
+        // A gesture may retain its own snapshot even when a shared control has
+        // cleared/replaced the global active slot. Only clear the slot when it
+        // still belongs to this exact transaction.
+        if (activeProjectHistorySnapshot === before) {
+            activeProjectHistorySnapshot = null
+        }
         val after = captureProjectEditSnapshot()
         val changed = hasProjectContentChanged(before, after)
+        fun selectedTextRange(snapshot: ProjectEditSnapshot): String {
+            val id = snapshot.selectedTextLayerId ?: return "none"
+            val layer = snapshot.textLayers.firstOrNull { it.id == id } ?: return "missing"
+            return "${layer.startMs}:${layer.endMs}"
+        }
         if (timelineSyncTestEnabled) {
             android.util.Log.i(
                 "ProjectHistoryTest",
                 "PROJECT_HISTORY_GESTURE_END beforeSoundVolume=${before.soundVolume} " +
-                    "afterSoundVolume=${after.soundVolume} changed=$changed undoCountBefore=${undoProjectHistory.size}"
+                    "afterSoundVolume=${after.soundVolume} changed=$changed undoCountBefore=${undoProjectHistory.size} " +
+                    "beforeTextId=${before.selectedTextLayerId} afterTextId=${after.selectedTextLayerId} " +
+                    "beforeTextRange=${selectedTextRange(before)} afterTextRange=${selectedTextRange(after)}"
             )
         }
         if (changed) {
@@ -7411,7 +7529,8 @@ class VideoEditorActivity : Activity() {
             android.util.Log.i(
                 "ProjectHistoryTest",
                 "PROJECT_HISTORY_GESTURE_COMMITTED soundVolume=${after.soundVolume} " +
-                    "undoCountAfter=${undoProjectHistory.size} undoEnabled=${undoProjectButton?.isEnabled}"
+                    "undoCountAfter=${undoProjectHistory.size} undoEnabled=${undoProjectButton?.isEnabled} " +
+                    "selectedTextId=${after.selectedTextLayerId} selectedTextRange=${selectedTextRange(after)}"
             )
         }
     }
@@ -7462,6 +7581,13 @@ class VideoEditorActivity : Activity() {
         }
         val beforeClipRanges = videoHistoryValue(current.clips)
         val afterClipRanges = videoHistoryValue(restored.clips)
+        fun selectedTextRange(snapshot: ProjectEditSnapshot): String {
+            val id = snapshot.selectedTextLayerId ?: return "none"
+            val layer = snapshot.textLayers.firstOrNull { it.id == id } ?: return "missing"
+            return "${layer.startMs}:${layer.endMs}"
+        }
+        val beforeSelectedTextRange = selectedTextRange(current)
+        val afterSelectedTextRange = selectedTextRange(restored)
         val beforeSelectedOverlay = current.selectedOverlayId?.let { id -> current.overlays.firstOrNull { it.id == id } }
         val afterSelectedOverlay = restored.selectedOverlayId?.let { id -> restored.overlays.firstOrNull { it.id == id } }
         fun overlayHistoryValue(overlay: OverlayClip?): String = overlay?.let {
@@ -7481,6 +7607,8 @@ class VideoEditorActivity : Activity() {
                 "beforeOverlays=${current.overlays.size} afterOverlays=${restored.overlays.size} " +
                 "beforeTexts=${current.textLayers.size} afterTexts=${restored.textLayers.size} " +
                 "beforeTextChars=$beforeTextChars afterTextChars=$afterTextChars " +
+                "beforeSelectedTextId=${current.selectedTextLayerId} afterSelectedTextId=${restored.selectedTextLayerId} " +
+                "beforeSelectedTextRange=$beforeSelectedTextRange afterSelectedTextRange=$afterSelectedTextRange " +
                 "beforeMusic=${current.musicUri != null} afterMusic=${restored.musicUri != null} " +
                 "beforeMusicStartMs=${current.musicStartMs} afterMusicStartMs=${restored.musicStartMs} " +
                 "beforeMusicDurationMs=${current.musicDurationMs} afterMusicDurationMs=${restored.musicDurationMs} " +
@@ -7519,8 +7647,22 @@ class VideoEditorActivity : Activity() {
 
     private fun undoProjectEdit() {
         dismissTextInputForHistoryRestore()
+        if (timelineSyncTestEnabled) {
+            android.util.Log.i(
+                "ProjectHistoryTest",
+                "PROJECT_HISTORY_UNDO_REQUEST undoBeforeFinish=${undoProjectHistory.size} " +
+                    "activeText=${activeTextHistorySnapshot != null} activeGesture=${activeProjectHistorySnapshot != null}"
+            )
+        }
         finishTextHistoryEdit()
         finishProjectHistoryGesture()
+        if (timelineSyncTestEnabled) {
+            android.util.Log.i(
+                "ProjectHistoryTest",
+                "PROJECT_HISTORY_UNDO_READY undoAfterFinish=${undoProjectHistory.size} " +
+                    "activeText=${activeTextHistorySnapshot != null} activeGesture=${activeProjectHistorySnapshot != null}"
+            )
+        }
         if (undoProjectHistory.isEmpty()) {
             status.text = "Geri alınacak proje işlemi yok."
             return

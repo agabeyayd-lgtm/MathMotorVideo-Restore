@@ -113,7 +113,7 @@ def verify(log_path: str, screenshot_path: str):
     sample_ms = None
     for timestamp, box in snapshot["cells"]:
         x = (box[0] + box[2]) // 2
-        if abs(x - snapshot["playhead_x"]) <= 2:
+        if x == snapshot["playhead_x"]:
             cell = box
             sample_ms = timestamp
             break

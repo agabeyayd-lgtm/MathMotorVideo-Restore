@@ -3555,12 +3555,649 @@ if ! grep -Fq "TEXT_TOOLS_DOCK_VISIBLE childCount=3" emulator-screenshots/text-p
 fi
 echo "PASS: tapping the preview text restored its three-action text dock and selection frame at $text_reselected_bounds."
 
+echo "Step 8c1: physically drag both text timeline edge handles and verify isolated timing changes"
+if ! dump_hierarchy editor-text-trim-before-start.xml emulator-screenshots/editor-text-trim-before-start.xml; then
+  collect_capture_diagnostics text-trim-initial-hierarchy-missing
+  exit 94
+fi
+
+read_text_edge_target() {
+  python3 - "$1" "$2" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+path, wanted = sys.argv[1:]
+root = ET.parse(path).getroot()
+bounds = None
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != wanted:
+        continue
+    if node.attrib.get("clickable", "false").lower() != "true":
+        continue
+    if node.attrib.get("enabled", "false").lower() != "true":
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        bounds = tuple(map(int, match.groups()))
+        break
+if bounds is None:
+    raise SystemExit(f"Missing live clickable text edge target: {wanted}")
+left, top, right, bottom = bounds
+if right <= left or bottom <= top:
+    raise SystemExit(f"Text edge target is outside the visible screen: {wanted} bounds={bounds}")
+center_y = (top + bottom) // 2
+scroll_candidates = []
+for node in root.iter("node"):
+    if node.attrib.get("class") != "android.widget.HorizontalScrollView":
+        continue
+    if node.attrib.get("scrollable", "false").lower() != "true":
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if not match:
+        continue
+    sx1, sy1, sx2, sy2 = map(int, match.groups())
+    if sx2 - sx1 > 300 and sy1 <= center_y <= sy2:
+        scroll_candidates.append((abs(center_y - (sy1 + sy2) // 2), sx1, sx2))
+if not scroll_candidates:
+    raise SystemExit("Could not resolve the text lane's live horizontal viewport.")
+_, scroll_left, scroll_right = min(scroll_candidates)
+visible_left = max(left, scroll_left)
+visible_right = min(right, scroll_right)
+visible_width = visible_right - visible_left
+if visible_width < min(28, right - left):
+    raise SystemExit(
+        f"Text edge target is not sufficiently visible in its own horizontal viewport: "
+        f"bounds={bounds}, viewport={scroll_left}..{scroll_right}, visibleWidth={visible_width}"
+    )
+# Tap inside the visible intersection, not at the off-screen centre of the view.
+center_x = (visible_left + visible_right) // 2
+if not (left <= center_x < right and scroll_left <= center_x < scroll_right):
+    raise SystemExit(f"Resolved point is outside the visible {wanted} target: bounds={bounds}")
+print(left, top, right, bottom, center_x, center_y, scroll_right)
+PY
+}
+
+assert_text_history_commit() {
+  local log_file="$1"
+  local expected_before="$2"
+  local expected_after="$3"
+  python3 - "$log_file" "$expected_before" "$expected_after" <<'PY'
+import re
+import sys
+path, expected_before, expected_after = sys.argv[1:]
+commit = re.compile(
+    r"PROJECT_HISTORY_TEXT_EDGE_COMMITTED edge=(?:start|end) "
+    r"beforeTextRange=(\d+:\d+) afterTextRange=(\d+:\d+) "
+    r"undoCountAfter=(\d+)"
+)
+commits = []
+for line in open(path, errors="replace"):
+    m = commit.search(line)
+    if m and m.group(1) == expected_before and m.group(2) == expected_after:
+        commits.append(int(m.group(3)))
+if not commits:
+    raise SystemExit(
+        f"No independent text-edge Undo entry recorded {expected_before}->{expected_after}."
+    )
+print(commits[-1])
+PY
+}
+
+assert_text_edge_commit() {
+  local log_file="$1"
+  local edge="$2"
+  python3 - "$log_file" "$edge" <<'PY'
+import re
+import sys
+path, edge = sys.argv[1:]
+pattern = re.compile(
+    r"TEXT_EDGE_TRIM_COMMIT edge=(start|end) layerId=([^ ]+) "
+    r"beforeStartMs=(\d+) beforeEndMs=(\d+) "
+    r"afterStartMs=(\d+) afterEndMs=(\d+) deltaPx=(-?\d+(?:\.\d+)?) deltaMs=(-?\d+)"
+)
+matches = []
+for line in open(path, errors="replace"):
+    match = pattern.search(line)
+    if match and match.group(1) == edge:
+        matches.append(match)
+if not matches:
+    raise SystemExit(f"No physical text {edge}-edge trim commit marker was recorded.")
+m = matches[-1]
+layer, before_start, before_end, after_start, after_end, delta_px, delta_ms = m.groups()[1:]
+before_start, before_end, after_start, after_end, delta_ms = map(
+    int, (before_start, before_end, after_start, after_end, delta_ms)
+)
+delta_px = float(delta_px)
+if abs(delta_px) < 15 or delta_ms == 0:
+    raise SystemExit(f"The text {edge} handle did not register a real drag: {m.group(0)}")
+if edge == "start":
+    if after_start <= before_start or after_end != before_end:
+        raise SystemExit(
+            f"Text left handle must change only startMs: before={before_start},{before_end} "
+            f"after={after_start},{after_end}"
+        )
+else:
+    if after_start != before_start or after_end >= before_end:
+        raise SystemExit(
+            f"Text right handle must change only endMs: before={before_start},{before_end} "
+            f"after={after_start},{after_end}"
+        )
+if after_end - after_start < 500:
+    raise SystemExit(f"Text trim violated the 500ms minimum span: {m.group(0)}")
+print(before_start, before_end, after_start, after_end, layer)
+print(
+    f"PASS: physical text {edge} trim changed only its own boundary: "
+    f"{before_start}-{before_end}ms -> {after_start}-{after_end}ms"
+)
+PY
+}
+
+assert_text_grip_layout_and_state() {
+  local log_file="$1"
+  local expected_start="$2"
+  local expected_end="$3"
+  shift 3
+  # Each trim/Undo/Redo captures a fresh logcat window. The untouched opposite
+  # grip is not necessarily re-laid out, so combine earlier measured geometry
+  # with the current operation's log before validating both visible tabs.
+  python3 - "$log_file" "$expected_start" "$expected_end" "$@" <<'PY'
+import re
+import sys
+current_log, expected_start, expected_end, *prior_logs = sys.argv[1:]
+expected_start, expected_end = int(expected_start), int(expected_end)
+pattern = re.compile(
+    r"TEXT_EDGE_GRIP_LAYOUT edge=(start|end) layerId=([^ ]+) "
+    r"boundaryPx=(-?\d+) centerPx=(-?\d+) offsetPx=(-?\d+) "
+    r"gripWidthPx=(\d+) gripHeightPx=(\d+) stripHeightPx=(\d+) "
+    r"startMs=(\d+) endMs=(\d+)"
+)
+latest = {}
+for path in [*prior_logs, current_log]:
+    with open(path, errors="replace") as stream:
+        for line in stream:
+            m = pattern.search(line)
+            if m:
+                latest[m.group(1)] = tuple(map(int, m.groups()[2:]))
+for edge in ("start", "end"):
+    if edge not in latest:
+        raise SystemExit(f"Missing measured visible text {edge} grip layout.")
+    boundary, center, offset, width, height, strip_height, start_ms, end_ms = latest[edge]
+    if abs(offset) > 1:
+        raise SystemExit(f"Text {edge} grip is not centred on its own boundary: {latest[edge]}")
+    if width <= 0 or height != strip_height:
+        raise SystemExit(
+            f"Text {edge} grip does not span the full strip height: grip={width}x{height}, strip={strip_height}"
+        )
+    if (start_ms, end_ms) != (expected_start, expected_end):
+        raise SystemExit(
+            f"Text {edge} visual grip was rendered for stale timing {(start_ms, end_ms)}; "
+            f"expected {(expected_start, expected_end)}"
+        )
+print(
+    f"PASS: both text tabs are full-height, edge-centred and show "
+    f"the same live range {expected_start}-{expected_end}ms."
+)
+PY
+}
+
+
+assert_text_grip_screenshot() {
+  local edge="$1"
+  local image_file="$2"
+  local hierarchy_file="$3"
+  local log_file="$4"
+  python3 - "$edge" "$image_file" "$hierarchy_file" "$log_file" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+sys.path.insert(0, ".github/scripts")
+from ci_image import Image
+
+edge, image_path, xml_path, log_path = sys.argv[1:]
+if edge not in ("start", "end"):
+    raise SystemExit(f"Unsupported text grip edge: {edge}")
+image = Image.open(image_path).convert("RGB")
+root = ET.parse(xml_path).getroot()
+root_node = root.find("node")
+root_match = re.fullmatch(
+    r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",
+    root_node.attrib.get("bounds", "")
+)
+if not root_match:
+    raise SystemExit("Could not map Android screen coordinates to the text-grip screenshot.")
+win_left, win_top, win_right, win_bottom = map(int, root_match.groups())
+if win_right <= win_left or win_bottom <= win_top:
+    raise SystemExit("Invalid Android root bounds for text-grip screenshot.")
+scale_x = image.width / (win_right - win_left)
+scale_y = image.height / (win_bottom - win_top)
+strip = None
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").startswith("Yazı katmanı 1:"):
+        match = re.fullmatch(
+            r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",
+            node.attrib.get("bounds", "")
+        )
+        if match:
+            strip = tuple(map(int, match.groups()))
+            break
+if strip is None:
+    raise SystemExit("The screenshot hierarchy does not expose the text strip bounds.")
+_, strip_top, _, strip_bottom = strip
+pattern = re.compile(
+    r"TEXT_EDGE_GRIP_LAYOUT edge=(start|end).*?boundaryPx=(-?\d+) centerPx=(-?\d+) "
+    r"offsetPx=(-?\d+) gripWidthPx=(\d+) gripHeightPx=(\d+) stripHeightPx=(\d+)"
+)
+latest = {}
+for line in open(log_path, errors="replace"):
+    match = pattern.search(line)
+    if match:
+        latest[match.group(1)] = tuple(map(int, match.groups()[1:]))
+if edge not in latest:
+    raise SystemExit(f"No measured {edge} text grip layout is available.")
+boundary, center, offset, width, height, strip_height = latest[edge]
+if abs(offset) > 1 or width <= 0 or height != strip_height:
+    raise SystemExit(f"Invalid {edge} text grip geometry: {latest[edge]}")
+x = round((center - win_left) * scale_x)
+y_values = (
+    round((strip_top + (strip_bottom - strip_top) * 0.12 - win_top) * scale_y),
+    round((strip_top + (strip_bottom - strip_top) * 0.88 - win_top) * scale_y),
+)
+for y in y_values:
+    white = 0
+    total = 0
+    for dy in range(-2, 3):
+        for dx in range(-2, 3):
+            px, py = x + dx, y + dy
+            if 0 <= px < image.width and 0 <= py < image.height:
+                red, green, blue = image.getpixel((px, py))
+                total += 1
+                if min(red, green, blue) >= 215 and max(red, green, blue) - min(red, green, blue) <= 45:
+                    white += 1
+    if total < 20 or white < 18:
+        raise SystemExit(
+            f"The visible {edge} white tab is clipped or missing in its own viewport screenshot: "
+            f"centre=({x},{y}), white={white}/{total}."
+        )
+print(
+    f"PASS: the {edge} white text tab is visible in its own viewport screenshot "
+    f"at the measured boundary (centre={center}px, full-height={height}px)."
+)
+PY
+}
+
+# The left target is measured from the current Android hierarchy rather than a
+# cached timeline snapshot. Move it right to shorten only the text IN point.
+text_start_target="$(read_text_edge_target emulator-screenshots/editor-text-trim-before-start.xml "Yazı başlangıcını sürükle")" || {
+  collect_capture_diagnostics text-trim-start-target-missing
+  exit 94
+}
+read -r text_start_left text_start_top text_start_right text_start_bottom text_start_x text_start_y text_lane_right <<< "$text_start_target"
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$text_start_x" "$text_start_y" "$((text_start_x + 48))" "$text_start_y" 700
+text_start_committed=false
+for attempt in $(seq 1 12); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime \
+    -s EditorTouchTest:I ProjectHistoryTest:I \
+    > emulator-screenshots/text-edge-start-trim-logcat.txt 2>&1 || true
+  if grep -Fq "TEXT_EDGE_TRIM_COMMIT edge=start" emulator-screenshots/text-edge-start-trim-logcat.txt; then
+    text_start_committed=true
+    break
+  fi
+  sleep 1
+done
+if [ "$text_start_committed" != true ]; then
+  echo "The left text handle did not emit a committed physical trim event."
+  collect_capture_diagnostics text-trim-start-gesture-not-committed
+  exit 95
+fi
+text_start_history_count="$(assert_text_history_commit emulator-screenshots/text-edge-start-trim-logcat.txt 0:8000 615:8000)" || {
+  collect_capture_diagnostics text-trim-start-history-not-committed
+  exit 95
+}
+echo "PASS: first text trim created its own Undo entry (depth=$text_start_history_count)."
+text_start_values="$(assert_text_edge_commit emulator-screenshots/text-edge-start-trim-logcat.txt start)" || {
+  collect_capture_diagnostics text-trim-start-changed-wrong-boundary
+  exit 95
+}
+read -r text_start_before_start text_start_before_end text_start_after_start text_start_after_end text_start_layer <<< "$(printf '%s\n' "$text_start_values" | head -n 1)"
+assert_text_grip_layout_and_state emulator-screenshots/text-edge-start-trim-logcat.txt \
+  "$text_start_after_start" "$text_start_after_end" || {
+  collect_capture_diagnostics text-trim-start-grip-layout-invalid
+  exit 95
+}
+echo "PASS: text start handle changed only the start time; end time stayed fixed."
+
+# The text layer is longer than the viewport. Capture its leading grip while
+# the timeline is still positioned at the start; the trailing grip is checked
+# later after scrolling to the end. They cannot both be on-screen at once.
+if ! dump_hierarchy editor-text-start-grip-visible.xml emulator-screenshots/editor-text-start-grip-visible.xml; then
+  collect_capture_diagnostics text-start-grip-hierarchy-missing
+  exit 95
+fi
+if ! take_screen emulator-screenshots/text-start-grip-visible.png; then
+  collect_capture_diagnostics text-start-grip-capture-failure
+  exit 95
+fi
+assert_text_grip_screenshot start \
+  emulator-screenshots/text-start-grip-visible.png \
+  emulator-screenshots/editor-text-start-grip-visible.xml \
+  emulator-screenshots/text-edge-start-trim-logcat.txt || {
+  collect_capture_diagnostics text-start-grip-pixel-check-failed
+  exit 95
+}
+
+# The right boundary may be beyond the initial viewport. Move the shared
+# timeline through the ruler until UIAutomator exposes the real trailing edge.
+# Do not swipe on the orange text body: that is reserved for layer movement.
+scroll_timeline_until_text_end_visible() {
+  local hierarchy="$1"
+  for attempt in $(seq 1 6); do
+    if ! dump_hierarchy "editor-text-trim-scroll-end-$attempt.xml" "$hierarchy"; then
+      echo "Could not inspect the timeline while locating the text end handle."
+      return 1
+    fi
+    if python3 - "$hierarchy" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+target = None
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != "Yazı bitişini sürükle":
+        continue
+    if node.attrib.get("clickable", "false").lower() != "true":
+        continue
+    m = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if m:
+        target = tuple(map(int, m.groups()))
+        break
+if target is None:
+    raise SystemExit(1)
+left, top, right, bottom = target
+if right <= left or bottom <= top:
+    raise SystemExit(1)
+center_y = (top + bottom) // 2
+viewports = []
+for node in root.iter("node"):
+    if node.attrib.get("class") != "android.widget.HorizontalScrollView" or node.attrib.get("scrollable", "false").lower() != "true":
+        continue
+    m = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if not m:
+        continue
+    sx1, sy1, sx2, sy2 = map(int, m.groups())
+    if sx2 - sx1 > 300 and sy1 <= center_y <= sy2:
+        viewports.append((abs(center_y - (sy1 + sy2) // 2), sx1, sx2))
+if not viewports:
+    raise SystemExit(1)
+_, sx1, sx2 = min(viewports)
+visible = min(right, sx2) - max(left, sx1)
+if visible < min(28, right - left):
+    raise SystemExit(1)
+print(f"Visible trailing text target bounds={target}, viewport={sx1}..{sx2}, visibleWidth={visible}px")
+PY
+    then
+      echo "The trailing text edge is genuinely inside the timeline viewport after $((attempt - 1)) ruler scroll gesture(s)."
+      return 0
+    fi
+    local ruler_y
+    ruler_y="$(python3 - "$hierarchy" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+candidates = []
+for node in root.iter("node"):
+    if node.attrib.get("class") != "android.widget.HorizontalScrollView":
+        continue
+    if node.attrib.get("scrollable", "false").lower() != "true":
+        continue
+    m = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if not m:
+        continue
+    left, top, right, bottom = map(int, m.groups())
+    height, width = bottom - top, right - left
+    if width > 500 and 20 <= height <= 100 and 0 < top < 1350:
+        candidates.append((top, bottom, (top + bottom) // 2))
+if not candidates:
+    raise SystemExit("No visible shared timeline ruler/scroll lane was found.")
+print(min(candidates)[2])
+PY
+)" || return 1
+    echo "Scrolling the shared timeline toward the text layer's trailing edge (attempt $attempt/6)."
+    timeout -k 2s 8s adb -s emulator-5554 shell input swipe 930 "$ruler_y" 270 "$ruler_y" 420
+    sleep 1
+  done
+  dump_hierarchy editor-text-trim-scroll-end-final.xml "$hierarchy" || return 1
+  if ! python3 - "$hierarchy" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+target = None
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != "Yazı bitişini sürükle":
+        continue
+    m = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if m:
+        target = tuple(map(int, m.groups()))
+        break
+if target is None:
+    raise SystemExit(1)
+left, top, right, bottom = target
+if right <= left or bottom <= top:
+    raise SystemExit(1)
+center_y = (top + bottom) // 2
+viewports = []
+for node in root.iter("node"):
+    if node.attrib.get("class") != "android.widget.HorizontalScrollView" or node.attrib.get("scrollable", "false").lower() != "true":
+        continue
+    m = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if not m:
+        continue
+    sx1, sy1, sx2, sy2 = map(int, m.groups())
+    if sx2 - sx1 > 300 and sy1 <= center_y <= sy2:
+        viewports.append((abs(center_y - (sy1 + sy2) // 2), sx1, sx2))
+if not viewports:
+    raise SystemExit(1)
+_, sx1, sx2 = min(viewports)
+visible = min(right, sx2) - max(left, sx1)
+if visible < min(28, right - left):
+    raise SystemExit(1)
+PY
+  then
+    echo "The right text edge is still outside or clipped by the timeline viewport after six measured ruler swipes."
+    return 1
+  fi
+}
+if ! scroll_timeline_until_text_end_visible emulator-screenshots/editor-text-trim-before-end.xml; then
+  collect_capture_diagnostics text-trim-end-not-reachable-after-scroll
+  exit 96
+fi
+
+# Re-read the entire hierarchy because the first trim rebuilds the timeline.
+if ! dump_hierarchy editor-text-trim-before-end.xml emulator-screenshots/editor-text-trim-before-end.xml; then
+  collect_capture_diagnostics text-trim-end-hierarchy-missing
+  exit 96
+fi
+text_end_target="$(read_text_edge_target emulator-screenshots/editor-text-trim-before-end.xml "Yazı bitişini sürükle")" || {
+  collect_capture_diagnostics text-trim-end-target-missing
+  exit 96
+}
+read -r text_end_left text_end_top text_end_right text_end_bottom text_end_x text_end_y text_lane_right <<< "$text_end_target"
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$text_end_x" "$text_end_y" "$((text_end_x - 48))" "$text_end_y" 700
+text_end_committed=false
+for attempt in $(seq 1 12); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime \
+    -s EditorTouchTest:I ProjectHistoryTest:I \
+    > emulator-screenshots/text-edge-end-trim-logcat.txt 2>&1 || true
+  if grep -Fq "TEXT_EDGE_TRIM_COMMIT edge=end" emulator-screenshots/text-edge-end-trim-logcat.txt; then
+    text_end_committed=true
+    break
+  fi
+  sleep 1
+done
+if [ "$text_end_committed" != true ]; then
+  echo "The right text handle did not emit a committed physical trim event."
+  collect_capture_diagnostics text-trim-end-gesture-not-committed
+  exit 96
+fi
+text_end_history_count="$(assert_text_history_commit emulator-screenshots/text-edge-end-trim-logcat.txt 615:8000 615:7385)" || {
+  collect_capture_diagnostics text-trim-end-history-not-committed
+  exit 96
+}
+if [ "$text_end_history_count" -le "$text_start_history_count" ]; then
+  echo "The second text trim did not create a new, separate Undo entry: start=$text_start_history_count end=$text_end_history_count."
+  collect_capture_diagnostics text-trim-history-depth-did-not-increase
+  exit 96
+fi
+echo "PASS: second text trim created a separate Undo entry (depth=$text_end_history_count)."
+text_end_values="$(assert_text_edge_commit emulator-screenshots/text-edge-end-trim-logcat.txt end)" || {
+  collect_capture_diagnostics text-trim-end-changed-wrong-boundary
+  exit 96
+}
+read -r text_end_before_start text_end_before_end text_end_after_start text_end_after_end text_end_layer <<< "$(printf '%s\n' "$text_end_values" | head -n 1)"
+if [ "$text_end_after_start" -ne "$text_start_after_start" ] ||
+   [ "$text_end_before_end" -ne "$text_start_after_end" ]; then
+  echo "The two text-edge operations did not preserve the opposite edge between gestures."
+  collect_capture_diagnostics text-trim-edge-independence-failed
+  exit 96
+fi
+assert_text_grip_layout_and_state emulator-screenshots/text-edge-end-trim-logcat.txt \
+  "$text_end_after_start" "$text_end_after_end" \
+  emulator-screenshots/text-edge-start-trim-logcat.txt || {
+  collect_capture_diagnostics text-trim-end-grip-layout-invalid
+  exit 96
+}
+echo "PASS: text right handle changed only the end time; the previously trimmed start stayed fixed."
+
+# Verify project-wide Undo/Redo restores/reapplies the exact text timing edit.
+if ! dump_hierarchy editor-text-trim-history-before-undo.xml emulator-screenshots/editor-text-trim-history-before-undo.xml; then
+  collect_capture_diagnostics text-trim-history-hierarchy-missing
+  exit 97
+fi
+find_text_history_button() {
+  python3 - "$1" "$2" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+wanted = sys.argv[2]
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "").strip() != wanted:
+        continue
+    if node.attrib.get("enabled", "false").lower() != "true":
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        left, top, right, bottom = map(int, match.groups())
+        print((left + right) // 2, (top + bottom) // 2)
+        raise SystemExit(0)
+raise SystemExit(f"Enabled history button is unavailable: {wanted}")
+PY
+}
+text_trim_undo_coords="$(find_text_history_button emulator-screenshots/editor-text-trim-history-before-undo.xml "Proje işlemini geri al")" || {
+  collect_capture_diagnostics text-trim-undo-button-unavailable
+  exit 97
+}
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_trim_undo_coords
+text_trim_undo_ready=false
+for attempt in $(seq 1 12); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime \
+    -s ProjectHistoryTest:I EditorTouchTest:I \
+    > emulator-screenshots/text-edge-undo-logcat.txt 2>&1 || true
+  if grep -Fq "PROJECT_HISTORY_APPLIED action=undo" emulator-screenshots/text-edge-undo-logcat.txt &&
+     grep -Fq "TEXT_EDGE_GRIP_LAYOUT edge=end" emulator-screenshots/text-edge-undo-logcat.txt; then
+    text_trim_undo_ready=true
+    break
+  fi
+  sleep 1
+done
+if [ "$text_trim_undo_ready" != true ]; then
+  echo "Global Undo did not restore and re-render the text timing lane."
+  collect_capture_diagnostics text-trim-undo-not-applied
+  exit 97
+fi
+if ! grep -Fq "beforeSelectedTextRange=615:7385 afterSelectedTextRange=615:8000" emulator-screenshots/text-edge-undo-logcat.txt; then
+  echo "One Undo did not restore only the most recent right-edge trim: expected 615:8000."
+  collect_capture_diagnostics text-trim-undo-wrong-range
+  exit 97
+fi
+assert_text_grip_layout_and_state emulator-screenshots/text-edge-undo-logcat.txt \
+  "$text_start_after_start" "$text_end_before_end" \
+  emulator-screenshots/text-edge-start-trim-logcat.txt \
+  emulator-screenshots/text-edge-end-trim-logcat.txt || {
+  collect_capture_diagnostics text-trim-undo-wrong-range
+  exit 97
+}
+if ! dump_hierarchy editor-text-trim-history-before-redo.xml emulator-screenshots/editor-text-trim-history-before-redo.xml; then
+  collect_capture_diagnostics text-trim-redo-hierarchy-missing
+  exit 98
+fi
+text_trim_redo_coords="$(find_text_history_button emulator-screenshots/editor-text-trim-history-before-redo.xml "Proje işlemini yinele")" || {
+  collect_capture_diagnostics text-trim-redo-button-unavailable
+  exit 98
+}
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_trim_redo_coords
+text_trim_redo_ready=false
+for attempt in $(seq 1 12); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime \
+    -s ProjectHistoryTest:I EditorTouchTest:I \
+    > emulator-screenshots/text-edge-redo-logcat.txt 2>&1 || true
+  if grep -Fq "PROJECT_HISTORY_APPLIED action=redo" emulator-screenshots/text-edge-redo-logcat.txt &&
+     grep -Fq "TEXT_EDGE_GRIP_LAYOUT edge=end" emulator-screenshots/text-edge-redo-logcat.txt; then
+    text_trim_redo_ready=true
+    break
+  fi
+  sleep 1
+done
+if [ "$text_trim_redo_ready" != true ]; then
+  echo "Global Redo did not reapply and re-render the text timing edit."
+  collect_capture_diagnostics text-trim-redo-not-applied
+  exit 98
+fi
+if ! grep -Fq "beforeSelectedTextRange=615:8000 afterSelectedTextRange=615:7385" emulator-screenshots/text-edge-redo-logcat.txt; then
+  echo "One Redo did not reapply only the right-edge trim: expected 615:7385."
+  collect_capture_diagnostics text-trim-redo-wrong-range
+  exit 98
+fi
+assert_text_grip_layout_and_state emulator-screenshots/text-edge-redo-logcat.txt \
+  "$text_end_after_start" "$text_end_after_end" \
+  emulator-screenshots/text-edge-start-trim-logcat.txt \
+  emulator-screenshots/text-edge-end-trim-logcat.txt || {
+  collect_capture_diagnostics text-trim-redo-wrong-range
+  exit 98
+}
+if ! dump_hierarchy editor-text-after-trim-redo.xml emulator-screenshots/editor-text-after-trim-redo.xml; then
+  collect_capture_diagnostics text-trim-final-hierarchy-missing
+  exit 98
+fi
+if ! take_screen emulator-screenshots/editor-text-timeline-grips.png; then
+  collect_capture_diagnostics text-trim-final-capture-failure
+  exit 6
+fi
+
+# The timeline remains scrolled to the trailing edge after testing Undo/Redo.
+# Validate that edge in this viewport; the leading edge was pixel-checked in its
+# own start-position screenshot above instead of expecting off-screen pixels.
+assert_text_grip_screenshot end \
+  emulator-screenshots/editor-text-timeline-grips.png \
+  emulator-screenshots/editor-text-after-trim-redo.xml \
+  emulator-screenshots/text-edge-redo-logcat.txt || {
+  collect_capture_diagnostics text-end-grip-pixel-check-failed
+  exit 98
+}
+echo "PASS: both text trim tabs were pixel-verified independently in their visible timeline positions; physical trim and exact Undo/Redo ranges passed."
+
+
 # UIAutomator can time out on this large panel even after the direct interaction
 # has succeeded. The app-side dock marker plus the full-canvas screenshot and
 # pixel-verified selection frame are authoritative; hierarchy-based cleanup is
 # best-effort so a slow accessibility dump cannot turn a valid editor state red.
-if dump_hierarchy editor-text-reselected.xml emulator-screenshots/editor-text-reselected.xml; then
-  text_delete_coords="$(find_bottom_tool emulator-screenshots/editor-text-reselected.xml "Sil" || true)"
+if dump_hierarchy editor-text-after-trim-redo.xml emulator-screenshots/editor-text-after-trim-redo.xml; then
+  text_delete_coords="$(find_bottom_tool emulator-screenshots/editor-text-after-trim-redo.xml "Sil" || true)"
   if [ -n "$text_delete_coords" ]; then
     timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_delete_coords
     sleep 1
@@ -3614,9 +4251,11 @@ echo "Step 9/12: align a thumbnail cell with the playhead and compare the render
 # dump becomes unreliable after repeated panel/keyboard operations.
 echo "Using startup-captured Android ViewConfiguration touch slop: ${touch_slop_px}px"
 # ADB-injected HorizontalScrollView gestures on API 35 showed a 3px dead zone
-# beyond ViewConfiguration’s measured touch slop (21px): 24px swipes could
-# leave scrollX unchanged, while 27px moved it by 3px. Include that measured
-# input-dispatch margin so the final 2–4px alignment correction is not a no-op.
+# beyond ViewConfiguration’s measured touch slop (21px): short correction
+# gestures can be consumed without moving scrollX. Include the measured input
+# dispatch margin so even a one-pixel alignment correction reaches the ruler.
+# Exact pixel alignment matters: at 24fps, a one-pixel offset can cross the
+# half-frame snap boundary and select a neighbouring decoded frame.
 alignment_gesture_slop_px="$((touch_slop_px + 3))"
 
 # Timeline geometry can settle after the first activity sync callback on slower
@@ -3652,7 +4291,7 @@ for attempt in $(seq 1 12); do
   delta_x="$((play_center_x - thumb_center_x))"
   absolute_delta="$((delta_x < 0 ? -delta_x : delta_x))"
   echo "Alignment attempt $attempt: sample=${thumb_sample_ms}ms center=${thumb_center_x}px playhead=${play_center_x}px delta=${delta_x}px"
-  if [ "$absolute_delta" -le 2 ]; then
+  if [ "$absolute_delta" -eq 0 ]; then
     thumbnail_aligned=true
     break
   fi
@@ -3671,7 +4310,7 @@ for attempt in $(seq 1 12); do
   sleep 1
 done
 if [ "$thumbnail_aligned" != true ]; then
-  echo "Could not center any filmstrip thumbnail under the fixed playhead after 12 measured drags."
+  echo "Could not align a filmstrip thumbnail to the exact fixed-playhead pixel after 12 measured drags."
   collect_capture_diagnostics thumbnail-alignment-not-centered
   exit 24
 fi
@@ -3807,15 +4446,70 @@ reverse_width="$((reverse_x2 - reverse_x1))"
 reverse_inset="$((reverse_width / 10))"
 if [ "$reverse_inset" -lt 10 ]; then reverse_inset=10; fi
 if [ "$reverse_inset" -gt 24 ]; then reverse_inset=24; fi
-# Keep the reverse gesture entirely to the right of the fixed playhead's
-# 28dp touch target. Crossing that overlay hands the gesture to playhead seeking
-# instead of the HorizontalScrollView and can falsely look like reverse scrub.
-reverse_start="$((reverse_x1 + reverse_inset))"
-playhead_safe_start="$((playhead_center + 20))"
-if [ "$reverse_start" -lt "$playhead_safe_start" ]; then
-  reverse_start="$playhead_safe_start"
+# The measured clip bounds describe the full content child and can extend
+# beyond the HorizontalScrollView's visible viewport after a long forward scrub.
+# Read a fresh hierarchy and use the actual video-lane viewport intersection;
+# otherwise a reverse swipe can start in the left tool gutter, outside the lane.
+if ! dump_hierarchy filmstrip-reverse-target.xml emulator-screenshots/filmstrip-reverse-target.xml; then
+  echo "Could not inspect the live video-lane viewport before reverse scrubbing."
+  collect_capture_diagnostics filmstrip-reverse-viewport-hierarchy-missing
+  exit 21
 fi
-reverse_end="$((reverse_x2 - reverse_inset))"
+filmstrip_viewport_bounds="$(python3 - emulator-screenshots/filmstrip-reverse-target.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+candidates = []
+for node in root.iter("node"):
+    if node.attrib.get("class") != "android.widget.HorizontalScrollView":
+        continue
+    if node.attrib.get("scrollable") != "true":
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if not match:
+        continue
+    left, top, right, bottom = map(int, match.groups())
+    width, height = right - left, bottom - top
+    # The ruler is the first short row. The next tall horizontal viewport is
+    # the video filmstrip; overlay/text/audio lanes follow below it.
+    if width > 500 and 90 <= height <= 140 and 1000 <= top < 1400:
+        candidates.append((top, left, right, bottom))
+if not candidates:
+    raise SystemExit("Could not locate the live video-filmstrip HorizontalScrollView.")
+top, left, right, bottom = min(candidates)
+print(left, top, right, bottom)
+PY
+)"
+if [ -z "$filmstrip_viewport_bounds" ]; then
+  echo "Could not resolve the live video-filmstrip viewport bounds."
+  collect_capture_diagnostics filmstrip-reverse-viewport-bounds-missing
+  exit 21
+fi
+read -r filmstrip_viewport_left filmstrip_viewport_top filmstrip_viewport_right filmstrip_viewport_bottom <<< "$filmstrip_viewport_bounds"
+visible_clip_left="$reverse_x1"
+if [ "$visible_clip_left" -lt "$filmstrip_viewport_left" ]; then
+  visible_clip_left="$filmstrip_viewport_left"
+fi
+visible_clip_right="$reverse_x2"
+if [ "$visible_clip_right" -gt "$filmstrip_viewport_right" ]; then
+  visible_clip_right="$filmstrip_viewport_right"
+fi
+visible_clip_width="$((visible_clip_right - visible_clip_left))"
+reverse_inset="$((visible_clip_width / 10))"
+if [ "$reverse_inset" -lt 10 ]; then reverse_inset=10; fi
+if [ "$reverse_inset" -gt 24 ]; then reverse_inset=24; fi
+# Keep the rightward drag on visible thumbnail pixels and end before the
+# fixed playhead's 28dp hit target. The content child's off-screen coordinates
+# are never used as touch points.
+reverse_start="$((visible_clip_left + reverse_inset))"
+reverse_end="$((visible_clip_right - reverse_inset))"
+playhead_safe_end="$((playhead_center - 20))"
+if [ "$reverse_end" -gt "$playhead_safe_end" ]; then
+  reverse_end="$playhead_safe_end"
+fi
+echo "Reverse filmstrip swipe uses visible lane intersection [$visible_clip_left,$visible_clip_right] within viewport [$filmstrip_viewport_left,$filmstrip_viewport_right]: x=$reverse_start->$reverse_end y=$reverse_y."
 reverse_distance="$((reverse_end - reverse_start))"
 if [ "$reverse_distance" -lt 80 ]; then
   echo "The visible filmstrip range became too small for the reverse scrub (${reverse_width}px wide; ${reverse_distance}px usable after ${reverse_inset}px insets)."
@@ -4350,32 +5044,36 @@ then
   collect_capture_diagnostics video-split-after-drag-visible-seam
   exit 99
 fi
-# A restored project deliberately starts without a selected clip. The trim
-# grips are only attached to the selected filmstrip, so select the first clip
-# before resolving the visible touch targets. Previously this smoke sent its
-# first drag to the unselected clip body, which panned the timeline instead.
-timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineAlignmentTest:I \
-  > emulator-screenshots/video-edge-trim-selection-before.txt 2>&1 || true
-video_edge_select_coords="$(python3 - emulator-screenshots/video-edge-trim-selection-before.txt <<'PY'
+# The rate-limited timeline snapshot can become stale after the restored editor
+# finishes its follow-up layout pass. Use a fresh accessibility hierarchy for the
+# actual tap coordinates; its bounds describe the clip at the moment of input.
+if ! dump_hierarchy video-edge-trim-selection-before.xml emulator-screenshots/video-edge-trim-selection-before.xml; then
+  collect_capture_diagnostics video-edge-trim-selection-hierarchy-missing
+  exit 102
+fi
+video_edge_select_coords="$(python3 - emulator-screenshots/video-edge-trim-selection-before.xml <<'PY'
 import re
 import sys
+import xml.etree.ElementTree as ET
 
-pattern = re.compile(r"TIMELINE_ALIGNMENT_SNAPSHOT .*?clipBoundsByIndex=([0-9:,;]+)")
+root = ET.parse(sys.argv[1]).getroot()
 latest = None
-for line in open(sys.argv[1], errors="replace"):
-    match = pattern.search(line)
-    if not match:
+for node in root.iter("node"):
+    description = node.attrib.get("content-desc", "")
+    if not description.startswith("Klip 1:"):
         continue
-    bounds = {}
-    for item in match.group(1).split(";"):
-        index, raw = item.split(":", 1)
-        bounds[int(index)] = tuple(map(int, raw.split(",")))
-    if 1 in bounds:
-        latest = bounds[1]
+    if node.attrib.get("clickable", "false").lower() != "true":
+        continue
+    if node.attrib.get("enabled", "false").lower() != "true":
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        latest = tuple(map(int, match.groups()))
+        break
 if latest is None:
-    raise SystemExit("No first-clip bounds available before selecting the trim target.")
+    raise SystemExit("No current clickable bounds for the first restored video clip.")
 left, top, right, bottom = latest
-if right - left < 70 or bottom <= top:
+if right - left < 70 or bottom - top < 20:
     raise SystemExit(f"First video clip is too small to select safely: {latest}")
 print((left + right) // 2, (top + bottom) // 2)
 PY
@@ -4414,20 +5112,30 @@ import sys
 latest = {}
 pattern = re.compile(
     r"VIDEO_EDGE_GRIP_LAYOUT edge=(start|end) clipIndex=(\d+) "
-    r"boundaryPx=(-?\d+) centerPx=(-?\d+) offsetPx=(-?\d+)"
+    r"boundaryPx=(-?\d+) centerPx=(-?\d+) offsetPx=(-?\d+) "
+    r"gripWidthPx=(\d+) gripHeightPx=(\d+) stripHeightPx=(\d+)"
 )
 for line in open(sys.argv[1], errors="replace"):
     match = pattern.search(line)
     if match:
-        edge, clip_index, boundary, center, offset = match.groups()
-        latest[edge] = tuple(map(int, (clip_index, boundary, center, offset)))
+        edge, clip_index, boundary, center, offset, grip_width, grip_height, strip_height = match.groups()
+        latest[edge] = tuple(map(int, (
+            clip_index, boundary, center, offset, grip_width, grip_height, strip_height
+        )))
 
 for edge in ("start", "end"):
     if edge not in latest:
         raise SystemExit(f"Missing measured {edge} visual trim grip placement.")
-    clip_index, boundary, center, offset = latest[edge]
+    clip_index, boundary, center, offset, grip_width, grip_height, strip_height = latest[edge]
     if clip_index != 0:
         raise SystemExit(f"{edge} visual grip belongs to unexpected clip {clip_index}.")
+    if grip_height != strip_height:
+        raise SystemExit(
+            f"{edge} grip height={grip_height}px does not span the full "
+            f"filmstrip height={strip_height}px."
+        )
+    if grip_width <= 0:
+        raise SystemExit(f"{edge} grip has invalid width={grip_width}px.")
     if abs(offset) > 1:
         raise SystemExit(
             f"{edge} grip is inset from its clip boundary: "
@@ -4435,7 +5143,8 @@ for edge in ("start", "end"):
         )
     print(
         f"PASS: {edge} white grip centre={center}px matches "
-        f"clip boundary={boundary}px (offset={offset}px)."
+        f"clip boundary={boundary}px (offset={offset}px); "
+        f"full-height grip={grip_width}x{grip_height}px."
     )
 PY
 then
@@ -4449,28 +5158,33 @@ echo "PASS: selected video trim grips are centred on both measured clip boundari
 resolve_video_edge_point() {
   local edge="$1"
   local direction="$2"
-  local bounds_file="emulator-screenshots/video-edge-trim-measurements.txt"
-  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineAlignmentTest:I \
-    > "$bounds_file" 2>&1 || true
+  local bounds_file="emulator-screenshots/video-edge-trim-touch-bounds.xml"
+  # Timeline log snapshots are rate-limited and may predate a final layout pass.
+  # Re-read the clickable clip View before every physical gesture so both X/Y
+  # coordinates match the current screen geometry.
+  if ! dump_hierarchy video-edge-trim-touch-bounds.xml "$bounds_file" >&2; then
+    echo "Could not capture current clip bounds before the $edge $direction gesture." >&2
+    return 1
+  fi
   python3 - "$bounds_file" "$edge" "$direction" <<'PY'
 import re
 import sys
+import xml.etree.ElementTree as ET
 
 path, edge, direction = sys.argv[1:]
-pattern = re.compile(r"TIMELINE_ALIGNMENT_SNAPSHOT .*?clipBoundsByIndex=([0-9:,;]+)")
+root = ET.parse(path).getroot()
 latest = None
-for line in open(path, errors="replace"):
-    match = pattern.search(line)
-    if not match:
+for node in root.iter("node"):
+    if not node.attrib.get("content-desc", "").startswith("Klip 1:"):
         continue
-    measured = {}
-    for item in match.group(1).split(";"):
-        index, raw = item.split(":", 1)
-        measured[int(index)] = tuple(map(int, raw.split(",")))
-    if 1 in measured:
-        latest = measured[1]
+    if node.attrib.get("clickable", "false").lower() != "true":
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        latest = tuple(map(int, match.groups()))
+        break
 if latest is None:
-    raise SystemExit("No measured bounds for the selected first video clip (UI clip ids are 1-based).")
+    raise SystemExit("No current clickable bounds for the selected first video clip.")
 left, top, right, bottom = latest
 width, height = right - left, bottom - top
 if width < 70 or height < 20:
@@ -4492,8 +5206,8 @@ else:
     x2 = x1 - travel if direction == "trim" else x1 + travel
 y = (top + bottom) // 2
 if not (left <= x1 < right and left <= x2 < right and top <= y < bottom):
-    raise SystemExit(f"Resolved touch is outside the measured clip: bounds={latest}, points={x1},{x2},{y}")
-print(f"PASS: {edge} {direction} touch uses measured clip bounds {latest}", file=sys.stderr)
+    raise SystemExit(f"Resolved touch is outside the current clip bounds: bounds={latest}, points={x1},{x2},{y}")
+print(f"PASS: {edge} {direction} touch uses fresh accessibility clip bounds {latest}", file=sys.stderr)
 print(x1, y, x2)
 PY
 }
