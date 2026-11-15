@@ -4407,14 +4407,14 @@ fi
 video_edge_grip_layout_file="emulator-screenshots/video-edge-grip-layout.txt"
 timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I \
   > "$video_edge_grip_layout_file" 2>&1 || true
-python3 - "$video_edge_grip_layout_file" <<'PY'
+if ! python3 - "$video_edge_grip_layout_file" <<'PY'
 import re
 import sys
 
 latest = {}
 pattern = re.compile(
-    r"VIDEO_EDGE_GRIP_LAYOUT edge=(start|end) clipIndex=(\\d+) "
-    r"boundaryPx=(-?\\d+) centerPx=(-?\\d+) offsetPx=(-?\\d+)"
+    r"VIDEO_EDGE_GRIP_LAYOUT edge=(start|end) clipIndex=(\d+) "
+    r"boundaryPx=(-?\d+) centerPx=(-?\d+) offsetPx=(-?\d+)"
 )
 for line in open(sys.argv[1], errors="replace"):
     match = pattern.search(line)
@@ -4438,7 +4438,7 @@ for edge in ("start", "end"):
         f"clip boundary={boundary}px (offset={offset}px)."
     )
 PY
-if [ "$?" -ne 0 ]; then
+then
   collect_capture_diagnostics video-edge-grip-boundary-misaligned
   exit 102
 fi
