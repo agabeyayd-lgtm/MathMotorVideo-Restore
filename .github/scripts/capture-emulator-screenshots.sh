@@ -4256,7 +4256,9 @@ echo "Using startup-captured Android ViewConfiguration touch slop: ${touch_slop_
 # dispatch margin so even a one-pixel alignment correction reaches the ruler.
 # Exact pixel alignment matters: at 24fps, a one-pixel offset can cross the
 # half-frame snap boundary and select a neighbouring decoded frame.
-alignment_gesture_slop_px="$((touch_slop_px + 3))"
+# The previous +3 compensation overscrolled every correction by one pixel
+# (539 -> 541 -> 539). Keep the measured touch slop and remove that extra pixel.
+alignment_gesture_slop_px="$((touch_slop_px + 2))"
 
 # Timeline geometry can settle after the first activity sync callback on slower
 # API 35 emulators. Wait briefly for a real app-measured snapshot; do not turn a
