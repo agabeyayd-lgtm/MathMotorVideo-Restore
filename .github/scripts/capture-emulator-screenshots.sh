@@ -4290,6 +4290,9 @@ for attempt in $(seq 1 12); do
     > emulator-screenshots/thumbnail-alignment-measurements.txt 2>&1 || true
   alignment="$(python3 .github/scripts/assert-thumbnail-alignment.py prepare emulator-screenshots/thumbnail-alignment-measurements.txt)"
   read -r thumb_center_x2 thumb_center_y play_center_x2 thumb_sample_ms <<< "$alignment"
+  # Convert the doubled playhead center back to an integer screen coordinate
+  # for adb touch injection; retain the doubled value for the strict assertion.
+  play_center_x="$((play_center_x2 / 2))"
   delta_x2="$((play_center_x2 - thumb_center_x2))"
   absolute_delta_x2="$((delta_x2 < 0 ? -delta_x2 : delta_x2))"
   echo "Alignment attempt $attempt: sample=${thumb_sample_ms}ms thumbnailCenter2x=${thumb_center_x2} playheadCenter2x=${play_center_x2} delta=${delta_x2}/2px"
