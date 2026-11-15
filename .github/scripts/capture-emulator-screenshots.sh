@@ -3707,9 +3707,9 @@ current_log, expected_start, expected_end, *prior_logs = sys.argv[1:]
 expected_start, expected_end = int(expected_start), int(expected_end)
 pattern = re.compile(
     r"TEXT_EDGE_GRIP_LAYOUT edge=(start|end) layerId=([^ ]+) "
-    r"boundaryPx=(-?\\d+) centerPx=(-?\\d+) offsetPx=(-?\\d+) "
-    r"gripWidthPx=(\\d+) gripHeightPx=(\\d+) stripHeightPx=(\\d+) "
-    r"startMs=(\\d+) endMs=(\\d+)"
+    r"boundaryPx=(-?\d+) centerPx=(-?\d+) offsetPx=(-?\d+) "
+    r"gripWidthPx=(\d+) gripHeightPx=(\d+) stripHeightPx=(\d+) "
+    r"startMs=(\d+) endMs=(\d+)"
 )
 latest = {}
 for path in [*prior_logs, current_log]:
