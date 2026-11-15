@@ -4275,18 +4275,16 @@ class VideoEditorActivity : Activity() {
                 var initialStartMs = startMs
                 var initialEndMs = endMs
                 var moved = false
-                // Keep this text-edge gesture's history baseline local to the
-                // touch target. The shared field is also used by other editor
-                // controls and may be cleared/replaced while this gesture is active.
-                var textEdgeHistorySnapshot: ProjectEditSnapshot? = null
                 handle.setOnTouchListener { view, event ->
                     when (event.actionMasked) {
                         android.view.MotionEvent.ACTION_DOWN -> {
                             downRawX = event.rawX
                             initialStartMs = layer.startMs
                             initialEndMs = layer.endMs
-                            textEdgeHistorySnapshot = beginProjectHistoryGesture()
-                            activeProjectHistorySnapshot = textEdgeHistorySnapshot
+                            // The trim changes the model only on ACTION_UP. Capture
+                            // the history snapshot immediately before that atomic
+                            // model change rather than keeping a gesture-wide slot
+                            // that can be reset by a view/layout refresh.
                             moved = false
                             player?.playWhenReady = false
                             view.parent?.requestDisallowInterceptTouchEvent(true)
@@ -4313,6 +4311,8 @@ class VideoEditorActivity : Activity() {
                             view.translationX = 0f
                             view.parent?.requestDisallowInterceptTouchEvent(false)
                             if (moved) {
+                                recordProjectEdit()
+                                val beforeTextRange = "${initialStartMs}:${initialEndMs}"
                                 val deltaMs = TimelineScaleMath.millisecondsForPixels(
                                     deltaPx, timelinePixelsPerSecond()
                                 )
@@ -4339,8 +4339,14 @@ class VideoEditorActivity : Activity() {
                                 layer.timingCustomized = true
                                 selectedTextLayerId = layer.id
                                 loadTextLayerIntoControls(layer)
-                                finishProjectHistoryGesture(textEdgeHistorySnapshot)
-                                textEdgeHistorySnapshot = null
+                                if (timelineSyncTestEnabled) {
+                                    android.util.Log.i(
+                                        "ProjectHistoryTest",
+                                        "PROJECT_HISTORY_TEXT_EDGE_COMMITTED edge=${if (isStart) "start" else "end"} " +
+                                            "beforeTextRange=$beforeTextRange afterTextRange=${layer.startMs}:${layer.endMs} " +
+                                            "undoCountAfter=${undoProjectHistory.size}"
+                                    )
+                                }
                                 status.text = if (isStart) {
                                     "Yazı başlangıcı: ${formatTimelineMs(layer.startMs)}"
                                 } else {
@@ -4348,10 +4354,6 @@ class VideoEditorActivity : Activity() {
                                 }
                                 enterTextTools()
                             } else {
-                                if (activeProjectHistorySnapshot === textEdgeHistorySnapshot) {
-                                    activeProjectHistorySnapshot = null
-                                }
-                                textEdgeHistorySnapshot = null
                                 selectTextLayer(layer.id)
                             }
                             refreshTimelineTracks()
@@ -4359,10 +4361,6 @@ class VideoEditorActivity : Activity() {
                             true
                         }
                         android.view.MotionEvent.ACTION_CANCEL -> {
-                            if (activeProjectHistorySnapshot === textEdgeHistorySnapshot) {
-                                activeProjectHistorySnapshot = null
-                            }
-                            textEdgeHistorySnapshot = null
                             view.translationX = 0f
                             view.parent?.requestDisallowInterceptTouchEvent(false)
                             true
