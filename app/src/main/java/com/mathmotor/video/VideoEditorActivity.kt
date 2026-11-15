@@ -3572,6 +3572,12 @@ class VideoEditorActivity : Activity() {
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
+                // Text trim tabs intentionally straddle their exact time boundary.
+                // Let only the narrow edge tabs draw into the timeline's side gutter.
+                if (tag.startsWith("Metin")) {
+                    clipChildren = false
+                    clipToPadding = false
+                }
                 setPadding(dp(3), dp(1), dp(3), dp(1))
                 this.tag = if (reorderable) laneKey else "__ruler__"
                 isClickable = true
@@ -3767,6 +3773,10 @@ class VideoEditorActivity : Activity() {
             val scroll = android.widget.HorizontalScrollView(this).apply {
                 isHorizontalScrollBarEnabled = false
                 overScrollMode = View.OVER_SCROLL_NEVER
+                if (tag.startsWith("Metin")) {
+                    clipChildren = false
+                    clipToPadding = false
+                }
                 isClickable = true
                 setOnClickListener { clearTimelineClipSelection() }
             }
@@ -3841,6 +3851,22 @@ class VideoEditorActivity : Activity() {
                 dp(responsiveLaneHeightDp)
             }
             row.addView(scroll, LinearLayout.LayoutParams(0, responsiveLaneHeightPx, 1f))
+            if (tag.startsWith("Metin")) {
+                // The text edge tabs are centred on the strip boundary, so half
+                // of the trailing tab can extend beyond the HorizontalScrollView.
+                // The editor leaves a side gutter inside its content root; disable
+                // ancestor child clipping so that gutter can display the full tab.
+                row.post {
+                    val contentRoot = findViewById<ViewGroup>(android.R.id.content)
+                    var ancestor: android.view.ViewParent? = row
+                    while (ancestor is ViewGroup) {
+                        ancestor.clipChildren = false
+                        ancestor.clipToPadding = false
+                        if (ancestor === contentRoot) break
+                        ancestor = ancestor.parent
+                    }
+                }
+            }
 
             if (!reorderable) {
                 timelineTracks.addView(row, 0)
@@ -4296,6 +4322,15 @@ class VideoEditorActivity : Activity() {
                                         totalMs
                                     )
                                 }
+                                if (timelineSyncTestEnabled) {
+                                    android.util.Log.i(
+                                        "EditorTouchTest",
+                                        "TEXT_EDGE_TRIM_COMMIT edge=${if (isStart) "start" else "end"} " +
+                                            "layerId=${layer.id} beforeStartMs=$initialStartMs " +
+                                            "beforeEndMs=$initialEndMs afterStartMs=${layer.startMs} " +
+                                            "afterEndMs=${layer.endMs} deltaPx=$deltaPx deltaMs=$deltaMs"
+                                    )
+                                }
                                 layer.timingCustomized = true
                                 selectedTextLayerId = layer.id
                                 loadTextLayerIntoControls(layer)
@@ -4379,7 +4414,8 @@ class VideoEditorActivity : Activity() {
                         "TEXT_EDGE_GRIP_LAYOUT edge=${if (isStart) "start" else "end"} " +
                             "layerId=${layer.id} boundaryPx=$boundaryPx centerPx=$gripCenterPx " +
                             "offsetPx=${gripCenterPx - boundaryPx} gripWidthPx=${grip.width} " +
-                            "gripHeightPx=${grip.height} stripHeightPx=${frame.height}"
+                            "gripHeightPx=${grip.height} stripHeightPx=${frame.height} " +
+                            "startMs=${layer.startMs} endMs=${layer.endMs}"
                     )
                 }
             }
