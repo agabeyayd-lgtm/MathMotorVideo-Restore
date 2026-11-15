@@ -4388,10 +4388,8 @@ class VideoEditorActivity : Activity() {
             val visibleGripMarkHeight = dp(14).coerceAtLeast(1)
             fun addVisibleTextTrimGrip(isStart: Boolean) {
                 val grip = FrameLayout(this).apply {
-                    background = android.graphics.drawable.GradientDrawable().apply {
-                        setColor(Color.WHITE)
-                        cornerRadius = dp(5).toFloat()
-                    }
+                    // Match the square-cornered CapCut trim tab.
+                    setBackgroundColor(Color.WHITE)
                     isClickable = false
                     isFocusable = false
                     importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
@@ -4607,10 +4605,8 @@ class VideoEditorActivity : Activity() {
                     val boundaryInStrip = selectedClipLeftForGrips +
                         if (isStart) 0 else selectedClipWidthForGrips
                     val grip = FrameLayout(this).apply {
-                        background = android.graphics.drawable.GradientDrawable().apply {
-                            setColor(Color.WHITE)
-                            cornerRadius = dp(5).toFloat()
-                        }
+                        // CapCut reference: square-cornered white trim tab.
+                        setBackgroundColor(Color.WHITE)
                         isClickable = false
                         isFocusable = false
                         importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
