@@ -11805,14 +11805,6 @@ class VideoEditorActivity : Activity() {
                 }
             }
             container.addView(handle, handleParams)
-            container.addView(
-                handle,
-                FrameLayout.LayoutParams(
-                    handleWidth,
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    if (isStart) Gravity.START else Gravity.END
-                )
-            )
         }
         addTrimHandle(isStart = true)
         addTrimHandle(isStart = false)
