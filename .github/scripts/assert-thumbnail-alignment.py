@@ -115,7 +115,9 @@ def verify(log_path: str, screenshot_path: str):
     cell = None
     sample_ms = None
     for timestamp, box in snapshot["cells"]:
-        # Compare exact geometric centers in half-pixel units. The sole
+        # Keep this in doubled-pixel units: integer Android bounds can produce
+    # half-pixel geometric centers, but a full 1px offset must never pass.
+    # Compare exact geometric centers in half-pixel units. The sole
         # representational allowance is <=0.5px; a full 1px offset fails.
         center_x_twice = box[0] + box[2]
         if abs(center_x_twice - 2 * snapshot["playhead_x"]) <= 1:
