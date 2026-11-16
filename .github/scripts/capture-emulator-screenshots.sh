@@ -1203,7 +1203,7 @@ matches = []
 for node in root.iter("node"):
     if node.attrib.get("clickable") != "true" or node.attrib.get("enabled") != "true":
         continue
-    bounds = [int(value) for value in re.findall(r"\\d+", node.attrib.get("bounds", ""))]
+    bounds = [int(value) for value in re.findall("[0-9]+", node.attrib.get("bounds", ""))]
     if len(bounds) != 4 or bounds[2] <= bounds[0] or bounds[3] <= bounds[1]:
         continue
     text = " ".join(node.attrib.get("text", "").casefold().split())
