@@ -5915,10 +5915,15 @@ class VideoEditorActivity : Activity() {
         val requestedScroll = TimelineScaleMath.pixelsForTime(
             timelinePlayheadMs, timelinePixelsPerSecond()
         ).coerceAtLeast(0)
-        if (timelineScrollViews.all { it.width > 0 && it.scrollX == requestedScroll }) return
-
         val isPlaying = timelineCompositionPlayer?.let { it.isPlaying || it.playWhenReady } == true ||
             (previewSingleClip && player?.let { it.isPlaying || it.playWhenReady } == true)
+        if (timelineScrollViews.all { it.width > 0 && it.scrollX == requestedScroll }) {
+            // Even an already-correct first playback sample must start the
+            // VSYNC follower; otherwise a clip beginning at the current scroll
+            // position would wait for the next 50ms sample before gliding.
+            if (isPlaying) startTimelinePlaybackFrameSync() else stopTimelinePlaybackFrameSync()
+            return
+        }
         // The 50ms player-sync callback must leave its lane geometry exact before
         // it emits a diagnostic sample or updates the time label. Do not defer this
         // authoritative position through an animator that can still be running
