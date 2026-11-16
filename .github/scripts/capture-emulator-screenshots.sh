@@ -1221,8 +1221,42 @@ PY
 
 # The sample overlay must be selected in the paused preview, not hidden by a
 # settings sheet. Confirm its contextual dock and direct canvas gesture target.
+# Cover Save/Undo/Redo leaves the selected video contextual strip active. Exit
+# that strip, reselect the actual overlay lane, and measure the overlay dock from
+# a fresh hierarchy instead of reusing the earlier editor-window coordinates.
+if ! dump_hierarchy editor-after-cover-redo.xml emulator-screenshots/editor-after-cover-redo.xml; then
+  echo "Could not inspect the editor after cover history completed."
+  collect_capture_diagnostics overlay-tools-after-cover-hierarchy-missing
+  exit 33
+fi
+clip_tools_back="$(find_bottom_tool emulator-screenshots/editor-after-cover-redo.xml "Ana araçlara dön" || true)"
+if [ -z "$clip_tools_back" ]; then
+  echo "The selected clip strip did not expose its return-to-main-dock action after cover history."
+  collect_capture_diagnostics overlay-tools-clip-strip-return-missing
+  exit 33
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$clip_tools_back"
+sleep 1
+if ! dump_hierarchy editor-main-dock-after-cover.xml emulator-screenshots/editor-main-dock-after-cover.xml; then
+  echo "Could not inspect the main dock before reselecting the overlay."
+  collect_capture_diagnostics overlay-tools-main-dock-after-cover-missing
+  exit 33
+fi
+overlay_track_coords="$(find_bottom_tool emulator-screenshots/editor-main-dock-after-cover.xml "editor-test-overlay.png" || true)"
+if [ -z "$overlay_track_coords" ]; then
+  echo "The test overlay lane was not available after returning to the main dock."
+  collect_capture_diagnostics overlay-track-after-cover-missing
+  exit 33
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$overlay_track_coords"
+sleep 1
+if ! dump_hierarchy editor-overlay-tools-before-animation.xml emulator-screenshots/editor-overlay-tools-before-animation.xml; then
+  echo "Could not inspect the overlay tool strip before opening Animasyonlar."
+  collect_capture_diagnostics overlay-tools-before-animation-missing
+  exit 33
+fi
 for overlay_tool in "Bindirme ekle" "Böl" "Birleştir" "Animasyonlar" "Sil"; do
-  if [ -z "$(find_bottom_tool emulator-screenshots/editor-window.xml "$overlay_tool" || true)" ]; then
+  if [ -z "$(find_bottom_tool emulator-screenshots/editor-overlay-tools-before-animation.xml "$overlay_tool" || true)" ]; then
     echo "Selected overlay dock is missing '$overlay_tool'."
     collect_capture_diagnostics "overlay-tool-missing"
     exit 33
@@ -1232,7 +1266,7 @@ done
 # Opening the overlay animation detail sheet must not duplicate the shared sticky
 # return header with a second in-panel button. Its one remaining action must still
 # return to the overlay tool strip.
-overlay_animation_coords="$(find_bottom_tool emulator-screenshots/editor-window.xml "Animasyonlar" || true)"
+overlay_animation_coords="$(find_bottom_tool emulator-screenshots/editor-overlay-tools-before-animation.xml "Animasyonlar" || true)"
 if [ -z "$overlay_animation_coords" ]; then
   echo "Selected overlay dock did not expose Animasyonlar."
   collect_capture_diagnostics overlay-animation-tool-missing
@@ -1243,6 +1277,11 @@ sleep 1
 if ! dump_hierarchy editor-overlay-animation-panel.xml emulator-screenshots/editor-overlay-animation-panel.xml; then
   echo "Could not inspect the overlay animation detail panel."
   collect_capture_diagnostics overlay-animation-panel-hierarchy-missing
+  exit 33
+fi
+if ! take_screen emulator-screenshots/editor-overlay-animation-panel.png; then
+  echo "Could not capture the overlay animation detail panel."
+  collect_capture_diagnostics overlay-animation-panel-capture-failure
   exit 33
 fi
 assert_single_panel_return_control emulator-screenshots/editor-overlay-animation-panel.xml "overlay animation"
@@ -1296,7 +1335,7 @@ PY
 
 # Leave the selected overlay tools, tap the visible layer itself, and require
 # the overlay-specific dock and gesture surface to reopen from that canvas tap.
-overlay_back_coords="$(find_bottom_tool emulator-screenshots/editor-window.xml "Ana araçlara dön" || true)"
+overlay_back_coords="$(find_bottom_tool emulator-screenshots/editor-overlay-tools-after-animation.xml "Ana araçlara dön" || true)"
 if [ -z "$overlay_back_coords" ]; then
   echo "Could not find the overlay tools' return control before preview tap selection."
   collect_capture_diagnostics overlay-tap-select-back-missing
