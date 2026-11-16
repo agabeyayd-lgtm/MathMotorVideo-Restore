@@ -1,3 +1,12 @@
+## 2026-11-16 — CapCut timeline glide and trim interaction work
+
+- Normal one-finger filmstrip swipes are handed to the video lane's native `HorizontalScrollView` so Android retains swipe velocity and release momentum; the existing synchronized scroll listener still moves ruler and every timeline lane together.
+- Clip movement remains a distinct stationary long-press-then-drag gesture. Playback now interpolates the 50ms player clock's scroll targets across display frames while keeping the centre playhead fixed.
+- Video trim edges now use a single square visible white tab that is also the actual touch target, with an enlarged centred hit area. Left/right trim semantics remain independent.
+- API 35 smoke now checks that a normal video-filmstrip gesture reaches the native lane scroll release path. Exact-head tests are pending; no app version bump or release has been made.
+
+---
+
 ## Current verified candidate — 2026-11-16: PR #42 / version 407
 
 - `main` remains at `versionCode=406` / `versionName=8.39-capcut-editor`. PR #42 (`fix/release-407-trim-grips`) proposes `versionCode=407` / `versionName=8.40-capcut-editor`; this remains an unmerged branch candidate, not a signed or published release.
