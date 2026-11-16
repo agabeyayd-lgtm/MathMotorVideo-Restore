@@ -5599,16 +5599,23 @@ timeout -k 2s 8s adb -s emulator-5554 shell am force-stop com.mathmotor.video.ne
 timeout -k 2s 5s adb -s emulator-5554 logcat -c || true
 if ! timeout -k 2s 15s adb -s emulator-5554 shell am start \
   -n com.mathmotor.video.next/com.mathmotor.video.EditorTestEntryActivity \
-  --es draft_id "11111111-1111-4111-8111-111111111111" | tee emulator-screenshots/video-split-draft-reopen.txt; then
+  --es draft_id "11111111-1111-4111-8111-111111111111" \
+  --ez timeline_sync_test true | tee emulator-screenshots/video-split-draft-reopen.txt; then
   echo "Could not reopen the saved split-video draft after force-stop."
   collect_capture_diagnostics video-split-draft-reopen-launch-failure
   exit 14
 fi
 split_draft_restored=false
 for attempt in $(seq 1 20); do
-  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorSmokeTest:I \
+  # A model-restore marker alone can precede the first rendered editor frame.
+  # Wait for a fresh timeline layout snapshot as well, so the diagnostic image
+  # captures the reopened editor instead of Android's transient splash screen.
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime \
+    -s EditorSmokeTest:I TimelineAlignmentTest:I \
     > emulator-screenshots/video-split-draft-restore-logcat.txt 2>&1 || true
   if grep -Fq "EDITOR_SMOKE_DRAFT_VIDEO_RESTORED id=11111111-1111-4111-8111-111111111111 clips=2" \
+      emulator-screenshots/video-split-draft-restore-logcat.txt \
+      && grep -q "TIMELINE_ALIGNMENT_SNAPSHOT.*clipBoundsByIndex=" \
       emulator-screenshots/video-split-draft-restore-logcat.txt; then
     split_draft_restored=true
     break
@@ -5616,7 +5623,7 @@ for attempt in $(seq 1 20); do
   sleep 1
 done
 if [ "$split_draft_restored" != true ]; then
-  echo "The force-stopped video draft did not restore both split segments."
+  echo "The force-stopped video draft did not restore both split segments and lay out its editor timeline."
   cat emulator-screenshots/video-split-draft-restore-logcat.txt || true
   collect_capture_diagnostics video-split-draft-restore-failure
   exit 14
@@ -5651,6 +5658,8 @@ then
   collect_capture_diagnostics video-split-draft-restore-seam
   exit 14
 fi
+# Let the first measured editor layout reach the surface before the diagnostic capture.
+sleep 1
 if ! take_screen emulator-screenshots/video-split-draft-restored.png; then
   collect_capture_diagnostics video-split-draft-restore-capture-failure
   exit 6
