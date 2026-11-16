@@ -1,3 +1,15 @@
+## 2026-11-16 — CapCut timeline glide and unified trim hit targets (PR candidate)
+
+- Based on `main` at `5ebeaf14711d75fd71bcc5a953aa545a1cd37530`; working branch `fix/capcut-timeline-fling-edge-handles`.
+- Normal one-finger swipes on the video filmstrip are now handed to the lane `HorizontalScrollView` instead of being simulated with per-MOVE `scrollBy`. This restores the platform velocity-based release/fling path; the shared scroll listener still keeps ruler, video, text and audio lanes synchronized.
+- Stationary long-press explicitly takes ownership before a clip-move drag, so clip reorder remains separate from normal scrubbing. Two-finger pinch and the fixed centre playhead mapping are unchanged.
+- Playback-driven timeline movement now interpolates each 50ms player-clock update across display frames. A user-driven scroll cancels the playback animator immediately.
+- Removed the duplicate decorative-only edge tabs. Each video trim edge now has one square white visible tab inside its own centred transparent 40dp drag target; both are centred exactly on their clip boundary. The existing source IN/OUT trim math and four-direction rules are unchanged.
+- Extended the API 35 smoke to require the video lane's real ACTION_UP release marker, in addition to the existing forward/reverse shared-lane scroll and four-direction trim/extend assertions.
+- Exact-head Android unit/build, APK-package and API 35 emulator checks are pending. No thresholds were relaxed; no versionCode, signed release, merge or APK publication was changed.
+
+---
+
 ## 2026-11-16 — PR #42 updated; exact implementation head passed all required checks
 
 - PR #42 remains open on `fix/release-407-trim-grips`; current implementation/test commit `b51402e1ee92bb3c3af10aadbac0a56d05d10f65` passed all three required workflows:
