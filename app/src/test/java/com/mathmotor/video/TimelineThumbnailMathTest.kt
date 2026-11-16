@@ -89,6 +89,30 @@ class TimelineThumbnailMathTest {
     }
 
     @Test
+    fun pixelCellWidthsFollowRoundedCumulativeTemporalBoundaries() {
+        val totalWidth = 624
+        val count = 9
+        val widths = (0 until count).map {
+            TimelineThumbnailMath.cellPixelWidth(totalWidth, count, it)
+        }
+        val starts = widths.runningFold(0) { left, width -> left + width }.dropLast(1)
+        val geometricCenters = starts.indices.map { index ->
+            starts[index] + widths[index] / 2.0
+        }
+        val idealCenters = (0 until count).map { index ->
+            totalWidth * (index + 0.5) / count
+        }
+
+        assertEquals(listOf(69, 70, 69, 69, 70, 69, 69, 70, 69), widths)
+        assertEquals(totalWidth, widths.sum())
+        assertTrue(geometricCenters.indices.all {
+            kotlin.math.abs(geometricCenters[it] - idealCenters[it]) <= 0.5
+        })
+        assertEquals(1, TimelineThumbnailMath.cellPixelWidth(1, 1, 0))
+        assertEquals(3, TimelineThumbnailMath.cellPixelWidth(3, 9, 99))
+    }
+
+    @Test
     fun samplesMatchTheTemporalCenterOfEachVisibleCell() {
         val start = 1_250L
         val end = 11_250L
