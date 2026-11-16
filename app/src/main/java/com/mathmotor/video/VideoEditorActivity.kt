@@ -628,10 +628,10 @@ class VideoEditorActivity : Activity() {
         }
     }
     private val timelineThumbnailTaskSequence = java.util.concurrent.atomic.AtomicLong()
-    // The exact playhead owns a separate, normal-priority decoder lane. Two
-    // persistent filmstrip workers use the measured platform MMR-first path;
-    // Media3 is retained only as a compatibility fallback. Each worker retains
-    // its own retriever/extractor for subsequent requests.
+    // Exact playhead requests share this priority-ordered decoder pool and
+    // always outrank visible thumbnails. Three persistent platform MMR-first
+    // workers reduce the first-viewport queue; Media3 remains a compatibility
+    // fallback for unsupported sources. Each worker retains its own decoder.
     private val timelineThumbnailWorkerSequence = java.util.concurrent.atomic.AtomicLong()
     private val timelineThumbnailRetrievers =
         java.util.concurrent.ConcurrentHashMap<Long, Pair<Uri, MediaMetadataRetriever>>()
@@ -642,8 +642,8 @@ class VideoEditorActivity : Activity() {
     private val previewFrameExtractors =
         java.util.concurrent.ConcurrentHashMap<Long, Triple<Uri, Int, FrameExtractor>>()
     private val timelineThumbnailExecutor = java.util.concurrent.ThreadPoolExecutor(
-        2,
-        2,
+        3,
+        3,
         0L,
         java.util.concurrent.TimeUnit.MILLISECONDS,
         java.util.concurrent.PriorityBlockingQueue<Runnable>(
@@ -668,10 +668,10 @@ class VideoEditorActivity : Activity() {
             }, "timeline-thumbnail-\u0024{timelineThumbnailWorkerSequence.incrementAndGet()}")
         }
     )
-    // Exact playhead frames and visible filmstrip cells share the measured
-    // two-worker MMR-first priority queue. Exact frames use priority -1, visible
-    // cells priority 0 and secondary poster/overlay frames priority 1. This avoids
-    // a third cold decoder and removes the multi-second bootstrap hold.
+    // Exact playhead frames and visible filmstrip cells share this three-worker
+    // MMR-first priority queue. Exact frames use priority -1, visible cells
+    // priority 0 and secondary poster/overlay frames priority 1, so a live
+    // playhead seek can preempt background filmstrip work.
     private val previewFrameExecutor: java.util.concurrent.ThreadPoolExecutor
         get() = timelineThumbnailExecutor
 
