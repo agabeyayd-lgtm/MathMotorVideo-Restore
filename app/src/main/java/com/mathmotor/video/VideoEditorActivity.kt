@@ -5877,14 +5877,16 @@ class VideoEditorActivity : Activity() {
             return
         }
 
-        // Player position is sampled every 50ms. Animate each small interval on
-        // display frames so the fixed playhead glides over the filmstrip instead
-        // of jumping in 20Hz steps. Manual scrolling cancels this animator above.
+        // Player position is sampled every 50ms. Finish the visual interpolation
+        // before the next clock sample can replace it; a 50ms animator races the
+        // 50ms sync task and leaves the filmstrip one sample behind the playhead.
+        // Two display frames are enough to soften each step without accumulating lag.
+        // Manual scrolling cancels this animator immediately in the lane listener.
         timelinePlaybackScrollAnimator?.cancel()
         timelinePlaybackScrollAnimator = android.animation.ValueAnimator.ofInt(
             firstLane.scrollX, requestedScroll
         ).apply {
-            duration = 50L
+            duration = 32L
             interpolator = android.view.animation.LinearInterpolator()
             addUpdateListener { animator ->
                 scrollTimelineProgrammatically(animator.animatedValue as Int)
