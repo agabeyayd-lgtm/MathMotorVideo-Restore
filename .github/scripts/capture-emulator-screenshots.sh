@@ -4449,7 +4449,7 @@ timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime \
 seek_timeline_to_ms() {
   local target_ms="$1"
   local label="$2"
-  local log_file="emulator-screenshots/\${label}-sync-logcat.txt"
+  local log_file="emulator-screenshots/${label}-sync-logcat.txt"
   local action_start action_end action_current ready=false
 
   for attempt in $(seq 1 8); do
@@ -4489,14 +4489,14 @@ PY
       ready=true
       break
     fi
-    echo "Moving ruler playhead from \${action_current}ms toward \${target_ms}ms (attempt $attempt/8): \${action_start}->\${action_end}"
+    echo "Moving ruler playhead from ${action_current}ms toward ${target_ms}ms (attempt $attempt/8): ${action_start}->${action_end}"
     timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$action_start" "$ruler_y" "$action_end" "$ruler_y" 600
     sleep 1
   done
 
   if [ "$ready" != true ]; then
-    echo "Could not position the playhead near \${target_ms}ms before the filmstrip gesture."
-    collect_capture_diagnostics "\${label}-playhead-reset-failed"
+    echo "Could not position the playhead near ${target_ms}ms before the filmstrip gesture."
+    collect_capture_diagnostics "${label}-playhead-reset-failed"
     exit 27
   fi
   # Let the ruler's final touch/fling settle before measuring the thumbnail Views.
@@ -4517,7 +4517,7 @@ if latest is None or abs(latest - int(sys.argv[2])) > 100:
 print(latest)
 PY
 )"
-  echo "PASS: ruler reposition settled at \${SEEK_RESULT_MS}ms before the reverse filmstrip swipe."
+  echo "PASS: ruler reposition settled at ${SEEK_RESULT_MS}ms before the reverse filmstrip swipe."
 }
 
 echo "Step 10/12: swipe directly on the filmstrip and verify every timeline lane stays synchronized"
@@ -4728,10 +4728,10 @@ if [ "$reverse_inset" -lt 10 ]; then reverse_inset=10; fi
 if [ "$reverse_inset" -gt 24 ]; then reverse_inset=24; fi
 reverse_start="$((reverse_left + reverse_inset))"
 reverse_end="$((reverse_right - reverse_inset))"
-echo "Reverse filmstrip swipe uses \${reverse_cell_count} real thumbnail cells (\${reverse_cell_times}) in [\${reverse_left},\${reverse_right}], playhead-safe end=\${playhead_safe_end}: x=\${reverse_start}->\${reverse_end} y=\${reverse_y}."
+echo "Reverse filmstrip swipe uses ${reverse_cell_count} real thumbnail cells (${reverse_cell_times}) in [${reverse_left},${reverse_right}], playhead-safe end=${playhead_safe_end}: x=${reverse_start}->${reverse_end} y=${reverse_y}."
 reverse_distance="$((reverse_end - reverse_start))"
 if [ "$reverse_distance" -lt 80 ] || [ "$reverse_end" -gt "$playhead_safe_end" ]; then
-  echo "The real visible thumbnail range is too small or overlaps the playhead hit area (\${reverse_distance}px usable)."
+  echo "The real visible thumbnail range is too small or overlaps the playhead hit area (${reverse_distance}px usable)."
   collect_capture_diagnostics filmstrip-scrub-reverse-distance-too-small
   exit 23
 fi
@@ -4744,7 +4744,6 @@ sleep 1
 timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime \
   -s TimelineAlignmentTest:I TimelineSyncTest:I TimelineFrameSyncTest:I TimelineThumbnail:I \
   > emulator-screenshots/filmstrip-scrub-reverse-logcat.txt 2>&1
-timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime > emulator-screenshots/filmstrip-scrub-reverse-logcat.txt 2>&1
 reverse_ms="$(python3 - emulator-screenshots/filmstrip-scrub-reverse-logcat.txt <<'PY'
 import re
 import sys
