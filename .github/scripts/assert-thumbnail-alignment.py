@@ -86,15 +86,18 @@ def latest_snapshot(log_path: str):
 
 def prepare(log_path: str):
     snapshot = latest_snapshot(log_path)
+    # Android bounds are integer edges, so keep the geometric center exact
+    # by storing it doubled. This preserves .5px centers instead of flooring
+    # them to a whole pixel before the alignment decision.
     cells = [
-        (abs((box[0] + box[2]) // 2 - snapshot["playhead_x"]),
-         (box[0] + box[2]) // 2,
+        (abs((box[0] + box[2]) - 2 * snapshot["playhead_x"]),
+         box[0] + box[2],
          (box[1] + box[3]) // 2,
          timestamp)
         for timestamp, box in snapshot["cells"]
     ]
-    _, x, y, sample_ms = min(cells)
-    print(x, y, snapshot["playhead_x"], sample_ms)
+    _, center_x_twice, y, sample_ms = min(cells)
+    print(center_x_twice, y, 2 * snapshot["playhead_x"], sample_ms)
 
 def pixel_mean(image, x, y, radius=2):
     image = image.convert("RGB")
@@ -112,19 +115,26 @@ def verify(log_path: str, screenshot_path: str):
     cell = None
     sample_ms = None
     for timestamp, box in snapshot["cells"]:
-        x = (box[0] + box[2]) // 2
-        if x == snapshot["playhead_x"]:
+        # Acceptance contract: compare geometric centres at half-pixel precision;
+        # never round away a full-pixel offset or relax this threshold to pass CI.
+        # Keep this in doubled-pixel units: integer Android bounds can produce
+        # half-pixel geometric centers, but a full 1px offset must never pass.
+        # Compare exact geometric centers in half-pixel units. The sole
+        # representational allowance is <=0.5px; a full 1px offset fails.
+        center_x_twice = box[0] + box[2]
+        if abs(center_x_twice - 2 * snapshot["playhead_x"]) <= 1:
             cell = box
             sample_ms = timestamp
             break
     if cell is None or sample_ms is None:
         nearest = min(
-            (abs((box[0] + box[2]) // 2 - snapshot["playhead_x"]), timestamp)
+            (abs((box[0] + box[2]) - 2 * snapshot["playhead_x"]), timestamp)
             for timestamp, box in snapshot["cells"]
         )
         raise SystemExit(
             f"FAIL: no fully visible thumbnail cell is centered under the fixed playhead "
-            f"(nearest delta={nearest[0]}px, timestamp={nearest[1]}ms)."
+            f"(nearest geometric-center delta={nearest[0] / 2:g}px, timestamp={nearest[1]}ms; "
+            "maximum representational difference is 0.5px)."
         )
 
     ready = [

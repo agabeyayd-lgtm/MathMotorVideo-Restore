@@ -1581,8 +1581,6 @@ class VideoEditorActivity : Activity() {
         val clipPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         // The first-level tools live in the bottom dock. This panel is only the
         // second-level content that grows upward after the user chooses Kırp.
-        clipPanel.addView(miniButton("‹ Araçlara dön") { returnToClipToolStrip() },
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(38)))
         selectedClipLabel = label("Önce bir video seç.", 12f, Color.WHITE, true)
         clipPanel.addView(selectedClipLabel)
         val clipActions1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
@@ -1669,8 +1667,6 @@ class VideoEditorActivity : Activity() {
         clipPanel.addView(clipSpeedSeek, matchWrap())
 
         val clipVolumePanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        clipVolumePanel.addView(miniButton("‹ Araçlara dön") { returnToClipToolStrip() },
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(38)))
         clipVolumeLabel = label("Orijinal video sesi: 100%", 13f, Color.WHITE, true)
         clipVolumePanel.addView(clipVolumeLabel)
         clipVolumeSeek = SeekBar(this).apply {
@@ -2240,7 +2236,6 @@ class VideoEditorActivity : Activity() {
         })
 
         val overlayPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        overlayPanel.addView(miniButton("‹ Araçlara dön") { closeVisualLayerPanel("overlay") }, matchWrap())
         overlayPanel.addView(label("GÖRSEL / VİDEO BİNDİRME", 13f, Color.rgb(121, 202, 218), true))
         overlayPanel.addView(label("Logo seçtiğinde tüm video boyunca sağ üstte başlar. Önizlemede sürükleyebilir, iki parmakla boyutunu değiştirebilirsin.", 11f, Color.rgb(154, 171, 190), false))
         val overlayActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
@@ -8745,6 +8740,47 @@ class VideoEditorActivity : Activity() {
         if (!deferTimelineRefresh && refreshTimeline) refreshTimelineTracks()
     }
 
+    /** Debug-only readiness diagnostics for independently prepared audio preview players. */
+    private fun attachAudioPreviewDiagnostics(
+        preview: ExoPlayer,
+        kind: String
+    ) {
+        if (!timelineLifecycleDiagnosticsEnabled) return
+        preview.addListener(object : androidx.media3.common.Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                val stateName = when (playbackState) {
+                    androidx.media3.common.Player.STATE_IDLE -> "idle"
+                    androidx.media3.common.Player.STATE_BUFFERING -> "buffering"
+                    androidx.media3.common.Player.STATE_READY -> "ready"
+                    androidx.media3.common.Player.STATE_ENDED -> "ended"
+                    else -> "unknown"
+                }
+                android.util.Log.i(
+                    "TimelineAudioPreview",
+                    "AUDIO_PREVIEW_STATE kind=$kind state=$stateName positionMs=${preview.currentPosition} " +
+                        "uptimeMs=${SystemClock.uptimeMillis()}"
+                )
+            }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                android.util.Log.i(
+                    "TimelineAudioPreview",
+                    "AUDIO_PREVIEW_IS_PLAYING kind=$kind isPlaying=$isPlaying " +
+                        "positionMs=${preview.currentPosition} uptimeMs=${SystemClock.uptimeMillis()}"
+                )
+            }
+
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                android.util.Log.w(
+                    "TimelineAudioPreview",
+                    "AUDIO_PREVIEW_ERROR kind=$kind message=${error.message} " +
+                        "uptimeMs=${SystemClock.uptimeMillis()}",
+                    error
+                )
+            }
+        })
+    }
+
     /**
      * Plays selected music and sound effects alongside the video preview. Both are
      * driven by the output timeline, so scrubbing and clip changes keep them aligned.
@@ -8758,10 +8794,16 @@ class VideoEditorActivity : Activity() {
             musicPreviewUri = musicUri
             musicUri?.let { uri ->
                 musicPreviewPlayer = ExoPlayer.Builder(this).build().apply {
+                    attachAudioPreviewDiagnostics(this, "music")
                     setMediaItem(MediaItem.fromUri(uri))
                     repeatMode = androidx.media3.common.Player.REPEAT_MODE_ONE
                     volume = musicVolume / 100f
                     prepare()
+                    if (timelineLifecycleDiagnosticsEnabled) android.util.Log.i(
+                        "TimelineAudioPreview",
+                        "AUDIO_PREVIEW_PREPARE_REQUESTED kind=music state=$playbackState " +
+                            "uptimeMs=${SystemClock.uptimeMillis()}"
+                    )
                 }
             }
         }
@@ -8771,9 +8813,15 @@ class VideoEditorActivity : Activity() {
             soundPreviewUri = soundUri
             soundUri?.let { uri ->
                 soundPreviewPlayer = ExoPlayer.Builder(this).build().apply {
+                    attachAudioPreviewDiagnostics(this, "sound")
                     setMediaItem(MediaItem.fromUri(uri))
                     volume = soundVolume / 100f
                     prepare()
+                    if (timelineLifecycleDiagnosticsEnabled) android.util.Log.i(
+                        "TimelineAudioPreview",
+                        "AUDIO_PREVIEW_PREPARE_REQUESTED kind=sound state=$playbackState " +
+                            "uptimeMs=${SystemClock.uptimeMillis()}"
+                    )
                 }
             }
         }
@@ -10404,6 +10452,10 @@ class VideoEditorActivity : Activity() {
                     status.text = "Ses katmanı eklendi. Başlama saniyesini aşağıdaki kaydırıcıdan ayarla."
                 }
                 pushProjectUndoSnapshot(beforeProjectEdit)
+                // Prepare audio while the editor is paused. The timeline sync loop
+                // intentionally sleeps when paused, so waiting for its first playback
+                // tick would start video before these independent players are ready.
+                syncPreviewAudio()
 
                 if (timelineSyncTestEnabled) {
                     android.util.Log.i(
@@ -12620,6 +12672,9 @@ class VideoEditorActivity : Activity() {
             var frameDecodeDurationMs = -1L
             var bitmapScaleDurationMs = 0L
             var diskCacheHit = false
+            // A timestamp may already exist on disk at a previous viewport size.
+            // Reuse only that exact frame; never let a neighbouring timestamp stand in.
+            var diskCacheVariantHit = false
             var decoded: Bitmap? = null
             var decodedSourceAspectRatio: Float? = null
             try {
@@ -12627,14 +12682,20 @@ class VideoEditorActivity : Activity() {
                 // never on the main thread. A reopened project can therefore paint
                 // its cached filmstrip without blocking input or layout.
                 val diskLookupStartedAtUptimeMs = SystemClock.uptimeMillis()
-                // Only an exact timestamp may bypass source decoding. Loading a
-                // nearby JPEG here and then decoding the requested source frame did
-                // the same visible cell twice; on API 35 its JPEG lookup/decode took
-                // 380-577ms per early cell. Nearby in-memory frames were already
-                // applied above and remain visible while the exact frame is decoded.
-                val diskExact = timelineThumbnailDiskCache.getExact(
+                // First prefer the exact-size entry. If the same source frame was
+                // already cached at another viewport size (for example after an
+                // Activity/process recreation), reuse that exact timestamp and fit it
+                // to the new cell instead of decoding the source video again.
+                // maxDistanceMs=0 is intentional: no neighbouring frame may be shown.
+                val exactSizeDiskFrame = timelineThumbnailDiskCache.getExact(
                     sourceKey, timestampMs, decodeWidthPx, decodeHeightPx
                 )
+                val diskExact = exactSizeDiskFrame ?: timelineThumbnailDiskCache.findNearest(
+                    sourceKey,
+                    timestampMs,
+                    maxDistanceMs = 0L
+                )?.bitmap
+                diskCacheVariantHit = exactSizeDiskFrame == null && diskExact != null
                 diskLookupDurationMs = SystemClock.uptimeMillis() - diskLookupStartedAtUptimeMs
 
                 if (Thread.currentThread().isInterrupted ||
@@ -12645,16 +12706,44 @@ class VideoEditorActivity : Activity() {
                 }
 
                 if (diskExact != null && !diskExact.isRecycled) {
-                    timelineThumbnailCache.put(key, diskExact)
+                    val cachedWidth = diskExact.width
+                    val cachedHeight = diskExact.height
                     decodedSourceAspectRatio = TimelineThumbnailMath.sourceAspectRatio(
-                        diskExact.width, diskExact.height
+                        cachedWidth, cachedHeight
                     )
-                    decoded = diskExact
+                    val fittedDiskFrame = if (diskCacheVariantHit) {
+                        val (fittedWidth, fittedHeight) = TimelineThumbnailMath.fitDimensions(
+                            cachedWidth,
+                            cachedHeight,
+                            decodeWidthPx.coerceAtLeast(1),
+                            decodeHeightPx.coerceAtLeast(1)
+                        )
+                        if (fittedWidth == cachedWidth && fittedHeight == cachedHeight) {
+                            diskExact
+                        } else {
+                            val scaleStartedAtUptimeMs = SystemClock.uptimeMillis()
+                            Bitmap.createScaledBitmap(
+                                diskExact,
+                                fittedWidth,
+                                fittedHeight,
+                                true
+                            ).also {
+                                bitmapScaleDurationMs = SystemClock.uptimeMillis() - scaleStartedAtUptimeMs
+                                if (!diskExact.isRecycled) diskExact.recycle()
+                            }
+                        }
+                    } else {
+                        diskExact
+                    }
+                    timelineThumbnailCache.put(key, fittedDiskFrame)
+                    decoded = fittedDiskFrame
                     frameDecodeDurationMs = 0L
                     diskCacheHit = true
-                    if (timelineSyncTestEnabled) android.util.Log.i(
+                    if (timelineLifecycleDiagnosticsEnabled) android.util.Log.i(
                         "TimelineThumbnail",
-                        "TIMELINE_THUMBNAIL_DISK_CACHE_HIT sourceMs=$timestampMs exact=true"
+                        "TIMELINE_THUMBNAIL_DISK_CACHE_HIT sourceMs=$timestampMs exactTimestamp=true " +
+                            "exactSize=${!diskCacheVariantHit} cached=${cachedWidth}x${cachedHeight} " +
+                            "target=${decodeWidthPx}x${decodeHeightPx}"
                     )
                 }
 
@@ -12714,7 +12803,9 @@ class VideoEditorActivity : Activity() {
             }
 
             val result = decoded
-            if (!diskCacheHit && result != null && !result.isRecycled) {
+            // Persist a fitted size-variant hit under the current dimensions so
+            // reopening this viewport can use the constant-time exact-size lookup.
+            if ((!diskCacheHit || diskCacheVariantHit) && result != null && !result.isRecycled) {
                 // Keep JPEG compression and filesystem latency off both the
                 // two measured MMR decode workers and the first-visible callback.
                 // The bounded-size thumbnail copy remains valid if the LRU later

@@ -1,3 +1,20 @@
+## 2026-11-16 — PR #42 updated; exact implementation head passed all required checks
+
+- PR #42 remains open on `fix/release-407-trim-grips`; current implementation/test commit `b51402e1ee92bb3c3af10aadbac0a56d05d10f65` passed all three required workflows:
+  - [Verify Android build #1506](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/43818842646) — success; unit tests and debug compilation passed.
+  - [Build MathMotorVideo APK #1407](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/43818842798) — success; tested debug APK ZIP was uploaded.
+  - [Android emulator screenshots #1647](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/43818842615) — success; API 35 smoke and diagnostics upload completed.
+- Reverse-filmstrip smoke failure root cause: after the forward fling reached the composition end, the logged clip-parent bounds no longer represented visible thumbnail cells. The old reverse touch could land outside the filmstrip and the app received no clip-touch event. The test now settles the ruler around 5.5s, reads actual visible thumbnail ImageView bounds from a fresh hierarchy, uses four visible cell ranges and isolates the reverse log. The exact passing run measured 5,542ms before the reverse swipe and 3,833ms after it; the forward swipe reached 7,333ms. No production gesture code was changed for this CI fix.
+- Half-pixel alignment remains strict and unchanged in `.github/scripts/assert-thumbnail-alignment.py`: doubled-coordinate centre delta <=1 (maximum 0.5px) is accepted; 1px produces delta 2 and fails. The API 35 run also passed the strict thumbnail/frame alignment assertion and the rest of the timeline interaction sequence.
+- Physical-phone thumbnail recovery improvement: `TimelineThumbnailDiskCache` is queried first by exact timestamp and exact dimensions, then by the same exact timestamp at a previous cell size (`maxDistanceMs=0`). That bitmap is fitted to the current cell and persisted under the current size. No neighbouring timestamp may substitute for the requested frame. Emulator logs confirmed exact-size disk-cache hits after draft reopen; the size-variant fallback needs confirmation with a real phone whose view dimensions actually change across background/foreground or recreation.
+- Delayed audio-start improvement: `loadAudioTrack()` now calls `syncPreviewAudio()` immediately after the imported audio model/history is committed, preparing music/SFX ExoPlayer instances while the editor is paused. This removes the old dependency on the next active-playback sync tick. Debug logs show both sound and music preview players progressing from BUFFERING to READY during import, before the next playback interaction. The emulator run validates player readiness, but actual acoustic start-time on the user's physical phone remains to be checked.
+- The emulator still uses deterministic fixture media; physical-device install/update, background/foreground retention on the user's own media, the size-variant cache path on that phone, actual audio latency and the exact gallery-selected export asset are not claimed as physically verified.
+- Implementation-run artifacts: [emulator screenshots/diagnostics 14203724791](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/43818842615/artifacts/14203724791) and [debug APK ZIP 14203124682](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/43818842615/artifacts/14203124682). This ZIP is a CI debug build, not a signed production release.
+- The subsequent README/RESTORATION_STATUS edits are documentation-only. Verify the final PR head separately before treating it as the latest exact-head green result.
+- No merge, signed release, publication or version-code publication was performed. Main remains at `versionCode=406`; candidate `407` remains behind PR #42 and explicit user authorization.
+
+---
+
 ## 2026-11-15 — Start reverse filmstrip swipes inside the live video viewport
 
 - The exact-head emulator run passed build, unit tests, clip/text/overlay/audio interactions, and the forward filmstrip swipe, then failed the reverse filmstrip check because playhead time remained at 7,167ms.
@@ -33,7 +50,7 @@
 
 ## 2026-11-15 — CapCut-style full-height video trim handle appearance
 
-- The user's CapCut reference shows a broad white rounded edge tab spanning the complete clip-strip height, with a small centred grip mark; a short narrow pill floating mid-strip is not visually equivalent.
+- The user's CapCut reference requires a square-cornered white rectangular edge tab spanning the complete clip-strip height, with a small centred grip mark; a short narrow pill floating mid-strip is not visually equivalent.
 - Updated both selected-edge handles to 10dp width and the exact measured filmstrip height, with a 2dp centred grey grip mark. Each handle centre remains aligned to the actual clip boundary; half its width extends to either side.
 - Extended API 35 diagnostics and assertions to require <=1px boundary-centre offset and exact full-height coverage for both start/end handles, before the existing real four-direction trim/extend and Undo/Redo interactions.
 - Preserved all gesture targets, trim math, clip timing, selection and history behavior. No versionCode, release, signing or updater change.

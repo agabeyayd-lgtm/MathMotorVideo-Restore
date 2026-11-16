@@ -1189,15 +1189,123 @@ print(x, y)
 PY
 }
 
+assert_single_panel_return_control() {
+  local hierarchy="$1"
+  local panel_name="$2"
+  python3 - "$hierarchy" "$panel_name" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+path, panel_name = sys.argv[1:3]
+root = ET.parse(path).getroot()
+matches = []
+for node in root.iter("node"):
+    if node.attrib.get("clickable") != "true" or node.attrib.get("enabled") != "true":
+        continue
+    bounds = [int(value) for value in re.findall("[0-9]+", node.attrib.get("bounds", ""))]
+    if len(bounds) != 4 or bounds[2] <= bounds[0] or bounds[3] <= bounds[1]:
+        continue
+    text = " ".join(node.attrib.get("text", "").casefold().split())
+    desc = " ".join(node.attrib.get("content-desc", "").casefold().split())
+    if text in {"‹ araçlara dön", "araçlara dön"} or desc == "araçlara dön":
+        matches.append((text, desc, node.attrib["bounds"]))
+if len(matches) != 1:
+    raise SystemExit(
+        f"FAIL: {panel_name} panel must expose exactly one clickable Araçlara dön control; "
+        f"found {len(matches)}: {matches}"
+    )
+print(f"PASS: {panel_name} panel exposes exactly one clickable Araçlara dön control.")
+PY
+}
+
 # The sample overlay must be selected in the paused preview, not hidden by a
 # settings sheet. Confirm its contextual dock and direct canvas gesture target.
+# Cover Save/Undo/Redo leaves the selected video contextual strip active. Exit
+# that strip, reselect the actual overlay lane, and measure the overlay dock from
+# a fresh hierarchy instead of reusing the earlier editor-window coordinates.
+if ! dump_hierarchy editor-after-cover-redo.xml emulator-screenshots/editor-after-cover-redo.xml; then
+  echo "Could not inspect the editor after cover history completed."
+  collect_capture_diagnostics overlay-tools-after-cover-hierarchy-missing
+  exit 33
+fi
+clip_tools_back="$(find_bottom_tool emulator-screenshots/editor-after-cover-redo.xml "Ana araçlara dön" || true)"
+if [ -z "$clip_tools_back" ]; then
+  echo "The selected clip strip did not expose its return-to-main-dock action after cover history."
+  collect_capture_diagnostics overlay-tools-clip-strip-return-missing
+  exit 33
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$clip_tools_back"
+sleep 1
+if ! dump_hierarchy editor-main-dock-after-cover.xml emulator-screenshots/editor-main-dock-after-cover.xml; then
+  echo "Could not inspect the main dock before reselecting the overlay."
+  collect_capture_diagnostics overlay-tools-main-dock-after-cover-missing
+  exit 33
+fi
+overlay_track_coords="$(find_bottom_tool emulator-screenshots/editor-main-dock-after-cover.xml "editor-test-overlay.png" || true)"
+if [ -z "$overlay_track_coords" ]; then
+  echo "The test overlay lane was not available after returning to the main dock."
+  collect_capture_diagnostics overlay-track-after-cover-missing
+  exit 33
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$overlay_track_coords"
+sleep 1
+if ! dump_hierarchy editor-overlay-tools-before-animation.xml emulator-screenshots/editor-overlay-tools-before-animation.xml; then
+  echo "Could not inspect the overlay tool strip before opening Animasyonlar."
+  collect_capture_diagnostics overlay-tools-before-animation-missing
+  exit 33
+fi
 for overlay_tool in "Bindirme ekle" "Böl" "Birleştir" "Animasyonlar" "Sil"; do
-  if [ -z "$(find_bottom_tool emulator-screenshots/editor-window.xml "$overlay_tool" || true)" ]; then
+  if [ -z "$(find_bottom_tool emulator-screenshots/editor-overlay-tools-before-animation.xml "$overlay_tool" || true)" ]; then
     echo "Selected overlay dock is missing '$overlay_tool'."
     collect_capture_diagnostics "overlay-tool-missing"
     exit 33
   fi
 done
+
+# Opening the overlay animation detail sheet must not duplicate the shared sticky
+# return header with a second in-panel button. Its one remaining action must still
+# return to the overlay tool strip.
+overlay_animation_coords="$(find_bottom_tool emulator-screenshots/editor-overlay-tools-before-animation.xml "Animasyonlar" || true)"
+if [ -z "$overlay_animation_coords" ]; then
+  echo "Selected overlay dock did not expose Animasyonlar."
+  collect_capture_diagnostics overlay-animation-tool-missing
+  exit 33
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$overlay_animation_coords"
+sleep 1
+if ! dump_hierarchy editor-overlay-animation-panel.xml emulator-screenshots/editor-overlay-animation-panel.xml; then
+  echo "Could not inspect the overlay animation detail panel."
+  collect_capture_diagnostics overlay-animation-panel-hierarchy-missing
+  exit 33
+fi
+if ! take_screen emulator-screenshots/editor-overlay-animation-panel.png; then
+  echo "Could not capture the overlay animation detail panel."
+  collect_capture_diagnostics overlay-animation-panel-capture-failure
+  exit 33
+fi
+assert_single_panel_return_control emulator-screenshots/editor-overlay-animation-panel.xml "overlay animation"
+overlay_animation_back="$(find_bottom_tool emulator-screenshots/editor-overlay-animation-panel.xml "Araçlara dön" || true)"
+if [ -z "$overlay_animation_back" ]; then
+  echo "Overlay animation detail panel did not expose its single sticky return action."
+  collect_capture_diagnostics overlay-animation-panel-return-missing
+  exit 33
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$overlay_animation_back"
+sleep 1
+if ! dump_hierarchy editor-overlay-tools-after-animation.xml emulator-screenshots/editor-overlay-tools-after-animation.xml; then
+  echo "Could not verify return to the overlay tool strip."
+  collect_capture_diagnostics overlay-animation-return-hierarchy-missing
+  exit 33
+fi
+for overlay_tool in "Bindirme ekle" "Böl" "Birleştir" "Animasyonlar" "Sil"; do
+  if [ -z "$(find_bottom_tool emulator-screenshots/editor-overlay-tools-after-animation.xml "$overlay_tool" || true)" ]; then
+    echo "Overlay animation return did not restore the overlay tool strip ('$overlay_tool' missing)."
+    collect_capture_diagnostics overlay-animation-return-strip-missing
+    exit 33
+  fi
+done
+echo "PASS: overlay animation panel has one return control and returns to its overlay tool strip."
 if ! grep -q "Bindirmeyi önizlemede tek parmakla taşı" emulator-screenshots/editor-window.xml; then
   echo "Selected overlay does not expose its direct-canvas touch surface."
   collect_capture_diagnostics overlay-canvas-touch-surface-missing
@@ -1227,7 +1335,7 @@ PY
 
 # Leave the selected overlay tools, tap the visible layer itself, and require
 # the overlay-specific dock and gesture surface to reopen from that canvas tap.
-overlay_back_coords="$(find_bottom_tool emulator-screenshots/editor-window.xml "Ana araçlara dön" || true)"
+overlay_back_coords="$(find_bottom_tool emulator-screenshots/editor-overlay-tools-after-animation.xml "Ana araçlara dön" || true)"
 if [ -z "$overlay_back_coords" ]; then
   echo "Could not find the overlay tools' return control before preview tap selection."
   collect_capture_diagnostics overlay-tap-select-back-missing
@@ -1974,6 +2082,8 @@ if ! dump_hierarchy editor-panel-trim.xml emulator-screenshots/editor-panel-trim
   exit 63
 fi
 
+assert_single_panel_return_control emulator-screenshots/editor-panel-trim.xml "clip trim"
+
 # With the clip detail tool active, the main-video gesture surface must receive
 # the canvas drag above paused media and text/overlay content. Verify its frame
 # moves, then reverse the gesture so later export checks use the original transform.
@@ -2094,6 +2204,7 @@ if ! take_screen emulator-screenshots/editor-panel-audio.png; then
   exit 6
 fi
 dump_hierarchy editor-panel-audio.xml emulator-screenshots/editor-panel-audio.xml || true
+assert_single_panel_return_control emulator-screenshots/editor-panel-audio.xml "clip volume"
 
 detail_back_coords="$(find_bottom_tool emulator-screenshots/editor-panel-audio.xml "Araçlara dön" || true)"
 if [ -z "$detail_back_coords" ]; then
@@ -4256,7 +4367,9 @@ echo "Using startup-captured Android ViewConfiguration touch slop: ${touch_slop_
 # dispatch margin so even a one-pixel alignment correction reaches the ruler.
 # Exact pixel alignment matters: at 24fps, a one-pixel offset can cross the
 # half-frame snap boundary and select a neighbouring decoded frame.
-alignment_gesture_slop_px="$((touch_slop_px + 3))"
+# The previous +3 compensation overscrolled every correction by one pixel
+# (539 -> 541 -> 539). Keep the measured touch slop and remove that extra pixel.
+alignment_gesture_slop_px="$((touch_slop_px + 2))"
 
 # Timeline geometry can settle after the first activity sync callback on slower
 # API 35 emulators. Wait briefly for a real app-measured snapshot; do not turn a
@@ -4287,14 +4400,21 @@ for attempt in $(seq 1 12); do
     -s TimelineAlignmentTest:I TimelineSyncTest:I TimelineFrameSyncTest:I TimelineThumbnail:I \
     > emulator-screenshots/thumbnail-alignment-measurements.txt 2>&1 || true
   alignment="$(python3 .github/scripts/assert-thumbnail-alignment.py prepare emulator-screenshots/thumbnail-alignment-measurements.txt)"
-  read -r thumb_center_x thumb_center_y play_center_x thumb_sample_ms <<< "$alignment"
-  delta_x="$((play_center_x - thumb_center_x))"
-  absolute_delta="$((delta_x < 0 ? -delta_x : delta_x))"
-  echo "Alignment attempt $attempt: sample=${thumb_sample_ms}ms center=${thumb_center_x}px playhead=${play_center_x}px delta=${delta_x}px"
-  if [ "$absolute_delta" -eq 0 ]; then
+  read -r thumb_center_x2 thumb_center_y play_center_x2 thumb_sample_ms <<< "$alignment"
+  # Convert the doubled playhead center back to an integer screen coordinate
+  # for adb touch injection; retain the doubled value for the strict assertion.
+  play_center_x="$((play_center_x2 / 2))"
+  delta_x2="$((play_center_x2 - thumb_center_x2))"
+  absolute_delta_x2="$((delta_x2 < 0 ? -delta_x2 : delta_x2))"
+  echo "Alignment attempt $attempt: sample=${thumb_sample_ms}ms thumbnailCenter2x=${thumb_center_x2} playheadCenter2x=${play_center_x2} delta=${delta_x2}/2px"
+  # Exact doubled coordinates retain half-pixel centers. Only a <=0.5px
+  # representation difference passes; any full-pixel offset must be corrected.
+  if [ "$absolute_delta_x2" -le 1 ]; then
     thumbnail_aligned=true
     break
   fi
+  # Convert the measured half-pixel delta to the nearest whole-pixel gesture.
+  delta_x="$((delta_x2 >= 0 ? (delta_x2 + 1) / 2 : -(((-delta_x2) + 1) / 2)))"
   gesture_delta="$((delta_x + (delta_x < 0 ? -alignment_gesture_slop_px : alignment_gesture_slop_px)))"
   # Start outside the fixed playhead overlay hit region. The centre guide is
   # intentionally visual-only, but keeping the gesture origin clear of it also
@@ -4310,7 +4430,7 @@ for attempt in $(seq 1 12); do
   sleep 1
 done
 if [ "$thumbnail_aligned" != true ]; then
-  echo "Could not align a filmstrip thumbnail to the exact fixed-playhead pixel after 12 measured drags."
+  echo "Could not align a filmstrip thumbnail within 0.5px of the fixed playhead after 12 measured drags."
   collect_capture_diagnostics thumbnail-alignment-not-centered
   exit 24
 fi
@@ -4322,6 +4442,83 @@ fi
 timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime \
   -s TimelineAlignmentTest:I TimelineSyncTest:I TimelineFrameSyncTest:I TimelineThumbnail:I \
   > emulator-screenshots/thumbnail-alignment-logcat.txt 2>&1
+
+# Reposition the playhead before the reverse filmstrip gesture. The forward
+# fling can reach the composition end and carry the clip completely out of view;
+# a later accessibility dump must not be paired with the earlier clipBounds log.
+seek_timeline_to_ms() {
+  local target_ms="$1"
+  local label="$2"
+  local log_file="emulator-screenshots/${label}-sync-logcat.txt"
+  local action_start action_end action_current ready=false
+
+  for attempt in $(seq 1 8); do
+    timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineSyncTest:I \
+      > "$log_file" 2>&1 || true
+    local action
+    action="$(python3 - "$log_file" "$target_ms" "$touch_slop_px" <<'PY'
+import re
+import sys
+
+target_ms = int(sys.argv[2])
+touch_slop_px = int(sys.argv[3])
+pattern = re.compile(r"TIMELINE_SYNC_SAMPLE .*?playheadMs=(\d+).*?pxPerSecond=([0-9.]+)")
+latest = None
+for line in open(sys.argv[1], errors="replace"):
+    match = pattern.search(line)
+    if match:
+        latest = (int(match.group(1)), float(match.group(2)))
+if latest is None:
+    raise SystemExit("No measured timeline playhead sample before repositioning.")
+current_ms, pixels_per_second = latest
+if abs(target_ms - current_ms) <= 80:
+    print("READY", current_ms)
+else:
+    delta_px = round((target_ms - current_ms) * pixels_per_second / 1000.0)
+    delta_px = max(-520, min(520, delta_px))
+    gesture_delta_px = delta_px + (touch_slop_px if delta_px > 0 else -touch_slop_px)
+    start_x = 900 if delta_px > 0 else 500
+    end_x = start_x - gesture_delta_px
+    if not (128 <= start_x <= 952 and 128 <= end_x <= 952):
+        raise SystemExit(f"Repositioning swipe would leave the safe ruler range: {start_x}->{end_x}")
+    print(start_x, end_x, current_ms)
+PY
+)"
+    read -r action_start action_end action_current <<< "$action"
+    if [ "$action_start" = "READY" ]; then
+      ready=true
+      break
+    fi
+    echo "Moving ruler playhead from ${action_current}ms toward ${target_ms}ms (attempt $attempt/8): ${action_start}->${action_end}"
+    timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$action_start" "$ruler_y" "$action_end" "$ruler_y" 600
+    sleep 1
+  done
+
+  if [ "$ready" != true ]; then
+    echo "Could not position the playhead near ${target_ms}ms before the filmstrip gesture."
+    collect_capture_diagnostics "${label}-playhead-reset-failed"
+    exit 27
+  fi
+  # Let the ruler's final touch/fling settle before measuring the thumbnail Views.
+  sleep 1
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s TimelineSyncTest:I \
+    > "$log_file" 2>&1 || true
+  SEEK_RESULT_MS="$(python3 - "$log_file" "$target_ms" <<'PY'
+import re
+import sys
+pattern = re.compile(r"TIMELINE_SYNC_SAMPLE .*?playheadMs=(\d+)")
+latest = None
+for line in open(sys.argv[1], errors="replace"):
+    match = pattern.search(line)
+    if match:
+        latest = int(match.group(1))
+if latest is None or abs(latest - int(sys.argv[2])) > 100:
+    raise SystemExit(f"Ruler did not settle within 100ms of {sys.argv[2]}ms: {latest}")
+print(latest)
+PY
+)"
+  echo "PASS: ruler reposition settled at ${SEEK_RESULT_MS}ms before the reverse filmstrip swipe."
+}
 
 echo "Step 10/12: swipe directly on the filmstrip and verify every timeline lane stays synchronized"
 clip_bounds="$(python3 - emulator-screenshots/thumbnail-alignment-logcat.txt <<'PY'
@@ -4423,45 +4620,28 @@ fi
 timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime \
   -s TimelineAlignmentTest:I TimelineSyncTest:I TimelineFrameSyncTest:I TimelineThumbnail:I \
   > emulator-screenshots/filmstrip-scrub-forward-logcat.txt 2>&1
-reverse_bounds="$(python3 - emulator-screenshots/filmstrip-scrub-forward-logcat.txt <<'PY'
-import re
-import sys
-latest = None
-for line in open(sys.argv[1], errors="replace"):
-    match = re.search(r"TIMELINE_ALIGNMENT_SNAPSHOT .*?clipBounds=(none|\d+,\d+,\d+,\d+)", line)
-    if match and match.group(1) != "none":
-        latest = match.group(1).replace(",", " ")
-if latest:
-    print(latest)
-PY
-)"
-if [ -z "$reverse_bounds" ]; then
-  echo "Could not relocate the filmstrip after forward scrubbing."
-  collect_capture_diagnostics filmstrip-scrub-reverse-target-missing
-  exit 21
-fi
-read -r reverse_x1 reverse_y1 reverse_x2 reverse_y2 <<< "$reverse_bounds"
-reverse_y="$(((reverse_y1 + reverse_y2) / 2))"
-reverse_width="$((reverse_x2 - reverse_x1))"
-reverse_inset="$((reverse_width / 10))"
-if [ "$reverse_inset" -lt 10 ]; then reverse_inset=10; fi
-if [ "$reverse_inset" -gt 24 ]; then reverse_inset=24; fi
-# The measured clip bounds describe the full content child and can extend
-# beyond the HorizontalScrollView's visible viewport after a long forward scrub.
-# Read a fresh hierarchy and use the actual video-lane viewport intersection;
-# otherwise a reverse swipe can start in the left tool gutter, outside the lane.
+echo "Resetting the timeline to 5500ms before reverse filmstrip scrubbing."
+seek_timeline_to_ms 5500 "filmstrip-reverse-reset"
+reverse_start_ms="$SEEK_RESULT_MS"
+
+# Capture fresh accessibility bounds after the ruler reset. The previous clipBounds
+# log can be stale while a HorizontalScrollView fling continues; only actual visible
+# thumbnail ImageViews are valid reverse-swipe targets.
 if ! dump_hierarchy filmstrip-reverse-target.xml emulator-screenshots/filmstrip-reverse-target.xml; then
-  echo "Could not inspect the live video-lane viewport before reverse scrubbing."
+  echo "Could not inspect the live thumbnail cells before reverse scrubbing."
   collect_capture_diagnostics filmstrip-reverse-viewport-hierarchy-missing
   exit 21
 fi
-filmstrip_viewport_bounds="$(python3 - emulator-screenshots/filmstrip-reverse-target.xml <<'PY'
+playhead_safe_margin_px="$(((28 * density_dpi + 159) / 160))"
+playhead_safe_end="$((playhead_center - playhead_safe_margin_px))"
+filmstrip_reverse_touch_bounds="$(python3 - emulator-screenshots/filmstrip-reverse-target.xml "$playhead_safe_end" <<'PY'
 import re
 import sys
 import xml.etree.ElementTree as ET
 
 root = ET.parse(sys.argv[1]).getroot()
-candidates = []
+playhead_safe_end = int(sys.argv[2])
+viewports = []
 for node in root.iter("node"):
     if node.attrib.get("class") != "android.widget.HorizontalScrollView":
         continue
@@ -4473,52 +4653,97 @@ for node in root.iter("node"):
     left, top, right, bottom = map(int, match.groups())
     width, height = right - left, bottom - top
     # The ruler is the first short row. The next tall horizontal viewport is
-    # the video filmstrip; overlay/text/audio lanes follow below it.
+    # the video filmstrip; the other tall rows are overlay/audio lanes.
     if width > 500 and 90 <= height <= 140 and 1000 <= top < 1400:
-        candidates.append((top, left, right, bottom))
-if not candidates:
-    raise SystemExit("Could not locate the live video-filmstrip HorizontalScrollView.")
-top, left, right, bottom = min(candidates)
-print(left, top, right, bottom)
+        viewports.append((top, left, right, bottom, node))
+if not viewports:
+    raise SystemExit("Could not locate the live video-filmstrip viewport.")
+viewport_top, viewport_left, viewport_right, viewport_bottom, viewport = min(
+    viewports, key=lambda item: item[0]
+)
+
+# Use the bounds of the actual thumbnail ImageViews, not the clip's parent
+# FrameLayout. UIAutomator reports off-screen children with inverted bounds;
+# those are deliberately discarded rather than treated as swipeable pixels.
+cells = []
+for node in viewport.iter("node"):
+    if node.attrib.get("class") != "android.widget.ImageView":
+        continue
+    description = node.attrib.get("content-desc", "")
+    timestamp = re.fullmatch(r"Klip karesi @(\d+)ms", description)
+    bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if not timestamp or not bounds:
+        continue
+    source_ms = int(timestamp.group(1))
+    left, top, right, bottom = map(int, bounds.groups())
+    if right <= left or bottom <= top:
+        continue
+    # Stay away from the clip's edge-trim grips; this test uses interior source
+    # frames and the left side of the fixed playhead.
+    if not 1500 <= source_ms <= 7000:
+        continue
+    left = max(left, viewport_left)
+    right = min(right, viewport_right, playhead_safe_end)
+    top = max(top, viewport_top)
+    bottom = min(bottom, viewport_bottom)
+    if right - left >= 1 and bottom - top >= 1:
+        cells.append((left, right, top, bottom, source_ms))
+if not cells:
+    raise SystemExit(
+        "No actual thumbnail ImageView remains visible to the left of the playhead "
+        f"(viewport={viewport_left}..{viewport_right}, safeEnd={playhead_safe_end})."
+    )
+cells.sort(key=lambda cell: cell[0])
+
+# Merge adjacent visible frame cells into swipeable ranges; never bridge a
+# blank section or the fixed playhead's protected hit area.
+segments = []
+for left, right, top, bottom, source_ms in cells:
+    if not segments or left > segments[-1][1] + 3:
+        segments.append([left, right, top, bottom, [source_ms]])
+    else:
+        segments[-1][1] = max(segments[-1][1], right)
+        segments[-1][2] = min(segments[-1][2], top)
+        segments[-1][3] = max(segments[-1][3], bottom)
+        segments[-1][4].append(source_ms)
+left, right, top, bottom, timestamps = max(segments, key=lambda segment: segment[1] - segment[0])
+if right - left < 80:
+    raise SystemExit(
+        f"Visible interior thumbnail range is too narrow for reverse scrub: {left}..{right}px "
+        f"from source frames {timestamps}."
+    )
+print(left, top, right, bottom, len(timestamps), ",".join(map(str, timestamps)))
 PY
 )"
-if [ -z "$filmstrip_viewport_bounds" ]; then
-  echo "Could not resolve the live video-filmstrip viewport bounds."
-  collect_capture_diagnostics filmstrip-reverse-viewport-bounds-missing
+if [ -z "$filmstrip_reverse_touch_bounds" ]; then
+  echo "Could not resolve actual visible thumbnail pixels for reverse scrubbing."
+  collect_capture_diagnostics filmstrip-reverse-thumbnail-bounds-missing
   exit 21
 fi
-read -r filmstrip_viewport_left filmstrip_viewport_top filmstrip_viewport_right filmstrip_viewport_bottom <<< "$filmstrip_viewport_bounds"
-visible_clip_left="$reverse_x1"
-if [ "$visible_clip_left" -lt "$filmstrip_viewport_left" ]; then
-  visible_clip_left="$filmstrip_viewport_left"
-fi
-visible_clip_right="$reverse_x2"
-if [ "$visible_clip_right" -gt "$filmstrip_viewport_right" ]; then
-  visible_clip_right="$filmstrip_viewport_right"
-fi
-visible_clip_width="$((visible_clip_right - visible_clip_left))"
-reverse_inset="$((visible_clip_width / 10))"
+read -r reverse_left reverse_top reverse_right reverse_bottom reverse_cell_count reverse_cell_times <<< "$filmstrip_reverse_touch_bounds"
+reverse_width="$((reverse_right - reverse_left))"
+reverse_y="$(((reverse_top + reverse_bottom) / 2))"
+reverse_inset="$((reverse_width / 10))"
 if [ "$reverse_inset" -lt 10 ]; then reverse_inset=10; fi
 if [ "$reverse_inset" -gt 24 ]; then reverse_inset=24; fi
-# Keep the rightward drag on visible thumbnail pixels and end before the
-# fixed playhead's 28dp hit target. The content child's off-screen coordinates
-# are never used as touch points.
-reverse_start="$((visible_clip_left + reverse_inset))"
-reverse_end="$((visible_clip_right - reverse_inset))"
-playhead_safe_end="$((playhead_center - 20))"
-if [ "$reverse_end" -gt "$playhead_safe_end" ]; then
-  reverse_end="$playhead_safe_end"
-fi
-echo "Reverse filmstrip swipe uses visible lane intersection [$visible_clip_left,$visible_clip_right] within viewport [$filmstrip_viewport_left,$filmstrip_viewport_right]: x=$reverse_start->$reverse_end y=$reverse_y."
+reverse_start="$((reverse_left + reverse_inset))"
+reverse_end="$((reverse_right - reverse_inset))"
+echo "Reverse filmstrip swipe uses ${reverse_cell_count} real thumbnail cells (${reverse_cell_times}) in [${reverse_left},${reverse_right}], playhead-safe end=${playhead_safe_end}: x=${reverse_start}->${reverse_end} y=${reverse_y}."
 reverse_distance="$((reverse_end - reverse_start))"
-if [ "$reverse_distance" -lt 80 ]; then
-  echo "The visible filmstrip range became too small for the reverse scrub (${reverse_width}px wide; ${reverse_distance}px usable after ${reverse_inset}px insets)."
+if [ "$reverse_distance" -lt 80 ] || [ "$reverse_end" -gt "$playhead_safe_end" ]; then
+  echo "The real visible thumbnail range is too small or overlaps the playhead hit area (${reverse_distance}px usable)."
   collect_capture_diagnostics filmstrip-scrub-reverse-distance-too-small
   exit 23
 fi
+
+# Isolate post-reset reverse samples so a stale 5500ms sample cannot make a
+# failed gesture look successful.
+timeout -k 2s 5s adb -s emulator-5554 logcat -c
 timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$reverse_start" "$reverse_y" "$reverse_end" "$reverse_y" 700
 sleep 1
-timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime > emulator-screenshots/filmstrip-scrub-reverse-logcat.txt 2>&1
+timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime \
+  -s TimelineAlignmentTest:I TimelineSyncTest:I TimelineFrameSyncTest:I TimelineThumbnail:I \
+  > emulator-screenshots/filmstrip-scrub-reverse-logcat.txt 2>&1
 reverse_ms="$(python3 - emulator-screenshots/filmstrip-scrub-reverse-logcat.txt <<'PY'
 import re
 import sys
@@ -4533,13 +4758,13 @@ if latest is not None:
     print(latest)
 PY
 )"
-if [ -z "$reverse_ms" ] || [ "$reverse_ms" -ge "$forward_ms" ]; then
-  echo "Dragging the filmstrip right did not move the playhead backward."
-  echo "Forward=$forward_ms ms reverse=$reverse_ms ms"
+if [ -z "$reverse_ms" ] || [ "$reverse_ms" -ge "$((reverse_start_ms - 100))" ]; then
+  echo "Dragging the filmstrip right did not move the playhead backward from the measured post-reset position."
+  echo "Forward=$forward_ms ms reset=$reverse_start_ms ms reverse=$reverse_ms ms"
   collect_capture_diagnostics filmstrip-scrub-reverse-not-reversed
   exit 22
 fi
-echo "PASS: filmstrip left advanced to ${forward_ms}ms; right returned to ${reverse_ms}ms"
+echo "PASS: filmstrip left advanced to ${forward_ms}ms; after ruler reset to ${reverse_start_ms}ms, right returned to ${reverse_ms}ms"
 # Verify warmed preview performance only after the real forward and reverse filmstrip
 # gestures have run. Previously this assertion ran before either scrub was exercised.
 timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime \
@@ -5479,16 +5704,23 @@ timeout -k 2s 8s adb -s emulator-5554 shell am force-stop com.mathmotor.video.ne
 timeout -k 2s 5s adb -s emulator-5554 logcat -c || true
 if ! timeout -k 2s 15s adb -s emulator-5554 shell am start \
   -n com.mathmotor.video.next/com.mathmotor.video.EditorTestEntryActivity \
-  --es draft_id "11111111-1111-4111-8111-111111111111" | tee emulator-screenshots/video-split-draft-reopen.txt; then
+  --es draft_id "11111111-1111-4111-8111-111111111111" \
+  --ez timeline_sync_test true | tee emulator-screenshots/video-split-draft-reopen.txt; then
   echo "Could not reopen the saved split-video draft after force-stop."
   collect_capture_diagnostics video-split-draft-reopen-launch-failure
   exit 14
 fi
 split_draft_restored=false
 for attempt in $(seq 1 20); do
-  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorSmokeTest:I \
+  # A model-restore marker alone can precede the first rendered editor frame.
+  # Wait for a fresh timeline layout snapshot as well, so the diagnostic image
+  # captures the reopened editor instead of Android's transient splash screen.
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime \
+    -s EditorSmokeTest:I TimelineAlignmentTest:I \
     > emulator-screenshots/video-split-draft-restore-logcat.txt 2>&1 || true
   if grep -Fq "EDITOR_SMOKE_DRAFT_VIDEO_RESTORED id=11111111-1111-4111-8111-111111111111 clips=2" \
+      emulator-screenshots/video-split-draft-restore-logcat.txt \
+      && grep -q "TIMELINE_ALIGNMENT_SNAPSHOT.*clipBoundsByIndex=" \
       emulator-screenshots/video-split-draft-restore-logcat.txt; then
     split_draft_restored=true
     break
@@ -5496,7 +5728,7 @@ for attempt in $(seq 1 20); do
   sleep 1
 done
 if [ "$split_draft_restored" != true ]; then
-  echo "The force-stopped video draft did not restore both split segments."
+  echo "The force-stopped video draft did not restore both split segments and lay out its editor timeline."
   cat emulator-screenshots/video-split-draft-restore-logcat.txt || true
   collect_capture_diagnostics video-split-draft-restore-failure
   exit 14
@@ -5531,6 +5763,8 @@ then
   collect_capture_diagnostics video-split-draft-restore-seam
   exit 14
 fi
+# Let the first measured editor layout reach the surface before the diagnostic capture.
+sleep 1
 if ! take_screen emulator-screenshots/video-split-draft-restored.png; then
   collect_capture_diagnostics video-split-draft-restore-capture-failure
   exit 6
