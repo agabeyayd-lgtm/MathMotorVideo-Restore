@@ -11295,9 +11295,18 @@ class VideoEditorActivity : Activity() {
                 isClickable = true
                 isFocusable = true
                 isLongClickable = true
-                addView(visibleTab, FrameLayout.LayoutParams(
-                    dp(10).coerceAtLeast(1), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER
-                ))
+                val visibleTabParams = FrameLayout.LayoutParams(
+                    dp(10).coerceAtLeast(1), ViewGroup.LayoutParams.MATCH_PARENT
+                ).apply {
+                    if (isStart) {
+                        gravity = Gravity.TOP or Gravity.LEFT
+                        leftMargin = -dp(5)
+                    } else {
+                        gravity = Gravity.TOP or Gravity.RIGHT
+                        rightMargin = -dp(5)
+                    }
+                }
+                addView(visibleTab, visibleTabParams)
                 var downRawX = 0f
                 var initialStartMs = clip.startMs
                 var initialEndMs = clip.endMs
@@ -11432,16 +11441,12 @@ class VideoEditorActivity : Activity() {
                         "gripWidthPx=${visibleTab.width} gripHeightPx=${visibleTab.height} stripHeightPx=$height"
                 )
             }
+            // The full transparent hit zone stays inside the clip bounds;
+            // only the visible 10dp white tab straddles the measured clip edge.
             val handleParams = FrameLayout.LayoutParams(
                 handleWidth, ViewGroup.LayoutParams.MATCH_PARENT
             ).apply {
-                if (isStart) {
-                    gravity = Gravity.TOP or Gravity.LEFT
-                    leftMargin = -handleWidth / 2
-                } else {
-                    gravity = Gravity.TOP or Gravity.RIGHT
-                    rightMargin = -handleWidth / 2
-                }
+                gravity = if (isStart) Gravity.TOP or Gravity.LEFT else Gravity.TOP or Gravity.RIGHT
             }
             container.addView(handle, handleParams)
         }
