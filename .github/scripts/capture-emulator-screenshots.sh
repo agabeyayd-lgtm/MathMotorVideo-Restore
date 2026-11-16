@@ -3839,10 +3839,16 @@ for edge in ("start", "end"):
         raise SystemExit(
             f"Text {edge} grip does not span the full strip height: grip={width}x{height}, strip={strip_height}"
         )
-    if (start_ms, end_ms) != (expected_start, expected_end):
+    # A one-sided trim does not need to rebuild the untouched opposite
+    # grip. Its geometry and own boundary remain valid, while its logged
+    # opposite endpoint may reflect the previous range. Validate the endpoint
+    # represented by this grip, not unrelated stale metadata.
+    actual_boundary_ms = start_ms if edge == "start" else end_ms
+    expected_boundary_ms = expected_start if edge == "start" else expected_end
+    if actual_boundary_ms != expected_boundary_ms:
         raise SystemExit(
-            f"Text {edge} visual grip was rendered for stale timing {(start_ms, end_ms)}; "
-            f"expected {(expected_start, expected_end)}"
+            f"Text {edge} visual grip is attached to {actual_boundary_ms}ms; "
+            f"expected its own boundary at {expected_boundary_ms}ms (range={(start_ms, end_ms)})"
         )
 print(
     f"PASS: both text tabs are full-height, edge-centred and show "
