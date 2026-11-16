@@ -343,8 +343,8 @@ class VideoEditorActivity : Activity() {
     private val timelineLaneOrder = mutableListOf<String>()
     private var syncingTimelineScroll = false
     private var autoScrollingTimeline = false
-    // Interpolate playback-driven timeline movement between player clock samples.
-    private var timelinePlaybackScrollAnimator: android.animation.ValueAnimator? = null
+    // Playback scroll is sampled exactly at the player clock and visually followed per display frame.
+    private var timelinePlaybackFrameSyncRunning = false
     private var timelineHorizontalScrollX = 0
     private var pendingTimelineScrollX: Int? = null
     // Single authoritative timeline scale in physical pixels per second.
@@ -742,6 +742,56 @@ class VideoEditorActivity : Activity() {
             }
         }
     }
+    private val timelinePlaybackFrameSyncTask = object : Runnable {
+        override fun run() {
+            val lane = timelineScrollViews.firstOrNull()
+            if (!timelinePlaybackFrameSyncRunning || lane == null || lane.width <= 0) {
+                timelinePlaybackFrameSyncRunning = false
+                return
+            }
+            val composition = timelineCompositionPlayer
+            val currentTimeMs = when {
+                composition != null && (composition.isPlaying || composition.playWhenReady) ->
+                    composition.currentPosition.coerceIn(0L, totalOutputDurationMs())
+                previewSingleClip && player?.isPlaying == true -> {
+                    val clip = clips.getOrNull(selectedClipIndex)
+                    val currentPlayer = player
+                    if (clip != null && currentPlayer != null) {
+                        (clip.timelineStartMs + currentPlayer.currentPosition.coerceAtLeast(0L))
+                            .coerceIn(0L, totalOutputDurationMs())
+                    } else null
+                }
+                else -> null
+            }
+            if (currentTimeMs == null) {
+                timelinePlaybackFrameSyncRunning = false
+                return
+            }
+            // Read the actual player clock on every display frame between the
+            // 50ms UI sync samples. This keeps the filmstrip flowing smoothly
+            // without allowing an animation started by the previous sample to
+            // remain behind when the next sample is measured.
+            val frameScrollX = TimelineScaleMath.pixelsForTime(
+                currentTimeMs, timelinePixelsPerSecond()
+            ).coerceAtLeast(0)
+            scrollTimelineProgrammatically(frameScrollX)
+            lane.postOnAnimation(this)
+        }
+    }
+
+    private fun startTimelinePlaybackFrameSync() {
+        if (timelinePlaybackFrameSyncRunning) return
+        val lane = timelineScrollViews.firstOrNull() ?: return
+        if (lane.width <= 0) return
+        timelinePlaybackFrameSyncRunning = true
+        lane.postOnAnimation(timelinePlaybackFrameSyncTask)
+    }
+
+    private fun stopTimelinePlaybackFrameSync() {
+        timelinePlaybackFrameSyncRunning = false
+        timelineScrollViews.forEach { it.removeCallbacks(timelinePlaybackFrameSyncTask) }
+    }
+
     private val pausedTimelineSyncSampleTask = Runnable {
         if (timelineSyncTestEnabled &&
             timelineCompositionPlayer?.isPlaying != true &&
@@ -3783,10 +3833,9 @@ class VideoEditorActivity : Activity() {
             scroll.setOnScrollChangeListener { view, scrollX, _, _, _ ->
                 if (!syncingTimelineScroll) {
                     if (!autoScrollingTimeline) {
-                        // A user's finger takes ownership immediately; an older playback
-                        // animation must never pull the timeline back under the finger.
-                        timelinePlaybackScrollAnimator?.cancel()
-                        timelinePlaybackScrollAnimator = null
+                        // A user's finger takes ownership immediately; cancel the
+                        // display-frame playback follower before manual scrolling.
+                        stopTimelinePlaybackFrameSync()
                     }
                     syncingTimelineScroll = true
                     try {
@@ -5869,29 +5918,19 @@ class VideoEditorActivity : Activity() {
         if (timelineScrollViews.all { it.width > 0 && it.scrollX == requestedScroll }) return
 
         val isPlaying = timelineCompositionPlayer?.let { it.isPlaying || it.playWhenReady } == true ||
-            player?.let { it.isPlaying || it.playWhenReady } == true
-        if (!isPlaying) {
-            timelinePlaybackScrollAnimator?.cancel()
-            timelinePlaybackScrollAnimator = null
-            scrollTimelineProgrammatically(requestedScroll)
-            return
-        }
-
-        // Player position is sampled every 50ms. Finish the visual interpolation
-        // before the next clock sample can replace it; a 50ms animator races the
-        // 50ms sync task and leaves the filmstrip one sample behind the playhead.
-        // Two display frames are enough to soften each step without accumulating lag.
-        // Manual scrolling cancels this animator immediately in the lane listener.
-        timelinePlaybackScrollAnimator?.cancel()
-        timelinePlaybackScrollAnimator = android.animation.ValueAnimator.ofInt(
-            firstLane.scrollX, requestedScroll
-        ).apply {
-            duration = 32L
-            interpolator = android.view.animation.LinearInterpolator()
-            addUpdateListener { animator ->
-                scrollTimelineProgrammatically(animator.animatedValue as Int)
-            }
-            start()
+            (previewSingleClip && player?.let { it.isPlaying || it.playWhenReady } == true)
+        // The 50ms player-sync callback must leave its lane geometry exact before
+        // it emits a diagnostic sample or updates the time label. Do not defer this
+        // authoritative position through an animator that can still be running
+        // when the next sample arrives.
+        scrollTimelineProgrammatically(requestedScroll)
+        if (isPlaying) {
+            // A separate display-frame follower reads the real player clock at
+            // every VSYNC between 50ms UI sync callbacks, giving the filmstrip
+            // continuous movement without accumulating interpolation lag.
+            startTimelinePlaybackFrameSync()
+        } else {
+            stopTimelinePlaybackFrameSync()
         }
     }
 
