@@ -116,6 +116,24 @@ internal object TimelineThumbnailMath {
     }
 
     /**
+     * Pixel width of one evenly timed filmstrip cell.
+     *
+     * Round cumulative boundaries instead of assigning every remainder pixel
+     * to the first cells. This keeps each visible cell centre aligned with its
+     * own temporal interval and makes the final boundary exactly [totalWidthPx].
+     */
+    fun cellPixelWidth(totalWidthPx: Int, count: Int, index: Int): Int {
+        val width = totalWidthPx.coerceAtLeast(1).toLong()
+        val safeCount = count.coerceAtLeast(1)
+        val slot = index.coerceIn(0, safeCount - 1)
+        fun boundary(cell: Int): Int {
+            val numerator = width * cell.toLong()
+            return ((numerator + safeCount.toLong() / 2L) / safeCount.toLong()).toInt()
+        }
+        return (boundary(slot + 1) - boundary(slot)).coerceAtLeast(1)
+    }
+
+    /**
      * Samples the temporal center of the requested visual cell.
      *
      * Filmstrip cells divide the clip into [count] equal-width intervals. Sampling
