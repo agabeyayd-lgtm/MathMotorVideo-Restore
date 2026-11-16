@@ -11257,9 +11257,10 @@ class VideoEditorActivity : Activity() {
             if (!selected) return
             // Bound handle travel by source-time limits, not rendered clip width.
             // Otherwise short trimmed clips cannot be expanded back toward the source boundaries.
-            // Keep a clear central drag area even on very short split fragments.
-            // Each transparent edge target takes at most one third of the clip width.
-            val handleWidth = minOf(dp(40), (width / 3).coerceAtLeast(1))
+            // Use a wider invisible hit target than the narrow white visual tab.
+            // 56dp is easier to grab on a phone; cap each side at one third of
+            // short clips so the two independent handles never overlap.
+            val handleWidth = minOf(dp(56), (width / 3).coerceAtLeast(1))
             fun allowedDeltaPx(startMs:Long,endMs:Long):Pair<Float,Float>{
                 // Handle travel is measured on the project timeline, while clip in/out
                 // values remain source timestamps. Convert source bounds through speed
