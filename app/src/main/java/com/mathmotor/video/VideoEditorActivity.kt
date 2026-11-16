@@ -11287,7 +11287,11 @@ class VideoEditorActivity : Activity() {
             }
             val handle = FrameLayout(this).apply {
                 // A wide transparent touch area with one square white edge tab.
+                // Allow only the visible tab to extend beyond this inside-the-clip
+                // hit zone so its centre remains exactly on the cut boundary.
                 setBackgroundColor(Color.TRANSPARENT)
+                clipChildren = false
+                clipToPadding = false
                 elevation = dp(TouchPriority.TIMELINE_EDGE_HANDLE_DP).toFloat()
                 contentDescription = if (isStart) "Sol beyaz tutamaç: klibin başlangıcını sürükleyerek kısalt veya uzat" else "Sağ beyaz tutamaç: klibin bitişini sürükleyerek kısalt veya uzat"
                 // Explicitly keep this transparent child as the touch owner. The
