@@ -1189,6 +1189,36 @@ print(x, y)
 PY
 }
 
+assert_single_panel_return_control() {
+  local hierarchy="$1"
+  local panel_name="$2"
+  python3 - "$hierarchy" "$panel_name" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+path, panel_name = sys.argv[1:3]
+root = ET.parse(path).getroot()
+matches = []
+for node in root.iter("node"):
+    if node.attrib.get("clickable") != "true" or node.attrib.get("enabled") != "true":
+        continue
+    bounds = [int(value) for value in re.findall(r"\\d+", node.attrib.get("bounds", ""))]
+    if len(bounds) != 4 or bounds[2] <= bounds[0] or bounds[3] <= bounds[1]:
+        continue
+    text = " ".join(node.attrib.get("text", "").casefold().split())
+    desc = " ".join(node.attrib.get("content-desc", "").casefold().split())
+    if text in {"‹ araçlara dön", "araçlara dön"} or desc == "araçlara dön":
+        matches.append((text, desc, node.attrib["bounds"]))
+if len(matches) != 1:
+    raise SystemExit(
+        f"FAIL: {panel_name} panel must expose exactly one clickable Araçlara dön control; "
+        f"found {len(matches)}: {matches}"
+    )
+print(f"PASS: {panel_name} panel exposes exactly one clickable Araçlara dön control.")
+PY
+}
+
 # The sample overlay must be selected in the paused preview, not hidden by a
 # settings sheet. Confirm its contextual dock and direct canvas gesture target.
 for overlay_tool in "Bindirme ekle" "Böl" "Birleştir" "Animasyonlar" "Sil"; do
@@ -1198,6 +1228,45 @@ for overlay_tool in "Bindirme ekle" "Böl" "Birleştir" "Animasyonlar" "Sil"; do
     exit 33
   fi
 done
+
+# Opening the overlay animation detail sheet must not duplicate the shared sticky
+# return header with a second in-panel button. Its one remaining action must still
+# return to the overlay tool strip.
+overlay_animation_coords="$(find_bottom_tool emulator-screenshots/editor-window.xml "Animasyonlar" || true)"
+if [ -z "$overlay_animation_coords" ]; then
+  echo "Selected overlay dock did not expose Animasyonlar."
+  collect_capture_diagnostics overlay-animation-tool-missing
+  exit 33
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$overlay_animation_coords"
+sleep 1
+if ! dump_hierarchy editor-overlay-animation-panel.xml emulator-screenshots/editor-overlay-animation-panel.xml; then
+  echo "Could not inspect the overlay animation detail panel."
+  collect_capture_diagnostics overlay-animation-panel-hierarchy-missing
+  exit 33
+fi
+assert_single_panel_return_control emulator-screenshots/editor-overlay-animation-panel.xml "overlay animation"
+overlay_animation_back="$(find_bottom_tool emulator-screenshots/editor-overlay-animation-panel.xml "Araçlara dön" || true)"
+if [ -z "$overlay_animation_back" ]; then
+  echo "Overlay animation detail panel did not expose its single sticky return action."
+  collect_capture_diagnostics overlay-animation-panel-return-missing
+  exit 33
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$overlay_animation_back"
+sleep 1
+if ! dump_hierarchy editor-overlay-tools-after-animation.xml emulator-screenshots/editor-overlay-tools-after-animation.xml; then
+  echo "Could not verify return to the overlay tool strip."
+  collect_capture_diagnostics overlay-animation-return-hierarchy-missing
+  exit 33
+fi
+for overlay_tool in "Bindirme ekle" "Böl" "Birleştir" "Animasyonlar" "Sil"; do
+  if [ -z "$(find_bottom_tool emulator-screenshots/editor-overlay-tools-after-animation.xml "$overlay_tool" || true)" ]; then
+    echo "Overlay animation return did not restore the overlay tool strip ('$overlay_tool' missing)."
+    collect_capture_diagnostics overlay-animation-return-strip-missing
+    exit 33
+  fi
+done
+echo "PASS: overlay animation panel has one return control and returns to its overlay tool strip."
 if ! grep -q "Bindirmeyi önizlemede tek parmakla taşı" emulator-screenshots/editor-window.xml; then
   echo "Selected overlay does not expose its direct-canvas touch surface."
   collect_capture_diagnostics overlay-canvas-touch-surface-missing
@@ -1974,6 +2043,8 @@ if ! dump_hierarchy editor-panel-trim.xml emulator-screenshots/editor-panel-trim
   exit 63
 fi
 
+assert_single_panel_return_control emulator-screenshots/editor-panel-trim.xml "clip trim"
+
 # With the clip detail tool active, the main-video gesture surface must receive
 # the canvas drag above paused media and text/overlay content. Verify its frame
 # moves, then reverse the gesture so later export checks use the original transform.
@@ -2094,6 +2165,7 @@ if ! take_screen emulator-screenshots/editor-panel-audio.png; then
   exit 6
 fi
 dump_hierarchy editor-panel-audio.xml emulator-screenshots/editor-panel-audio.xml || true
+assert_single_panel_return_control emulator-screenshots/editor-panel-audio.xml "clip volume"
 
 detail_back_coords="$(find_bottom_tool emulator-screenshots/editor-panel-audio.xml "Araçlara dön" || true)"
 if [ -z "$detail_back_coords" ]; then

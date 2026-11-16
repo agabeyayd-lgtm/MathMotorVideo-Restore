@@ -1581,8 +1581,6 @@ class VideoEditorActivity : Activity() {
         val clipPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         // The first-level tools live in the bottom dock. This panel is only the
         // second-level content that grows upward after the user chooses Kırp.
-        clipPanel.addView(miniButton("‹ Araçlara dön") { returnToClipToolStrip() },
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(38)))
         selectedClipLabel = label("Önce bir video seç.", 12f, Color.WHITE, true)
         clipPanel.addView(selectedClipLabel)
         val clipActions1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
@@ -1669,8 +1667,6 @@ class VideoEditorActivity : Activity() {
         clipPanel.addView(clipSpeedSeek, matchWrap())
 
         val clipVolumePanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        clipVolumePanel.addView(miniButton("‹ Araçlara dön") { returnToClipToolStrip() },
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(38)))
         clipVolumeLabel = label("Orijinal video sesi: 100%", 13f, Color.WHITE, true)
         clipVolumePanel.addView(clipVolumeLabel)
         clipVolumeSeek = SeekBar(this).apply {
@@ -2240,7 +2236,6 @@ class VideoEditorActivity : Activity() {
         })
 
         val overlayPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        overlayPanel.addView(miniButton("‹ Araçlara dön") { closeVisualLayerPanel("overlay") }, matchWrap())
         overlayPanel.addView(label("GÖRSEL / VİDEO BİNDİRME", 13f, Color.rgb(121, 202, 218), true))
         overlayPanel.addView(label("Logo seçtiğinde tüm video boyunca sağ üstte başlar. Önizlemede sürükleyebilir, iki parmakla boyutunu değiştirebilirsin.", 11f, Color.rgb(154, 171, 190), false))
         val overlayActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
