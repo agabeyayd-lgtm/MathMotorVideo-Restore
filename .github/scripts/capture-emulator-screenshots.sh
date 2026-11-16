@@ -4413,9 +4413,12 @@ for attempt in $(seq 1 12); do
     thumbnail_aligned=true
     break
   fi
-  # Convert the measured half-pixel delta to the nearest whole-pixel gesture.
+  # The measured delta is (playhead - thumbnail). A HorizontalScrollView
+  # moves its content opposite to the finger, so the correction swipe must
+  # invert that sign. The old same-sign gesture pushed an already-near-centred
+  # thumbnail farther away and could never satisfy the strict half-pixel check.
   delta_x="$((delta_x2 >= 0 ? (delta_x2 + 1) / 2 : -(((-delta_x2) + 1) / 2)))"
-  gesture_delta="$((delta_x + (delta_x < 0 ? -alignment_gesture_slop_px : alignment_gesture_slop_px)))"
+  gesture_delta="$((-delta_x + (delta_x < 0 ? alignment_gesture_slop_px : -alignment_gesture_slop_px)))"
   # Start outside the fixed playhead overlay hit region. The centre guide is
   # intentionally visual-only, but keeping the gesture origin clear of it also
   # ensures the HorizontalScrollView receives the horizontal correction drag.
