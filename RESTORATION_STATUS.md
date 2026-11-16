@@ -1,3 +1,24 @@
+## 2026-11-16 — PR #42 exact-head verification complete; release remains gated
+
+- PR #40 is merged into `main` as `69861fca9980c84c05d371323ba8edf0d643eb49`. Main currently declares `versionCode=406` / `versionName=8.39-capcut-editor`.
+- PR #42 is open on `fix/release-407-trim-grips`, exact head `3a7e43168e82be3afc6f03e85ecd15890095219e`. Its candidate metadata is `versionCode=407` / `versionName=8.40-capcut-editor`.
+- All three exact-head workflows succeeded on that same SHA:
+  - [Build MathMotorVideo APK #43767682367](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/43767682367) — success; installable debug ZIP uploaded.
+  - [Verify Android build #43767682413](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/43767682413) — success; unit tests and debug compile passed.
+  - [Android emulator screenshots #43767682375](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/43767682375) — success; API 35 editor smoke and diagnostics upload completed.
+- Alignment root causes and corrections:
+  - The old `touch_slop_px + 3` gesture margin overscrolled by one pixel. It is now `+2`; the acceptance limit was not relaxed.
+  - Half-pixel centers are represented in doubled-pixel units. Only an absolute doubled-coordinate delta <=1 (0.5px) passes; a 1px offset fails.
+  - The adb injection coordinate is explicitly derived from `play_center_x2 / 2`, fixing the earlier unbound `play_center_x` regression without discarding the exact doubled measurement.
+  - Real emulator correction sequence: -30px, -3px, then 0px on attempt 3.
+- The full emulator run passed forward/reverse filmstrip swipes, warmed preview/frame agreement, 44 live playback samples across six synchronized lanes, split seam 0ms, direct clip reorder, all four video trim/extend gestures, and exact Undo/Redo. The square-cornered white video tabs measured 26×126px against the 126px strip with both centres exactly on their clip boundaries.
+- It also passed text canvas drag and grouped typing history, independent text start/end trim and history, audio waveform decode/draw, audio trim/volume history, overlay start/end trim and transform history, filter/brightness history, a real MP4 fixture export, cover JPG generation/reload, and gallery `content://` photo persistence through force-stop/relaunch. Keyboard-open preview remained exactly 423×753px.
+- Visual review of the uploaded 320-file emulator artifact found no additional reproducible editor defect in the exercised flows. No fatal MathMotor exception or app ANR appeared in the captured final logcat. Emulator codec/EGL/SurfaceSync warnings were platform diagnostics and did not fail an editor assertion.
+- Remaining verification boundary: CI uses deterministic fixture media. Physical-device install/update, the user's exact gallery-selected export asset, and the previously reported background/foreground thumbnail retention and delayed audio-start observations still need a real-phone reproduction; this run does not claim those are fixed.
+- The debug ZIP is [Actions artifact 14182752935](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/43767682375/artifacts/14182752935), not a signed production APK. PR #42 remains open. Its release-trigger file change is intended to start signed version 407 publication after merge; do not merge or publish without explicit user authorization.
+
+---
+
 ## 2026-11-15 — Start reverse filmstrip swipes inside the live video viewport
 
 - The exact-head emulator run passed build, unit tests, clip/text/overlay/audio interactions, and the forward filmstrip swipe, then failed the reverse filmstrip check because playhead time remained at 7,167ms.
@@ -33,7 +54,7 @@
 
 ## 2026-11-15 — CapCut-style full-height video trim handle appearance
 
-- The user's CapCut reference shows a broad white rounded edge tab spanning the complete clip-strip height, with a small centred grip mark; a short narrow pill floating mid-strip is not visually equivalent.
+- The user's CapCut reference requires a square-cornered white rectangular edge tab spanning the complete clip-strip height, with a small centred grip mark; a short narrow pill floating mid-strip is not visually equivalent.
 - Updated both selected-edge handles to 10dp width and the exact measured filmstrip height, with a 2dp centred grey grip mark. Each handle centre remains aligned to the actual clip boundary; half its width extends to either side.
 - Extended API 35 diagnostics and assertions to require <=1px boundary-centre offset and exact full-height coverage for both start/end handles, before the existing real four-direction trim/extend and Undo/Redo interactions.
 - Preserved all gesture targets, trim math, clip timing, selection and history behavior. No versionCode, release, signing or updater change.

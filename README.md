@@ -1,11 +1,18 @@
-## Current work — 2026-11-15: CapCut-style full-height video trim handles
+## Current verified candidate — 2026-11-16: PR #42 / version 407
 
-- The selected video's white left/right handles now span the full filmstrip height, use a wider rounded edge-tab shape with a subtle centred grip mark, and remain centred exactly on the clip's measured start/end boundaries.
-- The handles are lane-level siblings; existing transparent gesture targets, trim source-time calculations, selection outline, four-direction trim/extend behavior and project-history Undo/Redo remain unchanged.
-- API 35 validation checks both edge-centre alignment (<=1px) and full-height coverage before exercising the real trim gestures.
-- Work is on `fix/capcut-trim-grip-visual-parity`. Exact-head build/unit/emulator checks are required; no version bump, signed APK, release, or updater change.
+- Main remains at `versionCode=406` / `versionName=8.39-capcut-editor`. PR #42 (`fix/release-407-trim-grips`) proposes `versionCode=407` / `versionName=8.40-capcut-editor`; this is a branch candidate, not a signed or published release.
+- Exact PR head `3a7e43168e82be3afc6f03e85ecd15890095219e` passed all three required workflows on the same SHA: [Build MathMotorVideo APK #43767682367](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/43767682367), [Verify Android build #43767682413](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/43767682413), and [Android emulator screenshots #43767682375](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/43767682375).
+- The thumbnail/playhead test retains strict half-pixel geometry: centers are compared in doubled-pixel units, a representational difference of at most 0.5px is accepted, and a full 1px offset fails. The prior correction gesture overscrolled by one pixel with `touch_slop_px + 3`; it now uses `+2`. The adb touch coordinate is derived from `play_center_x2 / 2`, while the doubled value remains authoritative for the assertion. API 35 measured alignment deltas of -30px, -3px, then exactly 0px on attempts 1–3.
+- The completed API 35 run also passed forward/reverse filmstrip scrubbing, warmed preview-to-thumbnail frame agreement, 44 playback-sync samples across six lanes, a zero-millisecond split seam, clip reorder, all four video trim/extend directions, and exact project Undo/Redo. Both square-cornered white video trim tabs measured 26×126px against a 126px strip with 0px centre offset.
+- The same run passed text drag and grouped typing Undo/Redo, both text-edge trims and their history, audio waveform decoding/drawing, audio trim/volume history, overlay trim/transform history, filter/brightness history, MP4 fixture export, cover JPG save/reload, and gallery `content://` photo persistence after force-stop/relaunch. The preview stayed exactly 423×753px with the keyboard open.
+- The installable CI debug ZIP is an Actions artifact only: [mathmotor-debug-apk-zip](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/43767682375/artifacts/14182752935). It is not a signed production update. The emulator evidence uses deterministic fixture media; physical-phone installation/update and the user's exact gallery-selected export asset remain unverified.
+- PR #42 remains open. Its `.github/release-trigger.txt` change is intended to activate the signed 407 publisher after merge; do not merge or publish until the user explicitly authorizes it.
 
-## Current verified baseline — 2026-11-10
+Historical investigation notes below are snapshots from earlier PR states; their pending labels do not describe the exact-head result above.
+
+---
+
+## Historical verified baseline — 2026-11-10 (main later advanced to versionCode 406)
 
 - PR #35 is merged into `main` (merge commit `4bae7412f8c330247f983b150c2dc1bd951142df`). The application change is on `48b1ef097a4ac3ce0231e98dd0021ed9e5a5684a`; later release metadata and workflow commits do not alter editor code.
 - Exact app-source unit/build [run 42788533221](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/42788533221) and API 35 emulator [run 42788532908](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions/runs/42788532908) passed.
