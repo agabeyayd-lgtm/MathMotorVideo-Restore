@@ -133,6 +133,9 @@ class VideoEditorActivity : Activity() {
         val clips: List<Clip>,
         val overlays: List<OverlayClip>,
         val textLayers: List<TextLayer>,
+        val videoEffects: List<TimelineVideoEffectClip>,
+        val selectedVideoEffectId: Long?,
+        val nextVideoEffectId: Long,
         val selectedClipIndex: Int,
         val selectedOverlayId: Long?,
         val selectedTextLayerId: Long?,
@@ -170,6 +173,9 @@ class VideoEditorActivity : Activity() {
 
     private val clips = mutableListOf<Clip>()
     private val overlayClips = mutableListOf<OverlayClip>()
+    private val timelineVideoEffectClips = mutableListOf<TimelineVideoEffectClip>()
+    private var selectedTimelineVideoEffectId: Long? = null
+    private var nextTimelineVideoEffectId = 1L
     private var nextOverlayId = 1L
     private var selectedOverlayId: Long? = null
     private var overlayCompositionRefreshGeneration = 0L
@@ -789,6 +795,7 @@ class VideoEditorActivity : Activity() {
     private var restoringProjectEditSnapshot = false
     private val videoFilterButtons = linkedMapOf<VideoFilterPreset, Button>()
     private lateinit var videoFilterSummary: TextView
+    private lateinit var timelineVideoEffectSummary: TextView
     private lateinit var filterBrightnessLabel: TextView
     private lateinit var filterContrastLabel: TextView
     private lateinit var filterSaturationLabel: TextView
@@ -2238,6 +2245,29 @@ class VideoEditorActivity : Activity() {
         effectsPanel.addView(actionButton("Renk ayarlarını sıfırla") {
             applyVideoFilterPreset(VideoFilterPreset.ORIGINAL)
         })
+        effectsPanel.addView(gap(10))
+        effectsPanel.addView(label("ZAMAN ÇİZELGESİ EFEKTLERİ", 13f, Color.rgb(121, 202, 218), true))
+        effectsPanel.addView(label(
+            "Efekt, seçili konumdan başlayan ayrı bir şerit olarak eklenir. Şeridi taşıyıp iki ucundan kısaltabilirsin.",
+            11f, Color.rgb(154, 171, 190), false
+        ))
+        timelineVideoEffectSummary = label("Seçili efekt yok.", 12f, Color.WHITE, true)
+        effectsPanel.addView(timelineVideoEffectSummary)
+        TimelineVideoEffectPreset.values().toList().chunked(2).forEach { group ->
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            group.forEach { preset ->
+                row.addView(miniButton("＋ ${preset.title}") {
+                    addTimelineVideoEffect(preset)
+                }, LinearLayout.LayoutParams(0, dp(42), 1f).apply {
+                    if (group.first() != preset) leftMargin = dp(4)
+                })
+            }
+            effectsPanel.addView(row, matchWrap())
+            effectsPanel.addView(gap(4))
+        }
+        effectsPanel.addView(actionButton("Seçili efekti kaldır") {
+            removeSelectedTimelineVideoEffect()
+        })
 
         val overlayPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         overlayPanel.addView(miniButton("‹ Araçlara dön") { closeVisualLayerPanel("overlay") }, matchWrap())
@@ -3538,6 +3568,15 @@ class VideoEditorActivity : Activity() {
 
         if (!loadingTextLayerControls) syncSelectedTextLayerFromControls()
         val totalMs = totalOutputDurationMs()
+        val videoDurationMs = TimelineVideoMath.totalDuration(videoTimelineSegments())
+        val normalizedEffects = timelineVideoEffectClips.mapNotNull {
+            TimelineVideoEffectMath.normalize(it, videoDurationMs)
+        }
+        timelineVideoEffectClips.clear()
+        timelineVideoEffectClips.addAll(normalizedEffects)
+        if (selectedTimelineVideoEffectId !in timelineVideoEffectClips.map { it.id }) {
+            selectedTimelineVideoEffectId = null
+        }
         textLayers.forEach { layer ->
             val requestedEnd = if (layer.timingCustomized) {
                 layer.endMs.coerceAtMost(totalMs)
@@ -4762,6 +4801,63 @@ class VideoEditorActivity : Activity() {
                 addTextLayerBlock(textTrack, layer, index)
             }
         }
+
+        if (timelineVideoEffectClips.isEmpty()) {
+            makeLane("Efekt", 30, "effects")
+        } else {
+            timelineVideoEffectClips.sortedWith(
+                compareBy<TimelineVideoEffectClip> { it.timelineStartMs }.thenBy { it.id }
+            ).forEachIndexed { index, rawEffect ->
+                val effect = TimelineVideoEffectMath.normalize(rawEffect, videoDurationMs)
+                    ?: return@forEachIndexed
+                val endMs = effect.endMs
+                val lane = makeLane("Efekt ${index + 1}", 30, "effect:${effect.id}")
+                addSpacer(lane, 0L, effect.timelineStartMs)
+                addBlock(
+                    track = lane,
+                    title = "✦ ${effect.preset.title}",
+                    durationMs = effect.durationMs,
+                    fill = when (effect.preset) {
+                        TimelineVideoEffectPreset.BLUR -> Color.rgb(103, 79, 168)
+                        TimelineVideoEffectPreset.MONOCHROME -> Color.rgb(88, 100, 117)
+                        TimelineVideoEffectPreset.NEGATIVE -> Color.rgb(147, 73, 111)
+                        TimelineVideoEffectPreset.WARM -> Color.rgb(164, 104, 57)
+                    },
+                    selected = effect.id == selectedTimelineVideoEffectId,
+                    onClick = {
+                        selectedTimelineVideoEffectId = effect.id
+                        updateTimelineVideoEffectSummary()
+                        refreshTimelineTracks()
+                    },
+                    minimumWidthDp = 52,
+                    startMs = effect.timelineStartMs,
+                    onMove = { deltaMs ->
+                        val updated = TimelineVideoEffectMath.move(effect, deltaMs, videoDurationMs)
+                        replaceTimelineVideoEffect(effect.id, updated)
+                        selectedTimelineVideoEffectId = effect.id
+                        timelinePlayheadMs = updated?.timelineStartMs ?: effect.timelineStartMs
+                        refreshColorGradePreview()
+                        updateTimelineVideoEffectSummary()
+                    },
+                    onTrimStart = { deltaMs ->
+                        val updated = TimelineVideoEffectMath.trimStart(effect, deltaMs, videoDurationMs)
+                        replaceTimelineVideoEffect(effect.id, updated)
+                        selectedTimelineVideoEffectId = effect.id
+                        refreshColorGradePreview()
+                        updateTimelineVideoEffectSummary()
+                    },
+                    onTrimEnd = { deltaMs ->
+                        val updated = TimelineVideoEffectMath.trimEnd(effect, deltaMs, videoDurationMs)
+                        replaceTimelineVideoEffect(effect.id, updated)
+                        selectedTimelineVideoEffectId = effect.id
+                        refreshColorGradePreview()
+                        updateTimelineVideoEffectSummary()
+                    }
+                )
+                addSpacer(lane, endMs, totalMs)
+            }
+        }
+        updateTimelineVideoEffectSummary()
 
         val musicTrack = makeLane("Müzik", 28, "music")
         if (musicUri != null && totalMs > 0L) {
@@ -6369,7 +6465,10 @@ class VideoEditorActivity : Activity() {
     private fun buildFlattenedVideoSequence():EditedMediaItemSequence {
         val builder=EditedMediaItemSequence.Builder(setOf(androidx.media3.common.C.TRACK_TYPE_AUDIO,androidx.media3.common.C.TRACK_TYPE_VIDEO))
         val total=totalOutputDurationMs()
-        val boundaries=(videoTimelineSegments().flatMap{listOf(it.timelineStartMs,it.timelineEndMs)}+listOf(0L,total)).distinct().sorted()
+        val videoDurationMs = TimelineVideoMath.totalDuration(videoTimelineSegments())
+        val effectBoundaries = TimelineVideoEffectMath.boundaries(videoDurationMs, timelineVideoEffectClips)
+        val boundaries=(videoTimelineSegments().flatMap{listOf(it.timelineStartMs,it.timelineEndMs)}+
+            effectBoundaries+listOf(0L,total)).distinct().sorted()
         for(i in 0 until (boundaries.size-1).coerceAtLeast(0)){
             val from=boundaries[i];val to=boundaries[i+1];val span=(to-from).coerceAtLeast(0L)
             if(span<=0L)continue
@@ -6383,7 +6482,12 @@ class VideoEditorActivity : Activity() {
                 val localEnd = ClipSpeedMath.sourceOffsetMs(
                     (to - clip.timelineStartMs).coerceAtLeast(0L), clip.speed
                 ).coerceAtMost((clip.endMs - clip.startMs).coerceAtLeast(0L))
-                if (localEnd > localStart) builder.addItem(buildClipSegment(clip, localStart, localEnd))
+                if (localEnd > localStart) {
+                    val activeEffects = TimelineVideoEffectMath.activeAt(
+                        from, timelineVideoEffectClips, videoDurationMs
+                    )
+                    builder.addItem(buildClipSegment(clip, localStart, localEnd, activeEffects))
+                }
             }
         }
         return builder.build()
@@ -6686,6 +6790,70 @@ class VideoEditorActivity : Activity() {
             )
         }
         return effects
+    }
+
+    private fun updateTimelineVideoEffectSummary() {
+        if (!::timelineVideoEffectSummary.isInitialized) return
+        val selected = timelineVideoEffectClips.firstOrNull { it.id == selectedTimelineVideoEffectId }
+        timelineVideoEffectSummary.text = selected?.let {
+            "Seçili: ${it.preset.title} • ${formatTimelineMs(it.timelineStartMs)}–${formatTimelineMs(it.endMs)}"
+        } ?: "Seçili efekt yok."
+    }
+
+    private fun replaceTimelineVideoEffect(
+        effectId: Long,
+        updated: TimelineVideoEffectClip?
+    ) {
+        timelineVideoEffectClips.removeAll { it.id == effectId }
+        if (updated != null) {
+            timelineVideoEffectClips.add(updated)
+        } else if (selectedTimelineVideoEffectId == effectId) {
+            selectedTimelineVideoEffectId = null
+        }
+    }
+
+    private fun addTimelineVideoEffect(preset: TimelineVideoEffectPreset) {
+        val videoDurationMs = TimelineVideoMath.totalDuration(videoTimelineSegments())
+        if (videoDurationMs < TimelineVideoEffectMath.MIN_DURATION_MS) {
+            status.text = "Efekt eklemek için önce bir video ekle."
+            return
+        }
+        val startMs = timelinePlayheadMs.coerceIn(0L, videoDurationMs - TimelineVideoEffectMath.MIN_DURATION_MS)
+        val durationMs = minOf(TimelineVideoEffectMath.DEFAULT_DURATION_MS, videoDurationMs - startMs)
+        val effect = TimelineVideoEffectClip(
+            id = nextTimelineVideoEffectId,
+            preset = preset,
+            timelineStartMs = startMs,
+            durationMs = durationMs
+        )
+        recordProjectEdit()
+        nextTimelineVideoEffectId = effect.id + 1L
+        timelineLaneOrder.remove("effects")
+        timelineVideoEffectClips.add(effect)
+        selectedTimelineVideoEffectId = effect.id
+        refreshTimelineTracks()
+        refreshColorGradePreview()
+        updateTimelineVideoEffectSummary()
+        status.text = "${preset.title} efekti zaman çizelgesine eklendi."
+    }
+
+    private fun removeSelectedTimelineVideoEffect() {
+        val selectedId = selectedTimelineVideoEffectId
+        if (selectedId == null || timelineVideoEffectClips.none { it.id == selectedId }) {
+            status.text = "Kaldırmak için önce bir efekt şeridi seç."
+            return
+        }
+        recordProjectEdit()
+        timelineVideoEffectClips.removeAll { it.id == selectedId }
+        timelineLaneOrder.remove("effect:$selectedId")
+        if (timelineVideoEffectClips.isEmpty()) {
+            timelineLaneOrder.removeAll { it.startsWith("effect:") }
+        }
+        selectedTimelineVideoEffectId = null
+        refreshTimelineTracks()
+        refreshColorGradePreview()
+        updateTimelineVideoEffectSummary()
+        status.text = "Seçili efekt kaldırıldı."
     }
 
     private fun refreshColorGradePreview() {
@@ -7392,6 +7560,9 @@ class VideoEditorActivity : Activity() {
             clips = clips.map { it.copy() },
             overlays = overlayClips.map(::copyOverlayForHistory),
             textLayers = textLayers.map { it.copy() },
+            videoEffects = timelineVideoEffectClips.map { it.copy() },
+            selectedVideoEffectId = selectedTimelineVideoEffectId,
+            nextVideoEffectId = nextTimelineVideoEffectId,
             selectedClipIndex = selectedClipIndex,
             selectedOverlayId = selectedOverlayId,
             selectedTextLayerId = selectedTextLayerId,
@@ -7435,6 +7606,7 @@ class VideoEditorActivity : Activity() {
         before.clips != after.clips ||
             before.overlays != after.overlays ||
             before.textLayers != after.textLayers ||
+            before.videoEffects != after.videoEffects ||
             before.musicUri != after.musicUri ||
             before.musicTitle != after.musicTitle ||
             before.musicSourceDurationMs != after.musicSourceDurationMs ||
@@ -7709,6 +7881,7 @@ class VideoEditorActivity : Activity() {
                 playerView.player === timelineCompositionPlayer &&
                 clips == snapshot.clips &&
                 overlayClips == snapshot.overlays &&
+                timelineVideoEffectClips == snapshot.videoEffects &&
                 musicUri == snapshot.musicUri &&
                 musicTitle == snapshot.musicTitle &&
                 musicSourceDurationMs == snapshot.musicSourceDurationMs &&
@@ -7744,6 +7917,14 @@ class VideoEditorActivity : Activity() {
         overlayClips.addAll(snapshot.overlays.map(::copyOverlayForHistory))
         textLayers.clear()
         textLayers.addAll(snapshot.textLayers.map { it.copy() })
+        timelineVideoEffectClips.clear()
+        timelineVideoEffectClips.addAll(snapshot.videoEffects.map { it.copy() })
+        selectedTimelineVideoEffectId = snapshot.selectedVideoEffectId
+            .takeIf { id -> timelineVideoEffectClips.any { it.id == id } }
+        nextTimelineVideoEffectId = maxOf(
+            snapshot.nextVideoEffectId,
+            (timelineVideoEffectClips.maxOfOrNull { it.id } ?: 0L) + 1L
+        )
 
         nextOverlayId = maxOf(snapshot.nextOverlayId, (overlayClips.maxOfOrNull { it.id } ?: 0L) + 1L)
         nextTextLayerId = maxOf(snapshot.nextTextLayerId, (textLayers.maxOfOrNull { it.id } ?: 0L) + 1L)
@@ -7810,6 +7991,7 @@ class VideoEditorActivity : Activity() {
         // Restore preset highlighting, color-grade labels and every filter SeekBar
         // before any diagnostics or downstream UI assertions inspect the controls.
         loadVideoFilterControls()
+        updateTimelineVideoEffectSummary()
         if (timelineSyncTestEnabled) {
             android.util.Log.i(
                 "ProjectHistoryTest",
@@ -8993,6 +9175,16 @@ class VideoEditorActivity : Activity() {
         val clipArray = JSONArray()
         val textLayerArray = JSONArray()
         val overlayArray = JSONArray()
+        val videoEffectArray = JSONArray()
+        timelineVideoEffectClips.forEach { effect ->
+            videoEffectArray.put(JSONObject().apply {
+                put("id", effect.id)
+                put("preset", effect.preset.key)
+                put("timelineStartMs", effect.timelineStartMs)
+                put("durationMs", effect.durationMs)
+                put("intensityPercent", effect.intensityPercent)
+            })
+        }
         textLayers.forEach { layer ->
             textLayerArray.put(JSONObject().apply {
                 put("id", layer.id)
@@ -9078,6 +9270,9 @@ class VideoEditorActivity : Activity() {
             put("videoLaneLayoutVersion", 1)
             put("clips", clipArray)
             put("overlays", overlayArray)
+            put("videoEffects", videoEffectArray)
+            put("selectedVideoEffectId", selectedTimelineVideoEffectId ?: JSONObject.NULL)
+            put("nextVideoEffectId", nextTimelineVideoEffectId)
             put("selectedOverlayId", selectedOverlayId ?: JSONObject.NULL)
             put("nextOverlayId", nextOverlayId)
             put("selectedClipIndex", selectedClipIndex)
@@ -9139,6 +9334,24 @@ class VideoEditorActivity : Activity() {
         val migrateLegacyVideoLane = json.optInt("videoLaneLayoutVersion", 0) < 1
         var migratedSelectedClipIndex: Int? = null
         val loadedClips = mutableListOf<Clip>()
+        val loadedVideoEffects = mutableListOf<TimelineVideoEffectClip>()
+        val videoEffectArray = json.optJSONArray("videoEffects") ?: JSONArray()
+        var maxVideoEffectId = 0L
+        for (i in 0 until videoEffectArray.length()) {
+            val item = videoEffectArray.optJSONObject(i) ?: continue
+            val id = item.optLong("id", i + 1L).coerceAtLeast(1L)
+            loadedVideoEffects.add(
+                TimelineVideoEffectClip(
+                    id = id,
+                    preset = TimelineVideoEffectPreset.fromKey(item.optString("preset", "blur")),
+                    timelineStartMs = item.optLong("timelineStartMs", 0L).coerceAtLeast(0L),
+                    durationMs = item.optLong("durationMs", TimelineVideoEffectMath.DEFAULT_DURATION_MS)
+                        .coerceAtLeast(TimelineVideoEffectMath.MIN_DURATION_MS),
+                    intensityPercent = item.optInt("intensityPercent", 100).coIn(0, 100)
+                )
+            )
+            maxVideoEffectId = maxOf(maxVideoEffectId, id)
+        }
         val clipArray = json.optJSONArray("clips") ?: JSONArray()
         var legacyTimelineCursorMs=0L
         for (i in 0 until clipArray.length()) {
@@ -9428,9 +9641,22 @@ class VideoEditorActivity : Activity() {
             }
         }
         nextTextLayerId = (textLayers.maxOfOrNull { it.id } ?: 0L) + 1L
+        val videoDurationMs = TimelineVideoMath.totalDuration(videoTimelineSegments())
+        timelineVideoEffectClips.clear()
+        timelineVideoEffectClips.addAll(
+            loadedVideoEffects.mapNotNull { TimelineVideoEffectMath.normalize(it, videoDurationMs) }
+        )
+        nextTimelineVideoEffectId = maxOf(
+            json.optLong("nextVideoEffectId", maxVideoEffectId + 1L),
+            maxVideoEffectId + 1L
+        )
+        selectedTimelineVideoEffectId = json.optLong(
+            "selectedVideoEffectId", timelineVideoEffectClips.lastOrNull()?.id ?: -1L
+        ).takeIf { id -> timelineVideoEffectClips.any { it.id == id } }
         val savedSelectedTextId = json.optLong("selectedTextLayerId", textLayers.firstOrNull()?.id ?: -1L)
         selectedTextLayerId = savedSelectedTextId.takeIf { id -> textLayers.any { it.id == id } }
         selectedVideoFilter = VideoFilterPreset.fromKey(json.optString("videoFilterPreset", "original"))
+        updateTimelineVideoEffectSummary()
         filterBrightness = json.optInt("filterBrightness", 0).coerceIn(-100, 100)
         filterContrast = json.optInt("filterContrast", 0).coerceIn(-100, 100)
         filterSaturation = json.optInt("filterSaturation", 0).coerceIn(-100, 100)
@@ -13532,10 +13758,35 @@ class VideoEditorActivity : Activity() {
 
     
 
+    private fun buildTimelineVideoEffectGlEffects(
+        effects: List<TimelineVideoEffectClip>
+    ): List<androidx.media3.common.Effect> = buildList {
+        effects.forEach { effect ->
+            val intensity = effect.intensityPercent.coerceIn(0, 100) / 100f
+            if (intensity <= 0f) return@forEach
+            when (effect.preset) {
+                TimelineVideoEffectPreset.BLUR ->
+                    add(androidx.media3.effect.GaussianBlur((intensity * 8f).coerceAtLeast(0.1f)))
+                TimelineVideoEffectPreset.MONOCHROME ->
+                    add(RgbFilter.createGrayscaleFilter())
+                TimelineVideoEffectPreset.NEGATIVE ->
+                    add(RgbFilter.createInvertedFilter())
+                TimelineVideoEffectPreset.WARM ->
+                    add(
+                        HslAdjustment.Builder()
+                            .adjustHue(-10f * intensity)
+                            .adjustSaturation(12f * intensity)
+                            .build()
+                    )
+            }
+        }
+    }
+
     private fun buildClipSegment(
         clip: Clip,
         localStartMs: Long,
-        localEndMs: Long
+        localEndMs: Long,
+        timelineEffects: List<TimelineVideoEffectClip> = emptyList()
     ): EditedMediaItem {
         require(localEndMs > localStartMs) { "Boş video parçası oluşturulamaz." }
         val mediaItem = MediaItem.Builder()
@@ -13578,6 +13829,7 @@ class VideoEditorActivity : Activity() {
                 }
             )
         } else emptyList()
+        val combinedVideoEffects = videoEffects + buildTimelineVideoEffectGlEffects(timelineEffects)
         val speed = ClipSpeedMath.normalize(clip.speed)
         val speedProvider = object : androidx.media3.common.audio.SpeedProvider {
             override fun getSpeed(timeUs: Long): Float = speed
@@ -13586,7 +13838,7 @@ class VideoEditorActivity : Activity() {
         return EditedMediaItem.Builder(mediaItem)
             .setDurationUs(clip.durationMs * 1000L)
             .setSpeed(speedProvider)
-            .setEffects(Effects(audio, videoEffects))
+            .setEffects(Effects(audio, combinedVideoEffects))
             .apply { if (!keepSourceAudio.isChecked) setRemoveAudio(true) }
             .build()
     }
