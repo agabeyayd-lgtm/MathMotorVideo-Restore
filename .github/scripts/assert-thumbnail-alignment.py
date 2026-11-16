@@ -115,6 +115,8 @@ def verify(log_path: str, screenshot_path: str):
     cell = None
     sample_ms = None
     for timestamp, box in snapshot["cells"]:
+        # Acceptance contract: compare geometric centres at half-pixel precision;
+        # never round away a full-pixel offset or relax this threshold to pass CI.
         # Keep this in doubled-pixel units: integer Android bounds can produce
         # half-pixel geometric centers, but a full 1px offset must never pass.
         # Compare exact geometric centers in half-pixel units. The sole
