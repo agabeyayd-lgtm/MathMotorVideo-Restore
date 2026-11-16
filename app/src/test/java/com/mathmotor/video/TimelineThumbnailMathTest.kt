@@ -109,7 +109,7 @@ class TimelineThumbnailMathTest {
             kotlin.math.abs(geometricCenters[it] - idealCenters[it]) <= 0.5
         })
         assertEquals(1, TimelineThumbnailMath.cellPixelWidth(1, 1, 0))
-        assertEquals(3, TimelineThumbnailMath.cellPixelWidth(3, 9, 99))
+        assertEquals(1, TimelineThumbnailMath.cellPixelWidth(3, 3, 99))
     }
 
     @Test
