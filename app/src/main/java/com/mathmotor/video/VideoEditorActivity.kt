@@ -343,6 +343,8 @@ class VideoEditorActivity : Activity() {
     private val timelineLaneOrder = mutableListOf<String>()
     private var syncingTimelineScroll = false
     private var autoScrollingTimeline = false
+    // Interpolate playback-driven timeline movement between player clock samples.
+    private var timelinePlaybackScrollAnimator: android.animation.ValueAnimator? = null
     private var timelineHorizontalScrollX = 0
     private var pendingTimelineScrollX: Int? = null
     // Single authoritative timeline scale in physical pixels per second.
@@ -3780,6 +3782,12 @@ class VideoEditorActivity : Activity() {
             timelineScrollViews.add(scroll)
             scroll.setOnScrollChangeListener { view, scrollX, _, _, _ ->
                 if (!syncingTimelineScroll) {
+                    if (!autoScrollingTimeline) {
+                        // A user's finger takes ownership immediately; an older playback
+                        // animation must never pull the timeline back under the finger.
+                        timelinePlaybackScrollAnimator?.cancel()
+                        timelinePlaybackScrollAnimator = null
+                    }
                     syncingTimelineScroll = true
                     try {
                         timelineHorizontalScrollX = scrollX
@@ -3821,6 +3829,28 @@ class VideoEditorActivity : Activity() {
                     updateTimelinePlayheadLine()
                     if (timelineSyncTestEnabled) scheduleTimelineAlignmentSnapshot()
                 }
+            }
+            // Let the HorizontalScrollView own ordinary one-finger swipes on its lane.
+            // Its native OverScroller supplies the same release momentum as CapCut.
+            // The child clip only disallows interception after a stationary long-press
+            // has explicitly entered clip-reorder mode.
+            scroll.setOnTouchListener { view, event ->
+                if (timelineSyncTestEnabled &&
+                    event.actionMasked == android.view.MotionEvent.ACTION_UP
+                ) {
+                    val scrollAtRelease = view.scrollX
+                    listOf(64L, 128L, 240L).forEach { sampleDelayMs ->
+                        view.postDelayed({
+                            android.util.Log.i(
+                                "TimelineSyncTest",
+                                "TIMELINE_NATIVE_SCROLL_RELEASE lane=$laneKey " +
+                                    "sampleDelayMs=$sampleDelayMs startScrollX=$scrollAtRelease " +
+                                    "scrollX=${view.scrollX}"
+                            )
+                        }, sampleDelayMs)
+                    }
+                }
+                false
             }
             val track = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -4565,9 +4595,6 @@ class VideoEditorActivity : Activity() {
 
             // Placement order is layer order: later clips draw above earlier ones,
             // matching activeSegmentIndexAt() and the flattened preview/export.
-            var selectedClipViewForGrips: View? = null
-            var selectedClipLeftForGrips = 0
-            var selectedClipWidthForGrips = 0
             placements.forEach { placement ->
                 val index = placement.clipIndex
                 val clip = clips.getOrNull(index) ?: return@forEach
@@ -4581,64 +4608,6 @@ class VideoEditorActivity : Activity() {
                     leftMargin = left
                     gravity = Gravity.TOP or Gravity.LEFT
                 })
-                if (index == selectedClipIndex && clipHandlesVisible) {
-                    selectedClipViewForGrips = clipView
-                    selectedClipLeftForGrips = left
-                    selectedClipWidthForGrips = width
-                }
-            }
-            // CapCut puts the white trim grips on the clip's two cut boundaries.
-            // Draw them as siblings in the lane, not inside the filmstrip's clipped
-            // foreground, so each 6dp grip is centered on the exact clip edge.
-            selectedClipViewForGrips?.let { selectedView ->
-                // CapCut's trim handle is a full-height white edge tab, not a
-                // short pill floating inside the filmstrip. Keep its centre on the
-                // cut boundary while allowing half the tab to sit outside the clip.
-                val gripWidth = dp(10).coerceAtLeast(1)
-                val gripHeight = stripHeight.coerceAtLeast(1)
-                fun addVisibleTrimGrip(isStart: Boolean) {
-                    val boundaryInStrip = selectedClipLeftForGrips +
-                        if (isStart) 0 else selectedClipWidthForGrips
-                    val grip = FrameLayout(this).apply {
-                        // CapCut reference: square-cornered white trim tab.
-                        setBackgroundColor(Color.WHITE)
-                        isClickable = false
-                        isFocusable = false
-                        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-                        elevation = dp(14).toFloat()
-                    }
-                    val innerHandle = View(this).apply {
-                        setBackgroundColor(Color.rgb(150, 150, 150))
-                    }
-                    grip.addView(innerHandle, FrameLayout.LayoutParams(
-                        dp(2).coerceAtLeast(1), dp(14).coerceAtLeast(1),
-                        Gravity.CENTER
-                    ))
-                    strip.addView(grip, FrameLayout.LayoutParams(gripWidth, gripHeight).apply {
-                        leftMargin = boundaryInStrip - gripWidth / 2
-                        topMargin = 0
-                        gravity = Gravity.TOP or Gravity.LEFT
-                    })
-                    grip.post {
-                        if (!timelineSyncTestEnabled || grip.width <= 0) return@post
-                        val clipLocation = IntArray(2)
-                        val gripLocation = IntArray(2)
-                        selectedView.getLocationOnScreen(clipLocation)
-                        grip.getLocationOnScreen(gripLocation)
-                        val boundaryPx = clipLocation[0] +
-                            if (isStart) 0 else selectedView.width
-                        val gripCenterPx = gripLocation[0] + grip.width / 2
-                        android.util.Log.i(
-                            "EditorTouchTest",
-                            "VIDEO_EDGE_GRIP_LAYOUT edge=${if (isStart) "start" else "end"} " +
-                                "clipIndex=$selectedClipIndex boundaryPx=$boundaryPx " +
-                                "centerPx=$gripCenterPx offsetPx=${gripCenterPx - boundaryPx} " +
-                                "gripWidthPx=${grip.width} gripHeightPx=${grip.height} stripHeightPx=$stripHeight"
-                        )
-                    }
-                }
-                addVisibleTrimGrip(isStart = true)
-                addVisibleTrimGrip(isStart = false)
             }
             val addVideoButton = TextView(this).apply {
                 text = "＋"
@@ -5897,9 +5866,31 @@ class VideoEditorActivity : Activity() {
         val requestedScroll = TimelineScaleMath.pixelsForTime(
             timelinePlayheadMs, timelinePixelsPerSecond()
         ).coerceAtLeast(0)
-        // A rebuilt text/audio lane can drift while the video row already has the target.
         if (timelineScrollViews.all { it.width > 0 && it.scrollX == requestedScroll }) return
-        scrollTimelineProgrammatically(requestedScroll)
+
+        val isPlaying = timelineCompositionPlayer?.let { it.isPlaying || it.playWhenReady } == true ||
+            player?.let { it.isPlaying || it.playWhenReady } == true
+        if (!isPlaying) {
+            timelinePlaybackScrollAnimator?.cancel()
+            timelinePlaybackScrollAnimator = null
+            scrollTimelineProgrammatically(requestedScroll)
+            return
+        }
+
+        // Player position is sampled every 50ms. Animate each small interval on
+        // display frames so the fixed playhead glides over the filmstrip instead
+        // of jumping in 20Hz steps. Manual scrolling cancels this animator above.
+        timelinePlaybackScrollAnimator?.cancel()
+        timelinePlaybackScrollAnimator = android.animation.ValueAnimator.ofInt(
+            firstLane.scrollX, requestedScroll
+        ).apply {
+            duration = 50L
+            interpolator = android.view.animation.LinearInterpolator()
+            addUpdateListener { animator ->
+                scrollTimelineProgrammatically(animator.animatedValue as Int)
+            }
+            start()
+        }
     }
 
     private fun scrollTimelineProgrammatically(requestedScrollX: Int) {
@@ -10988,7 +10979,9 @@ class VideoEditorActivity : Activity() {
 
                 override fun getOpacity(): Int = android.graphics.PixelFormat.TRANSLUCENT
             }
-            clipToOutline = true
+            clipToOutline = !selected
+            clipChildren = false
+            clipToPadding = false
             // Keep the selected clip reachable even when it overlaps another clip.
             elevation = if (selected && !hasPreviousAdjacentClip && !hasNextAdjacentClip) dp(12).toFloat() else 0f
             isClickable = true
@@ -10999,12 +10992,15 @@ class VideoEditorActivity : Activity() {
             var filmstripPannedTimeline = false
             var filmstripLongPressed = false
             var downRawX = 0f
-            var lastRawX = 0f
             var initialStartMs = clip.timelineStartMs
             var initialTimelineScrollX = 0
+            val clipViewForTouch = this
             val longPressAction = Runnable {
                 if (filmstripTouchActive && !filmstripPannedTimeline) {
                     filmstripLongPressed = true
+                    // Once long-press is confirmed, reserve the following drag for
+                    // clip movement instead of allowing the parent lane to scroll.
+                    clipViewForTouch.parent?.requestDisallowInterceptTouchEvent(true)
                     if (timelineSyncTestEnabled) android.util.Log.i(
                         "TimelineSyncTest",
                         "VIDEO_CLIP_TOUCH longPress index=$index"
@@ -11020,7 +11016,6 @@ class VideoEditorActivity : Activity() {
                         filmstripPannedTimeline = false
                         filmstripLongPressed = false
                         downRawX = event.rawX
-                        lastRawX = event.rawX
                         initialStartMs = clip.timelineStartMs
                         initialTimelineScrollX = timelineScrollViews.firstOrNull()?.scrollX ?: 0
                         if (timelineSyncTestEnabled) android.util.Log.i(
@@ -11030,11 +11025,9 @@ class VideoEditorActivity : Activity() {
                                 "viewBounds=${left},${top},${right},${bottom}"
                         )
                         pauseActivePreview()
-                        // Match CapCut: an ordinary one-finger swipe on the filmstrip
-                        // pans the shared time axis. A clip becomes movable only after
-                        // a stationary long-press, so scrubbing and clip reordering
-                        // cannot steal the same gesture.
-                        view.parent?.requestDisallowInterceptTouchEvent(true)
+                        // A normal horizontal swipe is left unclaimed here so the
+                        // parent HorizontalScrollView can intercept and perform a native
+                        // velocity-based fling. Stationary holds remain taps/long-presses.
                         timelineHandler.postDelayed(
                             longPressAction,
                             android.view.ViewConfiguration.getLongPressTimeout().toLong()
@@ -11089,16 +11082,359 @@ class VideoEditorActivity : Activity() {
                                 view.translationX = maxOf(minimumPx.toFloat(), gestureDeltaPx)
                             }
                         } else if (kotlin.math.abs(dx) > touchSlop) {
-                            // Normal swipe: scroll every lane together through the shared
-                            // HorizontalScrollView listener; do not translate/reorder the clip.
+                            // The parent normally intercepts this move first. Keep this
+                            // fallback non-mutating: never emulate scrolling with scrollBy,
+                            // because that discards the finger velocity at release.
                             filmstripPannedTimeline = true
                             timelineHandler.removeCallbacks(longPressAction)
-                            val deltaSinceLastMove = event.rawX - lastRawX
-                            timelineScrollViews.firstOrNull()?.scrollBy(
-                                -deltaSinceLastMove.toInt(), 0
-                            )
                         }
-                        lastRawX = event.rawX
+                        true
+                    }
+                    android.view.MotionEvent.ACTION_UP -> {
+                        if (timelineSyncTestEnabled) android.util.Log.i(
+                            "TimelineSyncTest",
+                            "VIDEO_CLIP_TOUCH up index=$index moved=$filmstripMoved " +
+                                "longPressed=$filmstripLongPressed panned=$filmstripPannedTimeline " +
+                                "rawDx=${event.rawX - downRawX} rawX=${event.rawX}"
+                        )
+                        timelineHandler.removeCallbacks(longPressAction)
+                        filmstripTouchActive = false
+                        view.parent?.requestDisallowInterceptTouchEvent(false)
+                        view.translationX = 0f
+                        view.animate().scaleX(1f).scaleY(1f).setDuration(100L).start()
+                        if (filmstripMoved) {
+                            val rawDeltaPx = event.rawX - downRawX
+                            val scrollDeltaPx = (
+                                (timelineScrollViews.firstOrNull()?.scrollX ?: initialTimelineScrollX) -
+                                    initialTimelineScrollX
+                                ).toFloat()
+                            val requestedStartMs = TimelineScaleMath.timeAfterHorizontalDrag(
+                                initialStartMs,
+                                rawDeltaPx + scrollDeltaPx,
+                                timelinePixelsPerSecond()
+                            )
+                            if (requestedStartMs != initialStartMs) {
+                                reorderTimelineClipFromDrop(index, requestedStartMs)
+                            }
+                        } else if (filmstripPannedTimeline) {
+                            // The scroll listener has already synchronized ruler, lanes,
+                            // playhead time and preview throughout the finger movement.
+                        } else if (filmstripLongPressed) {
+                            view.performLongClick()
+                        } else {
+                            view.performClick()
+                        }
+                        true
+                    }
+                    android.view.MotionEvent.ACTION_CANCEL -> {
+                        if (timelineSyncTestEnabled) android.util.Log.i(
+                            "TimelineSyncTest",
+                            "VIDEO_CLIP_TOUCH cancel index=$index rawX=${event.rawX} rawY=${event.rawY}"
+                        )
+                        timelineHandler.removeCallbacks(longPressAction)
+                        filmstripTouchActive = false
+                        filmstripPannedTimeline = false
+                        view.translationX = 0f
+                        view.animate().scaleX(1f).scaleY(1f).setDuration(100L).start()
+                        view.parent?.requestDisallowInterceptTouchEvent(false)
+                        true
+                    }
+                    else -> true
+                }
+            }
+            setOnLongClickListener {
+                val menu = android.widget.PopupMenu(this@VideoEditorActivity, this)
+                menu.menu.add(0, 1, 0, "Kopyala")
+                menu.menu.add(0, 2, 1, "Sil")
+                menu.menu.add(0, 3, 2, "Böl")
+                menu.menu.add(0, 4, 3, "Bir önceye al")
+                menu.menu.add(0, 5, 4, "Bir sonraya al")
+                val currentSegment = videoTimelineSegments().getOrNull(index)
+                val overlappingIndices = videoTimelineSegments().indices.filter { otherIndex ->
+                    if (otherIndex == index || currentSegment == null) return@filter false
+                    val other = TimelineVideoMath.normalize(videoTimelineSegments()[otherIndex])
+                    val current = TimelineVideoMath.normalize(currentSegment)
+                    current.timelineStartMs < other.timelineEndMs &&
+                        other.timelineStartMs < current.timelineEndMs
+                }
+                if (overlappingIndices.isNotEmpty()) {
+                    val overlapMenu = menu.menu.addSubMenu("Örtüşen klibi seç")
+                    overlappingIndices.forEach { otherIndex ->
+                        overlapMenu.add(0, 1000 + otherIndex, otherIndex, clips[otherIndex].title)
+                    }
+                }
+                menu.setOnMenuItemClickListener { item ->
+                    when {
+                        item.itemId >= 1000 -> selectTimelineClip(item.itemId - 1000)
+                        item.itemId == 1 -> duplicateClipAt(index)
+                        item.itemId == 2 -> removeClipAt(index)
+                        item.itemId == 3 -> splitSelectedClipAtPlayhead(expectedClipIndex = index)
+                        item.itemId == 4 -> { selectTimelineClip(index); moveSelectedClip(-1) }
+                        item.itemId == 5 -> { selectTimelineClip(index); moveSelectedClip(1) }
+                    }
+                    true
+                }
+                menu.show()
+                true
+            }
+            contentDescription = "Klip ${index + 1}: ${clip.title}, ${formatTimelineMs(durationMs)}"
+        }
+        val filmstrip = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            // The surrounding area matches the clip surface; it is not a black letterbox.
+            setBackgroundColor(Color.rgb(27, 39, 54))
+        }
+        // Render one continuous filmstrip. Cell width follows the source aspect
+        // ratio at a shared strip height; cells fill the clip without a second
+        // independently moving strip. Bound the count to control decode/cache pressure.
+        val targetThumbnailWidth = TimelineThumbnailMath.thumbnailCellWidthPx(
+            height,
+            timelineVideoAspectRatio(clip.uri)
+        ).coerceAtLeast(1)
+        // Cell count follows the real clip width (duration × px/sec): zooming in
+        // creates more timestamp samples; zooming out reduces their density.
+        val thumbnailCount = TimelineThumbnailMath.thumbnailCount(width, targetThumbnailWidth)
+        val availableCellWidth = width.coerceAtLeast(thumbnailCount)
+        val baseCellWidth = (availableCellWidth / thumbnailCount).coerceAtLeast(1)
+        val extraPixels = availableCellWidth % thumbnailCount
+        repeat(thumbnailCount) { slot ->
+            val cellWidth = baseCellWidth + if (slot < extraPixels) 1 else 0
+            val cellHeight = height.coerceAtLeast(1)
+            val image = ImageView(this).apply {
+                // Fit the complete source frame into its aspect-aware cell.
+                // FIT_CENTER preserves every edge; no source pixels are cropped or stretched.
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                setBackgroundColor(Color.TRANSPARENT)
+                contentDescription = "Klip karesi"
+            }
+            filmstrip.addView(image, LinearLayout.LayoutParams(cellWidth, cellHeight))
+            val cellStartMs = TimelineThumbnailMath.cellStartTime(
+                clip.startMs, clip.endMs, thumbnailCount, slot
+            )
+            val cellEndMs = TimelineThumbnailMath.cellEndTime(
+                clip.startMs, clip.endMs, thumbnailCount, slot
+            )
+            val frameTime = TimelineThumbnailMath.sampleTime(
+                clip.startMs, clip.endMs, thumbnailCount, slot
+            )
+            // Expose the sample timestamp for diagnostics and accessibility. The
+            // image now represents the center of this cell's shared timeline range.
+            image.contentDescription = "Klip karesi @${frameTime}ms"
+            val projectFrameTime = clip.timelineStartMs + (frameTime - clip.startMs).coerceAtLeast(0L)
+            val priorityDistanceMs = kotlin.math.abs(projectFrameTime - timelinePlayheadMs)
+            if (timelineSyncTestEnabled) android.util.Log.i(
+                "TimelineFrameSyncTest",
+                "TIMELINE_THUMBNAIL_SAMPLE slot=$slot count=$thumbnailCount sourceMs=$frameTime projectMs=$projectFrameTime"
+            )
+            requestTimelineThumbnail(
+                clip.uri,
+                frameTime,
+                image,
+                priorityDistanceMs,
+                cellStartMs,
+                cellEndMs,
+                usePosterPlaceholder = slot == 0
+            )
+        }
+        container.addView(filmstrip, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+
+    private fun buildVideoClipFilmstrip(
+        clip: Clip,
+        index: Int,
+        width: Int,
+        height: Int,
+        selected: Boolean
+    ): FrameLayout {
+        val sourceDurationMs = (clip.endMs - clip.startMs).coerceAtLeast(0L)
+        val durationMs = ClipSpeedMath.timelineDurationMs(sourceDurationMs, clip.speed)
+        val clipTimelineEndMs = clip.timelineStartMs + durationMs
+        // A split or reordered pair is still one continuous filmstrip. Rounded
+        // corners and per-view strokes on both touching clips were painting a
+        // dark divider even when their measured timeline bounds met exactly.
+        // Square only the two inner corners and omit strokes on shared edges.
+        val hasPreviousAdjacentClip = clips.indices.any { otherIndex ->
+            if (otherIndex == index) false else {
+                val other = clips[otherIndex]
+                val otherDuration = ClipSpeedMath.timelineDurationMs(
+                    (other.endMs - other.startMs).coerceAtLeast(0L), other.speed
+                )
+                other.timelineStartMs + otherDuration == clip.timelineStartMs
+            }
+        }
+        val hasNextAdjacentClip = clips.indices.any { otherIndex ->
+            if (otherIndex == index) false else {
+                clips[otherIndex].timelineStartMs == clipTimelineEndMs
+            }
+        }
+        val clipRadius = dp(4).toFloat()
+        val leftRadius = if (hasPreviousAdjacentClip) 0f else clipRadius
+        val rightRadius = if (hasNextAdjacentClip) 0f else clipRadius
+        val clipCornerRadii = floatArrayOf(
+            leftRadius, leftRadius,
+            rightRadius, rightRadius,
+            rightRadius, rightRadius,
+            leftRadius, leftRadius
+        )
+        val container = FrameLayout(this).apply {
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.rgb(27, 39, 54))
+                cornerRadii = clipCornerRadii
+            }
+            foreground = if (!selected) null else object : android.graphics.drawable.Drawable() {
+                private val borderPaint = android.graphics.Paint(
+                    android.graphics.Paint.ANTI_ALIAS_FLAG
+                ).apply {
+                    color = Color.WHITE
+                    style = android.graphics.Paint.Style.STROKE
+                    strokeWidth = dp(2).toFloat()
+                }
+
+                override fun draw(canvas: android.graphics.Canvas) {
+                    val area = bounds
+                    if (area.isEmpty) return
+                    val half = borderPaint.strokeWidth / 2f
+                    // Match CapCut's rounded white selection frame. The trim grips
+                    // remain separate touch targets at both ends; the outline is an
+                    // overlay and never changes the clip's measured timeline width.
+                    val outline = android.graphics.RectF(
+                        area.left + half,
+                        area.top + half,
+                        area.right - half,
+                        area.bottom - half
+                    )
+                    canvas.drawRoundRect(
+                        outline,
+                        dp(4).toFloat(),
+                        dp(4).toFloat(),
+                        borderPaint
+                    )
+                    // Visible trim grips are separate lane-level views. This
+                    // outline stays on the clip edge; the grips are centered on the
+                    // same measured boundaries instead of being inset into the strip.
+                }
+
+                override fun setAlpha(alpha: Int) {
+                    borderPaint.alpha = alpha
+                }
+
+                override fun setColorFilter(colorFilter: android.graphics.ColorFilter?) {
+                    borderPaint.colorFilter = colorFilter
+                }
+
+                override fun getOpacity(): Int = android.graphics.PixelFormat.TRANSLUCENT
+            }
+            clipToOutline = !selected
+            clipChildren = false
+            clipToPadding = false
+            // Keep the selected clip reachable even when it overlaps another clip.
+            elevation = if (selected && !hasPreviousAdjacentClip && !hasNextAdjacentClip) dp(12).toFloat() else 0f
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { selectTimelineClip(index) }
+            var filmstripTouchActive = false
+            var filmstripMoved = false
+            var filmstripPannedTimeline = false
+            var filmstripLongPressed = false
+            var downRawX = 0f
+            var initialStartMs = clip.timelineStartMs
+            var initialTimelineScrollX = 0
+            val clipViewForTouch = this
+            val longPressAction = Runnable {
+                if (filmstripTouchActive && !filmstripPannedTimeline) {
+                    filmstripLongPressed = true
+                    // Once long-press is confirmed, reserve the following drag for
+                    // clip movement instead of allowing the parent lane to scroll.
+                    clipViewForTouch.parent?.requestDisallowInterceptTouchEvent(true)
+                    if (timelineSyncTestEnabled) android.util.Log.i(
+                        "TimelineSyncTest",
+                        "VIDEO_CLIP_TOUCH longPress index=$index"
+                    )
+                    animate().scaleX(0.96f).scaleY(0.96f).setDuration(120L).start()
+                }
+            }
+            setOnTouchListener { view, event ->
+                when (event.actionMasked) {
+                    android.view.MotionEvent.ACTION_DOWN -> {
+                        filmstripTouchActive = true
+                        filmstripMoved = false
+                        filmstripPannedTimeline = false
+                        filmstripLongPressed = false
+                        downRawX = event.rawX
+                        initialStartMs = clip.timelineStartMs
+                        initialTimelineScrollX = timelineScrollViews.firstOrNull()?.scrollX ?: 0
+                        if (timelineSyncTestEnabled) android.util.Log.i(
+                            "TimelineSyncTest",
+                            "VIDEO_CLIP_TOUCH down index=$index rawX=${event.rawX} rawY=${event.rawY} " +
+                                "clipStartMs=$initialStartMs scrollX=$initialTimelineScrollX " +
+                                "viewBounds=${left},${top},${right},${bottom}"
+                        )
+                        pauseActivePreview()
+                        // A normal horizontal swipe is left unclaimed here so the
+                        // parent HorizontalScrollView can intercept and perform a native
+                        // velocity-based fling. Stationary holds remain taps/long-presses.
+                        timelineHandler.postDelayed(
+                            longPressAction,
+                            android.view.ViewConfiguration.getLongPressTimeout().toLong()
+                        )
+                        true
+                    }
+                    android.view.MotionEvent.ACTION_MOVE -> {
+                        val dx = event.rawX - downRawX
+                        val touchSlop = android.view.ViewConfiguration.get(
+                            this@VideoEditorActivity
+                        ).scaledTouchSlop
+                        if (filmstripLongPressed) {
+                            if (kotlin.math.abs(dx) > touchSlop) {
+                                if (!filmstripMoved && timelineSyncTestEnabled) android.util.Log.i(
+                                    "TimelineSyncTest",
+                                    "VIDEO_CLIP_TOUCH dragMove index=$index dx=${dx} rawX=${event.rawX} " +
+                                        "scrollX=${timelineScrollViews.firstOrNull()?.scrollX ?: initialTimelineScrollX}"
+                                )
+                                filmstripMoved = true
+                                timelineHandler.removeCallbacks(longPressAction)
+                                view.parent?.requestDisallowInterceptTouchEvent(true)
+                                // Long-press then drag is the explicit clip-move gesture.
+                                // Keep the shared time axis moving at viewport edges.
+                                val lane = timelineScrollViews.firstOrNull()
+                                if (lane != null) {
+                                    val laneLocation = IntArray(2)
+                                    lane.getLocationOnScreen(laneLocation)
+                                    val fingerInLane = event.rawX - laneLocation[0]
+                                    val edgeZone = dp(48).toFloat()
+                                    val scrollStep = when {
+                                        fingerInLane > lane.width - edgeZone -> dp(10)
+                                        fingerInLane < edgeZone -> -dp(10)
+                                        else -> 0
+                                    }
+                                    if (scrollStep != 0) {
+                                        autoScrollingTimeline = true
+                                        try {
+                                            lane.scrollBy(scrollStep, 0)
+                                        } finally {
+                                            autoScrollingTimeline = false
+                                        }
+                                    }
+                                }
+                                val scrollDeltaPx = (
+                                    (timelineScrollViews.firstOrNull()?.scrollX ?: initialTimelineScrollX) -
+                                        initialTimelineScrollX
+                                    ).toFloat()
+                                val gestureDeltaPx = dx + scrollDeltaPx
+                                val minimumPx = -TimelineScaleMath.pixelsForTime(
+                                    initialStartMs, timelinePixelsPerSecond()
+                                )
+                                view.translationX = maxOf(minimumPx.toFloat(), gestureDeltaPx)
+                            }
+                        } else if (kotlin.math.abs(dx) > touchSlop) {
+                            // The parent normally intercepts this move first. Keep this
+                            // fallback non-mutating: never emulate scrolling with scrollBy,
+                            // because that discards the finger velocity at release.
+                            filmstripPannedTimeline = true
+                            timelineHandler.removeCallbacks(longPressAction)
+                        }
                         true
                     }
                     android.view.MotionEvent.ACTION_UP -> {
@@ -11283,17 +11619,37 @@ class VideoEditorActivity : Activity() {
                 val scale=timelinePixelsPerSecond()/1000f
                 return minTimelineDelta*scale to maxTimelineDelta*scale
             }
+            // The white tab is part of the touch target, not a decorative
+            // sibling overlay. The transparent 40dp hit zone is centred on the
+            // clip edge, giving the user room to grab it from either side.
+            val visibleTab = FrameLayout(this@VideoEditorActivity).apply {
+                setBackgroundColor(Color.WHITE)
+                isClickable = false
+                isFocusable = false
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                val centreMark = View(this@VideoEditorActivity).apply {
+                    setBackgroundColor(Color.rgb(150, 150, 150))
+                }
+                addView(centreMark, FrameLayout.LayoutParams(
+                    dp(2).coerceAtLeast(1), dp(14).coerceAtLeast(1), Gravity.CENTER
+                ))
+            }
             val handle = FrameLayout(this).apply {
-                // CapCut-style clean white trim edge: keep the wide transparent
-                // touch target, but remove the oversized turquoise arrow blocks.
                 setBackgroundColor(Color.TRANSPARENT)
+                clipChildren = false
+                clipToPadding = false
                 elevation = dp(TouchPriority.TIMELINE_EDGE_HANDLE_DP).toFloat()
-                contentDescription = if (isStart) "Sol beyaz tutamaç: klibin başlangıcını sürükleyerek kısalt veya uzat" else "Sağ beyaz tutamaç: klibin bitişini sürükleyerek kısalt veya uzat"
-                // Explicitly keep this transparent child as the touch owner. The
-                // clip body and horizontal scroller must not steal an edge drag.
+                contentDescription = if (isStart) {
+                    "Sol beyaz tutamaç: klibin başlangıcını sürükleyerek kısalt veya uzat"
+                } else {
+                    "Sağ beyaz tutamaç: klibin bitişini sürükleyerek kısalt veya uzat"
+                }
                 isClickable = true
                 isFocusable = true
                 isLongClickable = true
+                addView(visibleTab, FrameLayout.LayoutParams(
+                    dp(10).coerceAtLeast(1), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER
+                ))
                 var downRawX = 0f
                 var initialStartMs = clip.startMs
                 var initialEndMs = clip.endMs
@@ -11321,9 +11677,6 @@ class VideoEditorActivity : Activity() {
                             val delta = event.rawX - downRawX
                             if (kotlin.math.abs(delta) > android.view.ViewConfiguration.get(this@VideoEditorActivity).scaledTouchSlop) moved = true
                             val (minimumDeltaPx, maximumDeltaPx) = allowedDeltaPx(initialStartMs, initialEndMs)
-                            // Keep the handle visible while the gesture crosses beyond the
-                            // current cut edge to restore trimmed-away source footage.
-                            // The committed time still uses the full raw pointer delta on ACTION_UP.
                             val visibleMinDelta = if (isStart) -handleWidth * 0.25f
                                 else -(width - handleWidth).coerceAtLeast(0).toFloat()
                             val visibleMaxDelta = if (isStart) (width - handleWidth).coerceAtLeast(0).toFloat()
@@ -11334,9 +11687,6 @@ class VideoEditorActivity : Activity() {
                             true
                         }
                         android.view.MotionEvent.ACTION_UP -> {
-                            // Some devices coalesce the last move into ACTION_UP. Classify
-                            // the completed pointer displacement as a drag as well, or a
-                            // valid short edge gesture can be mistaken for a tap.
                             val finalPointerDeltaPx = event.rawX - downRawX
                             if (!moved &&
                                 kotlin.math.abs(finalPointerDeltaPx) >
@@ -11356,18 +11706,31 @@ class VideoEditorActivity : Activity() {
                                     "initialStartMs=$initialStartMs initialEndMs=$initialEndMs"
                             )
                             if (moved) {
-                                val initial=TimelineVideoSegment(clip.timelineStartMs,initialStartMs,initialEndMs,clip.durationMs,clip.speed)
-                                val sourceDeltaMs = ClipSpeedMath.sourceOffsetMs(kotlin.math.abs(deltaMs), clip.speed) *
-                                    if (deltaMs < 0L) -1L else 1L
-                                val updated=if(isStart && initial.timelineStartMs==0L)
-                                    TimelineVideoMath.trimStartKeepingTimelinePosition(initial,sourceDeltaMs)
-                                else if(isStart) TimelineVideoMath.trimStart(initial,sourceDeltaMs)
-                                else TimelineVideoMath.trimEnd(initial,sourceDeltaMs)
-                                if(updated!=initial){
-                                    clip.startMs=updated.sourceStartMs;clip.endMs=updated.sourceEndMs
+                                val initial = TimelineVideoSegment(
+                                    clip.timelineStartMs, initialStartMs, initialEndMs,
+                                    clip.durationMs, clip.speed
+                                )
+                                val sourceDeltaMs = ClipSpeedMath.sourceOffsetMs(
+                                    kotlin.math.abs(deltaMs), clip.speed
+                                ) * if (deltaMs < 0L) -1L else 1L
+                                val updated = if (isStart && initial.timelineStartMs == 0L) {
+                                    TimelineVideoMath.trimStartKeepingTimelinePosition(initial, sourceDeltaMs)
+                                } else if (isStart) {
+                                    TimelineVideoMath.trimStart(initial, sourceDeltaMs)
+                                } else {
+                                    TimelineVideoMath.trimEnd(initial, sourceDeltaMs)
+                                }
+                                if (updated != initial) {
+                                    clip.startMs = updated.sourceStartMs
+                                    clip.endMs = updated.sourceEndMs
                                     // Trimming source footage must not move a clip already anchored at project time zero.
-                                    clip.timelineStartMs=if(initial.timelineStartMs==0L) 0L else updated.timelineStartMs
-                                    selectedClipIndex=index;finishTrimControlGesture()
+                                    clip.timelineStartMs = if (initial.timelineStartMs == 0L) {
+                                        0L
+                                    } else {
+                                        updated.timelineStartMs
+                                    }
+                                    selectedClipIndex = index
+                                    finishTrimControlGesture()
                                     val after = selectedClip()
                                     if (timelineSyncTestEnabled && after != null) {
                                         val afterDurationMs = ClipSpeedMath.timelineDurationMs(
@@ -11388,8 +11751,10 @@ class VideoEditorActivity : Activity() {
                                                 "afterDurationMs=$afterDurationMs laneStarts=$laneStarts deltaPx=$deltaPx"
                                         )
                                     }
-                                    status.text="Klip kesimi güncellendi."
-                                }else activeProjectHistorySnapshot=null
+                                    status.text = "Klip kesimi güncellendi."
+                                } else {
+                                    activeProjectHistorySnapshot = null
+                                }
                             } else {
                                 activeProjectHistorySnapshot = null
                             }
@@ -11412,6 +11777,34 @@ class VideoEditorActivity : Activity() {
                 }
                 setOnClickListener { /* The handle is primarily a drag control. */ }
             }
+            visibleTab.post {
+                if (!timelineSyncTestEnabled || visibleTab.width <= 0) return@post
+                val clipLocation = IntArray(2)
+                val gripLocation = IntArray(2)
+                container.getLocationOnScreen(clipLocation)
+                visibleTab.getLocationOnScreen(gripLocation)
+                val boundaryPx = clipLocation[0] + if (isStart) 0 else container.width
+                val gripCenterPx = gripLocation[0] + visibleTab.width / 2
+                android.util.Log.i(
+                    "EditorTouchTest",
+                    "VIDEO_EDGE_GRIP_LAYOUT edge=${if (isStart) "start" else "end"} " +
+                        "clipIndex=$index boundaryPx=$boundaryPx " +
+                        "centerPx=$gripCenterPx offsetPx=${gripCenterPx - boundaryPx} " +
+                        "gripWidthPx=${visibleTab.width} gripHeightPx=${visibleTab.height} stripHeightPx=$height"
+                )
+            }
+            val handleParams = FrameLayout.LayoutParams(
+                handleWidth, ViewGroup.LayoutParams.MATCH_PARENT
+            ).apply {
+                if (isStart) {
+                    gravity = Gravity.TOP or Gravity.LEFT
+                    leftMargin = -handleWidth / 2
+                } else {
+                    gravity = Gravity.TOP or Gravity.RIGHT
+                    rightMargin = -handleWidth / 2
+                }
+            }
+            container.addView(handle, handleParams)
             container.addView(
                 handle,
                 FrameLayout.LayoutParams(
