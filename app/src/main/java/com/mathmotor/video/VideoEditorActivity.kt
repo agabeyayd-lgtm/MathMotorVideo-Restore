@@ -3884,19 +3884,38 @@ class VideoEditorActivity : Activity() {
             // The child clip only disallows interception after a stationary long-press
             // has explicitly entered clip-reorder mode.
             scroll.setOnTouchListener { view, event ->
-                if (timelineSyncTestEnabled &&
-                    event.actionMasked == android.view.MotionEvent.ACTION_UP
-                ) {
-                    val scrollAtRelease = view.scrollX
-                    listOf(64L, 128L, 240L).forEach { sampleDelayMs ->
-                        view.postDelayed({
-                            android.util.Log.i(
-                                "TimelineSyncTest",
-                                "TIMELINE_NATIVE_SCROLL_RELEASE lane=$laneKey " +
-                                    "sampleDelayMs=$sampleDelayMs startScrollX=$scrollAtRelease " +
-                                    "scrollX=${view.scrollX}"
-                            )
-                        }, sampleDelayMs)
+                if (timelineSyncTestEnabled) {
+                    val actionName = when (event.actionMasked) {
+                        android.view.MotionEvent.ACTION_DOWN -> "down"
+                        android.view.MotionEvent.ACTION_MOVE -> "move"
+                        android.view.MotionEvent.ACTION_UP -> "up"
+                        android.view.MotionEvent.ACTION_CANCEL -> "cancel"
+                        else -> "other"
+                    }
+                    if (event.actionMasked == android.view.MotionEvent.ACTION_DOWN ||
+                        event.actionMasked == android.view.MotionEvent.ACTION_MOVE ||
+                        event.actionMasked == android.view.MotionEvent.ACTION_UP ||
+                        event.actionMasked == android.view.MotionEvent.ACTION_CANCEL
+                    ) {
+                        android.util.Log.i(
+                            "TimelineSyncTest",
+                            "TIMELINE_SCROLL_TOUCH lane=$laneKey action=$actionName " +
+                                "x=${event.x} rawX=${event.rawX} y=${event.y} " +
+                                "scrollX=${view.scrollX} pointerCount=${event.pointerCount}"
+                        )
+                    }
+                    if (event.actionMasked == android.view.MotionEvent.ACTION_UP) {
+                        val scrollAtRelease = view.scrollX
+                        listOf(64L, 128L, 240L).forEach { sampleDelayMs ->
+                            view.postDelayed({
+                                android.util.Log.i(
+                                    "TimelineSyncTest",
+                                    "TIMELINE_NATIVE_SCROLL_RELEASE lane=$laneKey " +
+                                        "sampleDelayMs=$sampleDelayMs startScrollX=$scrollAtRelease " +
+                                        "scrollX=${view.scrollX}"
+                                )
+                            }, sampleDelayMs)
+                        }
                     }
                 }
                 false
@@ -11241,10 +11260,13 @@ class VideoEditorActivity : Activity() {
         // creates more timestamp samples; zooming out reduces their density.
         val thumbnailCount = TimelineThumbnailMath.thumbnailCount(width, targetThumbnailWidth)
         val availableCellWidth = width.coerceAtLeast(thumbnailCount)
-        val baseCellWidth = (availableCellWidth / thumbnailCount).coerceAtLeast(1)
-        val extraPixels = availableCellWidth % thumbnailCount
         repeat(thumbnailCount) { slot ->
-            val cellWidth = baseCellWidth + if (slot < extraPixels) 1 else 0
+            // Align every cell boundary to the rounded cumulative time fraction.
+            // Putting all remainder pixels at the beginning shifts early frame
+            // centres away from their actual equal-duration sample timestamps.
+            val cellWidth = TimelineThumbnailMath.cellPixelWidth(
+                availableCellWidth, thumbnailCount, slot
+            )
             val cellHeight = height.coerceAtLeast(1)
             val image = ImageView(this).apply {
                 // Fit the complete source frame into its aspect-aware cell.
