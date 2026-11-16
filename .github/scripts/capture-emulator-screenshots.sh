@@ -4580,6 +4580,20 @@ fi
 timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$forward_start" "$scrub_y" "$forward_end" "$scrub_y" 700
 sleep 1
 timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime > emulator-screenshots/filmstrip-scrub-forward-logcat.txt 2>&1
+# The filmstrip child must hand a normal swipe to the parent HorizontalScrollView.
+# This marker is emitted from the real lane ACTION_UP and proves the native
+# velocity/fling path owns the release (a child-owned scrollBy drag cannot emit it).
+if ! grep -Fq "TIMELINE_NATIVE_SCROLL_RELEASE lane=video sampleDelayMs=64" \
+    emulator-screenshots/filmstrip-scrub-forward-logcat.txt \
+    || ! grep -Fq "TIMELINE_NATIVE_SCROLL_RELEASE lane=video sampleDelayMs=128" \
+    emulator-screenshots/filmstrip-scrub-forward-logcat.txt \
+    || ! grep -Fq "TIMELINE_NATIVE_SCROLL_RELEASE lane=video sampleDelayMs=240" \
+    emulator-screenshots/filmstrip-scrub-forward-logcat.txt; then
+  echo "A normal one-finger filmstrip swipe did not reach the native video-lane scroll/fling owner."
+  collect_capture_diagnostics filmstrip-native-fling-release-missing
+  exit 23
+fi
+echo "PASS: video filmstrip swipe reached the native HorizontalScrollView release/fling path."
 forward_values="$(python3 - emulator-screenshots/filmstrip-scrub-forward-logcat.txt <<'PY'
 import re
 import sys
