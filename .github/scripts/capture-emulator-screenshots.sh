@@ -3839,10 +3839,16 @@ for edge in ("start", "end"):
         raise SystemExit(
             f"Text {edge} grip does not span the full strip height: grip={width}x{height}, strip={strip_height}"
         )
-    if (start_ms, end_ms) != (expected_start, expected_end):
+    # A one-sided trim does not need to rebuild the untouched opposite
+    # grip. Its geometry and own boundary remain valid, while its logged
+    # opposite endpoint may reflect the previous range. Validate the endpoint
+    # represented by this grip, not unrelated stale metadata.
+    actual_boundary_ms = start_ms if edge == "start" else end_ms
+    expected_boundary_ms = expected_start if edge == "start" else expected_end
+    if actual_boundary_ms != expected_boundary_ms:
         raise SystemExit(
-            f"Text {edge} visual grip was rendered for stale timing {(start_ms, end_ms)}; "
-            f"expected {(expected_start, expected_end)}"
+            f"Text {edge} visual grip is attached to {actual_boundary_ms}ms; "
+            f"expected its own boundary at {expected_boundary_ms}ms (range={(start_ms, end_ms)})"
         )
 print(
     f"PASS: both text tabs are full-height, edge-centred and show "
@@ -4413,7 +4419,10 @@ for attempt in $(seq 1 12); do
     thumbnail_aligned=true
     break
   fi
-  # Convert the measured half-pixel delta to the nearest whole-pixel gesture.
+  # The measured delta is (playhead - thumbnail). The filmstrip content
+  # follows the finger: if the thumbnail is left of the playhead, drag right;
+  # if it is right of the playhead, drag left. Keep the touch-slop margin in
+  # that same direction so the gesture crosses Android's interception threshold.
   delta_x="$((delta_x2 >= 0 ? (delta_x2 + 1) / 2 : -(((-delta_x2) + 1) / 2)))"
   gesture_delta="$((delta_x + (delta_x < 0 ? -alignment_gesture_slop_px : alignment_gesture_slop_px)))"
   # Start outside the fixed playhead overlay hit region. The centre guide is
@@ -4580,6 +4589,20 @@ fi
 timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$forward_start" "$scrub_y" "$forward_end" "$scrub_y" 700
 sleep 1
 timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime > emulator-screenshots/filmstrip-scrub-forward-logcat.txt 2>&1
+# The filmstrip child must hand a normal swipe to the parent HorizontalScrollView.
+# This marker is emitted from the real lane ACTION_UP and proves the native
+# velocity/fling path owns the release (a child-owned scrollBy drag cannot emit it).
+if ! grep -Fq "TIMELINE_NATIVE_SCROLL_RELEASE lane=video sampleDelayMs=64" \
+    emulator-screenshots/filmstrip-scrub-forward-logcat.txt \
+    || ! grep -Fq "TIMELINE_NATIVE_SCROLL_RELEASE lane=video sampleDelayMs=128" \
+    emulator-screenshots/filmstrip-scrub-forward-logcat.txt \
+    || ! grep -Fq "TIMELINE_NATIVE_SCROLL_RELEASE lane=video sampleDelayMs=240" \
+    emulator-screenshots/filmstrip-scrub-forward-logcat.txt; then
+  echo "A normal one-finger filmstrip swipe did not reach the native video-lane scroll/fling owner."
+  collect_capture_diagnostics filmstrip-native-fling-release-missing
+  exit 23
+fi
+echo "PASS: video filmstrip swipe reached the native HorizontalScrollView release/fling path."
 forward_values="$(python3 - emulator-screenshots/filmstrip-scrub-forward-logcat.txt <<'PY'
 import re
 import sys

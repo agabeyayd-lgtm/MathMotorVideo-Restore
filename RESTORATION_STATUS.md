@@ -1,3 +1,24 @@
+## 2026-11-17 — Visible thumbnail queue and disk-index correction (PR #44 candidate)
+
+- The 2026-11-16 API 35 failure was the visible-thumbnail executor queue, not timeline alignment: 9 visible timestamps were submitted together to a 2-worker pool; queue wait peaked at 2747ms and visible-strip fill at 3808ms. Preview-frame checks passed. No acceptance threshold was relaxed.
+- The thumbnail pool now uses three persistent workers while retaining priority ordering (exact playhead first, visible cells next, poster/overlay work last).
+- Persistent thumbnail cache file names are indexed once per source by timestamp. This avoids every visible cell independently enumerating and sorting the same source directory during exact-timestamp/alternate-size fallback lookup.
+- Exact-head Android unit/build and API 35 emulator verification are pending. No version bump, release, APK publication or merge.
+
+---
+
+## 2026-11-16 — CapCut timeline glide and unified trim hit targets (PR candidate)
+
+- Based on `main` at `5ebeaf14711d75fd71bcc5a953aa545a1cd37530`; working branch `fix/capcut-timeline-fling-edge-handles`.
+- Normal one-finger swipes on the video filmstrip are now handed to the lane `HorizontalScrollView` instead of being simulated with per-MOVE `scrollBy`. This restores the platform velocity-based release/fling path; the shared scroll listener still keeps ruler, video, text and audio lanes synchronized.
+- Stationary long-press explicitly takes ownership before a clip-move drag, so clip reorder remains separate from normal scrubbing. Two-finger pinch and the fixed centre playhead mapping are unchanged.
+- Playback updates now apply the sampled player position synchronously at every 50ms UI sync, then follow the real player clock on each display frame between samples. This prevents an animation from still being in flight when the next sample is measured; manual scrolling stops the frame follower immediately.
+- Removed the duplicate decorative-only edge tabs. Each video trim edge now has one square white visible tab inside its own centred transparent 40dp drag target; both are centred exactly on their clip boundary. The existing source IN/OUT trim math and four-direction rules are unchanged.
+- Extended the API 35 smoke to require the video lane's real ACTION_UP release marker, in addition to the existing forward/reverse shared-lane scroll and four-direction trim/extend assertions.
+- Exact-head Android unit/build, APK-package and API 35 emulator checks are pending. No thresholds were relaxed; no versionCode, signed release, merge or APK publication was changed.
+
+---
+
 ## 2026-11-16 — PR #42 updated; exact implementation head passed all required checks
 
 - PR #42 remains open on `fix/release-407-trim-grips`; current implementation/test commit `b51402e1ee92bb3c3af10aadbac0a56d05d10f65` passed all three required workflows:

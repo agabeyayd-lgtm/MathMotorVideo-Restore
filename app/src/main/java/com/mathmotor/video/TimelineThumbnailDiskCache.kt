@@ -27,6 +27,33 @@ internal class TimelineThumbnailDiskCache(
     // frame write on a cold import.
     private val cachedBytes = AtomicLong(0L)
     private val trimInProgress = AtomicBoolean(false)
+    // All cells for one source used to enumerate and sort the same JPEG directory
+    // independently. Build a per-source timestamp index once, then serve exact
+    // timestamp variant lookups from memory while concurrent decoders run.
+    private val sourceFrameIndexes =
+        java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.ConcurrentSkipListMap<Long, MutableSet<File>>>()
+
+    private fun indexedFramesFor(sourceKey: String): java.util.concurrent.ConcurrentSkipListMap<Long, MutableSet<File>> =
+        sourceFrameIndexes.computeIfAbsent(sourceKey) {
+            val index = java.util.concurrent.ConcurrentSkipListMap<Long, MutableSet<File>>()
+            sourceDirectory(sourceKey).listFiles()?.forEach { file ->
+                if (!file.isFile || !file.extension.equals("jpg", ignoreCase = true)) {
+                    return@forEach
+                }
+                val timestamp = file.name.substringBefore('_').toLongOrNull()
+                    ?: return@forEach
+                index.computeIfAbsent(timestamp) {
+                    java.util.concurrent.ConcurrentHashMap.newKeySet<File>()
+                }.add(file)
+            }
+            index
+        }
+
+    private fun addIndexedFrame(sourceKey: String, timestampMs: Long, file: File) {
+        sourceFrameIndexes[sourceKey]?.computeIfAbsent(timestampMs.coerceAtLeast(0L)) {
+            java.util.concurrent.ConcurrentHashMap.newKeySet<File>()
+        }?.add(file)
+    }
 
     fun getExact(
         sourceKey: String,
@@ -39,6 +66,7 @@ internal class TimelineThumbnailDiskCache(
         val bitmap = decode(file)
         if (bitmap == null) {
             file.delete()
+            sourceFrameIndexes[sourceKey]?.get(timestampMs.coerceAtLeast(0L))?.remove(file)
             return null
         }
         file.setLastModified(System.currentTimeMillis())
@@ -55,23 +83,34 @@ internal class TimelineThumbnailDiskCache(
         timestampMs: Long,
         maxDistanceMs: Long
     ): CachedFrame? {
-        val sourceDirectory = sourceDirectory(sourceKey)
-        val candidates = sourceDirectory.listFiles()
-            ?.asSequence()
-            ?.filter { it.isFile && it.extension.equals("jpg", ignoreCase = true) }
-            ?.mapNotNull { file ->
-                val cachedTime = file.name.substringBefore('_').toLongOrNull()
-                    ?: return@mapNotNull null
-                val distance = abs(cachedTime - timestampMs)
-                if (distance > maxDistanceMs) return@mapNotNull null
-                Triple(distance, cachedTime, file)
+        val safeTimestamp = timestampMs.coerceAtLeast(0L)
+        val distanceLimit = maxDistanceMs.coerceAtLeast(0L)
+        val lowerTimestamp = (safeTimestamp - distanceLimit).coerceAtLeast(0L)
+        val upperTimestamp = if (Long.MAX_VALUE - safeTimestamp < distanceLimit) {
+            Long.MAX_VALUE
+        } else {
+            safeTimestamp + distanceLimit
+        }
+        // File enumeration is performed once per source, not once per visible
+        // thumbnail. In particular, maxDistanceMs=0 (the normal exact-frame
+        // fallback) becomes a direct timestamp-index lookup rather than a full
+        // directory scan and sort on every worker.
+        val candidates = indexedFramesFor(sourceKey)
+            .subMap(lowerTimestamp, true, upperTimestamp, true)
+            .entries
+            .asSequence()
+            .flatMap { entry ->
+                entry.value.asSequence()
+                    .filter { it.isFile }
+                    .map { file ->
+                        Triple(abs(entry.key - safeTimestamp), entry.key, file)
+                    }
             }
-            ?.sortedWith(
+            .sortedWith(
                 compareBy<Triple<Long, Long, File>> { it.first }
                     .thenByDescending { it.third.length() }
             )
-            ?.toList()
-            .orEmpty()
+            .toList()
 
         for ((_, cachedTime, file) in candidates) {
             val bitmap = decode(file)
@@ -80,6 +119,7 @@ internal class TimelineThumbnailDiskCache(
                 return CachedFrame(cachedTime, bitmap)
             }
             file.delete()
+            sourceFrameIndexes[sourceKey]?.get(cachedTime)?.remove(file)
         }
         return null
     }
@@ -95,8 +135,10 @@ internal class TimelineThumbnailDiskCache(
         val sourceDirectory = sourceDirectory(sourceKey)
         if (!sourceDirectory.exists() && !sourceDirectory.mkdirs()) return
 
-        val destination = frameFile(sourceKey, timestampMs, widthPx, heightPx)
+        val safeTimestamp = timestampMs.coerceAtLeast(0L)
+        val destination = frameFile(sourceKey, safeTimestamp, widthPx, heightPx)
         if (destination.isFile && destination.length() > 0L) {
+            addIndexedFrame(sourceKey, safeTimestamp, destination)
             destination.setLastModified(System.currentTimeMillis())
             return
         }
@@ -134,6 +176,7 @@ internal class TimelineThumbnailDiskCache(
         }
 
         if (written) {
+            addIndexedFrame(sourceKey, safeTimestamp, destination)
             val total = addToKnownSize(destination.length())
             // Directory walking/LRU deletion is exceptional maintenance, not part
             // of every thumbnail write. In particular it never blocks cache reads.
@@ -196,6 +239,9 @@ internal class TimelineThumbnailDiskCache(
             directory.walkBottomUp()
                 .filter { it.isDirectory && it != directory }
                 .forEach { dir -> if (dir.list().isNullOrEmpty()) dir.delete() }
+            // Eviction changes the on-disk contents; rebuild indexes lazily after
+            // this rare maintenance pass rather than retaining stale file entries.
+            sourceFrameIndexes.clear()
         } finally {
             trimInProgress.set(false)
         }
