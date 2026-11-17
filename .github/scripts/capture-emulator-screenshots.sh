@@ -4588,7 +4588,7 @@ import re
 import sys
 latest = None
 for line in open(sys.argv[1], errors="replace"):
-    match = re.search(r"TIMELINE_ALIGNMENT_SNAPSHOT .*?clipBounds=(none|\\d+,\\d+,\\d+,\\d+)", line)
+    match = re.search(r"TIMELINE_ALIGNMENT_SNAPSHOT .*?clipBounds=(none|\d+,\d+,\d+,\d+)", line)
     if match and match.group(1) != "none":
         latest = match.group(1).replace(",", " ")
 if latest:
@@ -4602,8 +4602,8 @@ if [ -z "$clip_bounds" ]; then
 fi
 read -r clip_x1 clip_y1 clip_x2 clip_y2 <<< "$clip_bounds"
 scrub_y="$(((clip_y1 + clip_y2) / 2))"
-screen_width="$(timeout -k 2s 5s adb -s emulator-5554 shell wm size | sed -n 's/.*: \\([0-9]*\\)x[0-9]*.*/\\1/p' | tail -n 1 || true)"
-density_dpi="$(timeout -k 2s 5s adb -s emulator-5554 shell wm density | sed -n 's/.*Physical density: \\([0-9]*\\).*/\\1/p' | tail -n 1 || true)"
+screen_width="$(timeout -k 2s 5s adb -s emulator-5554 shell wm size | sed -n 's/.*: \([0-9]*\)x[0-9]*.*/\1/p' | tail -n 1 || true)"
+density_dpi="$(timeout -k 2s 5s adb -s emulator-5554 shell wm density | sed -n 's/.*Physical density: \([0-9]*\).*/\1/p' | tail -n 1 || true)"
 if ! [[ "$screen_width" =~ ^[0-9]+$ ]] || [ "$screen_width" -le 0 ]; then
   echo "Could not read emulator screen width for safe filmstrip gesture positioning."
   collect_capture_diagnostics filmstrip-screen-width-missing
@@ -4619,7 +4619,7 @@ import re
 import sys
 latest = None
 for line in open(sys.argv[1], errors="replace"):
-    match = re.search(r"TIMELINE_SYNC_SAMPLE .*?playheadCenterPx=(\\d+)", line)
+    match = re.search(r"TIMELINE_SYNC_SAMPLE .*?playheadCenterPx=(\d+)", line)
     if match:
         latest = int(match.group(1))
 if latest is not None:
@@ -4659,7 +4659,7 @@ import sys
 records = {}
 pattern = re.compile(
     r"TIMELINE_NATIVE_SCROLL_RELEASE lane=shared "
-    r"sampleDelayMs=(64|128|240) startScrollX=(\\d+) scrollX=(\\d+)"
+    r"sampleDelayMs=(64|128|240) startScrollX=(\d+) scrollX=(\d+)"
 )
 for line in open(sys.argv[1], errors="replace"):
     match = pattern.search(line)
