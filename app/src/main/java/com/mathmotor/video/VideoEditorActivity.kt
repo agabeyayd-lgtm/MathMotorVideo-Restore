@@ -3734,7 +3734,7 @@ class VideoEditorActivity : Activity() {
                 setOnClickListener { clearTimelineClipSelection() }
             }
             val leadingPadding = View(this).apply {
-                tag = "timeline-leading-padding"
+                this.tag = "timeline-leading-padding"
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             }
             row.addView(
@@ -11563,7 +11563,7 @@ class VideoEditorActivity : Activity() {
                 // Filmstrip cells are representative images, not frame-accurate preview.
             // Seeking to sync samples avoids decoding every inter-frame from the
             // previous keyframe for each separate thumbnail request.
-            .setSeekParameters(androidx.media3.exoplayer.SeekParameters.CLOSEST)
+            .setSeekParameters(androidx.media3.exoplayer.SeekParameters.CLOSEST_SYNC)
                 .setEffects(listOf(Presentation.createForHeight(144)))
                 .build()
                 .also { timelineThumbnailExtractors[threadId] = uri to it }
