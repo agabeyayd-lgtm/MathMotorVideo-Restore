@@ -1664,3 +1664,11 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - The time-zero spacer remains transparent and present. It is required timeline geometry, not clip media; deleting or painting it would reintroduce a zero-time alignment defect.
 - The API 35 sync log/validator now reports the frame-center difference and requires each lane's zero-edge screen coordinate plus its shared scroll offset to match the actual Play-button center within the existing 1px tolerance. Player/playhead time and pixel-scale assertions are unchanged.
 - **Verification boundary:** implementation and validator are in draft PR #38. Exact-head unit/build and emulator results are pending; no pass is claimed. Keep the PR unmerged and do not change app version metadata, sign/publish an APK, or activate the updater until verification succeeds.
+
+
+## 2026-11-17 — Correct sound-effect waveform visibility smoke
+
+- The `b5b1346` API 35 emulator run decoded both WAV fixtures and emitted `AUDIO_WAVEFORM_DRAWN kind=sound width=109 height=63`; the production waveform view was attached and drawn. The screenshot contained only 16 orange pixels because the bottom sound-effect lane was still mostly below the timeline's vertical viewport.
+- This is a test-driver scroll issue, not a PCM decode or waveform paint failure. The prior single swipe began on an audio clip's touch surface and did not reliably expose the bottom lane.
+- Updated the emulator smoke to scroll from the unused right side of the timeline viewport, retry up to six times, and inspect the screenshot after each attempt. The existing minimum of 24 visible pixels for both music and sound-effect waveforms is unchanged; no visual threshold was relaxed.
+- Exact-head unit/build, APK packaging and API 35 emulator workflows must all pass again before PR #45 can be accepted. No app version bump, merge or release.
