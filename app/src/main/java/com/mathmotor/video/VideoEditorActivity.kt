@@ -634,6 +634,7 @@ class VideoEditorActivity : Activity() {
     // workers reduce the first-viewport queue; Media3 remains a compatibility
     // fallback for unsupported sources. Each worker retains its own decoder.
     private val timelineThumbnailWorkerSequence = java.util.concurrent.atomic.AtomicLong()
+    private val previewFrameWorkerSequence = java.util.concurrent.atomic.AtomicLong()
     private val timelineThumbnailRetrievers =
         java.util.concurrent.ConcurrentHashMap<Long, Pair<Uri, MediaMetadataRetriever>>()
     private val timelineThumbnailExtractors =
@@ -642,9 +643,13 @@ class VideoEditorActivity : Activity() {
     // Rebuilding ExoPlayer/codec state for every paused frame adds avoidable latency.
     private val previewFrameExtractors =
         java.util.concurrent.ConcurrentHashMap<Long, Triple<Uri, Int, FrameExtractor>>()
+
+    // Two long-lived MMR workers keep the native codec from being opened by too
+    // many concurrent filmstrip requests. This pool handles only background
+    // stills (visible thumbnails, cover tiles and temporary posters).
     private val timelineThumbnailExecutor = java.util.concurrent.ThreadPoolExecutor(
-        3,
-        3,
+        2,
+        2,
         0L,
         java.util.concurrent.TimeUnit.MILLISECONDS,
         java.util.concurrent.PriorityBlockingQueue<Runnable>(
@@ -655,9 +660,7 @@ class VideoEditorActivity : Activity() {
         ),
         java.util.concurrent.ThreadFactory { worker ->
             Thread({
-                // Keep visible thumbnail workers below UI priority without
-                // background-throttling their decode queue. The exact playhead
-                // remains on its own normal-priority reserved decoder lane.
+                // Keep background still decoding below the UI and preview lanes.
                 android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_DEFAULT)
                 try {
                     worker.run()
@@ -666,15 +669,38 @@ class VideoEditorActivity : Activity() {
                     releaseTimelineThumbnailExtractor()
                     releasePreviewFrameExtractor()
                 }
-            }, "timeline-thumbnail-\u0024{timelineThumbnailWorkerSequence.incrementAndGet()}")
+            }, "timeline-thumbnail-${timelineThumbnailWorkerSequence.incrementAndGet()}")
         }
     )
-    // Exact playhead frames and visible filmstrip cells share this three-worker
-    // MMR-first priority queue. Exact frames use priority -1, visible cells
-    // priority 0 and secondary poster/overlay frames priority 1, so a live
-    // playhead seek can preempt background filmstrip work.
-    private val previewFrameExecutor: java.util.concurrent.ThreadPoolExecutor
-        get() = timelineThumbnailExecutor
+
+    // Exact playhead frames must never queue behind visible filmstrip decoding.
+    // Keep one dedicated foreground-priority decoder thread for paused scrubs
+    // and playback-frame refreshes; superseded requests are removed from this
+    // small queue before the newest requested timestamp is submitted.
+    private val previewFrameExecutor = java.util.concurrent.ThreadPoolExecutor(
+        1,
+        1,
+        0L,
+        java.util.concurrent.TimeUnit.MILLISECONDS,
+        java.util.concurrent.PriorityBlockingQueue<Runnable>(
+            3,
+            java.util.Comparator { first, second ->
+                (first as TimelineThumbnailTask).compareTo(second as TimelineThumbnailTask)
+            }
+        ),
+        java.util.concurrent.ThreadFactory { worker ->
+            Thread({
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_FOREGROUND)
+                try {
+                    worker.run()
+                } finally {
+                    releaseTimelineThumbnailRetriever()
+                    releaseTimelineThumbnailExtractor()
+                    releasePreviewFrameExtractor()
+                }
+            }, "timeline-preview-${previewFrameWorkerSequence.incrementAndGet()}")
+        }
+    )
 
     private fun enqueueSecondaryThumbnailTask(task: TimelineThumbnailTask) {
         task.markEnqueued()
