@@ -1672,3 +1672,11 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - This is a test-driver scroll issue, not a PCM decode or waveform paint failure. The prior single swipe began on an audio clip's touch surface and did not reliably expose the bottom lane.
 - Updated the emulator smoke to scroll from the unused right side of the timeline viewport, retry up to six times, and inspect the screenshot after each attempt. The existing minimum of 24 visible pixels for both music and sound-effect waveforms is unchanged; no visual threshold was relaxed.
 - Exact-head unit/build, APK packaging and API 35 emulator workflows must all pass again before PR #45 can be accepted. No app version bump, merge or release.
+
+
+## 2026-11-17 — Thumbnail queue contention: measured three-worker follow-up
+
+- Exact-head API 35 run for `295679f2cf08d6a18cbc4c61bb8af34f9ebd11af` passed unit/build and APK packaging but failed the strict thumbnail timing gate. The combined log shows seven visible cells decoded by only two MMR workers (`worker=62` and `worker=66`); queue waits rose from 9–21 ms to 2049 ms, while per-frame MMR decode ranged 434–1186 ms. Disk lookup was at most 71 ms and UI dispatch at most 243 ms. This isolates the overrun to decoder-worker throughput/queueing, not disk or preview bootstrap (deferred wait 0–1 ms).
+- The measured last cell was displayed after 3109 ms from submission (visible strip fill 3111 ms), exceeding the unchanged 2500 ms fill limit. No assertion or timing threshold was changed.
+- Follow-up source change on PR #45 commit `18950583873ad1db0b433089c0178a2bc91a5e87`: increase the dedicated background thumbnail executor from two to three persistent MMR workers. This matches the existing top-level worker-pool design comment, while keeping the exact playhead preview on its separate reserved foreground executor. The third worker is a measured throughput experiment, not yet a claimed performance fix.
+- Required next: exact-head unit/build, APK packaging and API 35 emulator run. Compare worker count, per-cell decode, maximum queue wait and visible-strip fill. Preserve the 2000 ms queue and 2500 ms fill limits. If codec contention increases decode time or the strict gate still fails, inspect per-worker decoder reuse/seek cost rather than adding more workers blindly. No version bump, merge or release.
