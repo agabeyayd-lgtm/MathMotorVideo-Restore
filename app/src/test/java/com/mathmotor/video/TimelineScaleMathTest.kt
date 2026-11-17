@@ -132,8 +132,9 @@ class TimelineScaleMathTest {
         assertEquals(180, origin)
         assertEquals(180, trailing)
         assertEquals(0L, TimelineScaleMath.timeAtViewportX(0, 180f, origin.toFloat(), 55f))
-        val scroll = TimelineScaleMath.pixelsForTime(2_500L, 55f)
-        assertEquals(2_500L, TimelineScaleMath.timeAtViewportX(scroll, 180f, origin.toFloat(), 55f))
+        // Use a time that maps to an exact whole-pixel offset at 55 px/s.
+        val scroll = TimelineScaleMath.pixelsForTime(2_200L, 55f)
+        assertEquals(2_200L, TimelineScaleMath.timeAtViewportX(scroll, 180f, origin.toFloat(), 55f))
     }
 
     @Test
