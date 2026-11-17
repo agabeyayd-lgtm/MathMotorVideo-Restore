@@ -141,7 +141,7 @@ jobs:
           ffmpeg -hide_banner -loglevel error -y \
             -f lavfi -i "color=c=lime:s=360x640:r=24" \
             -t 8 \
-            -vf "drawbox=x=40:y=100:w=40:h=40:color=red:t=fill:enable='between(t,0.37,0.77)',drawbox=x=160:y=100:w=40:h=40:color=red:t=fill:enable='between(t,1.51,1.91)',drawbox=x=280:y=100:w=40:h=40:color=red:t=fill:enable='between(t,2.65,3.05)',drawbox=x=40:y=300:w=40:h=40:color=red:t=fill:enable='between(t,3.79,4.19)',drawbox=x=160:y=300:w=40:h=40:color=red:t=fill:enable='between(t,4.94,5.34)',drawbox=x=280:y=300:w=40:h=40:color=red:t=fill:enable='between(t,6.08,6.48)',drawbox=x=160:y=500:w=40:h=40:color=red:t=fill:enable='between(t,7.23,7.63)' \"
+            -vf "drawbox=x=40:y=100:w=40:h=40:color=red:t=fill:enable='between(t,0.37,0.77)',drawbox=x=160:y=100:w=40:h=40:color=red:t=fill:enable='between(t,1.51,1.91)',drawbox=x=280:y=100:w=40:h=40:color=red:t=fill:enable='between(t,2.65,3.05)',drawbox=x=40:y=300:w=40:h=40:color=red:t=fill:enable='between(t,3.79,4.19)',drawbox=x=160:y=300:w=40:h=40:color=red:t=fill:enable='between(t,4.94,5.34)',drawbox=x=280:y=300:w=40:h=40:color=red:t=fill:enable='between(t,6.08,6.48)',drawbox=x=160:y=500:w=40:h=40:color=red:t=fill:enable='between(t,7.23,7.63)' " \
             -an -c:v libx264 -preset ultrafast -tune zerolatency \
             -g 24 -keyint_min 24 -sc_threshold 0 -pix_fmt yuv420p \
             app/build/test-fixtures/editor-test-video-replacement.mp4
