@@ -4916,10 +4916,17 @@ class VideoEditorActivity : Activity() {
         // A MATCH_PARENT playhead inside a WRAP_CONTENT FrameLayout would let
         // the frame expand to the full available screen height and push the tool dock
         // off-screen. Size the frame from the actual timeline lanes instead.
+        // Rows have a variable number of gutter children: video rows include a
+        // cover action, while text/audio rows include an add action. Child index 2
+        // is therefore not consistently the timeline lane (and often reports
+        // MATCH_PARENT). Resolve the actual tagged lane so the vertical scroller's
+        // content height includes every row, including the final sound-effect lane.
         val laneContentHeight = (0 until timelineTracks.childCount).sumOf { index ->
             val row = timelineTracks.getChildAt(index) as? LinearLayout ?: return@sumOf 0
-            val lane = row.getChildAt(2)
-            val laneHeight = lane?.layoutParams?.height?.takeIf { it > 0 } ?: dp(24)
+            val lane = row.findViewWithTag<LinearLayout>("timeline-track-content")
+            val laneHeight = lane?.layoutParams?.height?.takeIf { it > 0 }
+                ?: lane?.measuredHeight?.takeIf { it > 0 }
+                ?: dp(24)
             laneHeight + row.paddingTop + row.paddingBottom
         }.coerceAtLeast(if (keyboardLayoutActive) dp(24) else dp(188))
         (timelineTracksFrame.layoutParams as? FrameLayout.LayoutParams)?.let { params ->
