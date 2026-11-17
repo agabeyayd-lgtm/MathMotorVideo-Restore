@@ -3926,6 +3926,7 @@ class VideoEditorActivity : Activity() {
             }
 
             val track = LinearLayout(this).apply {
+                this.tag = "timeline-track-content"
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 // Trim targets can straddle a clip edge into adjacent spacer pixels.
@@ -4844,7 +4845,7 @@ class VideoEditorActivity : Activity() {
         // their 84dp header sits beneath the fixed centre playhead.
         for (rowIndex in 0 until timelineTracks.childCount) {
             val row = timelineTracks.getChildAt(rowIndex) as? LinearLayout ?: continue
-            val laneTrack = row.getChildAt(2) as? LinearLayout ?: continue
+            val laneTrack = row.findViewWithTag<LinearLayout>("timeline-track-content") ?: continue
             if (laneTrack.childCount == 0 && totalMs > 0L) {
                 val durationWidth = widthBetween(0L, totalMs).coerceAtLeast(dp(1))
                 laneTrack.addView(
@@ -4868,7 +4869,7 @@ class VideoEditorActivity : Activity() {
                 .takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
             for (rowIndex in 0 until timelineTracks.childCount) {
                 val row = timelineTracks.getChildAt(rowIndex) as? LinearLayout ?: continue
-                val content = row.getChildAt(2) as? LinearLayout ?: continue
+                val content = row.findViewWithTag<LinearLayout>("timeline-track-content") ?: continue
                 val runway = View(this).apply {
                     tag = "timeline-drag-tail-runway"
                     isClickable = false
@@ -6132,7 +6133,7 @@ class VideoEditorActivity : Activity() {
                 leadingParams.width = leadingWidth
                 leading.layoutParams = leadingParams
             }
-            val track = row.getChildAt(2) as? LinearLayout ?: continue
+            val track = row.findViewWithTag<LinearLayout>("timeline-track-content") ?: continue
             val endIndex = (0 until track.childCount).lastOrNull { childIndex ->
                 track.getChildAt(childIndex)?.tag == "timeline-end-spacer"
             } ?: continue
