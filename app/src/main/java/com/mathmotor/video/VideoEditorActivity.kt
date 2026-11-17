@@ -12465,10 +12465,11 @@ class VideoEditorActivity : Activity() {
         maxWidthPx: Int,
         maxHeightPx: Int
     ): Bitmap? {
-        // Keep the measured fast path first: the API-35 filmstrip benchmark passed
-        // with MediaMetadataRetriever as the primary decoder. Media3 remains a
-        // compatibility fallback for sources the platform decoder cannot read.
-        // The reserved exact-playhead decoder remains isolated on its own executor.
+        // Filmstrip cells are visual summaries of their time ranges, not the
+        // authoritative paused-preview frame. Decode the closest sync sample so
+        // a one-second GOP does not force every tiny cell through a costly
+        // arbitrary-frame seek. The dedicated playhead decoder still uses
+        // OPTION_CLOSEST and keeps the preview frame time-accurate.
         val requestedTimeMs = timeMs.coerceAtLeast(0L)
         val frameTimeUs = requestedTimeMs * 1_000L
         val platformStartedAt = SystemClock.uptimeMillis()
@@ -12479,7 +12480,7 @@ class VideoEditorActivity : Activity() {
                 runCatching {
                     activeRetriever.getScaledFrameAtTime(
                         frameTimeUs,
-                        MediaMetadataRetriever.OPTION_CLOSEST,
+                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
                         maxWidthPx.coerceAtLeast(1),
                         maxHeightPx.coerceAtLeast(1)
                     )
@@ -12488,18 +12489,18 @@ class VideoEditorActivity : Activity() {
                 null
             }
             if (scaledFrame != null) {
-                platformDecodePath = "scaled"
+                platformDecodePath = "scaled-sync"
                 scaledFrame
             } else {
                 platformDecodePath = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                    "full-frame-fallback"
+                    "full-frame-sync-fallback"
                 } else {
-                    "full-frame-legacy"
+                    "full-frame-sync-legacy"
                 }
                 runCatching {
                     activeRetriever.getFrameAtTime(
                         frameTimeUs,
-                        MediaMetadataRetriever.OPTION_CLOSEST
+                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC
                     )
                 }.getOrNull()
             }

@@ -134,14 +134,14 @@ jobs:
           # to prove that the home-screen photo route fills the editable canvas.
           ffmpeg -hide_banner -loglevel error -y -f lavfi -i "color=c=magenta:s=360x640" -frames:v 1 app/build/test-fixtures/editor-test-photo.png
           test -s app/build/test-fixtures/editor-test-photo.png
-          # Keep every sampled frame >99% green while making each of the eight
-          # expected thumbnail timestamps visibly distinct to the 3x3 fingerprint
-          # sampler. Each tiny red square moves to a different 3x3 sample location;
-          # it occupies <1% of the frame, so the green-pixel replacement check remains valid.
+          # Place a distinct sub-1% red marker on each nearest one-second sync
+          # sample used by the seven visible filmstrip cells. The remaining frame
+          # stays >99% green for the replacement-source check, while whole-cell
+          # fingerprints prove that the sync-sampled thumbnails are not duplicates.
           ffmpeg -hide_banner -loglevel error -y \
             -f lavfi -i "color=c=lime:s=360x640:r=24" \
             -t 8 \
-            -vf "drawbox=x=40:y=100:w=40:h=40:color=red:t=fill:enable='between(t,0.37,0.77)',drawbox=x=160:y=100:w=40:h=40:color=red:t=fill:enable='between(t,1.51,1.91)',drawbox=x=280:y=100:w=40:h=40:color=red:t=fill:enable='between(t,2.65,3.05)',drawbox=x=40:y=300:w=40:h=40:color=red:t=fill:enable='between(t,3.79,4.19)',drawbox=x=160:y=300:w=40:h=40:color=red:t=fill:enable='between(t,4.94,5.34)',drawbox=x=280:y=300:w=40:h=40:color=red:t=fill:enable='between(t,6.08,6.48)',drawbox=x=160:y=500:w=40:h=40:color=red:t=fill:enable='between(t,7.23,7.63)' " \
+            -vf "drawbox=x=40:y=100:w=40:h=40:color=red:t=fill:enable='between(t,0.90,1.10)',drawbox=x=160:y=100:w=40:h=40:color=red:t=fill:enable='between(t,1.90,2.10)',drawbox=x=280:y=100:w=40:h=40:color=red:t=fill:enable='between(t,2.90,3.10)',drawbox=x=40:y=300:w=40:h=40:color=red:t=fill:enable='between(t,3.90,4.10)',drawbox=x=160:y=300:w=40:h=40:color=red:t=fill:enable='between(t,4.90,5.10)',drawbox=x=280:y=300:w=40:h=40:color=red:t=fill:enable='between(t,5.90,6.10)',drawbox=x=160:y=500:w=40:h=40:color=red:t=fill:enable='between(t,6.90,7.10)' " \
             -an -c:v libx264 -preset ultrafast -tune zerolatency \
             -g 24 -keyint_min 24 -sc_threshold 0 -pix_fmt yuv420p \
             app/build/test-fixtures/editor-test-video-replacement.mp4
