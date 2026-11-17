@@ -609,6 +609,11 @@ if [ "$waveform_music_ready" != true ] || [ "$waveform_sound_ready" != true ] ||
   collect_capture_diagnostics audio-waveform-generation-or-draw-failed
   exit 77
 fi
+# The timeline card is intentionally vertically scrollable when all lanes do not
+# fit on a short display. Bring the bottom sound-effect lane fully into view before
+# measuring its waveform; do not weaken the pixel-visibility assertion.
+timeout -k 2s 8s adb -s emulator-5554 shell input swipe 850 1320 850 1030 350
+sleep 1
 if ! take_screen emulator-screenshots/editor-audio-waveforms.png; then
   collect_capture_diagnostics audio-waveform-screenshot-failed
   exit 77
