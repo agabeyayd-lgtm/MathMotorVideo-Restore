@@ -1702,7 +1702,7 @@ class VideoEditorActivity : Activity() {
         timelineTracksFrame.addView(
             timelinePlayheadLine,
             FrameLayout.LayoutParams(dp(28), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.TOP or Gravity.START).apply {
-                topMargin = dp(16)
+                topMargin = dp(28)
             }
         )
         timelineTracksFrame.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
@@ -6374,7 +6374,7 @@ class VideoEditorActivity : Activity() {
         val frameCenterPx = frameLocation[0] + timelineTracksFrame.width / 2
         val expectedScrollPx = TimelineScaleMath.pixelsForTime(timelinePlayheadMs, pixelsPerSecond)
         val laneScrolls = timelineScrollViews.joinToString(",") { it.scrollX.toString() }
-        // The time-zero point is the RIGHT edge of the leading spacer, not its left edge.
+        // The time-zero point is the RIGHT edge of the scrolling ruler header, not its left edge.
         val rulerRow = timelineTracks.getChildAt(0) as? LinearLayout
         val rulerHeader = rulerRow?.getChildAt(1)
         val originRightScreenXs = if (rulerHeader == null) Int.MIN_VALUE.toString() else {
@@ -11563,7 +11563,7 @@ class VideoEditorActivity : Activity() {
                 // Filmstrip cells are representative images, not frame-accurate preview.
             // Seeking to sync samples avoids decoding every inter-frame from the
             // previous keyframe for each separate thumbnail request.
-            .setSeekParameters(androidx.media3.exoplayer.SeekParameters.CLOSEST_SYNC)
+            .setSeekParameters(androidx.media3.exoplayer.SeekParameters.EXACT)
                 .setEffects(listOf(Presentation.createForHeight(144)))
                 .build()
                 .also { timelineThumbnailExtractors[threadId] = uri to it }
