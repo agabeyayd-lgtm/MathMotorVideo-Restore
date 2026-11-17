@@ -610,19 +610,40 @@ if [ "$waveform_music_ready" != true ] || [ "$waveform_sound_ready" != true ] ||
   exit 77
 fi
 # The timeline card is intentionally vertically scrollable when all lanes do not
-# fit on a short display. Bring the bottom sound-effect lane fully into view before
-# measuring its waveform; do not weaken the pixel-visibility assertion.
-timeout -k 2s 8s adb -s emulator-5554 shell input swipe 850 1320 850 1030 350
-sleep 1
-if ! take_screen emulator-screenshots/editor-audio-waveforms.png; then
-  collect_capture_diagnostics audio-waveform-screenshot-failed
-  exit 77
-fi
+# fit on a short display. The audio clip touch surface can consume the first
+# vertical gesture, so scroll from the unused right side of the timeline viewport
+# and retry until the sound-effect waveform itself is visible. Keep the 24px
+# visibility assertion unchanged; a partial lane must not count as a pass.
+waveform_orange_bars=0
+for waveform_scroll_attempt in $(seq 1 6); do
+  timeout -k 2s 8s adb -s emulator-5554 shell input swipe 1018 1390 1018 980 280
+  sleep 0.35
+  if ! take_screen emulator-screenshots/editor-audio-waveforms.png; then
+    collect_capture_diagnostics audio-waveform-screenshot-failed
+    exit 77
+  fi
+  waveform_orange_bars="$(python3 - emulator-screenshots/editor-audio-waveforms.png <<'PY'
+import sys
+sys.path.insert(0, ".github/scripts")
+from ci_image import Image
+
+image = Image.open(sys.argv[1]).convert("RGB")
+orange_bars = sum(
+    1 for red, green, blue in image.getdata()
+    if red >= 220 and 165 <= green <= 235 and 95 <= blue <= 180 and red - green >= 20
+)
+print(orange_bars)
+PY
+)"
+  if [ "$waveform_orange_bars" -ge 24 ]; then
+    break
+  fi
+  echo "Sound-effect waveform has only $waveform_orange_bars visible pixels after vertical scroll $waveform_scroll_attempt/6; continuing."
+done
 python3 - emulator-screenshots/editor-audio-waveforms.png <<'PY'
 import sys
 sys.path.insert(0, ".github/scripts")
 from ci_image import Image
-import sys
 
 image = Image.open(sys.argv[1]).convert("RGB")
 green_bars = 0
