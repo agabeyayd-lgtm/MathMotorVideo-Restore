@@ -1,3 +1,11 @@
+## 2026-11-17 — PR #44 merged; signed 408 publication requested
+
+- PR #44 merged to `main` as `e8dace6a0dc9033ec33944b48f8fdbdc94c1de5a`; exact head `aa2fc32a1add488a22ea2d2c8b0537e9e761aeb8` passed `test-and-build`, `build`, and `emulator-ui`.
+- Thumbnail cells now distribute rounded cumulative pixel boundaries across equal temporal intervals. Added unit coverage; the strict half-pixel alignment assertion remains unchanged.
+- App version advanced from 407 / 8.40 to 408 / 8.41. `.github/release-trigger.txt` now requests the signed installable 408 APK.
+- Await signed publisher and signing-continuity workflow results before claiming publication. Physical-device in-app update remains unverified.
+- Emulator smoke passed, but this run's short alignment-correction gesture did not prove natural inertial fling after finger release.
+
 ## 2026-11-17 — Visible thumbnail queue and disk-index correction (PR #44 candidate)
 
 - The 2026-11-16 API 35 failure was the visible-thumbnail executor queue, not timeline alignment: 9 visible timestamps were submitted together to a 2-worker pool; queue wait peaked at 2747ms and visible-strip fill at 3808ms. Preview-frame checks passed. No acceptance threshold was relaxed.
