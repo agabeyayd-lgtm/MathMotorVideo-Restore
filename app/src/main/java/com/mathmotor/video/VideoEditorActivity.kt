@@ -5651,12 +5651,8 @@ class VideoEditorActivity : Activity() {
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT
         ))
-        // Match the music lane: keep the transparent gesture/title surface below
-        // the waveform so its visible bars are not occluded by the later TextView.
-        soundWaveform.isClickable = false
-        soundWaveform.isFocusable = false
-        soundWaveform.bringToFront()
-        // Non-clickable bars let touches fall through to the title/gesture surface.
+        // Keep the transparent title/gesture surface below the waveform.
+        // Non-clickable bars let clip gestures continue to reach the body.
         soundWaveform.isClickable = false
         soundWaveform.isFocusable = false
         soundWaveform.bringToFront()
