@@ -3764,13 +3764,6 @@ class VideoEditorActivity : Activity() {
                 this.tag = "timeline-leading-padding"
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             }
-            row.addView(
-                leadingPadding,
-                LinearLayout.LayoutParams(
-                    timelineLeadingPaddingWidth(resources.displayMetrics.widthPixels),
-                    ViewGroup.LayoutParams.MATCH_PARENT
-                )
-            )
             val grip = TextView(this).apply {
                 // Keep the existing drag handle while giving the video/audio/text
                 // lanes their compact CapCut-style left-side affordance.
@@ -3863,6 +3856,17 @@ class VideoEditorActivity : Activity() {
                     }
                 }
                 row.addView(sideAction, LinearLayout.LayoutParams(dp(40), ViewGroup.LayoutParams.MATCH_PARENT))
+                // The header is the first horizontally scrolling item. The
+                // zero-time spacer follows it so the clip still begins beneath
+                // the fixed centre playhead, but the header itself scrolls away
+                // instead of remaining as a left-side gutter over later times.
+                row.addView(
+                    leadingPadding,
+                    LinearLayout.LayoutParams(
+                        timelineLeadingPaddingWidth(resources.displayMetrics.widthPixels),
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                )
             if (reorderable && tag == "Video") {
                 grip.contentDescription = if (keepSourceAudio.isChecked) {
                     "Klip sesini kapat"
@@ -3885,6 +3889,15 @@ class VideoEditorActivity : Activity() {
                     gravity = Gravity.CENTER_VERTICAL
                     setPadding(dp(2), 0, dp(2), 0)
                 }
+                // The ruler keeps its time readout adjacent to the zero-time
+                // spacer; only media/action headers move ahead of that spacer.
+                row.addView(
+                    leadingPadding,
+                    LinearLayout.LayoutParams(
+                        timelineLeadingPaddingWidth(resources.displayMetrics.widthPixels),
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                )
                 row.addView(timelineRulerHeader, LinearLayout.LayoutParams(dp(84), ViewGroup.LayoutParams.MATCH_PARENT))
             }
 
@@ -6161,7 +6174,7 @@ class VideoEditorActivity : Activity() {
         val trailingWidth = timelineEndSpacerWidth(timelineSharedScrollView.width)
         for (index in 0 until timelineTracks.childCount) {
             val row = timelineTracks.getChildAt(index) as? LinearLayout ?: continue
-            val leading = row.getChildAt(0) ?: continue
+            val leading = row.findViewWithTag<View>("timeline-leading-padding") ?: continue
             val leadingParams = leading.layoutParams as? LinearLayout.LayoutParams ?: continue
             if (leadingParams.width != leadingWidth) {
                 leadingParams.width = leadingWidth
