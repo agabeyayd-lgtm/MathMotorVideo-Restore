@@ -4357,8 +4357,28 @@ for node in root.iter("node"):
         candidates.append((top, bottom, top + min(40, max(8, height // 4)), left, right, height))
 if not candidates:
     raise SystemExit("Could not locate the horizontally scrollable timeline ruler in the editor hierarchy.")
-# The ruler is the first/uppermost short scroll row; audio/text lanes follow below it.
+# The shared HorizontalScrollView contains the ruler and every timeline lane.
+# Its top edge is the ruler row; +40 lands inside the first video clip on the
+# current layout and causes the test to long-press/drag the clip instead.
+# Tap near the top of the shared viewport, safely above the clip strip.
 top, bottom, y, left, right, height = min(candidates, key=lambda item: (item[0], item[1]))
+clip_tops = []
+for node in root.iter("node"):
+    if node.attrib.get("class") != "android.widget.FrameLayout":
+        continue
+    if not node.attrib.get("content-desc", "").startswith("Klip "):
+        continue
+    clip_match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+    if clip_match:
+        clip_tops.append(int(clip_match.group(2)))
+if clip_tops:
+    clip_top = min(clip_tops)
+    ruler_gap = clip_top - top
+    if ruler_gap <= 8:
+        raise SystemExit(f"Timeline ruler hit area is not safely separated from clip strip: top={top}, clipTop={clip_top}")
+    y = top + min(10, ruler_gap // 2)
+else:
+    y = top + 10
 print(y)
 PY
 )"
