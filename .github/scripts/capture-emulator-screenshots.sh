@@ -4575,13 +4575,20 @@ PY
   echo "PASS: ruler reposition settled at ${SEEK_RESULT_MS}ms before the reverse filmstrip swipe."
 }
 
-echo "Step 10/12: swipe directly on the filmstrip and verify every timeline lane stays synchronized"
-clip_bounds="$(python3 - emulator-screenshots/thumbnail-alignment-logcat.txt <<'PY'
+echo "Step 10/12: verify shared filmstrip scrubbing and real post-release inertia"
+# Begin from a measured middle position. The previous test started at or near
+# the composition end and dragged most of the visible strip to its clamp, where
+# no release momentum can be observed even when velocity was present.
+seek_timeline_to_ms 3000 "filmstrip-inertial-reset"
+inertial_start_ms="$SEEK_RESULT_MS"
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime \
+  -s TimelineAlignmentTest:I > emulator-screenshots/filmstrip-inertial-start-layout.txt 2>&1
+clip_bounds="$(python3 - emulator-screenshots/filmstrip-inertial-start-layout.txt <<'PY'
 import re
 import sys
 latest = None
 for line in open(sys.argv[1], errors="replace"):
-    match = re.search(r"TIMELINE_ALIGNMENT_SNAPSHOT .*?clipBounds=(none|\d+,\d+,\d+,\d+)", line)
+    match = re.search(r"TIMELINE_ALIGNMENT_SNAPSHOT .*?clipBounds=(none|\\d+,\\d+,\\d+,\\d+)", line)
     if match and match.group(1) != "none":
         latest = match.group(1).replace(",", " ")
 if latest:
@@ -4589,23 +4596,14 @@ if latest:
 PY
 )"
 if [ -z "$clip_bounds" ]; then
-  echo "Could not locate the first video filmstrip for the scrub test."
-  collect_capture_diagnostics filmstrip-scrub-target-missing
+  echo "Could not locate the video filmstrip after moving to the inertial test position."
+  collect_capture_diagnostics filmstrip-inertial-target-missing
   exit 17
 fi
 read -r clip_x1 clip_y1 clip_x2 clip_y2 <<< "$clip_bounds"
 scrub_y="$(((clip_y1 + clip_y2) / 2))"
-clip_width="$((clip_x2 - clip_x1))"
-# UIAutomator reports the visible intersection of a long clip with the lane
-# viewport, not the clip's full off-screen width. Scale the regular inset to
-# that visible width, but keep the initial touch safely inside Android's
-# gesture-navigation exclusion zone. Starting near the right screen edge can
-# invoke system Back and close the editor instead of scrolling the filmstrip.
-swipe_inset="$((clip_width / 10))"
-if [ "$swipe_inset" -lt 10 ]; then swipe_inset=10; fi
-if [ "$swipe_inset" -gt 24 ]; then swipe_inset=24; fi
-screen_width="$(timeout -k 2s 5s adb -s emulator-5554 shell wm size | sed -n 's/.*: \([0-9]*\)x[0-9]*.*/\1/p' | tail -n 1 || true)"
-density_dpi="$(timeout -k 2s 5s adb -s emulator-5554 shell wm density | sed -n 's/.*Physical density: \([0-9]*\).*/\1/p' | tail -n 1 || true)"
+screen_width="$(timeout -k 2s 5s adb -s emulator-5554 shell wm size | sed -n 's/.*: \\([0-9]*\\)x[0-9]*.*/\\1/p' | tail -n 1 || true)"
+density_dpi="$(timeout -k 2s 5s adb -s emulator-5554 shell wm density | sed -n 's/.*Physical density: \\([0-9]*\\).*/\\1/p' | tail -n 1 || true)"
 if ! [[ "$screen_width" =~ ^[0-9]+$ ]] || [ "$screen_width" -le 0 ]; then
   echo "Could not read emulator screen width for safe filmstrip gesture positioning."
   collect_capture_diagnostics filmstrip-screen-width-missing
@@ -4616,39 +4614,79 @@ if ! [[ "$density_dpi" =~ ^[0-9]+$ ]] || [ "$density_dpi" -le 0 ]; then
   collect_capture_diagnostics filmstrip-screen-density-missing
   exit 31
 fi
-# Start at least 48dp from the right edge, safely outside the system Back
-# gesture area on density-scaled emulator configurations. Gesture directly on
-# the thumbnails to verify ordinary filmstrip swipes pan the shared time axis.
-right_edge_safe_margin_px="$(((48 * density_dpi + 159) / 160))"
-right_edge_safe_x="$((screen_width - right_edge_safe_margin_px))"
-forward_start="$((clip_x2 - swipe_inset))"
-if [ "$forward_start" -gt "$right_edge_safe_x" ]; then
-  forward_start="$right_edge_safe_x"
+playhead_center="$(python3 - emulator-screenshots/filmstrip-inertial-reset-sync-logcat.txt <<'PY'
+import re
+import sys
+latest = None
+for line in open(sys.argv[1], errors="replace"):
+    match = re.search(r"TIMELINE_SYNC_SAMPLE .*?playheadCenterPx=(\\d+)", line)
+    if match:
+        latest = int(match.group(1))
+if latest is not None:
+    print(latest)
+PY
+)"
+if ! [[ "$playhead_center" =~ ^[0-9]+$ ]]; then
+  echo "Could not read the measured fixed playhead center before the inertial swipe."
+  collect_capture_diagnostics filmstrip-inertial-playhead-center-missing
+  exit 32
 fi
-forward_end="$((clip_x1 + swipe_inset))"
-forward_distance="$((forward_start - forward_end))"
-if [ "$forward_distance" -lt 80 ]; then
-  echo "The visible filmstrip range is too small for a meaningful scrub (${clip_width}px wide; ${forward_distance}px usable after ${swipe_inset}px insets)."
-  collect_capture_diagnostics filmstrip-scrub-distance-too-small
-  exit 18
+# Drag left by a controlled 200px, centred around the playhead. This keeps
+# both endpoints well inside the video strip and leaves room to coast after UP.
+forward_start="$((playhead_center + 100))"
+forward_end="$((playhead_center - 100))"
+right_edge_safe_x="$((screen_width - (48 * density_dpi + 159) / 160))"
+if [ "$forward_start" -gt "$right_edge_safe_x" ] || [ "$forward_end" -lt 48 ]; then
+  echo "Controlled inertial gesture would leave the safe filmstrip area: $forward_start->$forward_end."
+  collect_capture_diagnostics filmstrip-inertial-gesture-out-of-bounds
+  exit 33
 fi
-timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$forward_start" "$scrub_y" "$forward_end" "$scrub_y" 700
-sleep 1
-timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime > emulator-screenshots/filmstrip-scrub-forward-logcat.txt 2>&1
-# The filmstrip child must hand a normal swipe to the parent HorizontalScrollView.
-# This marker is emitted from the real lane ACTION_UP and proves the native
-# velocity/fling path owns the release (a child-owned scrollBy drag cannot emit it).
-if ! grep -Fq "TIMELINE_NATIVE_SCROLL_RELEASE lane=shared sampleDelayMs=64" \
-    emulator-screenshots/filmstrip-scrub-forward-logcat.txt \
-    || ! grep -Fq "TIMELINE_NATIVE_SCROLL_RELEASE lane=shared sampleDelayMs=128" \
-    emulator-screenshots/filmstrip-scrub-forward-logcat.txt \
-    || ! grep -Fq "TIMELINE_NATIVE_SCROLL_RELEASE lane=shared sampleDelayMs=240" \
-    emulator-screenshots/filmstrip-scrub-forward-logcat.txt; then
-  echo "A normal one-finger filmstrip swipe did not reach the native video-lane scroll/fling owner."
-  collect_capture_diagnostics filmstrip-native-fling-release-missing
+if [ "$inertial_start_ms" -lt 1500 ] || [ "$inertial_start_ms" -gt 4500 ]; then
+  echo "Timeline did not settle in the middle range before inertial test: ${inertial_start_ms}ms."
+  collect_capture_diagnostics filmstrip-inertial-start-position-invalid
+  exit 34
+fi
+timeout -k 2s 5s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$forward_start" "$scrub_y" "$forward_end" "$scrub_y" 180
+sleep 0.5
+timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime -s TimelineSyncTest:I \
+  > emulator-screenshots/filmstrip-scrub-forward-logcat.txt 2>&1
+# The parent must receive UP, and its actual scrollX must continue increasing
+# after release. Merely seeing an UP callback is not evidence of inertia.
+if ! python3 - emulator-screenshots/filmstrip-scrub-forward-logcat.txt <<'PY'
+import re
+import sys
+records = {}
+pattern = re.compile(
+    r"TIMELINE_NATIVE_SCROLL_RELEASE lane=shared "
+    r"sampleDelayMs=(64|128|240) startScrollX=(\\d+) scrollX=(\\d+)"
+)
+for line in open(sys.argv[1], errors="replace"):
+    match = pattern.search(line)
+    if match:
+        delay, start, current = map(int, match.groups())
+        records[delay] = (start, current)
+missing = sorted({64, 128, 240} - records.keys())
+if missing:
+    raise SystemExit(f"Missing native UP release samples at {missing}ms: {records}")
+starts = {start for start, _ in records.values()}
+if len(starts) != 1:
+    raise SystemExit(f"Release samples do not share one release position: {records}")
+release = next(iter(starts))
+advance = {delay: current - release for delay, (_, current) in records.items()}
+maximum = max(advance.values())
+print(f"Native release scrollX={release}; post-UP movement={advance}")
+if maximum < 8:
+    raise SystemExit(
+        f"Filmstrip stopped at release; expected at least 8px of inertial travel, got {maximum}px"
+    )
+PY
+then
+  echo "A fast one-finger filmstrip swipe did not continue moving after release."
+  collect_capture_diagnostics filmstrip-inertial-scroll-missing
   exit 23
 fi
-echo "PASS: video filmstrip swipe reached the native HorizontalScrollView release/fling path."
+echo "PASS: filmstrip continued moving after finger release; native momentum is measurable."
 forward_values="$(python3 - emulator-screenshots/filmstrip-scrub-forward-logcat.txt <<'PY'
 import re
 import sys
