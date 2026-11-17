@@ -1,3 +1,10 @@
+## Current verified candidate — 2026-11-17: PR #44 merged; signed 408 publication requested
+
+- PR #44 (`fix/capcut-timeline-fling-edge-handles`) was merged into `main` as merge commit `e8dace6a0dc9033ec33944b48f8fdbdc94c1de5a`. Its exact head `aa2fc32a1add488a22ea2d2c8b0537e9e761aeb8` passed all three required checks: `test-and-build`, `build`, and `emulator-ui`.
+- The change distributes thumbnail cell pixels using rounded cumulative temporal boundaries and adds strict geometry coverage; the emulator diagnostics now record the native timeline touch stream. The half-pixel alignment assertion was not relaxed.
+- The Android app version was advanced to `versionCode=408` / `versionName=8.41-capcut-editor`. The signed-release trigger was updated after the merge. The signed publisher and signing-continuity verification are pending; do not describe 408 as published or installable until both workflows complete successfully and the GitHub release contains `MathMotorVideo.apk`.
+- The emulator smoke test passed, but its short alignment-correction gesture did not demonstrate post-release inertial movement. Do not claim CapCut-style fling momentum is physically/fully verified from this run alone. No user-phone install/update has been confirmed.
+
 ## 2026-11-17 — Visible thumbnail queue and disk-index correction (PR #44 candidate)
 
 - The 2026-11-16 API 35 failure was the visible-thumbnail executor queue, not timeline alignment: 9 visible timestamps were submitted together to a 2-worker pool; queue wait peaked at 2747ms and visible-strip fill at 3808ms. Preview-frame checks passed. No acceptance threshold was relaxed.
