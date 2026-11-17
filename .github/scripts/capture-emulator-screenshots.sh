@@ -4368,7 +4368,7 @@ for node in root.iter("node"):
         continue
     if not node.attrib.get("content-desc", "").startswith("Klip "):
         continue
-    clip_match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+    clip_match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
     if clip_match:
         clip_tops.append(int(clip_match.group(2)))
 if clip_tops:

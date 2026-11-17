@@ -1,3 +1,11 @@
+## 2026-11-17 — PR #45 review: preserve exact filmstrip timestamps
+
+- The first PR #45 candidate used `MediaMetadataRetriever.OPTION_CLOSEST_SYNC` for every filmstrip cell and adjusted the synthetic fixture markers to one-second keyframe boundaries. That reproduced a previously rejected strategy: the 2026-11-01 implementation history records that sync-only sampling can repeat one keyframe across neighbouring cells on longer-GOP media.
+- Keep `OPTION_CLOSEST` for both scaled and full-frame filmstrip decoding. Retain the separate foreground playhead decoder and improve performance through measured decode sizing, cache lookup/indexing, worker isolation and visible-first scheduling. The fixture still uses a one-second GOP but now places distinct markers around the seven actual requested cell timestamps, so the test checks timestamp accuracy rather than keyframe coincidence.
+- PR #45 API 35 evidence currently proves the shared `HorizontalScrollView` receives `ACTION_UP` and all timeline content uses one scroll offset. Its release samples did not show additional `scrollX` movement at 64/128/240ms, so natural inertial fling is **not** yet verified. Do not claim CapCut-like post-release momentum until a mid-timeline, sufficiently fast gesture demonstrates it.
+
+---
+
 ## 2026-11-17 — PR #44 merged; signed 408 publication requested
 
 - PR #44 merged to `main` as `e8dace6a0dc9033ec33944b48f8fdbdc94c1de5a`; exact head `aa2fc32a1add488a22ea2d2c8b0537e9e761aeb8` passed `test-and-build`, `build`, and `emulator-ui`.

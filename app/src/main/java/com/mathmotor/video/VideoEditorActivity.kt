@@ -12465,11 +12465,12 @@ class VideoEditorActivity : Activity() {
         maxWidthPx: Int,
         maxHeightPx: Int
     ): Bitmap? {
-        // Filmstrip cells are visual summaries of their time ranges, not the
-        // authoritative paused-preview frame. Decode the closest sync sample so
-        // a one-second GOP does not force every tiny cell through a costly
-        // arbitrary-frame seek. The dedicated playhead decoder still uses
-        // OPTION_CLOSEST and keeps the preview frame time-accurate.
+        // Filmstrip cells summarize their own time ranges, but each cell must
+        // still represent its requested timestamp. OPTION_CLOSEST_SYNC was
+        // previously removed because long-GOP sources can repeat one keyframe
+        // across neighbouring cells. Keep preview and filmstrip timestamp
+        // semantics consistent; optimize decode cost through sizing, caching,
+        // worker isolation and visible-first scheduling instead.
         val requestedTimeMs = timeMs.coerceAtLeast(0L)
         val frameTimeUs = requestedTimeMs * 1_000L
         val platformStartedAt = SystemClock.uptimeMillis()
@@ -12480,7 +12481,7 @@ class VideoEditorActivity : Activity() {
                 runCatching {
                     activeRetriever.getScaledFrameAtTime(
                         frameTimeUs,
-                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                        MediaMetadataRetriever.OPTION_CLOSEST,
                         maxWidthPx.coerceAtLeast(1),
                         maxHeightPx.coerceAtLeast(1)
                     )
@@ -12489,7 +12490,7 @@ class VideoEditorActivity : Activity() {
                 null
             }
             if (scaledFrame != null) {
-                platformDecodePath = "scaled-sync"
+                platformDecodePath = "scaled-closest"
                 scaledFrame
             } else {
                 platformDecodePath = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
@@ -12500,7 +12501,7 @@ class VideoEditorActivity : Activity() {
                 runCatching {
                     activeRetriever.getFrameAtTime(
                         frameTimeUs,
-                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+                        MediaMetadataRetriever.OPTION_CLOSEST
                     )
                 }.getOrNull()
             }
