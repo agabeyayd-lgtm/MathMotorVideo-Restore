@@ -2443,7 +2443,7 @@ def walk(node):
         match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
         if match:
             left, top, right, bottom = map(int, match.groups())
-            if right - left > 500 and 0 < bottom - top <= 100 and top < 1150:
+            if right - left > 500 and 80 <= bottom - top <= 700 and top < 1150:
                 print(left, top, right, bottom)
                 return True
     for child in node:
@@ -2459,7 +2459,7 @@ PY
       exit 82
     fi
     read -r ruler_left ruler_top ruler_right ruler_bottom <<< "$ruler_bounds"
-    ruler_y=$(((ruler_top + ruler_bottom) / 2))
+    ruler_y=$((ruler_top + 40))
     ruler_width=$((ruler_right - ruler_left))
     # Start well inside the ruler viewport. The previous gesture began only
     # 35px from its right edge, close enough to Android's system-back region
@@ -4073,8 +4073,8 @@ for node in root.iter("node"):
         continue
     left, top, right, bottom = map(int, m.groups())
     height, width = bottom - top, right - left
-    if width > 500 and 20 <= height <= 100 and 0 < top < 1350:
-        candidates.append((top, bottom, (top + bottom) // 2))
+    if width > 500 and 80 <= height <= 700 and 0 < top < 1350:
+        candidates.append((top, bottom, top + min(40, max(8, height // 4))) )
 if not candidates:
     raise SystemExit("No visible shared timeline ruler/scroll lane was found.")
 print(min(candidates)[2])
@@ -4348,8 +4348,8 @@ for node in root.iter("node"):
         continue
     left, top, right, bottom = map(int, match.groups())
     width, height = right - left, bottom - top
-    if width > 500 and 20 <= height <= 100 and 0 < top < 1200:
-        candidates.append((top, bottom, (top + bottom) // 2, left, right, height))
+    if width > 500 and 80 <= height <= 700 and 0 < top < 1200:
+        candidates.append((top, bottom, top + min(40, max(8, height // 4)), left, right, height))
 if not candidates:
     raise SystemExit("Could not locate the horizontally scrollable timeline ruler in the editor hierarchy.")
 # The ruler is the first/uppermost short scroll row; audio/text lanes follow below it.
@@ -4592,11 +4592,11 @@ timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime > emulator-screen
 # The filmstrip child must hand a normal swipe to the parent HorizontalScrollView.
 # This marker is emitted from the real lane ACTION_UP and proves the native
 # velocity/fling path owns the release (a child-owned scrollBy drag cannot emit it).
-if ! grep -Fq "TIMELINE_NATIVE_SCROLL_RELEASE lane=video sampleDelayMs=64" \
+if ! grep -Fq "TIMELINE_NATIVE_SCROLL_RELEASE lane=shared sampleDelayMs=64" \
     emulator-screenshots/filmstrip-scrub-forward-logcat.txt \
-    || ! grep -Fq "TIMELINE_NATIVE_SCROLL_RELEASE lane=video sampleDelayMs=128" \
+    || ! grep -Fq "TIMELINE_NATIVE_SCROLL_RELEASE lane=shared sampleDelayMs=128" \
     emulator-screenshots/filmstrip-scrub-forward-logcat.txt \
-    || ! grep -Fq "TIMELINE_NATIVE_SCROLL_RELEASE lane=video sampleDelayMs=240" \
+    || ! grep -Fq "TIMELINE_NATIVE_SCROLL_RELEASE lane=shared sampleDelayMs=240" \
     emulator-screenshots/filmstrip-scrub-forward-logcat.txt; then
   echo "A normal one-finger filmstrip swipe did not reach the native video-lane scroll/fling owner."
   collect_capture_diagnostics filmstrip-native-fling-release-missing
@@ -4675,9 +4675,9 @@ for node in root.iter("node"):
         continue
     left, top, right, bottom = map(int, match.groups())
     width, height = right - left, bottom - top
-    # The ruler is the first short row. The next tall horizontal viewport is
-    # the video filmstrip; the other tall rows are overlay/audio lanes.
-    if width > 500 and 90 <= height <= 140 and 1000 <= top < 1400:
+    # The one shared horizontal viewport contains the ruler and every timeline row.
+    # Thumbnail ImageViews identify the video filmstrip within that shared viewport.
+    if width > 500 and 140 <= height <= 700 and 0 < top < 1400:
         viewports.append((top, left, right, bottom, node))
 if not viewports:
     raise SystemExit("Could not locate the live video-filmstrip viewport.")

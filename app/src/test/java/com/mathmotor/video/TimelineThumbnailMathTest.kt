@@ -7,6 +7,12 @@ import org.junit.Test
 
 class TimelineThumbnailMathTest {
     @Test
+    fun defaultFilmstripHasWiderPortraitFrameCells() {
+        assertEquals(64, TimelineThumbnailMath.THUMBNAIL_STRIP_HEIGHT_DP)
+        assertEquals(36, TimelineThumbnailMath.thumbnailCellWidthPx(64, 9f / 16f))
+    }
+
+    @Test
     fun decodeBoundsMatchRenderedPortraitCellWithoutOversampling() {
         assertEquals(81 to 144, TimelineThumbnailMath.decodeBounds(81, 144, 9f / 16f))
     }

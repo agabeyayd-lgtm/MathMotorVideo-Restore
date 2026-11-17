@@ -123,6 +123,35 @@ class TimelineScaleMathTest {
     }
 
     @Test
+    fun unifiedTimelineHeaderAndLeadingPaddingPlaceTimeZeroUnderFixedPlayhead() {
+        val width = 360
+        val leading = TimelineScaleMath.leadingContentPaddingWidthForCenteredPlayhead(width, 84)
+        val origin = leading + 84
+        val trailing = TimelineScaleMath.trailingContentPaddingWidthForCenteredPlayhead(width)
+        assertEquals(96, leading)
+        assertEquals(180, origin)
+        assertEquals(180, trailing)
+        assertEquals(0L, TimelineScaleMath.timeAtViewportX(0, 180f, origin.toFloat(), 55f))
+        val scroll = TimelineScaleMath.pixelsForTime(2_500L, 55f)
+        assertEquals(2_500L, TimelineScaleMath.timeAtViewportX(scroll, 180f, origin.toFloat(), 55f))
+    }
+
+    @Test
+    fun defaultScaleShowsAboutSixAndAHalfSecondsAcrossViewport() {
+        val scale = TimelineScaleMath.defaultPixelsPerSecondForDuration(390, 6_500L, 11f, 720f)
+        assertEquals(60f, scale, 0.001f)
+        assertEquals(6_500L, TimelineScaleMath.millisecondsForPixels(390f, scale))
+    }
+
+    @Test
+    fun legacyProjectsReceiveTheNewDefaultOnlyOnceAndNewProjectsKeepZoom() {
+        assertEquals(60f, TimelineScaleMath.restorePixelsPerSecond(null, 0, 60f, 11f, 720f), 0f)
+        assertEquals(60f, TimelineScaleMath.restorePixelsPerSecond(120f, 0, 60f, 11f, 720f), 0f)
+        assertEquals(120f, TimelineScaleMath.restorePixelsPerSecond(120f, 1, 60f, 11f, 720f), 0f)
+        assertEquals(60f, TimelineScaleMath.restorePixelsPerSecond(Float.NaN, 1, 60f, 11f, 720f), 0f)
+    }
+
+    @Test
     fun playbackScrollMovesBothRulerAndVideoUnderTheSameFixedCenter() {
         val frameWidthPx = 320
         val gutterPx = 87

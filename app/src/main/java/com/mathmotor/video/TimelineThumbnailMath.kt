@@ -9,9 +9,9 @@ import kotlin.math.roundToInt
  * thumbnail cells grows with pinch zoom and shrinks when the user zooms out.
  */
 internal object TimelineThumbnailMath {
-    // A 48dp strip matches the roughly 95px video lane in the 720x1600
-    // reference composition while keeping each thumbnail at its source aspect ratio.
-    const val THUMBNAIL_STRIP_HEIGHT_DP = 48
+    // More vertical room makes portrait frames readable while keeping each
+    // thumbnail fitted to its original source aspect ratio.
+    const val THUMBNAIL_STRIP_HEIGHT_DP = 64
     const val DEFAULT_SOURCE_ASPECT_RATIO = 9f / 16f
 
     /** Width of a full-frame thumbnail at the fixed strip height, without cropping. */
