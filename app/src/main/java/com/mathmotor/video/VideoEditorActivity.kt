@@ -5651,8 +5651,12 @@ class VideoEditorActivity : Activity() {
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT
         ))
-        // Keep the audio title/gesture surface transparent while drawing the
-        // waveform above it; non-clickable bars let touches fall through to body.
+        // Match the music lane: keep the transparent gesture/title surface below
+        // the waveform so its visible bars are not occluded by the later TextView.
+        soundWaveform.isClickable = false
+        soundWaveform.isFocusable = false
+        soundWaveform.bringToFront()
+        // Non-clickable bars let touches fall through to the title/gesture surface.
         soundWaveform.isClickable = false
         soundWaveform.isFocusable = false
         soundWaveform.bringToFront()
