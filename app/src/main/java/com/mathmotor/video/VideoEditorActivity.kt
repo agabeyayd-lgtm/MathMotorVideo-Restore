@@ -644,12 +644,13 @@ class VideoEditorActivity : Activity() {
     private val previewFrameExtractors =
         java.util.concurrent.ConcurrentHashMap<Long, Triple<Uri, Int, FrameExtractor>>()
 
-    // Two long-lived MMR workers keep the native codec from being opened by too
-    // many concurrent filmstrip requests. This pool handles only background
-    // stills (visible thumbnails, cover tiles and temporary posters).
+    // Three persistent MMR workers keep the initial visible filmstrip batch moving
+    // without sharing the reserved exact-playhead decoder. The API 35 timing trace
+    // showed two workers leaving the last visible cells queued for >2 seconds.
+    // This pool handles only background stills (filmstrip, cover tiles and posters).
     private val timelineThumbnailExecutor = java.util.concurrent.ThreadPoolExecutor(
-        2,
-        2,
+        3,
+        3,
         0L,
         java.util.concurrent.TimeUnit.MILLISECONDS,
         java.util.concurrent.PriorityBlockingQueue<Runnable>(
