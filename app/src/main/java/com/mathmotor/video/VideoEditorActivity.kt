@@ -6082,11 +6082,14 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun isScreenPointInsideTimeline(x: Float, y: Float): Boolean {
-        if (!::timelineTracksFrame.isInitialized || !timelineTracksFrame.isLaidOut) return false
+        // Hit-test the actual horizontally scrolling viewport, not its outer
+        // frame: the outer frame can include the ruler/track gutters and may
+        // not share the same screen-space bounds after panel layout changes.
+        if (!::timelineSharedScrollView.isInitialized || !timelineSharedScrollView.isLaidOut) return false
         val location = IntArray(2)
-        timelineTracksFrame.getLocationOnScreen(location)
-        return x >= location[0] && x <= location[0] + timelineTracksFrame.width &&
-            y >= location[1] && y <= location[1] + timelineTracksFrame.height
+        timelineSharedScrollView.getLocationOnScreen(location)
+        return x >= location[0] && x < location[0] + timelineSharedScrollView.width &&
+            y >= location[1] && y < location[1] + timelineSharedScrollView.height
     }
 
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
@@ -6099,6 +6102,16 @@ class VideoEditorActivity : Activity() {
                     if (::timelineSharedScrollView.isInitialized) timelineSharedScrollView.scrollX else 0
                 timelineFlingVelocityTracker = android.view.VelocityTracker.obtain().also {
                     it.addMovement(event)
+                }
+                if (timelineSyncTestEnabled) {
+                    val location = IntArray(2)
+                    timelineSharedScrollView.getLocationOnScreen(location)
+                    android.util.Log.i(
+                        "TimelineSyncTest",
+                        "TIMELINE_FLING_CAPTURE down=true rawX=${event.rawX} rawY=${event.rawY} " +
+                            "viewport=${location[0]},${location[1]},${location[0] + timelineSharedScrollView.width}," +
+                            "${location[1] + timelineSharedScrollView.height} startScrollX=$timelineFlingGestureStartScrollX"
+                    )
                 }
             }
         } else if (event.pointerCount >= 2 ||
@@ -6166,6 +6179,14 @@ class VideoEditorActivity : Activity() {
             val scrollDelta = if (::timelineSharedScrollView.isInitialized) {
                 timelineSharedScrollView.scrollX - timelineFlingGestureStartScrollX
             } else 0
+            if (timelineSyncTestEnabled) {
+                android.util.Log.i(
+                    "TimelineSyncTest",
+                    "TIMELINE_FLING_RELEASE captured=${tracker != null} intercepted=$timelineFlingGestureIntercepted " +
+                        "startScrollX=$timelineFlingGestureStartScrollX scrollDelta=$scrollDelta " +
+                        "fingerVelocityX=${releaseVelocityX.toInt()} minimumVelocity=$minimumVelocity"
+                )
+            }
             if (timelineFlingGestureIntercepted &&
                 scrollDelta != 0 &&
                 kotlin.math.abs(releaseVelocityX) >= minimumVelocity
