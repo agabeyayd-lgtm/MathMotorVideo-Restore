@@ -1711,3 +1711,11 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - Inspection of the current text-lane implementation found a concrete interaction mismatch: the broad transparent 48dp+ drag target and the visible white CapCut-style grip were separate sibling views. ACTION_MOVE translated only the transparent target, leaving the visible white grip at the old boundary; the user could feel the handle as unresponsive or disconnected.
 - Commit `4c0817600e96f4b0baf5cfcddc6b1931c21c7e08` keeps the visible grip's translation synchronized with its corresponding start/end touch target on every MOVE, and resets both together on UP/CANCEL. Existing trim math, min-span constraints, history commit and hit-target geometry are unchanged.
 - Pending exact-head Android tests/build, APK package, and emulator UI check. Validate both text start/end handles, drag direction and boundary clamping, plus video/audio/overlay grips; do not call this fixed until emulator evidence passes.
+
+
+## 2026-11-18 — Unified visible trim grip for non-text layers
+
+- The exact-head emulator run for `451c37cf80d3a79be912deedc658e2ab09addd54` still fails earlier in the filmstrip inertia step (release scrollX=384, post-UP movement 0 at 64/128/240ms); the new text-grip follow behavior is not reached by that run. Android unit/build and APK packaging passed.
+- Review of the shared non-text layer edge control found it still displayed a narrow teal 5x24px marker inside a much wider transparent hit target. This differs from the CapCut white edge tab and makes it harder to visually track the trim boundary.
+- Commit `28614bf0e414af7201c395b2aad0ec118036cca1` changes the visible marker to a square-corner white 10dp tab with a centered gray 2x14dp mark, as a child of the same interactive edge target. Thus the visual grip and touch target share translation by construction. The existing broad hit target, edge clamping, trim callbacks, and gesture exclusion are unchanged.
+- Pending exact-head Android tests/build, APK package, and emulator validation of both start/end grips across video, audio, and overlay lanes; verify text grip separately; verify the inertia failure independently. No merge/version bump/release until all checks green.
