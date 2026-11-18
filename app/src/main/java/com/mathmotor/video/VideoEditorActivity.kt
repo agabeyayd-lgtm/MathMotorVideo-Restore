@@ -647,6 +647,11 @@ class VideoEditorActivity : Activity() {
     private val previewFrameWorkerSequence = java.util.concurrent.atomic.AtomicLong()
     private val timelineThumbnailRetrievers =
         java.util.concurrent.ConcurrentHashMap<Long, Pair<Uri, MediaMetadataRetriever>>()
+    // MediaMetadataRetriever can retain decoder seek state per worker. Track the
+    // last successful filmstrip timestamp so a large jump does not force the
+    // reused decoder to walk forward through an entire intervening GOP range.
+    private val timelineThumbnailLastFrameTimesMs =
+        java.util.concurrent.ConcurrentHashMap<Long, Long>()
     private val timelineThumbnailExtractors =
         java.util.concurrent.ConcurrentHashMap<Long, Pair<Uri, FrameExtractor>>()
     // A single exact-seek extractor is retained by the reserved preview worker.
@@ -11768,6 +11773,7 @@ class VideoEditorActivity : Activity() {
 
     private fun releaseTimelineThumbnailRetriever() {
         val threadId = Thread.currentThread().id
+        timelineThumbnailLastFrameTimesMs.remove(threadId)
         timelineThumbnailRetrievers.remove(threadId)?.second?.let { retriever ->
             runCatching { retriever.release() }
         }
@@ -12662,6 +12668,24 @@ class VideoEditorActivity : Activity() {
         // worker isolation and visible-first scheduling instead.
         val requestedTimeMs = timeMs.coerceAtLeast(0L)
         val frameTimeUs = requestedTimeMs * 1_000L
+        val workerId = Thread.currentThread().id
+        val previousFrameTimeMs = timelineThumbnailLastFrameTimesMs[workerId]
+        val seekDistanceMs = previousFrameTimeMs?.let { kotlin.math.abs(requestedTimeMs - it) }
+        // The API 35 trace showed a worker reusing its MMR for a second frame
+        // 5.7s ahead; that decode took 1.7–2.3s while the first frame took
+        // 0.2–1.2s. Reopen only for a large discontinuity so normal adjacent
+        // filmstrip samples keep their warm retriever and exact OPTION_CLOSEST.
+        if (seekDistanceMs != null && seekDistanceMs > 2_000L) {
+            if (timelineSyncTestEnabled || timelineLifecycleDiagnosticsEnabled) {
+                android.util.Log.i(
+                    "TimelineThumbnail",
+                    "TIMELINE_THUMBNAIL_RETRIEVER_RESET worker=$workerId " +
+                        "previousMs=$previousFrameTimeMs requestedMs=$requestedTimeMs " +
+                        "seekDistanceMs=$seekDistanceMs"
+                )
+            }
+            releaseTimelineThumbnailRetriever()
+        }
         val platformStartedAt = SystemClock.uptimeMillis()
         val retriever = timelineThumbnailRetrieverFor(uri, "TimelineThumbnail")
         var platformDecodePath = "unavailable"
@@ -12696,6 +12720,7 @@ class VideoEditorActivity : Activity() {
             }
         }
         if (platformFrame != null) {
+            timelineThumbnailLastFrameTimesMs[workerId] = requestedTimeMs
             if (timelineSyncTestEnabled) android.util.Log.i(
                 "TimelineFrameSyncTest",
                 "TIMELINE_THUMBNAIL_DECODED requestedMs=$requestedTimeMs " +
