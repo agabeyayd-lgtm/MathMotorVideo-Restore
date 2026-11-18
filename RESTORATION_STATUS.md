@@ -1,3 +1,11 @@
+## 2026-11-19 — PR #45: recover zeroed velocity on fast intercepted filmstrip swipes
+
+- Reviewed both API 35 emulator artifacts instead of repeating the same gesture blindly. Failed run 44384371017 (artifact 14465522532): the same controlled 200px left swipe was captured at Activity level, the shared scroller intercepted it, and scrollX advanced 149px; however, VelocityTracker reported fingerVelocityX=0 against the unchanged 131px/s minimum. No custom fling started and post-UP movement was 0px at 64/128/240ms.
+- Comparison run 44384001261 (artifact 14466872947): same start coordinates and gesture produced fingerVelocityX=-1111, started the custom fling, and advanced 112/288/352px after release. This proves an intermittent zeroed velocity measurement, not a missing touch target or edge clamp.
+- Commit b2231010521aae91889477f9b71a68980ea74c1b adds a bounded 160ms raw-screen-X/event-time sample window. When the platform tracker is below the existing minimum but the recent raw-coordinate velocity meets it, the raw estimate is used as a fallback. Slow drags remain below the same minimum; no test threshold or expected motion was weakened.
+- The existing API 35 smoke still requires at least 8px of real post-UP scroll movement. Exact-head unit/build, APK package and API 35 emulator verification are pending. The five-worker thumbnail experiment remains unverified; do not merge, bump app version or publish until the exact final head is green and thumbnail budgets are independently resolved.
+
+---
 ## 2026-11-18 — PR #45: four-worker API 35 measurement and five-worker experiment
 
 - Exact PR head `fceb623c5aa8fe5d484deef54a42d3b134daf71f`: APK build and Android verification passed; emulator UI failed only the strict visible-thumbnail performance assertion. The text-grip geometry correction, editor smoke interactions, forward/reverse filmstrip scrubbing, shared scroll, and post-release momentum all passed.
