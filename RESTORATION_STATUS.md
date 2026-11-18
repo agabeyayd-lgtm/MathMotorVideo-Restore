@@ -1704,3 +1704,10 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - The dispatch-level tracker was gated by a screen hit-test against `timelineTracksFrame`. The actual gesture is on `timelineSharedScrollView`; using the outer frame is an unnecessary coordinate dependency and can leave the tracker uncaptured even though the shared scroller later receives the gesture.
 - Commit `069db2e9cb74d5559fe9560ca8790e763b45cba8` changes the initial hit-test to the actual laid-out shared scroll viewport and adds test-only capture/release diagnostics showing tracker capture, viewport bounds, interception, delta, and computed velocity. No fling assertion or velocity threshold has been relaxed.
 - Pending: exact-head test/build, APK package, and emulator. First confirm the diagnostic says captured=true and a nonzero release velocity, then confirm fling movement at 64/128/240ms in both directions. Confirm clip long-press and pinch still do not fling. No merge/version bump/release until all checks are green.
+
+
+## 2026-11-18 — Visible text trim grip follows its touch target
+
+- Inspection of the current text-lane implementation found a concrete interaction mismatch: the broad transparent 48dp+ drag target and the visible white CapCut-style grip were separate sibling views. ACTION_MOVE translated only the transparent target, leaving the visible white grip at the old boundary; the user could feel the handle as unresponsive or disconnected.
+- Commit `4c0817600e96f4b0baf5cfcddc6b1931c21c7e08` keeps the visible grip's translation synchronized with its corresponding start/end touch target on every MOVE, and resets both together on UP/CANCEL. Existing trim math, min-span constraints, history commit and hit-target geometry are unchanged.
+- Pending exact-head Android tests/build, APK package, and emulator UI check. Validate both text start/end handles, drag direction and boundary clamping, plus video/audio/overlay grips; do not call this fixed until emulator evidence passes.
