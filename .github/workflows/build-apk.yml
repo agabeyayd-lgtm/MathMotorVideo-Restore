@@ -5,6 +5,9 @@ on:
   pull_request:
     branches:
       - main
+  push:
+    branches:
+      - fix/capcut-unified-timeline-scroll
   workflow_dispatch:
 
 permissions:
