@@ -1,3 +1,13 @@
+## 2026-11-18 — PR #45: four-worker API 35 measurement and five-worker experiment
+
+- Exact PR head `fceb623c5aa8fe5d484deef54a42d3b134daf71f`: APK build and Android verification passed; emulator UI failed only the strict visible-thumbnail performance assertion. The text-grip geometry correction, editor smoke interactions, forward/reverse filmstrip scrubbing, shared scroll, and post-release momentum all passed.
+- The API 35 run measured seven visible cells: executor queue median/max 293/2241ms, preview-deferred 0/3ms, disk lookup 0/4ms, decode median/max 1550/1960ms, request-to-display median/max 2273/3015ms, and visible-strip fill 3022ms. The queue limit is 2000ms, decode limit 1500ms, and fill limit 2500ms; none of these limits were relaxed.
+- Warm exact-playhead preview remained healthy: queue max 2ms, decode max 424ms, request-to-visible max 484ms. This confirms the dedicated preview worker remains isolated and responsive.
+- Four workers improved the previous three-worker queue maximum (2996ms to 2241ms), but the visible strip still misses the queue, decode, and fill budgets. The five-worker change in commit `4a1e64953ecb784e7a402186a2dcc5b7fb0c4900` is a measurement-only concurrency experiment; it is provisional and must be evaluated on API 35 before acceptance. Do not increase concurrency further without new measurements.
+- Emulator artifact: `14466872947`. Exact run: `44384001261`. No merge, release, version bump, or change to `main`.
+
+---
+
 ## 2026-11-18 — PR #45: wait for committed text-grip geometry before asserting
 
 - Review of emulator artifact `14463568565` showed that the earlier smoke failure was caused by an incomplete log-capture window, not a failed trim interaction. The app logged `TEXT_EDGE_TRIM_COMMIT edge=start` at 19:36:50.051 and then logged both updated grip layouts (`startMs=615 endMs=8000`) at 19:36:50.141. The polling loop stopped as soon as it saw the commit marker, before the asynchronous layout records were available in its captured file.
