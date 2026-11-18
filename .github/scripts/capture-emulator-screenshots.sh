@@ -5347,8 +5347,9 @@ sample_x = (left[2] + right[0]) // 2
 # captured PNG can be density-scaled and include system insets. Do not use the
 # view-space vertical midpoint as a PNG pixel row. Find the actual fixture-frame
 # row at the seam by scanning the two interior strips in the captured image.
-# The selected clip's rounded trim handle overlays the exact seam, so sample
-# 18..22 pixels to either side, never on the handle itself.
+# The selected clip's rounded trim handle extends beyond the seam.
+# Sample 28..32 pixels to either side so both probes land on actual filmstrip
+# pixels rather than the white handle/border.
 def fixture_frame_pixel(rgb):
     red, green, blue = rgb
     return green > 120 and green > red * 1.5 and green > blue * 1.5
@@ -5359,12 +5360,12 @@ best_score = 0
 for y in range(image.height):
     left_pixels = [
         image.getpixel((sample_x - offset, y))
-        for offset in range(18, 23)
+        for offset in range(28, 33)
         if 0 <= sample_x - offset < image.width
     ]
     right_pixels = [
         image.getpixel((sample_x + offset, y))
-        for offset in range(18, 23)
+        for offset in range(28, 33)
         if 0 <= sample_x + offset < image.width
     ]
     left_visible = sum(fixture_frame_pixel(pixel) for pixel in left_pixels)
