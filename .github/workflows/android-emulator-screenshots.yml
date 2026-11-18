@@ -36,7 +36,8 @@ concurrency:
 jobs:
   emulator-ui:
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    # Leave enough room for slow hosted-runner package mirrors plus the API-35 smoke.
+    timeout-minutes: 60
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -84,7 +85,8 @@ jobs:
 
       - name: Install FFmpeg from Ubuntu packages when static download fails
         if: steps.setup_ffmpeg.outcome != 'success'
-        timeout-minutes: 8
+        # Ubuntu's mirror took longer than eight minutes to deliver FFmpeg's runtime packages.
+        timeout-minutes: 15
         shell: bash
         run: |
           set -euo pipefail
