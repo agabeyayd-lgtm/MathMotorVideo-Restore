@@ -1,3 +1,13 @@
+## 2026-11-19 — PR #45: keep warm MMR for ordinary two-cell jumps
+
+- Exact-head run 44406239499 for commit 13f4bfaddf80a3f31f2d9654a5e83ddcf2f5e15e passed Android unit/build, debug APK packaging/upload, the cold-preview bootstrap check, warmed interactive preview budgets, ruler/filmstrip sync, and measured forward/reverse fling.
+- The remaining strict red is visible-thumbnail decode only: queue max 215ms, preview-deferred max 1ms, disk lookup max 5ms, decode median/max 1,363/1,859ms, visible-strip fill 2,124ms. Fill is within 2,500ms; decode exceeds the unchanged 1,500ms cap. Warm playhead preview also passed its 250/800/1,000ms budgets.
+- Inspected the exact emulator artifact. A 4,572ms worker jump reset the MMR and the following decode measured 843ms. However, two ordinary 2,286ms jumps also reset warm retrievers; the following frame decodes measured 1,711ms and 1,846ms. These resets are unnecessary for ordinary two-cell movement and can discard a useful warm decoder.
+- Follow-up code commit changes the per-worker reset threshold from 2,000ms to 4,000ms. This preserves the observed beneficial reset above 4s while keeping the MMR warm for 2.286s jumps. OPTION_CLOSEST semantics, worker count, and all performance thresholds are unchanged.
+- Pending: exact-head unit/build, APK package, and API 35 emulator rerun. Accept only if decode max <=1,500ms and visible-strip fill <=2,500ms, with the large-jump reset still logged. No threshold relaxation, merge, version bump, or release before all checks are green.
+
+---
+
 ## 2026-11-19 — PR #45: post-release fling passes; isolate long MMR seek latency
 
 - API 35 run 44398309278 passed the filmstrip post-release momentum assertion. The earlier zero-velocity fallback is behaving as intended; do not reopen or weaken that check.
