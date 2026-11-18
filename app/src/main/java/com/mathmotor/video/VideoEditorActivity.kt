@@ -7099,10 +7099,16 @@ class VideoEditorActivity : Activity() {
                             timelinePlayheadMs = pendingSeek.coerceIn(0L, totalOutputDurationMs())
                             comp.playWhenReady = pendingTimelineCompositionResumeAfterSeek
                             pendingTimelineCompositionResumeAfterSeek = false
-                            // Keep the prepared video surface visible during the source's
-                            // cold still-decoder bootstrap; do not cover it with black.
-                            awaitingInitialPreviewBootstrap = false
-                            requestPreviewFrameAt(timelinePlayheadMs, keepPreviousFrame = true)
+                            // A seek can move CompositionPlayer back to BUFFERING after the
+                            // READY callback that delivered it. Keep the cold-still gate closed
+                            // here; the next READY callback owns the single bootstrap request.
+                            // Starting MMR now races the seek's decoder preparation and the
+                            // delayed bootstrap below would immediately cancel this first task.
+                            awaitingInitialPreviewBootstrap = true
+                            if (timelineSyncTestEnabled) android.util.Log.i(
+                                "TimelineSyncTest",
+                                "TIMELINE_PREVIEW_SEEK_APPLIED positionMs=$timelinePlayheadMs waitingForReady=true"
+                            )
                             updateTimelinePlayheadLabel()
                         }
                     }
@@ -7125,9 +7131,22 @@ class VideoEditorActivity : Activity() {
                         // player preparation; the live preview is already READY.
                         playerView.postDelayed({
                             if (timelineCompositionPlayer === comp) {
-                                // Release the startup gate even if playback began during
-                                // the short surface-settle window. The next paused seek
-                                // can then request its own exact frame.
+                                // A seek issued by the preceding READY callback can put the
+                                // player back into BUFFERING. Do not release the still-decode
+                                // gate or start MMR until that seek has reached READY too.
+                                if (comp.playbackState != androidx.media3.common.Player.STATE_READY ||
+                                    pendingTimelineCompositionSeekMs != null
+                                ) {
+                                    initialPausedBaseFrameRefreshScheduled = false
+                                    if (timelineSyncTestEnabled) android.util.Log.i(
+                                        "TimelineSyncTest",
+                                        "TIMELINE_INITIAL_BASE_FRAME_BOOTSTRAP deferred=true " +
+                                            "state=${comp.playbackState} pendingSeek=${pendingTimelineCompositionSeekMs != null}"
+                                    )
+                                    return@postDelayed
+                                }
+                                // READY is stable after any pending seek. Release the startup
+                                // gate even if playback began during the surface-settle window.
                                 awaitingInitialPreviewBootstrap = false
                                 if (!comp.isPlaying && !comp.playWhenReady &&
                                     !isFinishing && !isDestroyed
