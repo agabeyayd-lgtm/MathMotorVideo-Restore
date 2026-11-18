@@ -12690,11 +12690,12 @@ class VideoEditorActivity : Activity() {
         val workerId = Thread.currentThread().id
         val previousFrameTimeMs = timelineThumbnailLastFrameTimesMs[workerId]
         val seekDistanceMs = previousFrameTimeMs?.let { kotlin.math.abs(requestedTimeMs - it) }
-        // The API 35 trace showed a worker reusing its MMR for a second frame
-        // 5.7s ahead; that decode took 1.7–2.3s while the first frame took
-        // 0.2–1.2s. Reopen only for a large discontinuity so normal adjacent
-        // filmstrip samples keep their warm retriever and exact OPTION_CLOSEST.
-        if (seekDistanceMs != null && seekDistanceMs > 2_000L) {
+        // API 35 traces show that a 4.57s per-worker jump benefits from reopening
+        // the MMR (843ms on the measured run), while 2.286s jumps do not: reopening
+        // those warm retrievers raised the next two decodes to 1.71s and 1.85s.
+        // Keep the retriever warm for ordinary multi-cell movement and reset only
+        // on a genuinely large discontinuity; exact OPTION_CLOSEST semantics remain.
+        if (seekDistanceMs != null && seekDistanceMs > 4_000L) {
             if (timelineSyncTestEnabled || timelineLifecycleDiagnosticsEnabled) {
                 android.util.Log.i(
                     "TimelineThumbnail",
