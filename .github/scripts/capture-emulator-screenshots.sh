@@ -4106,8 +4106,11 @@ if not candidates:
 print(min(candidates)[2])
 PY
 )" || return 1
-    echo "Scrolling the shared timeline toward the text layer's trailing edge (attempt $attempt/6)."
-    timeout -k 2s 8s adb -s emulator-5554 shell input swipe 930 "$ruler_y" 270 "$ruler_y" 420
+    echo "Nudging the shared timeline toward the text layer's trailing edge without triggering inertial fling (attempt $attempt/6)."
+    # This check is about making the trim handle visible, not fling velocity.
+    # Use a short, slow 140px drag so the app's new natural-fling behavior does
+    # not coast past the target and make the edge disappear off the opposite side.
+    timeout -k 2s 8s adb -s emulator-5554 shell input swipe 930 "$ruler_y" 790 "$ruler_y" 1600
     sleep 1
   done
   dump_hierarchy editor-text-trim-scroll-end-final.xml "$hierarchy" || return 1
