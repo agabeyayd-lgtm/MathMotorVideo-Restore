@@ -16,6 +16,7 @@ on:
   push:
     branches:
       - main
+      - fix/capcut-unified-timeline-scroll
     paths:
       - "app/build.gradle.kts"
       - "app/src/main/**"
