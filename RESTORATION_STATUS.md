@@ -1,3 +1,12 @@
+## 2026-11-18 — PR #45: wait for committed text-grip geometry before asserting
+
+- Review of emulator artifact `14463568565` showed that the earlier smoke failure was caused by an incomplete log-capture window, not a failed trim interaction. The app logged `TEXT_EDGE_TRIM_COMMIT edge=start` at 19:36:50.051 and then logged both updated grip layouts (`startMs=615 endMs=8000`) at 19:36:50.141. The polling loop stopped as soon as it saw the commit marker, before the asynchronous layout records were available in its captured file.
+- Commit `fc844678459c42f46c205f9835f3597176a6be88` changes the emulator smoke to read all log buffers and wait for both grips to report the exact committed range before the start trim, end trim, Undo, or Redo geometry assertion. The existing trim values, history checks, pixel checks, and timing budgets are unchanged; no production behavior or release metadata changed.
+- The initial-layout log is still supplied as a fallback to the assertion helper, but current post-operation geometry must now be present before the test proceeds. This prevents a stale 0–8000ms grip measurement from being mistaken for the live 615–8000ms range.
+- Pending: run Android unit/build, APK packaging, and API 35 emulator verification on the exact new PR head. The four-worker thumbnail executor remains provisional until fresh queue/decode/visible-strip measurements are captured. Do not merge or publish while any required check is missing or red.
+
+---
+
 ## 2026-11-18 — PR #45 emulator smoke: text-grip diagnostic input fix
 
 - Exact head `6890fbfd7a3b139e9426de09e52da8b765d2aa49`: `build` and `test-and-build` passed; `emulator-ui` failed at the first text-start-grip layout assertion (exit 95).
