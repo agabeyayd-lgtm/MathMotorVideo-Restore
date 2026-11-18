@@ -659,14 +659,16 @@ class VideoEditorActivity : Activity() {
     private val previewFrameExtractors =
         java.util.concurrent.ConcurrentHashMap<Long, Triple<Uri, Int, FrameExtractor>>()
 
-    // Five persistent MMR workers are an experiment to reduce the second-wave
-    // wait observed with four workers (2,241ms on the API 35 smoke run). Keep this
-    // provisional until the next exact-head run confirms queue, decode, and fill
-    // budgets together; do not increase concurrency again without measurements.
+    // Six persistent MMR workers are a measured follow-up to the five-worker run:
+    // its final visible cell was assigned as a second seek on an already-used worker
+    // and took 1,676ms, while the other six cells took 281–997ms. With seven visible
+    // cells, one extra worker reduces the number of second-wave seeks from two to one.
+    // Keep the strict 1,500ms decode and 2,500ms strip-fill gates; revert this experiment
+    // if exact-head API 35 measurements show more codec contention or worse fill time.
     // The reserved exact-playhead decoder remains isolated from this pool.
     private val timelineThumbnailExecutor = java.util.concurrent.ThreadPoolExecutor(
-        5,
-        5,
+        6,
+        6,
         0L,
         java.util.concurrent.TimeUnit.MILLISECONDS,
         java.util.concurrent.PriorityBlockingQueue<Runnable>(
