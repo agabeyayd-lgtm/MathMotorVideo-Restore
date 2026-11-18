@@ -6202,8 +6202,14 @@ class VideoEditorActivity : Activity() {
                         "fingerVelocityX=${releaseVelocityX.toInt()} minimumVelocity=$minimumVelocity"
                 )
             }
-            if (timelineFlingGestureIntercepted &&
-                scrollDelta != 0 &&
+            // The Activity-level tracker owns the complete DOWN-to-UP
+            // trajectory even when a child filmstrip initially owns DOWN.
+            // Use the observed shared-scroll delta as the proof that this was
+            // a pan, rather than requiring the shared view's touch listener to
+            // observe MOVE (Android may transfer ownership after interception
+            // without replaying the full MOVE sequence to that listener).
+            // Clip/trim drags do not change scrollX; pinch resets this tracker.
+            if (scrollDelta != 0 &&
                 kotlin.math.abs(releaseVelocityX) >= minimumVelocity
             ) {
                 val scrollVelocity = -releaseVelocityX
