@@ -4004,7 +4004,8 @@ text_start_values="$(assert_text_edge_commit emulator-screenshots/text-edge-star
 }
 read -r text_start_before_start text_start_before_end text_start_after_start text_start_after_end text_start_layer <<< "$(printf '%s\n' "$text_start_values" | head -n 1)"
 assert_text_grip_layout_and_state emulator-screenshots/text-edge-start-trim-logcat.txt \
-  "$text_start_after_start" "$text_start_after_end" || {
+  "$text_start_after_start" "$text_start_after_end" \
+  emulator-screenshots/editor-text-selected-canvas-logcat.txt || {
   collect_capture_diagnostics text-trim-start-grip-layout-invalid
   exit 95
 }
