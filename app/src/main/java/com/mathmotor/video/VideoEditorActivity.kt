@@ -355,6 +355,9 @@ class VideoEditorActivity : Activity() {
     private var timelineFlingVelocityTracker: android.view.VelocityTracker? = null
     private var timelineFlingGestureStartScrollX = 0
     private var timelineFlingGestureIntercepted = false
+    // Keep a short raw-coordinate window as a fallback when VelocityTracker
+    // returns zero for a fast intercepted child-to-parent gesture.
+    private val timelineFlingRawSamples = mutableListOf<Pair<Long, Float>>()
     // Single authoritative timeline scale in physical pixels per second.
     private var timelinePxPerSec = 0f
     private var timelineScaleGestureActive = false
@@ -6095,6 +6098,33 @@ class VideoEditorActivity : Activity() {
         timelineFlingVelocityTracker = null
         timelineFlingGestureStartScrollX = 0
         timelineFlingGestureIntercepted = false
+        timelineFlingRawSamples.clear()
+    }
+
+    private fun recordTimelineFlingSample(event: MotionEvent) {
+        timelineFlingRawSamples.add(event.eventTime to event.rawX)
+        val cutoffMs = event.eventTime - 160L
+        // Keep one sample just before the window so sparse input streams still
+        // have a valid interval, while bounding memory to a tiny gesture buffer.
+        while (timelineFlingRawSamples.size > 2 &&
+            timelineFlingRawSamples[1].first < cutoffMs
+        ) {
+            timelineFlingRawSamples.removeAt(0)
+        }
+        while (timelineFlingRawSamples.size > 12) {
+            timelineFlingRawSamples.removeAt(0)
+        }
+    }
+
+    private fun estimateTimelineFlingVelocityX(): Float {
+        if (timelineFlingRawSamples.size < 2) return 0f
+        val last = timelineFlingRawSamples.last()
+        val cutoffMs = last.first - 160L
+        val recent = timelineFlingRawSamples.filter { it.first >= cutoffMs }
+        val first = if (recent.size >= 2) recent.first() else timelineFlingRawSamples[timelineFlingRawSamples.lastIndex - 1]
+        val elapsedMs = last.first - first.first
+        if (elapsedMs <= 0L) return 0f
+        return (last.second - first.second) * 1000f / elapsedMs.toFloat()
     }
 
     private fun isScreenPointInsideTimeline(x: Float, y: Float): Boolean {
@@ -6119,6 +6149,7 @@ class VideoEditorActivity : Activity() {
                 timelineFlingVelocityTracker = android.view.VelocityTracker.obtain().also {
                     it.addMovement(event)
                 }
+                recordTimelineFlingSample(event)
                 if (timelineSyncTestEnabled) {
                     val location = IntArray(2)
                     timelineSharedScrollView.getLocationOnScreen(location)
@@ -6136,7 +6167,10 @@ class VideoEditorActivity : Activity() {
             // Pinch zoom owns multi-touch. Never turn the end of a pinch into a fling.
             resetTimelineFlingGesture()
         } else {
-            timelineFlingVelocityTracker?.addMovement(event)
+            timelineFlingVelocityTracker?.let { tracker ->
+                tracker.addMovement(event)
+                recordTimelineFlingSample(event)
+            }
         }
 
         val wasPinchCaptured = timelinePinchGestureCaptured
@@ -6177,21 +6211,26 @@ class VideoEditorActivity : Activity() {
 
         val isRelease = event.actionMasked == MotionEvent.ACTION_UP
         val tracker = if (isRelease) timelineFlingVelocityTracker else null
-        var releaseVelocityX = 0f
+        var trackerVelocityX = 0f
         if (tracker != null) {
             tracker.computeCurrentVelocity(
                 1000,
                 android.view.ViewConfiguration.get(this).scaledMaximumFlingVelocity.toFloat()
             )
-            releaseVelocityX = tracker.getXVelocity(event.getPointerId(0))
+            trackerVelocityX = tracker.getXVelocity(event.getPointerId(0))
         }
+        val minimumVelocity = android.view.ViewConfiguration.get(this).scaledMinimumFlingVelocity
+        val rawWindowVelocityX = if (isRelease) estimateTimelineFlingVelocityX() else 0f
+        val useRawWindowFallback = tracker != null &&
+            kotlin.math.abs(trackerVelocityX) < minimumVelocity &&
+            kotlin.math.abs(rawWindowVelocityX) >= minimumVelocity
+        val releaseVelocityX = if (useRawWindowFallback) rawWindowVelocityX else trackerVelocityX
 
         // Let Android finish dispatching ACTION_UP first, then start one fling
         // from the full down-to-up velocity. The shared ScrollView's own tracker
         // may only have seen MOVE/UP because the filmstrip child owned ACTION_DOWN.
         val handled = super.dispatchTouchEvent(event)
         if (isRelease) {
-            val minimumVelocity = android.view.ViewConfiguration.get(this).scaledMinimumFlingVelocity
             val scrollDelta = if (::timelineSharedScrollView.isInitialized) {
                 timelineSharedScrollView.scrollX - timelineFlingGestureStartScrollX
             } else 0
@@ -6200,7 +6239,9 @@ class VideoEditorActivity : Activity() {
                     "TimelineSyncTest",
                     "TIMELINE_FLING_RELEASE captured=${tracker != null} intercepted=$timelineFlingGestureIntercepted " +
                         "startScrollX=$timelineFlingGestureStartScrollX scrollDelta=$scrollDelta " +
-                        "fingerVelocityX=${releaseVelocityX.toInt()} minimumVelocity=$minimumVelocity"
+                        "fingerVelocityX=${releaseVelocityX.toInt()} trackerVelocityX=${trackerVelocityX.toInt()} " +
+                        "rawWindowVelocityX=${rawWindowVelocityX.toInt()} rawSamples=${timelineFlingRawSamples.size} " +
+                        "velocitySource=${if (useRawWindowFallback) "raw-window" else "tracker"} minimumVelocity=$minimumVelocity"
                 )
             }
             // The Activity-level tracker owns the complete DOWN-to-UP
