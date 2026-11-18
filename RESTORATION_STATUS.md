@@ -1,3 +1,13 @@
+## 2026-11-18 — PR #45 API 35 thumbnail queue failure and four-worker measurement
+
+- Exact head `77f52db43543a7d54addad320e6e4b983e7ba1db` passed `test-and-build` and `build`; `emulator-ui` reached the real editor smoke and failed only the strict visible-thumbnail queue budget.
+- The measured seven visible samples had queue waits of 119, 42, 114, 771, 1184, 1801 and 2996ms; decode times were 640, 977, 1665, 2124, 2267, 2124 and 1374ms. Visible-strip fill was 4400ms. The separate warmed interactive preview passed (queue max 6ms, decode max 519ms, request-to-visible max 610ms). Filmstrip forward/reverse scrubbing, shared scroll and post-release momentum also passed in this run.
+- This is not an emulator bootstrap or FFmpeg failure. The remaining bottleneck is contention/throughput in the background still-frame worker pool while decoding the seven visible filmstrip cells.
+- Candidate `f18bb700ceba0483de2168c9a0a6a31a39dfd949` increases the persistent background still worker pool from three to four solely as a measured experiment. No assertion threshold, timestamp-selection semantics, preview decoder isolation, versionCode, release trigger, or merge state was changed.
+- Re-run exact-head unit/build/emulator checks. Keep or revert the fourth worker based on measured queue, decode and visible-strip-fill results; do not merge or publish while any required check is not green.
+
+---
+
 ## 2026-11-17 — PR #45 review: preserve exact filmstrip timestamps
 
 - The first PR #45 candidate used `MediaMetadataRetriever.OPTION_CLOSEST_SYNC` for every filmstrip cell and adjusted the synthetic fixture markers to one-second keyframe boundaries. That reproduced a previously rejected strategy: the 2026-11-01 implementation history records that sync-only sampling can repeat one keyframe across neighbouring cells on longer-GOP media.
