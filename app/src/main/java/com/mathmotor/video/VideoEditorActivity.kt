@@ -4418,6 +4418,7 @@ class VideoEditorActivity : Activity() {
                 }
             }
 
+            val textTrimVisibleGrips = mutableMapOf<Boolean, View>()
             fun addTextTrimHandle(isStart: Boolean) {
                 if (totalMs <= 0L) return
                 val handleWidth = timelineEdgeTouchWidth(blockWidth)
@@ -4470,11 +4471,16 @@ class VideoEditorActivity : Activity() {
                             } else {
                                 deltaPx.coerceIn(-maximumShiftPx, sourceAfterPx)
                             }
+                            // The visible white tab is a separate sibling for
+                            // accurate boundary rendering; keep it physically
+                            // attached to the broad transparent touch target.
+                            textTrimVisibleGrips[isStart]?.translationX = view.translationX
                             true
                         }
                         android.view.MotionEvent.ACTION_UP -> {
                             val deltaPx = event.rawX - downRawX
                             view.translationX = 0f
+                            textTrimVisibleGrips[isStart]?.translationX = 0f
                             view.parent?.requestDisallowInterceptTouchEvent(false)
                             if (moved) {
                                 recordProjectEdit()
@@ -4528,6 +4534,7 @@ class VideoEditorActivity : Activity() {
                         }
                         android.view.MotionEvent.ACTION_CANCEL -> {
                             view.translationX = 0f
+                            textTrimVisibleGrips[isStart]?.translationX = 0f
                             view.parent?.requestDisallowInterceptTouchEvent(false)
                             true
                         }
@@ -4575,6 +4582,7 @@ class VideoEditorActivity : Activity() {
                     topMargin = 0
                     gravity = Gravity.TOP or Gravity.LEFT
                 })
+                textTrimVisibleGrips[isStart] = grip
                 grip.post {
                     if (!timelineSyncTestEnabled || grip.width <= 0) return@post
                     val frameLocation = IntArray(2)
