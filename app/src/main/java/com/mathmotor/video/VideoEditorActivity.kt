@@ -4192,15 +4192,22 @@ class VideoEditorActivity : Activity() {
                     isClickable = true
                     isFocusable = true
                     importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
-                    addView(View(this@VideoEditorActivity).apply {
-                        background = android.graphics.drawable.GradientDrawable().apply {
-                            setColor(Color.rgb(0, 164, 146))
-                            cornerRadius = dp(3).toFloat()
-                        }
+                    // CapCut-style visible trim tab is a child of the
+                    // same broad touch target, so it can never lag behind the
+                    // finger or become detached from the active hit region.
+                    val visibleGrip = FrameLayout(this@VideoEditorActivity).apply {
+                        setBackgroundColor(Color.WHITE)
                         isClickable = false
                         isFocusable = false
-                    }, FrameLayout.LayoutParams(
-                        dp(5), dp(24), Gravity.CENTER
+                        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                    }
+                    visibleGrip.addView(View(this@VideoEditorActivity).apply {
+                        setBackgroundColor(Color.rgb(145, 145, 145))
+                        isClickable = false
+                        isFocusable = false
+                    }, FrameLayout.LayoutParams(dp(2), dp(14), Gravity.CENTER))
+                    addView(visibleGrip, FrameLayout.LayoutParams(
+                        dp(10), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER
                     ))
                     setOnClickListener { /* The transparent edge target is primarily a drag control. */ }
                 }
