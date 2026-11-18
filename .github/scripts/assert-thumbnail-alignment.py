@@ -341,6 +341,24 @@ def verify(log_path: str, screenshot_path: str):
             f"FAIL: visible thumbnail work was held behind preview bootstrap for {max(deferred_waits)}ms; limit is 2000ms."
         )
     if max(decode_times) > 1_500:
+        # Keep the strict per-cell limit, but show which source timestamp and
+        # worker produced every measured decode so a slow second-wave seek can
+        # be traced without downloading/replaying the entire emulator session.
+        latest_decoder_by_source = {}
+        for requested, actual, decoder, worker, decode_ms in decoder_rows:
+            latest_decoder_by_source[int(requested)] = (
+                decoder, int(worker), int(decode_ms), actual
+            )
+        print("  Per-cell decode diagnostics (sourceMs, decodeMs, queueWaitMs, decoder, worker):")
+        for row in visible_timing_rows:
+            source_ms = row[0]
+            decoder, worker, decode_ms, actual = latest_decoder_by_source.get(
+                source_ms, ("unknown", -1, row[4], None)
+            )
+            print(
+                f"    {source_ms}ms: {decode_ms}ms, queue={row[1]}ms, "
+                f"decoder={decoder}, worker={worker}, actualFrameMs={actual or 'n/a'}"
+            )
         raise SystemExit(
             f"FAIL: visible thumbnail decode reached {max(decode_times)}ms; limit is 1500ms."
         )
