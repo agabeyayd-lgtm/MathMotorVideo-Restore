@@ -1,3 +1,12 @@
+## 2026-11-18 — PR #45 emulator smoke: text-grip diagnostic input fix
+
+- Exact head `6890fbfd7a3b139e9426de09e52da8b765d2aa49`: `build` and `test-and-build` passed; `emulator-ui` failed at the first text-start-grip layout assertion (exit 95).
+- The app emitted a real `TEXT_EDGE_TRIM_COMMIT` from 0–8000ms to 615–8000ms and recorded its own Undo entry. The test then failed because its first call to `assert_text_grip_layout_and_state` supplied only the fresh trim log, which intentionally contains commit/history markers but not the initial layout measurements. The same function already accepts prior log files, and later start/end/undo/redo calls correctly pass those prior measurements.
+- Commit `8e0b5ebc0cf42decea043a1fabc8e197b1a4b15f` fixes only the smoke-test input: the first start-trim layout assertion now also reads `editor-text-selected-canvas-logcat.txt`, which contains both initially measured grip geometries. No app behavior, assertion, tolerance, timing budget, or release metadata was changed.
+- Re-run all required checks on the new exact head. The four-worker thumbnail experiment is not accepted or rejected by this text-grip failure; keep it provisional until the emulator run yields valid queue/decode/visible-strip measurements. Do not merge or publish while a required check is red.
+
+---
+
 ## 2026-11-18 — PR #45 API 35 thumbnail queue failure and four-worker measurement
 
 - Exact head `77f52db43543a7d54addad320e6e4b983e7ba1db` passed `test-and-build` and `build`; `emulator-ui` reached the real editor smoke and failed only the strict visible-thumbnail queue budget.
