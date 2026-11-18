@@ -12695,6 +12695,7 @@ class VideoEditorActivity : Activity() {
         // those warm retrievers raised the next two decodes to 1.71s and 1.85s.
         // Keep the retriever warm for ordinary multi-cell movement and reset only
         // on a genuinely large discontinuity; exact OPTION_CLOSEST semantics remain.
+        // This is intentionally a per-worker threshold, not a global cache expiry.
         if (seekDistanceMs != null && seekDistanceMs > 4_000L) {
             if (timelineSyncTestEnabled || timelineLifecycleDiagnosticsEnabled) {
                 android.util.Log.i(
