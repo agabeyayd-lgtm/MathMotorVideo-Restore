@@ -1,3 +1,12 @@
+## 2026-11-19 — PR #45: post-release fling passes; isolate long MMR seek latency
+
+- API 35 run 44398309278 passed the filmstrip post-release momentum assertion. The earlier zero-velocity fallback is behaving as intended; do not reopen or weaken that check.
+- The remaining emulator red is only the visible-thumbnail decode budget: max 2,337ms against 1,500ms, with seven final visible cells; visible-strip fill 2,890ms against 2,500ms. Warm playhead preview passed (queue max 4ms, decode max 652ms, request-to-visible max 728ms). Queue max was 456ms, so the current five-worker queue is no longer the bottleneck.
+- Downloaded and inspected the exact emulator artifact. The seven replacement frames were queued together. The first five ran on separate MMR workers; the final two were assigned to workers that had just decoded 571ms and 1,713ms, then jumped forward to 6,285ms and 7,428ms. Those long per-worker jumps took 1,708ms and 2,337ms. Adjacent/first decodes ranged from 214ms to 1,179ms. All used the scaled `OPTION_CLOSEST` path (89x158/90x160); no Media3 fallback was used. Do not switch to `OPTION_CLOSEST_SYNC`—that was previously rejected because long-GOP media repeated keyframes.
+- Commit 990167c77336b915d8699c0bd0876fa88fdaa6d0 adds a measured 2,000ms per-worker seek-discontinuity guard: on a large timestamp jump it releases that worker's cached MMR before reopening it for the next frame. Adjacent samples retain their warm retriever. A diagnostic `TIMELINE_THUMBNAIL_RETRIEVER_RESET` records worker, previous/requested timestamps and jump distance. This is a targeted experiment, not yet accepted.
+- Pending: exact-head Android unit/build, debug APK packaging and API 35 emulator. Accept this only if the emulator confirms the large-jump reset occurs and decode max <=1,500ms plus visible-strip fill <=2,500ms. Do not change thresholds, merge, bump version or publish before green.
+
+---
 ## 2026-11-19 — PR #45: recover zeroed velocity on fast intercepted filmstrip swipes
 
 - Reviewed both API 35 emulator artifacts instead of repeating the same gesture blindly. Failed run 44384371017 (artifact 14465522532): the same controlled 200px left swipe was captured at Activity level, the shared scroller intercepted it, and scrollX advanced 149px; however, VelocityTracker reported fingerVelocityX=0 against the unchanged 131px/s minimum. No custom fling started and post-UP movement was 0px at 64/128/240ms.
