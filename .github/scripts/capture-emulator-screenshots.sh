@@ -3979,10 +3979,15 @@ timeout -k 2s 8s adb -s emulator-5554 logcat -c
 timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$text_start_x" "$text_start_y" "$((text_start_x + 48))" "$text_start_y" 700
 text_start_committed=false
 for attempt in $(seq 1 12); do
-  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime \
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -b all -v threadtime \
     -s EditorTouchTest:I ProjectHistoryTest:I \
     > emulator-screenshots/text-edge-start-trim-logcat.txt 2>&1 || true
-  if grep -Fq "TEXT_EDGE_TRIM_COMMIT edge=start" emulator-screenshots/text-edge-start-trim-logcat.txt; then
+  # The commit event is logged before Android finishes rebuilding the text lane.
+  # Wait for both live grips to report the committed range; otherwise the
+  # assertion can mistakenly reuse the initial 0-8000ms measurements.
+  if grep -Fq "TEXT_EDGE_TRIM_COMMIT edge=start" emulator-screenshots/text-edge-start-trim-logcat.txt &&
+     grep -Eq 'TEXT_EDGE_GRIP_LAYOUT edge=start .*startMs=615 endMs=8000' emulator-screenshots/text-edge-start-trim-logcat.txt &&
+     grep -Eq 'TEXT_EDGE_GRIP_LAYOUT edge=end .*startMs=615 endMs=8000' emulator-screenshots/text-edge-start-trim-logcat.txt; then
     text_start_committed=true
     break
   fi
@@ -4175,10 +4180,14 @@ timeout -k 2s 8s adb -s emulator-5554 logcat -c
 timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$text_end_x" "$text_end_y" "$((text_end_x - 48))" "$text_end_y" 700
 text_end_committed=false
 for attempt in $(seq 1 12); do
-  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime \
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -b all -v threadtime \
     -s EditorTouchTest:I ProjectHistoryTest:I \
     > emulator-screenshots/text-edge-end-trim-logcat.txt 2>&1 || true
-  if grep -Fq "TEXT_EDGE_TRIM_COMMIT edge=end" emulator-screenshots/text-edge-end-trim-logcat.txt; then
+  # The end-trim commit precedes its asynchronous layout pass. Require both
+  # grips to expose the final 615-7385ms range before validating geometry.
+  if grep -Fq "TEXT_EDGE_TRIM_COMMIT edge=end" emulator-screenshots/text-edge-end-trim-logcat.txt &&
+     grep -Eq 'TEXT_EDGE_GRIP_LAYOUT edge=start .*startMs=615 endMs=7385' emulator-screenshots/text-edge-end-trim-logcat.txt &&
+     grep -Eq 'TEXT_EDGE_GRIP_LAYOUT edge=end .*startMs=615 endMs=7385' emulator-screenshots/text-edge-end-trim-logcat.txt; then
     text_end_committed=true
     break
   fi
@@ -4251,11 +4260,12 @@ timeout -k 2s 8s adb -s emulator-5554 logcat -c
 timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_trim_undo_coords
 text_trim_undo_ready=false
 for attempt in $(seq 1 12); do
-  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime \
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -b all -v threadtime \
     -s ProjectHistoryTest:I EditorTouchTest:I \
     > emulator-screenshots/text-edge-undo-logcat.txt 2>&1 || true
   if grep -Fq "PROJECT_HISTORY_APPLIED action=undo" emulator-screenshots/text-edge-undo-logcat.txt &&
-     grep -Fq "TEXT_EDGE_GRIP_LAYOUT edge=end" emulator-screenshots/text-edge-undo-logcat.txt; then
+     grep -Eq 'TEXT_EDGE_GRIP_LAYOUT edge=start .*startMs=615 endMs=8000' emulator-screenshots/text-edge-undo-logcat.txt &&
+     grep -Eq 'TEXT_EDGE_GRIP_LAYOUT edge=end .*startMs=615 endMs=8000' emulator-screenshots/text-edge-undo-logcat.txt; then
     text_trim_undo_ready=true
     break
   fi
@@ -4290,11 +4300,12 @@ timeout -k 2s 8s adb -s emulator-5554 logcat -c
 timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_trim_redo_coords
 text_trim_redo_ready=false
 for attempt in $(seq 1 12); do
-  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime \
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -b all -v threadtime \
     -s ProjectHistoryTest:I EditorTouchTest:I \
     > emulator-screenshots/text-edge-redo-logcat.txt 2>&1 || true
   if grep -Fq "PROJECT_HISTORY_APPLIED action=redo" emulator-screenshots/text-edge-redo-logcat.txt &&
-     grep -Fq "TEXT_EDGE_GRIP_LAYOUT edge=end" emulator-screenshots/text-edge-redo-logcat.txt; then
+     grep -Eq 'TEXT_EDGE_GRIP_LAYOUT edge=start .*startMs=615 endMs=7385' emulator-screenshots/text-edge-redo-logcat.txt &&
+     grep -Eq 'TEXT_EDGE_GRIP_LAYOUT edge=end .*startMs=615 endMs=7385' emulator-screenshots/text-edge-redo-logcat.txt; then
     text_trim_redo_ready=true
     break
   fi
