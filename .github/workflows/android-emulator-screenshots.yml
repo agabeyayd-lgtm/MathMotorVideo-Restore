@@ -13,6 +13,7 @@ on:
       - ".github/scripts/capture-emulator-screenshots.sh"
       - ".github/scripts/assert-thumbnail-alignment.py"
       - ".github/scripts/assert-timeline-sync.py"
+      - ".github/scripts/ci_image.py"
   push:
     branches:
       - main
@@ -24,6 +25,7 @@ on:
       - ".github/scripts/capture-emulator-screenshots.sh"
       - ".github/scripts/assert-thumbnail-alignment.py"
       - ".github/scripts/assert-timeline-sync.py"
+      - ".github/scripts/ci_image.py"
 
 permissions:
   contents: read
