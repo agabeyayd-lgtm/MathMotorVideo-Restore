@@ -348,6 +348,13 @@ class VideoEditorActivity : Activity() {
     private var timelinePlaybackFrameSyncRunning = false
     private var timelineHorizontalScrollX = 0
     private var pendingTimelineScrollX: Int? = null
+    // Capture the complete finger trajectory at Activity dispatch level. The
+    // filmstrip child receives DOWN first and the HorizontalScrollView only
+    // takes ownership after touch slop, so its own velocity tracker can miss
+    // the beginning of the gesture and release with zero fling velocity.
+    private var timelineFlingVelocityTracker: android.view.VelocityTracker? = null
+    private var timelineFlingGestureStartScrollX = 0
+    private var timelineFlingGestureIntercepted = false
     // Single authoritative timeline scale in physical pixels per second.
     private var timelinePxPerSec = 0f
     private var timelineScaleGestureActive = false
@@ -1688,6 +1695,13 @@ class VideoEditorActivity : Activity() {
                             "x=${event.x} rawX=${event.rawX} y=${event.y} " +
                             "scrollX=${view.scrollX} pointerCount=${event.pointerCount}"
                     )
+                }
+                if (event.actionMasked == MotionEvent.ACTION_MOVE && event.pointerCount == 1) {
+                    // This listener is reached only after the shared scroller
+                    // has become the touch target (the normal one-finger pan).
+                    // Long-press clip drags disallow parent interception and
+                    // therefore never opt into the inertial release below.
+                    timelineFlingGestureIntercepted = true
                 }
                 if (event.actionMasked == MotionEvent.ACTION_UP) {
                     val scrollAtRelease = view.scrollX
@@ -6060,7 +6074,42 @@ class VideoEditorActivity : Activity() {
             screenY >= location[1] && screenY <= location[1] + timelineTracksFrame.height
     }
 
+    private fun resetTimelineFlingGesture() {
+        timelineFlingVelocityTracker?.recycle()
+        timelineFlingVelocityTracker = null
+        timelineFlingGestureStartScrollX = 0
+        timelineFlingGestureIntercepted = false
+    }
+
+    private fun isScreenPointInsideTimeline(x: Float, y: Float): Boolean {
+        if (!::timelineTracksFrame.isInitialized || !timelineTracksFrame.isLaidOut) return false
+        val location = IntArray(2)
+        timelineTracksFrame.getLocationOnScreen(location)
+        return x >= location[0] && x <= location[0] + timelineTracksFrame.width &&
+            y >= location[1] && y <= location[1] + timelineTracksFrame.height
+    }
+
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            resetTimelineFlingGesture()
+            if (event.pointerCount == 1 &&
+                isScreenPointInsideTimeline(event.rawX, event.rawY)
+            ) {
+                timelineFlingGestureStartScrollX =
+                    if (::timelineSharedScrollView.isInitialized) timelineSharedScrollView.scrollX else 0
+                timelineFlingVelocityTracker = android.view.VelocityTracker.obtain().also {
+                    it.addMovement(event)
+                }
+            }
+        } else if (event.pointerCount >= 2 ||
+            event.actionMasked == MotionEvent.ACTION_POINTER_DOWN
+        ) {
+            // Pinch zoom owns multi-touch. Never turn the end of a pinch into a fling.
+            resetTimelineFlingGesture()
+        } else {
+            timelineFlingVelocityTracker?.addMovement(event)
+        }
+
         val wasPinchCaptured = timelinePinchGestureCaptured
         timelineScaleGestureDetector.onTouchEvent(event)
 
@@ -6096,7 +6145,49 @@ class VideoEditorActivity : Activity() {
             event.actionMasked == MotionEvent.ACTION_UP) {
             timelineScaleGestureActive = false
         }
-        return super.dispatchTouchEvent(event)
+
+        val isRelease = event.actionMasked == MotionEvent.ACTION_UP
+        val tracker = if (isRelease) timelineFlingVelocityTracker else null
+        var releaseVelocityX = 0f
+        if (tracker != null) {
+            tracker.computeCurrentVelocity(
+                1000,
+                android.view.ViewConfiguration.get(this).scaledMaximumFlingVelocity.toFloat()
+            )
+            releaseVelocityX = tracker.getXVelocity(event.getPointerId(0))
+        }
+
+        // Let Android finish dispatching ACTION_UP first, then start one fling
+        // from the full down-to-up velocity. The shared ScrollView's own tracker
+        // may only have seen MOVE/UP because the filmstrip child owned ACTION_DOWN.
+        val handled = super.dispatchTouchEvent(event)
+        if (isRelease) {
+            val minimumVelocity = android.view.ViewConfiguration.get(this).scaledMinimumFlingVelocity
+            val scrollDelta = if (::timelineSharedScrollView.isInitialized) {
+                timelineSharedScrollView.scrollX - timelineFlingGestureStartScrollX
+            } else 0
+            if (timelineFlingGestureIntercepted &&
+                scrollDelta != 0 &&
+                kotlin.math.abs(releaseVelocityX) >= minimumVelocity
+            ) {
+                val scrollVelocity = -releaseVelocityX
+                if (::timelineSharedScrollView.isInitialized) {
+                    timelineSharedScrollView.fling(scrollVelocity.toInt())
+                    if (timelineSyncTestEnabled) {
+                        android.util.Log.i(
+                            "TimelineSyncTest",
+                            "TIMELINE_CUSTOM_FLING fingerVelocityX=${releaseVelocityX.toInt()} " +
+                                "scrollVelocityX=${scrollVelocity.toInt()} scrollDelta=$scrollDelta " +
+                                "scrollX=${timelineSharedScrollView.scrollX}"
+                        )
+                    }
+                }
+            }
+            resetTimelineFlingGesture()
+        } else if (event.actionMasked == MotionEvent.ACTION_CANCEL) {
+            resetTimelineFlingGesture()
+        }
+        return handled
     }
 
     private fun timelinePixelsPerSecond(): Float {
