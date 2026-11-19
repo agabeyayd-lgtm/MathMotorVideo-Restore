@@ -659,16 +659,17 @@ class VideoEditorActivity : Activity() {
     private val previewFrameExtractors =
         java.util.concurrent.ConcurrentHashMap<Long, Triple<Uri, Int, FrameExtractor>>()
 
-    // Three persistent MMR workers limit simultaneous codec contention while
-    // still decoding the visible filmstrip in parallel. The latest API 35 trace
-    // showed five concurrent workers pushing visible-frame decode to 2,101ms
-    // and strip fill to 2,855ms; validate this smaller pool against the unchanged
-    // 1,500ms per-frame and 2,500ms strip-fill gates before retaining it.
-    // Keep the 4s per-worker reset guard so ordinary 2.286s jumps do not
-    // cold-reopen a warm retriever. The exact-playhead decoder stays isolated.
+    // Five persistent MMR workers are the best measured API 35 H.264 baseline:
+    // max queue wait 215ms and strip fill 2,124ms, with max decode 1,859ms
+    // (still above the strict 1,500ms per-frame limit). That run used the older
+    // 2s reset guard; retain the later 4s guard to avoid its measured 2.286s
+    // cold-reopen penalty. The three-worker rerun degraded to 3,814ms queue,
+    // 2,923ms decode and 5,051ms strip fill; six workers also increased contention.
+    // Re-verify this combined setting on the exact API 35 head. Do not relax
+    // the 1,500ms decode, 2,000ms queue or 2,500ms strip-fill gates.
     private val timelineThumbnailExecutor = java.util.concurrent.ThreadPoolExecutor(
-        3,
-        3,
+        5,
+        5,
         0L,
         java.util.concurrent.TimeUnit.MILLISECONDS,
         java.util.concurrent.PriorityBlockingQueue<Runnable>(
