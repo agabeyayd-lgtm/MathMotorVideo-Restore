@@ -571,6 +571,7 @@ class VideoEditorActivity : Activity() {
         timelineVideoAspectRatios.remove(sourceKey)
         timelineVideoAspectRatioMetadataCache.remove(sourceKey)
         timelineVideoFrameDimensions.remove(sourceKey)
+        timelineThumbnailSyncFrameFingerprints.remove(sourceKey)
         if (timelineSyncTestEnabled || timelineLifecycleDiagnosticsEnabled) {
             android.util.Log.i(
                 "TimelineThumbnail",
@@ -652,6 +653,11 @@ class VideoEditorActivity : Activity() {
     // reused decoder to walk forward through an entire intervening GOP range.
     private val timelineThumbnailLastFrameTimesMs =
         java.util.concurrent.ConcurrentHashMap<Long, Long>()
+    // Store compact fingerprints of sync-seek results per source. If multiple
+    // nearby cells resolve to the same keyframe image, only those collisions
+    // pay for an exact timestamp seek instead of repeating the same thumbnail.
+    private val timelineThumbnailSyncFrameFingerprints =
+        java.util.concurrent.ConcurrentHashMap<String, MutableMap<Long, Long>>()
     private val timelineThumbnailExtractors =
         java.util.concurrent.ConcurrentHashMap<Long, Pair<Uri, FrameExtractor>>()
     // A single exact-seek extractor is retained by the reserved preview worker.
@@ -12674,29 +12680,79 @@ class VideoEditorActivity : Activity() {
         return timelineVideoAspectRatios[sourceKey] ?: result
     }
 
+    private fun timelineThumbnailFingerprint(bitmap: Bitmap): Long {
+        // A small, deterministic color grid is sufficient to recognize the exact
+        // same decoded sync frame without retaining additional bitmap allocations.
+        val sampleSide = 8
+        val prime = 1_099_511_628_211L
+        var hash = -3_750_764_393_456_079_579L
+        hash = (hash xor bitmap.width.toLong()) * prime
+        hash = (hash xor bitmap.height.toLong()) * prime
+        for (sampleY in 0 until sampleSide) {
+            val y = if (bitmap.height <= 1) 0 else {
+                sampleY * (bitmap.height - 1) / (sampleSide - 1)
+            }
+            for (sampleX in 0 until sampleSide) {
+                val x = if (bitmap.width <= 1) 0 else {
+                    sampleX * (bitmap.width - 1) / (sampleSide - 1)
+                }
+                hash = (hash xor (bitmap.getPixel(x, y).toLong() and 0xffffffffL)) * prime
+            }
+        }
+        return hash
+    }
+
+    private fun rememberTimelineSyncFrameFingerprint(
+        sourceKey: String,
+        timestampMs: Long,
+        fingerprint: Long,
+        maxNeighborDistanceMs: Long
+    ): Long? {
+        val samples = timelineThumbnailSyncFrameFingerprints.computeIfAbsent(sourceKey) {
+            java.util.LinkedHashMap<Long, Long>()
+        }
+        synchronized(samples) {
+            val previous = samples.entries.map { it.key to it.value }
+            val duplicateTimeMs = TimelineThumbnailMath.nearbyDuplicateSyncFrameTimeMs(
+                requestedTimeMs = timestampMs,
+                fingerprint = fingerprint,
+                previousSamples = previous,
+                maxDistanceMs = maxNeighborDistanceMs
+            )
+            samples[timestampMs] = fingerprint
+            while (samples.size > 256) {
+                val iterator = samples.entries.iterator()
+                if (iterator.hasNext()) {
+                    iterator.next()
+                    iterator.remove()
+                } else {
+                    break
+                }
+            }
+            return duplicateTimeMs
+        }
+    }
+
     private fun decodeTimelineFrame(
         uri: Uri,
         timeMs: Long,
         maxWidthPx: Int,
-        maxHeightPx: Int
+        maxHeightPx: Int,
+        cellWindowMs: Long
     ): Bitmap? {
-        // Filmstrip cells summarize their own time ranges, but each cell must
-        // still represent its requested timestamp. OPTION_CLOSEST_SYNC was
-        // previously removed because long-GOP sources can repeat one keyframe
-        // across neighbouring cells. Keep preview and filmstrip timestamp
-        // semantics consistent; optimize decode cost through sizing, caching,
-        // worker isolation and visible-first scheduling instead.
+        // First use a fast nearest-sync decode for filmstrip cells. It is a visual
+        // summary, not the authoritative paused-preview frame. Long GOPs can map
+        // adjacent cells to the same sync frame, so fingerprint those results and
+        // use an exact timestamp seek only when a nearby collision is detected.
+        // The playhead preview continues to use its independent exact decoder.
         val requestedTimeMs = timeMs.coerceAtLeast(0L)
         val frameTimeUs = requestedTimeMs * 1_000L
         val workerId = Thread.currentThread().id
         val previousFrameTimeMs = timelineThumbnailLastFrameTimesMs[workerId]
         val seekDistanceMs = previousFrameTimeMs?.let { kotlin.math.abs(requestedTimeMs - it) }
-        // API 35 traces show that a 4.57s per-worker jump benefits from reopening
-        // the MMR (843ms on the measured run), while 2.286s jumps do not: reopening
-        // those warm retrievers raised the next two decodes to 1.71s and 1.85s.
-        // Keep the retriever warm for ordinary multi-cell movement and reset only
-        // on a genuinely large discontinuity; exact OPTION_CLOSEST semantics remain.
-        // This is intentionally a per-worker threshold, not a global cache expiry.
+        // Keep each worker's MMR warm across ordinary adjacent-cell requests.
+        // The reset guard only applies to large discontinuities, not to the
+        // per-cell sync/exact choice below.
         if (seekDistanceMs != null && seekDistanceMs > 4_000L) {
             if (timelineSyncTestEnabled || timelineLifecycleDiagnosticsEnabled) {
                 android.util.Log.i(
@@ -12708,9 +12764,82 @@ class VideoEditorActivity : Activity() {
             }
             releaseTimelineThumbnailRetriever()
         }
+
         val platformStartedAt = SystemClock.uptimeMillis()
+        val sourceKey = uri.toString()
         val retriever = timelineThumbnailRetrieverFor(uri, "TimelineThumbnail")
-        var platformDecodePath = "unavailable"
+        var duplicateSyncFrameTimeMs: Long? = null
+        val syncFrame = retriever?.let { activeRetriever ->
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                runCatching {
+                    activeRetriever.getScaledFrameAtTime(
+                        frameTimeUs,
+                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                        maxWidthPx.coerceAtLeast(1),
+                        maxHeightPx.coerceAtLeast(1)
+                    )
+                }.getOrNull()
+            } else {
+                runCatching {
+                    activeRetriever.getFrameAtTime(
+                        frameTimeUs,
+                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+                    )
+                }.getOrNull()
+            }
+        }
+
+        if (Thread.currentThread().isInterrupted) {
+            syncFrame?.let { if (!it.isRecycled) it.recycle() }
+            return null
+        }
+
+        if (syncFrame != null && !syncFrame.isRecycled) {
+            // Compare several neighboring cells so a long GOP cannot repeat one
+            // anchor across a run of thumbnails. The cap avoids treating a distant
+            // recurrence of the same scene as one local GOP collision.
+            val maxNeighborDistanceMs = maxOf(
+                1_500L,
+                (cellWindowMs.coerceAtLeast(1L).coerceAtMost(60_000L) * 8L)
+                    .coerceAtMost(10_000L)
+            )
+            duplicateSyncFrameTimeMs = rememberTimelineSyncFrameFingerprint(
+                sourceKey,
+                requestedTimeMs,
+                timelineThumbnailFingerprint(syncFrame),
+                maxNeighborDistanceMs
+            )
+            if (duplicateSyncFrameTimeMs == null) {
+                timelineThumbnailLastFrameTimesMs[workerId] = requestedTimeMs
+                if (timelineSyncTestEnabled) android.util.Log.i(
+                    "TimelineFrameSyncTest",
+                    "TIMELINE_THUMBNAIL_DECODED requestedMs=$requestedTimeMs " +
+                        "decoder=platform-mmr-sync worker=$workerId " +
+                        "decodeMs=${SystemClock.uptimeMillis() - platformStartedAt} " +
+                        "path=scaled-sync bitmap=${syncFrame.width}x${syncFrame.height}"
+                )
+                return syncFrame
+            }
+            if (!syncFrame.isRecycled) syncFrame.recycle()
+            if (timelineSyncTestEnabled || timelineLifecycleDiagnosticsEnabled) {
+                android.util.Log.i(
+                    "TimelineThumbnail",
+                    "TIMELINE_THUMBNAIL_SYNC_DUPLICATE sourceMs=$requestedTimeMs " +
+                        "matchedSourceMs=$duplicateSyncFrameTimeMs strategy=exact-fallback"
+                )
+            }
+        }
+
+        if (Thread.currentThread().isInterrupted) return null
+
+        // A repeated sync frame is the only reason to pay for arbitrary-frame
+        // seeking on a supported MMR source. If sync extraction itself failed,
+        // exact MMR remains the first fallback before Media3 compatibility.
+        var platformDecodePath = if (duplicateSyncFrameTimeMs != null) {
+            "scaled-closest-after-sync-duplicate"
+        } else {
+            "scaled-closest-sync-unavailable"
+        }
         val platformFrame = retriever?.let { activeRetriever ->
             val scaledFrame = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                 runCatching {
@@ -12725,13 +12854,12 @@ class VideoEditorActivity : Activity() {
                 null
             }
             if (scaledFrame != null) {
-                platformDecodePath = "scaled-closest"
                 scaledFrame
             } else {
                 platformDecodePath = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                    "full-frame-sync-fallback"
+                    "full-frame-exact-fallback"
                 } else {
-                    "full-frame-sync-legacy"
+                    "full-frame-exact-legacy"
                 }
                 runCatching {
                     activeRetriever.getFrameAtTime(
@@ -12741,12 +12869,16 @@ class VideoEditorActivity : Activity() {
                 }.getOrNull()
             }
         }
+        if (Thread.currentThread().isInterrupted) {
+            platformFrame?.let { if (!it.isRecycled) it.recycle() }
+            return null
+        }
         if (platformFrame != null) {
             timelineThumbnailLastFrameTimesMs[workerId] = requestedTimeMs
             if (timelineSyncTestEnabled) android.util.Log.i(
                 "TimelineFrameSyncTest",
                 "TIMELINE_THUMBNAIL_DECODED requestedMs=$requestedTimeMs " +
-                    "decoder=platform-mmr-primary worker=${Thread.currentThread().id} " +
+                    "decoder=platform-mmr-exact worker=$workerId " +
                     "decodeMs=${SystemClock.uptimeMillis() - platformStartedAt} " +
                     "path=$platformDecodePath bitmap=${platformFrame.width}x${platformFrame.height}"
             )
@@ -12773,8 +12905,7 @@ class VideoEditorActivity : Activity() {
                 "TimelineFrameSyncTest",
                 "TIMELINE_THUMBNAIL_DECODED requestedMs=$requestedTimeMs " +
                     "actualFrameMs=${frame.presentationTimeMs} decoder=media3-fallback " +
-                    "worker=${Thread.currentThread().id} " +
-                    "decodeMs=${SystemClock.uptimeMillis() - startedAt}"
+                    "worker=$workerId decodeMs=${SystemClock.uptimeMillis() - startedAt}"
             )
             frame.bitmap
         } catch (error: Exception) {
@@ -13111,7 +13242,13 @@ class VideoEditorActivity : Activity() {
 
                 if (!diskCacheHit) {
                     val frameDecodeStartedAtUptimeMs = SystemClock.uptimeMillis()
-                    val original = decodeTimelineFrame(uri, timestampMs, decodeWidthPx, decodeHeightPx)
+                    val original = decodeTimelineFrame(
+                        uri,
+                        timestampMs,
+                        decodeWidthPx,
+                        decodeHeightPx,
+                        (cellEndMs - cellStartMs).coerceAtLeast(1L)
+                    )
                     val frameDecodedAtUptimeMs = SystemClock.uptimeMillis()
                     if (Thread.currentThread().isInterrupted ||
                         sourceGeneration != timelineThumbnailSourceGeneration(uri)
