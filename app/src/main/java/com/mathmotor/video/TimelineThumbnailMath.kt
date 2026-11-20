@@ -165,6 +165,30 @@ internal object TimelineThumbnailMath {
         return startMs + boundary(endMs - startMs, safeCount, slot + 1)
     }
 
+    /**
+     * Finds a nearby cell that resolved to the same sync-frame image.
+     *
+     * A sync seek is fast, but long GOPs can map multiple neighboring cells to
+     * one keyframe. The caller uses this collision to switch only that cell to
+     * an exact timestamp decode.
+     */
+    fun nearbyDuplicateSyncFrameTimeMs(
+        requestedTimeMs: Long,
+        fingerprint: Long,
+        previousSamples: List<Pair<Long, Long>>,
+        maxDistanceMs: Long
+    ): Long? {
+        if (maxDistanceMs <= 0L) return null
+        return previousSamples.asSequence()
+            .filter { (sampleTimeMs, sampleFingerprint) ->
+                sampleTimeMs != requestedTimeMs &&
+                    sampleFingerprint == fingerprint &&
+                    kotlin.math.abs(sampleTimeMs - requestedTimeMs) <= maxDistanceMs
+            }
+            .minByOrNull { kotlin.math.abs(it.first - requestedTimeMs) }
+            ?.first
+    }
+
     fun sampleTime(startMs: Long, endMs: Long, count: Int, index: Int): Long {
         if (endMs <= startMs) return startMs
         val cellStart = cellStartTime(startMs, endMs, count, index)
