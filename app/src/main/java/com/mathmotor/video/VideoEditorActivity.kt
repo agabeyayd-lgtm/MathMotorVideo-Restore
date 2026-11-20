@@ -541,6 +541,15 @@ class VideoEditorActivity : Activity() {
         timelineThumbnailExecutor.queue.removeIf { task ->
             (task as? TimelineThumbnailTask)?.sourceUriKey == sourceKey
         }
+        timelineExactThumbnailExecutor.queue.removeIf { runnable ->
+            val exactTask = runnable as? TimelineExactThumbnailTask
+            if (exactTask?.sourceUriKey == sourceKey) {
+                exactTask.cancel(true)
+                true
+            } else {
+                false
+            }
+        }
         // The provisional first-cell poster is also a decode task. Cancel it
         // with the rest of this URI so removed media cannot hold the secondary
         // still decoder while a newly imported source is waiting.
@@ -639,6 +648,20 @@ class VideoEditorActivity : Activity() {
             }
         }
     }
+    private class TimelineExactThumbnailTask(
+        val requestedTimeMs: Long,
+        val sequence: Long,
+        val sourceUriKey: String,
+        work: () -> Bitmap?
+    ) : java.util.concurrent.FutureTask<Bitmap?>(
+        java.util.concurrent.Callable<Bitmap?> { work() }
+    ), Comparable<TimelineExactThumbnailTask> {
+        override fun compareTo(other: TimelineExactThumbnailTask): Int {
+            val timeOrder = requestedTimeMs.compareTo(other.requestedTimeMs)
+            return if (timeOrder != 0) timeOrder else sequence.compareTo(other.sequence)
+        }
+    }
+
     private val timelineThumbnailTaskSequence = java.util.concurrent.atomic.AtomicLong()
     // Exact playhead requests share this priority-ordered decoder pool and
     // always outrank visible thumbnails. Three persistent platform MMR-first
@@ -664,6 +687,34 @@ class VideoEditorActivity : Activity() {
     // Rebuilding ExoPlayer/codec state for every paused frame adds avoidable latency.
     private val previewFrameExtractors =
         java.util.concurrent.ConcurrentHashMap<Long, Triple<Uri, Int, FrameExtractor>>()
+
+    // Duplicate sync-frame cells need exact seeks, but opening four MMR decoders
+    // in parallel makes API 35 contend and loses the benefit of a warm decoder.
+    // Keep the fast sync-frame probes parallel; serialize only exact corrections
+    // through one persistent retriever, ordered by source timestamp.
+    private val timelineExactThumbnailExecutor = java.util.concurrent.ThreadPoolExecutor(
+        1,
+        1,
+        0L,
+        java.util.concurrent.TimeUnit.MILLISECONDS,
+        java.util.concurrent.PriorityBlockingQueue<Runnable>(
+            8,
+            java.util.Comparator { first, second ->
+                (first as TimelineExactThumbnailTask).compareTo(second as TimelineExactThumbnailTask)
+            }
+        ),
+        java.util.concurrent.ThreadFactory { worker ->
+            Thread({
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_DEFAULT)
+                try {
+                    worker.run()
+                } finally {
+                    releaseTimelineThumbnailRetriever()
+                    releaseTimelineThumbnailExtractor()
+                }
+            }, "timeline-thumbnail-exact")
+        }
+    )
 
     // Four workers are the current lower-contention candidate for API 35 H.264.
     // The earlier four-worker trace measured 1,960ms max decode and 3,022ms strip
@@ -12832,58 +12883,107 @@ class VideoEditorActivity : Activity() {
 
         if (Thread.currentThread().isInterrupted) return null
 
-        // A repeated sync frame is the only reason to pay for arbitrary-frame
-        // seeking on a supported MMR source. If sync extraction itself failed,
-        // exact MMR remains the first fallback before Media3 compatibility.
-        var platformDecodePath = if (duplicateSyncFrameTimeMs != null) {
-            "scaled-closest-after-sync-duplicate"
-        } else {
-            "scaled-closest-sync-unavailable"
-        }
-        val platformFrame = retriever?.let { activeRetriever ->
-            val scaledFrame = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                runCatching {
-                    activeRetriever.getScaledFrameAtTime(
-                        frameTimeUs,
-                        MediaMetadataRetriever.OPTION_CLOSEST,
-                        maxWidthPx.coerceAtLeast(1),
-                        maxHeightPx.coerceAtLeast(1)
-                    )
-                }.getOrNull()
-            } else {
-                null
+        // Keep exact correction seeks on one long-lived decoder. The worker pool
+        // above remains parallel for cheap sync probes, while this queue prevents
+        // multiple costly arbitrary-frame MMR decoders from contending on API 35.
+        val exactTask = TimelineExactThumbnailTask(
+            requestedTimeMs = requestedTimeMs,
+            sequence = timelineThumbnailTaskSequence.incrementAndGet(),
+            sourceUriKey = sourceKey
+        ) {
+            val exactWorkerId = Thread.currentThread().id
+            val exactPreviousTimeMs = timelineThumbnailLastFrameTimesMs[exactWorkerId]
+            val exactSeekDistanceMs = exactPreviousTimeMs?.let {
+                kotlin.math.abs(requestedTimeMs - it)
             }
-            if (scaledFrame != null) {
-                scaledFrame
-            } else {
-                platformDecodePath = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                    "full-frame-exact-fallback"
-                } else {
-                    "full-frame-exact-legacy"
+            if (exactSeekDistanceMs != null && exactSeekDistanceMs > 4_000L) {
+                if (timelineSyncTestEnabled || timelineLifecycleDiagnosticsEnabled) {
+                    android.util.Log.i(
+                        "TimelineThumbnail",
+                        "TIMELINE_THUMBNAIL_RETRIEVER_RESET worker=$exactWorkerId " +
+                            "previousMs=$exactPreviousTimeMs requestedMs=$requestedTimeMs " +
+                            "seekDistanceMs=$exactSeekDistanceMs reason=exact-queue"
+                    )
                 }
-                runCatching {
-                    activeRetriever.getFrameAtTime(
-                        frameTimeUs,
-                        MediaMetadataRetriever.OPTION_CLOSEST
+                releaseTimelineThumbnailRetriever()
+            }
+
+            val exactStartedAt = SystemClock.uptimeMillis()
+            val exactRetriever = timelineThumbnailRetrieverFor(uri, "TimelineThumbnail")
+            var exactDecodePath = "scaled-closest-after-sync-duplicate"
+            val exactFrame = exactRetriever?.let { activeRetriever ->
+                val scaledFrame = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                    runCatching {
+                        activeRetriever.getScaledFrameAtTime(
+                            frameTimeUs,
+                            MediaMetadataRetriever.OPTION_CLOSEST,
+                            maxWidthPx.coerceAtLeast(1),
+                            maxHeightPx.coerceAtLeast(1)
+                        )
+                    }.getOrNull()
+                } else {
+                    null
+                }
+                if (scaledFrame != null) {
+                    scaledFrame
+                } else {
+                    exactDecodePath = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                        "full-frame-exact-fallback"
+                    } else {
+                        "full-frame-exact-legacy"
+                    }
+                    runCatching {
+                        activeRetriever.getFrameAtTime(
+                            frameTimeUs,
+                            MediaMetadataRetriever.OPTION_CLOSEST
+                        )
+                    }.getOrNull()
+                }
+            }
+
+            if (Thread.currentThread().isInterrupted) {
+                exactFrame?.let { if (!it.isRecycled) it.recycle() }
+                null
+            } else {
+                if (exactFrame != null) {
+                    timelineThumbnailLastFrameTimesMs[exactWorkerId] = requestedTimeMs
+                    if (timelineSyncTestEnabled) android.util.Log.i(
+                        "TimelineFrameSyncTest",
+                        "TIMELINE_THUMBNAIL_DECODED requestedMs=$requestedTimeMs " +
+                            "decoder=platform-mmr-exact worker=$exactWorkerId " +
+                            "decodeMs=${SystemClock.uptimeMillis() - exactStartedAt} " +
+                            "path=$exactDecodePath bitmap=${exactFrame.width}x${exactFrame.height}"
                     )
-                }.getOrNull()
+                }
+                exactFrame
             }
         }
+        val platformFrame = try {
+            timelineExactThumbnailExecutor.execute(exactTask)
+            exactTask.get()
+        } catch (interrupted: InterruptedException) {
+            exactTask.cancel(true)
+            timelineExactThumbnailExecutor.remove(exactTask)
+            Thread.currentThread().interrupt()
+            return null
+        } catch (cancelled: java.util.concurrent.CancellationException) {
+            null
+        } catch (error: Exception) {
+            exactTask.cancel(true)
+            timelineExactThumbnailExecutor.remove(exactTask)
+            android.util.Log.w(
+                "TimelineThumbnail",
+                "Serialized exact frame extraction failed for $uri at ${requestedTimeMs}ms",
+                error
+            )
+            null
+        }
+
         if (Thread.currentThread().isInterrupted) {
             platformFrame?.let { if (!it.isRecycled) it.recycle() }
             return null
         }
-        if (platformFrame != null) {
-            timelineThumbnailLastFrameTimesMs[workerId] = requestedTimeMs
-            if (timelineSyncTestEnabled) android.util.Log.i(
-                "TimelineFrameSyncTest",
-                "TIMELINE_THUMBNAIL_DECODED requestedMs=$requestedTimeMs " +
-                    "decoder=platform-mmr-exact worker=$workerId " +
-                    "decodeMs=${SystemClock.uptimeMillis() - platformStartedAt} " +
-                    "path=$platformDecodePath bitmap=${platformFrame.width}x${platformFrame.height}"
-            )
-            return platformFrame
-        }
+        if (platformFrame != null) return platformFrame
 
         if (Thread.currentThread().isInterrupted) return null
 
