@@ -12829,6 +12829,41 @@ class VideoEditorActivity : Activity() {
         }
     }
 
+    /**
+     * Resolve an exact filmstrip frame by its decoded frame index when the source
+     * exposes duration/frame-count metadata. This avoids an additional timestamp
+     * seek after a duplicate sync-frame probe. Keep the full-resolution indexed
+     * path bounded; larger sources retain the scaled timestamp decoder.
+     */
+    private fun decodeTimelineFrameByIndex(
+        retriever: MediaMetadataRetriever,
+        requestedTimeMs: Long
+    ): Bitmap? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return null
+        val frameCount = retriever.extractMetadata(
+            MediaMetadataRetriever.METADATA_KEY_VIDEO_FRAME_COUNT
+        )?.toLongOrNull() ?: return null
+        val durationMs = retriever.extractMetadata(
+            MediaMetadataRetriever.METADATA_KEY_DURATION
+        )?.toLongOrNull() ?: return null
+        val width = retriever.extractMetadata(
+            MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH
+        )?.toLongOrNull() ?: return null
+        val height = retriever.extractMetadata(
+            MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT
+        )?.toLongOrNull() ?: return null
+        if (frameCount <= 0L || durationMs <= 0L || width <= 0L || height <= 0L) return null
+        if (width * height > 2_500_000L) return null
+
+        val averageFrameRate = frameCount * 1_000.0 / durationMs.toDouble()
+        if (averageFrameRate !in 10.0..120.0) return null
+        val boundedTimeMs = requestedTimeMs.coerceIn(0L, durationMs)
+        val frameIndex = Math.round(
+            boundedTimeMs.toDouble() * frameCount.toDouble() / durationMs.toDouble()
+        ).coerceIn(0L, frameCount - 1L).toInt()
+        return runCatching { retriever.getFrameAtIndex(frameIndex) }.getOrNull()
+    }
+
     private fun decodeTimelineFrameOnDecoderThread(
         uri: Uri,
         requestedTimeMs: Long,
@@ -12936,32 +12971,38 @@ class VideoEditorActivity : Activity() {
         }
         val exactStartedAt = SystemClock.uptimeMillis()
         val platformFrame = retriever?.let { activeRetriever ->
-            val scaledFrame = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                runCatching {
-                    activeRetriever.getScaledFrameAtTime(
-                        frameTimeUs,
-                        MediaMetadataRetriever.OPTION_CLOSEST,
-                        maxWidthPx.coerceAtLeast(1),
-                        maxHeightPx.coerceAtLeast(1)
-                    )
-                }.getOrNull()
+            val indexedFrame = decodeTimelineFrameByIndex(activeRetriever, requestedTimeMs)
+            if (indexedFrame != null) {
+                platformDecodePath = "frame-index"
+                indexedFrame
             } else {
-                null
-            }
-            if (scaledFrame != null) {
-                scaledFrame
-            } else {
-                platformDecodePath = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                    "full-frame-exact-fallback"
+                val scaledFrame = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                    runCatching {
+                        activeRetriever.getScaledFrameAtTime(
+                            frameTimeUs,
+                            MediaMetadataRetriever.OPTION_CLOSEST,
+                            maxWidthPx.coerceAtLeast(1),
+                            maxHeightPx.coerceAtLeast(1)
+                        )
+                    }.getOrNull()
                 } else {
-                    "full-frame-exact-legacy"
+                    null
                 }
-                runCatching {
-                    activeRetriever.getFrameAtTime(
-                        frameTimeUs,
-                        MediaMetadataRetriever.OPTION_CLOSEST
-                    )
-                }.getOrNull()
+                if (scaledFrame != null) {
+                    scaledFrame
+                } else {
+                    platformDecodePath = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                        "full-frame-exact-fallback"
+                    } else {
+                        "full-frame-exact-legacy"
+                    }
+                    runCatching {
+                        activeRetriever.getFrameAtTime(
+                            frameTimeUs,
+                            MediaMetadataRetriever.OPTION_CLOSEST
+                        )
+                    }.getOrNull()
+                }
             }
         }
         if (Thread.currentThread().isInterrupted) {
@@ -12973,7 +13014,7 @@ class VideoEditorActivity : Activity() {
             if (timelineSyncTestEnabled) android.util.Log.i(
                 "TimelineFrameSyncTest",
                 "TIMELINE_THUMBNAIL_DECODED requestedMs=$requestedTimeMs " +
-                    "decoder=platform-mmr-exact worker=$workerId " +
+                    "decoder=${if (platformDecodePath == "frame-index") "platform-mmr-index" else "platform-mmr-exact"} worker=$workerId " +
                     "decodeMs=${SystemClock.uptimeMillis() - exactStartedAt} " +
                     "path=$platformDecodePath bitmap=${platformFrame.width}x${platformFrame.height}"
             )
