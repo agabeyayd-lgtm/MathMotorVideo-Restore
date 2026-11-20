@@ -12834,13 +12834,9 @@ class VideoEditorActivity : Activity() {
     ): Bitmap? {
         val timeMs = requestedTimeMs
         val frameTimeUs = requestedTimeMs * 1_000L
-        // First use a fast nearest-sync decode for filmstrip cells. It is a visual
-        // summary, not the authoritative paused-preview frame. Long GOPs can map
-        // adjacent cells to the same sync frame, so fingerprint those results and
-        // use an exact timestamp seek only when a nearby collision is detected.
-        // The playhead preview continues to use its independent exact decoder.
-        val requestedTimeMs = timeMs.coerceAtLeast(0L)
-        val frameTimeUs = requestedTimeMs * 1_000L
+        // Use a fast nearest-sync probe for each cell first. Long GOPs can map
+        // nearby cells to the same keyframe, so exact timestamp correction is
+        // performed on this same warm decoder only when a collision is detected.
         val workerId = Thread.currentThread().id
         val previousFrameTimeMs = timelineThumbnailLastFrameTimesMs[workerId]
         val seekDistanceMs = previousFrameTimeMs?.let { kotlin.math.abs(requestedTimeMs - it) }
