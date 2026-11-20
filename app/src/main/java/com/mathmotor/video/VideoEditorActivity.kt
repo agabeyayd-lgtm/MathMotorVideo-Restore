@@ -688,13 +688,13 @@ class VideoEditorActivity : Activity() {
     private val previewFrameExtractors =
         java.util.concurrent.ConcurrentHashMap<Long, Triple<Uri, Int, FrameExtractor>>()
 
-    // All filmstrip frames for a source share one persistent decoder thread.
-    // Fast sync probes and exact duplicate-frame corrections run on that same
-    // warm retriever, ordered by timestamp, so they never contend as independent
-    // MediaMetadataRetriever instances on API 35.
+    // Two persistent decoder lanes share the visible-strip work by timestamp.
+    // One lane caused the final cells to wait behind every earlier seek; four
+    // independent MMR lanes contended on API 35. Two prestarted lanes retain warm
+    // per-thread retrievers while allowing independent keyframe runs to overlap.
     private val timelineFrameDecoderExecutor = java.util.concurrent.ThreadPoolExecutor(
-        1,
-        1,
+        2,
+        2,
         0L,
         java.util.concurrent.TimeUnit.MILLISECONDS,
         java.util.concurrent.PriorityBlockingQueue<Runnable>(
@@ -712,9 +712,13 @@ class VideoEditorActivity : Activity() {
                     releaseTimelineThumbnailRetriever()
                     releaseTimelineThumbnailExtractor()
                 }
-            }, "timeline-thumbnail-decoder")
+            }, "timeline-thumbnail-decoder-${timelineThumbnailWorkerSequence.incrementAndGet()}")
         }
-    )
+    ).apply {
+        // Start both consumers before the first viewport batch is submitted so
+        // PriorityBlockingQueue, not task arrival order, chooses their first work.
+        prestartAllCoreThreads()
+    }
 
     // Four workers are the current lower-contention candidate for API 35 H.264.
     // The earlier four-worker trace measured 1,960ms max decode and 3,022ms strip
