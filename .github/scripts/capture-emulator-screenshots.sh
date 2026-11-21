@@ -831,23 +831,61 @@ echo "PASS: the visible replacement filmstrip is populated with the new green so
 # Record that exact replacement-source frames reached the persistent cache before
 # the later force-stop. This is the first half of the cold-process cache check.
 replacement_cache_uri="file://$app_internal_replacement_video"
-cache_persisted_count=0
+grid_persisted_count=0
+grid_first_paint_ms=""
+grid_generation_ms=""
 for attempt in $(seq 1 30); do
   timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime \
     -s TimelineThumbnail:I > emulator-screenshots/thumbnail-cache-first-process-logcat.txt 2>&1 || true
-  cache_persisted_count="$(grep -F "TIMELINE_THUMBNAIL_DISK_CACHE_PERSISTED uri=$replacement_cache_uri " \
+  grid_persisted_count="$(grep -F "TIMELINE_GRID_FRAME uri=$replacement_cache_uri " \
     emulator-screenshots/thumbnail-cache-first-process-logcat.txt \
+    | grep -F "persisted=true" \
     | sed -n 's/.*sourceMs=\([0-9][0-9]*\).*/\1/p' | sort -u | wc -l | tr -d ' ')"
-  if [ "$cache_persisted_count" -ge 5 ]; then break; fi
-  echo "Waiting for persistent cache writes from the replacement video (attempt $attempt/30; frames=$cache_persisted_count)"
+  grid_first_paint_ms="$(grep -F "TIMELINE_GRID_FIRST_PAINT uri=$replacement_cache_uri " \
+    emulator-screenshots/thumbnail-cache-first-process-logcat.txt \
+    | sed -n 's/.*elapsedMs=\([0-9][0-9]*\).*/\1/p' | head -n 1)"
+  grid_generation_ms="$(grep -F "TIMELINE_GRID_GENERATION_COMPLETE uri=$replacement_cache_uri " \
+    emulator-screenshots/thumbnail-cache-first-process-logcat.txt \
+    | sed -n 's/.*elapsedMs=\([0-9][0-9]*\).*/\1/p' | tail -n 1)"
+  if [ -n "$grid_first_paint_ms" ] && [ -n "$grid_generation_ms" ] && [ "$grid_persisted_count" -ge 5 ]; then
+    break
+  fi
+  echo "Waiting for replacement frame grid (attempt $attempt/30; persisted=$grid_persisted_count firstPaintMs=$grid_first_paint_ms generationMs=$grid_generation_ms)"
   sleep 1
 done
-if [ "$cache_persisted_count" -lt 5 ]; then
-  echo "The first editor process did not persist at least five distinct visible replacement frames."
-  collect_capture_diagnostics thumbnail-cache-first-process-writes-missing
+if [ "$grid_persisted_count" -lt 5 ] || [ -z "$grid_first_paint_ms" ] || [ -z "$grid_generation_ms" ]; then
+  echo "The replacement source did not finish its persistent grid or record first-paint/generation timings."
+  collect_capture_diagnostics timeline-grid-first-process-incomplete
   exit 63
 fi
-echo "PASS: $cache_persisted_count distinct replacement frames were confirmed persisted before process shutdown."
+python3 - emulator-screenshots/thumbnail-cache-first-process-logcat.txt "$replacement_cache_uri" <<'PY'
+import re
+import sys
+
+text = open(sys.argv[1], errors="replace").read()
+uri = re.escape(sys.argv[2])
+source_lines = [
+    line for line in text.splitlines()
+    if "TIMELINE_GRID_FRAME" in line and re.search(rf"uri={uri}\s", line)
+]
+stages = []
+for line in source_lines:
+    match = re.search(r"stageMs=(\d+)", line)
+    if match:
+        stage = int(match.group(1))
+        if stage not in stages:
+            stages.append(stage)
+expected = [4000, 2000, 1000, 500]
+if stages[:4] != expected:
+    raise SystemExit(
+        "FAIL: grid generation did not follow the required coarse-to-fine order; "
+        f"observed stages={stages}"
+    )
+print(f"PASS: frame grid stages ran in coarse-to-fine order: {stages[:4]}")
+PY
+echo "PASS: grid persisted $grid_persisted_count frames; first paint=$grid_first_paint_ms ms; total grid generation=$grid_generation_ms ms."
+echo "Per-frame grid decode timings are recorded as TIMELINE_GRID_FRAME frameElapsedMs in thumbnail-cache-first-process-logcat.txt."
+
 
 # Select the main-video timeline clip and verify that its white transform
 # selection frame appears around the transformed source canvas.
@@ -4922,50 +4960,60 @@ timeout -k 2s 15s adb -s emulator-5554 shell am start \
   --ez timeline_sync_test true \
   --ef timeline_test_px_per_sec_dp 30 | tee emulator-screenshots/thumbnail-cache-restart-launch.txt
 
-cache_restart_hit_count=0
+grid_restart_restored=false
+grid_restart_first_paint=false
 for attempt in $(seq 1 30); do
   timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime \
     -s TimelineThumbnail:I EditorSmokeTest:I > emulator-screenshots/thumbnail-cache-restarted-process-logcat.txt 2>&1 || true
-  cache_restart_hit_count="$((grep -F "TIMELINE_THUMBNAIL_DISK_CACHE_HIT uri=$replacement_cache_uri " \
-    emulator-screenshots/thumbnail-cache-restarted-process-logcat.txt || true) \
-    | sed -n 's/.*sourceMs=\([0-9][0-9]*\).*/\1/p' | sort -u | wc -l | tr -d ' ')"
   if grep -Fq "EDITOR_SMOKE_CLIP_ADDED" emulator-screenshots/thumbnail-cache-restarted-process-logcat.txt \
-      && [ "$cache_restart_hit_count" -ge 3 ]; then
-    break
+      && grep -Fq "TIMELINE_GRID_DISK_RESTORED uri=$replacement_cache_uri " \
+        emulator-screenshots/thumbnail-cache-restarted-process-logcat.txt; then
+    grid_restart_restored=true
   fi
-  echo "Waiting for reopened editor and disk-cache hits (attempt $attempt/30; hits=$cache_restart_hit_count)"
+  if grep -Fq "TIMELINE_GRID_FIRST_PAINT uri=$replacement_cache_uri " \
+      emulator-screenshots/thumbnail-cache-restarted-process-logcat.txt \
+      && grep -Fq "source=disk" emulator-screenshots/thumbnail-cache-restarted-process-logcat.txt; then
+    grid_restart_first_paint=true
+  fi
+  if [ "$grid_restart_restored" = true ] && [ "$grid_restart_first_paint" = true ]; then break; fi
+  echo "Waiting for reopened editor and frame-grid disk restore (attempt $attempt/30; restored=$grid_restart_restored diskFirstPaint=$grid_restart_first_paint)"
   sleep 1
 done
-
+if [ "$grid_restart_restored" != true ] || [ "$grid_restart_first_paint" != true ]; then
+  echo "Full process restart did not restore the persisted frame grid and paint a cell from disk."
+  cat emulator-screenshots/thumbnail-cache-restarted-process-logcat.txt || true
+  collect_capture_diagnostics timeline-grid-disk-restore-failed
+  exit 63
+fi
 python3 - emulator-screenshots/thumbnail-cache-first-process-logcat.txt \
   emulator-screenshots/thumbnail-cache-restarted-process-logcat.txt "$replacement_cache_uri" <<'PY'
 import re
 import sys
 
-persisted_text = open(sys.argv[1], errors="replace").read()
-reopened_text = open(sys.argv[2], errors="replace").read()
+first = open(sys.argv[1], errors="replace").read()
+reopened = open(sys.argv[2], errors="replace").read()
 uri = re.escape(sys.argv[3])
 persisted = set(re.findall(
-    rf"TIMELINE_THUMBNAIL_DISK_CACHE_PERSISTED uri={uri} sourceMs=(\d+)",
-    persisted_text
+    rf"TIMELINE_GRID_FRAME uri={uri} sourceMs=(\d+).*?persisted=true",
+    first
 ))
-hits = set(re.findall(
-    rf"TIMELINE_THUMBNAIL_DISK_CACHE_HIT uri={uri} sourceMs=(\d+)",
-    reopened_text
-))
-reused = persisted & hits
-if len(reused) < 3:
-    raise SystemExit(
-        "FAIL: full process restart did not reuse at least three of the exact "
-        f"persisted frame timestamps; persisted={sorted(persisted)}, "
-        f"diskHits={sorted(hits)}, intersection={sorted(reused)}"
-    )
-print(
-    "PASS: after force-stop/relaunch, the empty-RAM editor loaded "
-    f"{len(reused)} exact previously-persisted filmstrip frames from disk: "
-    f"{','.join(sorted(reused, key=int))}"
+disk_paints = re.findall(
+    rf"TIMELINE_GRID_FIRST_PAINT uri={uri} targetMs=(\d+) gridMs=(\d+) source=disk elapsedMs=(\d+)",
+    reopened
 )
+if not persisted:
+    raise SystemExit("FAIL: first process did not persist any grid frame timestamps.")
+if not disk_paints:
+    raise SystemExit("FAIL: relaunched process did not paint a filmstrip cell from disk.")
+print(
+    "PASS: force-stop/relaunch restored the completed source grid from disk; "
+    f"first process persisted {len(persisted)} timestamps and the reopened process "
+    f"painted {len(disk_paints)} cell(s) from disk."
+)
+for target_ms, grid_ms, elapsed_ms in disk_paints[:5]:
+    print(f"  disk first paint target={target_ms}ms grid={grid_ms}ms elapsed={elapsed_ms}ms")
 PY
+
 
 # Verify warmed preview performance only after the real forward and reverse filmstrip
 # gestures have run. Previously this assertion ran before either scrub was exercised.
