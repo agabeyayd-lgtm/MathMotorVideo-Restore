@@ -13168,7 +13168,8 @@ class VideoEditorActivity : Activity() {
         val (decodeWidthPx, decodeHeightPx) = TimelineThumbnailMath.decodeBounds(
             targetCellWidthPx,
             targetCellHeightPx,
-            timelineVideoAspectRatio(uri)
+            timelineVideoAspectRatio(uri),
+            TimelineThumbnailMath.FILMSTRIP_DECODE_SCALE
         )
 
         var submittedAtUptimeMs = 0L

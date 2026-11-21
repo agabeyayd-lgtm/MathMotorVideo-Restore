@@ -18,6 +18,16 @@ class TimelineThumbnailMathTest {
     }
 
     @Test
+    fun filmstripDecodeUsesSmallerFramesToReduceTimelineCodecWork() {
+        assertEquals(
+            71 to 126,
+            TimelineThumbnailMath.decodeBounds(
+                89, 158, 9f / 16f, TimelineThumbnailMath.FILMSTRIP_DECODE_SCALE
+            )
+        )
+    }
+
+    @Test
     fun decodeBoundsFollowLandscapeAndFourThreeCellAspectRatios() {
         assertEquals(256 to 144, TimelineThumbnailMath.decodeBounds(256, 144, 16f / 9f))
         assertEquals(192 to 144, TimelineThumbnailMath.decodeBounds(192, 144, 4f / 3f))

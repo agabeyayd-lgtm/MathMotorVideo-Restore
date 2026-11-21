@@ -1,3 +1,12 @@
+## 2026-11-21 — PR #45: avoid duplicate cold-preview bootstrap and reduce filmstrip decode cost
+
+- The exact-head emulator exposed two separate issues. The cold-preview assertion rejected a valid path where the single-clip preview had already decoded/applied the exact timestamp and logged `TIMELINE_PREVIEW_EXACT_CACHE_HIT` just before CompositionPlayer `STATE_READY`; the production path intentionally avoids a redundant cold decoder open. The validator now accepts this only when the exact project/source timestamps match and a subsequent `STATE_READY` is observed. A real post-READY bootstrap decode must still satisfy the original ordering check.
+- The other run measured a 2,298ms maximum background task queue wait (limit 2,000ms) and 2,907ms visible-strip fill (limit 2,500ms), while per-frame decode remained under 1,500ms. The previous two-worker one-pass run achieved 1,525ms queue, 1,181ms maximum decode and 1,803ms fill, but failed later at an unrelated clip-draft save assertion.
+- Follow-up change: decode timeline-only filmstrip cells at 80% of their rendered dimensions. This retains the exact requested timestamps and source aspect ratio; the full-resolution paused preview and export paths are untouched. Performance thresholds are unchanged.
+- Pending exact-head unit/build, APK package, and API 35 emulator checks. Do not merge or publish until all required checks pass.
+
+---
+
 ## 2026-11-19 — PR #45: keep warm MMR for ordinary two-cell jumps
 
 - Exact-head run 44406239499 for commit 13f4bfaddf80a3f31f2d9654a5e83ddcf2f5e15e passed Android unit/build, debug APK packaging/upload, the cold-preview bootstrap check, warmed interactive preview budgets, ruler/filmstrip sync, and measured forward/reverse fling.

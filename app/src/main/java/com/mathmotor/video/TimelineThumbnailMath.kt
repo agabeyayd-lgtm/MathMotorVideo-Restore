@@ -13,6 +13,9 @@ internal object TimelineThumbnailMath {
     // thumbnail fitted to its original source aspect ratio.
     const val THUMBNAIL_STRIP_HEIGHT_DP = 64
     const val DEFAULT_SOURCE_ASPECT_RATIO = 9f / 16f
+    // Timeline cells are displayed small; decode at 80% of their rendered
+    // bounds to reduce first-open codec work without changing preview/export quality.
+    const val FILMSTRIP_DECODE_SCALE = 0.8f
 
     /** Width of a full-frame thumbnail at the fixed strip height, without cropping. */
     fun thumbnailCellWidthPx(stripHeightPx: Int, sourceAspectRatio: Float): Int {

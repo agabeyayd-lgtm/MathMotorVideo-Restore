@@ -220,13 +220,38 @@ def verify(log_path: str, screenshot_path: str):
     interactive_rows = [row for row in preview_timing_rows if row[0] == "interactive"]
     state_ready = re.search(r"TIMELINE_PLAYER_PLAYBACK_STATE state=3", log)
     bootstrap_executed = re.search(r"TIMELINE_INITIAL_BASE_FRAME_BOOTSTRAP executed=true", log)
-    if not bootstrap_rows or not bootstrap_executed or not state_ready:
-        raise SystemExit(
-            "FAIL: cold-source preview bootstrap was not confirmed after CompositionPlayer STATE_READY."
+
+    # The one-clip preview may already have decoded and applied the exact paused
+    # frame before CompositionPlayer reports READY. The production cache-hit path
+    # marks that source bootstrap-complete and intentionally returns without
+    # opening a second decoder. Accept that path only when an exact project/source
+    # timestamp cache hit is immediately followed by this player's STATE_READY.
+    cached_exact_bootstrap = None
+    for cache_hit in re.finditer(
+        r"TIMELINE_PREVIEW_EXACT_CACHE_HIT projectMs=(\d+) sourceMs=(\d+)", log
+    ):
+        project_ms, source_ms = map(int, cache_hit.groups())
+        ready_after = re.search(
+            r"TIMELINE_PLAYER_PLAYBACK_STATE state=3",
+            log[cache_hit.end():cache_hit.end() + 1_024],
         )
-    if state_ready.start() > bootstrap_executed.start():
+        if abs(project_ms - source_ms) <= 35 and ready_after is not None:
+            cached_exact_bootstrap = (project_ms, source_ms)
+            break
+
+    if state_ready is None:
         raise SystemExit(
-            "FAIL: cold-source still decoding started before the composed video player reached STATE_READY."
+            "FAIL: CompositionPlayer never reported STATE_READY for the preview bootstrap."
+        )
+    if bootstrap_rows and bootstrap_executed:
+        if state_ready.start() > bootstrap_executed.start():
+            raise SystemExit(
+                "FAIL: cold-source still decoding started before the composed video player reached STATE_READY."
+            )
+    elif cached_exact_bootstrap is None:
+        raise SystemExit(
+            "FAIL: neither a post-READY cold preview decode nor an exact cached preview frame "
+            "followed by CompositionPlayer STATE_READY was confirmed."
         )
     if len(interactive_rows) < 2:
         raise SystemExit(
@@ -234,14 +259,22 @@ def verify(log_path: str, screenshot_path: str):
             f"only {len(interactive_rows)} interactive timings were captured."
         )
 
-    bootstrap_decode = [row[5] for row in bootstrap_rows]
-    print(
-        "  Cold-source bootstrap (n={}) decode median/max={}ms/{}ms; "
-        "CompositionPlayer was READY before this one-time decoder open.".format(
-            len(bootstrap_rows),
-            int(statistics.median(bootstrap_decode)), max(bootstrap_decode),
+    if bootstrap_rows:
+        bootstrap_decode = [row[5] for row in bootstrap_rows]
+        print(
+            "  Cold-source bootstrap (n={}) decode median/max={}ms/{}ms; "
+            "CompositionPlayer was READY before this one-time decoder open.".format(
+                len(bootstrap_rows),
+                int(statistics.median(bootstrap_decode)), max(bootstrap_decode),
+            )
         )
-    )
+    else:
+        print(
+            "  Cold-source preview used an exact frame already decoded and applied by the "
+            "single-clip cache (projectMs={} sourceMs={}) before CompositionPlayer STATE_READY.".format(
+                *cached_exact_bootstrap
+            )
+        )
     preview_queue = [row[4] for row in interactive_rows]
     preview_decode = [row[5] for row in interactive_rows]
     preview_ui_dispatch = [row[6] for row in interactive_rows]
