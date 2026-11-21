@@ -2894,13 +2894,15 @@ class VideoEditorActivity : Activity() {
             isHorizontalScrollBarEnabled = false
             overScrollMode = View.OVER_SCROLL_NEVER
             clipToPadding = false
+            // The viewport is full width even when contextual tools have only
+            // two or three buttons; keep the dock surface painted edge to edge.
+            setBackgroundColor(Color.rgb(8, 12, 18))
+            elevation = dp(8).toFloat()
         }
         val dock = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(5), dp(2), dp(5), dp(2))
-            setBackgroundColor(Color.rgb(8, 12, 18))
-            elevation = dp(8).toFloat()
         }
         editorDock = dock
         editorDockScroll = dockScroll
