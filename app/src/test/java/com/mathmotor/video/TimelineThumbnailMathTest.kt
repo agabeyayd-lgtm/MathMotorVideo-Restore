@@ -275,4 +275,34 @@ class TimelineThumbnailMathTest {
         assertEquals(8_416L, TimelineThumbnailMath.sampleTime(500L, 10_000L, 3, 99))
         assertEquals(2_083L, TimelineThumbnailMath.sampleTime(500L, 10_000L, 3, -2))
     }
+    
+    @Test
+    fun sequentialDecoderKeepsNearbyFramesButRepositionsOnLargeGaps() {
+        val gapLimit = TimelineThumbnailMath.sequentialDecodeGapLimitMs(1_000L)
+
+        assertEquals(1_500L, gapLimit)
+        assertEquals(
+            false,
+            TimelineThumbnailMath.shouldSeekSequentialDecoder(3_000L, 4_000L, gapLimit)
+        )
+        assertEquals(
+            true,
+            TimelineThumbnailMath.shouldSeekSequentialDecoder(1_000L, 5_000L, gapLimit)
+        )
+        assertEquals(
+            true,
+            TimelineThumbnailMath.shouldSeekSequentialDecoder(5_000L, 7_000L, gapLimit)
+        )
+        assertEquals(
+            true,
+            TimelineThumbnailMath.shouldSeekSequentialDecoder(5_000L, 4_000L, gapLimit)
+        )
+    }
+
+    @Test
+    fun sequentialDecoderGapLimitScalesWithGridInterval() {
+        assertEquals(750L, TimelineThumbnailMath.sequentialDecodeGapLimitMs(500L))
+        assertEquals(3_000L, TimelineThumbnailMath.sequentialDecodeGapLimitMs(2_000L))
+        assertEquals(2L, TimelineThumbnailMath.sequentialDecodeGapLimitMs(1L))
+    }
 }
