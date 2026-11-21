@@ -22,9 +22,8 @@ internal class TimelineThumbnailDiskCache(
 ) {
     data class CachedFrame(val timestampMs: Long, val bitmap: Bitmap)
 
-    // Track bytes added during this Activity lifetime. Existing cache size is
-    // reconciled only when the soft threshold is reached, never during the first
-    // frame write on a cold import.
+    // The existing disk size is initialized once per cache owner. The scan is
+    // performed by the dedicated writer thread, not by a thumbnail decode worker.
     // -1 means the existing on-disk size has not yet been reconciled. The first
     // reconciliation happens on the dedicated background cache-writer thread.
     private val cachedBytes = AtomicLong(-1L)
