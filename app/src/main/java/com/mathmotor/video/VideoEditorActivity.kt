@@ -2004,7 +2004,7 @@ class VideoEditorActivity : Activity() {
         // The track rows scroll horizontally; the editor shell keeps its own height.
         root.addView(timelineCard, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(220)
+            dp(190)
         ))
         root.addView(gap(8))
 
@@ -4139,7 +4139,7 @@ class VideoEditorActivity : Activity() {
                         ViewGroup.LayoutParams.MATCH_PARENT
                     )
                 )
-                row.addView(timelineRulerHeader, LinearLayout.LayoutParams(dp(84), ViewGroup.LayoutParams.MATCH_PARENT))
+                row.addView(timelineRulerHeader, LinearLayout.LayoutParams(dp(56), ViewGroup.LayoutParams.MATCH_PARENT))
             }
 
             if (reorderable) {
@@ -6535,7 +6535,7 @@ class VideoEditorActivity : Activity() {
         )
 
     /** The 84dp label/action header is now embedded in each scrolling row. */
-    private fun timelineHeaderGutterWidthPx(): Int = dp(84)
+    private fun timelineHeaderGutterWidthPx(): Int = dp(56)
 
     private fun timelineFrameWidth(viewportWidth: Int): Int =
         timelineTracksFrame.width.takeIf { it > 0 }
