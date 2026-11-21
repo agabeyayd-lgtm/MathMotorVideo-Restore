@@ -5004,13 +5004,13 @@ disk_paints = []
 for line in reopened.splitlines():
     if "TIMELINE_GRID_FIRST_PAINT" not in line:
         continue
-    if not re.search(rf"uri={uri}(?:\\s|$)", line):
+    if not re.search(rf"uri={uri}(?:\s|$)", line):
         continue
-    if not re.search(r"\\bsource=disk\\b", line):
+    if not re.search(r"\bsource=disk\b", line):
         continue
     fields = {}
     for field in ("targetMs", "gridMs", "elapsedMs"):
-        match = re.search(rf"\\b{field}=(\\d+)", line)
+        match = re.search(rf"\b{field}=(\d+)", line)
         if match:
             fields[field] = match.group(1)
     if len(fields) == 3:
