@@ -321,6 +321,10 @@ internal class TimelineThumbnailDiskCache(
                     if (file.delete()) {
                         totalBytes -= size
                         remainingFiles--
+                        // A completed-grid marker is valid only while every grid
+                        // JPEG remains on disk. If LRU eviction removes any frame,
+                        // force the next editor session to regenerate missing cells.
+                        File(file.parentFile, ".grid-v1.complete").delete()
                     }
                 }
             }
