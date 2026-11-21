@@ -4918,6 +4918,7 @@ timeout -k 2s 10s adb -s emulator-5554 shell am force-stop com.mathmotor.video.n
 timeout -k 2s 15s adb -s emulator-5554 shell am start \
   -n com.mathmotor.video.next/com.mathmotor.video.EditorTestEntryActivity \
   --es video_uri "$replacement_cache_uri" \
+  --es draft_id "11111111-1111-4111-8111-111111111111" \
   --ez timeline_sync_test true \
   --ef timeline_test_px_per_sec_dp 30 | tee emulator-screenshots/thumbnail-cache-restart-launch.txt
 
