@@ -4945,11 +4945,11 @@ persisted_text = open(sys.argv[1], errors="replace").read()
 reopened_text = open(sys.argv[2], errors="replace").read()
 uri = re.escape(sys.argv[3])
 persisted = set(re.findall(
-    rf"TIMELINE_THUMBNAIL_DISK_CACHE_PERSISTED uri={uri} sourceMs=(\\d+)",
+    rf"TIMELINE_THUMBNAIL_DISK_CACHE_PERSISTED uri={uri} sourceMs=(\d+)",
     persisted_text
 ))
 hits = set(re.findall(
-    rf"TIMELINE_THUMBNAIL_DISK_CACHE_HIT uri={uri} sourceMs=(\\d+)",
+    rf"TIMELINE_THUMBNAIL_DISK_CACHE_HIT uri={uri} sourceMs=(\d+)",
     reopened_text
 ))
 reused = persisted & hits
@@ -4970,7 +4970,7 @@ PY
 # gestures have run. Previously this assertion ran before either scrub was exercised.
 timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime \
   -s TimelineAlignmentTest:I TimelineSyncTest:I TimelineFrameSyncTest:I TimelineThumbnail:I \
-  > emulator-screenshots/filmstrip-scrub-reverse-logcat.txt 2>&1
+  > emulator-screenshots/timeline-after-cache-restart-logcat.txt 2>&1
 cat emulator-screenshots/video-replacement-logcat.txt \
   emulator-screenshots/filmstrip-scrub-forward-logcat.txt \
   emulator-screenshots/filmstrip-scrub-reverse-logcat.txt \
