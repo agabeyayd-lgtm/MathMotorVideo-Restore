@@ -843,13 +843,13 @@ for attempt in $(seq 1 30); do
   grid_persisted_count="$(grep -F "TIMELINE_GRID_FRAME uri=$replacement_cache_uri " \
     emulator-screenshots/thumbnail-cache-first-process-logcat.txt \
     | grep -F "persisted=true" \
-    | sed -n 's/.*sourceMs=\([0-9][0-9]*\).*/\1/p' | sort -u | wc -l | tr -d ' ')"
+    | sed -n 's/.*sourceMs=\([0-9][0-9]*\).*/\1/p' | sort -u | wc -l | tr -d ' ' || true)"
   grid_first_paint_ms="$(grep -F "TIMELINE_GRID_FIRST_PAINT uri=$replacement_cache_uri " \
     emulator-screenshots/thumbnail-cache-first-process-logcat.txt \
-    | sed -n 's/.*elapsedMs=\([0-9][0-9]*\).*/\1/p' | head -n 1)"
+    | sed -n 's/.*elapsedMs=\([0-9][0-9]*\).*/\1/p' | head -n 1 || true)"
   grid_generation_ms="$(grep -F "TIMELINE_GRID_GENERATION_COMPLETE uri=$replacement_cache_uri " \
     emulator-screenshots/thumbnail-cache-first-process-logcat.txt \
-    | sed -n 's/.*elapsedMs=\([0-9][0-9]*\).*/\1/p' | tail -n 1)"
+    | sed -n 's/.*elapsedMs=\([0-9][0-9]*\).*/\1/p' | tail -n 1 || true)"
   if [ -n "$grid_first_paint_ms" ] && [ -n "$grid_generation_ms" ] && [ "$grid_persisted_count" -ge 5 ]; then
     break
   fi
