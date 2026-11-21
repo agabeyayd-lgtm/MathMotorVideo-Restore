@@ -1,6 +1,7 @@
 package com.mathmotor.video
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -281,20 +282,16 @@ class TimelineThumbnailMathTest {
         val gapLimit = TimelineThumbnailMath.sequentialDecodeGapLimitMs(1_000L)
 
         assertEquals(1_500L, gapLimit)
-        assertEquals(
-            false,
+        assertFalse(
             TimelineThumbnailMath.shouldSeekSequentialDecoder(3_000L, 4_000L, gapLimit)
         )
-        assertEquals(
-            true,
+        assertTrue(
             TimelineThumbnailMath.shouldSeekSequentialDecoder(1_000L, 5_000L, gapLimit)
         )
-        assertEquals(
-            true,
+        assertTrue(
             TimelineThumbnailMath.shouldSeekSequentialDecoder(5_000L, 7_000L, gapLimit)
         )
-        assertEquals(
-            true,
+        assertTrue(
             TimelineThumbnailMath.shouldSeekSequentialDecoder(5_000L, 4_000L, gapLimit)
         )
     }
