@@ -1643,8 +1643,20 @@ class VideoEditorActivity : Activity() {
                     timelineHandler.removeCallbacks(timelineScrubPreviewSeekTask)
                     pendingTimelineScrubPreviewTargetMs = null
                     timelinePlaybackState = TimelinePlaybackState.PLAYING
-                    // Resume from the exact frozen playhead, not the last 50ms UI sample.
-                    currentPlayer.seekTo(timelinePlayheadMs.coerceIn(0L, totalOutputDurationMs()))
+                    // Pause already captured the player's authoritative clock. Avoid
+                    // flushing/repositioning Media3 when that clock still matches the
+                    // frozen playhead; a real timeline move while paused still seeks.
+                    val resumeTargetMs = timelinePlayheadMs.coerceIn(0L, totalOutputDurationMs())
+                    val resumePositionMs = currentPlayer.currentPosition.coerceAtLeast(0L)
+                    val resumeNeedsSeek = currentPlayer.playbackState ==
+                        androidx.media3.common.Player.STATE_ENDED ||
+                        TimelineScaleMath.shouldSeekOnPlaybackResume(resumePositionMs, resumeTargetMs)
+                    if (resumeNeedsSeek) currentPlayer.seekTo(resumeTargetMs)
+                    if (timelineSyncTestEnabled) android.util.Log.i(
+                        "TimelineSyncTest",
+                        "TIMELINE_PLAY_RESUME currentMs=$resumePositionMs targetMs=$resumeTargetMs " +
+                            "seek=$resumeNeedsSeek state=${currentPlayer.playbackState}"
+                    )
                     hidePreviewFrameOverlay()
                     currentPlayer.playWhenReady = true
                     status.text = "Proje önizlemesi oynatılıyor."
