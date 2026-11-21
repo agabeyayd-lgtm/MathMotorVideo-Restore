@@ -208,8 +208,15 @@ def verify(log_path: str, screenshot_path: str):
                 final_grid_by_target[target_ms] = (
                     grid_ms, elapsed_ms, request_uptime_ms, painted_uptime_ms
                 )
-    grid_sample = final_grid_by_target.get(sample_ms)
-    grid_sample_ready = grid_sample is not None and abs(grid_sample[0] - sample_ms) <= 250
+    # The accessibility timestamp on a filmstrip cell represents the actual
+    # cached grid frame (gridMs), while the request that caused its paint may
+    # target a nearby timeline slot (targetMs). Validate the frame actually
+    # displayed under the playhead against gridMs, not the neighboring request.
+    grid_sample_ready = any(
+        uri == latest_grid_uri and abs(grid_ms - sample_ms) <= 250
+        for uri, _target_ms, grid_ms, _elapsed_ms, _request_uptime_ms, _painted_uptime_ms
+        in grid_paint_events
+    )
     if not re.search(rf"TIMELINE_THUMBNAIL_READY sourceMs={sample_ms} ", log) and not grid_sample_ready:
         raise SystemExit(
             f"FAIL: centered filmstrip sample {sample_ms}ms has no grid frame within 250ms "
