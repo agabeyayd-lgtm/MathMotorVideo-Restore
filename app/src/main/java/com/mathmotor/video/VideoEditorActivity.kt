@@ -570,6 +570,13 @@ class VideoEditorActivity : Activity() {
         val sourceKey = uri.toString()
         val nextGeneration = timelineThumbnailSourceGeneration(uri) + 1L
         timelineThumbnailSourceGenerations[sourceKey] = nextGeneration
+        // Signal active sequential sessions without releasing MediaCodec from the UI thread.
+        timelineSequentialFilmstripDecoders.values
+            .filter { it.first == uri }
+            .forEach { it.second.markInvalidated() }
+        timelineSequentialFilmstripFailures.entries
+            .filter { it.value == uri }
+            .forEach { timelineSequentialFilmstripFailures.remove(it.key, uri) }
         // Recompute mutable source metadata if this URI is imported again later.
         timelineThumbnailDiskSourceKeys.remove(sourceKey)
         // queue.removeIf() alone only removes work that has not started. The API-35
@@ -703,8 +710,10 @@ class VideoEditorActivity : Activity() {
             // Preserve the outer filmstrip's playhead-distance priority after
             // requests enter the decoder queue. Timestamp sorting here used to
             // put the left edge ahead of the cell directly under the playhead.
-            val priorityOrder = priorityDistanceMs.compareTo(other.priorityDistanceMs)
-            return if (priorityOrder != 0) priorityOrder else sequence.compareTo(other.sequence)
+            // A retained decoder advances through presentation timestamps. Keeping
+            // requests chronological avoids repeatedly seeking backwards between cells.
+            val timeOrder = requestedTimeMs.compareTo(other.requestedTimeMs)
+            return if (timeOrder != 0) timeOrder else sequence.compareTo(other.sequence)
         }
     }
 
@@ -722,6 +731,12 @@ class VideoEditorActivity : Activity() {
     // reused decoder to walk forward through an entire intervening GOP range.
     private val timelineThumbnailLastFrameTimesMs =
         java.util.concurrent.ConcurrentHashMap<Long, Long>()
+    // Each decoder thread retains one sequential MediaCodec session for its current
+    // source. Sessions are only created/used/released on that decoder thread.
+    private val timelineSequentialFilmstripDecoders =
+        java.util.concurrent.ConcurrentHashMap<Long, Pair<Uri, SequentialFilmstripFrameDecoder>>()
+    private val timelineSequentialFilmstripFailures =
+        java.util.concurrent.ConcurrentHashMap<Long, Uri>()
     // Store compact fingerprints of sync-seek results per source. If multiple
     // nearby cells resolve to the same keyframe image, only those collisions
     // pay for an exact timestamp seek instead of repeating the same thumbnail.
@@ -754,6 +769,7 @@ class VideoEditorActivity : Activity() {
                 try {
                     worker.run()
                 } finally {
+                    releaseTimelineSequentialFilmstripDecoder()
                     releaseTimelineThumbnailRetriever()
                     releaseTimelineThumbnailExtractor()
                 }
@@ -11878,6 +11894,47 @@ class VideoEditorActivity : Activity() {
         return container
     }
 
+    private fun timelineSequentialFilmstripDecoderFor(
+        uri: Uri,
+        firstTargetTimeMs: Long
+    ): SequentialFilmstripFrameDecoder? {
+        val workerId = Thread.currentThread().id
+        val current = timelineSequentialFilmstripDecoders[workerId]
+        if (current != null) {
+            if (current.first == uri && !current.second.isInvalidated) return current.second
+            timelineSequentialFilmstripDecoders.remove(workerId, current)
+            runCatching { current.second.close() }
+        }
+        if (timelineSequentialFilmstripFailures[workerId] == uri) return null
+        timelineSequentialFilmstripFailures.remove(workerId)
+        return try {
+            SequentialFilmstripFrameDecoder(this, uri, firstTargetTimeMs).also { decoder ->
+                timelineSequentialFilmstripDecoders[workerId] = uri to decoder
+                android.util.Log.i(
+                    "TimelineThumbnail",
+                    "TIMELINE_SEQUENTIAL_DECODER_OPEN uri=$uri decoder=" + decoder.decoderName +
+                        " worker=$workerId firstTargetMs=$firstTargetTimeMs"
+                )
+            }
+        } catch (error: Exception) {
+            timelineSequentialFilmstripFailures[workerId] = uri
+            android.util.Log.w(
+                "TimelineThumbnail",
+                "Sequential MediaCodec setup failed for $uri; using compatibility decoder",
+                error
+            )
+            null
+        }
+    }
+
+    private fun releaseTimelineSequentialFilmstripDecoder() {
+        val workerId = Thread.currentThread().id
+        timelineSequentialFilmstripDecoders.remove(workerId)?.second?.let { decoder ->
+            runCatching { decoder.close() }
+        }
+        timelineSequentialFilmstripFailures.remove(workerId)
+    }
+
     private fun timelineThumbnailRetrieverFor(uri: Uri, tag: String): MediaMetadataRetriever? {
         val threadId = Thread.currentThread().id
         val current = timelineThumbnailRetrievers[threadId]
@@ -12892,6 +12949,48 @@ class VideoEditorActivity : Activity() {
         if (Thread.currentThread().isInterrupted) return null
         val workerId = Thread.currentThread().id
         val frameTimeUs = requestedTimeMs.coerceAtLeast(0L) * 1_000L
+
+        // Primary path: preserve the decoder position across ascending filmstrip
+        // timestamps. Intermediate frames are discarded by MediaCodec before any
+        // Bitmap is allocated; only each requested cell becomes an app thumbnail.
+        val sequentialDecoder = timelineSequentialFilmstripDecoderFor(uri, requestedTimeMs)
+        if (sequentialDecoder != null) {
+            val sequentialStartedAt = SystemClock.uptimeMillis()
+            try {
+                val decoded = sequentialDecoder.decodeAtOrAfter(
+                    requestedTimeMs,
+                    maxWidthPx.coerceAtLeast(1),
+                    maxHeightPx.coerceAtLeast(1)
+                )
+                if (decoded != null && !Thread.currentThread().isInterrupted) {
+                    timelineThumbnailLastFrameTimesMs[workerId] = decoded.presentationTimeMs
+                    if (timelineSyncTestEnabled) android.util.Log.i(
+                        "TimelineFrameSyncTest",
+                        "TIMELINE_THUMBNAIL_DECODED requestedMs=$requestedTimeMs " +
+                            "actualFrameMs=${decoded.presentationTimeMs} " +
+                            "decoder=media-codec-sequential worker=$workerId " +
+                            "decodeMs=${SystemClock.uptimeMillis() - sequentialStartedAt}"
+                    )
+                    return decoded.bitmap
+                }
+                decoded?.bitmap?.let { if (!it.isRecycled) it.recycle() }
+            } catch (error: Exception) {
+                if (Thread.currentThread().isInterrupted) return null
+                sequentialDecoder.markInvalidated()
+                timelineSequentialFilmstripDecoders.remove(workerId)?.second?.let { decoder ->
+                    runCatching { decoder.close() }
+                }
+                timelineSequentialFilmstripFailures[workerId] = uri
+                android.util.Log.w(
+                    "TimelineThumbnail",
+                    "Sequential MediaCodec decode failed for $uri at " +
+                        requestedTimeMs + "ms; using compatibility decoder",
+                    error
+                )
+            }
+        }
+
+        if (Thread.currentThread().isInterrupted) return null
         val retriever = timelineThumbnailRetrieverFor(uri, "TimelineThumbnail")
             ?: return null
 
@@ -13180,7 +13279,7 @@ class VideoEditorActivity : Activity() {
         )
         lateinit var task: TimelineThumbnailTask
         task = TimelineThumbnailTask(
-            priorityDistanceMs.coerceAtLeast(0L),
+            timestampMs,
             timelineThumbnailTaskSequence.incrementAndGet(),
             sourceUriKey = sourceKey,
             sourceGeneration = sourceGeneration,
@@ -14681,6 +14780,8 @@ class VideoEditorActivity : Activity() {
         audioWaveformCache.evictAll()
         timelineThumbnailExecutor.queue.clear()
         timelineThumbnailExecutor.shutdownNow()
+        timelineFrameDecoderExecutor.queue.clear()
+        timelineFrameDecoderExecutor.shutdownNow()
         pendingTimelinePosterTasks.values.toList().forEach { task ->
             coverThumbnailExecutor.remove(task)
             task.cancelForSourceInvalidation()
