@@ -201,12 +201,14 @@ def verify(log_path: str, screenshot_path: str):
                 int(match.group(4)), int(match.group(5)), int(match.group(6))
             ))
     latest_grid_uri = grid_paint_events[-1][0] if grid_paint_events else None
-    final_grid_by_target = {}
+    # Index paints by the actual grid frame timestamp. targetMs is the requested
+    # timeline slot and may differ from the frame that is rendered into the cell.
+    final_grid_by_frame = {}
     if latest_grid_uri is not None:
         for uri, target_ms, grid_ms, elapsed_ms, request_uptime_ms, painted_uptime_ms in grid_paint_events:
             if uri == latest_grid_uri:
-                final_grid_by_target[target_ms] = (
-                    grid_ms, elapsed_ms, request_uptime_ms, painted_uptime_ms
+                final_grid_by_frame[grid_ms] = (
+                    target_ms, elapsed_ms, request_uptime_ms, painted_uptime_ms
                 )
     # The accessibility timestamp on a filmstrip cell represents the actual
     # cached grid frame (gridMs), while the request that caused its paint may
@@ -223,6 +225,7 @@ def verify(log_path: str, screenshot_path: str):
             "and no exact replacement confirmation."
         )
 
+    visible_sources = {timestamp for timestamp, _ in snapshot["cells"]}
     timing_rows = [
         tuple(map(int, row))
         for row in re.findall(
@@ -256,26 +259,27 @@ def verify(log_path: str, screenshot_path: str):
                 int(queue), int(disk), int(decode), int(elapsed)
             )
 
-    if len(timing_rows) < 3:
-        visible_grid_rows = []
-        for target_ms in sorted(visible_sources):
-            match = final_grid_by_target.get(target_ms)
-            if match is None or latest_grid_uri is None:
+    # New frame-grid measurements replace the legacy per-thumbnail timings.
+    # Build the visible-strip rows from the actual frame decode and its paint
+    # event so existing queue/decode/fill limits remain fully enforced.
+    visible_grid_rows = []
+    if latest_grid_uri is not None:
+        for source_ms in sorted(visible_sources):
+            paint = final_grid_by_frame.get(source_ms)
+            frame = grid_frame_rows.get((latest_grid_uri, source_ms))
+            if paint is None or frame is None:
                 continue
-            grid_ms, elapsed_ms, request_uptime_ms, painted_uptime_ms = match
-            queue_wait_ms, disk_lookup_ms, frame_decode_ms, _ = grid_frame_rows.get(
-                (latest_grid_uri, grid_ms), (0, 0, 0, 0)
-            )
+            _target_ms, elapsed_ms, request_uptime_ms, painted_uptime_ms = paint
+            queue_wait_ms, disk_lookup_ms, frame_decode_ms, _frame_elapsed_ms = frame
             visible_grid_rows.append((
-                target_ms, queue_wait_ms, 0, disk_lookup_ms, frame_decode_ms,
+                source_ms, queue_wait_ms, 0, disk_lookup_ms, frame_decode_ms,
                 0, 0, elapsed_ms, request_uptime_ms, request_uptime_ms,
                 painted_uptime_ms
             ))
-        latest_visible_timing_by_source = {row[0]: row for row in visible_grid_rows}
-        visible_timing_rows = [
-            latest_visible_timing_by_source[timestamp]
-            for timestamp in sorted(latest_visible_timing_by_source)
-        ]
+    visible_grid_source_times = {row[0] for row in visible_grid_rows}
+
+    if len(visible_grid_rows) >= 3:
+        visible_timing_rows = visible_grid_rows
     else:
         latest_visible_timing_by_source = {
             row[0]: row for row in timing_rows if row[0] in visible_sources
@@ -285,7 +289,7 @@ def verify(log_path: str, screenshot_path: str):
             for timestamp in sorted(latest_visible_timing_by_source)
         ]
 
-    if not decoder_rows or len(visible_timing_rows) < 3:
+    if not (decoder_rows or visible_grid_rows) or len(visible_timing_rows) < 3:
         raise SystemExit(
             "FAIL: thumbnail/grid decode diagnostics are incomplete; "
             f"decoder records={decoder_rows[-8:]}, "
@@ -293,10 +297,11 @@ def verify(log_path: str, screenshot_path: str):
             f"measured visible timings={[row[0] for row in visible_timing_rows]}."
         )
     print(
-        "  Decoder path: Media3={} (median={}ms); native MMR fallback={}".format(
+        "  Decoder path: Media3={} (median={}ms); native MMR fallback={}; grid frames={}".format(
             len(media3_rows),
             int(statistics.median([int(row[4]) for row in media3_rows])) if media3_rows else 0,
             len(mmr_rows),
+            len(visible_grid_rows),
         )
     )
 
@@ -415,32 +420,12 @@ def verify(log_path: str, screenshot_path: str):
             )
         )
 
-    visible_sources = {timestamp for timestamp, _ in snapshot["cells"]}
-    # The combined logcat contains multiple editor layouts from the same run.
-    # A source timestamp can therefore have more than one successful timing row
-    # (for example, an early partial strip and the later settled strip). Keep the
-    # latest measurement for each timestamp in the final measured layout. Mixing
-    # an early enqueue with a later layout's final display falsely inflates the
-    # end-to-end fill interval even though every final-layout thumbnail is ready.
-    latest_visible_timing_by_source = {
-        row[0]: row for row in timing_rows if row[0] in visible_sources
-    }
-    visible_timing_rows = [
-        latest_visible_timing_by_source[timestamp]
-        for timestamp in sorted(latest_visible_timing_by_source)
-    ]
-    if len(visible_timing_rows) < 3:
-        raise SystemExit(
-            "FAIL: fewer than three visible timeline cells have measured decode/display timing; "
-            f"visible timestamps={sorted(visible_sources)}, timing timestamps={[row[0] for row in timing_rows]}."
-        )
-
     queue_waits = [row[1] for row in visible_timing_rows]
     deferred_waits = [row[2] for row in visible_timing_rows]
     disk_lookup_times = [row[3] for row in visible_timing_rows]
     decode_times = [row[4] for row in visible_timing_rows]
     total_times = [
-        (row[7] if row[0] in final_grid_by_target else
+        (row[7] if row[0] in visible_grid_source_times else
          row[1] + row[2] + row[3] + row[4] + row[5] + row[6] + row[7])
         for row in visible_timing_rows
     ]
