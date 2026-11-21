@@ -24,6 +24,10 @@ internal object TimelineScaleMath {
     fun leadingContentPaddingWidthForCenteredPlayhead(frameWidthPx: Int, headerWidthPx: Int): Int =
         (frameWidthPx.coerceAtLeast(0) / 2 - headerWidthPx.coerceAtLeast(0)).coerceAtLeast(1)
 
+    /** Width of the visible media-lane controls; shared with the ruler header. */
+    fun mediaLaneHeaderWidthPx(gripWidthPx: Int, sideActionWidthPx: Int): Int =
+        (gripWidthPx.coerceAtLeast(0) + sideActionWidthPx.coerceAtLeast(0)).coerceAtLeast(0)
+
     /** Content x-coordinate of time zero below the fixed centre playhead. */
     fun timeOriginContentXForCenteredPlayhead(frameWidthPx: Int): Int =
         frameWidthPx.coerceAtLeast(0) / 2
