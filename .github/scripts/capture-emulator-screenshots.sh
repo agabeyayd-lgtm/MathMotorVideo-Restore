@@ -4854,7 +4854,7 @@ for node in viewport.iter("node"):
     if node.attrib.get("class") != "android.widget.ImageView":
         continue
     description = node.attrib.get("content-desc", "")
-    timestamp = re.fullmatch(r"Klip karesi @(\d+)ms", description)
+    timestamp = re.fullmatch(r"Klip (?:ızgara )?karesi @(\d+)ms", description)
     bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
     if not timestamp or not bounds:
         continue
