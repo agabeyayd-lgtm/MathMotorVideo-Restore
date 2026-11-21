@@ -9,6 +9,17 @@ import kotlin.math.roundToLong
  * rounding differences when many clips or tracks are placed consecutively.
  */
 internal object TimelineScaleMath {
+    /** Avoid a redundant decoder seek when resuming from the already-frozen playhead. */
+    fun shouldSeekOnPlaybackResume(
+        currentPositionMs: Long,
+        playheadMs: Long,
+        toleranceMs: Long = 20L
+    ): Boolean {
+        val current = currentPositionMs.coerceAtLeast(0L)
+        val target = playheadMs.coerceAtLeast(0L)
+        return kotlin.math.abs(current - target) > toleranceMs.coerceAtLeast(0L)
+    }
+
     /** Leading scroll padding before the 84dp in-content header. */
     fun leadingContentPaddingWidthForCenteredPlayhead(frameWidthPx: Int, headerWidthPx: Int): Int =
         (frameWidthPx.coerceAtLeast(0) / 2 - headerWidthPx.coerceAtLeast(0)).coerceAtLeast(1)
