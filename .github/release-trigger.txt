@@ -19,3 +19,5 @@ Signed editor update 8.39 / versionCode 406. Publish after PR #36 merged with al
 Signed editor update 8.40 / versionCode 407. Publish the signed installable APK after PR #40 merged with all exact-head build, unit and API 35 emulator checks green; includes CapCut-style full-height square video trim grips with verified boundary alignment and trim/extend Undo/Redo.
 
 Signed editor update 8.41 / versionCode 408. Publish the signed installable APK after PR #44 merged with all three exact-head checks green; includes corrected proportional thumbnail-cell geometry and timeline gesture diagnostics.
+
+Signed editor update 8.42 / versionCode 409. Publish the signed installable APK from main commit 2a95456 after unit/build/emulator checks passed and non-publishing signing-continuity verification confirmed the 409 candidate certificate exactly matches published versionCode 408. Preserve the existing signing secrets and in-app updater.
