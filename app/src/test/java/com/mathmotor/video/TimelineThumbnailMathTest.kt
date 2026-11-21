@@ -7,8 +7,24 @@ import org.junit.Test
 
 class TimelineThumbnailMathTest {
     @Test
+    fun defaultFilmstripHasWiderPortraitFrameCells() {
+        assertEquals(64, TimelineThumbnailMath.THUMBNAIL_STRIP_HEIGHT_DP)
+        assertEquals(36, TimelineThumbnailMath.thumbnailCellWidthPx(64, 9f / 16f))
+    }
+
+    @Test
     fun decodeBoundsMatchRenderedPortraitCellWithoutOversampling() {
         assertEquals(81 to 144, TimelineThumbnailMath.decodeBounds(81, 144, 9f / 16f))
+    }
+
+    @Test
+    fun filmstripDecodeUsesSmallerFramesToReduceTimelineCodecWork() {
+        assertEquals(
+            71 to 126,
+            TimelineThumbnailMath.decodeBounds(
+                89, 158, 9f / 16f, TimelineThumbnailMath.FILMSTRIP_DECODE_SCALE
+            )
+        )
     }
 
     @Test
@@ -178,6 +194,79 @@ class TimelineThumbnailMathTest {
         assertEquals(end, ranges.last().second)
         assertTrue(ranges.all { it.second > it.first })
         assertTrue(ranges.zipWithNext().all { (left, right) -> left.second == right.first })
+    }
+
+    @Test
+    fun repeatedNearbySyncFramesRequireAnExactTimestampFallback() {
+        val previous = listOf(
+            571L to 0x11L,
+            1_713L to 0x22L,
+            2_856L to 0x22L,
+            3_999L to 0x33L
+        )
+
+        assertEquals(
+            1_713L,
+            TimelineThumbnailMath.nearbyDuplicateSyncFrameTimeMs(
+                requestedTimeMs = 2_856L,
+                fingerprint = 0x22L,
+                previousSamples = previous,
+                maxDistanceMs = 1_500L
+            )
+        )
+    }
+
+    @Test
+    fun differentOrDistantSyncFramesDoNotTriggerExactFallback() {
+        val previous = listOf(500L to 0x11L, 1_000L to 0x22L)
+
+        assertNull(
+            TimelineThumbnailMath.nearbyDuplicateSyncFrameTimeMs(
+                requestedTimeMs = 1_100L,
+                fingerprint = 0x33L,
+                previousSamples = previous,
+                maxDistanceMs = 500L
+            )
+        )
+        assertNull(
+            TimelineThumbnailMath.nearbyDuplicateSyncFrameTimeMs(
+                requestedTimeMs = 5_000L,
+                fingerprint = 0x11L,
+                previousSamples = previous,
+                maxDistanceMs = 500L
+            )
+        )
+        assertNull(
+            TimelineThumbnailMath.nearbyDuplicateSyncFrameTimeMs(
+                requestedTimeMs = 1_000L,
+                fingerprint = 0x22L,
+                previousSamples = previous,
+                maxDistanceMs = 500L
+            )
+        )
+    }
+
+    @Test
+    fun nearestMatchingSyncFrameIsSelectedWhenSeveralCellsRepeatIt() {
+        val previous = listOf(100L to 7L, 400L to 7L, 900L to 7L)
+
+        assertEquals(
+            900L,
+            TimelineThumbnailMath.nearbyDuplicateSyncFrameTimeMs(
+                requestedTimeMs = 1_000L,
+                fingerprint = 7L,
+                previousSamples = previous,
+                maxDistanceMs = 1_000L
+            )
+        )
+        assertNull(
+            TimelineThumbnailMath.nearbyDuplicateSyncFrameTimeMs(
+                requestedTimeMs = 1_000L,
+                fingerprint = 7L,
+                previousSamples = previous,
+                maxDistanceMs = 0L
+            )
+        )
     }
 
     @Test

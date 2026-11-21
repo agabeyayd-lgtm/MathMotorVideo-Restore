@@ -82,9 +82,9 @@ if last_player - first_player < 1200:
 
 baseline_center = int(samples[0]["center"])
 lane_count = len(samples[0]["scrolls"])
-if lane_count < 2:
+if lane_count != 1:
     raise SystemExit(
-        f"FAIL: only {lane_count} timeline lane(s) reported; expected at least ruler + video filmstrip."
+        f"FAIL: expected exactly one shared horizontal timeline viewport; found {lane_count}."
     )
 
 for index, sample in enumerate(samples):
@@ -185,8 +185,8 @@ if terminal_player_overshoots:
         "  Terminal player overrun after the playhead reached project end: "
         f"max={max(terminal_player_overshoots)}ms; end-of-timeline geometry stayed clamped"
     )
-print(f"  Timeline lanes synchronized: {lane_count}")
-print(f"  Shared ruler/filmstrip scroll follows playhead time; no negative scroll")
+print(f"  Shared horizontal timeline viewport: {lane_count}")
+print(f"  Ruler, headers, video, text and audio share one scroll offset; no negative scroll")
 print(f"  Fixed playhead/Play center: {baseline_center}px")
 frame_deltas = [int(sample["frame_center"]) - int(sample["play_button_center"]) for sample in samples]
 print(

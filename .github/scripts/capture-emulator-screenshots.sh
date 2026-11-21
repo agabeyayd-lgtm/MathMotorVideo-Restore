@@ -609,15 +609,41 @@ if [ "$waveform_music_ready" != true ] || [ "$waveform_sound_ready" != true ] ||
   collect_capture_diagnostics audio-waveform-generation-or-draw-failed
   exit 77
 fi
-if ! take_screen emulator-screenshots/editor-audio-waveforms.png; then
-  collect_capture_diagnostics audio-waveform-screenshot-failed
-  exit 77
-fi
+# The timeline card is intentionally vertically scrollable when all lanes do not
+# fit on a short display. The audio clip touch surface can consume the first
+# vertical gesture, so scroll from the unused right side of the timeline viewport
+# and retry until the sound-effect waveform itself is visible. Keep the 24px
+# visibility assertion unchanged; a partial lane must not count as a pass.
+waveform_orange_bars=0
+for waveform_scroll_attempt in $(seq 1 6); do
+  timeout -k 2s 8s adb -s emulator-5554 shell input swipe 1018 1390 1018 980 280
+  sleep 0.35
+  if ! take_screen emulator-screenshots/editor-audio-waveforms.png; then
+    collect_capture_diagnostics audio-waveform-screenshot-failed
+    exit 77
+  fi
+  waveform_orange_bars="$(python3 - emulator-screenshots/editor-audio-waveforms.png <<'PY'
+import sys
+sys.path.insert(0, ".github/scripts")
+from ci_image import Image
+
+image = Image.open(sys.argv[1]).convert("RGB")
+orange_bars = sum(
+    1 for red, green, blue in image.getdata()
+    if red >= 220 and 165 <= green <= 235 and 95 <= blue <= 180 and red - green >= 20
+)
+print(orange_bars)
+PY
+)"
+  if [ "$waveform_orange_bars" -ge 24 ]; then
+    break
+  fi
+  echo "Sound-effect waveform has only $waveform_orange_bars visible pixels after vertical scroll $waveform_scroll_attempt/6; continuing."
+done
 python3 - emulator-screenshots/editor-audio-waveforms.png <<'PY'
 import sys
 sys.path.insert(0, ".github/scripts")
 from ci_image import Image
-import sys
 
 image = Image.open(sys.argv[1]).convert("RGB")
 green_bars = 0
@@ -700,11 +726,14 @@ fi
 # Regression: after the overlay is present, the debug bridge calls the production
 # removeClipAt() path for the original red/hue-cycling source, then imports a
 # distinct solid-green video through addClip(replaceExisting=true).
+# The new filmstrip paints the nearest grid sample first. An exact-frame ready
+# marker is intentionally absent when that grid sample is within 250ms; the
+# visible green-frame assertion below verifies the replacement was actually drawn.
 replacement_complete=false
 for attempt in $(seq 1 30); do
   timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime > emulator-screenshots/video-replacement-logcat.txt 2>&1 || true
   if grep -Fq "EDITOR_SMOKE_CLIP_REPLACED newUri=file://$app_internal_replacement_video" emulator-screenshots/video-replacement-logcat.txt \
-     && grep -Fq "EDITOR_SMOKE_REPLACEMENT_THUMBNAIL_READY uri=file://$app_internal_replacement_video" emulator-screenshots/video-replacement-logcat.txt; then
+     && grep -Fq "TIMELINE_GRID_FIRST_PAINT uri=file://$app_internal_replacement_video" emulator-screenshots/video-replacement-logcat.txt; then
     replacement_complete=true
     break
   fi
@@ -713,11 +742,11 @@ for attempt in $(seq 1 30); do
     collect_capture_diagnostics video-replacement-skipped
     exit 41
   fi
-  echo "Waiting for old-video removal, new-video import, and its first exact thumbnail (attempt $attempt/30)"
+  echo "Waiting for old-video removal, new-video import, and its first grid paint (attempt $attempt/30)"
   sleep 2
 done
 if [ "$replacement_complete" != true ]; then
-  echo "Old filmstrip was not replaced by the new video fixture within 60 seconds."
+  echo "Replacement video produced no timeline grid paint within 60 seconds."
   collect_capture_diagnostics video-replacement-timeout
   exit 42
 fi
@@ -801,6 +830,65 @@ if [ "$replacement_visual_ready" != true ]; then
   exit 45
 fi
 echo "PASS: the visible replacement filmstrip is populated with the new green source frames (ratio >= 0.75)."
+
+# Record that exact replacement-source frames reached the persistent cache before
+# the later force-stop. This is the first half of the cold-process cache check.
+replacement_cache_uri="file://$app_internal_replacement_video"
+grid_persisted_count=0
+grid_first_paint_ms=""
+grid_generation_ms=""
+for attempt in $(seq 1 30); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime \
+    -s TimelineThumbnail:I > emulator-screenshots/thumbnail-cache-first-process-logcat.txt 2>&1 || true
+  grid_persisted_count="$(grep -F "TIMELINE_GRID_FRAME uri=$replacement_cache_uri " \
+    emulator-screenshots/thumbnail-cache-first-process-logcat.txt \
+    | grep -F "persisted=true" \
+    | sed -n 's/.*sourceMs=\([0-9][0-9]*\).*/\1/p' | sort -u | wc -l | tr -d ' ' || true)"
+  grid_first_paint_ms="$(grep -F "TIMELINE_GRID_FIRST_PAINT uri=$replacement_cache_uri " \
+    emulator-screenshots/thumbnail-cache-first-process-logcat.txt \
+    | sed -n 's/.*elapsedMs=\([0-9][0-9]*\).*/\1/p' | head -n 1 || true)"
+  grid_generation_ms="$(grep -F "TIMELINE_GRID_GENERATION_COMPLETE uri=$replacement_cache_uri " \
+    emulator-screenshots/thumbnail-cache-first-process-logcat.txt \
+    | sed -n 's/.*elapsedMs=\([0-9][0-9]*\).*/\1/p' | tail -n 1 || true)"
+  if [ -n "$grid_first_paint_ms" ] && [ -n "$grid_generation_ms" ] && [ "$grid_persisted_count" -ge 5 ]; then
+    break
+  fi
+  echo "Waiting for replacement frame grid (attempt $attempt/30; persisted=$grid_persisted_count firstPaintMs=$grid_first_paint_ms generationMs=$grid_generation_ms)"
+  sleep 1
+done
+if [ "$grid_persisted_count" -lt 5 ] || [ -z "$grid_first_paint_ms" ] || [ -z "$grid_generation_ms" ]; then
+  echo "The replacement source did not finish its persistent grid or record first-paint/generation timings."
+  collect_capture_diagnostics timeline-grid-first-process-incomplete
+  exit 63
+fi
+python3 - emulator-screenshots/thumbnail-cache-first-process-logcat.txt "$replacement_cache_uri" <<'PY'
+import re
+import sys
+
+text = open(sys.argv[1], errors="replace").read()
+uri = re.escape(sys.argv[2])
+source_lines = [
+    line for line in text.splitlines()
+    if "TIMELINE_GRID_FRAME" in line and re.search(rf"uri={uri}\s", line)
+]
+stages = []
+for line in source_lines:
+    match = re.search(r"stageMs=(\d+)", line)
+    if match:
+        stage = int(match.group(1))
+        if stage not in stages:
+            stages.append(stage)
+expected = [4000, 2000, 1000, 500]
+if stages[:4] != expected:
+    raise SystemExit(
+        "FAIL: grid generation did not follow the required coarse-to-fine order; "
+        f"observed stages={stages}"
+    )
+print(f"PASS: frame grid stages ran in coarse-to-fine order: {stages[:4]}")
+PY
+echo "PASS: grid persisted $grid_persisted_count frames; first paint=$grid_first_paint_ms ms; total grid generation=$grid_generation_ms ms."
+echo "Per-frame grid decode timings are recorded as TIMELINE_GRID_FRAME frameElapsedMs in thumbnail-cache-first-process-logcat.txt."
+
 
 # Select the main-video timeline clip and verify that its white transform
 # selection frame appears around the transformed source canvas.
@@ -2443,7 +2531,7 @@ def walk(node):
         match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
         if match:
             left, top, right, bottom = map(int, match.groups())
-            if right - left > 500 and 0 < bottom - top <= 100 and top < 1150:
+            if right - left > 500 and 80 <= bottom - top <= 700 and top < 1150:
                 print(left, top, right, bottom)
                 return True
     for child in node:
@@ -2459,7 +2547,7 @@ PY
       exit 82
     fi
     read -r ruler_left ruler_top ruler_right ruler_bottom <<< "$ruler_bounds"
-    ruler_y=$(((ruler_top + ruler_bottom) / 2))
+    ruler_y=$((ruler_top + 40))
     ruler_width=$((ruler_right - ruler_left))
     # Start well inside the ruler viewport. The previous gesture began only
     # 35px from its right edge, close enough to Android's system-back region
@@ -3953,10 +4041,15 @@ timeout -k 2s 8s adb -s emulator-5554 logcat -c
 timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$text_start_x" "$text_start_y" "$((text_start_x + 48))" "$text_start_y" 700
 text_start_committed=false
 for attempt in $(seq 1 12); do
-  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime \
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -b all -v threadtime \
     -s EditorTouchTest:I ProjectHistoryTest:I \
     > emulator-screenshots/text-edge-start-trim-logcat.txt 2>&1 || true
-  if grep -Fq "TEXT_EDGE_TRIM_COMMIT edge=start" emulator-screenshots/text-edge-start-trim-logcat.txt; then
+  # The commit event is logged before Android finishes rebuilding the text lane.
+  # Wait for both live grips to report the committed range; otherwise the
+  # assertion can mistakenly reuse the initial 0-8000ms measurements.
+  if grep -Fq "TEXT_EDGE_TRIM_COMMIT edge=start" emulator-screenshots/text-edge-start-trim-logcat.txt &&
+     grep -Eq 'TEXT_EDGE_GRIP_LAYOUT edge=start .*startMs=615 endMs=8000' emulator-screenshots/text-edge-start-trim-logcat.txt &&
+     grep -Eq 'TEXT_EDGE_GRIP_LAYOUT edge=end .*startMs=615 endMs=8000' emulator-screenshots/text-edge-start-trim-logcat.txt; then
     text_start_committed=true
     break
   fi
@@ -3978,7 +4071,8 @@ text_start_values="$(assert_text_edge_commit emulator-screenshots/text-edge-star
 }
 read -r text_start_before_start text_start_before_end text_start_after_start text_start_after_end text_start_layer <<< "$(printf '%s\n' "$text_start_values" | head -n 1)"
 assert_text_grip_layout_and_state emulator-screenshots/text-edge-start-trim-logcat.txt \
-  "$text_start_after_start" "$text_start_after_end" || {
+  "$text_start_after_start" "$text_start_after_end" \
+  emulator-screenshots/editor-text-selected-canvas-logcat.txt || {
   collect_capture_diagnostics text-trim-start-grip-layout-invalid
   exit 95
 }
@@ -4073,15 +4167,18 @@ for node in root.iter("node"):
         continue
     left, top, right, bottom = map(int, m.groups())
     height, width = bottom - top, right - left
-    if width > 500 and 20 <= height <= 100 and 0 < top < 1350:
-        candidates.append((top, bottom, (top + bottom) // 2))
+    if width > 500 and 80 <= height <= 700 and 0 < top < 1350:
+        candidates.append((top, bottom, top + min(40, max(8, height // 4))) )
 if not candidates:
     raise SystemExit("No visible shared timeline ruler/scroll lane was found.")
 print(min(candidates)[2])
 PY
 )" || return 1
-    echo "Scrolling the shared timeline toward the text layer's trailing edge (attempt $attempt/6)."
-    timeout -k 2s 8s adb -s emulator-5554 shell input swipe 930 "$ruler_y" 270 "$ruler_y" 420
+    echo "Nudging the shared timeline toward the text layer's trailing edge without triggering inertial fling (attempt $attempt/6)."
+    # This check is about making the trim handle visible, not fling velocity.
+    # Use a short, slow 140px drag so the app's new natural-fling behavior does
+    # not coast past the target and make the edge disappear off the opposite side.
+    timeout -k 2s 8s adb -s emulator-5554 shell input swipe 930 "$ruler_y" 790 "$ruler_y" 1600
     sleep 1
   done
   dump_hierarchy editor-text-trim-scroll-end-final.xml "$hierarchy" || return 1
@@ -4145,10 +4242,14 @@ timeout -k 2s 8s adb -s emulator-5554 logcat -c
 timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$text_end_x" "$text_end_y" "$((text_end_x - 48))" "$text_end_y" 700
 text_end_committed=false
 for attempt in $(seq 1 12); do
-  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime \
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -b all -v threadtime \
     -s EditorTouchTest:I ProjectHistoryTest:I \
     > emulator-screenshots/text-edge-end-trim-logcat.txt 2>&1 || true
-  if grep -Fq "TEXT_EDGE_TRIM_COMMIT edge=end" emulator-screenshots/text-edge-end-trim-logcat.txt; then
+  # The end-trim commit precedes its asynchronous layout pass. Require both
+  # grips to expose the final 615-7385ms range before validating geometry.
+  if grep -Fq "TEXT_EDGE_TRIM_COMMIT edge=end" emulator-screenshots/text-edge-end-trim-logcat.txt &&
+     grep -Eq 'TEXT_EDGE_GRIP_LAYOUT edge=start .*startMs=615 endMs=7385' emulator-screenshots/text-edge-end-trim-logcat.txt &&
+     grep -Eq 'TEXT_EDGE_GRIP_LAYOUT edge=end .*startMs=615 endMs=7385' emulator-screenshots/text-edge-end-trim-logcat.txt; then
     text_end_committed=true
     break
   fi
@@ -4221,11 +4322,12 @@ timeout -k 2s 8s adb -s emulator-5554 logcat -c
 timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_trim_undo_coords
 text_trim_undo_ready=false
 for attempt in $(seq 1 12); do
-  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime \
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -b all -v threadtime \
     -s ProjectHistoryTest:I EditorTouchTest:I \
     > emulator-screenshots/text-edge-undo-logcat.txt 2>&1 || true
   if grep -Fq "PROJECT_HISTORY_APPLIED action=undo" emulator-screenshots/text-edge-undo-logcat.txt &&
-     grep -Fq "TEXT_EDGE_GRIP_LAYOUT edge=end" emulator-screenshots/text-edge-undo-logcat.txt; then
+     grep -Eq 'TEXT_EDGE_GRIP_LAYOUT edge=start .*startMs=615 endMs=8000' emulator-screenshots/text-edge-undo-logcat.txt &&
+     grep -Eq 'TEXT_EDGE_GRIP_LAYOUT edge=end .*startMs=615 endMs=8000' emulator-screenshots/text-edge-undo-logcat.txt; then
     text_trim_undo_ready=true
     break
   fi
@@ -4260,11 +4362,12 @@ timeout -k 2s 8s adb -s emulator-5554 logcat -c
 timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_trim_redo_coords
 text_trim_redo_ready=false
 for attempt in $(seq 1 12); do
-  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime \
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -b all -v threadtime \
     -s ProjectHistoryTest:I EditorTouchTest:I \
     > emulator-screenshots/text-edge-redo-logcat.txt 2>&1 || true
   if grep -Fq "PROJECT_HISTORY_APPLIED action=redo" emulator-screenshots/text-edge-redo-logcat.txt &&
-     grep -Fq "TEXT_EDGE_GRIP_LAYOUT edge=end" emulator-screenshots/text-edge-redo-logcat.txt; then
+     grep -Eq 'TEXT_EDGE_GRIP_LAYOUT edge=start .*startMs=615 endMs=7385' emulator-screenshots/text-edge-redo-logcat.txt &&
+     grep -Eq 'TEXT_EDGE_GRIP_LAYOUT edge=end .*startMs=615 endMs=7385' emulator-screenshots/text-edge-redo-logcat.txt; then
     text_trim_redo_ready=true
     break
   fi
@@ -4348,12 +4451,32 @@ for node in root.iter("node"):
         continue
     left, top, right, bottom = map(int, match.groups())
     width, height = right - left, bottom - top
-    if width > 500 and 20 <= height <= 100 and 0 < top < 1200:
-        candidates.append((top, bottom, (top + bottom) // 2, left, right, height))
+    if width > 500 and 80 <= height <= 700 and 0 < top < 1200:
+        candidates.append((top, bottom, top + min(40, max(8, height // 4)), left, right, height))
 if not candidates:
     raise SystemExit("Could not locate the horizontally scrollable timeline ruler in the editor hierarchy.")
-# The ruler is the first/uppermost short scroll row; audio/text lanes follow below it.
+# The shared HorizontalScrollView contains the ruler and every timeline lane.
+# Its top edge is the ruler row; +40 lands inside the first video clip on the
+# current layout and causes the test to long-press/drag the clip instead.
+# Tap near the top of the shared viewport, safely above the clip strip.
 top, bottom, y, left, right, height = min(candidates, key=lambda item: (item[0], item[1]))
+clip_tops = []
+for node in root.iter("node"):
+    if node.attrib.get("class") != "android.widget.FrameLayout":
+        continue
+    if not node.attrib.get("content-desc", "").startswith("Klip "):
+        continue
+    clip_match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if clip_match:
+        clip_tops.append(int(clip_match.group(2)))
+if clip_tops:
+    clip_top = min(clip_tops)
+    ruler_gap = clip_top - top
+    if ruler_gap <= 8:
+        raise SystemExit(f"Timeline ruler hit area is not safely separated from clip strip: top={top}, clipTop={clip_top}")
+    y = top + min(10, ruler_gap // 2)
+else:
+    y = top + 10
 print(y)
 PY
 )"
@@ -4529,8 +4652,15 @@ PY
   echo "PASS: ruler reposition settled at ${SEEK_RESULT_MS}ms before the reverse filmstrip swipe."
 }
 
-echo "Step 10/12: swipe directly on the filmstrip and verify every timeline lane stays synchronized"
-clip_bounds="$(python3 - emulator-screenshots/thumbnail-alignment-logcat.txt <<'PY'
+echo "Step 10/12: verify shared filmstrip scrubbing and real post-release inertia"
+# Begin from a measured middle position. The previous test started at or near
+# the composition end and dragged most of the visible strip to its clamp, where
+# no release momentum can be observed even when velocity was present.
+seek_timeline_to_ms 3000 "filmstrip-inertial-reset"
+inertial_start_ms="$SEEK_RESULT_MS"
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime \
+  -s TimelineAlignmentTest:I > emulator-screenshots/filmstrip-inertial-start-layout.txt 2>&1
+clip_bounds="$(python3 - emulator-screenshots/filmstrip-inertial-start-layout.txt <<'PY'
 import re
 import sys
 latest = None
@@ -4543,21 +4673,12 @@ if latest:
 PY
 )"
 if [ -z "$clip_bounds" ]; then
-  echo "Could not locate the first video filmstrip for the scrub test."
-  collect_capture_diagnostics filmstrip-scrub-target-missing
+  echo "Could not locate the video filmstrip after moving to the inertial test position."
+  collect_capture_diagnostics filmstrip-inertial-target-missing
   exit 17
 fi
 read -r clip_x1 clip_y1 clip_x2 clip_y2 <<< "$clip_bounds"
 scrub_y="$(((clip_y1 + clip_y2) / 2))"
-clip_width="$((clip_x2 - clip_x1))"
-# UIAutomator reports the visible intersection of a long clip with the lane
-# viewport, not the clip's full off-screen width. Scale the regular inset to
-# that visible width, but keep the initial touch safely inside Android's
-# gesture-navigation exclusion zone. Starting near the right screen edge can
-# invoke system Back and close the editor instead of scrolling the filmstrip.
-swipe_inset="$((clip_width / 10))"
-if [ "$swipe_inset" -lt 10 ]; then swipe_inset=10; fi
-if [ "$swipe_inset" -gt 24 ]; then swipe_inset=24; fi
 screen_width="$(timeout -k 2s 5s adb -s emulator-5554 shell wm size | sed -n 's/.*: \([0-9]*\)x[0-9]*.*/\1/p' | tail -n 1 || true)"
 density_dpi="$(timeout -k 2s 5s adb -s emulator-5554 shell wm density | sed -n 's/.*Physical density: \([0-9]*\).*/\1/p' | tail -n 1 || true)"
 if ! [[ "$screen_width" =~ ^[0-9]+$ ]] || [ "$screen_width" -le 0 ]; then
@@ -4570,39 +4691,79 @@ if ! [[ "$density_dpi" =~ ^[0-9]+$ ]] || [ "$density_dpi" -le 0 ]; then
   collect_capture_diagnostics filmstrip-screen-density-missing
   exit 31
 fi
-# Start at least 48dp from the right edge, safely outside the system Back
-# gesture area on density-scaled emulator configurations. Gesture directly on
-# the thumbnails to verify ordinary filmstrip swipes pan the shared time axis.
-right_edge_safe_margin_px="$(((48 * density_dpi + 159) / 160))"
-right_edge_safe_x="$((screen_width - right_edge_safe_margin_px))"
-forward_start="$((clip_x2 - swipe_inset))"
-if [ "$forward_start" -gt "$right_edge_safe_x" ]; then
-  forward_start="$right_edge_safe_x"
+playhead_center="$(python3 - emulator-screenshots/filmstrip-inertial-reset-sync-logcat.txt <<'PY'
+import re
+import sys
+latest = None
+for line in open(sys.argv[1], errors="replace"):
+    match = re.search(r"TIMELINE_SYNC_SAMPLE .*?playheadCenterPx=(\d+)", line)
+    if match:
+        latest = int(match.group(1))
+if latest is not None:
+    print(latest)
+PY
+)"
+if ! [[ "$playhead_center" =~ ^[0-9]+$ ]]; then
+  echo "Could not read the measured fixed playhead center before the inertial swipe."
+  collect_capture_diagnostics filmstrip-inertial-playhead-center-missing
+  exit 32
 fi
-forward_end="$((clip_x1 + swipe_inset))"
-forward_distance="$((forward_start - forward_end))"
-if [ "$forward_distance" -lt 80 ]; then
-  echo "The visible filmstrip range is too small for a meaningful scrub (${clip_width}px wide; ${forward_distance}px usable after ${swipe_inset}px insets)."
-  collect_capture_diagnostics filmstrip-scrub-distance-too-small
-  exit 18
+# Drag left by a controlled 200px, centred around the playhead. This keeps
+# both endpoints well inside the video strip and leaves room to coast after UP.
+forward_start="$((playhead_center + 100))"
+forward_end="$((playhead_center - 100))"
+right_edge_safe_x="$((screen_width - (48 * density_dpi + 159) / 160))"
+if [ "$forward_start" -gt "$right_edge_safe_x" ] || [ "$forward_end" -lt 48 ]; then
+  echo "Controlled inertial gesture would leave the safe filmstrip area: $forward_start->$forward_end."
+  collect_capture_diagnostics filmstrip-inertial-gesture-out-of-bounds
+  exit 33
 fi
-timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$forward_start" "$scrub_y" "$forward_end" "$scrub_y" 700
-sleep 1
-timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime > emulator-screenshots/filmstrip-scrub-forward-logcat.txt 2>&1
-# The filmstrip child must hand a normal swipe to the parent HorizontalScrollView.
-# This marker is emitted from the real lane ACTION_UP and proves the native
-# velocity/fling path owns the release (a child-owned scrollBy drag cannot emit it).
-if ! grep -Fq "TIMELINE_NATIVE_SCROLL_RELEASE lane=video sampleDelayMs=64" \
-    emulator-screenshots/filmstrip-scrub-forward-logcat.txt \
-    || ! grep -Fq "TIMELINE_NATIVE_SCROLL_RELEASE lane=video sampleDelayMs=128" \
-    emulator-screenshots/filmstrip-scrub-forward-logcat.txt \
-    || ! grep -Fq "TIMELINE_NATIVE_SCROLL_RELEASE lane=video sampleDelayMs=240" \
-    emulator-screenshots/filmstrip-scrub-forward-logcat.txt; then
-  echo "A normal one-finger filmstrip swipe did not reach the native video-lane scroll/fling owner."
-  collect_capture_diagnostics filmstrip-native-fling-release-missing
+if [ "$inertial_start_ms" -lt 1500 ] || [ "$inertial_start_ms" -gt 4500 ]; then
+  echo "Timeline did not settle in the middle range before inertial test: ${inertial_start_ms}ms."
+  collect_capture_diagnostics filmstrip-inertial-start-position-invalid
+  exit 34
+fi
+timeout -k 2s 5s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$forward_start" "$scrub_y" "$forward_end" "$scrub_y" 180
+sleep 0.5
+timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime -s TimelineSyncTest:I \
+  > emulator-screenshots/filmstrip-scrub-forward-logcat.txt 2>&1
+# The parent must receive UP, and its actual scrollX must continue increasing
+# after release. Merely seeing an UP callback is not evidence of inertia.
+if ! python3 - emulator-screenshots/filmstrip-scrub-forward-logcat.txt <<'PY'
+import re
+import sys
+records = {}
+pattern = re.compile(
+    r"TIMELINE_NATIVE_SCROLL_RELEASE lane=shared "
+    r"sampleDelayMs=(64|128|240) startScrollX=(\d+) scrollX=(\d+)"
+)
+for line in open(sys.argv[1], errors="replace"):
+    match = pattern.search(line)
+    if match:
+        delay, start, current = map(int, match.groups())
+        records[delay] = (start, current)
+missing = sorted({64, 128, 240} - records.keys())
+if missing:
+    raise SystemExit(f"Missing native UP release samples at {missing}ms: {records}")
+starts = {start for start, _ in records.values()}
+if len(starts) != 1:
+    raise SystemExit(f"Release samples do not share one release position: {records}")
+release = next(iter(starts))
+advance = {delay: current - release for delay, (_, current) in records.items()}
+maximum = max(advance.values())
+print(f"Native release scrollX={release}; post-UP movement={advance}")
+if maximum < 8:
+    raise SystemExit(
+        f"Filmstrip stopped at release; expected at least 8px of inertial travel, got {maximum}px"
+    )
+PY
+then
+  echo "A fast one-finger filmstrip swipe did not continue moving after release."
+  collect_capture_diagnostics filmstrip-inertial-scroll-missing
   exit 23
 fi
-echo "PASS: video filmstrip swipe reached the native HorizontalScrollView release/fling path."
+echo "PASS: filmstrip continued moving after finger release; native momentum is measurable."
 forward_values="$(python3 - emulator-screenshots/filmstrip-scrub-forward-logcat.txt <<'PY'
 import re
 import sys
@@ -4675,9 +4836,9 @@ for node in root.iter("node"):
         continue
     left, top, right, bottom = map(int, match.groups())
     width, height = right - left, bottom - top
-    # The ruler is the first short row. The next tall horizontal viewport is
-    # the video filmstrip; the other tall rows are overlay/audio lanes.
-    if width > 500 and 90 <= height <= 140 and 1000 <= top < 1400:
+    # The one shared horizontal viewport contains the ruler and every timeline row.
+    # Thumbnail ImageViews identify the video filmstrip within that shared viewport.
+    if width > 500 and 140 <= height <= 700 and 0 < top < 1400:
         viewports.append((top, left, right, bottom, node))
 if not viewports:
     raise SystemExit("Could not locate the live video-filmstrip viewport.")
@@ -4693,7 +4854,7 @@ for node in viewport.iter("node"):
     if node.attrib.get("class") != "android.widget.ImageView":
         continue
     description = node.attrib.get("content-desc", "")
-    timestamp = re.fullmatch(r"Klip karesi @(\d+)ms", description)
+    timestamp = re.fullmatch(r"Klip (?:ızgara )?karesi @(\d+)ms", description)
     bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
     if not timestamp or not bounds:
         continue
@@ -4788,11 +4949,91 @@ if [ -z "$reverse_ms" ] || [ "$reverse_ms" -ge "$((reverse_start_ms - 100))" ]; 
   exit 22
 fi
 echo "PASS: filmstrip left advanced to ${forward_ms}ms; after ruler reset to ${reverse_start_ms}ms, right returned to ${reverse_ms}ms"
+
+echo "Step 10b: verify persistent thumbnail cache survives a full app-process restart"
+# Force-stop the target app (not merely its Activity), then relaunch the same
+# file URI at the same test zoom. The new process has an empty RAM LRU, so a hit
+# here can only come from the on-disk thumbnail cache.
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 10s adb -s emulator-5554 shell am force-stop com.mathmotor.video.next
+timeout -k 2s 15s adb -s emulator-5554 shell am start \
+  -n com.mathmotor.video.next/com.mathmotor.video.EditorTestEntryActivity \
+  --es video_uri "$replacement_cache_uri" \
+  --es draft_id "11111111-1111-4111-8111-111111111111" \
+  --ez timeline_sync_test true \
+  --ef timeline_test_px_per_sec_dp 30 | tee emulator-screenshots/thumbnail-cache-restart-launch.txt
+
+grid_restart_restored=false
+grid_restart_first_paint=false
+for attempt in $(seq 1 30); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime \
+    -s TimelineThumbnail:I EditorSmokeTest:I > emulator-screenshots/thumbnail-cache-restarted-process-logcat.txt 2>&1 || true
+  if grep -Fq "EDITOR_SMOKE_CLIP_ADDED" emulator-screenshots/thumbnail-cache-restarted-process-logcat.txt \
+      && grep -Fq "TIMELINE_GRID_DISK_RESTORED uri=$replacement_cache_uri " \
+        emulator-screenshots/thumbnail-cache-restarted-process-logcat.txt; then
+    grid_restart_restored=true
+  fi
+  if grep -Fq "TIMELINE_GRID_FIRST_PAINT uri=$replacement_cache_uri " \
+      emulator-screenshots/thumbnail-cache-restarted-process-logcat.txt \
+      && grep -Fq "source=disk" emulator-screenshots/thumbnail-cache-restarted-process-logcat.txt; then
+    grid_restart_first_paint=true
+  fi
+  if [ "$grid_restart_restored" = true ] && [ "$grid_restart_first_paint" = true ]; then break; fi
+  echo "Waiting for reopened editor and frame-grid disk restore (attempt $attempt/30; restored=$grid_restart_restored diskFirstPaint=$grid_restart_first_paint)"
+  sleep 1
+done
+if [ "$grid_restart_restored" != true ] || [ "$grid_restart_first_paint" != true ]; then
+  echo "Full process restart did not restore the persisted frame grid and paint a cell from disk."
+  cat emulator-screenshots/thumbnail-cache-restarted-process-logcat.txt || true
+  collect_capture_diagnostics timeline-grid-disk-restore-failed
+  exit 63
+fi
+python3 - emulator-screenshots/thumbnail-cache-first-process-logcat.txt \
+  emulator-screenshots/thumbnail-cache-restarted-process-logcat.txt "$replacement_cache_uri" <<'PY'
+import re
+import sys
+
+first = open(sys.argv[1], errors="replace").read()
+reopened = open(sys.argv[2], errors="replace").read()
+uri = re.escape(sys.argv[3])
+persisted = set(re.findall(
+    rf"TIMELINE_GRID_FRAME uri={uri} sourceMs=(\d+).*?persisted=true",
+    first
+))
+disk_paints = []
+for line in reopened.splitlines():
+    if "TIMELINE_GRID_FIRST_PAINT" not in line:
+        continue
+    if not re.search(rf"uri={uri}(?:\s|$)", line):
+        continue
+    if not re.search(r"\bsource=disk\b", line):
+        continue
+    fields = {}
+    for field in ("targetMs", "gridMs", "elapsedMs"):
+        match = re.search(rf"\b{field}=(\d+)", line)
+        if match:
+            fields[field] = match.group(1)
+    if len(fields) == 3:
+        disk_paints.append((fields["targetMs"], fields["gridMs"], fields["elapsedMs"]))
+if not persisted:
+    raise SystemExit("FAIL: first process did not persist any grid frame timestamps.")
+if not disk_paints:
+    raise SystemExit("FAIL: relaunched process did not paint a filmstrip cell from disk.")
+print(
+    "PASS: force-stop/relaunch restored the completed source grid from disk; "
+    f"first process persisted {len(persisted)} timestamps and the reopened process "
+    f"painted {len(disk_paints)} cell(s) from disk."
+)
+for target_ms, grid_ms, elapsed_ms in disk_paints[:5]:
+    print(f"  disk first paint target={target_ms}ms grid={grid_ms}ms elapsed={elapsed_ms}ms")
+PY
+
+
 # Verify warmed preview performance only after the real forward and reverse filmstrip
 # gestures have run. Previously this assertion ran before either scrub was exercised.
 timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime \
   -s TimelineAlignmentTest:I TimelineSyncTest:I TimelineFrameSyncTest:I TimelineThumbnail:I \
-  > emulator-screenshots/filmstrip-scrub-reverse-logcat.txt 2>&1
+  > emulator-screenshots/timeline-after-cache-restart-logcat.txt 2>&1
 cat emulator-screenshots/video-replacement-logcat.txt \
   emulator-screenshots/filmstrip-scrub-forward-logcat.txt \
   emulator-screenshots/filmstrip-scrub-reverse-logcat.txt \
@@ -5248,8 +5489,9 @@ sample_x = (left[2] + right[0]) // 2
 # captured PNG can be density-scaled and include system insets. Do not use the
 # view-space vertical midpoint as a PNG pixel row. Find the actual fixture-frame
 # row at the seam by scanning the two interior strips in the captured image.
-# The selected clip's rounded trim handle overlays the exact seam, so sample
-# 18..22 pixels to either side, never on the handle itself.
+# The selected clip's rounded trim handle extends beyond the seam.
+# Sample 30..34 pixels to either side, leaving a small safety margin
+# beyond the white handle/border while staying inside each adjacent clip.
 def fixture_frame_pixel(rgb):
     red, green, blue = rgb
     return green > 120 and green > red * 1.5 and green > blue * 1.5
@@ -5260,12 +5502,12 @@ best_score = 0
 for y in range(image.height):
     left_pixels = [
         image.getpixel((sample_x - offset, y))
-        for offset in range(18, 23)
+        for offset in range(30, 35)
         if 0 <= sample_x - offset < image.width
     ]
     right_pixels = [
         image.getpixel((sample_x + offset, y))
-        for offset in range(18, 23)
+        for offset in range(30, 35)
         if 0 <= sample_x + offset < image.width
     ]
     left_visible = sum(fixture_frame_pixel(pixel) for pixel in left_pixels)

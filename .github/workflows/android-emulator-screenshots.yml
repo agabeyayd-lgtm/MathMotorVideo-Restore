@@ -13,9 +13,11 @@ on:
       - ".github/scripts/capture-emulator-screenshots.sh"
       - ".github/scripts/assert-thumbnail-alignment.py"
       - ".github/scripts/assert-timeline-sync.py"
+      - ".github/scripts/ci_image.py"
   push:
     branches:
       - main
+      - fix/capcut-unified-timeline-scroll
     paths:
       - "app/build.gradle.kts"
       - "app/src/main/**"
@@ -23,6 +25,7 @@ on:
       - ".github/scripts/capture-emulator-screenshots.sh"
       - ".github/scripts/assert-thumbnail-alignment.py"
       - ".github/scripts/assert-timeline-sync.py"
+      - ".github/scripts/ci_image.py"
 
 permissions:
   contents: read
@@ -36,7 +39,8 @@ concurrency:
 jobs:
   emulator-ui:
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    # Leave enough room for slow hosted-runner package mirrors plus the API-35 smoke.
+    timeout-minutes: 60
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -84,7 +88,8 @@ jobs:
 
       - name: Install FFmpeg from Ubuntu packages when static download fails
         if: steps.setup_ffmpeg.outcome != 'success'
-        timeout-minutes: 8
+        # Ubuntu's mirror took longer than eight minutes to deliver FFmpeg's runtime packages.
+        timeout-minutes: 15
         shell: bash
         run: |
           set -euo pipefail
@@ -134,14 +139,15 @@ jobs:
           # to prove that the home-screen photo route fills the editable canvas.
           ffmpeg -hide_banner -loglevel error -y -f lavfi -i "color=c=magenta:s=360x640" -frames:v 1 app/build/test-fixtures/editor-test-photo.png
           test -s app/build/test-fixtures/editor-test-photo.png
-          # Keep every sampled frame >99% green while making each of the eight
-          # expected thumbnail timestamps visibly distinct to the 3x3 fingerprint
-          # sampler. Each tiny red square moves to a different 3x3 sample location;
-          # it occupies <1% of the frame, so the green-pixel replacement check remains valid.
+          # Place a distinct sub-1% red marker on each actual frame-grid
+          # timestamp used by the seven visible filmstrip cells. The timeline
+          # paints the nearest persisted grid frame when it is within 250ms, so
+          # markers must align to those grid timestamps rather than the request
+          # slots. Keep the one-second GOP and the >99% green visual background.
           ffmpeg -hide_banner -loglevel error -y \
             -f lavfi -i "color=c=lime:s=360x640:r=24" \
             -t 8 \
-            -vf "drawbox=x=52:y=108:w=40:h=40:color=red:t=fill:enable='between(t,0.25,0.65)',drawbox=x=160:y=108:w=40:h=40:color=red:t=fill:enable='between(t,1.14,1.54)',drawbox=x=268:y=108:w=40:h=40:color=red:t=fill:enable='between(t,2.03,2.43)',drawbox=x=52:y=300:w=40:h=40:color=red:t=fill:enable='between(t,2.92,3.32)',drawbox=x=160:y=300:w=40:h=40:color=red:t=fill:enable='between(t,3.82,4.22)',drawbox=x=268:y=300:w=40:h=40:color=red:t=fill:enable='between(t,4.71,5.11)',drawbox=x=52:y=492:w=40:h=40:color=red:t=fill:enable='between(t,5.60,6.00)',drawbox=x=160:y=492:w=40:h=40:color=red:t=fill:enable='between(t,6.49,6.89)' " \
+            -vf "drawbox=x=200:y=500:w=40:h=40:color=red:t=fill:enable='between(t,0.40,0.60)',drawbox=x=40:y=100:w=40:h=40:color=red:t=fill:enable='between(t,1.40,1.60)',drawbox=x=280:y=100:w=40:h=40:color=red:t=fill:enable='between(t,2.90,3.10)',drawbox=x=40:y=300:w=40:h=40:color=red:t=fill:enable='between(t,3.90,4.10)',drawbox=x=160:y=300:w=40:h=40:color=red:t=fill:enable='between(t,4.90,5.10)',drawbox=x=280:y=300:w=40:h=40:color=red:t=fill:enable='between(t,6.40,6.60)',drawbox=x=160:y=500:w=40:h=40:color=red:t=fill:enable='between(t,7.40,7.60)' " \
             -an -c:v libx264 -preset ultrafast -tune zerolatency \
             -g 24 -keyint_min 24 -sc_threshold 0 -pix_fmt yuv420p \
             app/build/test-fixtures/editor-test-video-replacement.mp4
@@ -250,7 +256,7 @@ jobs:
           adb -s emulator-5554 shell settings put global window_animation_scale 0
           adb -s emulator-5554 shell settings put global transition_animation_scale 0
           adb -s emulator-5554 shell settings put global animator_duration_scale 0
-          gradle --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.mathmotor.video.VideoProjectDraftBackupTest
+          gradle --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.mathmotor.video.VideoProjectDraftBackupTest,com.mathmotor.video.TimelineThumbnailDiskCacheTest
           bash .github/scripts/capture-emulator-screenshots.sh
 
       - name: Upload emulator screenshots and diagnostics

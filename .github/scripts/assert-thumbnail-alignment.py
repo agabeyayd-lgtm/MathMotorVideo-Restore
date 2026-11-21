@@ -137,6 +137,22 @@ def verify(log_path: str, screenshot_path: str):
             "maximum representational difference is 0.5px)."
         )
 
+    # A grid thumbnail may deliberately stand in for a nearby requested cell
+    # (for example, targetMs=1708 uses gridMs=1500 within the 250ms grid limit).
+    # Its accessibility timestamp is therefore not the exact playhead time.
+    # The exact preview must match the latest app-measured playhead from this
+    # same final alignment capture, with the existing 35ms frame tolerance.
+    playhead_samples = [
+        int(playhead)
+        for playhead in re.findall(
+            r"TIMELINE_SYNC_SAMPLE .*?playheadMs=(\d+)", log
+        )
+    ]
+    if not playhead_samples:
+        raise SystemExit(
+            "FAIL: no app-measured playhead timestamp was recorded for the centered thumbnail."
+        )
+    preview_target_ms = playhead_samples[-1]
     ready = [
         (int(project), int(source))
         for project, source in re.findall(
@@ -145,14 +161,14 @@ def verify(log_path: str, screenshot_path: str):
     ]
     time_tolerance_ms = 35
     if not any(
-        abs(project - sample_ms) <= time_tolerance_ms
-        and abs(source - sample_ms) <= time_tolerance_ms
+        abs(project - preview_target_ms) <= time_tolerance_ms
+        and abs(source - preview_target_ms) <= time_tolerance_ms
         for project, source in ready
     ):
         raise SystemExit(
-            f"FAIL: preview did not decode the timestamp represented by the centered thumbnail "
-            f"within the fixed {time_tolerance_ms}ms limit "
-            f"(thumbnail={sample_ms}ms, ready preview frames={ready[-5:]})."
+            f"FAIL: preview did not decode the exact playhead timestamp within the fixed "
+            f"{time_tolerance_ms}ms limit (grid thumbnail={sample_ms}ms, "
+            f"playhead={preview_target_ms}ms, ready preview frames={ready[-5:]})."
         )
     scrub_ready = [
         (int(project), int(source))
@@ -161,18 +177,55 @@ def verify(log_path: str, screenshot_path: str):
         )
     ]
     if not any(
-        abs(project - sample_ms) <= time_tolerance_ms
-        and abs(source - sample_ms) <= time_tolerance_ms
+        abs(project - preview_target_ms) <= time_tolerance_ms
+        and abs(source - preview_target_ms) <= time_tolerance_ms
         for project, source in scrub_ready
     ):
         raise SystemExit(
-            f"FAIL: dragging the filmstrip did not update the preview to the centered playhead time "
-            f"within the fixed {time_tolerance_ms}ms limit "
-            f"(thumbnail={sample_ms}ms, scrub preview frames={scrub_ready[-5:]})."
+            f"FAIL: dragging the filmstrip did not update the preview to the exact playhead "
+            f"timestamp within the fixed {time_tolerance_ms}ms limit "
+            f"(grid thumbnail={sample_ms}ms, playhead={preview_target_ms}ms, "
+            f"scrub preview frames={scrub_ready[-5:]})."
         )
-    if not re.search(rf"TIMELINE_THUMBNAIL_READY sourceMs={sample_ms} ", log):
-        raise SystemExit(f"FAIL: centered thumbnail sample {sample_ms}ms was not confirmed decoded.")
+    grid_paint_events = []
+    for line in log.splitlines():
+        match = re.search(
+            r"TIMELINE_GRID_(?:FIRST_PAINT|NEAREST_UPDATE) uri=(\S+) "
+            r"targetMs=(\d+).*?gridMs=(\d+).*?elapsedMs=(\d+).*?"
+            r"requestUptimeMs=(\d+).*?paintedUptimeMs=(\d+)",
+            line,
+        )
+        if match:
+            grid_paint_events.append((
+                match.group(1), int(match.group(2)), int(match.group(3)),
+                int(match.group(4)), int(match.group(5)), int(match.group(6))
+            ))
+    latest_grid_uri = grid_paint_events[-1][0] if grid_paint_events else None
+    # Index paints by the actual grid frame timestamp. targetMs is the requested
+    # timeline slot and may differ from the frame that is rendered into the cell.
+    final_grid_by_frame = {}
+    if latest_grid_uri is not None:
+        for uri, target_ms, grid_ms, elapsed_ms, request_uptime_ms, painted_uptime_ms in grid_paint_events:
+            if uri == latest_grid_uri:
+                final_grid_by_frame[grid_ms] = (
+                    target_ms, elapsed_ms, request_uptime_ms, painted_uptime_ms
+                )
+    # The accessibility timestamp on a filmstrip cell represents the actual
+    # cached grid frame (gridMs), while the request that caused its paint may
+    # target a nearby timeline slot (targetMs). Validate the frame actually
+    # displayed under the playhead against gridMs, not the neighboring request.
+    grid_sample_ready = any(
+        uri == latest_grid_uri and abs(grid_ms - sample_ms) <= 250
+        for uri, _target_ms, grid_ms, _elapsed_ms, _request_uptime_ms, _painted_uptime_ms
+        in grid_paint_events
+    )
+    if not re.search(rf"TIMELINE_THUMBNAIL_READY sourceMs={sample_ms} ", log) and not grid_sample_ready:
+        raise SystemExit(
+            f"FAIL: centered filmstrip sample {sample_ms}ms has no grid frame within 250ms "
+            "and no exact replacement confirmation."
+        )
 
+    visible_sources = {timestamp for timestamp, _ in snapshot["cells"]}
     timing_rows = [
         tuple(map(int, row))
         for row in re.findall(
@@ -192,16 +245,63 @@ def verify(log_path: str, screenshot_path: str):
     )
     mmr_rows = [row for row in decoder_rows if row[2].startswith("platform-mmr-")]
     media3_rows = [row for row in decoder_rows if row[2].startswith("media3-")]
-    if not decoder_rows or len(timing_rows) < 3:
+    grid_frame_rows = {}
+    for line in log.splitlines():
+        match = re.search(
+            r"TIMELINE_GRID_FRAME uri=(\S+) sourceMs=(\d+) stageMs=(\d+) "
+            r"queueWaitMs=(\d+) diskLookupMs=(\d+) frameDecodeMs=(\d+) "
+            r"frameElapsedMs=(\d+)",
+            line,
+        )
+        if match:
+            uri, source, stage, queue, disk, decode, elapsed = match.groups()
+            grid_frame_rows[(uri, int(source))] = (
+                int(queue), int(disk), int(decode), int(elapsed)
+            )
+
+    # New frame-grid measurements replace the legacy per-thumbnail timings.
+    # Build the visible-strip rows from the actual frame decode and its paint
+    # event so existing queue/decode/fill limits remain fully enforced.
+    visible_grid_rows = []
+    if latest_grid_uri is not None:
+        for source_ms in sorted(visible_sources):
+            paint = final_grid_by_frame.get(source_ms)
+            frame = grid_frame_rows.get((latest_grid_uri, source_ms))
+            if paint is None or frame is None:
+                continue
+            _target_ms, elapsed_ms, request_uptime_ms, painted_uptime_ms = paint
+            queue_wait_ms, disk_lookup_ms, frame_decode_ms, _frame_elapsed_ms = frame
+            visible_grid_rows.append((
+                source_ms, queue_wait_ms, 0, disk_lookup_ms, frame_decode_ms,
+                0, 0, elapsed_ms, request_uptime_ms, request_uptime_ms,
+                painted_uptime_ms
+            ))
+    visible_grid_source_times = {row[0] for row in visible_grid_rows}
+
+    if len(visible_grid_rows) >= 3:
+        visible_timing_rows = visible_grid_rows
+    else:
+        latest_visible_timing_by_source = {
+            row[0]: row for row in timing_rows if row[0] in visible_sources
+        }
+        visible_timing_rows = [
+            latest_visible_timing_by_source[timestamp]
+            for timestamp in sorted(latest_visible_timing_by_source)
+        ]
+
+    if not (decoder_rows or visible_grid_rows) or len(visible_timing_rows) < 3:
         raise SystemExit(
-            "FAIL: thumbnail decode diagnostics are incomplete; "
-            f"decoder records={decoder_rows[-8:]}, successful timing rows={len(timing_rows)}."
+            "FAIL: thumbnail/grid decode diagnostics are incomplete; "
+            f"decoder records={decoder_rows[-8:]}, "
+            f"visible cells={sorted(visible_sources)}, "
+            f"measured visible timings={[row[0] for row in visible_timing_rows]}."
         )
     print(
-        "  Decoder path: Media3={} (median={}ms); native MMR fallback={}".format(
+        "  Decoder path: Media3={} (median={}ms); native MMR fallback={}; grid frames={}".format(
             len(media3_rows),
             int(statistics.median([int(row[4]) for row in media3_rows])) if media3_rows else 0,
             len(mmr_rows),
+            len(visible_grid_rows),
         )
     )
 
@@ -220,13 +320,38 @@ def verify(log_path: str, screenshot_path: str):
     interactive_rows = [row for row in preview_timing_rows if row[0] == "interactive"]
     state_ready = re.search(r"TIMELINE_PLAYER_PLAYBACK_STATE state=3", log)
     bootstrap_executed = re.search(r"TIMELINE_INITIAL_BASE_FRAME_BOOTSTRAP executed=true", log)
-    if not bootstrap_rows or not bootstrap_executed or not state_ready:
-        raise SystemExit(
-            "FAIL: cold-source preview bootstrap was not confirmed after CompositionPlayer STATE_READY."
+
+    # The one-clip preview may already have decoded and applied the exact paused
+    # frame before CompositionPlayer reports READY. The production cache-hit path
+    # marks that source bootstrap-complete and intentionally returns without
+    # opening a second decoder. Accept that path only when an exact project/source
+    # timestamp cache hit is immediately followed by this player's STATE_READY.
+    cached_exact_bootstrap = None
+    for cache_hit in re.finditer(
+        r"TIMELINE_PREVIEW_EXACT_CACHE_HIT projectMs=(\d+) sourceMs=(\d+)", log
+    ):
+        project_ms, source_ms = map(int, cache_hit.groups())
+        ready_after = re.search(
+            r"TIMELINE_PLAYER_PLAYBACK_STATE state=3",
+            log[cache_hit.end():cache_hit.end() + 1_024],
         )
-    if state_ready.start() > bootstrap_executed.start():
+        if abs(project_ms - source_ms) <= 35 and ready_after is not None:
+            cached_exact_bootstrap = (project_ms, source_ms)
+            break
+
+    if state_ready is None:
         raise SystemExit(
-            "FAIL: cold-source still decoding started before the composed video player reached STATE_READY."
+            "FAIL: CompositionPlayer never reported STATE_READY for the preview bootstrap."
+        )
+    if bootstrap_rows and bootstrap_executed:
+        if state_ready.start() > bootstrap_executed.start():
+            raise SystemExit(
+                "FAIL: cold-source still decoding started before the composed video player reached STATE_READY."
+            )
+    elif cached_exact_bootstrap is None:
+        raise SystemExit(
+            "FAIL: neither a post-READY cold preview decode nor an exact cached preview frame "
+            "followed by CompositionPlayer STATE_READY was confirmed."
         )
     if len(interactive_rows) < 2:
         raise SystemExit(
@@ -234,14 +359,22 @@ def verify(log_path: str, screenshot_path: str):
             f"only {len(interactive_rows)} interactive timings were captured."
         )
 
-    bootstrap_decode = [row[5] for row in bootstrap_rows]
-    print(
-        "  Cold-source bootstrap (n={}) decode median/max={}ms/{}ms; "
-        "CompositionPlayer was READY before this one-time decoder open.".format(
-            len(bootstrap_rows),
-            int(statistics.median(bootstrap_decode)), max(bootstrap_decode),
+    if bootstrap_rows:
+        bootstrap_decode = [row[5] for row in bootstrap_rows]
+        print(
+            "  Cold-source bootstrap (n={}) decode median/max={}ms/{}ms; "
+            "CompositionPlayer was READY before this one-time decoder open.".format(
+                len(bootstrap_rows),
+                int(statistics.median(bootstrap_decode)), max(bootstrap_decode),
+            )
         )
-    )
+    else:
+        print(
+            "  Cold-source preview used an exact frame already decoded and applied by the "
+            "single-clip cache (projectMs={} sourceMs={}) before CompositionPlayer STATE_READY.".format(
+                *cached_exact_bootstrap
+            )
+        )
     preview_queue = [row[4] for row in interactive_rows]
     preview_decode = [row[5] for row in interactive_rows]
     preview_ui_dispatch = [row[6] for row in interactive_rows]
@@ -287,32 +420,13 @@ def verify(log_path: str, screenshot_path: str):
             )
         )
 
-    visible_sources = {timestamp for timestamp, _ in snapshot["cells"]}
-    # The combined logcat contains multiple editor layouts from the same run.
-    # A source timestamp can therefore have more than one successful timing row
-    # (for example, an early partial strip and the later settled strip). Keep the
-    # latest measurement for each timestamp in the final measured layout. Mixing
-    # an early enqueue with a later layout's final display falsely inflates the
-    # end-to-end fill interval even though every final-layout thumbnail is ready.
-    latest_visible_timing_by_source = {
-        row[0]: row for row in timing_rows if row[0] in visible_sources
-    }
-    visible_timing_rows = [
-        latest_visible_timing_by_source[timestamp]
-        for timestamp in sorted(latest_visible_timing_by_source)
-    ]
-    if len(visible_timing_rows) < 3:
-        raise SystemExit(
-            "FAIL: fewer than three visible timeline cells have measured decode/display timing; "
-            f"visible timestamps={sorted(visible_sources)}, timing timestamps={[row[0] for row in timing_rows]}."
-        )
-
     queue_waits = [row[1] for row in visible_timing_rows]
     deferred_waits = [row[2] for row in visible_timing_rows]
     disk_lookup_times = [row[3] for row in visible_timing_rows]
     decode_times = [row[4] for row in visible_timing_rows]
     total_times = [
-        row[1] + row[2] + row[3] + row[4] + row[5] + row[6] + row[7]
+        (row[7] if row[0] in visible_grid_source_times else
+         row[1] + row[2] + row[3] + row[4] + row[5] + row[6] + row[7])
         for row in visible_timing_rows
     ]
     # The end-to-end fill includes time held behind preview bootstrap and disk IO.
@@ -341,6 +455,24 @@ def verify(log_path: str, screenshot_path: str):
             f"FAIL: visible thumbnail work was held behind preview bootstrap for {max(deferred_waits)}ms; limit is 2000ms."
         )
     if max(decode_times) > 1_500:
+        # Keep the strict per-cell limit, but show which source timestamp and
+        # worker produced every measured decode so a slow second-wave seek can
+        # be traced without downloading/replaying the entire emulator session.
+        latest_decoder_by_source = {}
+        for requested, actual, decoder, worker, decode_ms in decoder_rows:
+            latest_decoder_by_source[int(requested)] = (
+                decoder, int(worker), int(decode_ms), actual
+            )
+        print("  Per-cell decode diagnostics (sourceMs, decodeMs, queueWaitMs, decoder, worker):")
+        for row in visible_timing_rows:
+            source_ms = row[0]
+            decoder, worker, decode_ms, actual = latest_decoder_by_source.get(
+                source_ms, ("unknown", -1, row[4], None)
+            )
+            print(
+                f"    {source_ms}ms: {decode_ms}ms, queue={row[1]}ms, "
+                f"decoder={decoder}, worker={worker}, actualFrameMs={actual or 'n/a'}"
+            )
         raise SystemExit(
             f"FAIL: visible thumbnail decode reached {max(decode_times)}ms; limit is 1500ms."
         )

@@ -9,7 +9,66 @@ import kotlin.math.roundToLong
  * rounding differences when many clips or tracks are placed consecutively.
  */
 internal object TimelineScaleMath {
-    /** Leading spacer that places time zero beneath the full timeline/Play center. */
+    /** Avoid a redundant decoder seek when resuming from the already-frozen playhead. */
+    fun shouldSeekOnPlaybackResume(
+        currentPositionMs: Long,
+        playheadMs: Long,
+        toleranceMs: Long = 20L
+    ): Boolean {
+        val current = currentPositionMs.coerceAtLeast(0L)
+        val target = playheadMs.coerceAtLeast(0L)
+        return kotlin.math.abs(current - target) > toleranceMs.coerceAtLeast(0L)
+    }
+
+    /** Leading scroll padding before the 84dp in-content header. */
+    fun leadingContentPaddingWidthForCenteredPlayhead(frameWidthPx: Int, headerWidthPx: Int): Int =
+        (frameWidthPx.coerceAtLeast(0) / 2 - headerWidthPx.coerceAtLeast(0)).coerceAtLeast(1)
+
+    /** Content x-coordinate of time zero below the fixed centre playhead. */
+    fun timeOriginContentXForCenteredPlayhead(frameWidthPx: Int): Int =
+        frameWidthPx.coerceAtLeast(0) / 2
+
+    /** Trailing content padding lets the final frame reach the fixed centre line. */
+    fun trailingContentPaddingWidthForCenteredPlayhead(
+        frameWidthPx: Int,
+        trailingInsetPx: Int = 0
+    ): Int =
+        (frameWidthPx.coerceAtLeast(0) / 2 - trailingInsetPx.coerceAtLeast(0)).coerceAtLeast(1)
+
+    /** Scale that displays the requested time interval over the available viewport. */
+    fun defaultPixelsPerSecondForDuration(
+        viewportWidthPx: Int,
+        visibleDurationMs: Long,
+        minimumPixelsPerSecond: Float,
+        maximumPixelsPerSecond: Float
+    ): Float {
+        if (viewportWidthPx <= 0 || visibleDurationMs <= 0L) {
+            return minimumPixelsPerSecond.coerceAtLeast(0f)
+        }
+        val minimum = minimumPixelsPerSecond.coerceAtLeast(0f)
+        val maximum = maximumPixelsPerSecond.coerceAtLeast(minimum)
+        return (viewportWidthPx.toDouble() * 1_000.0 / visibleDurationMs.toDouble())
+            .toFloat().coerceIn(minimum, maximum)
+    }
+
+    /** Migrate old drafts to the new default once, while retaining newer saved zoom. */
+    fun restorePixelsPerSecond(
+        savedPixelsPerSecond: Float?,
+        savedScaleVersion: Int,
+        defaultPixelsPerSecond: Float,
+        minimumPixelsPerSecond: Float,
+        maximumPixelsPerSecond: Float
+    ): Float {
+        val minimum = minimumPixelsPerSecond.takeIf { it.isFinite() }?.coerceAtLeast(1f) ?: 1f
+        val maximum = maximumPixelsPerSecond.takeIf { it.isFinite() }?.coerceAtLeast(minimum) ?: minimum
+        val fallback = defaultPixelsPerSecond.takeIf { it.isFinite() && it > 0f }
+            ?.coerceIn(minimum, maximum) ?: minimum
+        if (savedScaleVersion < 1) return fallback
+        val saved = savedPixelsPerSecond?.takeIf { it.isFinite() && it > 0f } ?: return fallback
+        return saved.coerceIn(minimum, maximum)
+    }
+
+    /** Legacy geometry helper retained for tests of the previous fixed-gutter layout. */
     fun originSpacerWidthForCenteredPlayhead(frameWidthPx: Int, gutterPx: Int): Int =
         (frameWidthPx.coerceAtLeast(0) / 2 - gutterPx.coerceAtLeast(0)).coerceAtLeast(1)
 
