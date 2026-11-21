@@ -25,8 +25,12 @@ internal class TimelineThumbnailDiskCache(
     // Track bytes added during this Activity lifetime. Existing cache size is
     // reconciled only when the soft threshold is reached, never during the first
     // frame write on a cold import.
-    private val cachedBytes = AtomicLong(0L)
+    // -1 means the existing on-disk size has not yet been reconciled. The first
+    // reconciliation happens on the dedicated background cache-writer thread.
+    private val cachedBytes = AtomicLong(-1L)
+    private val sizeInitializationLock = Any()
     private val trimInProgress = AtomicBoolean(false)
+    private val staleTemporaryFileAgeMs = 60L * 60L * 1_000L
     // All cells for one source used to enumerate and sort the same JPEG directory
     // independently. Build a per-source timestamp index once, then serve exact
     // timestamp variant lookups from memory while concurrent decoders run.
@@ -130,18 +134,24 @@ internal class TimelineThumbnailDiskCache(
         widthPx: Int,
         heightPx: Int,
         bitmap: Bitmap
-    ) {
-        if (bitmap.isRecycled || widthPx <= 0 || heightPx <= 0) return
+    ): Boolean {
+        if (bitmap.isRecycled || widthPx <= 0 || heightPx <= 0) return false
         val sourceDirectory = sourceDirectory(sourceKey)
-        if (!sourceDirectory.exists() && !sourceDirectory.mkdirs()) return
+        if (!sourceDirectory.exists() && !sourceDirectory.mkdirs()) return false
 
         val safeTimestamp = timestampMs.coerceAtLeast(0L)
         val destination = frameFile(sourceKey, safeTimestamp, widthPx, heightPx)
         if (destination.isFile && destination.length() > 0L) {
             addIndexedFrame(sourceKey, safeTimestamp, destination)
             destination.setLastModified(System.currentTimeMillis())
-            return
+            return true
         }
+        // A zero-byte/incomplete destination must not block a replacement write.
+        if (destination.exists()) destination.delete()
+
+        // Reconcile old cache files before publishing this new one. This runs
+        // exclusively on the background disk writer, never on a decode worker.
+        initializeKnownSize()
 
         // Each writer gets its own temporary file. Publishing is one same-directory
         // rename, so readers see either no frame or the complete JPEG, never a
@@ -178,17 +188,40 @@ internal class TimelineThumbnailDiskCache(
         if (written) {
             addIndexedFrame(sourceKey, safeTimestamp, destination)
             val total = addToKnownSize(destination.length())
-            // Directory walking/LRU deletion is exceptional maintenance, not part
-            // of every thumbnail write. In particular it never blocks cache reads.
-            // Reconcile the real on-disk size only after accumulating a meaningful
-            // amount of new data. A cold import with a handful of small frames
-            // performs no recursive cache-directory scan.
-            if (total > maxBytes / 8L) trimToLimit()
+            // Enforce the configured cap against both pre-existing files and the
+            // frame just published. This scan/eviction is isolated to the disk writer.
+            if (total > maxBytes) trimToLimit()
+        }
+        return destination.isFile && destination.length() > 0L
+    }
+
+    private fun initializeKnownSize(): Long {
+        val known = cachedBytes.get()
+        if (known >= 0L) return known
+        synchronized(sizeInitializationLock) {
+            val secondRead = cachedBytes.get()
+            if (secondRead >= 0L) return secondRead
+            val cutoff = System.currentTimeMillis() - staleTemporaryFileAgeMs
+            var existingBytes = 0L
+            if (directory.isDirectory) {
+                directory.walkTopDown().forEach { file ->
+                    if (!file.isFile) return@forEach
+                    if (file.name.endsWith(".tmp", ignoreCase = true)) {
+                        if (file.lastModified() <= cutoff) file.delete()
+                    } else if (file.extension.equals("jpg", ignoreCase = true)) {
+                        existingBytes += file.length().coerceAtLeast(0L)
+                    }
+                }
+            }
+            cachedBytes.set(existingBytes)
+            return existingBytes
         }
     }
 
-    private fun addToKnownSize(bytes: Long): Long =
-        cachedBytes.addAndGet(bytes.coerceAtLeast(0L))
+    private fun addToKnownSize(bytes: Long): Long {
+        initializeKnownSize()
+        return cachedBytes.addAndGet(bytes.coerceAtLeast(0L))
+    }
 
     private fun decode(file: File): Bitmap? = runCatching {
         BitmapFactory.decodeFile(
@@ -235,7 +268,15 @@ internal class TimelineThumbnailDiskCache(
                     if (file.delete()) totalBytes -= size
                 }
             }
-            cachedBytes.set(0L)
+            // Remove abandoned temporary writes left by a process killed during
+            // JPEG compression. Fresh temp files are left alone in case another
+            // editor instance is still publishing one.
+            val staleTempCutoff = System.currentTimeMillis() - staleTemporaryFileAgeMs
+            directory.walkTopDown()
+                .filter { it.isFile && it.name.endsWith(".tmp", ignoreCase = true) }
+                .filter { it.lastModified() <= staleTempCutoff }
+                .forEach { it.delete() }
+            cachedBytes.set(totalBytes)
             directory.walkBottomUp()
                 .filter { it.isDirectory && it != directory }
                 .forEach { dir -> if (dir.list().isNullOrEmpty()) dir.delete() }
