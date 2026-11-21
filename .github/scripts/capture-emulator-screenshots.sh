@@ -5062,20 +5062,32 @@ try:
 except (OSError, ET.ParseError) as error:
     raise SystemExit(f"Cannot parse editor hierarchy: {error}")
 
+# VideoEditorActivity updates this description with the current playback state.
+# Accept the real Play or Pause state, but require one visible, enabled Button.
+playback_actions = {"Önizlemeyi oynat", "Önizlemeyi duraklat"}
 matches = []
 for node in root.iter("node"):
-    if node.attrib.get("content-desc", "") != "Önizlemeyi oynat veya duraklat":
+    attributes = node.attrib
+    if attributes.get("content-desc", "") not in playback_actions:
         continue
-    bounds = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+    if attributes.get("class") != "android.widget.Button":
+        continue
+    if attributes.get("clickable") != "true" or attributes.get("enabled") != "true":
+        continue
+    bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", attributes.get("bounds", ""))
     if not bounds:
         continue
     x1, y1, x2, y2 = map(int, bounds.groups())
     if x2 > x1 and y2 > y1:
-        matches.append(((x1 + x2) // 2, (y1 + y2) // 2))
+        matches.append((attributes.get("content-desc"), (x1 + x2) // 2, (y1 + y2) // 2))
 
 if len(matches) != 1:
-    raise SystemExit(f"Expected exactly one accessible preview Play button, found {len(matches)}.")
-print(*matches[0])
+    raise SystemExit(
+        f"Expected exactly one enabled accessible preview Play/Pause button, found {len(matches)}."
+    )
+description, x, y = matches[0]
+print(x, y)
+print(f"Resolved accessible preview action: {description}", file=sys.stderr)
 PY
 )"
 if [ -z "$play_coords" ]; then
