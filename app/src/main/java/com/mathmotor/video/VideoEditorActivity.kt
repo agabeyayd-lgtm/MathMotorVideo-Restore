@@ -13398,7 +13398,11 @@ class VideoEditorActivity : Activity() {
         if (state.nextIndex >= state.frames.size) {
             val diskKey = state.diskSourceKey ?: timelineThumbnailGridDiskSourceKey(state.uri)
             state.diskSourceKey = diskKey
-            val markerWritten = timelineThumbnailDiskCache.markGridComplete(diskKey)
+            // A grid is reusable after process restart only if every planned
+            // timestamp was successfully read or decoded and persisted. Keep the
+            // marker absent after partial failures so a later session retries them.
+            val markerWritten = state.failedFrames == 0 &&
+                timelineThumbnailDiskCache.markGridComplete(diskKey)
             timelineFrameGridStates.remove(state.sourceKey, state)
             markTimelineGridReady(state.sourceKey, state)
             android.util.Log.i(
