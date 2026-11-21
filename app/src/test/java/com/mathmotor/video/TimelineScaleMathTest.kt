@@ -6,6 +6,25 @@ import kotlin.math.abs
 
 class TimelineScaleMathTest {
     @Test
+    fun playbackResumeSkipsSeekWhenPlayerIsAlreadyAtFrozenPlayhead() {
+        assertEquals(false, TimelineScaleMath.shouldSeekOnPlaybackResume(4_120L, 4_120L))
+        assertEquals(false, TimelineScaleMath.shouldSeekOnPlaybackResume(4_108L, 4_120L))
+        assertEquals(false, TimelineScaleMath.shouldSeekOnPlaybackResume(4_132L, 4_120L))
+    }
+
+    @Test
+    fun playbackResumeSeeksWhenTimelineWasMovedWhilePaused() {
+        assertEquals(true, TimelineScaleMath.shouldSeekOnPlaybackResume(4_120L, 4_141L))
+        assertEquals(true, TimelineScaleMath.shouldSeekOnPlaybackResume(4_120L, 3_900L))
+    }
+
+    @Test
+    fun playbackResumeSeekPolicyClampsNegativePositionsAndTolerance() {
+        assertEquals(false, TimelineScaleMath.shouldSeekOnPlaybackResume(-1L, 0L))
+        assertEquals(true, TimelineScaleMath.shouldSeekOnPlaybackResume(100L, 120L, 0L))
+    }
+
+    @Test
     fun rulerAndPlayheadUseTheSameAbsolutePosition() {
         val pixelsPerSecond = 29.7f
         val duration = 20_000L
