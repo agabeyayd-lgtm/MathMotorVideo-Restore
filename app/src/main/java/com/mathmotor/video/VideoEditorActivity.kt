@@ -13106,7 +13106,8 @@ class VideoEditorActivity : Activity() {
                 val decoded = sequentialDecoder.decodeAtOrAfter(
                     requestedTimeMs,
                     maxWidthPx.coerceAtLeast(1),
-                    maxHeightPx.coerceAtLeast(1)
+                    maxHeightPx.coerceAtLeast(1),
+                    TimelineThumbnailMath.sequentialDecodeGapLimitMs(cellWindowMs)
                 )
                 if (decoded != null && !Thread.currentThread().isInterrupted) {
                     timelineThumbnailLastFrameTimesMs[workerId] = decoded.presentationTimeMs
