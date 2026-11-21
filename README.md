@@ -2,7 +2,7 @@
 
 **MathMotorVideo** is an Android video editor built around a practical, timeline-based editing workflow. The project aims to provide a CapCut-style editing experience while keeping core editing operations independent of cloud AI services.
 
-> **Project status:** Active development. The current main-branch source declares Android version `408` (`8.41-capcut-editor`). This is source metadata, not confirmation that a signed APK for that version has been published. [PR #45](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/pull/45) is an open timeline/editor change and must be judged by its exact-head CI results.
+> **Project status (2026-11-21):** Active development. The current PR #45 branch declares Android version `409` (`8.42-capcut-editor`). This is source metadata, not proof that a signed release has been published. PR #45 remains open and unmerged. Its latest head is being checked by GitHub Actions; build and unit-test workflows have passed, while the API 35 emulator workflow is still running. See [PR #45](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/pull/45) and [Actions](https://github.com/agabeyayd-lgtm/MathMotorVideo-Restore/actions) for live status.
 
 ## What the app is for
 
