@@ -175,7 +175,8 @@ internal object TimelineThumbnailMath {
      */
     fun sequentialDecodeGapLimitMs(cellIntervalMs: Long): Long {
         val interval = cellIntervalMs.coerceAtLeast(1L)
-        return interval + interval / 2L
+        val half = interval / 2L + interval % 2L
+        return if (interval > Long.MAX_VALUE - half) Long.MAX_VALUE else interval + half
     }
 
     /**
