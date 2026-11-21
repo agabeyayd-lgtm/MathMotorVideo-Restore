@@ -2898,7 +2898,7 @@ class VideoEditorActivity : Activity() {
         val dock = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(3), dp(4), dp(3), dp(2))
+            setPadding(dp(5), dp(2), dp(5), dp(2))
             setBackgroundColor(Color.rgb(8, 12, 18))
             elevation = dp(8).toFloat()
         }
@@ -2934,18 +2934,45 @@ class VideoEditorActivity : Activity() {
                     android.widget.Toast.makeText(this, "Bu araç bu sürümde etkin değil.", android.widget.Toast.LENGTH_SHORT).show()
                 }
             }.apply {
+                val dockLabel = android.text.SpannableString("$symbol\n$title")
+                dockLabel.setSpan(
+                    android.text.style.RelativeSizeSpan(1.8f),
+                    0,
+                    symbol.length,
+                    android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+                dockLabel.setSpan(
+                    android.text.style.StyleSpan(Typeface.BOLD),
+                    0,
+                    symbol.length,
+                    android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+                dockLabel.setSpan(
+                    android.text.style.RelativeSizeSpan(0.9f),
+                    symbol.length + 1,
+                    dockLabel.length,
+                    android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+                text = dockLabel
                 textSize = 10f
                 gravity = Gravity.CENTER
-                minWidth = dp(52)
-                minimumWidth = dp(52)
-                minHeight = dp(58)
-                setPadding(dp(1), dp(2), dp(1), dp(2))
+                minWidth = dp(60)
+                minimumWidth = dp(60)
+                minHeight = dp(62)
+                setPadding(dp(2), dp(2), dp(2), dp(2))
                 maxLines = 2
-                background = android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
+                background = android.graphics.drawable.RippleDrawable(
+                    android.content.res.ColorStateList.valueOf(Color.rgb(39, 57, 73)),
+                    android.graphics.drawable.GradientDrawable().apply {
+                        setColor(Color.TRANSPARENT)
+                        cornerRadius = dp(9).toFloat()
+                    },
+                    null
+                )
                 setTextColor(Color.rgb(205, 216, 228))
             }
             editorTabButtons[key] = tab
-            dock.addView(tab, LinearLayout.LayoutParams(dp(52), dp(58)).apply {
+            dock.addView(tab, LinearLayout.LayoutParams(dp(60), dp(62)).apply {
                 if (key != "clip") leftMargin = dp(2)
             })
         }
