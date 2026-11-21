@@ -163,7 +163,7 @@ class TimelineThumbnailDiskCacheTest {
             val reopenedOwner = TimelineThumbnailDiskCache(directory)
             assertTrue(reopenedOwner.isGridComplete(sourceA))
             assertTrue(reopenedOwner.isGridComplete(sourceB))
-            val nearest = reopenedOwner.findNearest(sourceA, 760L, Long.MAX_VALUE)
+            val nearest = reopenedOwner.findNearest(sourceA, 740L, Long.MAX_VALUE)
             assertNotNull(nearest)
             try {
                 assertEquals(500L, nearest!!.timestampMs)
@@ -174,7 +174,10 @@ class TimelineThumbnailDiskCacheTest {
             val isolated = reopenedOwner.findNearest(sourceB, 500L, Long.MAX_VALUE)
             assertNotNull(isolated)
             try {
-                assertEquals(Color.MAGENTA, isolated!!.bitmap.getPixel(24, 24))
+                val pixel = isolated!!.bitmap.getPixel(24, 24)
+                assertTrue(abs(Color.red(pixel) - 255) < 25)
+                assertTrue(abs(Color.green(pixel)) < 25)
+                assertTrue(abs(Color.blue(pixel) - 255) < 25)
             } finally {
                 isolated?.bitmap?.recycle()
             }

@@ -393,6 +393,9 @@ class VideoEditorActivity : Activity() {
                 timelinePinchStartContentX = lane.scrollX + timelinePinchStartViewportX
                 timelinePinchBasePxPerSecond = timelinePixelsPerSecond()
                 timelinePinchPreviewRatio = 1f
+                timelineGridMotionGeneration.incrementAndGet()
+                timelineGridExactTasksToCancel()
+                timelineHandler.removeCallbacks(timelineGridIdleExactPass)
                 timelineScaleGestureActive = true
                 return true
             }
@@ -439,6 +442,47 @@ class VideoEditorActivity : Activity() {
     private val timelineThumbnailCache = object : android.util.LruCache<String, Bitmap>(32 * 1024 * 1024) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount.coerceAtLeast(1)
     }
+    private data class TimelineGridTarget(
+        val uri: Uri,
+        val sourceGeneration: Long,
+        val timestampMs: Long,
+        val priorityDistanceMs: Long,
+        val cellStartMs: Long,
+        val cellEndMs: Long,
+        val target: WeakReference<ImageView>,
+        val requestedAtUptimeMs: Long,
+        @Volatile var paintedTimestampMs: Long? = null,
+        @Volatile var diskLookupFinished: Boolean = false,
+        @Volatile var gridReady: Boolean = false,
+        @Volatile var exactRequested: Boolean = false
+    )
+
+    private data class TimelineGridGenerationState(
+        val uri: Uri,
+        val sourceKey: String,
+        val sourceGeneration: Long,
+        val durationMs: Long,
+        val frames: List<TimelineFrameGridPlanner.FrameRequest>,
+        val decodeWidthPx: Int,
+        val decodeHeightPx: Int,
+        val startedAtUptimeMs: Long,
+        @Volatile var diskSourceKey: String? = null,
+        var nextIndex: Int = 0,
+        var persistedFrames: Int = 0,
+        var failedFrames: Int = 0
+    )
+
+    private val timelineFrameGridStates =
+        java.util.concurrent.ConcurrentHashMap<String, TimelineGridGenerationState>()
+    private val completedTimelineFrameGridSources =
+        java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val pendingTimelineGridTargets =
+        java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.CopyOnWriteArrayList<TimelineGridTarget>>()
+    private val pendingTimelineGridExactTasks =
+        java.util.concurrent.ConcurrentHashMap.newKeySet<TimelineThumbnailTask>()
+    private val timelineGridMotionGeneration = java.util.concurrent.atomic.AtomicLong()
+    private val timelineGridIdleExactPass = Runnable { runTimelineGridIdleExactPass() }
+
     // Keep low-resolution filmstrip frames on disk across Activity recreation and
     // app restarts. The in-memory LruCache remains the fastest first-level cache.
     private val timelineThumbnailDiskCache by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
@@ -545,7 +589,9 @@ class VideoEditorActivity : Activity() {
                 }.getOrNull()
                 else -> null
             }
-            if (fingerprint.isNullOrBlank()) uri.toString() else "$uri|source-version=$fingerprint"
+            val durationMs = clips.firstOrNull { it.uri == uri }?.durationMs ?: 0L
+            val versionParts = listOfNotNull(fingerprint?.takeIf { it.isNotBlank() }, "duration=" + durationMs)
+            "$uri|source-version=" + versionParts.joinToString("|")
         }
 
     private fun trackTimelineThumbnailTask(sourceKey: String, task: TimelineThumbnailTask) {
@@ -578,11 +624,34 @@ class VideoEditorActivity : Activity() {
             .filter { it.value == uri }
             .forEach { timelineSequentialFilmstripFailures.remove(it.key, uri) }
         // Recompute mutable source metadata if this URI is imported again later.
-        timelineThumbnailDiskSourceKeys.remove(sourceKey)
+        val obsoleteDiskSourceKey = timelineThumbnailDiskSourceKeys.remove(sourceKey)
+        if (obsoleteDiskSourceKey != null) {
+            runCatching {
+                timelineThumbnailDiskWriter.execute {
+                    timelineThumbnailDiskCache.deleteSource(obsoleteDiskSourceKey)
+                    timelineThumbnailDiskCache.deleteSource(obsoleteDiskSourceKey + "|grid-v1")
+                }
+            }
+        }
+        completedTimelineFrameGridSources.remove(sourceKey)
+        timelineFrameGridStates.remove(sourceKey)
+        pendingTimelineGridTargets.remove(sourceKey)
+        pendingTimelineGridExactTasks.toList().forEach { task ->
+            if (task.sourceUriKey == sourceKey) {
+                timelineThumbnailExecutor.remove(task)
+                task.cancelForSourceInvalidation()
+            }
+        }
         // queue.removeIf() alone only removes work that has not started. The API-35
         // failure showed three decoders still running for a clip after it was removed;
         // a newly imported clip then waited behind frames that could never be displayed.
         val obsoleteTasks = timelineThumbnailTasksBySource.remove(sourceKey).orEmpty().toList()
+        pendingTimelineGridExactTasks.toList().forEach { task ->
+            if (task.sourceUriKey == sourceKey) {
+                timelineThumbnailExecutor.remove(task)
+                task.cancelForSourceInvalidation()
+            }
+        }
         obsoleteTasks.forEach { task ->
             timelineThumbnailExecutor.remove(task)
             task.cancelForSourceInvalidation()
@@ -1629,6 +1698,17 @@ class VideoEditorActivity : Activity() {
                     currentPlayer.pause()
                     currentPlayer.playWhenReady = false
                     timelineHandler.removeCallbacks(timelineScrubPreviewSeekTask)
+        timelineHandler.removeCallbacks(timelineGridIdleExactPass)
+        timelineGridExactTasksToCancel()
+        timelineFrameGridStates.keys.toList().forEach { sourceKey ->
+            timelineThumbnailTasksBySource[sourceKey]?.toList()?.forEach { task ->
+                timelineThumbnailExecutor.remove(task)
+                task.cancelForSourceInvalidation()
+            }
+        }
+        timelineFrameGridStates.clear()
+        pendingTimelineGridTargets.clear()
+        completedTimelineFrameGridSources.clear()
                     pendingTimelineScrubPreviewTargetMs = null
                     val pausedAtMs = currentPlayer.currentPosition
                         .coerceIn(0L, totalOutputDurationMs())
@@ -1816,6 +1896,7 @@ class VideoEditorActivity : Activity() {
                     }
                 }
                 updateTimelinePlayheadLine()
+                if (!autoScrollingTimeline) onTimelineGridMotion()
                 if (timelineSyncTestEnabled) scheduleTimelineAlignmentSnapshot()
             }
         }
@@ -5156,6 +5237,7 @@ class VideoEditorActivity : Activity() {
         // Rebind the independent cover surface here so no caller can leave it blank.
         // Project cover is a fixed still from the first clip, not the clip under the playhead.
         refreshClipCoverThumbnail(clips.firstOrNull())
+        scheduleTimelineFrameGridsForCurrentClips()
     }
 
 
@@ -6221,6 +6303,7 @@ class VideoEditorActivity : Activity() {
                 scheduleTimelineScrubPreviewSeek(playheadAfterPinch)
             }
         }
+        onTimelineGridMotion()
     }
 
     private fun isWindowPointInsideTimeline(screenX: Float, screenY: Float): Boolean {
@@ -9720,6 +9803,16 @@ class VideoEditorActivity : Activity() {
 
         require(loadedClips.isNotEmpty()) { "Projede video klibi bulunamadı." }
 
+        val previousClipDurations = clips.associate { it.uri.toString() to it.durationMs }
+        val loadedClipDurations = loadedClips.associate { it.uri.toString() to it.durationMs }
+        previousClipDurations.forEach { (sourceUri, oldDuration) ->
+            if (loadedClipDurations[sourceUri] != oldDuration) {
+                invalidateTimelineThumbnailSource(
+                    Uri.parse(sourceUri),
+                    "project-source-removed-or-changed"
+                )
+            }
+        }
         clearProjectHistory()
         clips.clear()
         clips.addAll(loadedClips)
@@ -13180,6 +13273,361 @@ class VideoEditorActivity : Activity() {
         }
     }
 
+    private fun timelineThumbnailGridDiskSourceKey(uri: Uri): String =
+        timelineThumbnailDiskSourceKey(uri) + "|grid-v1"
+
+    /**
+     * Starts one source-level grid job after the timeline has been laid out.
+     * The source-wide job is shared by every clip cell for the same URI.
+     */
+    private fun scheduleTimelineFrameGridsForCurrentClips() {
+        if (clips.isEmpty() || isFinishing || isDestroyed) return
+        val schedule = Runnable {
+            if (clips.isEmpty() || isFinishing || isDestroyed) return@Runnable
+            val viewportWidth = if (::timelineSharedScrollView.isInitialized) {
+                timelineSharedScrollView.width.takeIf { it > 0 }
+                    ?: resources.displayMetrics.widthPixels
+            } else {
+                resources.displayMetrics.widthPixels
+            }
+            val visibleSpanMs = (
+                viewportWidth.toDouble() /
+                    timelinePixelsPerSecond().coerceAtLeast(1f).toDouble() * 1_000.0
+            ).toLong().coerceAtLeast(500L)
+            val visibleProjectStart = (timelinePlayheadMs - visibleSpanMs / 2L).coerceAtLeast(0L)
+            val visibleProjectEnd = visibleProjectStart + visibleSpanMs
+
+            clips.toList().forEach { clip ->
+                val segment = TimelineVideoSegment(
+                    clip.timelineStartMs, clip.startMs, clip.endMs, clip.durationMs, clip.speed
+                )
+                val clipDurationOnTimeline = ClipSpeedMath.timelineDurationMs(
+                    (clip.endMs - clip.startMs).coerceAtLeast(0L), clip.speed
+                )
+                val clipProjectEnd = clip.timelineStartMs + clipDurationOnTimeline
+                val overlapStart = maxOf(clip.timelineStartMs, visibleProjectStart)
+                val overlapEnd = minOf(clipProjectEnd, visibleProjectEnd)
+                val anchorStart = when {
+                    overlapEnd > overlapStart -> overlapStart
+                    clipProjectEnd <= visibleProjectStart ->
+                        (clipProjectEnd - 1L).coerceAtLeast(clip.timelineStartMs)
+                    else -> clip.timelineStartMs
+                }
+                val anchorEnd = if (overlapEnd > overlapStart) overlapEnd else anchorStart
+                val visibleSourceStart = TimelineVideoMath.sourceTimeAtProjectTime(
+                    segment, anchorStart
+                ) ?: clip.startMs
+                val visibleSourceEnd = TimelineVideoMath.sourceTimeAtProjectTime(
+                    segment, anchorEnd
+                ) ?: visibleSourceStart
+                ensureTimelineFrameGrid(
+                    clip.uri, clip.durationMs, visibleSourceStart, visibleSourceEnd
+                )
+            }
+        }
+        if (::timelineSharedScrollView.isInitialized) timelineSharedScrollView.post(schedule)
+        else timelineHandler.post(schedule)
+    }
+
+    private fun ensureTimelineFrameGrid(
+        uri: Uri,
+        durationMs: Long,
+        visibleStartMs: Long,
+        visibleEndMs: Long
+    ) {
+        if (durationMs <= 0L || isFinishing || isDestroyed) return
+        val sourceKey = uri.toString()
+        if (completedTimelineFrameGridSources.contains(sourceKey)) return
+        val existing = timelineFrameGridStates[sourceKey]
+        if (existing != null && existing.sourceGeneration == timelineThumbnailSourceGeneration(uri)) return
+
+        val frames = TimelineFrameGridPlanner.orderedFrames(durationMs, visibleStartMs, visibleEndMs)
+        if (frames.isEmpty()) return
+        val aspectRatio = timelineVideoAspectRatio(uri)
+        val stripHeightPx = dp(TimelineThumbnailMath.THUMBNAIL_STRIP_HEIGHT_DP).coerceAtLeast(1)
+        val stripWidthPx = dp(TimelineThumbnailMath.thumbnailCellWidthPx(stripHeightPx, aspectRatio))
+            .coerceAtLeast(1)
+        val decodeBounds = TimelineThumbnailMath.decodeBounds(
+            stripWidthPx,
+            stripHeightPx,
+            aspectRatio,
+            TimelineThumbnailMath.FILMSTRIP_DECODE_SCALE
+        )
+        val state = TimelineGridGenerationState(
+            uri = uri,
+            sourceKey = sourceKey,
+            sourceGeneration = timelineThumbnailSourceGeneration(uri),
+            durationMs = durationMs,
+            frames = frames,
+            decodeWidthPx = decodeBounds.first,
+            decodeHeightPx = decodeBounds.second,
+            startedAtUptimeMs = SystemClock.uptimeMillis()
+        )
+        if (timelineFrameGridStates.putIfAbsent(sourceKey, state) != null) return
+        android.util.Log.i(
+            "TimelineThumbnail",
+            "TIMELINE_GRID_GENERATION_QUEUED uri=" + uri +
+                " durationMs=" + durationMs +
+                " frameCount=" + frames.size +
+                " visibleStartMs=" + visibleStartMs +
+                " visibleEndMs=" + visibleEndMs +
+                " firstStageMs=4000"
+        )
+        enqueueNextTimelineGridFrame(state)
+    }
+
+    private fun markTimelineGridReady(sourceKey: String, state: TimelineGridGenerationState) {
+        completedTimelineFrameGridSources.add(sourceKey)
+        pendingTimelineGridTargets[sourceKey]?.forEach { target ->
+            if (target.sourceGeneration == state.sourceGeneration) target.gridReady = true
+        }
+        timelineHandler.post { scheduleTimelineGridIdleExactPass() }
+    }
+
+    private fun enqueueNextTimelineGridFrame(state: TimelineGridGenerationState) {
+        if (timelineFrameGridStates[state.sourceKey] !== state ||
+            state.sourceGeneration != timelineThumbnailSourceGeneration(state.uri) ||
+            isFinishing || isDestroyed
+        ) return
+
+        if (state.nextIndex >= state.frames.size) {
+            val diskKey = state.diskSourceKey ?: timelineThumbnailGridDiskSourceKey(state.uri)
+            state.diskSourceKey = diskKey
+            val markerWritten = timelineThumbnailDiskCache.markGridComplete(diskKey)
+            timelineFrameGridStates.remove(state.sourceKey, state)
+            markTimelineGridReady(state.sourceKey, state)
+            android.util.Log.i(
+                "TimelineThumbnail",
+                "TIMELINE_GRID_GENERATION_COMPLETE uri=" + state.uri +
+                    " durationMs=" + state.durationMs +
+                    " frames=" + state.frames.size +
+                    " persisted=" + state.persistedFrames +
+                    " failed=" + state.failedFrames +
+                    " elapsedMs=" + (SystemClock.uptimeMillis() - state.startedAtUptimeMs) +
+                    " marker=" + markerWritten
+            )
+            return
+        }
+
+        val frameRequest = state.frames[state.nextIndex++]
+        val timestampMs = frameRequest.timestampMs
+        lateinit var task: TimelineThumbnailTask
+        task = TimelineThumbnailTask(
+            kotlin.math.abs(timestampMs - timelinePlayheadMs),
+            timelineThumbnailTaskSequence.incrementAndGet(),
+            sourceUriKey = state.sourceKey,
+            sourceGeneration = state.sourceGeneration,
+            onFinished = { untrackTimelineThumbnailTask(state.sourceKey, task) }
+        ) {
+            if (Thread.currentThread().isInterrupted ||
+                timelineFrameGridStates[state.sourceKey] !== state ||
+                state.sourceGeneration != timelineThumbnailSourceGeneration(state.uri)
+            ) return@TimelineThumbnailTask
+
+            val diskKey = state.diskSourceKey ?: timelineThumbnailGridDiskSourceKey(state.uri).also {
+                state.diskSourceKey = it
+            }
+            if (state.nextIndex == 1 && timelineThumbnailDiskCache.isGridComplete(diskKey)) {
+                timelineFrameGridStates.remove(state.sourceKey, state)
+                markTimelineGridReady(state.sourceKey, state)
+                android.util.Log.i(
+                    "TimelineThumbnail",
+                    "TIMELINE_GRID_DISK_RESTORED uri=" + state.uri +
+                        " durationMs=" + state.durationMs +
+                        " elapsedMs=" + (SystemClock.uptimeMillis() - state.startedAtUptimeMs)
+                )
+                return@TimelineThumbnailTask
+            }
+
+            val frameStartedAt = SystemClock.uptimeMillis()
+            var frameBitmap: Bitmap? = null
+            if (timelineThumbnailDiskCache.containsTimestamp(diskKey, timestampMs)) {
+                frameBitmap = timelineThumbnailDiskCache.findNearest(diskKey, timestampMs, 0L)?.bitmap
+            } else {
+                frameBitmap = decodeTimelineFrame(
+                    state.uri,
+                    timestampMs,
+                    state.decodeWidthPx,
+                    state.decodeHeightPx,
+                    frameRequest.intervalMs,
+                    kotlin.math.abs(timestampMs - timelinePlayheadMs)
+                )
+            }
+            val frameElapsedMs = SystemClock.uptimeMillis() - frameStartedAt
+
+            if (Thread.currentThread().isInterrupted ||
+                timelineFrameGridStates[state.sourceKey] !== state ||
+                state.sourceGeneration != timelineThumbnailSourceGeneration(state.uri)
+            ) {
+                frameBitmap?.let { if (!it.isRecycled) it.recycle() }
+                return@TimelineThumbnailTask
+            }
+
+            if (frameBitmap != null && !frameBitmap.isRecycled) {
+                val persisted = timelineThumbnailDiskCache.put(
+                    diskKey,
+                    timestampMs,
+                    state.decodeWidthPx,
+                    state.decodeHeightPx,
+                    frameBitmap
+                )
+                if (persisted) {
+                    state.persistedFrames++
+                    timelineThumbnailCache.put(state.uri.toString() + "#" + timestampMs, frameBitmap)
+                    publishTimelineGridFrame(state.uri, state.sourceGeneration, timestampMs, frameBitmap)
+                } else {
+                    state.failedFrames++
+                    if (!frameBitmap.isRecycled) frameBitmap.recycle()
+                }
+            } else {
+                state.failedFrames++
+            }
+
+            android.util.Log.i(
+                "TimelineThumbnail",
+                "TIMELINE_GRID_FRAME uri=" + state.uri +
+                    " sourceMs=" + timestampMs +
+                    " stageMs=" + frameRequest.stageMs +
+                    " frameElapsedMs=" + frameElapsedMs +
+                    " persisted=" + (frameBitmap != null && !frameBitmap.isRecycled) +
+                    " progress=" + state.nextIndex + "/" + state.frames.size
+            )
+            enqueueNextTimelineGridFrame(state)
+        }
+        trackTimelineThumbnailTask(state.sourceKey, task)
+        try {
+            timelineThumbnailExecutor.execute(task)
+        } catch (_: java.util.concurrent.RejectedExecutionException) {
+            untrackTimelineThumbnailTask(state.sourceKey, task)
+            state.failedFrames++
+            android.util.Log.e(
+                "TimelineThumbnail",
+                "TIMELINE_GRID_FRAME_REJECTED uri=" + state.uri + " sourceMs=" + timestampMs
+            )
+            enqueueNextTimelineGridFrame(state)
+        }
+    }
+
+    private fun publishTimelineGridFrame(
+        uri: Uri,
+        sourceGeneration: Long,
+        gridTimestampMs: Long,
+        bitmap: Bitmap
+    ) {
+        if (bitmap.isRecycled) return
+        val sourceKey = uri.toString()
+        pendingTimelineGridTargets[sourceKey]?.forEach { request ->
+            if (request.sourceGeneration != sourceGeneration) return@forEach
+            val previousTime = request.paintedTimestampMs
+            val previousDistance = previousTime?.let {
+                kotlin.math.abs(it - request.timestampMs)
+            } ?: Long.MAX_VALUE
+            val nextDistance = kotlin.math.abs(gridTimestampMs - request.timestampMs)
+            if (nextDistance > previousDistance) return@forEach
+            val target = request.target.get() ?: return@forEach
+            if (target.tag?.toString() != sourceKey + "#" + request.timestampMs) return@forEach
+            timelineHandler.post {
+                if (request.sourceGeneration != timelineThumbnailSourceGeneration(uri) ||
+                    target.tag?.toString() != sourceKey + "#" + request.timestampMs ||
+                    bitmap.isRecycled
+                ) return@post
+                val currentDistance = request.paintedTimestampMs?.let {
+                    kotlin.math.abs(it - request.timestampMs)
+                } ?: Long.MAX_VALUE
+                if (nextDistance > currentDistance) return@post
+                target.setImageBitmap(bitmap)
+                target.contentDescription = "Klip ızgara karesi @" + gridTimestampMs + "ms"
+                request.paintedTimestampMs = gridTimestampMs
+                if (previousTime == null) {
+                    android.util.Log.i(
+                        "TimelineThumbnail",
+                        "TIMELINE_GRID_FIRST_PAINT uri=" + uri +
+                            " targetMs=" + request.timestampMs +
+                            " gridMs=" + gridTimestampMs +
+                            " elapsedMs=" + (SystemClock.uptimeMillis() - request.requestedAtUptimeMs)
+                    )
+                } else {
+                    android.util.Log.i(
+                        "TimelineThumbnail",
+                        "TIMELINE_GRID_NEAREST_UPDATE uri=" + uri +
+                            " targetMs=" + request.timestampMs +
+                            " previousGridMs=" + previousTime +
+                            " gridMs=" + gridTimestampMs
+                    )
+                }
+            }
+        }
+    }
+
+    private fun scheduleTimelineGridIdleExactPass() {
+        timelineHandler.removeCallbacks(timelineGridIdleExactPass)
+        if (!timelineScaleGestureActive && !isFinishing && !isDestroyed) {
+            timelineHandler.postDelayed(timelineGridIdleExactPass, 250L)
+        }
+    }
+
+    private fun onTimelineGridMotion() {
+        timelineGridMotionGeneration.incrementAndGet()
+        timelineGridExactTasksToCancel()
+        timelineHandler.removeCallbacks(timelineGridIdleExactPass)
+        if (!timelineScaleGestureActive) {
+            timelineHandler.postDelayed(timelineGridIdleExactPass, 250L)
+        }
+    }
+
+    private fun timelineGridExactTasksToCancel() {
+        pendingTimelineGridExactTasks.toList().forEach { task ->
+            timelineThumbnailExecutor.remove(task)
+            task.cancelForSupersededRequest()
+        }
+        pendingTimelineGridExactTasks.clear()
+    }
+
+    private fun runTimelineGridIdleExactPass() {
+        if (timelineScaleGestureActive || isFinishing || isDestroyed) return
+        val motionGeneration = timelineGridMotionGeneration.get()
+        pendingTimelineGridTargets.entries.toList().forEach { (sourceKey, targets) ->
+            targets.toList().forEach { request ->
+                if (!request.gridReady || !request.diskLookupFinished || request.exactRequested) return@forEach
+                val target = request.target.get()
+                if (target == null || target.tag?.toString() != request.uri.toString() + "#" + request.timestampMs) {
+                    targets.remove(request)
+                    return@forEach
+                }
+                val nearestTime = request.paintedTimestampMs
+                val nearestDistance = nearestTime?.let {
+                    kotlin.math.abs(it - request.timestampMs)
+                } ?: Long.MAX_VALUE
+                if (nearestDistance <= 250L) {
+                    targets.remove(request)
+                    return@forEach
+                }
+                val visibleRect = android.graphics.Rect()
+                if (!target.isShown || !target.getGlobalVisibleRect(visibleRect)) return@forEach
+                request.exactRequested = true
+                targets.remove(request)
+                android.util.Log.i(
+                    "TimelineThumbnail",
+                    "TIMELINE_GRID_EXACT_FALLBACK uri=" + request.uri +
+                        " targetMs=" + request.timestampMs +
+                        " nearestGridMs=" + (nearestTime ?: "none") +
+                        " distanceMs=" + nearestDistance
+                )
+                requestTimelineThumbnailExact(
+                    request.uri,
+                    request.timestampMs,
+                    target,
+                    request.priorityDistanceMs,
+                    request.cellStartMs,
+                    request.cellEndMs,
+                    usePosterPlaceholder = false,
+                    gridMotionGeneration = motionGeneration
+                )
+            }
+            if (targets.isEmpty()) pendingTimelineGridTargets.remove(sourceKey, targets)
+        }
+    }
+
     private fun requestTimelineThumbnail(
         uri: Uri,
         timeMs: Long,
@@ -13188,6 +13636,141 @@ class VideoEditorActivity : Activity() {
         cellStartMs: Long = timeMs,
         cellEndMs: Long = timeMs + 1L,
         usePosterPlaceholder: Boolean = false
+    ) {
+        val timestampMs = timeMs.coerceAtLeast(0L)
+        val sourceKey = uri.toString()
+        val sourceGeneration = timelineThumbnailSourceGeneration(uri)
+        val key = sourceKey + "#" + timestampMs
+        val requestedAt = SystemClock.uptimeMillis()
+        target.tag = key
+
+        val request = TimelineGridTarget(
+            uri = uri,
+            sourceGeneration = sourceGeneration,
+            timestampMs = timestampMs,
+            priorityDistanceMs = priorityDistanceMs,
+            cellStartMs = cellStartMs,
+            cellEndMs = cellEndMs,
+            target = WeakReference(target),
+            requestedAtUptimeMs = requestedAt,
+            gridReady = completedTimelineFrameGridSources.contains(sourceKey)
+        )
+        val requests = pendingTimelineGridTargets.computeIfAbsent(sourceKey) {
+            java.util.concurrent.CopyOnWriteArrayList()
+        }
+        requests.removeIf { existing -> existing.target.get() === target }
+        requests.add(request)
+
+        val nearestMemory = timelineThumbnailCache.snapshot().entries.mapNotNull { entry ->
+            if (!entry.key.startsWith(sourceKey + "#")) return@mapNotNull null
+            val cachedTime = entry.key.substringAfterLast("#").toLongOrNull() ?: return@mapNotNull null
+            val bitmap = entry.value
+            if (bitmap.isRecycled) return@mapNotNull null
+            Triple(kotlin.math.abs(cachedTime - timestampMs), cachedTime, bitmap)
+        }.minByOrNull { it.first }
+
+        if (nearestMemory != null) {
+            target.setImageBitmap(nearestMemory.third)
+            target.contentDescription = "Klip ızgara karesi @" + nearestMemory.second + "ms"
+            request.paintedTimestampMs = nearestMemory.second
+            request.diskLookupFinished = true
+            android.util.Log.i(
+                "TimelineThumbnail",
+                "TIMELINE_GRID_FIRST_PAINT uri=" + uri +
+                    " targetMs=" + timestampMs +
+                    " gridMs=" + nearestMemory.second +
+                    " source=memory elapsedMs=" + (SystemClock.uptimeMillis() - requestedAt)
+            )
+        } else {
+            lateinit var diskTask: TimelineThumbnailTask
+            diskTask = TimelineThumbnailTask(
+                priorityDistanceMs,
+                timelineThumbnailTaskSequence.incrementAndGet(),
+                sourceUriKey = sourceKey,
+                sourceGeneration = sourceGeneration,
+                onFinished = { untrackTimelineThumbnailTask(sourceKey, diskTask) }
+            ) {
+                val gridDiskKey = timelineThumbnailGridDiskSourceKey(uri)
+                val nearest = timelineThumbnailDiskCache.findNearest(
+                    gridDiskKey, timestampMs, Long.MAX_VALUE
+                )
+                val frame = nearest?.bitmap
+                val fitted = if (frame != null && !frame.isRecycled) {
+                    val targetWidth = target.layoutParams?.width?.takeIf { it > 0 }
+                        ?: target.width.coerceAtLeast(1)
+                    val targetHeight = target.layoutParams?.height?.takeIf { it > 0 }
+                        ?: target.height.coerceAtLeast(1)
+                    val dimensions = TimelineThumbnailMath.fitDimensions(
+                        frame.width, frame.height, targetWidth, targetHeight
+                    )
+                    if (dimensions.first == frame.width && dimensions.second == frame.height) {
+                        frame
+                    } else {
+                        Bitmap.createScaledBitmap(frame, dimensions.first, dimensions.second, true).also {
+                            if (!frame.isRecycled) frame.recycle()
+                        }
+                    }
+                } else {
+                    null
+                }
+                if (Thread.currentThread().isInterrupted ||
+                    sourceGeneration != timelineThumbnailSourceGeneration(uri)
+                ) {
+                    fitted?.let { if (!it.isRecycled) it.recycle() }
+                    return@TimelineThumbnailTask
+                }
+                if (nearest != null && fitted != null && !fitted.isRecycled) {
+                    timelineThumbnailCache.put(sourceKey + "#" + nearest.timestampMs, fitted)
+                }
+                timelineHandler.post {
+                    request.diskLookupFinished = true
+                    if (sourceGeneration == timelineThumbnailSourceGeneration(uri) &&
+                        target.tag?.toString() == key &&
+                        nearest != null && fitted != null && !fitted.isRecycled
+                    ) {
+                        val previousTime = request.paintedTimestampMs
+                        val previousDistance = previousTime?.let {
+                            kotlin.math.abs(it - timestampMs)
+                        } ?: Long.MAX_VALUE
+                        val nextDistance = kotlin.math.abs(nearest.timestampMs - timestampMs)
+                        if (nextDistance <= previousDistance) {
+                            target.setImageBitmap(fitted)
+                            target.contentDescription = "Klip ızgara karesi @" + nearest.timestampMs + "ms"
+                            request.paintedTimestampMs = nearest.timestampMs
+                            android.util.Log.i(
+                                "TimelineThumbnail",
+                                "TIMELINE_GRID_FIRST_PAINT uri=" + uri +
+                                    " targetMs=" + timestampMs +
+                                    " gridMs=" + nearest.timestampMs +
+                                    " source=disk elapsedMs=" + (SystemClock.uptimeMillis() - requestedAt)
+                            )
+                        }
+                    } else if (fitted != null && !fitted.isRecycled) {
+                        fitted.recycle()
+                    }
+                    if (request.gridReady) scheduleTimelineGridIdleExactPass()
+                }
+            }
+            trackTimelineThumbnailTask(sourceKey, diskTask)
+            try {
+                timelineThumbnailExecutor.execute(diskTask)
+            } catch (_: java.util.concurrent.RejectedExecutionException) {
+                untrackTimelineThumbnailTask(sourceKey, diskTask)
+                request.diskLookupFinished = true
+            }
+        }
+        if (request.gridReady) scheduleTimelineGridIdleExactPass()
+    }
+
+    private fun requestTimelineThumbnailExact(
+        uri: Uri,
+        timeMs: Long,
+        target: ImageView,
+        priorityDistanceMs: Long = kotlin.math.abs(timeMs - timelinePlayheadMs),
+        cellStartMs: Long = timeMs,
+        cellEndMs: Long = timeMs + 1L,
+        usePosterPlaceholder: Boolean = false,
+        gridMotionGeneration: Long? = null
     ) {
         val timestampMs = timeMs.coerceAtLeast(0L)
         val sourceKey = uri.toString()
@@ -13297,6 +13880,7 @@ class VideoEditorActivity : Activity() {
             sourceGeneration = sourceGeneration,
             onFinished = {
                 untrackTimelineThumbnailTask(sourceKey, task)
+                pendingTimelineGridExactTasks.remove(task)
             },
             onEnqueued = { submittedAtUptimeMs = SystemClock.uptimeMillis() },
             taskPriority = 0
@@ -13307,7 +13891,8 @@ class VideoEditorActivity : Activity() {
             val queueWaitMs = (taskStartedAtUptimeMs - queueSubmittedAtUptimeMs).coerceAtLeast(0L)
             val deferredWaitMs = (queueSubmittedAtUptimeMs - requestedAtUptimeMs).coerceAtLeast(0L)
             if (Thread.currentThread().isInterrupted ||
-                sourceGeneration != timelineThumbnailSourceGeneration(uri)
+                sourceGeneration != timelineThumbnailSourceGeneration(uri) ||
+                (gridMotionGeneration != null && gridMotionGeneration != timelineGridMotionGeneration.get())
             ) return@TimelineThumbnailTask
             var diskLookupDurationMs = 0L
             var frameDecodeDurationMs = -1L
@@ -13511,7 +14096,9 @@ class VideoEditorActivity : Activity() {
                     pendingTimelineThumbnailGenerations.remove(key)
                     pendingTimelineThumbnails.remove(key).orEmpty()
                 } else emptyList()
-                if (sourceGeneration != timelineThumbnailSourceGeneration(uri)) {
+                if (sourceGeneration != timelineThumbnailSourceGeneration(uri) ||
+                    (gridMotionGeneration != null && gridMotionGeneration != timelineGridMotionGeneration.get())
+                ) {
                     result?.let { if (!it.isRecycled) it.recycle() }
                     return@runOnUiThread
                 }
@@ -13592,6 +14179,7 @@ class VideoEditorActivity : Activity() {
                 }
             }
         }
+        if (gridMotionGeneration != null) pendingTimelineGridExactTasks.add(task)
         trackTimelineThumbnailTask(sourceKey, task)
         try {
             enqueueSecondaryThumbnailTask(task)
