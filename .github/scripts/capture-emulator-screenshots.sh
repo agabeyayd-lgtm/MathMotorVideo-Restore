@@ -828,6 +828,27 @@ if [ "$replacement_visual_ready" != true ]; then
 fi
 echo "PASS: the visible replacement filmstrip is populated with the new green source frames (ratio >= 0.75)."
 
+# Record that exact replacement-source frames reached the persistent cache before
+# the later force-stop. This is the first half of the cold-process cache check.
+replacement_cache_uri="file://$app_internal_replacement_video"
+cache_persisted_count=0
+for attempt in $(seq 1 30); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime \
+    -s TimelineThumbnail:I > emulator-screenshots/thumbnail-cache-first-process-logcat.txt 2>&1 || true
+  cache_persisted_count="$(grep -F "TIMELINE_THUMBNAIL_DISK_CACHE_PERSISTED uri=$replacement_cache_uri " \
+    emulator-screenshots/thumbnail-cache-first-process-logcat.txt \
+    | sed -n 's/.*sourceMs=\([0-9][0-9]*\).*/\1/p' | sort -u | wc -l | tr -d ' ')"
+  if [ "$cache_persisted_count" -ge 5 ]; then break; fi
+  echo "Waiting for persistent cache writes from the replacement video (attempt $attempt/30; frames=$cache_persisted_count)"
+  sleep 1
+done
+if [ "$cache_persisted_count" -lt 5 ]; then
+  echo "The first editor process did not persist at least five distinct visible replacement frames."
+  collect_capture_diagnostics thumbnail-cache-first-process-writes-missing
+  exit 63
+fi
+echo "PASS: $cache_persisted_count distinct replacement frames were confirmed persisted before process shutdown."
+
 # Select the main-video timeline clip and verify that its white transform
 # selection frame appears around the transformed source canvas.
 video_clip_center="$(python3 - emulator-screenshots/editor-after-video-replacement.xml <<'PY'
@@ -4887,6 +4908,64 @@ if [ -z "$reverse_ms" ] || [ "$reverse_ms" -ge "$((reverse_start_ms - 100))" ]; 
   exit 22
 fi
 echo "PASS: filmstrip left advanced to ${forward_ms}ms; after ruler reset to ${reverse_start_ms}ms, right returned to ${reverse_ms}ms"
+
+echo "Step 10b: verify persistent thumbnail cache survives a full app-process restart"
+# Force-stop the target app (not merely its Activity), then relaunch the same
+# file URI at the same test zoom. The new process has an empty RAM LRU, so a hit
+# here can only come from the on-disk thumbnail cache.
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 10s adb -s emulator-5554 shell am force-stop com.mathmotor.video.next
+timeout -k 2s 15s adb -s emulator-5554 shell am start \
+  -n com.mathmotor.video.next/com.mathmotor.video.EditorTestEntryActivity \
+  --es video_uri "$replacement_cache_uri" \
+  --ez timeline_sync_test true \
+  --ef timeline_test_px_per_sec_dp 30 | tee emulator-screenshots/thumbnail-cache-restart-launch.txt
+
+cache_restart_hit_count=0
+for attempt in $(seq 1 30); do
+  timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime \
+    -s TimelineThumbnail:I EditorSmokeTest:I > emulator-screenshots/thumbnail-cache-restarted-process-logcat.txt 2>&1 || true
+  cache_restart_hit_count="$(grep -F "TIMELINE_THUMBNAIL_DISK_CACHE_HIT uri=$replacement_cache_uri " \
+    emulator-screenshots/thumbnail-cache-restarted-process-logcat.txt \
+    | sed -n 's/.*sourceMs=\([0-9][0-9]*\).*/\1/p' | sort -u | wc -l | tr -d ' ')"
+  if grep -Fq "EDITOR_SMOKE_CLIP_ADDED" emulator-screenshots/thumbnail-cache-restarted-process-logcat.txt \
+      && [ "$cache_restart_hit_count" -ge 3 ]; then
+    break
+  fi
+  echo "Waiting for reopened editor and disk-cache hits (attempt $attempt/30; hits=$cache_restart_hit_count)"
+  sleep 1
+done
+
+python3 - emulator-screenshots/thumbnail-cache-first-process-logcat.txt \
+  emulator-screenshots/thumbnail-cache-restarted-process-logcat.txt "$replacement_cache_uri" <<'PY'
+import re
+import sys
+
+persisted_text = open(sys.argv[1], errors="replace").read()
+reopened_text = open(sys.argv[2], errors="replace").read()
+uri = re.escape(sys.argv[3])
+persisted = set(re.findall(
+    rf"TIMELINE_THUMBNAIL_DISK_CACHE_PERSISTED uri={uri} sourceMs=(\\d+)",
+    persisted_text
+))
+hits = set(re.findall(
+    rf"TIMELINE_THUMBNAIL_DISK_CACHE_HIT uri={uri} sourceMs=(\\d+)",
+    reopened_text
+))
+reused = persisted & hits
+if len(reused) < 3:
+    raise SystemExit(
+        "FAIL: full process restart did not reuse at least three of the exact "
+        f"persisted frame timestamps; persisted={sorted(persisted)}, "
+        f"diskHits={sorted(hits)}, intersection={sorted(reused)}"
+    )
+print(
+    "PASS: after force-stop/relaunch, the empty-RAM editor loaded "
+    f"{len(reused)} exact previously-persisted filmstrip frames from disk: "
+    f"{','.join(sorted(reused, key=int))}"
+)
+PY
+
 # Verify warmed preview performance only after the real forward and reverse filmstrip
 # gestures have run. Previously this assertion ran before either scrub was exercised.
 timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime \
