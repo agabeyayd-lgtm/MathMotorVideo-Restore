@@ -13411,6 +13411,7 @@ class VideoEditorActivity : Activity() {
 
         val frameRequest = state.frames[state.nextIndex++]
         val timestampMs = frameRequest.timestampMs
+        val queuedAtUptimeMs = SystemClock.uptimeMillis()
         lateinit var task: TimelineThumbnailTask
         task = TimelineThumbnailTask(
             kotlin.math.abs(timestampMs - timelinePlayheadMs),
@@ -13439,11 +13440,20 @@ class VideoEditorActivity : Activity() {
                 return@TimelineThumbnailTask
             }
 
-            val frameStartedAt = SystemClock.uptimeMillis()
+            val taskStartedAtUptimeMs = SystemClock.uptimeMillis()
+            val queueWaitMs = (taskStartedAtUptimeMs - queuedAtUptimeMs).coerceAtLeast(0L)
+            var diskLookupMs = 0L
+            var frameDecodeMs = 0L
             var frameBitmap: Bitmap? = null
-            if (timelineThumbnailDiskCache.containsTimestamp(diskKey, timestampMs)) {
+            val diskLookupStartedAtUptimeMs = SystemClock.uptimeMillis()
+            val cachedTimestampExists =
+                timelineThumbnailDiskCache.containsTimestamp(diskKey, timestampMs)
+            if (cachedTimestampExists) {
                 frameBitmap = timelineThumbnailDiskCache.findNearest(diskKey, timestampMs, 0L)?.bitmap
-            } else {
+            }
+            diskLookupMs = SystemClock.uptimeMillis() - diskLookupStartedAtUptimeMs
+            if (!cachedTimestampExists) {
+                val sourceDecodeStartedAtUptimeMs = SystemClock.uptimeMillis()
                 frameBitmap = decodeTimelineFrame(
                     state.uri,
                     timestampMs,
@@ -13452,8 +13462,9 @@ class VideoEditorActivity : Activity() {
                     frameRequest.intervalMs,
                     kotlin.math.abs(timestampMs - timelinePlayheadMs)
                 )
+                frameDecodeMs = SystemClock.uptimeMillis() - sourceDecodeStartedAtUptimeMs
             }
-            val frameElapsedMs = SystemClock.uptimeMillis() - frameStartedAt
+            val frameElapsedMs = SystemClock.uptimeMillis() - taskStartedAtUptimeMs
 
             if (Thread.currentThread().isInterrupted ||
                 timelineFrameGridStates[state.sourceKey] !== state ||
@@ -13488,6 +13499,9 @@ class VideoEditorActivity : Activity() {
                 "TIMELINE_GRID_FRAME uri=" + state.uri +
                     " sourceMs=" + timestampMs +
                     " stageMs=" + frameRequest.stageMs +
+                    " queueWaitMs=" + queueWaitMs +
+                    " diskLookupMs=" + diskLookupMs +
+                    " frameDecodeMs=" + frameDecodeMs +
                     " frameElapsedMs=" + frameElapsedMs +
                     " persisted=" + (frameBitmap != null && !frameBitmap.isRecycled) +
                     " progress=" + state.nextIndex + "/" + state.frames.size
@@ -13538,13 +13552,19 @@ class VideoEditorActivity : Activity() {
                 target.setImageBitmap(bitmap)
                 target.contentDescription = "Klip ızgara karesi @" + gridTimestampMs + "ms"
                 request.paintedTimestampMs = gridTimestampMs
+                val paintedAtUptimeMs = SystemClock.uptimeMillis()
+                val elapsedMs = paintedAtUptimeMs - request.requestedAtUptimeMs
                 if (previousTime == null) {
                     android.util.Log.i(
                         "TimelineThumbnail",
                         "TIMELINE_GRID_FIRST_PAINT uri=" + uri +
                             " targetMs=" + request.timestampMs +
                             " gridMs=" + gridTimestampMs +
-                            " elapsedMs=" + (SystemClock.uptimeMillis() - request.requestedAtUptimeMs)
+                            " distanceMs=" + nextDistance +
+                            " elapsedMs=" + elapsedMs +
+                            " requestUptimeMs=" + request.requestedAtUptimeMs +
+                            " paintedUptimeMs=" + paintedAtUptimeMs +
+                            " source=generated"
                     )
                 } else {
                     android.util.Log.i(
@@ -13552,7 +13572,11 @@ class VideoEditorActivity : Activity() {
                         "TIMELINE_GRID_NEAREST_UPDATE uri=" + uri +
                             " targetMs=" + request.timestampMs +
                             " previousGridMs=" + previousTime +
-                            " gridMs=" + gridTimestampMs
+                            " gridMs=" + gridTimestampMs +
+                            " distanceMs=" + nextDistance +
+                            " elapsedMs=" + elapsedMs +
+                            " requestUptimeMs=" + request.requestedAtUptimeMs +
+                            " paintedUptimeMs=" + paintedAtUptimeMs
                     )
                 }
             }
@@ -13688,7 +13712,11 @@ class VideoEditorActivity : Activity() {
                 "TIMELINE_GRID_FIRST_PAINT uri=" + uri +
                     " targetMs=" + timestampMs +
                     " gridMs=" + nearestMemory.second +
-                    " source=memory elapsedMs=" + (SystemClock.uptimeMillis() - requestedAt)
+                    " distanceMs=" + nearestMemory.first +
+                    " elapsedMs=" + (SystemClock.uptimeMillis() - requestedAt) +
+                    " requestUptimeMs=" + requestedAt +
+                    " paintedUptimeMs=" + SystemClock.uptimeMillis() +
+                    " source=memory"
             )
         } else {
             lateinit var diskTask: TimelineThumbnailTask
@@ -13751,7 +13779,11 @@ class VideoEditorActivity : Activity() {
                                 "TIMELINE_GRID_FIRST_PAINT uri=" + uri +
                                     " targetMs=" + timestampMs +
                                     " gridMs=" + nearest.timestampMs +
-                                    " source=disk elapsedMs=" + (SystemClock.uptimeMillis() - requestedAt)
+                                    " distanceMs=" + kotlin.math.abs(nearest.timestampMs - timestampMs) +
+                                    " elapsedMs=" + (SystemClock.uptimeMillis() - requestedAt) +
+                                    " requestUptimeMs=" + requestedAt +
+                                    " paintedUptimeMs=" + SystemClock.uptimeMillis() +
+                                    " source=disk"
                             )
                         }
                     } else if (fitted != null && !fitted.isRecycled) {

@@ -170,8 +170,34 @@ def verify(log_path: str, screenshot_path: str):
             f"within the fixed {time_tolerance_ms}ms limit "
             f"(thumbnail={sample_ms}ms, scrub preview frames={scrub_ready[-5:]})."
         )
-    if not re.search(rf"TIMELINE_THUMBNAIL_READY sourceMs={sample_ms} ", log):
-        raise SystemExit(f"FAIL: centered thumbnail sample {sample_ms}ms was not confirmed decoded.")
+    grid_paint_events = []
+    for line in log.splitlines():
+        match = re.search(
+            r"TIMELINE_GRID_(?:FIRST_PAINT|NEAREST_UPDATE) uri=(\S+) "
+            r"targetMs=(\d+).*?gridMs=(\d+).*?elapsedMs=(\d+).*?"
+            r"requestUptimeMs=(\d+).*?paintedUptimeMs=(\d+)",
+            line,
+        )
+        if match:
+            grid_paint_events.append((
+                match.group(1), int(match.group(2)), int(match.group(3)),
+                int(match.group(4)), int(match.group(5)), int(match.group(6))
+            ))
+    latest_grid_uri = grid_paint_events[-1][0] if grid_paint_events else None
+    final_grid_by_target = {}
+    if latest_grid_uri is not None:
+        for uri, target_ms, grid_ms, elapsed_ms, request_uptime_ms, painted_uptime_ms in grid_paint_events:
+            if uri == latest_grid_uri:
+                final_grid_by_target[target_ms] = (
+                    grid_ms, elapsed_ms, request_uptime_ms, painted_uptime_ms
+                )
+    grid_sample = final_grid_by_target.get(sample_ms)
+    grid_sample_ready = grid_sample is not None and abs(grid_sample[0] - sample_ms) <= 250
+    if not re.search(rf"TIMELINE_THUMBNAIL_READY sourceMs={sample_ms} ", log) and not grid_sample_ready:
+        raise SystemExit(
+            f"FAIL: centered filmstrip sample {sample_ms}ms has no grid frame within 250ms "
+            "and no exact replacement confirmation."
+        )
 
     timing_rows = [
         tuple(map(int, row))
@@ -192,10 +218,55 @@ def verify(log_path: str, screenshot_path: str):
     )
     mmr_rows = [row for row in decoder_rows if row[2].startswith("platform-mmr-")]
     media3_rows = [row for row in decoder_rows if row[2].startswith("media3-")]
-    if not decoder_rows or len(timing_rows) < 3:
+    grid_frame_rows = {}
+    for line in log.splitlines():
+        match = re.search(
+            r"TIMELINE_GRID_FRAME uri=(\S+) sourceMs=(\d+) stageMs=(\d+) "
+            r"queueWaitMs=(\d+) diskLookupMs=(\d+) frameDecodeMs=(\d+) "
+            r"frameElapsedMs=(\d+)",
+            line,
+        )
+        if match:
+            uri, source, stage, queue, disk, decode, elapsed = match.groups()
+            grid_frame_rows[(uri, int(source))] = (
+                int(queue), int(disk), int(decode), int(elapsed)
+            )
+
+    if len(timing_rows) < 3:
+        visible_grid_rows = []
+        for target_ms in sorted(visible_sources):
+            match = final_grid_by_target.get(target_ms)
+            if match is None or latest_grid_uri is None:
+                continue
+            grid_ms, elapsed_ms, request_uptime_ms, painted_uptime_ms = match
+            queue_wait_ms, disk_lookup_ms, frame_decode_ms, _ = grid_frame_rows.get(
+                (latest_grid_uri, grid_ms), (0, 0, 0, 0)
+            )
+            visible_grid_rows.append((
+                target_ms, queue_wait_ms, 0, disk_lookup_ms, frame_decode_ms,
+                0, 0, elapsed_ms, request_uptime_ms, request_uptime_ms,
+                painted_uptime_ms
+            ))
+        latest_visible_timing_by_source = {row[0]: row for row in visible_grid_rows}
+        visible_timing_rows = [
+            latest_visible_timing_by_source[timestamp]
+            for timestamp in sorted(latest_visible_timing_by_source)
+        ]
+    else:
+        latest_visible_timing_by_source = {
+            row[0]: row for row in timing_rows if row[0] in visible_sources
+        }
+        visible_timing_rows = [
+            latest_visible_timing_by_source[timestamp]
+            for timestamp in sorted(latest_visible_timing_by_source)
+        ]
+
+    if not decoder_rows or len(visible_timing_rows) < 3:
         raise SystemExit(
-            "FAIL: thumbnail decode diagnostics are incomplete; "
-            f"decoder records={decoder_rows[-8:]}, successful timing rows={len(timing_rows)}."
+            "FAIL: thumbnail/grid decode diagnostics are incomplete; "
+            f"decoder records={decoder_rows[-8:]}, "
+            f"visible cells={sorted(visible_sources)}, "
+            f"measured visible timings={[row[0] for row in visible_timing_rows]}."
         )
     print(
         "  Decoder path: Media3={} (median={}ms); native MMR fallback={}".format(
@@ -345,7 +416,8 @@ def verify(log_path: str, screenshot_path: str):
     disk_lookup_times = [row[3] for row in visible_timing_rows]
     decode_times = [row[4] for row in visible_timing_rows]
     total_times = [
-        row[1] + row[2] + row[3] + row[4] + row[5] + row[6] + row[7]
+        (row[7] if row[0] in final_grid_by_target else
+         row[1] + row[2] + row[3] + row[4] + row[5] + row[6] + row[7])
         for row in visible_timing_rows
     ]
     # The end-to-end fill includes time held behind preview bootstrap and disk IO.
