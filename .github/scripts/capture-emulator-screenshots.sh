@@ -4925,8 +4925,8 @@ cache_restart_hit_count=0
 for attempt in $(seq 1 30); do
   timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime \
     -s TimelineThumbnail:I EditorSmokeTest:I > emulator-screenshots/thumbnail-cache-restarted-process-logcat.txt 2>&1 || true
-  cache_restart_hit_count="$(grep -F "TIMELINE_THUMBNAIL_DISK_CACHE_HIT uri=$replacement_cache_uri " \
-    emulator-screenshots/thumbnail-cache-restarted-process-logcat.txt \
+  cache_restart_hit_count="$((grep -F "TIMELINE_THUMBNAIL_DISK_CACHE_HIT uri=$replacement_cache_uri " \
+    emulator-screenshots/thumbnail-cache-restarted-process-logcat.txt || true) \
     | sed -n 's/.*sourceMs=\([0-9][0-9]*\).*/\1/p' | sort -u | wc -l | tr -d ' ')"
   if grep -Fq "EDITOR_SMOKE_CLIP_ADDED" emulator-screenshots/thumbnail-cache-restarted-process-logcat.txt \
       && [ "$cache_restart_hit_count" -ge 3 ]; then
