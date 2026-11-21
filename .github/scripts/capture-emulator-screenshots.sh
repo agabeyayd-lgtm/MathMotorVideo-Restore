@@ -726,11 +726,14 @@ fi
 # Regression: after the overlay is present, the debug bridge calls the production
 # removeClipAt() path for the original red/hue-cycling source, then imports a
 # distinct solid-green video through addClip(replaceExisting=true).
+# The new filmstrip paints the nearest grid sample first. An exact-frame ready
+# marker is intentionally absent when that grid sample is within 250ms; the
+# visible green-frame assertion below verifies the replacement was actually drawn.
 replacement_complete=false
 for attempt in $(seq 1 30); do
   timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime > emulator-screenshots/video-replacement-logcat.txt 2>&1 || true
   if grep -Fq "EDITOR_SMOKE_CLIP_REPLACED newUri=file://$app_internal_replacement_video" emulator-screenshots/video-replacement-logcat.txt \
-     && grep -Fq "EDITOR_SMOKE_REPLACEMENT_THUMBNAIL_READY uri=file://$app_internal_replacement_video" emulator-screenshots/video-replacement-logcat.txt; then
+     && grep -Fq "TIMELINE_GRID_FIRST_PAINT uri=file://$app_internal_replacement_video" emulator-screenshots/video-replacement-logcat.txt; then
     replacement_complete=true
     break
   fi
@@ -739,11 +742,11 @@ for attempt in $(seq 1 30); do
     collect_capture_diagnostics video-replacement-skipped
     exit 41
   fi
-  echo "Waiting for old-video removal, new-video import, and its first exact thumbnail (attempt $attempt/30)"
+  echo "Waiting for old-video removal, new-video import, and its first grid paint (attempt $attempt/30)"
   sleep 2
 done
 if [ "$replacement_complete" != true ]; then
-  echo "Old filmstrip was not replaced by the new video fixture within 60 seconds."
+  echo "Replacement video produced no timeline grid paint within 60 seconds."
   collect_capture_diagnostics video-replacement-timeout
   exit 42
 fi
