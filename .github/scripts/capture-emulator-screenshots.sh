@@ -5000,10 +5000,21 @@ persisted = set(re.findall(
     rf"TIMELINE_GRID_FRAME uri={uri} sourceMs=(\d+).*?persisted=true",
     first
 ))
-disk_paints = re.findall(
-    rf"TIMELINE_GRID_FIRST_PAINT uri={uri} targetMs=(\d+) gridMs=(\d+) source=disk elapsedMs=(\d+)",
-    reopened
-)
+disk_paints = []
+for line in reopened.splitlines():
+    if "TIMELINE_GRID_FIRST_PAINT" not in line:
+        continue
+    if not re.search(rf"uri={uri}(?:\\s|$)", line):
+        continue
+    if not re.search(r"\\bsource=disk\\b", line):
+        continue
+    fields = {}
+    for field in ("targetMs", "gridMs", "elapsedMs"):
+        match = re.search(rf"\\b{field}=(\\d+)", line)
+        if match:
+            fields[field] = match.group(1)
+    if len(fields) == 3:
+        disk_paints.append((fields["targetMs"], fields["gridMs"], fields["elapsedMs"]))
 if not persisted:
     raise SystemExit("FAIL: first process did not persist any grid frame timestamps.")
 if not disk_paints:
