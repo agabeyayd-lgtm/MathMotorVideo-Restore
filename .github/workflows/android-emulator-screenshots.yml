@@ -9,6 +9,7 @@ on:
     paths:
       - "app/build.gradle.kts"
       - "app/src/main/**"
+      - "app/src/androidTest/**"
       - ".github/workflows/android-emulator-screenshots.yml"
       - ".github/scripts/capture-emulator-screenshots.sh"
       - ".github/scripts/assert-thumbnail-alignment.py"
@@ -21,6 +22,7 @@ on:
     paths:
       - "app/build.gradle.kts"
       - "app/src/main/**"
+      - "app/src/androidTest/**"
       - ".github/workflows/android-emulator-screenshots.yml"
       - ".github/scripts/capture-emulator-screenshots.sh"
       - ".github/scripts/assert-thumbnail-alignment.py"
