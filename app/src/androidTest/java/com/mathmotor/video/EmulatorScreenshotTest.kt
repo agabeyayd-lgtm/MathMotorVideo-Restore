@@ -236,7 +236,44 @@ class EmulatorScreenshotTest {
         // and its real local-draft autosave. Launching MainActivity from shell
         // can be delivered to the current editor top instance on API 35.
         device.executeShellCommand("logcat -c")
-        assertTrue("Could not background the editor after the clip drag", device.pressHome())
+
+        // UiDevice.pressHome() can return false on API 35 even when Android
+        // has successfully brought the launcher to the foreground. Treat the
+        // actual resolved HOME activity/window focus as the source of truth,
+        // rather than the key-injection helper's Boolean return value.
+        val homeComponent = device.executeShellCommand(
+            "cmd package resolve-activity --brief " +
+                "-a android.intent.action.MAIN -c android.intent.category.HOME"
+        ).lineSequence()
+            .map(String::trim)
+            .lastOrNull { it.contains("/") }
+            ?: throw AssertionError("Could not resolve Android's default HOME activity")
+        val homePackage = homeComponent.substringBefore("/")
+        val homeKeyAccepted = device.pressHome()
+        var homeFocused = false
+        var latestWindowFocus = ""
+        for (attempt in 0 until 12) {
+            latestWindowFocus = device.executeShellCommand("dumpsys window")
+                .lineSequence()
+                .filter { it.contains("mCurrentFocus") || it.contains("mFocusedApp") }
+                .joinToString(" | ")
+            if (latestWindowFocus.contains(homePackage)) {
+                homeFocused = true
+                break
+            }
+            SystemClock.sleep(400L)
+        }
+        android.util.Log.i(
+            "TimelineSyncTest",
+            "CLIP_REORDER_HOME_RESULT keyAccepted=$homeKeyAccepted " +
+                "homePackage=$homePackage focused=$homeFocused focus=$latestWindowFocus"
+        )
+        assertTrue(
+            "Android HOME did not reach the foreground after the clip drag; " +
+                "expected=$homePackage focus=$latestWindowFocus",
+            homeFocused
+        )
+
         var reorderedDraftSaved = false
         for (attempt in 0 until 12) {
             val draftLog = device.executeShellCommand("logcat -d -v threadtime -s MathMotorDraft:I")
