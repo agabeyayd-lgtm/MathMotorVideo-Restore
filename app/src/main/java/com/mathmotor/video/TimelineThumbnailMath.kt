@@ -169,6 +169,32 @@ internal object TimelineThumbnailMath {
     }
 
     /**
+     * Maximum forward distance to decode continuously for a filmstrip request.
+     * Keep adjacent cells on the current decoder session, but avoid walking
+     * through multiple cell intervals when the planner makes a larger jump.
+     */
+    fun sequentialDecodeGapLimitMs(cellIntervalMs: Long): Long {
+        val interval = cellIntervalMs.coerceAtLeast(1L)
+        return interval + interval / 2L
+    }
+
+    /**
+     * Whether a retained sequential decoder should be repositioned before a
+     * request. Backward seeks always reposition; large forward gaps do too.
+     */
+    fun shouldSeekSequentialDecoder(
+        lastOutputTimeMs: Long,
+        targetTimeMs: Long,
+        maxSequentialGapMs: Long
+    ): Boolean {
+        val last = lastOutputTimeMs.coerceAtLeast(0L)
+        val target = targetTimeMs.coerceAtLeast(0L)
+        if (target < last) return true
+        val limit = maxSequentialGapMs.coerceAtLeast(0L)
+        return limit > 0L && target - last >= limit
+    }
+
+    /**
      * Finds a nearby cell that resolved to the same sync-frame image.
      *
      * A sync seek is fast, but long GOPs can map multiple neighboring cells to
