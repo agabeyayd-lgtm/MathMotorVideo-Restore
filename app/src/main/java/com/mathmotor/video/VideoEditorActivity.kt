@@ -692,6 +692,7 @@ class VideoEditorActivity : Activity() {
     }
     private class TimelineThumbnailDecodeTask(
         val requestedTimeMs: Long,
+        val priorityDistanceMs: Long,
         val sequence: Long,
         val sourceUriKey: String,
         work: () -> Bitmap?
@@ -699,8 +700,11 @@ class VideoEditorActivity : Activity() {
         java.util.concurrent.Callable<Bitmap?> { work() }
     ), Comparable<TimelineThumbnailDecodeTask> {
         override fun compareTo(other: TimelineThumbnailDecodeTask): Int {
-            val timeOrder = requestedTimeMs.compareTo(other.requestedTimeMs)
-            return if (timeOrder != 0) timeOrder else sequence.compareTo(other.sequence)
+            // Preserve the outer filmstrip's playhead-distance priority after
+            // requests enter the decoder queue. Timestamp sorting here used to
+            // put the left edge ahead of the cell directly under the playhead.
+            val priorityOrder = priorityDistanceMs.compareTo(other.priorityDistanceMs)
+            return if (priorityOrder != 0) priorityOrder else sequence.compareTo(other.sequence)
         }
     }
 
@@ -730,13 +734,12 @@ class VideoEditorActivity : Activity() {
     private val previewFrameExtractors =
         java.util.concurrent.ConcurrentHashMap<Long, Triple<Uri, Int, FrameExtractor>>()
 
-    // Two persistent decoder lanes share the visible-strip work by timestamp.
-    // One lane caused the final cells to wait behind every earlier seek; four
-    // independent MMR lanes contended on API 35. Two prestarted lanes retain warm
-    // per-thread retrievers while allowing independent keyframe runs to overlap.
+    // Three persistent decoder lanes are the middle ground between the measured
+    // two-lane backlog and four-lane API-35 contention. Keep each retriever warm,
+    // and let the nearest-to-playhead cells enter the decoder queue first.
     private val timelineFrameDecoderExecutor = java.util.concurrent.ThreadPoolExecutor(
-        2,
-        2,
+        3,
+        3,
         0L,
         java.util.concurrent.TimeUnit.MILLISECONDS,
         java.util.concurrent.PriorityBlockingQueue<Runnable>(
@@ -12835,13 +12838,15 @@ class VideoEditorActivity : Activity() {
         timeMs: Long,
         maxWidthPx: Int,
         maxHeightPx: Int,
-        cellWindowMs: Long
+        cellWindowMs: Long,
+        priorityDistanceMs: Long
     ): Bitmap? {
         val requestedTimeMs = timeMs.coerceAtLeast(0L)
         // All frame extraction, including sync probes, enters the same dedicated
         // decoder. Metadata/disk preparation remains parallel on thumbnail workers.
         val task = TimelineThumbnailDecodeTask(
             requestedTimeMs = requestedTimeMs,
+            priorityDistanceMs = priorityDistanceMs.coerceAtLeast(0L),
             sequence = timelineThumbnailTaskSequence.incrementAndGet(),
             sourceUriKey = uri.toString()
         ) {
@@ -13427,7 +13432,8 @@ class VideoEditorActivity : Activity() {
                         timestampMs,
                         decodeWidthPx,
                         decodeHeightPx,
-                        (cellEndMs - cellStartMs).coerceAtLeast(1L)
+                        (cellEndMs - cellStartMs).coerceAtLeast(1L),
+                        priorityDistanceMs
                     )
                     val frameDecodedAtUptimeMs = SystemClock.uptimeMillis()
                     if (Thread.currentThread().isInterrupted ||
