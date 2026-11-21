@@ -18,15 +18,20 @@ import kotlin.math.abs
  */
 internal class TimelineThumbnailDiskCache(
     private val directory: File,
-    private val maxBytes: Long = 96L * 1024L * 1024L
+    private val maxBytes: Long = 96L * 1024L * 1024L,
+    private val maxFiles: Int = 20_000
 ) {
     data class CachedFrame(val timestampMs: Long, val bitmap: Bitmap)
 
-    // Track bytes added during this Activity lifetime. Existing cache size is
-    // reconciled only when the soft threshold is reached, never during the first
-    // frame write on a cold import.
-    private val cachedBytes = AtomicLong(0L)
+    // The existing disk size is initialized once per cache owner. The scan is
+    // performed by the dedicated writer thread, not by a thumbnail decode worker.
+    // -1 means the existing on-disk size has not yet been reconciled. The first
+    // reconciliation happens on the dedicated background cache-writer thread.
+    private val cachedBytes = AtomicLong(-1L)
+    private val cachedFileCount = AtomicLong(-1L)
+    private val sizeInitializationLock = Any()
     private val trimInProgress = AtomicBoolean(false)
+    private val staleTemporaryFileAgeMs = 60L * 60L * 1_000L
     // All cells for one source used to enumerate and sort the same JPEG directory
     // independently. Build a per-source timestamp index once, then serve exact
     // timestamp variant lookups from memory while concurrent decoders run.
@@ -85,43 +90,86 @@ internal class TimelineThumbnailDiskCache(
     ): CachedFrame? {
         val safeTimestamp = timestampMs.coerceAtLeast(0L)
         val distanceLimit = maxDistanceMs.coerceAtLeast(0L)
-        val lowerTimestamp = (safeTimestamp - distanceLimit).coerceAtLeast(0L)
-        val upperTimestamp = if (Long.MAX_VALUE - safeTimestamp < distanceLimit) {
-            Long.MAX_VALUE
-        } else {
-            safeTimestamp + distanceLimit
-        }
-        // File enumeration is performed once per source, not once per visible
-        // thumbnail. In particular, maxDistanceMs=0 (the normal exact-frame
-        // fallback) becomes a direct timestamp-index lookup rather than a full
-        // directory scan and sort on every worker.
-        val candidates = indexedFramesFor(sourceKey)
-            .subMap(lowerTimestamp, true, upperTimestamp, true)
-            .entries
-            .asSequence()
-            .flatMap { entry ->
-                entry.value.asSequence()
-                    .filter { it.isFile }
-                    .map { file ->
-                        Triple(abs(entry.key - safeTimestamp), entry.key, file)
-                    }
-            }
-            .sortedWith(
-                compareBy<Triple<Long, Long, File>> { it.first }
-                    .thenByDescending { it.third.length() }
-            )
-            .toList()
+        val index = indexedFramesFor(sourceKey)
+        var lower = index.floorEntry(safeTimestamp)
+        var upper = index.ceilingEntry(safeTimestamp)
 
-        for ((_, cachedTime, file) in candidates) {
-            val bitmap = decode(file)
-            if (bitmap != null) {
-                file.setLastModified(System.currentTimeMillis())
-                return CachedFrame(cachedTime, bitmap)
+        // Walk outward from the requested timestamp instead of sorting every
+        // cached file for every visible cell. The timestamp index makes the
+        // common nearest-frame lookup logarithmic plus one JPEG decode.
+        while (lower != null || upper != null) {
+            val sameTimestamp = lower != null && upper != null && lower.key == upper.key
+            val chooseLower = when {
+                lower == null -> false
+                upper == null -> true
+                sameTimestamp -> true
+                else -> (safeTimestamp - lower.key) <= (upper.key - safeTimestamp)
             }
-            file.delete()
-            sourceFrameIndexes[sourceKey]?.get(cachedTime)?.remove(file)
+            val entry = if (chooseLower) lower else upper
+            if (entry == null) break
+            val candidateTimestamp = entry.key
+            val distance = kotlin.math.abs(candidateTimestamp - safeTimestamp)
+            if (distance > distanceLimit) break
+
+            for (file in entry.value.toList().filter { it.isFile }.sortedByDescending { it.length() }) {
+                val bitmap = decode(file)
+                if (bitmap != null) {
+                    file.setLastModified(System.currentTimeMillis())
+                    return CachedFrame(candidateTimestamp, bitmap)
+                }
+                file.delete()
+                sourceFrameIndexes[sourceKey]?.get(candidateTimestamp)?.remove(file)
+            }
+
+            if (sameTimestamp) {
+                lower = index.lowerEntry(candidateTimestamp)
+                upper = index.higherEntry(candidateTimestamp)
+            } else if (chooseLower) {
+                lower = index.lowerEntry(candidateTimestamp)
+            } else {
+                upper = index.higherEntry(candidateTimestamp)
+            }
         }
         return null
+    }
+
+    fun containsTimestamp(sourceKey: String, timestampMs: Long): Boolean =
+        indexedFramesFor(sourceKey)[timestampMs.coerceAtLeast(0L)]
+            ?.any { it.isFile && it.length() > 0L } == true
+
+    fun isGridComplete(sourceKey: String): Boolean =
+        File(sourceDirectory(sourceKey), ".grid-v1.complete").isFile
+
+    fun markGridComplete(sourceKey: String): Boolean {
+        val source = sourceDirectory(sourceKey)
+        if (!source.exists() && !source.mkdirs()) return false
+        val marker = File(source, ".grid-v1.complete")
+        val temporary = File(source, ".grid-v1.complete.tmp")
+        return runCatching {
+            temporary.writeText("version=1")
+            if (marker.exists()) marker.delete()
+            check(temporary.renameTo(marker)) { "Could not publish frame-grid marker" }
+            true
+        }.getOrDefault(false).also {
+            if (!it) temporary.delete()
+        }
+    }
+
+    fun deleteSource(sourceKey: String) {
+        val source = sourceDirectory(sourceKey)
+        val files = source.walkTopDown()
+            .filter { it.isFile && it.extension.equals("jpg", ignoreCase = true) }
+            .toList()
+        val bytes = files.sumOf { it.length().coerceAtLeast(0L) }
+        val fileCount = files.size.toLong()
+        source.deleteRecursively()
+        sourceFrameIndexes.remove(sourceKey)
+        cachedBytes.updateAndGet { known ->
+            if (known < 0L) -1L else (known - bytes).coerceAtLeast(0L)
+        }
+        cachedFileCount.updateAndGet { known ->
+            if (known < 0L) -1L else (known - fileCount).coerceAtLeast(0L)
+        }
     }
 
     fun put(
@@ -130,18 +178,24 @@ internal class TimelineThumbnailDiskCache(
         widthPx: Int,
         heightPx: Int,
         bitmap: Bitmap
-    ) {
-        if (bitmap.isRecycled || widthPx <= 0 || heightPx <= 0) return
+    ): Boolean {
+        if (bitmap.isRecycled || widthPx <= 0 || heightPx <= 0) return false
         val sourceDirectory = sourceDirectory(sourceKey)
-        if (!sourceDirectory.exists() && !sourceDirectory.mkdirs()) return
+        if (!sourceDirectory.exists() && !sourceDirectory.mkdirs()) return false
 
         val safeTimestamp = timestampMs.coerceAtLeast(0L)
         val destination = frameFile(sourceKey, safeTimestamp, widthPx, heightPx)
         if (destination.isFile && destination.length() > 0L) {
             addIndexedFrame(sourceKey, safeTimestamp, destination)
             destination.setLastModified(System.currentTimeMillis())
-            return
+            return true
         }
+        // A zero-byte/incomplete destination must not block a replacement write.
+        if (destination.exists()) destination.delete()
+
+        // Reconcile old cache files before publishing this new one. This runs
+        // exclusively on the background disk writer, never on a decode worker.
+        initializeKnownSize()
 
         // Each writer gets its own temporary file. Publishing is one same-directory
         // rename, so readers see either no frame or the complete JPEG, never a
@@ -178,17 +232,48 @@ internal class TimelineThumbnailDiskCache(
         if (written) {
             addIndexedFrame(sourceKey, safeTimestamp, destination)
             val total = addToKnownSize(destination.length())
-            // Directory walking/LRU deletion is exceptional maintenance, not part
-            // of every thumbnail write. In particular it never blocks cache reads.
-            // Reconcile the real on-disk size only after accumulating a meaningful
-            // amount of new data. A cold import with a handful of small frames
-            // performs no recursive cache-directory scan.
-            if (total > maxBytes / 8L) trimToLimit()
+            val fileCount = addToKnownFileCount()
+            // Enforce both the byte and file-count caps on the background writer.
+            if (total > maxBytes || fileCount > maxFiles.coerceAtLeast(1)) trimToLimit()
+        }
+        return destination.isFile && destination.length() > 0L
+    }
+
+    private fun initializeKnownSize(): Long {
+        val known = cachedBytes.get()
+        if (known >= 0L) return known
+        synchronized(sizeInitializationLock) {
+            val secondRead = cachedBytes.get()
+            if (secondRead >= 0L) return secondRead
+            val cutoff = System.currentTimeMillis() - staleTemporaryFileAgeMs
+            var existingBytes = 0L
+            var existingFileCount = 0L
+            if (directory.isDirectory) {
+                directory.walkTopDown().forEach { file ->
+                    if (!file.isFile) return@forEach
+                    if (file.name.endsWith(".tmp", ignoreCase = true)) {
+                        if (file.lastModified() <= cutoff) file.delete()
+                    } else if (file.extension.equals("jpg", ignoreCase = true)) {
+                        existingBytes += file.length().coerceAtLeast(0L)
+                        existingFileCount++
+                    }
+                }
+            }
+            cachedBytes.set(existingBytes)
+            cachedFileCount.set(existingFileCount)
+            return existingBytes
         }
     }
 
-    private fun addToKnownSize(bytes: Long): Long =
-        cachedBytes.addAndGet(bytes.coerceAtLeast(0L))
+    private fun addToKnownSize(bytes: Long): Long {
+        initializeKnownSize()
+        return cachedBytes.addAndGet(bytes.coerceAtLeast(0L))
+    }
+
+    private fun addToKnownFileCount(): Long {
+        initializeKnownSize()
+        return cachedFileCount.incrementAndGet()
+    }
 
     private fun decode(file: File): Bitmap? = runCatching {
         BitmapFactory.decodeFile(
@@ -228,14 +313,31 @@ internal class TimelineThumbnailDiskCache(
                 .filter { it.isFile && it.extension.equals("jpg", ignoreCase = true) }
                 .toList()
             var totalBytes = files.sumOf { it.length() }
-            if (totalBytes > maxBytes) {
+            var remainingFiles = files.size
+            if (totalBytes > maxBytes || remainingFiles > maxFiles.coerceAtLeast(1)) {
                 files.sortedBy { it.lastModified() }.forEach { file ->
-                    if (totalBytes <= maxBytes) return@forEach
+                    if (totalBytes <= maxBytes && remainingFiles <= maxFiles.coerceAtLeast(1)) return@forEach
                     val size = file.length()
-                    if (file.delete()) totalBytes -= size
+                    if (file.delete()) {
+                        totalBytes -= size
+                        remainingFiles--
+                        // A completed-grid marker is valid only while every grid
+                        // JPEG remains on disk. If LRU eviction removes any frame,
+                        // force the next editor session to regenerate missing cells.
+                        File(file.parentFile, ".grid-v1.complete").delete()
+                    }
                 }
             }
-            cachedBytes.set(0L)
+            // Remove abandoned temporary writes left by a process killed during
+            // JPEG compression. Fresh temp files are left alone in case another
+            // editor instance is still publishing one.
+            val staleTempCutoff = System.currentTimeMillis() - staleTemporaryFileAgeMs
+            directory.walkTopDown()
+                .filter { it.isFile && it.name.endsWith(".tmp", ignoreCase = true) }
+                .filter { it.lastModified() <= staleTempCutoff }
+                .forEach { it.delete() }
+            cachedBytes.set(totalBytes)
+            cachedFileCount.set(remainingFiles.toLong())
             directory.walkBottomUp()
                 .filter { it.isDirectory && it != directory }
                 .forEach { dir -> if (dir.list().isNullOrEmpty()) dir.delete() }

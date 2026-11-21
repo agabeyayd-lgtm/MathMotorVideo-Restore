@@ -6,6 +6,25 @@ import kotlin.math.abs
 
 class TimelineScaleMathTest {
     @Test
+    fun playbackResumeSkipsSeekWhenPlayerIsAlreadyAtFrozenPlayhead() {
+        assertEquals(false, TimelineScaleMath.shouldSeekOnPlaybackResume(4_120L, 4_120L))
+        assertEquals(false, TimelineScaleMath.shouldSeekOnPlaybackResume(4_108L, 4_120L))
+        assertEquals(false, TimelineScaleMath.shouldSeekOnPlaybackResume(4_132L, 4_120L))
+    }
+
+    @Test
+    fun playbackResumeSeeksWhenTimelineWasMovedWhilePaused() {
+        assertEquals(true, TimelineScaleMath.shouldSeekOnPlaybackResume(4_120L, 4_141L))
+        assertEquals(true, TimelineScaleMath.shouldSeekOnPlaybackResume(4_120L, 3_900L))
+    }
+
+    @Test
+    fun playbackResumeSeekPolicyClampsNegativePositionsAndTolerance() {
+        assertEquals(false, TimelineScaleMath.shouldSeekOnPlaybackResume(-1L, 0L))
+        assertEquals(true, TimelineScaleMath.shouldSeekOnPlaybackResume(100L, 120L, 0L))
+    }
+
+    @Test
     fun rulerAndPlayheadUseTheSameAbsolutePosition() {
         val pixelsPerSecond = 29.7f
         val duration = 20_000L
@@ -120,6 +139,41 @@ class TimelineScaleMathTest {
                 pixelsPerSecond = 22f
             )
         )
+    }
+
+    @Test
+    fun mediaRowsAndRulerUseTheSameMeasuredHeaderForTimeZero() {
+        val gripWidth = 44
+        val sideActionWidth = 40
+        val headerWidth = TimelineScaleMath.mediaLaneHeaderWidthPx(gripWidth, sideActionWidth)
+
+        assertEquals(84, headerWidth)
+        listOf(320, 360, 412, 720).forEach { frameWidth ->
+            val leading = TimelineScaleMath.leadingContentPaddingWidthForCenteredPlayhead(
+                frameWidth,
+                headerWidth
+            )
+            val rulerOrigin = leading + headerWidth
+            val mediaRowOrigin = leading + gripWidth + sideActionWidth
+
+            assertEquals(frameWidth / 2, rulerOrigin)
+            assertEquals(rulerOrigin, mediaRowOrigin)
+        }
+    }
+
+    @Test
+    fun defaultScaleShowsAboutSixAndAHalfSecondsAcrossViewport() {
+        val scale = TimelineScaleMath.defaultPixelsPerSecondForDuration(390, 6_500L, 11f, 720f)
+        assertEquals(60f, scale, 0.001f)
+        assertEquals(6_500L, TimelineScaleMath.millisecondsForPixels(390f, scale))
+    }
+
+    @Test
+    fun legacyProjectsReceiveTheNewDefaultOnlyOnceAndNewProjectsKeepZoom() {
+        assertEquals(60f, TimelineScaleMath.restorePixelsPerSecond(null, 0, 60f, 11f, 720f), 0f)
+        assertEquals(60f, TimelineScaleMath.restorePixelsPerSecond(120f, 0, 60f, 11f, 720f), 0f)
+        assertEquals(120f, TimelineScaleMath.restorePixelsPerSecond(120f, 1, 60f, 11f, 720f), 0f)
+        assertEquals(60f, TimelineScaleMath.restorePixelsPerSecond(Float.NaN, 1, 60f, 11f, 720f), 0f)
     }
 
     @Test

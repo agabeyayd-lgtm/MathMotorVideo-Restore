@@ -337,6 +337,7 @@ class VideoEditorActivity : Activity() {
     private lateinit var previewEmptyState: LinearLayout
     private lateinit var timelineTracks: LinearLayout
     private lateinit var timelineTracksFrame: FrameLayout
+    private lateinit var timelineSharedScrollView: android.widget.HorizontalScrollView
     private lateinit var timelinePlayheadLine: View
     private val timelineScrollViews = mutableListOf<android.widget.HorizontalScrollView>()
     // Order of the independently movable timeline strips, persisted with the project.
@@ -347,6 +348,16 @@ class VideoEditorActivity : Activity() {
     private var timelinePlaybackFrameSyncRunning = false
     private var timelineHorizontalScrollX = 0
     private var pendingTimelineScrollX: Int? = null
+    // Capture the complete finger trajectory at Activity dispatch level. The
+    // filmstrip child receives DOWN first and the HorizontalScrollView only
+    // takes ownership after touch slop, so its own velocity tracker can miss
+    // the beginning of the gesture and release with zero fling velocity.
+    private var timelineFlingVelocityTracker: android.view.VelocityTracker? = null
+    private var timelineFlingGestureStartScrollX = 0
+    private var timelineFlingGestureIntercepted = false
+    // Keep a short raw-coordinate window as a fallback when VelocityTracker
+    // returns zero for a fast intercepted child-to-parent gesture.
+    private val timelineFlingRawSamples = mutableListOf<Pair<Long, Float>>()
     // Single authoritative timeline scale in physical pixels per second.
     private var timelinePxPerSec = 0f
     private var timelineScaleGestureActive = false
@@ -382,6 +393,9 @@ class VideoEditorActivity : Activity() {
                 timelinePinchStartContentX = lane.scrollX + timelinePinchStartViewportX
                 timelinePinchBasePxPerSecond = timelinePixelsPerSecond()
                 timelinePinchPreviewRatio = 1f
+                timelineGridMotionGeneration.incrementAndGet()
+                timelineGridExactTasksToCancel()
+                timelineHandler.removeCallbacks(timelineGridIdleExactPass)
                 timelineScaleGestureActive = true
                 return true
             }
@@ -428,6 +442,47 @@ class VideoEditorActivity : Activity() {
     private val timelineThumbnailCache = object : android.util.LruCache<String, Bitmap>(32 * 1024 * 1024) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount.coerceAtLeast(1)
     }
+    private data class TimelineGridTarget(
+        val uri: Uri,
+        val sourceGeneration: Long,
+        val timestampMs: Long,
+        val priorityDistanceMs: Long,
+        val cellStartMs: Long,
+        val cellEndMs: Long,
+        val target: WeakReference<ImageView>,
+        val requestedAtUptimeMs: Long,
+        @Volatile var paintedTimestampMs: Long? = null,
+        @Volatile var diskLookupFinished: Boolean = false,
+        @Volatile var gridReady: Boolean = false,
+        @Volatile var exactRequested: Boolean = false
+    )
+
+    private data class TimelineGridGenerationState(
+        val uri: Uri,
+        val sourceKey: String,
+        val sourceGeneration: Long,
+        val durationMs: Long,
+        val frames: List<TimelineFrameGridPlanner.FrameRequest>,
+        val decodeWidthPx: Int,
+        val decodeHeightPx: Int,
+        val startedAtUptimeMs: Long,
+        @Volatile var diskSourceKey: String? = null,
+        var nextIndex: Int = 0,
+        var persistedFrames: Int = 0,
+        var failedFrames: Int = 0
+    )
+
+    private val timelineFrameGridStates =
+        java.util.concurrent.ConcurrentHashMap<String, TimelineGridGenerationState>()
+    private val completedTimelineFrameGridSources =
+        java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val pendingTimelineGridTargets =
+        java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.CopyOnWriteArrayList<TimelineGridTarget>>()
+    private val pendingTimelineGridExactTasks =
+        java.util.concurrent.ConcurrentHashMap.newKeySet<TimelineThumbnailTask>()
+    private val timelineGridMotionGeneration = java.util.concurrent.atomic.AtomicLong()
+    private val timelineGridIdleExactPass = Runnable { runTimelineGridIdleExactPass() }
+
     // Keep low-resolution filmstrip frames on disk across Activity recreation and
     // app restarts. The in-memory LruCache remains the fastest first-level cache.
     private val timelineThumbnailDiskCache by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
@@ -479,6 +534,8 @@ class VideoEditorActivity : Activity() {
     private val timelineThumbnailTasksBySource =
         java.util.concurrent.ConcurrentHashMap<String, MutableSet<TimelineThumbnailTask>>()
     private val timelineThumbnailSourceGenerations = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    // Stable across process restarts, but changes when the same URI's backing file changes.
+    private val timelineThumbnailDiskSourceKeys = java.util.concurrent.ConcurrentHashMap<String, String>()
     private val pendingTimelinePosterGenerations = java.util.concurrent.ConcurrentHashMap<String, Long>()
     // Learned from the actual decoded frame, so imported and restored clips share
     // the same aspect-ratio-aware filmstrip path without blocking the UI for metadata.
@@ -496,6 +553,46 @@ class VideoEditorActivity : Activity() {
 
     private fun timelineThumbnailSourceGeneration(uri: Uri): Long =
         timelineThumbnailSourceGenerations[uri.toString()] ?: 0L
+
+    /**
+     * Disk cache keys include source metadata so a file replaced in place cannot
+     * accidentally reuse frames from its previous contents. The URI alone remains
+     * the fallback for providers that expose no version metadata.
+     */
+    private fun timelineThumbnailDiskSourceKey(uri: Uri): String =
+        timelineThumbnailDiskSourceKeys.computeIfAbsent(uri.toString()) {
+            val fingerprint = when (uri.scheme) {
+                "file" -> uri.path?.let(::File)?.takeIf { it.isFile }?.let { file ->
+                    "size=${file.length()}|modified=${file.lastModified()}"
+                }
+                "content" -> runCatching {
+                    contentResolver.query(
+                        uri,
+                        arrayOf(
+                            android.provider.OpenableColumns.SIZE,
+                            MediaStore.MediaColumns.DATE_MODIFIED
+                        ),
+                        null,
+                        null,
+                        null
+                    )?.use { cursor ->
+                        if (!cursor.moveToFirst()) return@use null
+                        val sizeIndex = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                        val modifiedIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
+                        val size = sizeIndex.takeIf { it >= 0 && !cursor.isNull(it) }
+                            ?.let { cursor.getLong(it) }
+                        val modified = modifiedIndex.takeIf { it >= 0 && !cursor.isNull(it) }
+                            ?.let { cursor.getLong(it) }
+                        if (size == null && modified == null) null
+                        else "size=${size ?: "na"}|modified=${modified ?: "na"}"
+                    }
+                }.getOrNull()
+                else -> null
+            }
+            val durationMs = clips.firstOrNull { it.uri == uri }?.durationMs ?: 0L
+            val versionParts = listOfNotNull(fingerprint?.takeIf { it.isNotBlank() }, "duration=" + durationMs)
+            "$uri|source-version=" + versionParts.joinToString("|")
+        }
 
     private fun trackTimelineThumbnailTask(sourceKey: String, task: TimelineThumbnailTask) {
         timelineThumbnailTasksBySource.computeIfAbsent(sourceKey) {
@@ -519,16 +616,57 @@ class VideoEditorActivity : Activity() {
         val sourceKey = uri.toString()
         val nextGeneration = timelineThumbnailSourceGeneration(uri) + 1L
         timelineThumbnailSourceGenerations[sourceKey] = nextGeneration
+        // Signal active sequential sessions without releasing MediaCodec from the UI thread.
+        timelineSequentialFilmstripDecoders.values
+            .filter { it.first == uri }
+            .forEach { it.second.markInvalidated() }
+        timelineSequentialFilmstripFailures.entries
+            .filter { it.value == uri }
+            .forEach { timelineSequentialFilmstripFailures.remove(it.key, uri) }
+        // Recompute mutable source metadata if this URI is imported again later.
+        val obsoleteDiskSourceKey = timelineThumbnailDiskSourceKeys.remove(sourceKey)
+        if (obsoleteDiskSourceKey != null) {
+            runCatching {
+                timelineThumbnailDiskWriter.execute {
+                    timelineThumbnailDiskCache.deleteSource(obsoleteDiskSourceKey)
+                    timelineThumbnailDiskCache.deleteSource(obsoleteDiskSourceKey + "|grid-v1")
+                }
+            }
+        }
+        completedTimelineFrameGridSources.remove(sourceKey)
+        timelineFrameGridStates.remove(sourceKey)
+        pendingTimelineGridTargets.remove(sourceKey)
+        pendingTimelineGridExactTasks.toList().forEach { task ->
+            if (task.sourceUriKey == sourceKey) {
+                timelineThumbnailExecutor.remove(task)
+                task.cancelForSourceInvalidation()
+            }
+        }
         // queue.removeIf() alone only removes work that has not started. The API-35
         // failure showed three decoders still running for a clip after it was removed;
         // a newly imported clip then waited behind frames that could never be displayed.
         val obsoleteTasks = timelineThumbnailTasksBySource.remove(sourceKey).orEmpty().toList()
+        pendingTimelineGridExactTasks.toList().forEach { task ->
+            if (task.sourceUriKey == sourceKey) {
+                timelineThumbnailExecutor.remove(task)
+                task.cancelForSourceInvalidation()
+            }
+        }
         obsoleteTasks.forEach { task ->
             timelineThumbnailExecutor.remove(task)
             task.cancelForSourceInvalidation()
         }
         timelineThumbnailExecutor.queue.removeIf { task ->
             (task as? TimelineThumbnailTask)?.sourceUriKey == sourceKey
+        }
+        timelineFrameDecoderExecutor.queue.removeIf { runnable ->
+            val decodeTask = runnable as? TimelineThumbnailDecodeTask
+            if (decodeTask?.sourceUriKey == sourceKey) {
+                decodeTask.cancel(true)
+                true
+            } else {
+                false
+            }
         }
         // The provisional first-cell poster is also a decode task. Cancel it
         // with the rest of this URI so removed media cannot hold the secondary
@@ -560,6 +698,7 @@ class VideoEditorActivity : Activity() {
         timelineVideoAspectRatios.remove(sourceKey)
         timelineVideoAspectRatioMetadataCache.remove(sourceKey)
         timelineVideoFrameDimensions.remove(sourceKey)
+        timelineThumbnailSyncFrameFingerprints.remove(sourceKey)
         if (timelineSyncTestEnabled || timelineLifecycleDiagnosticsEnabled) {
             android.util.Log.i(
                 "TimelineThumbnail",
@@ -627,23 +766,99 @@ class VideoEditorActivity : Activity() {
             }
         }
     }
+    private class TimelineThumbnailDecodeTask(
+        val requestedTimeMs: Long,
+        val priorityDistanceMs: Long,
+        val sequence: Long,
+        val sourceUriKey: String,
+        work: () -> Bitmap?
+    ) : java.util.concurrent.FutureTask<Bitmap?>(
+        java.util.concurrent.Callable<Bitmap?> { work() }
+    ), Comparable<TimelineThumbnailDecodeTask> {
+        override fun compareTo(other: TimelineThumbnailDecodeTask): Int {
+            // Preserve the outer filmstrip's playhead-distance priority after
+            // requests enter the decoder queue. Timestamp sorting here used to
+            // put the left edge ahead of the cell directly under the playhead.
+            // A retained decoder advances through presentation timestamps. Keeping
+            // requests chronological avoids repeatedly seeking backwards between cells.
+            val timeOrder = requestedTimeMs.compareTo(other.requestedTimeMs)
+            return if (timeOrder != 0) timeOrder else sequence.compareTo(other.sequence)
+        }
+    }
+
     private val timelineThumbnailTaskSequence = java.util.concurrent.atomic.AtomicLong()
     // Exact playhead requests share this priority-ordered decoder pool and
     // always outrank visible thumbnails. Three persistent platform MMR-first
     // workers reduce the first-viewport queue; Media3 remains a compatibility
     // fallback for unsupported sources. Each worker retains its own decoder.
     private val timelineThumbnailWorkerSequence = java.util.concurrent.atomic.AtomicLong()
+    private val previewFrameWorkerSequence = java.util.concurrent.atomic.AtomicLong()
     private val timelineThumbnailRetrievers =
         java.util.concurrent.ConcurrentHashMap<Long, Pair<Uri, MediaMetadataRetriever>>()
+    // MediaMetadataRetriever can retain decoder seek state per worker. Track the
+    // last successful filmstrip timestamp so a large jump does not force the
+    // reused decoder to walk forward through an entire intervening GOP range.
+    private val timelineThumbnailLastFrameTimesMs =
+        java.util.concurrent.ConcurrentHashMap<Long, Long>()
+    // Each decoder thread retains one sequential MediaCodec session for its current
+    // source. Sessions are only created/used/released on that decoder thread.
+    private val timelineSequentialFilmstripDecoders =
+        java.util.concurrent.ConcurrentHashMap<Long, Pair<Uri, SequentialFilmstripFrameDecoder>>()
+    private val timelineSequentialFilmstripFailures =
+        java.util.concurrent.ConcurrentHashMap<Long, Uri>()
+    // Store compact fingerprints of sync-seek results per source. If multiple
+    // nearby cells resolve to the same keyframe image, only those collisions
+    // pay for an exact timestamp seek instead of repeating the same thumbnail.
+    private val timelineThumbnailSyncFrameFingerprints =
+        java.util.concurrent.ConcurrentHashMap<String, MutableMap<Long, Long>>()
     private val timelineThumbnailExtractors =
         java.util.concurrent.ConcurrentHashMap<Long, Pair<Uri, FrameExtractor>>()
     // A single exact-seek extractor is retained by the reserved preview worker.
     // Rebuilding ExoPlayer/codec state for every paused frame adds avoidable latency.
     private val previewFrameExtractors =
         java.util.concurrent.ConcurrentHashMap<Long, Triple<Uri, Int, FrameExtractor>>()
+
+    // Three persistent decoder lanes are the middle ground between the measured
+    // two-lane backlog and four-lane API-35 contention. Keep each retriever warm,
+    // and let the nearest-to-playhead cells enter the decoder queue first.
+    private val timelineFrameDecoderExecutor = java.util.concurrent.ThreadPoolExecutor(
+        2,
+        2,
+        0L,
+        java.util.concurrent.TimeUnit.MILLISECONDS,
+        java.util.concurrent.PriorityBlockingQueue<Runnable>(
+            8,
+            java.util.Comparator { first, second ->
+                (first as TimelineThumbnailDecodeTask).compareTo(second as TimelineThumbnailDecodeTask)
+            }
+        ),
+        java.util.concurrent.ThreadFactory { worker ->
+            Thread({
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_DEFAULT)
+                try {
+                    worker.run()
+                } finally {
+                    releaseTimelineSequentialFilmstripDecoder()
+                    releaseTimelineThumbnailRetriever()
+                    releaseTimelineThumbnailExtractor()
+                }
+            }, "timeline-thumbnail-decoder-${timelineThumbnailWorkerSequence.incrementAndGet()}")
+        }
+    ).apply {
+        // Start both consumers before the first viewport batch is submitted so
+        // PriorityBlockingQueue, not task arrival order, chooses their first work.
+        prestartAllCoreThreads()
+    }
+
+    // Four workers are the current lower-contention candidate for API 35 H.264.
+    // The earlier four-worker trace measured 1,960ms max decode and 3,022ms strip
+    // fill; the exact-head five-worker rerun improved queue max to 1,785ms but
+    // regressed decode max to 2,763ms and strip fill to 3,540ms. Re-measure four
+    // workers with the retained 4s per-worker reset guard; keep every strict gate.
+    // Do not relax the 1,500ms decode, 2,000ms queue or 2,500ms strip-fill limits.
     private val timelineThumbnailExecutor = java.util.concurrent.ThreadPoolExecutor(
-        3,
-        3,
+        2,
+        2,
         0L,
         java.util.concurrent.TimeUnit.MILLISECONDS,
         java.util.concurrent.PriorityBlockingQueue<Runnable>(
@@ -654,9 +869,7 @@ class VideoEditorActivity : Activity() {
         ),
         java.util.concurrent.ThreadFactory { worker ->
             Thread({
-                // Keep visible thumbnail workers below UI priority without
-                // background-throttling their decode queue. The exact playhead
-                // remains on its own normal-priority reserved decoder lane.
+                // Keep background still decoding below the UI and preview lanes.
                 android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_DEFAULT)
                 try {
                     worker.run()
@@ -665,15 +878,38 @@ class VideoEditorActivity : Activity() {
                     releaseTimelineThumbnailExtractor()
                     releasePreviewFrameExtractor()
                 }
-            }, "timeline-thumbnail-\u0024{timelineThumbnailWorkerSequence.incrementAndGet()}")
+            }, "timeline-thumbnail-${timelineThumbnailWorkerSequence.incrementAndGet()}")
         }
     )
-    // Exact playhead frames and visible filmstrip cells share this three-worker
-    // MMR-first priority queue. Exact frames use priority -1, visible cells
-    // priority 0 and secondary poster/overlay frames priority 1, so a live
-    // playhead seek can preempt background filmstrip work.
-    private val previewFrameExecutor: java.util.concurrent.ThreadPoolExecutor
-        get() = timelineThumbnailExecutor
+
+    // Exact playhead frames must never queue behind visible filmstrip decoding.
+    // Keep one dedicated foreground-priority decoder thread for paused scrubs
+    // and playback-frame refreshes; superseded requests are removed from this
+    // small queue before the newest requested timestamp is submitted.
+    private val previewFrameExecutor = java.util.concurrent.ThreadPoolExecutor(
+        1,
+        1,
+        0L,
+        java.util.concurrent.TimeUnit.MILLISECONDS,
+        java.util.concurrent.PriorityBlockingQueue<Runnable>(
+            3,
+            java.util.Comparator { first, second ->
+                (first as TimelineThumbnailTask).compareTo(second as TimelineThumbnailTask)
+            }
+        ),
+        java.util.concurrent.ThreadFactory { worker ->
+            Thread({
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_FOREGROUND)
+                try {
+                    worker.run()
+                } finally {
+                    releaseTimelineThumbnailRetriever()
+                    releaseTimelineThumbnailExtractor()
+                    releasePreviewFrameExtractor()
+                }
+            }, "timeline-preview-${previewFrameWorkerSequence.incrementAndGet()}")
+        }
+    )
 
     private fun enqueueSecondaryThumbnailTask(task: TimelineThumbnailTask) {
         task.markEnqueued()
@@ -1462,6 +1698,17 @@ class VideoEditorActivity : Activity() {
                     currentPlayer.pause()
                     currentPlayer.playWhenReady = false
                     timelineHandler.removeCallbacks(timelineScrubPreviewSeekTask)
+        timelineHandler.removeCallbacks(timelineGridIdleExactPass)
+        timelineGridExactTasksToCancel()
+        timelineFrameGridStates.keys.toList().forEach { sourceKey ->
+            timelineThumbnailTasksBySource[sourceKey]?.toList()?.forEach { task ->
+                timelineThumbnailExecutor.remove(task)
+                task.cancelForSourceInvalidation()
+            }
+        }
+        timelineFrameGridStates.clear()
+        pendingTimelineGridTargets.clear()
+        completedTimelineFrameGridSources.clear()
                     pendingTimelineScrubPreviewTargetMs = null
                     val pausedAtMs = currentPlayer.currentPosition
                         .coerceIn(0L, totalOutputDurationMs())
@@ -1476,8 +1723,20 @@ class VideoEditorActivity : Activity() {
                     timelineHandler.removeCallbacks(timelineScrubPreviewSeekTask)
                     pendingTimelineScrubPreviewTargetMs = null
                     timelinePlaybackState = TimelinePlaybackState.PLAYING
-                    // Resume from the exact frozen playhead, not the last 50ms UI sample.
-                    currentPlayer.seekTo(timelinePlayheadMs.coerceIn(0L, totalOutputDurationMs()))
+                    // Pause already captured the player's authoritative clock. Avoid
+                    // flushing/repositioning Media3 when that clock still matches the
+                    // frozen playhead; a real timeline move while paused still seeks.
+                    val resumeTargetMs = timelinePlayheadMs.coerceIn(0L, totalOutputDurationMs())
+                    val resumePositionMs = currentPlayer.currentPosition.coerceAtLeast(0L)
+                    val resumeNeedsSeek = currentPlayer.playbackState ==
+                        androidx.media3.common.Player.STATE_ENDED ||
+                        TimelineScaleMath.shouldSeekOnPlaybackResume(resumePositionMs, resumeTargetMs)
+                    if (resumeNeedsSeek) currentPlayer.seekTo(resumeTargetMs)
+                    if (timelineSyncTestEnabled) android.util.Log.i(
+                        "TimelineSyncTest",
+                        "TIMELINE_PLAY_RESUME currentMs=$resumePositionMs targetMs=$resumeTargetMs " +
+                            "seek=$resumeNeedsSeek state=${currentPlayer.playbackState}"
+                    )
                     hidePreviewFrameOverlay()
                     currentPlayer.playWhenReady = true
                     status.text = "Proje önizlemesi oynatılıyor."
@@ -1512,14 +1771,27 @@ class VideoEditorActivity : Activity() {
 
         // Compact playback time and fullscreen control share the left side of
         // the playback row; the play action stays on the phone's center axis.
-        timelinePlayheadLabel = label("00:00.0 / 00:00.0", 8.5f, Color.rgb(225, 233, 237), true).apply {
+        timelinePlayheadLabel = label("00:00.0 / 00:00.0", 10f, Color.rgb(225, 233, 237), true).apply {
             maxLines = 1
             gravity = Gravity.CENTER_VERTICAL or Gravity.START
             setSingleLine(true)
             ellipsize = android.text.TextUtils.TruncateAt.END
-            setPadding(dp(3), 0, dp(2), 0)
+            setPadding(dp(10), 0, dp(6), 0)
             contentDescription = "Oynatma zamanı ve toplam video süresi"
         }
+        // Keep the live time readout on its own row. The ruler below is reserved
+        // exclusively for time ticks, never playback actions or fit/undo controls.
+        val timelineTimeRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), 0, dp(4), 0)
+            addView(timelinePlayheadLabel, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(26)
+            ))
+        }
+        root.addView(timelineTimeRow, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(26)
+        ))
         playbackLeft = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -1577,9 +1849,113 @@ class VideoEditorActivity : Activity() {
             }
         )
         timelineTracksFrame = FrameLayout(this)
-        timelineTracks = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        timelineTracksFrame.addView(
+        timelineTracks = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            clipChildren = false
+            clipToPadding = false
+        }
+        // One native horizontal scroller owns the entire vertical timeline stack.
+        timelineSharedScrollView = android.widget.HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            isFillViewport = false
+            clipChildren = true
+            clipToPadding = true
+            isClickable = true
+            setOnClickListener { clearTimelineClipSelection() }
+        }
+        timelineSharedScrollView.addView(
             timelineTracks,
+            ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        )
+        timelineScrollViews.clear()
+        timelineScrollViews.add(timelineSharedScrollView)
+        timelineSharedScrollView.setOnScrollChangeListener { view, scrollX, _, _, _ ->
+            if (!syncingTimelineScroll) {
+                if (!autoScrollingTimeline) stopTimelinePlaybackFrameSync()
+                syncingTimelineScroll = true
+                try {
+                    timelineHorizontalScrollX = scrollX
+                    timelineScrollViews.forEach { other ->
+                        if (other !== view && other.scrollX != scrollX) other.scrollTo(scrollX, 0)
+                    }
+                } finally {
+                    syncingTimelineScroll = false
+                }
+                if (!autoScrollingTimeline && view.width > 0) {
+                    val originPx = timelineOriginSpacerWidth(view).toFloat()
+                    val rawPlayheadMs = TimelineScaleMath.timeAtViewportX(
+                        scrollX, originPx, originPx, timelinePixelsPerSecond()
+                    ).coerceIn(0L, totalOutputDurationMs())
+                    val underPlayheadMs = snapTimelineTimeToSourceFrame(rawPlayheadMs)
+                    if (underPlayheadMs != timelinePlayheadMs) {
+                        timelineCompositionPlayer?.let { composition ->
+                            if (composition.isPlaying || composition.playWhenReady) {
+                                composition.pause()
+                                composition.playWhenReady = false
+                            }
+                        }
+                        timelinePlayheadMs = underPlayheadMs
+                        showPreviewFramePending(keepPreviousFrame = true)
+                        updateTimelinePlayheadLabel()
+                        scheduleTimelineScrubPreviewSeek(underPlayheadMs)
+                        if (timelineSyncTestEnabled) logTimelineSyncTestSample()
+                    }
+                }
+                updateTimelinePlayheadLine()
+                if (!autoScrollingTimeline) onTimelineGridMotion()
+                if (timelineSyncTestEnabled) scheduleTimelineAlignmentSnapshot()
+            }
+        }
+        timelineSharedScrollView.setOnTouchListener { view, event ->
+            if (timelineSyncTestEnabled) {
+                val actionName = when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> "down"
+                    MotionEvent.ACTION_MOVE -> "move"
+                    MotionEvent.ACTION_UP -> "up"
+                    MotionEvent.ACTION_CANCEL -> "cancel"
+                    else -> "other"
+                }
+                if (event.actionMasked == MotionEvent.ACTION_DOWN ||
+                    event.actionMasked == MotionEvent.ACTION_MOVE ||
+                    event.actionMasked == MotionEvent.ACTION_UP ||
+                    event.actionMasked == MotionEvent.ACTION_CANCEL
+                ) {
+                    android.util.Log.i(
+                        "TimelineSyncTest",
+                        "TIMELINE_SCROLL_TOUCH lane=shared action=$actionName " +
+                            "x=${event.x} rawX=${event.rawX} y=${event.y} " +
+                            "scrollX=${view.scrollX} pointerCount=${event.pointerCount}"
+                    )
+                }
+                if (event.actionMasked == MotionEvent.ACTION_MOVE && event.pointerCount == 1) {
+                    // This listener is reached only after the shared scroller
+                    // has become the touch target (the normal one-finger pan).
+                    // Long-press clip drags disallow parent interception and
+                    // therefore never opt into the inertial release below.
+                    timelineFlingGestureIntercepted = true
+                }
+                if (event.actionMasked == MotionEvent.ACTION_UP) {
+                    val scrollAtRelease = view.scrollX
+                    listOf(64L, 128L, 240L).forEach { sampleDelayMs ->
+                        view.postDelayed({
+                            android.util.Log.i(
+                                "TimelineSyncTest",
+                                "TIMELINE_NATIVE_SCROLL_RELEASE lane=shared " +
+                                    "sampleDelayMs=$sampleDelayMs startScrollX=$scrollAtRelease " +
+                                    "scrollX=${view.scrollX}"
+                            )
+                        }, sampleDelayMs)
+                    }
+                }
+            }
+            false
+        }
+        timelineSharedScrollView.addOnLayoutChangeListener { _, left, _, right, _, oldLeft, _, oldRight, _ ->
+            if (right - left != oldRight - oldLeft) updateTimelineContentSpacers()
+        }
+        timelineTracksFrame.addView(
+            timelineSharedScrollView,
             FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         )
         timelinePlayheadLine = FrameLayout(this).apply {
@@ -1598,7 +1974,9 @@ class VideoEditorActivity : Activity() {
         }
         timelineTracksFrame.addView(
             timelinePlayheadLine,
-            FrameLayout.LayoutParams(dp(28), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.TOP or Gravity.START)
+            FrameLayout.LayoutParams(dp(28), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.TOP or Gravity.START).apply {
+                topMargin = dp(28)
+            }
         )
         timelineTracksFrame.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
             updateTimelinePlayheadLine()
@@ -1626,7 +2004,7 @@ class VideoEditorActivity : Activity() {
         // The track rows scroll horizontally; the editor shell keeps its own height.
         root.addView(timelineCard, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(220)
+            dp(190)
         ))
         root.addView(gap(8))
 
@@ -2516,13 +2894,15 @@ class VideoEditorActivity : Activity() {
             isHorizontalScrollBarEnabled = false
             overScrollMode = View.OVER_SCROLL_NEVER
             clipToPadding = false
+            // The viewport is full width even when contextual tools have only
+            // two or three buttons; keep the dock surface painted edge to edge.
+            setBackgroundColor(Color.rgb(8, 12, 18))
+            elevation = dp(8).toFloat()
         }
         val dock = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(3), dp(4), dp(3), dp(2))
-            setBackgroundColor(Color.rgb(8, 12, 18))
-            elevation = dp(8).toFloat()
+            setPadding(dp(5), dp(2), dp(5), dp(2))
         }
         editorDock = dock
         editorDockScroll = dockScroll
@@ -2556,18 +2936,45 @@ class VideoEditorActivity : Activity() {
                     android.widget.Toast.makeText(this, "Bu araç bu sürümde etkin değil.", android.widget.Toast.LENGTH_SHORT).show()
                 }
             }.apply {
+                val dockLabel = android.text.SpannableString("$symbol\n$title")
+                dockLabel.setSpan(
+                    android.text.style.RelativeSizeSpan(1.8f),
+                    0,
+                    symbol.length,
+                    android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+                dockLabel.setSpan(
+                    android.text.style.StyleSpan(Typeface.BOLD),
+                    0,
+                    symbol.length,
+                    android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+                dockLabel.setSpan(
+                    android.text.style.RelativeSizeSpan(0.9f),
+                    symbol.length + 1,
+                    dockLabel.length,
+                    android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+                text = dockLabel
                 textSize = 10f
                 gravity = Gravity.CENTER
-                minWidth = dp(52)
-                minimumWidth = dp(52)
-                minHeight = dp(58)
-                setPadding(dp(1), dp(2), dp(1), dp(2))
+                minWidth = dp(60)
+                minimumWidth = dp(60)
+                minHeight = dp(62)
+                setPadding(dp(2), dp(2), dp(2), dp(2))
                 maxLines = 2
-                background = android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
+                background = android.graphics.drawable.RippleDrawable(
+                    android.content.res.ColorStateList.valueOf(Color.rgb(39, 57, 73)),
+                    android.graphics.drawable.GradientDrawable().apply {
+                        setColor(Color.TRANSPARENT)
+                        cornerRadius = dp(9).toFloat()
+                    },
+                    null
+                )
                 setTextColor(Color.rgb(205, 216, 228))
             }
             editorTabButtons[key] = tab
-            dock.addView(tab, LinearLayout.LayoutParams(dp(52), dp(58)).apply {
+            dock.addView(tab, LinearLayout.LayoutParams(dp(60), dp(62)).apply {
                 if (key != "clip") leftMargin = dp(2)
             })
         }
@@ -3150,13 +3557,8 @@ class VideoEditorActivity : Activity() {
                 0,
                 LinearLayout.LayoutParams(dp(38), dp(36))
             )
-            if (::timelineRulerHeader.isInitialized) {
-                (timelinePlayheadLabel.parent as? ViewGroup)?.removeView(timelinePlayheadLabel)
-                timelineRulerHeader.addView(
-                    timelinePlayheadLabel,
-                    LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-                )
-            }
+            // The time readout remains on its dedicated row; the ruler header
+            // stays an empty alignment gutter in both normal and focus modes.
             centeredPlaybackRow.addView(
                 timelinePlayButton,
                 FrameLayout.LayoutParams(dp(46), dp(38), Gravity.CENTER)
@@ -3576,11 +3978,9 @@ class VideoEditorActivity : Activity() {
         val preservedScrollX = pendingTimelineScrollX ?: timelineHorizontalScrollX
         pendingTimelineScrollX = null
         timelineHorizontalScrollX = preservedScrollX
-        if (::timelinePlayheadLabel.isInitialized && !previewFocusMode) {
-            (timelinePlayheadLabel.parent as? ViewGroup)?.removeView(timelinePlayheadLabel)
-        }
         timelineTracks.removeAllViews()
         timelineScrollViews.clear()
+        timelineScrollViews.add(timelineSharedScrollView)
         if (::timelinePlayheadLabel.isInitialized) updateTimelinePlayheadDisplay()
 
         if (!loadingTextLayerControls) syncSelectedTextLayerFromControls()
@@ -3625,10 +4025,14 @@ class VideoEditorActivity : Activity() {
                     clipChildren = false
                     clipToPadding = false
                 }
-                setPadding(dp(3), dp(1), dp(3), dp(1))
+                setPadding(0, dp(1), 0, dp(1))
                 this.tag = if (reorderable) laneKey else "__ruler__"
                 isClickable = true
                 setOnClickListener { clearTimelineClipSelection() }
+            }
+            val leadingPadding = View(this).apply {
+                this.tag = "timeline-leading-padding"
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             }
             val grip = TextView(this).apply {
                 // Keep the existing drag handle while giving the video/audio/text
@@ -3653,7 +4057,7 @@ class VideoEditorActivity : Activity() {
                 } else tag
             }
             if (reorderable) {
-                row.addView(grip, LinearLayout.LayoutParams(dp(44), ViewGroup.LayoutParams.MATCH_PARENT))
+                row.addView(grip, LinearLayout.LayoutParams(timelineGripWidthPx(), ViewGroup.LayoutParams.MATCH_PARENT))
                 val sideAction: View = if (tag == "Video") {
                     val coverAction = LinearLayout(this).apply {
                         orientation = LinearLayout.VERTICAL
@@ -3721,7 +4125,18 @@ class VideoEditorActivity : Activity() {
                         }
                     }
                 }
-                row.addView(sideAction, LinearLayout.LayoutParams(dp(40), ViewGroup.LayoutParams.MATCH_PARENT))
+                row.addView(sideAction, LinearLayout.LayoutParams(timelineSideActionWidthPx(), ViewGroup.LayoutParams.MATCH_PARENT))
+                // The header is the first horizontally scrolling item. The
+                // zero-time spacer follows it so the clip still begins beneath
+                // the fixed centre playhead, but the header itself scrolls away
+                // instead of remaining as a left-side gutter over later times.
+                row.addView(
+                    leadingPadding,
+                    LinearLayout.LayoutParams(
+                        timelineLeadingPaddingWidth(resources.displayMetrics.widthPixels),
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                )
             if (reorderable && tag == "Video") {
                 grip.contentDescription = if (keepSourceAudio.isChecked) {
                     "Klip sesini kapat"
@@ -3744,13 +4159,16 @@ class VideoEditorActivity : Activity() {
                     gravity = Gravity.CENTER_VERTICAL
                     setPadding(dp(2), 0, dp(2), 0)
                 }
-                if (::timelinePlayheadLabel.isInitialized && !previewFocusMode) {
-                    timelineRulerHeader.addView(
-                        timelinePlayheadLabel,
-                        LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                // The ruler keeps its time readout adjacent to the zero-time
+                // spacer; only media/action headers move ahead of that spacer.
+                row.addView(
+                    leadingPadding,
+                    LinearLayout.LayoutParams(
+                        timelineLeadingPaddingWidth(resources.displayMetrics.widthPixels),
+                        ViewGroup.LayoutParams.MATCH_PARENT
                     )
-                }
-                row.addView(timelineRulerHeader, LinearLayout.LayoutParams(dp(84), ViewGroup.LayoutParams.MATCH_PARENT))
+                )
+                row.addView(timelineRulerHeader, LinearLayout.LayoutParams(timelineHeaderGutterWidthPx(), ViewGroup.LayoutParams.MATCH_PARENT))
             }
 
             if (reorderable) {
@@ -3817,110 +4235,8 @@ class VideoEditorActivity : Activity() {
                 }
             }
 
-            val scroll = android.widget.HorizontalScrollView(this).apply {
-                isHorizontalScrollBarEnabled = false
-                overScrollMode = View.OVER_SCROLL_NEVER
-                if (tag.startsWith("Metin") || tag == "Video") {
-                    // Video trim tabs, like text tabs, are centred on strip edges
-                    // and must be allowed to draw into the lane's side gutter.
-                    clipChildren = false
-                    clipToPadding = false
-                }
-                isClickable = true
-                setOnClickListener { clearTimelineClipSelection() }
-            }
-            timelineScrollViews.add(scroll)
-            scroll.setOnScrollChangeListener { view, scrollX, _, _, _ ->
-                if (!syncingTimelineScroll) {
-                    if (!autoScrollingTimeline) {
-                        // A user's finger takes ownership immediately; cancel the
-                        // display-frame playback follower before manual scrolling.
-                        stopTimelinePlaybackFrameSync()
-                    }
-                    syncingTimelineScroll = true
-                    try {
-                        timelineHorizontalScrollX = scrollX
-                        timelineScrollViews.forEach { other ->
-                            if (other !== view && other.scrollX != scrollX) other.scrollTo(scrollX, 0)
-                        }
-                    } finally {
-                        syncingTimelineScroll = false
-                    }
-                    if (!autoScrollingTimeline && view.width > 0) {
-                        // The fixed center playhead stays still while the filmstrip moves
-                        // underneath it. Update the visible time immediately on every drag.
-                        val originPx = timelineOriginSpacerWidth(view).toFloat()
-                        val rawPlayheadMs = TimelineScaleMath.timeAtViewportX(
-                            scrollX, originPx, originPx, timelinePixelsPerSecond()
-                        ).coerceIn(0L, totalOutputDurationMs())
-                        val underPlayheadMs = snapTimelineTimeToSourceFrame(rawPlayheadMs)
-                        if (underPlayheadMs != timelinePlayheadMs) {
-                            // A manual scrub takes control from playback so the periodic
-                            // player sync cannot pull the ruler back to an older frame.
-                            timelineCompositionPlayer?.let { composition ->
-                                if (composition.isPlaying || composition.playWhenReady) {
-                                    composition.pause()
-                                    composition.playWhenReady = false
-                                }
-                            }
-                            timelinePlayheadMs = underPlayheadMs
-                            // Invalidate an older pending decode without flashing black;
-                            // keep the last valid frame until this scrub position is ready.
-                            showPreviewFramePending(keepPreviousFrame = true)
-                            updateTimelinePlayheadLabel()
-                            scheduleTimelineScrubPreviewSeek(underPlayheadMs)
-                            // Emit a direct gesture-time sample even before Media3's
-                            // composition player has finished preparing. The smoke test
-                            // can then validate the shared ruler/playhead scroll mapping.
-                            if (timelineSyncTestEnabled) logTimelineSyncTestSample()
-                        }
-                    }
-                    updateTimelinePlayheadLine()
-                    if (timelineSyncTestEnabled) scheduleTimelineAlignmentSnapshot()
-                }
-            }
-            // Let the HorizontalScrollView own ordinary one-finger swipes on its lane.
-            // Its native OverScroller supplies the same release momentum as CapCut.
-            // The child clip only disallows interception after a stationary long-press
-            // has explicitly entered clip-reorder mode.
-            scroll.setOnTouchListener { view, event ->
-                if (timelineSyncTestEnabled) {
-                    val actionName = when (event.actionMasked) {
-                        android.view.MotionEvent.ACTION_DOWN -> "down"
-                        android.view.MotionEvent.ACTION_MOVE -> "move"
-                        android.view.MotionEvent.ACTION_UP -> "up"
-                        android.view.MotionEvent.ACTION_CANCEL -> "cancel"
-                        else -> "other"
-                    }
-                    if (event.actionMasked == android.view.MotionEvent.ACTION_DOWN ||
-                        event.actionMasked == android.view.MotionEvent.ACTION_MOVE ||
-                        event.actionMasked == android.view.MotionEvent.ACTION_UP ||
-                        event.actionMasked == android.view.MotionEvent.ACTION_CANCEL
-                    ) {
-                        android.util.Log.i(
-                            "TimelineSyncTest",
-                            "TIMELINE_SCROLL_TOUCH lane=$laneKey action=$actionName " +
-                                "x=${event.x} rawX=${event.rawX} y=${event.y} " +
-                                "scrollX=${view.scrollX} pointerCount=${event.pointerCount}"
-                        )
-                    }
-                    if (event.actionMasked == android.view.MotionEvent.ACTION_UP) {
-                        val scrollAtRelease = view.scrollX
-                        listOf(64L, 128L, 240L).forEach { sampleDelayMs ->
-                            view.postDelayed({
-                                android.util.Log.i(
-                                    "TimelineSyncTest",
-                                    "TIMELINE_NATIVE_SCROLL_RELEASE lane=$laneKey " +
-                                        "sampleDelayMs=$sampleDelayMs startScrollX=$scrollAtRelease " +
-                                        "scrollX=${view.scrollX}"
-                                )
-                            }, sampleDelayMs)
-                        }
-                    }
-                }
-                false
-            }
             val track = LinearLayout(this).apply {
+                this.tag = "timeline-track-content"
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 // Trim targets can straddle a clip edge into adjacent spacer pixels.
@@ -3932,7 +4248,6 @@ class VideoEditorActivity : Activity() {
                 isClickable = true
                 setOnClickListener { clearTimelineClipSelection() }
             }
-            scroll.addView(track)
             val responsiveLaneHeightPx = if (reorderable && tag == "Video") {
                 dp(TimelineThumbnailMath.THUMBNAIL_STRIP_HEIGHT_DP)
             } else {
@@ -3945,7 +4260,10 @@ class VideoEditorActivity : Activity() {
                 }
                 dp(responsiveLaneHeightDp)
             }
-            row.addView(scroll, LinearLayout.LayoutParams(0, responsiveLaneHeightPx, 1f))
+            row.addView(
+                track,
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, responsiveLaneHeightPx)
+            )
             if (tag.startsWith("Metin") || tag == "Video") {
                 // Text and video trim tabs are centred on their strip boundaries.
                 // The leading video tab needs the same left-gutter drawing path as
@@ -3963,16 +4281,26 @@ class VideoEditorActivity : Activity() {
             }
 
             if (!reorderable) {
-                timelineTracks.addView(row, 0)
+                timelineTracks.addView(
+                    row, 0,
+                    LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                )
             } else {
                 val savedIndex = timelineLaneOrder.indexOf(laneKey)
                 if (savedIndex < 0) {
                     timelineLaneOrder.add(laneKey)
-                    timelineTracks.addView(row)
+                    timelineTracks.addView(
+                        row,
+                        LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                    )
                 } else {
                     val rulerOffset = if (timelineTracks.childCount > 0 &&
                         timelineTracks.getChildAt(0).tag == "__ruler__") 1 else 0
-                    timelineTracks.addView(row, (savedIndex + rulerOffset).coerceIn(0, timelineTracks.childCount))
+                    timelineTracks.addView(
+                        row,
+                        (savedIndex + rulerOffset).coerceIn(0, timelineTracks.childCount),
+                        LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                    )
                 }
             }
             return track
@@ -4120,15 +4448,22 @@ class VideoEditorActivity : Activity() {
                     isClickable = true
                     isFocusable = true
                     importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
-                    addView(View(this@VideoEditorActivity).apply {
-                        background = android.graphics.drawable.GradientDrawable().apply {
-                            setColor(Color.rgb(0, 164, 146))
-                            cornerRadius = dp(3).toFloat()
-                        }
+                    // CapCut-style visible trim tab is a child of the
+                    // same broad touch target, so it can never lag behind the
+                    // finger or become detached from the active hit region.
+                    val visibleGrip = FrameLayout(this@VideoEditorActivity).apply {
+                        setBackgroundColor(Color.WHITE)
                         isClickable = false
                         isFocusable = false
-                    }, FrameLayout.LayoutParams(
-                        dp(5), dp(24), Gravity.CENTER
+                        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                    }
+                    visibleGrip.addView(View(this@VideoEditorActivity).apply {
+                        setBackgroundColor(Color.rgb(145, 145, 145))
+                        isClickable = false
+                        isFocusable = false
+                    }, FrameLayout.LayoutParams(dp(2), dp(14), Gravity.CENTER))
+                    addView(visibleGrip, FrameLayout.LayoutParams(
+                        dp(10), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER
                     ))
                     setOnClickListener { /* The transparent edge target is primarily a drag control. */ }
                 }
@@ -4346,6 +4681,7 @@ class VideoEditorActivity : Activity() {
                 }
             }
 
+            val textTrimVisibleGrips = mutableMapOf<Boolean, View>()
             fun addTextTrimHandle(isStart: Boolean) {
                 if (totalMs <= 0L) return
                 val handleWidth = timelineEdgeTouchWidth(blockWidth)
@@ -4398,11 +4734,16 @@ class VideoEditorActivity : Activity() {
                             } else {
                                 deltaPx.coerceIn(-maximumShiftPx, sourceAfterPx)
                             }
+                            // The visible white tab is a separate sibling for
+                            // accurate boundary rendering; keep it physically
+                            // attached to the broad transparent touch target.
+                            textTrimVisibleGrips[isStart]?.translationX = view.translationX
                             true
                         }
                         android.view.MotionEvent.ACTION_UP -> {
                             val deltaPx = event.rawX - downRawX
                             view.translationX = 0f
+                            textTrimVisibleGrips[isStart]?.translationX = 0f
                             view.parent?.requestDisallowInterceptTouchEvent(false)
                             if (moved) {
                                 recordProjectEdit()
@@ -4456,6 +4797,7 @@ class VideoEditorActivity : Activity() {
                         }
                         android.view.MotionEvent.ACTION_CANCEL -> {
                             view.translationX = 0f
+                            textTrimVisibleGrips[isStart]?.translationX = 0f
                             view.parent?.requestDisallowInterceptTouchEvent(false)
                             true
                         }
@@ -4503,6 +4845,7 @@ class VideoEditorActivity : Activity() {
                     topMargin = 0
                     gravity = Gravity.TOP or Gravity.LEFT
                 })
+                textTrimVisibleGrips[isStart] = grip
                 grip.post {
                     if (!timelineSyncTestEnabled || grip.width <= 0) return@post
                     val frameLocation = IntArray(2)
@@ -4823,17 +5166,11 @@ class VideoEditorActivity : Activity() {
             addSoundEffectTimelineBlock(effectTrack, totalMs)
             addSpacer(effectTrack, endMs, totalMs)
         }
-        // Each lane's leading spacer is measured from that lane's actual on-screen
-        // viewport edge to the fixed playhead center. This keeps ruler, filmstrip and
-        // independently positioned rows on the same project-time origin after insets,
-        // responsive layout changes, and horizontal scrolling.
-        timelineScrollViews.forEach { laneScroll ->
-            val laneTrack = laneScroll.getChildAt(0) as? LinearLayout ?: return@forEach
-            // Empty persistent lanes still represent the same project time axis.
-            // Give them an invisible duration span so their HorizontalScrollView
-            // remains scrollable and follows the shared ruler/video playhead.
-            // Without this, an empty Text/Music lane stays at scrollX=0 while the
-            // populated ruler/video lanes move during playback.
+        // All rows share the same horizontal content origin: the right edge of
+        // their 84dp header sits beneath the fixed centre playhead.
+        for (rowIndex in 0 until timelineTracks.childCount) {
+            val row = timelineTracks.getChildAt(rowIndex) as? LinearLayout ?: continue
+            val laneTrack = row.findViewWithTag<LinearLayout>("timeline-track-content") ?: continue
             if (laneTrack.childCount == 0 && totalMs > 0L) {
                 val durationWidth = widthBetween(0L, totalMs).coerceAtLeast(dp(1))
                 laneTrack.addView(
@@ -4844,66 +5181,26 @@ class VideoEditorActivity : Activity() {
                     LinearLayout.LayoutParams(durationWidth, dp(24))
                 )
             }
-            fun updateLaneOriginSpacer(viewportWidth: Int) {
-                if (viewportWidth <= 0 || laneTrack.childCount == 0) return
-                // Measure the actual viewport-to-playhead distance instead of deriving
-                // it from a hard-coded header gutter. The ruler and media rows have
-                // different child layouts, and their measured left edges are the
-                // authoritative geometry after responsive padding/insets are applied.
-                val originWidth = timelineOriginSpacerWidth(laneScroll)
-                val endWidth = (viewportWidth - originWidth).coerceAtLeast(1)
-                val first = laneTrack.getChildAt(0)
-                if (first?.tag == "timeline-origin-spacer") {
-                    val params = first.layoutParams as? LinearLayout.LayoutParams
-                    if (params == null || params.width != originWidth) {
-                        first.layoutParams = LinearLayout.LayoutParams(originWidth, dp(24))
-                    }
-                }
-                val last = laneTrack.getChildAt(laneTrack.childCount - 1)
-                if (last?.tag == "timeline-end-spacer") {
-                    val params = last.layoutParams as? LinearLayout.LayoutParams
-                    if (params == null || params.width != endWidth) {
-                        last.layoutParams = LinearLayout.LayoutParams(endWidth, dp(24))
-                    }
-                }
-            }
-            val originWidth = timelineOriginSpacerWidthFallback(laneScroll.width)
-            val endWidth = timelineEndSpacerWidth(laneScroll.width)
-            if (laneTrack.getChildAt(0)?.tag != "timeline-origin-spacer") {
-                val originSpacer = View(this).apply { tag = "timeline-origin-spacer" }
-                laneTrack.addView(originSpacer, 0, LinearLayout.LayoutParams(originWidth, dp(24)))
-            }
             if (laneTrack.getChildAt(laneTrack.childCount - 1)?.tag != "timeline-end-spacer") {
-                val endSpacer = View(this).apply { tag = "timeline-end-spacer" }
-                laneTrack.addView(endSpacer, LinearLayout.LayoutParams(endWidth, dp(24)))
+                laneTrack.addView(
+                    View(this).apply { tag = "timeline-end-spacer" },
+                    LinearLayout.LayoutParams(timelineEndSpacerWidth(timelineSharedScrollView.width), dp(24))
+                )
             }
-            // Recalculate after measurement and on responsive viewport changes.
-            laneScroll.addOnLayoutChangeListener { view, left, top, right, bottom,
-                                                   oldLeft, oldTop, oldRight, oldBottom ->
-                if (left != oldLeft || right - left != oldRight - oldLeft ||
-                    bottom - top != oldBottom - oldTop
-                ) {
-                    updateLaneOriginSpacer(view.width)
-                }
-            }
-            laneScroll.post { updateLaneOriginSpacer(laneScroll.width) }
         }
+        updateTimelineContentSpacers()
         if (clips.isNotEmpty()) {
-            // A clip must be draggable beyond the current last frame. Give every
-            // synchronized lane the same one-viewport tail runway; when a clip is
-            // dropped there, the real project end grows to that new clip end.
-            val dragTailBufferPx = timelineScrollViews.firstOrNull()?.width
-                ?.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
-            timelineScrollViews.forEach { lane ->
-                val content = lane.getChildAt(0) as? LinearLayout ?: return@forEach
+            val dragTailBufferPx = timelineSharedScrollView.width
+                .takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
+            for (rowIndex in 0 until timelineTracks.childCount) {
+                val row = timelineTracks.getChildAt(rowIndex) as? LinearLayout ?: continue
+                val content = row.findViewWithTag<LinearLayout>("timeline-track-content") ?: continue
                 val runway = View(this).apply {
                     tag = "timeline-drag-tail-runway"
                     isClickable = false
                     isFocusable = false
                     importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
                 }
-                // Keep timeline-end-spacer as the final child; its measured width
-                // is recalculated when the viewport changes.
                 val endSpacerIndex = (0 until content.childCount).lastOrNull { index ->
                     content.getChildAt(index)?.tag == "timeline-end-spacer"
                 } ?: content.childCount
@@ -4918,10 +5215,17 @@ class VideoEditorActivity : Activity() {
         // A MATCH_PARENT playhead inside a WRAP_CONTENT FrameLayout would let
         // the frame expand to the full available screen height and push the tool dock
         // off-screen. Size the frame from the actual timeline lanes instead.
+        // Rows have a variable number of gutter children: video rows include a
+        // cover action, while text/audio rows include an add action. Child index 2
+        // is therefore not consistently the timeline lane (and often reports
+        // MATCH_PARENT). Resolve the actual tagged lane so the vertical scroller's
+        // content height includes every row, including the final sound-effect lane.
         val laneContentHeight = (0 until timelineTracks.childCount).sumOf { index ->
             val row = timelineTracks.getChildAt(index) as? LinearLayout ?: return@sumOf 0
-            val lane = row.getChildAt(if (row.tag == "__ruler__") 1 else 2)
-            val laneHeight = lane?.layoutParams?.height?.takeIf { it > 0 } ?: dp(24)
+            val lane = row.findViewWithTag<LinearLayout>("timeline-track-content")
+            val laneHeight = lane?.layoutParams?.height?.takeIf { it > 0 }
+                ?: lane?.measuredHeight?.takeIf { it > 0 }
+                ?: dp(24)
             laneHeight + row.paddingTop + row.paddingBottom
         }.coerceAtLeast(if (keyboardLayoutActive) dp(24) else dp(188))
         (timelineTracksFrame.layoutParams as? FrameLayout.LayoutParams)?.let { params ->
@@ -4964,6 +5268,7 @@ class VideoEditorActivity : Activity() {
         // Rebind the independent cover surface here so no caller can leave it blank.
         // Project cover is a fixed still from the first clip, not the clip under the playhead.
         refreshClipCoverThumbnail(clips.firstOrNull())
+        scheduleTimelineFrameGridsForCurrentClips()
     }
 
 
@@ -5679,8 +5984,8 @@ class VideoEditorActivity : Activity() {
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT
         ))
-        // Keep the audio title/gesture surface transparent while drawing the
-        // waveform above it; non-clickable bars let touches fall through to body.
+        // Keep the transparent title/gesture surface below the waveform.
+        // Non-clickable bars let clip gestures continue to reach the body.
         soundWaveform.isClickable = false
         soundWaveform.isFocusable = false
         soundWaveform.bringToFront()
@@ -6029,6 +6334,7 @@ class VideoEditorActivity : Activity() {
                 scheduleTimelineScrubPreviewSeek(playheadAfterPinch)
             }
         }
+        onTimelineGridMotion()
     }
 
     private fun isWindowPointInsideTimeline(screenX: Float, screenY: Float): Boolean {
@@ -6041,7 +6347,86 @@ class VideoEditorActivity : Activity() {
             screenY >= location[1] && screenY <= location[1] + timelineTracksFrame.height
     }
 
+    private fun resetTimelineFlingGesture() {
+        timelineFlingVelocityTracker?.recycle()
+        timelineFlingVelocityTracker = null
+        timelineFlingGestureStartScrollX = 0
+        timelineFlingGestureIntercepted = false
+        timelineFlingRawSamples.clear()
+    }
+
+    private fun recordTimelineFlingSample(event: MotionEvent) {
+        timelineFlingRawSamples.add(event.eventTime to event.rawX)
+        val cutoffMs = event.eventTime - 160L
+        // Keep one sample just before the window so sparse input streams still
+        // have a valid interval, while bounding memory to a tiny gesture buffer.
+        while (timelineFlingRawSamples.size > 2 &&
+            timelineFlingRawSamples[1].first < cutoffMs
+        ) {
+            timelineFlingRawSamples.removeAt(0)
+        }
+        while (timelineFlingRawSamples.size > 12) {
+            timelineFlingRawSamples.removeAt(0)
+        }
+    }
+
+    private fun estimateTimelineFlingVelocityX(): Float {
+        if (timelineFlingRawSamples.size < 2) return 0f
+        val last = timelineFlingRawSamples.last()
+        val cutoffMs = last.first - 160L
+        val recent = timelineFlingRawSamples.filter { it.first >= cutoffMs }
+        val first = if (recent.size >= 2) recent.first() else timelineFlingRawSamples[timelineFlingRawSamples.lastIndex - 1]
+        val elapsedMs = last.first - first.first
+        if (elapsedMs <= 0L) return 0f
+        return (last.second - first.second) * 1000f / elapsedMs.toFloat()
+    }
+
+    private fun isScreenPointInsideTimeline(x: Float, y: Float): Boolean {
+        // Hit-test the actual horizontally scrolling viewport, not its outer
+        // frame: the outer frame can include the ruler/track gutters and may
+        // not share the same screen-space bounds after panel layout changes.
+        if (!::timelineSharedScrollView.isInitialized || !timelineSharedScrollView.isLaidOut) return false
+        val location = IntArray(2)
+        timelineSharedScrollView.getLocationOnScreen(location)
+        return x >= location[0] && x < location[0] + timelineSharedScrollView.width &&
+            y >= location[1] && y < location[1] + timelineSharedScrollView.height
+    }
+
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            resetTimelineFlingGesture()
+            if (event.pointerCount == 1 &&
+                isScreenPointInsideTimeline(event.rawX, event.rawY)
+            ) {
+                timelineFlingGestureStartScrollX =
+                    if (::timelineSharedScrollView.isInitialized) timelineSharedScrollView.scrollX else 0
+                timelineFlingVelocityTracker = android.view.VelocityTracker.obtain().also {
+                    it.addMovement(event)
+                }
+                recordTimelineFlingSample(event)
+                if (timelineSyncTestEnabled) {
+                    val location = IntArray(2)
+                    timelineSharedScrollView.getLocationOnScreen(location)
+                    android.util.Log.i(
+                        "TimelineSyncTest",
+                        "TIMELINE_FLING_CAPTURE down=true rawX=${event.rawX} rawY=${event.rawY} " +
+                            "viewport=${location[0]},${location[1]},${location[0] + timelineSharedScrollView.width}," +
+                            "${location[1] + timelineSharedScrollView.height} startScrollX=$timelineFlingGestureStartScrollX"
+                    )
+                }
+            }
+        } else if (event.pointerCount >= 2 ||
+            event.actionMasked == MotionEvent.ACTION_POINTER_DOWN
+        ) {
+            // Pinch zoom owns multi-touch. Never turn the end of a pinch into a fling.
+            resetTimelineFlingGesture()
+        } else {
+            timelineFlingVelocityTracker?.let { tracker ->
+                tracker.addMovement(event)
+                recordTimelineFlingSample(event)
+            }
+        }
+
         val wasPinchCaptured = timelinePinchGestureCaptured
         timelineScaleGestureDetector.onTouchEvent(event)
 
@@ -6077,12 +6462,75 @@ class VideoEditorActivity : Activity() {
             event.actionMasked == MotionEvent.ACTION_UP) {
             timelineScaleGestureActive = false
         }
-        return super.dispatchTouchEvent(event)
+
+        val isRelease = event.actionMasked == MotionEvent.ACTION_UP
+        val tracker = if (isRelease) timelineFlingVelocityTracker else null
+        var trackerVelocityX = 0f
+        if (tracker != null) {
+            tracker.computeCurrentVelocity(
+                1000,
+                android.view.ViewConfiguration.get(this).scaledMaximumFlingVelocity.toFloat()
+            )
+            trackerVelocityX = tracker.getXVelocity(event.getPointerId(0))
+        }
+        val minimumVelocity = android.view.ViewConfiguration.get(this).scaledMinimumFlingVelocity
+        val rawWindowVelocityX = if (isRelease) estimateTimelineFlingVelocityX() else 0f
+        val useRawWindowFallback = tracker != null &&
+            kotlin.math.abs(trackerVelocityX) < minimumVelocity &&
+            kotlin.math.abs(rawWindowVelocityX) >= minimumVelocity
+        val releaseVelocityX = if (useRawWindowFallback) rawWindowVelocityX else trackerVelocityX
+
+        // Let Android finish dispatching ACTION_UP first, then start one fling
+        // from the full down-to-up velocity. The shared ScrollView's own tracker
+        // may only have seen MOVE/UP because the filmstrip child owned ACTION_DOWN.
+        val handled = super.dispatchTouchEvent(event)
+        if (isRelease) {
+            val scrollDelta = if (::timelineSharedScrollView.isInitialized) {
+                timelineSharedScrollView.scrollX - timelineFlingGestureStartScrollX
+            } else 0
+            if (timelineSyncTestEnabled) {
+                android.util.Log.i(
+                    "TimelineSyncTest",
+                    "TIMELINE_FLING_RELEASE captured=${tracker != null} intercepted=$timelineFlingGestureIntercepted " +
+                        "startScrollX=$timelineFlingGestureStartScrollX scrollDelta=$scrollDelta " +
+                        "fingerVelocityX=${releaseVelocityX.toInt()} trackerVelocityX=${trackerVelocityX.toInt()} " +
+                        "rawWindowVelocityX=${rawWindowVelocityX.toInt()} rawSamples=${timelineFlingRawSamples.size} " +
+                        "velocitySource=${if (useRawWindowFallback) "raw-window" else "tracker"} minimumVelocity=$minimumVelocity"
+                )
+            }
+            // The Activity-level tracker owns the complete DOWN-to-UP
+            // trajectory even when a child filmstrip initially owns DOWN.
+            // Use the observed shared-scroll delta as the proof that this was
+            // a pan, rather than requiring the shared view's touch listener to
+            // observe MOVE (Android may transfer ownership after interception
+            // without replaying the full MOVE sequence to that listener).
+            // Clip/trim drags do not change scrollX; pinch resets this tracker.
+            if (scrollDelta != 0 &&
+                kotlin.math.abs(releaseVelocityX) >= minimumVelocity
+            ) {
+                val scrollVelocity = -releaseVelocityX
+                if (::timelineSharedScrollView.isInitialized) {
+                    timelineSharedScrollView.fling(scrollVelocity.toInt())
+                    if (timelineSyncTestEnabled) {
+                        android.util.Log.i(
+                            "TimelineSyncTest",
+                            "TIMELINE_CUSTOM_FLING fingerVelocityX=${releaseVelocityX.toInt()} " +
+                                "scrollVelocityX=${scrollVelocity.toInt()} scrollDelta=$scrollDelta " +
+                                "scrollX=${timelineSharedScrollView.scrollX}"
+                        )
+                    }
+                }
+            }
+            resetTimelineFlingGesture()
+        } else if (event.actionMasked == MotionEvent.ACTION_CANCEL) {
+            resetTimelineFlingGesture()
+        }
+        return handled
     }
 
     private fun timelinePixelsPerSecond(): Float {
         if (!timelinePxPerSec.isFinite() || timelinePxPerSec <= 0f) {
-            timelinePxPerSec = dp(22).toFloat().coerceAtLeast(1f)
+            timelinePxPerSec = timelineDefaultPixelsPerSecond()
         }
         return timelinePxPerSec
     }
@@ -6092,7 +6540,7 @@ class VideoEditorActivity : Activity() {
         if (totalMs <= 0L) return
         val frameWidth = timelineTracksFrame.width.takeIf { it > 0 }
             ?: resources.displayMetrics.widthPixels
-        val availableWidth = (frameWidth - timelineHeaderGutterWidthPx() - dp(3)).coerceAtLeast(dp(80))
+        val availableWidth = (frameWidth - dp(3)).coerceAtLeast(dp(80))
         timelinePxPerSec = TimelineScaleMath.fitPixelsPerSecond(
             durationMs = totalMs,
             availableWidthPx = availableWidth,
@@ -6109,35 +6557,24 @@ class VideoEditorActivity : Activity() {
         updateTimelinePlayheadLabel()
     }
 
-    /**
-     * Horizontal space consumed before a lane's scrolling content: the 84dp
-     * ruler/media header plus the row's 3dp leading inset. Keep this in sync
-     * with makeLane(), otherwise the fixed playhead maps to the wrong project time.
-     */
-    private fun timelineHeaderGutterWidthPx(): Int {
-        // Prefer the measured lane/header boundary. The dp value is only an
-        // initial-layout fallback before the ruler/media rows have been measured.
-        val lane = timelineScrollViews.firstOrNull()
-        if (lane != null && lane.isLaidOut &&
-            ::timelineTracksFrame.isInitialized && timelineTracksFrame.isLaidOut
-        ) {
-            val laneLocation = IntArray(2)
-            val frameLocation = IntArray(2)
-            lane.getLocationOnScreen(laneLocation)
-            timelineTracksFrame.getLocationOnScreen(frameLocation)
-            val measuredGutter = laneLocation[0] - frameLocation[0]
-            if (measuredGutter > 0) return measuredGutter
-        }
-        return dp(87)
-    }
+    /** Default zoom shows approximately 6.5 seconds across the full screen width. */
+    private fun timelineDefaultPixelsPerSecond(): Float =
+        TimelineScaleMath.defaultPixelsPerSecondForDuration(
+            resources.displayMetrics.widthPixels, 6_500L, dp(11).toFloat(), dp(720).toFloat()
+        )
 
-    /** Width of the leading blank time-zero spacer inside each horizontally scrolling lane. */
-    private fun timelineFrameWidth(viewportWidth: Int): Int {
-        val gutterPx = timelineHeaderGutterWidthPx()
-        return timelineTracksFrame.width.takeIf { it > 0 }
-            ?: if (viewportWidth > 0) viewportWidth + gutterPx
-            else resources.displayMetrics.widthPixels
-    }
+    /** Use the exact child widths for both the media-row and ruler headers. */
+    private fun timelineGripWidthPx(): Int = dp(44)
+
+    private fun timelineSideActionWidthPx(): Int = dp(40)
+
+    private fun timelineHeaderGutterWidthPx(): Int =
+        TimelineScaleMath.mediaLaneHeaderWidthPx(timelineGripWidthPx(), timelineSideActionWidthPx())
+
+    private fun timelineFrameWidth(viewportWidth: Int): Int =
+        timelineTracksFrame.width.takeIf { it > 0 }
+            ?: viewportWidth.takeIf { it > 0 }
+            ?: resources.displayMetrics.widthPixels
 
     private fun timelineOriginSpacerWidth(lane: View): Int {
         if (lane.width > 0 && lane.isLaidOut &&
@@ -6154,17 +6591,41 @@ class VideoEditorActivity : Activity() {
     }
 
     private fun timelineOriginSpacerWidthFallback(viewportWidth: Int = 0): Int =
-        TimelineScaleMath.originSpacerWidthForCenteredPlayhead(
-            timelineFrameWidth(viewportWidth),
-            timelineHeaderGutterWidthPx()
+        TimelineScaleMath.timeOriginContentXForCenteredPlayhead(timelineFrameWidth(viewportWidth))
+
+    private fun timelineLeadingPaddingWidth(viewportWidth: Int = 0): Int =
+        TimelineScaleMath.leadingContentPaddingWidthForCenteredPlayhead(
+            timelineFrameWidth(viewportWidth), timelineHeaderGutterWidthPx()
         )
 
     private fun timelineEndSpacerWidth(viewportWidth: Int = 0): Int =
-        TimelineScaleMath.endSpacerWidthForCenteredPlayhead(
-            timelineFrameWidth(viewportWidth),
-            timelineHeaderGutterWidthPx(),
-            dp(3)
-        )
+        TimelineScaleMath.trailingContentPaddingWidthForCenteredPlayhead(timelineFrameWidth(viewportWidth))
+
+    /** Keep matching start/end padding on every row when viewport dimensions change. */
+    private fun updateTimelineContentSpacers() {
+        if (!::timelineTracks.isInitialized || !::timelineSharedScrollView.isInitialized) return
+        val leadingWidth = timelineLeadingPaddingWidth(timelineSharedScrollView.width)
+        val trailingWidth = timelineEndSpacerWidth(timelineSharedScrollView.width)
+        for (index in 0 until timelineTracks.childCount) {
+            val row = timelineTracks.getChildAt(index) as? LinearLayout ?: continue
+            val leading = row.findViewWithTag<View>("timeline-leading-padding") ?: continue
+            val leadingParams = leading.layoutParams as? LinearLayout.LayoutParams ?: continue
+            if (leadingParams.width != leadingWidth) {
+                leadingParams.width = leadingWidth
+                leading.layoutParams = leadingParams
+            }
+            val track = row.findViewWithTag<LinearLayout>("timeline-track-content") ?: continue
+            val endIndex = (0 until track.childCount).lastOrNull { childIndex ->
+                track.getChildAt(childIndex)?.tag == "timeline-end-spacer"
+            } ?: continue
+            val end = track.getChildAt(endIndex)
+            val endParams = end.layoutParams as? LinearLayout.LayoutParams ?: continue
+            if (endParams.width != trailingWidth) {
+                endParams.width = trailingWidth
+                end.layoutParams = endParams
+            }
+        }
+    }
 
     private fun ensureTrimHandlesReachable(index: Int): Boolean {
         val clip = clips.getOrNull(index) ?: return false
@@ -6322,9 +6783,14 @@ class VideoEditorActivity : Activity() {
                     if (clipIndex == 1 && clipBounds == "none") clipBounds = bounds
                 }
             }
-            if (view is ImageView && description.startsWith("Klip karesi @")) {
+            val thumbnailTimestampPrefix = when {
+                description.startsWith("Klip karesi @") -> "Klip karesi @"
+                description.startsWith("Klip ızgara karesi @") -> "Klip ızgara karesi @"
+                else -> null
+            }
+            if (view is ImageView && thumbnailTimestampPrefix != null) {
                 cellCandidates++
-                val timestampStart = description.indexOf("Klip karesi @") + "Klip karesi @".length
+                val timestampStart = description.indexOf(thumbnailTimestampPrefix) + thumbnailTimestampPrefix.length
                 val timestampEnd = description.indexOf("ms", timestampStart)
                 val timestamp = if (timestampEnd > timestampStart) {
                     description.substring(timestampStart, timestampEnd).toLongOrNull()
@@ -6395,16 +6861,13 @@ class VideoEditorActivity : Activity() {
         val frameCenterPx = frameLocation[0] + timelineTracksFrame.width / 2
         val expectedScrollPx = TimelineScaleMath.pixelsForTime(timelinePlayheadMs, pixelsPerSecond)
         val laneScrolls = timelineScrollViews.joinToString(",") { it.scrollX.toString() }
-        // The time-zero point is the RIGHT edge of the leading spacer, not its left edge.
-        val originRightScreenXs = timelineScrollViews.joinToString(",") { lane ->
-            val track = lane.getChildAt(0) as? LinearLayout
-            val origin = track?.getChildAt(0)
-            if (origin == null) Int.MIN_VALUE.toString()
-            else {
-                val location = IntArray(2)
-                origin.getLocationOnScreen(location)
-                (location[0] + origin.width).toString()
-            }
+        // The time-zero point is the RIGHT edge of the scrolling ruler header, not its left edge.
+        val rulerRow = timelineTracks.getChildAt(0) as? LinearLayout
+        val rulerHeader = rulerRow?.getChildAt(1)
+        val originRightScreenXs = if (rulerHeader == null) Int.MIN_VALUE.toString() else {
+            val location = IntArray(2)
+            rulerHeader.getLocationOnScreen(location)
+            (location[0] + rulerHeader.width).toString()
         }
         android.util.Log.i(
             "TimelineSyncTest",
@@ -6895,10 +7358,16 @@ class VideoEditorActivity : Activity() {
                             timelinePlayheadMs = pendingSeek.coerceIn(0L, totalOutputDurationMs())
                             comp.playWhenReady = pendingTimelineCompositionResumeAfterSeek
                             pendingTimelineCompositionResumeAfterSeek = false
-                            // Keep the prepared video surface visible during the source's
-                            // cold still-decoder bootstrap; do not cover it with black.
-                            awaitingInitialPreviewBootstrap = false
-                            requestPreviewFrameAt(timelinePlayheadMs, keepPreviousFrame = true)
+                            // A seek can move CompositionPlayer back to BUFFERING after the
+                            // READY callback that delivered it. Keep the cold-still gate closed
+                            // here; the next READY callback owns the single bootstrap request.
+                            // Starting MMR now races the seek's decoder preparation and the
+                            // delayed bootstrap below would immediately cancel this first task.
+                            awaitingInitialPreviewBootstrap = true
+                            if (timelineSyncTestEnabled) android.util.Log.i(
+                                "TimelineSyncTest",
+                                "TIMELINE_PREVIEW_SEEK_APPLIED positionMs=$timelinePlayheadMs waitingForReady=true"
+                            )
                             updateTimelinePlayheadLabel()
                         }
                     }
@@ -6921,9 +7390,22 @@ class VideoEditorActivity : Activity() {
                         // player preparation; the live preview is already READY.
                         playerView.postDelayed({
                             if (timelineCompositionPlayer === comp) {
-                                // Release the startup gate even if playback began during
-                                // the short surface-settle window. The next paused seek
-                                // can then request its own exact frame.
+                                // A seek issued by the preceding READY callback can put the
+                                // player back into BUFFERING. Do not release the still-decode
+                                // gate or start MMR until that seek has reached READY too.
+                                if (comp.playbackState != androidx.media3.common.Player.STATE_READY ||
+                                    pendingTimelineCompositionSeekMs != null
+                                ) {
+                                    initialPausedBaseFrameRefreshScheduled = false
+                                    if (timelineSyncTestEnabled) android.util.Log.i(
+                                        "TimelineSyncTest",
+                                        "TIMELINE_INITIAL_BASE_FRAME_BOOTSTRAP deferred=true " +
+                                            "state=${comp.playbackState} pendingSeek=${pendingTimelineCompositionSeekMs != null}"
+                                    )
+                                    return@postDelayed
+                                }
+                                // READY is stable after any pending seek. Release the startup
+                                // gate even if playback began during the surface-settle window.
                                 awaitingInitialPreviewBootstrap = false
                                 if (!comp.isPlaying && !comp.playWhenReady &&
                                     !isFinishing && !isDestroyed
@@ -9187,8 +9669,9 @@ class VideoEditorActivity : Activity() {
             put("selectedClipIndex", selectedClipIndex)
             put("timelinePlayheadMs", timelinePlayheadMs.coerceIn(0L, totalOutputDurationMs()))
             put("timelinePxPerSec", timelinePixelsPerSecond())
+            put("timelineScaleVersion", 1)
             // Backward compatibility for older project files.
-            put("timelineZoom", timelinePixelsPerSecond() / dp(22).toFloat().coerceAtLeast(1f))
+            put("timelineZoom", timelinePixelsPerSecond() / timelineDefaultPixelsPerSecond().coerceAtLeast(1f))
             put("timelineLaneOrder", JSONArray().apply {
                 timelineLaneOrder.forEach { put(it) }
             })
@@ -9361,6 +9844,16 @@ class VideoEditorActivity : Activity() {
 
         require(loadedClips.isNotEmpty()) { "Projede video klibi bulunamadı." }
 
+        val previousClipDurations = clips.associate { it.uri.toString() to it.durationMs }
+        val loadedClipDurations = loadedClips.associate { it.uri.toString() to it.durationMs }
+        previousClipDurations.forEach { (sourceUri, oldDuration) ->
+            if (loadedClipDurations[sourceUri] != oldDuration) {
+                invalidateTimelineThumbnailSource(
+                    Uri.parse(sourceUri),
+                    "project-source-removed-or-changed"
+                )
+            }
+        }
         clearProjectHistory()
         clips.clear()
         clips.addAll(loadedClips)
@@ -9405,13 +9898,15 @@ class VideoEditorActivity : Activity() {
                 if (key != null && key !in timelineLaneOrder) timelineLaneOrder.add(key)
             }
         }
-        val legacyZoom = json.optDouble("timelineZoom", 1.0).toFloat()
-            .takeIf { it.isFinite() }?.coerceIn(0.5f, 8.0f) ?: 1.0f
-        timelinePxPerSec = json.optDouble(
-            "timelinePxPerSec", (dp(22).toFloat() * legacyZoom).toDouble()
-        ).toFloat().takeIf { it.isFinite() }?.coerceIn(
-            dp(11).toFloat(), dp(720).toFloat()
-        ) ?: dp(22).toFloat()
+        val savedTimelineScale = json.optDouble("timelinePxPerSec", Double.NaN)
+            .toFloat().takeIf { it.isFinite() && it > 0f }
+        timelinePxPerSec = TimelineScaleMath.restorePixelsPerSecond(
+            savedPixelsPerSecond = savedTimelineScale,
+            savedScaleVersion = json.optInt("timelineScaleVersion", 0),
+            defaultPixelsPerSecond = timelineDefaultPixelsPerSecond(),
+            minimumPixelsPerSecond = dp(11).toFloat(),
+            maximumPixelsPerSecond = dp(720).toFloat()
+        )
         val savedTimelineScrollMs: Long? = when {
             migrateLegacyVideoLane -> null
             json.has("timelineHorizontalScrollMs") ->
@@ -11007,7 +11502,7 @@ class VideoEditorActivity : Activity() {
                 ).apply {
                     color = Color.WHITE
                     style = android.graphics.Paint.Style.STROKE
-                    strokeWidth = dp(2).toFloat()
+                    strokeWidth = dp(1).toFloat()
                 }
 
                 override fun draw(canvas: android.graphics.Canvas) {
@@ -11315,7 +11810,7 @@ class VideoEditorActivity : Activity() {
             // Otherwise short trimmed clips cannot be expanded back toward the source boundaries.
             // Keep a clear central drag area even on very short split fragments.
             // Each transparent edge target takes at most one third of the clip width.
-            val handleWidth = minOf(dp(40), (width / 3).coerceAtLeast(1))
+            val handleWidth = minOf(dp(48), (width / 3).coerceAtLeast(1))
             fun allowedDeltaPx(startMs:Long,endMs:Long):Pair<Float,Float>{
                 // Handle travel is measured on the project timeline, while clip in/out
                 // values remain source timestamps. Convert source bounds through speed
@@ -11368,14 +11863,14 @@ class VideoEditorActivity : Activity() {
                 isFocusable = true
                 isLongClickable = true
                 val visibleTabParams = FrameLayout.LayoutParams(
-                    dp(10).coerceAtLeast(1), ViewGroup.LayoutParams.MATCH_PARENT
+                    dp(14).coerceAtLeast(1), ViewGroup.LayoutParams.MATCH_PARENT
                 ).apply {
                     if (isStart) {
                         gravity = Gravity.TOP or Gravity.LEFT
-                        leftMargin = -dp(5)
+                        leftMargin = -dp(7)
                     } else {
                         gravity = Gravity.TOP or Gravity.RIGHT
-                        rightMargin = -dp(5)
+                        rightMargin = -dp(7)
                     }
                 }
                 addView(visibleTab, visibleTabParams)
@@ -11526,8 +12021,8 @@ class VideoEditorActivity : Activity() {
         addTrimHandle(isStart = false)
 
         val durationBadge = TextView(this).apply {
-            text = formatTimelineMs(durationMs)
-            textSize = if (height <= dp(18)) 7f else 8f
+            text = String.format(Locale.US, "%.1fs", durationMs / 1000.0)
+            textSize = if (height <= dp(18)) 8f else 9f
             setTextColor(Color.WHITE)
             setPadding(dp(3), 0, dp(3), 0)
             maxLines = 1
@@ -11540,9 +12035,50 @@ class VideoEditorActivity : Activity() {
         container.addView(durationBadge, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT,
             dp(if (height <= dp(18)) 12 else 14),
-            Gravity.BOTTOM or Gravity.END
-        ).apply { rightMargin = dp(2); bottomMargin = dp(2) })
+            Gravity.TOP or Gravity.START
+        ).apply { leftMargin = dp(2); topMargin = dp(2) })
         return container
+    }
+
+    private fun timelineSequentialFilmstripDecoderFor(
+        uri: Uri,
+        firstTargetTimeMs: Long
+    ): SequentialFilmstripFrameDecoder? {
+        val workerId = Thread.currentThread().id
+        val current = timelineSequentialFilmstripDecoders[workerId]
+        if (current != null) {
+            if (current.first == uri && !current.second.isInvalidated) return current.second
+            timelineSequentialFilmstripDecoders.remove(workerId, current)
+            runCatching { current.second.close() }
+        }
+        if (timelineSequentialFilmstripFailures[workerId] == uri) return null
+        timelineSequentialFilmstripFailures.remove(workerId)
+        return try {
+            SequentialFilmstripFrameDecoder(this, uri, firstTargetTimeMs).also { decoder ->
+                timelineSequentialFilmstripDecoders[workerId] = uri to decoder
+                android.util.Log.i(
+                    "TimelineThumbnail",
+                    "TIMELINE_SEQUENTIAL_DECODER_OPEN uri=$uri decoder=" + decoder.decoderName +
+                        " worker=$workerId firstTargetMs=$firstTargetTimeMs"
+                )
+            }
+        } catch (error: Exception) {
+            timelineSequentialFilmstripFailures[workerId] = uri
+            android.util.Log.w(
+                "TimelineThumbnail",
+                "Sequential MediaCodec setup failed for $uri; using compatibility decoder",
+                error
+            )
+            null
+        }
+    }
+
+    private fun releaseTimelineSequentialFilmstripDecoder() {
+        val workerId = Thread.currentThread().id
+        timelineSequentialFilmstripDecoders.remove(workerId)?.second?.let { decoder ->
+            runCatching { decoder.close() }
+        }
+        timelineSequentialFilmstripFailures.remove(workerId)
     }
 
     private fun timelineThumbnailRetrieverFor(uri: Uri, tag: String): MediaMetadataRetriever? {
@@ -11566,6 +12102,7 @@ class VideoEditorActivity : Activity() {
 
     private fun releaseTimelineThumbnailRetriever() {
         val threadId = Thread.currentThread().id
+        timelineThumbnailLastFrameTimesMs.remove(threadId)
         timelineThumbnailRetrievers.remove(threadId)?.second?.let { retriever ->
             runCatching { retriever.release() }
         }
@@ -11584,7 +12121,7 @@ class VideoEditorActivity : Activity() {
                 // Filmstrip cells are representative images, not frame-accurate preview.
             // Seeking to sync samples avoids decoding every inter-frame from the
             // previous keyframe for each separate thumbnail request.
-            .setSeekParameters(androidx.media3.exoplayer.SeekParameters.CLOSEST_SYNC)
+            .setSeekParameters(androidx.media3.exoplayer.SeekParameters.EXACT)
                 .setEffects(listOf(Presentation.createForHeight(144)))
                 .build()
                 .also { timelineThumbnailExtractors[threadId] = uri to it }
@@ -11993,7 +12530,7 @@ class VideoEditorActivity : Activity() {
             previewFrameOverlay.height.takeIf { it > 0 }
                 ?: (width / TimelineThumbnailMath.DEFAULT_SOURCE_ASPECT_RATIO).toInt().coerceAtLeast(1)
         }
-        return TimelineThumbnailMath.previewDecodeBounds(width, height)
+        return TimelineThumbnailMath.previewDecodeBounds(width, height, oversample = 1.5f)
     }
 
     /**
@@ -12446,86 +12983,224 @@ class VideoEditorActivity : Activity() {
         return timelineVideoAspectRatios[sourceKey] ?: result
     }
 
+    private fun timelineThumbnailFingerprint(bitmap: Bitmap): Long {
+        // A small, deterministic color grid is sufficient to recognize the exact
+        // same decoded sync frame without retaining additional bitmap allocations.
+        val sampleSide = 8
+        val prime = 1_099_511_628_211L
+        var hash = -3_750_764_393_456_079_579L
+        hash = (hash xor bitmap.width.toLong()) * prime
+        hash = (hash xor bitmap.height.toLong()) * prime
+        for (sampleY in 0 until sampleSide) {
+            val y = if (bitmap.height <= 1) 0 else {
+                sampleY * (bitmap.height - 1) / (sampleSide - 1)
+            }
+            for (sampleX in 0 until sampleSide) {
+                val x = if (bitmap.width <= 1) 0 else {
+                    sampleX * (bitmap.width - 1) / (sampleSide - 1)
+                }
+                hash = (hash xor (bitmap.getPixel(x, y).toLong() and 0xffffffffL)) * prime
+            }
+        }
+        return hash
+    }
+
+    private fun rememberTimelineSyncFrameFingerprint(
+        sourceKey: String,
+        timestampMs: Long,
+        fingerprint: Long,
+        maxNeighborDistanceMs: Long
+    ): Long? {
+        val samples = timelineThumbnailSyncFrameFingerprints.computeIfAbsent(sourceKey) {
+            java.util.LinkedHashMap<Long, Long>()
+        }
+        synchronized(samples) {
+            val previous = samples.entries.map { it.key to it.value }
+            val duplicateTimeMs = TimelineThumbnailMath.nearbyDuplicateSyncFrameTimeMs(
+                requestedTimeMs = timestampMs,
+                fingerprint = fingerprint,
+                previousSamples = previous,
+                maxDistanceMs = maxNeighborDistanceMs
+            )
+            samples[timestampMs] = fingerprint
+            while (samples.size > 256) {
+                val iterator = samples.entries.iterator()
+                if (iterator.hasNext()) {
+                    iterator.next()
+                    iterator.remove()
+                } else {
+                    break
+                }
+            }
+            return duplicateTimeMs
+        }
+    }
+
     private fun decodeTimelineFrame(
         uri: Uri,
         timeMs: Long,
         maxWidthPx: Int,
-        maxHeightPx: Int
+        maxHeightPx: Int,
+        cellWindowMs: Long,
+        priorityDistanceMs: Long
     ): Bitmap? {
-        // Keep the measured fast path first: the API-35 filmstrip benchmark passed
-        // with MediaMetadataRetriever as the primary decoder. Media3 remains a
-        // compatibility fallback for sources the platform decoder cannot read.
-        // The reserved exact-playhead decoder remains isolated on its own executor.
         val requestedTimeMs = timeMs.coerceAtLeast(0L)
-        val frameTimeUs = requestedTimeMs * 1_000L
-        val platformStartedAt = SystemClock.uptimeMillis()
-        val retriever = timelineThumbnailRetrieverFor(uri, "TimelineThumbnail")
-        var platformDecodePath = "unavailable"
-        val platformFrame = retriever?.let { activeRetriever ->
-            val scaledFrame = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                runCatching {
-                    activeRetriever.getScaledFrameAtTime(
-                        frameTimeUs,
-                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
-                        maxWidthPx.coerceAtLeast(1),
-                        maxHeightPx.coerceAtLeast(1)
+        // All frame extraction, including sync probes, enters the same dedicated
+        // decoder. Metadata/disk preparation remains parallel on thumbnail workers.
+        val task = TimelineThumbnailDecodeTask(
+            requestedTimeMs = requestedTimeMs,
+            priorityDistanceMs = priorityDistanceMs.coerceAtLeast(0L),
+            sequence = timelineThumbnailTaskSequence.incrementAndGet(),
+            sourceUriKey = uri.toString()
+        ) {
+            decodeTimelineFrameOnDecoderThread(
+                uri, requestedTimeMs, maxWidthPx, maxHeightPx, cellWindowMs
+            )
+        }
+        return try {
+            timelineFrameDecoderExecutor.execute(task)
+            task.get()
+        } catch (interrupted: InterruptedException) {
+            task.cancel(true)
+            timelineFrameDecoderExecutor.remove(task)
+            Thread.currentThread().interrupt()
+            null
+        } catch (cancelled: java.util.concurrent.CancellationException) {
+            null
+        } catch (error: Exception) {
+            task.cancel(true)
+            timelineFrameDecoderExecutor.remove(task)
+            android.util.Log.w(
+                "TimelineThumbnail",
+                "Queued frame extraction failed for $uri at ${requestedTimeMs}ms",
+                error
+            )
+            null
+        }
+    }
+
+    /**
+     * Resolve an exact filmstrip frame by its decoded frame index when the source
+     * exposes duration/frame-count metadata. This avoids an additional timestamp
+     * seek after a duplicate sync-frame probe. Keep the full-resolution indexed
+     * path bounded; larger sources retain the scaled timestamp decoder.
+     */
+    private fun decodeTimelineFrameOnDecoderThread(
+        uri: Uri,
+        requestedTimeMs: Long,
+        maxWidthPx: Int,
+        maxHeightPx: Int,
+        cellWindowMs: Long
+    ): Bitmap? {
+        if (Thread.currentThread().isInterrupted) return null
+        val workerId = Thread.currentThread().id
+        val frameTimeUs = requestedTimeMs.coerceAtLeast(0L) * 1_000L
+
+        // Primary path: preserve the decoder position across ascending filmstrip
+        // timestamps. Intermediate frames are discarded by MediaCodec before any
+        // Bitmap is allocated; only each requested cell becomes an app thumbnail.
+        val sequentialDecoder = timelineSequentialFilmstripDecoderFor(uri, requestedTimeMs)
+        if (sequentialDecoder != null) {
+            val sequentialStartedAt = SystemClock.uptimeMillis()
+            try {
+                val decoded = sequentialDecoder.decodeAtOrAfter(
+                    requestedTimeMs,
+                    maxWidthPx.coerceAtLeast(1),
+                    maxHeightPx.coerceAtLeast(1),
+                    TimelineThumbnailMath.sequentialDecodeGapLimitMs(cellWindowMs)
+                )
+                if (decoded != null && !Thread.currentThread().isInterrupted) {
+                    timelineThumbnailLastFrameTimesMs[workerId] = decoded.presentationTimeMs
+                    if (timelineSyncTestEnabled) android.util.Log.i(
+                        "TimelineFrameSyncTest",
+                        "TIMELINE_THUMBNAIL_DECODED requestedMs=$requestedTimeMs " +
+                            "actualFrameMs=${decoded.presentationTimeMs} " +
+                            "decoder=media-codec-sequential worker=$workerId " +
+                            "decodeMs=${SystemClock.uptimeMillis() - sequentialStartedAt}"
                     )
-                }.getOrNull()
-            } else {
-                null
-            }
-            if (scaledFrame != null) {
-                platformDecodePath = "scaled"
-                scaledFrame
-            } else {
-                platformDecodePath = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                    "full-frame-fallback"
-                } else {
-                    "full-frame-legacy"
+                    return decoded.bitmap
                 }
-                runCatching {
-                    activeRetriever.getFrameAtTime(
-                        frameTimeUs,
-                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC
-                    )
-                }.getOrNull()
+                decoded?.bitmap?.let { if (!it.isRecycled) it.recycle() }
+            } catch (error: Exception) {
+                if (Thread.currentThread().isInterrupted) return null
+                sequentialDecoder.markInvalidated()
+                timelineSequentialFilmstripDecoders.remove(workerId)?.second?.let { decoder ->
+                    runCatching { decoder.close() }
+                }
+                timelineSequentialFilmstripFailures[workerId] = uri
+                android.util.Log.w(
+                    "TimelineThumbnail",
+                    "Sequential MediaCodec decode failed for $uri at " +
+                        requestedTimeMs + "ms; using compatibility decoder",
+                    error
+                )
             }
         }
-        if (platformFrame != null) {
+
+        if (Thread.currentThread().isInterrupted) return null
+        val retriever = timelineThumbnailRetrieverFor(uri, "TimelineThumbnail")
+            ?: return null
+
+        // Decode each filmstrip cell once. The former sync-frame fingerprint
+        // probe decoded a second frame whenever adjacent cells shared a GOP
+        // anchor, doubling codec work exactly on the slowest visible cells.
+        // OPTION_CLOSEST gives each cell its own requested presentation time.
+        val startedAt = SystemClock.uptimeMillis()
+        val frame = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            runCatching {
+                retriever.getScaledFrameAtTime(
+                    frameTimeUs,
+                    MediaMetadataRetriever.OPTION_CLOSEST,
+                    maxWidthPx.coerceAtLeast(1),
+                    maxHeightPx.coerceAtLeast(1)
+                )
+            }.getOrNull()
+        } else {
+            runCatching {
+                retriever.getFrameAtTime(
+                    frameTimeUs,
+                    MediaMetadataRetriever.OPTION_CLOSEST
+                )
+            }.getOrNull()
+        }
+
+        if (Thread.currentThread().isInterrupted) {
+            frame?.let { if (!it.isRecycled) it.recycle() }
+            return null
+        }
+        if (frame != null && !frame.isRecycled) {
+            timelineThumbnailLastFrameTimesMs[workerId] = requestedTimeMs
             if (timelineSyncTestEnabled) android.util.Log.i(
                 "TimelineFrameSyncTest",
                 "TIMELINE_THUMBNAIL_DECODED requestedMs=$requestedTimeMs " +
-                    "decoder=platform-mmr-primary worker=${Thread.currentThread().id} " +
-                    "decodeMs=${SystemClock.uptimeMillis() - platformStartedAt} " +
-                    "path=$platformDecodePath bitmap=${platformFrame.width}x${platformFrame.height}"
+                    "decoder=platform-mmr-single-pass worker=$workerId " +
+                    "decodeMs=${SystemClock.uptimeMillis() - startedAt} " +
+                    "path=scaled-closest bitmap=${frame.width}x${frame.height}"
             )
-            return platformFrame
+            return frame
         }
 
         if (Thread.currentThread().isInterrupted) return null
 
-        // Unsupported platform formats may still be handled by Media3. This path
-        // is intentionally fallback-only so a slow Media3 timeout cannot delay
-        // normal H.264 filmstrip frames.
+        // Unsupported formats retain the existing Media3 compatibility path.
         val extractor = timelineThumbnailExtractorFor(uri) ?: return null
         var frameFuture: java.util.concurrent.Future<FrameExtractor.Frame>? = null
         return try {
-            val startedAt = SystemClock.uptimeMillis()
-            val future = extractor.getFrame(requestedTimeMs)
+            val fallbackStartedAt = SystemClock.uptimeMillis()
+            val future = extractor.getFrame(requestedTimeMs.coerceAtLeast(0L))
             frameFuture = future
-            val frame = future.get(2_500L, TimeUnit.MILLISECONDS)
+            val decoded = future.get(2_500L, TimeUnit.MILLISECONDS)
             if (Thread.currentThread().isInterrupted) {
-                if (!frame.bitmap.isRecycled) frame.bitmap.recycle()
+                if (!decoded.bitmap.isRecycled) decoded.bitmap.recycle()
                 return null
             }
             if (timelineSyncTestEnabled) android.util.Log.i(
                 "TimelineFrameSyncTest",
                 "TIMELINE_THUMBNAIL_DECODED requestedMs=$requestedTimeMs " +
-                    "actualFrameMs=${frame.presentationTimeMs} decoder=media3-fallback " +
-                    "worker=${Thread.currentThread().id} " +
-                    "decodeMs=${SystemClock.uptimeMillis() - startedAt}"
+                    "actualFrameMs=${decoded.presentationTimeMs} decoder=media3-fallback " +
+                    "worker=$workerId decodeMs=${SystemClock.uptimeMillis() - fallbackStartedAt}"
             )
-            frame.bitmap
+            decoded.bitmap
         } catch (error: Exception) {
             frameFuture?.cancel(true)
             android.util.Log.w(
@@ -12536,7 +13211,6 @@ class VideoEditorActivity : Activity() {
             null
         }
     }
-
     private fun requestTimelinePoster(uri: Uri) {
         val cacheKey = uri.toString()
         val sourceGeneration = timelineThumbnailSourceGeneration(uri)
@@ -12641,6 +13315,398 @@ class VideoEditorActivity : Activity() {
         }
     }
 
+    private fun timelineThumbnailGridDiskSourceKey(uri: Uri): String =
+        timelineThumbnailDiskSourceKey(uri) + "|grid-v1"
+
+    /**
+     * Starts one source-level grid job after the timeline has been laid out.
+     * The source-wide job is shared by every clip cell for the same URI.
+     */
+    private fun scheduleTimelineFrameGridsForCurrentClips() {
+        if (clips.isEmpty() || isFinishing || isDestroyed) return
+        val schedule = Runnable {
+            if (clips.isEmpty() || isFinishing || isDestroyed) return@Runnable
+            val viewportWidth = if (::timelineSharedScrollView.isInitialized) {
+                timelineSharedScrollView.width.takeIf { it > 0 }
+                    ?: resources.displayMetrics.widthPixels
+            } else {
+                resources.displayMetrics.widthPixels
+            }
+            val visibleSpanMs = (
+                viewportWidth.toDouble() /
+                    timelinePixelsPerSecond().coerceAtLeast(1f).toDouble() * 1_000.0
+            ).toLong().coerceAtLeast(500L)
+            val visibleProjectStart = (timelinePlayheadMs - visibleSpanMs / 2L).coerceAtLeast(0L)
+            val visibleProjectEnd = visibleProjectStart + visibleSpanMs
+
+            clips.toList().forEach { clip ->
+                val segment = TimelineVideoSegment(
+                    clip.timelineStartMs, clip.startMs, clip.endMs, clip.durationMs, clip.speed
+                )
+                val clipDurationOnTimeline = ClipSpeedMath.timelineDurationMs(
+                    (clip.endMs - clip.startMs).coerceAtLeast(0L), clip.speed
+                )
+                val clipProjectEnd = clip.timelineStartMs + clipDurationOnTimeline
+                val overlapStart = maxOf(clip.timelineStartMs, visibleProjectStart)
+                val overlapEnd = minOf(clipProjectEnd, visibleProjectEnd)
+                val anchorStart = when {
+                    overlapEnd > overlapStart -> overlapStart
+                    clipProjectEnd <= visibleProjectStart ->
+                        (clipProjectEnd - 1L).coerceAtLeast(clip.timelineStartMs)
+                    else -> clip.timelineStartMs
+                }
+                val anchorEnd = if (overlapEnd > overlapStart) overlapEnd else anchorStart
+                val visibleSourceStart = TimelineVideoMath.sourceTimeAtProjectTime(
+                    segment, anchorStart
+                ) ?: clip.startMs
+                val visibleSourceEnd = TimelineVideoMath.sourceTimeAtProjectTime(
+                    segment, anchorEnd
+                ) ?: visibleSourceStart
+                ensureTimelineFrameGrid(
+                    clip.uri, clip.durationMs, visibleSourceStart, visibleSourceEnd
+                )
+            }
+        }
+        if (::timelineSharedScrollView.isInitialized) timelineSharedScrollView.post(schedule)
+        else timelineHandler.post(schedule)
+    }
+
+    private fun ensureTimelineFrameGrid(
+        uri: Uri,
+        durationMs: Long,
+        visibleStartMs: Long,
+        visibleEndMs: Long
+    ) {
+        if (durationMs <= 0L || isFinishing || isDestroyed) return
+        val sourceKey = uri.toString()
+        if (completedTimelineFrameGridSources.contains(sourceKey)) return
+        val existing = timelineFrameGridStates[sourceKey]
+        if (existing != null && existing.sourceGeneration == timelineThumbnailSourceGeneration(uri)) return
+
+        val frames = TimelineFrameGridPlanner.orderedFrames(durationMs, visibleStartMs, visibleEndMs)
+        if (frames.isEmpty()) return
+        val aspectRatio = timelineVideoAspectRatio(uri)
+        val stripHeightPx = dp(TimelineThumbnailMath.THUMBNAIL_STRIP_HEIGHT_DP).coerceAtLeast(1)
+        val stripWidthPx = dp(TimelineThumbnailMath.thumbnailCellWidthPx(stripHeightPx, aspectRatio))
+            .coerceAtLeast(1)
+        val decodeBounds = TimelineThumbnailMath.decodeBounds(
+            stripWidthPx,
+            stripHeightPx,
+            aspectRatio,
+            TimelineThumbnailMath.FILMSTRIP_DECODE_SCALE
+        )
+        val state = TimelineGridGenerationState(
+            uri = uri,
+            sourceKey = sourceKey,
+            sourceGeneration = timelineThumbnailSourceGeneration(uri),
+            durationMs = durationMs,
+            frames = frames,
+            decodeWidthPx = decodeBounds.first,
+            decodeHeightPx = decodeBounds.second,
+            startedAtUptimeMs = SystemClock.uptimeMillis()
+        )
+        if (timelineFrameGridStates.putIfAbsent(sourceKey, state) != null) return
+        android.util.Log.i(
+            "TimelineThumbnail",
+            "TIMELINE_GRID_GENERATION_QUEUED uri=" + uri +
+                " durationMs=" + durationMs +
+                " frameCount=" + frames.size +
+                " visibleStartMs=" + visibleStartMs +
+                " visibleEndMs=" + visibleEndMs +
+                " firstStageMs=4000"
+        )
+        enqueueNextTimelineGridFrame(state)
+    }
+
+    private fun markTimelineGridReady(sourceKey: String, state: TimelineGridGenerationState) {
+        completedTimelineFrameGridSources.add(sourceKey)
+        pendingTimelineGridTargets[sourceKey]?.forEach { target ->
+            if (target.sourceGeneration == state.sourceGeneration) target.gridReady = true
+        }
+        timelineHandler.post { scheduleTimelineGridIdleExactPass() }
+    }
+
+    private fun enqueueNextTimelineGridFrame(state: TimelineGridGenerationState) {
+        if (timelineFrameGridStates[state.sourceKey] !== state ||
+            state.sourceGeneration != timelineThumbnailSourceGeneration(state.uri) ||
+            isFinishing || isDestroyed
+        ) return
+
+        if (state.nextIndex >= state.frames.size) {
+            val diskKey = state.diskSourceKey ?: timelineThumbnailGridDiskSourceKey(state.uri)
+            state.diskSourceKey = diskKey
+            // A grid is reusable after process restart only if every planned
+            // timestamp was successfully read or decoded and persisted. Keep the
+            // marker absent after partial failures so a later session retries them.
+            val markerWritten = state.failedFrames == 0 &&
+                timelineThumbnailDiskCache.markGridComplete(diskKey)
+            timelineFrameGridStates.remove(state.sourceKey, state)
+            markTimelineGridReady(state.sourceKey, state)
+            android.util.Log.i(
+                "TimelineThumbnail",
+                "TIMELINE_GRID_GENERATION_COMPLETE uri=" + state.uri +
+                    " durationMs=" + state.durationMs +
+                    " frames=" + state.frames.size +
+                    " persisted=" + state.persistedFrames +
+                    " failed=" + state.failedFrames +
+                    " elapsedMs=" + (SystemClock.uptimeMillis() - state.startedAtUptimeMs) +
+                    " marker=" + markerWritten
+            )
+            return
+        }
+
+        val frameRequest = state.frames[state.nextIndex++]
+        val timestampMs = frameRequest.timestampMs
+        val queuedAtUptimeMs = SystemClock.uptimeMillis()
+        lateinit var task: TimelineThumbnailTask
+        task = TimelineThumbnailTask(
+            kotlin.math.abs(timestampMs - timelinePlayheadMs),
+            timelineThumbnailTaskSequence.incrementAndGet(),
+            sourceUriKey = state.sourceKey,
+            sourceGeneration = state.sourceGeneration,
+            onFinished = { untrackTimelineThumbnailTask(state.sourceKey, task) }
+        ) {
+            if (Thread.currentThread().isInterrupted ||
+                timelineFrameGridStates[state.sourceKey] !== state ||
+                state.sourceGeneration != timelineThumbnailSourceGeneration(state.uri)
+            ) return@TimelineThumbnailTask
+
+            val diskKey = state.diskSourceKey ?: timelineThumbnailGridDiskSourceKey(state.uri).also {
+                state.diskSourceKey = it
+            }
+            if (state.nextIndex == 1 && timelineThumbnailDiskCache.isGridComplete(diskKey)) {
+                timelineFrameGridStates.remove(state.sourceKey, state)
+                markTimelineGridReady(state.sourceKey, state)
+                android.util.Log.i(
+                    "TimelineThumbnail",
+                    "TIMELINE_GRID_DISK_RESTORED uri=" + state.uri +
+                        " durationMs=" + state.durationMs +
+                        " elapsedMs=" + (SystemClock.uptimeMillis() - state.startedAtUptimeMs)
+                )
+                return@TimelineThumbnailTask
+            }
+
+            val taskStartedAtUptimeMs = SystemClock.uptimeMillis()
+            val queueWaitMs = (taskStartedAtUptimeMs - queuedAtUptimeMs).coerceAtLeast(0L)
+            var diskLookupMs = 0L
+            var frameDecodeMs = 0L
+            var frameBitmap: Bitmap? = null
+            val diskLookupStartedAtUptimeMs = SystemClock.uptimeMillis()
+            val cachedTimestampExists =
+                timelineThumbnailDiskCache.containsTimestamp(diskKey, timestampMs)
+            if (cachedTimestampExists) {
+                frameBitmap = timelineThumbnailDiskCache.findNearest(diskKey, timestampMs, 0L)?.bitmap
+            }
+            diskLookupMs = SystemClock.uptimeMillis() - diskLookupStartedAtUptimeMs
+            if (!cachedTimestampExists) {
+                val sourceDecodeStartedAtUptimeMs = SystemClock.uptimeMillis()
+                frameBitmap = decodeTimelineFrame(
+                    state.uri,
+                    timestampMs,
+                    state.decodeWidthPx,
+                    state.decodeHeightPx,
+                    frameRequest.intervalMs,
+                    kotlin.math.abs(timestampMs - timelinePlayheadMs)
+                )
+                frameDecodeMs = SystemClock.uptimeMillis() - sourceDecodeStartedAtUptimeMs
+            }
+            val frameElapsedMs = SystemClock.uptimeMillis() - taskStartedAtUptimeMs
+
+            if (Thread.currentThread().isInterrupted ||
+                timelineFrameGridStates[state.sourceKey] !== state ||
+                state.sourceGeneration != timelineThumbnailSourceGeneration(state.uri)
+            ) {
+                frameBitmap?.let { if (!it.isRecycled) it.recycle() }
+                return@TimelineThumbnailTask
+            }
+
+            if (frameBitmap != null && !frameBitmap.isRecycled) {
+                val persisted = timelineThumbnailDiskCache.put(
+                    diskKey,
+                    timestampMs,
+                    state.decodeWidthPx,
+                    state.decodeHeightPx,
+                    frameBitmap
+                )
+                if (persisted) {
+                    state.persistedFrames++
+                    timelineThumbnailCache.put(state.uri.toString() + "#" + timestampMs, frameBitmap)
+                    publishTimelineGridFrame(state.uri, state.sourceGeneration, timestampMs, frameBitmap)
+                } else {
+                    state.failedFrames++
+                    if (!frameBitmap.isRecycled) frameBitmap.recycle()
+                }
+            } else {
+                state.failedFrames++
+            }
+
+            android.util.Log.i(
+                "TimelineThumbnail",
+                "TIMELINE_GRID_FRAME uri=" + state.uri +
+                    " sourceMs=" + timestampMs +
+                    " stageMs=" + frameRequest.stageMs +
+                    " queueWaitMs=" + queueWaitMs +
+                    " diskLookupMs=" + diskLookupMs +
+                    " frameDecodeMs=" + frameDecodeMs +
+                    " frameElapsedMs=" + frameElapsedMs +
+                    " persisted=" + (frameBitmap != null && !frameBitmap.isRecycled) +
+                    " progress=" + state.nextIndex + "/" + state.frames.size
+            )
+            enqueueNextTimelineGridFrame(state)
+        }
+        trackTimelineThumbnailTask(state.sourceKey, task)
+        try {
+            timelineThumbnailExecutor.execute(task)
+        } catch (_: java.util.concurrent.RejectedExecutionException) {
+            untrackTimelineThumbnailTask(state.sourceKey, task)
+            state.failedFrames++
+            android.util.Log.e(
+                "TimelineThumbnail",
+                "TIMELINE_GRID_FRAME_REJECTED uri=" + state.uri + " sourceMs=" + timestampMs
+            )
+            enqueueNextTimelineGridFrame(state)
+        }
+    }
+
+    private fun publishTimelineGridFrame(
+        uri: Uri,
+        sourceGeneration: Long,
+        gridTimestampMs: Long,
+        bitmap: Bitmap
+    ) {
+        if (bitmap.isRecycled) return
+        val sourceKey = uri.toString()
+        pendingTimelineGridTargets[sourceKey]?.forEach { request ->
+            if (request.sourceGeneration != sourceGeneration) return@forEach
+            val previousTime = request.paintedTimestampMs
+            val previousDistance = previousTime?.let {
+                kotlin.math.abs(it - request.timestampMs)
+            } ?: Long.MAX_VALUE
+            val nextDistance = kotlin.math.abs(gridTimestampMs - request.timestampMs)
+            if (nextDistance > previousDistance) return@forEach
+            val target = request.target.get() ?: return@forEach
+            if (target.tag?.toString() != sourceKey + "#" + request.timestampMs) return@forEach
+            timelineHandler.post {
+                if (request.sourceGeneration != timelineThumbnailSourceGeneration(uri) ||
+                    target.tag?.toString() != sourceKey + "#" + request.timestampMs ||
+                    bitmap.isRecycled
+                ) return@post
+                val currentDistance = request.paintedTimestampMs?.let {
+                    kotlin.math.abs(it - request.timestampMs)
+                } ?: Long.MAX_VALUE
+                if (nextDistance > currentDistance) return@post
+                target.setImageBitmap(bitmap)
+                target.contentDescription = "Klip ızgara karesi @" + gridTimestampMs + "ms"
+                request.paintedTimestampMs = gridTimestampMs
+                val paintedAtUptimeMs = SystemClock.uptimeMillis()
+                val elapsedMs = paintedAtUptimeMs - request.requestedAtUptimeMs
+                if (previousTime == null) {
+                    android.util.Log.i(
+                        "TimelineThumbnail",
+                        "TIMELINE_GRID_FIRST_PAINT uri=" + uri +
+                            " targetMs=" + request.timestampMs +
+                            " gridMs=" + gridTimestampMs +
+                            " distanceMs=" + nextDistance +
+                            " elapsedMs=" + elapsedMs +
+                            " requestUptimeMs=" + request.requestedAtUptimeMs +
+                            " paintedUptimeMs=" + paintedAtUptimeMs +
+                            " source=generated"
+                    )
+                } else {
+                    android.util.Log.i(
+                        "TimelineThumbnail",
+                        "TIMELINE_GRID_NEAREST_UPDATE uri=" + uri +
+                            " targetMs=" + request.timestampMs +
+                            " previousGridMs=" + previousTime +
+                            " gridMs=" + gridTimestampMs +
+                            " distanceMs=" + nextDistance +
+                            " elapsedMs=" + elapsedMs +
+                            " requestUptimeMs=" + request.requestedAtUptimeMs +
+                            " paintedUptimeMs=" + paintedAtUptimeMs
+                    )
+                }
+            }
+        }
+    }
+
+    private fun scheduleTimelineGridIdleExactPass() {
+        timelineHandler.removeCallbacks(timelineGridIdleExactPass)
+        if (!timelineScaleGestureActive && !isFinishing && !isDestroyed) {
+            timelineHandler.postDelayed(timelineGridIdleExactPass, 250L)
+        }
+    }
+
+    private fun onTimelineGridMotion() {
+        timelineGridMotionGeneration.incrementAndGet()
+        timelineGridExactTasksToCancel()
+        timelineHandler.removeCallbacks(timelineGridIdleExactPass)
+        if (!timelineScaleGestureActive) {
+            timelineHandler.postDelayed(timelineGridIdleExactPass, 250L)
+        }
+    }
+
+    private fun timelineGridExactTasksToCancel() {
+        pendingTimelineGridExactTasks.toList().forEach { task ->
+            timelineThumbnailExecutor.remove(task)
+            task.cancelForSupersededRequest()
+        }
+        pendingTimelineGridExactTasks.clear()
+    }
+
+    private fun runTimelineGridIdleExactPass() {
+        if (timelineScaleGestureActive || isFinishing || isDestroyed) return
+        // Keep at most one non-playhead exact fallback in flight. Missing grid
+        // cells are repaired serially rather than filling the shared decoder queue.
+        if (pendingTimelineGridExactTasks.isNotEmpty()) return
+        val motionGeneration = timelineGridMotionGeneration.get()
+        pendingTimelineGridTargets.entries.toList().forEach { (sourceKey, targets) ->
+            targets.toList().forEach { request ->
+                if (!request.gridReady || !request.diskLookupFinished || request.exactRequested) return@forEach
+                val target = request.target.get()
+                if (target == null || target.tag?.toString() != request.uri.toString() + "#" + request.timestampMs) {
+                    targets.remove(request)
+                    return@forEach
+                }
+                val nearestTime = request.paintedTimestampMs
+                val nearestDistance = nearestTime?.let {
+                    kotlin.math.abs(it - request.timestampMs)
+                } ?: Long.MAX_VALUE
+                if (nearestDistance <= 250L) {
+                    targets.remove(request)
+                    return@forEach
+                }
+                val visibleRect = android.graphics.Rect()
+                if (!target.isShown || !target.getGlobalVisibleRect(visibleRect)) return@forEach
+                request.exactRequested = true
+                targets.remove(request)
+                android.util.Log.i(
+                    "TimelineThumbnail",
+                    "TIMELINE_GRID_EXACT_FALLBACK uri=" + request.uri +
+                        " targetMs=" + request.timestampMs +
+                        " nearestGridMs=" + (nearestTime ?: "none") +
+                        " distanceMs=" + nearestDistance
+                )
+                requestTimelineThumbnailExact(
+                    request.uri,
+                    request.timestampMs,
+                    target,
+                    request.priorityDistanceMs,
+                    request.cellStartMs,
+                    request.cellEndMs,
+                    usePosterPlaceholder = false,
+                    gridMotionGeneration = motionGeneration
+                )
+                android.util.Log.i(
+                    "TimelineThumbnail",
+                    "TIMELINE_GRID_EXACT_ENQUEUED sourceMs=" + request.timestampMs +
+                        " queuedNonPlayheadExact=" + pendingTimelineGridExactTasks.size
+                )
+                return
+            }
+            if (targets.isEmpty()) pendingTimelineGridTargets.remove(sourceKey, targets)
+        }
+    }
+
     private fun requestTimelineThumbnail(
         uri: Uri,
         timeMs: Long,
@@ -12649,6 +13715,149 @@ class VideoEditorActivity : Activity() {
         cellStartMs: Long = timeMs,
         cellEndMs: Long = timeMs + 1L,
         usePosterPlaceholder: Boolean = false
+    ) {
+        val timestampMs = timeMs.coerceAtLeast(0L)
+        val sourceKey = uri.toString()
+        val sourceGeneration = timelineThumbnailSourceGeneration(uri)
+        val key = sourceKey + "#" + timestampMs
+        val requestedAt = SystemClock.uptimeMillis()
+        target.tag = key
+
+        val request = TimelineGridTarget(
+            uri = uri,
+            sourceGeneration = sourceGeneration,
+            timestampMs = timestampMs,
+            priorityDistanceMs = priorityDistanceMs,
+            cellStartMs = cellStartMs,
+            cellEndMs = cellEndMs,
+            target = WeakReference(target),
+            requestedAtUptimeMs = requestedAt,
+            gridReady = completedTimelineFrameGridSources.contains(sourceKey)
+        )
+        val requests = pendingTimelineGridTargets.computeIfAbsent(sourceKey) {
+            java.util.concurrent.CopyOnWriteArrayList()
+        }
+        requests.removeIf { existing -> existing.target.get() === target }
+        requests.add(request)
+
+        val nearestMemory = timelineThumbnailCache.snapshot().entries.mapNotNull { entry ->
+            if (!entry.key.startsWith(sourceKey + "#")) return@mapNotNull null
+            val cachedTime = entry.key.substringAfterLast("#").toLongOrNull() ?: return@mapNotNull null
+            val bitmap = entry.value
+            if (bitmap.isRecycled) return@mapNotNull null
+            Triple(kotlin.math.abs(cachedTime - timestampMs), cachedTime, bitmap)
+        }.minByOrNull { it.first }
+
+        if (nearestMemory != null) {
+            target.setImageBitmap(nearestMemory.third)
+            target.contentDescription = "Klip ızgara karesi @" + nearestMemory.second + "ms"
+            request.paintedTimestampMs = nearestMemory.second
+            request.diskLookupFinished = true
+            android.util.Log.i(
+                "TimelineThumbnail",
+                "TIMELINE_GRID_FIRST_PAINT uri=" + uri +
+                    " targetMs=" + timestampMs +
+                    " gridMs=" + nearestMemory.second +
+                    " distanceMs=" + nearestMemory.first +
+                    " elapsedMs=" + (SystemClock.uptimeMillis() - requestedAt) +
+                    " requestUptimeMs=" + requestedAt +
+                    " paintedUptimeMs=" + SystemClock.uptimeMillis() +
+                    " source=memory"
+            )
+        } else {
+            lateinit var diskTask: TimelineThumbnailTask
+            diskTask = TimelineThumbnailTask(
+                priorityDistanceMs,
+                timelineThumbnailTaskSequence.incrementAndGet(),
+                sourceUriKey = sourceKey,
+                sourceGeneration = sourceGeneration,
+                onFinished = { untrackTimelineThumbnailTask(sourceKey, diskTask) }
+            ) {
+                val gridDiskKey = timelineThumbnailGridDiskSourceKey(uri)
+                val nearest = timelineThumbnailDiskCache.findNearest(
+                    gridDiskKey, timestampMs, Long.MAX_VALUE
+                )
+                val frame = nearest?.bitmap
+                val fitted = if (frame != null && !frame.isRecycled) {
+                    val targetWidth = target.layoutParams?.width?.takeIf { it > 0 }
+                        ?: target.width.coerceAtLeast(1)
+                    val targetHeight = target.layoutParams?.height?.takeIf { it > 0 }
+                        ?: target.height.coerceAtLeast(1)
+                    val dimensions = TimelineThumbnailMath.fitDimensions(
+                        frame.width, frame.height, targetWidth, targetHeight
+                    )
+                    if (dimensions.first == frame.width && dimensions.second == frame.height) {
+                        frame
+                    } else {
+                        Bitmap.createScaledBitmap(frame, dimensions.first, dimensions.second, true).also {
+                            if (!frame.isRecycled) frame.recycle()
+                        }
+                    }
+                } else {
+                    null
+                }
+                if (Thread.currentThread().isInterrupted ||
+                    sourceGeneration != timelineThumbnailSourceGeneration(uri)
+                ) {
+                    fitted?.let { if (!it.isRecycled) it.recycle() }
+                    return@TimelineThumbnailTask
+                }
+                if (nearest != null && fitted != null && !fitted.isRecycled) {
+                    timelineThumbnailCache.put(sourceKey + "#" + nearest.timestampMs, fitted)
+                }
+                timelineHandler.post {
+                    request.diskLookupFinished = true
+                    if (sourceGeneration == timelineThumbnailSourceGeneration(uri) &&
+                        target.tag?.toString() == key &&
+                        nearest != null && fitted != null && !fitted.isRecycled
+                    ) {
+                        val previousTime = request.paintedTimestampMs
+                        val previousDistance = previousTime?.let {
+                            kotlin.math.abs(it - timestampMs)
+                        } ?: Long.MAX_VALUE
+                        val nextDistance = kotlin.math.abs(nearest.timestampMs - timestampMs)
+                        if (nextDistance <= previousDistance) {
+                            target.setImageBitmap(fitted)
+                            target.contentDescription = "Klip ızgara karesi @" + nearest.timestampMs + "ms"
+                            request.paintedTimestampMs = nearest.timestampMs
+                            android.util.Log.i(
+                                "TimelineThumbnail",
+                                "TIMELINE_GRID_FIRST_PAINT uri=" + uri +
+                                    " targetMs=" + timestampMs +
+                                    " gridMs=" + nearest.timestampMs +
+                                    " distanceMs=" + kotlin.math.abs(nearest.timestampMs - timestampMs) +
+                                    " elapsedMs=" + (SystemClock.uptimeMillis() - requestedAt) +
+                                    " requestUptimeMs=" + requestedAt +
+                                    " paintedUptimeMs=" + SystemClock.uptimeMillis() +
+                                    " source=disk"
+                            )
+                        }
+                    } else if (fitted != null && !fitted.isRecycled) {
+                        fitted.recycle()
+                    }
+                    if (request.gridReady) scheduleTimelineGridIdleExactPass()
+                }
+            }
+            trackTimelineThumbnailTask(sourceKey, diskTask)
+            try {
+                timelineThumbnailExecutor.execute(diskTask)
+            } catch (_: java.util.concurrent.RejectedExecutionException) {
+                untrackTimelineThumbnailTask(sourceKey, diskTask)
+                request.diskLookupFinished = true
+            }
+        }
+        if (request.gridReady) scheduleTimelineGridIdleExactPass()
+    }
+
+    private fun requestTimelineThumbnailExact(
+        uri: Uri,
+        timeMs: Long,
+        target: ImageView,
+        priorityDistanceMs: Long = kotlin.math.abs(timeMs - timelinePlayheadMs),
+        cellStartMs: Long = timeMs,
+        cellEndMs: Long = timeMs + 1L,
+        usePosterPlaceholder: Boolean = false,
+        gridMotionGeneration: Long? = null
     ) {
         val timestampMs = timeMs.coerceAtLeast(0L)
         val sourceKey = uri.toString()
@@ -12740,7 +13949,8 @@ class VideoEditorActivity : Activity() {
         val (decodeWidthPx, decodeHeightPx) = TimelineThumbnailMath.decodeBounds(
             targetCellWidthPx,
             targetCellHeightPx,
-            timelineVideoAspectRatio(uri)
+            timelineVideoAspectRatio(uri),
+            TimelineThumbnailMath.FILMSTRIP_DECODE_SCALE
         )
 
         var submittedAtUptimeMs = 0L
@@ -12751,12 +13961,16 @@ class VideoEditorActivity : Activity() {
         )
         lateinit var task: TimelineThumbnailTask
         task = TimelineThumbnailTask(
-            priorityDistanceMs.coerceAtLeast(0L),
+            timestampMs,
             timelineThumbnailTaskSequence.incrementAndGet(),
             sourceUriKey = sourceKey,
             sourceGeneration = sourceGeneration,
             onFinished = {
                 untrackTimelineThumbnailTask(sourceKey, task)
+                pendingTimelineGridExactTasks.remove(task)
+                if (gridMotionGeneration != null) {
+                    timelineHandler.post { scheduleTimelineGridIdleExactPass() }
+                }
             },
             onEnqueued = { submittedAtUptimeMs = SystemClock.uptimeMillis() },
             taskPriority = 0
@@ -12767,7 +13981,8 @@ class VideoEditorActivity : Activity() {
             val queueWaitMs = (taskStartedAtUptimeMs - queueSubmittedAtUptimeMs).coerceAtLeast(0L)
             val deferredWaitMs = (queueSubmittedAtUptimeMs - requestedAtUptimeMs).coerceAtLeast(0L)
             if (Thread.currentThread().isInterrupted ||
-                sourceGeneration != timelineThumbnailSourceGeneration(uri)
+                sourceGeneration != timelineThumbnailSourceGeneration(uri) ||
+                (gridMotionGeneration != null && gridMotionGeneration != timelineGridMotionGeneration.get())
             ) return@TimelineThumbnailTask
             var diskLookupDurationMs = 0L
             var frameDecodeDurationMs = -1L
@@ -12778,21 +13993,24 @@ class VideoEditorActivity : Activity() {
             var diskCacheVariantHit = false
             var decoded: Bitmap? = null
             var decodedSourceAspectRatio: Float? = null
+            // Keep the fingerprint available for the asynchronous disk writer below.
+            var diskSourceKey = sourceKey
             try {
                 // Persistent cache reads run on the background thumbnail workers,
                 // never on the main thread. A reopened project can therefore paint
                 // its cached filmstrip without blocking input or layout.
                 val diskLookupStartedAtUptimeMs = SystemClock.uptimeMillis()
+                diskSourceKey = timelineThumbnailDiskSourceKey(uri)
                 // First prefer the exact-size entry. If the same source frame was
                 // already cached at another viewport size (for example after an
                 // Activity/process recreation), reuse that exact timestamp and fit it
                 // to the new cell instead of decoding the source video again.
                 // maxDistanceMs=0 is intentional: no neighbouring frame may be shown.
                 val exactSizeDiskFrame = timelineThumbnailDiskCache.getExact(
-                    sourceKey, timestampMs, decodeWidthPx, decodeHeightPx
+                    diskSourceKey, timestampMs, decodeWidthPx, decodeHeightPx
                 )
                 val diskExact = exactSizeDiskFrame ?: timelineThumbnailDiskCache.findNearest(
-                    sourceKey,
+                    diskSourceKey,
                     timestampMs,
                     maxDistanceMs = 0L
                 )?.bitmap
@@ -12842,7 +14060,7 @@ class VideoEditorActivity : Activity() {
                     diskCacheHit = true
                     if (timelineLifecycleDiagnosticsEnabled) android.util.Log.i(
                         "TimelineThumbnail",
-                        "TIMELINE_THUMBNAIL_DISK_CACHE_HIT sourceMs=$timestampMs exactTimestamp=true " +
+                        "TIMELINE_THUMBNAIL_DISK_CACHE_HIT uri=$uri sourceMs=$timestampMs exactTimestamp=true " +
                             "exactSize=${!diskCacheVariantHit} cached=${cachedWidth}x${cachedHeight} " +
                             "target=${decodeWidthPx}x${decodeHeightPx}"
                     )
@@ -12860,7 +14078,14 @@ class VideoEditorActivity : Activity() {
 
                 if (!diskCacheHit) {
                     val frameDecodeStartedAtUptimeMs = SystemClock.uptimeMillis()
-                    val original = decodeTimelineFrame(uri, timestampMs, decodeWidthPx, decodeHeightPx)
+                    val original = decodeTimelineFrame(
+                        uri,
+                        timestampMs,
+                        decodeWidthPx,
+                        decodeHeightPx,
+                        (cellEndMs - cellStartMs).coerceAtLeast(1L),
+                        priorityDistanceMs
+                    )
                     val frameDecodedAtUptimeMs = SystemClock.uptimeMillis()
                     if (Thread.currentThread().isInterrupted ||
                         sourceGeneration != timelineThumbnailSourceGeneration(uri)
@@ -12918,9 +14143,16 @@ class VideoEditorActivity : Activity() {
                     runCatching {
                         timelineThumbnailDiskWriter.execute {
                             try {
-                                timelineThumbnailDiskCache.put(
-                                    sourceKey, timestampMs, decodeWidthPx, decodeHeightPx, cacheCopy
+                                val persisted = timelineThumbnailDiskCache.put(
+                                    diskSourceKey, timestampMs, decodeWidthPx, decodeHeightPx, cacheCopy
                                 )
+                                if (persisted && timelineLifecycleDiagnosticsEnabled) {
+                                    android.util.Log.i(
+                                        "TimelineThumbnail",
+                                        "TIMELINE_THUMBNAIL_DISK_CACHE_PERSISTED uri=$uri sourceMs=$timestampMs " +
+                                            "width=$decodeWidthPx height=$decodeHeightPx"
+                                    )
+                                }
                             } catch (error: Exception) {
                                 if (timelineLifecycleDiagnosticsEnabled) {
                                     android.util.Log.w(
@@ -12954,7 +14186,9 @@ class VideoEditorActivity : Activity() {
                     pendingTimelineThumbnailGenerations.remove(key)
                     pendingTimelineThumbnails.remove(key).orEmpty()
                 } else emptyList()
-                if (sourceGeneration != timelineThumbnailSourceGeneration(uri)) {
+                if (sourceGeneration != timelineThumbnailSourceGeneration(uri) ||
+                    (gridMotionGeneration != null && gridMotionGeneration != timelineGridMotionGeneration.get())
+                ) {
                     result?.let { if (!it.isRecycled) it.recycle() }
                     return@runOnUiThread
                 }
@@ -13035,6 +14269,7 @@ class VideoEditorActivity : Activity() {
                 }
             }
         }
+        if (gridMotionGeneration != null) pendingTimelineGridExactTasks.add(task)
         trackTimelineThumbnailTask(sourceKey, task)
         try {
             enqueueSecondaryThumbnailTask(task)
@@ -14235,6 +15470,8 @@ class VideoEditorActivity : Activity() {
         audioWaveformCache.evictAll()
         timelineThumbnailExecutor.queue.clear()
         timelineThumbnailExecutor.shutdownNow()
+        timelineFrameDecoderExecutor.queue.clear()
+        timelineFrameDecoderExecutor.shutdownNow()
         pendingTimelinePosterTasks.values.toList().forEach { task ->
             coverThumbnailExecutor.remove(task)
             task.cancelForSourceInvalidation()

@@ -1,3 +1,85 @@
+## 2026-11-21 — PR #45: avoid duplicate cold-preview bootstrap and reduce filmstrip decode cost
+
+- The exact-head emulator exposed two separate issues. The cold-preview assertion rejected a valid path where the single-clip preview had already decoded/applied the exact timestamp and logged `TIMELINE_PREVIEW_EXACT_CACHE_HIT` just before CompositionPlayer `STATE_READY`; the production path intentionally avoids a redundant cold decoder open. The validator now accepts this only when the exact project/source timestamps match and a subsequent `STATE_READY` is observed. A real post-READY bootstrap decode must still satisfy the original ordering check.
+- The other run measured a 2,298ms maximum background task queue wait (limit 2,000ms) and 2,907ms visible-strip fill (limit 2,500ms), while per-frame decode remained under 1,500ms. The previous two-worker one-pass run achieved 1,525ms queue, 1,181ms maximum decode and 1,803ms fill, but failed later at an unrelated clip-draft save assertion.
+- Follow-up change: decode timeline-only filmstrip cells at 80% of their rendered dimensions. This retains the exact requested timestamps and source aspect ratio; the full-resolution paused preview and export paths are untouched. Performance thresholds are unchanged.
+- Pending exact-head unit/build, APK package, and API 35 emulator checks. Do not merge or publish until all required checks pass.
+
+---
+
+## 2026-11-19 — PR #45: keep warm MMR for ordinary two-cell jumps
+
+- Exact-head run 44406239499 for commit 13f4bfaddf80a3f31f2d9654a5e83ddcf2f5e15e passed Android unit/build, debug APK packaging/upload, the cold-preview bootstrap check, warmed interactive preview budgets, ruler/filmstrip sync, and measured forward/reverse fling.
+- The remaining strict red is visible-thumbnail decode only: queue max 215ms, preview-deferred max 1ms, disk lookup max 5ms, decode median/max 1,363/1,859ms, visible-strip fill 2,124ms. Fill is within 2,500ms; decode exceeds the unchanged 1,500ms cap. Warm playhead preview also passed its 250/800/1,000ms budgets.
+- Inspected the exact emulator artifact. A 4,572ms worker jump reset the MMR and the following decode measured 843ms. However, two ordinary 2,286ms jumps also reset warm retrievers; the following frame decodes measured 1,711ms and 1,846ms. These resets are unnecessary for ordinary two-cell movement and can discard a useful warm decoder.
+- Follow-up code commit changes the per-worker reset threshold from 2,000ms to 4,000ms. This preserves the observed beneficial reset above 4s while keeping the MMR warm for 2.286s jumps. OPTION_CLOSEST semantics, worker count, and all performance thresholds are unchanged.
+- Pending: exact-head unit/build, APK package, and API 35 emulator rerun. Accept only if decode max <=1,500ms and visible-strip fill <=2,500ms, with the large-jump reset still logged. No threshold relaxation, merge, version bump, or release before all checks are green.
+
+---
+
+## 2026-11-19 — PR #45: post-release fling passes; isolate long MMR seek latency
+
+- API 35 run 44398309278 passed the filmstrip post-release momentum assertion. The earlier zero-velocity fallback is behaving as intended; do not reopen or weaken that check.
+- The remaining emulator red is only the visible-thumbnail decode budget: max 2,337ms against 1,500ms, with seven final visible cells; visible-strip fill 2,890ms against 2,500ms. Warm playhead preview passed (queue max 4ms, decode max 652ms, request-to-visible max 728ms). Queue max was 456ms, so the current five-worker queue is no longer the bottleneck.
+- Downloaded and inspected the exact emulator artifact. The seven replacement frames were queued together. The first five ran on separate MMR workers; the final two were assigned to workers that had just decoded 571ms and 1,713ms, then jumped forward to 6,285ms and 7,428ms. Those long per-worker jumps took 1,708ms and 2,337ms. Adjacent/first decodes ranged from 214ms to 1,179ms. All used the scaled `OPTION_CLOSEST` path (89x158/90x160); no Media3 fallback was used. Do not switch to `OPTION_CLOSEST_SYNC`—that was previously rejected because long-GOP media repeated keyframes.
+- Commit 990167c77336b915d8699c0bd0876fa88fdaa6d0 adds a measured 2,000ms per-worker seek-discontinuity guard: on a large timestamp jump it releases that worker's cached MMR before reopening it for the next frame. Adjacent samples retain their warm retriever. A diagnostic `TIMELINE_THUMBNAIL_RETRIEVER_RESET` records worker, previous/requested timestamps and jump distance. This is a targeted experiment, not yet accepted.
+- Pending: exact-head Android unit/build, debug APK packaging and API 35 emulator. Accept this only if the emulator confirms the large-jump reset occurs and decode max <=1,500ms plus visible-strip fill <=2,500ms. Do not change thresholds, merge, bump version or publish before green.
+
+---
+## 2026-11-19 — PR #45: recover zeroed velocity on fast intercepted filmstrip swipes
+
+- Reviewed both API 35 emulator artifacts instead of repeating the same gesture blindly. Failed run 44384371017 (artifact 14465522532): the same controlled 200px left swipe was captured at Activity level, the shared scroller intercepted it, and scrollX advanced 149px; however, VelocityTracker reported fingerVelocityX=0 against the unchanged 131px/s minimum. No custom fling started and post-UP movement was 0px at 64/128/240ms.
+- Comparison run 44384001261 (artifact 14466872947): same start coordinates and gesture produced fingerVelocityX=-1111, started the custom fling, and advanced 112/288/352px after release. This proves an intermittent zeroed velocity measurement, not a missing touch target or edge clamp.
+- Commit b2231010521aae91889477f9b71a68980ea74c1b adds a bounded 160ms raw-screen-X/event-time sample window. When the platform tracker is below the existing minimum but the recent raw-coordinate velocity meets it, the raw estimate is used as a fallback. Slow drags remain below the same minimum; no test threshold or expected motion was weakened.
+- The existing API 35 smoke still requires at least 8px of real post-UP scroll movement. Exact-head unit/build, APK package and API 35 emulator verification are pending. The five-worker thumbnail experiment remains unverified; do not merge, bump app version or publish until the exact final head is green and thumbnail budgets are independently resolved.
+
+---
+## 2026-11-18 — PR #45: four-worker API 35 measurement and five-worker experiment
+
+- Exact PR head `fceb623c5aa8fe5d484deef54a42d3b134daf71f`: APK build and Android verification passed; emulator UI failed only the strict visible-thumbnail performance assertion. The text-grip geometry correction, editor smoke interactions, forward/reverse filmstrip scrubbing, shared scroll, and post-release momentum all passed.
+- The API 35 run measured seven visible cells: executor queue median/max 293/2241ms, preview-deferred 0/3ms, disk lookup 0/4ms, decode median/max 1550/1960ms, request-to-display median/max 2273/3015ms, and visible-strip fill 3022ms. The queue limit is 2000ms, decode limit 1500ms, and fill limit 2500ms; none of these limits were relaxed.
+- Warm exact-playhead preview remained healthy: queue max 2ms, decode max 424ms, request-to-visible max 484ms. This confirms the dedicated preview worker remains isolated and responsive.
+- Four workers improved the previous three-worker queue maximum (2996ms to 2241ms), but the visible strip still misses the queue, decode, and fill budgets. The five-worker change in commit `4a1e64953ecb784e7a402186a2dcc5b7fb0c4900` is a measurement-only concurrency experiment; it is provisional and must be evaluated on API 35 before acceptance. Do not increase concurrency further without new measurements.
+- Emulator artifact: `14466872947`. Exact run: `44384001261`. No merge, release, version bump, or change to `main`.
+
+---
+
+## 2026-11-18 — PR #45: wait for committed text-grip geometry before asserting
+
+- Review of emulator artifact `14463568565` showed that the earlier smoke failure was caused by an incomplete log-capture window, not a failed trim interaction. The app logged `TEXT_EDGE_TRIM_COMMIT edge=start` at 19:36:50.051 and then logged both updated grip layouts (`startMs=615 endMs=8000`) at 19:36:50.141. The polling loop stopped as soon as it saw the commit marker, before the asynchronous layout records were available in its captured file.
+- Commit `fc844678459c42f46c205f9835f3597176a6be88` changes the emulator smoke to read all log buffers and wait for both grips to report the exact committed range before the start trim, end trim, Undo, or Redo geometry assertion. The existing trim values, history checks, pixel checks, and timing budgets are unchanged; no production behavior or release metadata changed.
+- The initial-layout log is still supplied as a fallback to the assertion helper, but current post-operation geometry must now be present before the test proceeds. This prevents a stale 0–8000ms grip measurement from being mistaken for the live 615–8000ms range.
+- Pending: run Android unit/build, APK packaging, and API 35 emulator verification on the exact new PR head. The four-worker thumbnail executor remains provisional until fresh queue/decode/visible-strip measurements are captured. Do not merge or publish while any required check is missing or red.
+
+---
+
+## 2026-11-18 — PR #45 emulator smoke: text-grip diagnostic input fix
+
+- Exact head `6890fbfd7a3b139e9426de09e52da8b765d2aa49`: `build` and `test-and-build` passed; `emulator-ui` failed at the first text-start-grip layout assertion (exit 95).
+- The app emitted a real `TEXT_EDGE_TRIM_COMMIT` from 0–8000ms to 615–8000ms and recorded its own Undo entry. The test then failed because its first call to `assert_text_grip_layout_and_state` supplied only the fresh trim log, which intentionally contains commit/history markers but not the initial layout measurements. The same function already accepts prior log files, and later start/end/undo/redo calls correctly pass those prior measurements.
+- Commit `8e0b5ebc0cf42decea043a1fabc8e197b1a4b15f` fixes only the smoke-test input: the first start-trim layout assertion now also reads `editor-text-selected-canvas-logcat.txt`, which contains both initially measured grip geometries. No app behavior, assertion, tolerance, timing budget, or release metadata was changed.
+- Re-run all required checks on the new exact head. The four-worker thumbnail experiment is not accepted or rejected by this text-grip failure; keep it provisional until the emulator run yields valid queue/decode/visible-strip measurements. Do not merge or publish while a required check is red.
+
+---
+
+## 2026-11-18 — PR #45 API 35 thumbnail queue failure and four-worker measurement
+
+- Exact head `77f52db43543a7d54addad320e6e4b983e7ba1db` passed `test-and-build` and `build`; `emulator-ui` reached the real editor smoke and failed only the strict visible-thumbnail queue budget.
+- The measured seven visible samples had queue waits of 119, 42, 114, 771, 1184, 1801 and 2996ms; decode times were 640, 977, 1665, 2124, 2267, 2124 and 1374ms. Visible-strip fill was 4400ms. The separate warmed interactive preview passed (queue max 6ms, decode max 519ms, request-to-visible max 610ms). Filmstrip forward/reverse scrubbing, shared scroll and post-release momentum also passed in this run.
+- This is not an emulator bootstrap or FFmpeg failure. The remaining bottleneck is contention/throughput in the background still-frame worker pool while decoding the seven visible filmstrip cells.
+- Candidate `f18bb700ceba0483de2168c9a0a6a31a39dfd949` increases the persistent background still worker pool from three to four solely as a measured experiment. No assertion threshold, timestamp-selection semantics, preview decoder isolation, versionCode, release trigger, or merge state was changed.
+- Re-run exact-head unit/build/emulator checks. Keep or revert the fourth worker based on measured queue, decode and visible-strip-fill results; do not merge or publish while any required check is not green.
+
+---
+
+## 2026-11-17 — PR #45 review: preserve exact filmstrip timestamps
+
+- The first PR #45 candidate used `MediaMetadataRetriever.OPTION_CLOSEST_SYNC` for every filmstrip cell and adjusted the synthetic fixture markers to one-second keyframe boundaries. That reproduced a previously rejected strategy: the 2026-11-01 implementation history records that sync-only sampling can repeat one keyframe across neighbouring cells on longer-GOP media.
+- Keep `OPTION_CLOSEST` for both scaled and full-frame filmstrip decoding. Retain the separate foreground playhead decoder and improve performance through measured decode sizing, cache lookup/indexing, worker isolation and visible-first scheduling. The fixture still uses a one-second GOP but now places distinct markers around the seven actual requested cell timestamps, so the test checks timestamp accuracy rather than keyframe coincidence.
+- PR #45 API 35 evidence currently proves the shared `HorizontalScrollView` receives `ACTION_UP` and all timeline content uses one scroll offset. Its release samples did not show additional `scrollX` movement at 64/128/240ms, so natural inertial fling is **not** yet verified. Do not claim CapCut-like post-release momentum until a mid-timeline, sufficiently fast gesture demonstrates it.
+
+---
+
 ## 2026-11-17 — PR #44 merged; signed 408 publication requested
 
 - PR #44 merged to `main` as `e8dace6a0dc9033ec33944b48f8fdbdc94c1de5a`; exact head `aa2fc32a1add488a22ea2d2c8b0537e9e761aeb8` passed `test-and-build`, `build`, and `emulator-ui`.
@@ -1656,3 +1738,82 @@ These were phone observations recorded before the #754 editor-shell acceptance a
 - The time-zero spacer remains transparent and present. It is required timeline geometry, not clip media; deleting or painting it would reintroduce a zero-time alignment defect.
 - The API 35 sync log/validator now reports the frame-center difference and requires each lane's zero-edge screen coordinate plus its shared scroll offset to match the actual Play-button center within the existing 1px tolerance. Player/playhead time and pixel-scale assertions are unchanged.
 - **Verification boundary:** implementation and validator are in draft PR #38. Exact-head unit/build and emulator results are pending; no pass is claimed. Keep the PR unmerged and do not change app version metadata, sign/publish an APK, or activate the updater until verification succeeds.
+
+
+## 2026-11-17 — Correct sound-effect waveform visibility smoke
+
+- The `b5b1346` API 35 emulator run decoded both WAV fixtures and emitted `AUDIO_WAVEFORM_DRAWN kind=sound width=109 height=63`; the production waveform view was attached and drawn. The screenshot contained only 16 orange pixels because the bottom sound-effect lane was still mostly below the timeline's vertical viewport.
+- This is a test-driver scroll issue, not a PCM decode or waveform paint failure. The prior single swipe began on an audio clip's touch surface and did not reliably expose the bottom lane.
+- Updated the emulator smoke to scroll from the unused right side of the timeline viewport, retry up to six times, and inspect the screenshot after each attempt. The existing minimum of 24 visible pixels for both music and sound-effect waveforms is unchanged; no visual threshold was relaxed.
+- Exact-head unit/build, APK packaging and API 35 emulator workflows must all pass again before PR #45 can be accepted. No app version bump, merge or release.
+
+
+## 2026-11-17 — Thumbnail queue contention: measured three-worker follow-up
+
+- Exact-head API 35 run for `295679f2cf08d6a18cbc4c61bb8af34f9ebd11af` passed unit/build and APK packaging but failed the strict thumbnail timing gate. The combined log shows seven visible cells decoded by only two MMR workers (`worker=62` and `worker=66`); queue waits rose from 9–21 ms to 2049 ms, while per-frame MMR decode ranged 434–1186 ms. Disk lookup was at most 71 ms and UI dispatch at most 243 ms. This isolates the overrun to decoder-worker throughput/queueing, not disk or preview bootstrap (deferred wait 0–1 ms).
+- The measured last cell was displayed after 3109 ms from submission (visible strip fill 3111 ms), exceeding the unchanged 2500 ms fill limit. No assertion or timing threshold was changed.
+- Follow-up source change on PR #45 commit `18950583873ad1db0b433089c0178a2bc91a5e87`: increase the dedicated background thumbnail executor from two to three persistent MMR workers. This matches the existing top-level worker-pool design comment, while keeping the exact playhead preview on its separate reserved foreground executor. The third worker is a measured throughput experiment, not yet a claimed performance fix.
+- Required next: exact-head unit/build, APK packaging and API 35 emulator run. Compare worker count, per-cell decode, maximum queue wait and visible-strip fill. Preserve the 2000 ms queue and 2500 ms fill limits. If codec contention increases decode time or the strict gate still fails, inspect per-worker decoder reuse/seek cost rather than adding more workers blindly. No version bump, merge or release.
+
+
+## 2026-11-18 — Filmstrip release velocity ownership
+
+- Exact-head API 35 emulator run for `49e159a689a8ad04f988e736f901b511ccbffecf` passed unit/build and APK packaging, then failed the new strict post-release inertia assertion. The controlled filmstrip gesture moved from x=640 to x=440; the child received DOWN at x=640 and CANCEL at x=598. The shared HorizontalScrollView only began receiving MOVE at x=564 and later UP at x=440. At release scrollX was 317 and remained 317 at 64/128/240ms.
+- This event sequence shows that the child filmstrip owns the initial DOWN and the parent only becomes the event target after interception. The parent's touch listener therefore cannot be relied on as the sole source of the complete DOWN-to-UP velocity trajectory.
+- Follow-up on PR #45 commit `e166344ed68d0eb5aa8a15c53f0c19493d9bb75b`: capture the one-finger timeline trajectory at Activity dispatch level, but only issue the custom fling when the shared HorizontalScrollView actually received a MOVE and changed scroll position. Long-press clip moves continue to disallow parent interception; two-finger pinch cancels the tracker. After ACTION_UP, calculate full-gesture velocity and start the shared HorizontalScrollView fling in the opposite direction to finger velocity. The strict minimum post-UP movement assertion remains unchanged.
+- Pending: exact-head Android unit/build, APK packaging and API 35 emulator checks. Verify forward and reverse inertia, no fling on clip long-press drag, no fling on pinch, and synchronized ruler/lanes/playhead while coasting. No merge, version bump or release until all exact-head checks are green.
+
+
+## 2026-11-18 — Separate fling validation from text-edge visibility probe
+
+- Emulator log for `b590a325a1180a5dc606fe6b9256f73ebf89ac68` proves the new one-finger fling is active: first release moved scrollX 612→824 at 64 ms, 612→978 at 128 ms, and 612→1170 at 240 ms. The next release started at 1714 and hit the actual scroll boundary.
+- The overall emulator workflow then failed later in `scroll_timeline_until_text_end_visible`, not in the fling assertion: its old 660px/420ms ruler swipe generated ~1571px/s and the new fling carried the timeline to the far scroll boundary. The subsequent six identical fast swipes could not bring the text trailing handle into the viewport. This was an interaction between a fling-enabled editor and a test helper intended only to make a trim handle visible.
+- Follow-up commit `307eb974cb9c3a153689b963e74c34c04ac6c916` changes only that visibility probe to 140px over 1600ms, keeping it below the app's fling threshold and making small deliberate scroll adjustments. The actual high-velocity fling behavior remains covered by the earlier release samples; no threshold or product behavior was weakened.
+- Pending: rerun all checks on the exact new PR head. Confirm the slow probe exposes the trailing text grip, the physical end-trim still commits and creates a separate history entry, and the normal fling remains measured at 64/128/240ms. No merge or release until all checks are green.
+
+
+## 2026-11-18 — Fling capture hit-test correction after exact-head rerun
+
+- Exact-head emulator check for `ac8ce1e0ac976a13e7245251f3a72ffd23e51868` failed again at the forward filmstrip swipe. The clip child received DOWN at raw (640,1194), then CANCEL; the shared HorizontalScrollView received MOVE/UP and scrollX changed 230→374, but there was no post-UP travel (64/128/240ms all 0) and no `TIMELINE_CUSTOM_FLING` log. The text-edge probe was not reached.
+- The dispatch-level tracker was gated by a screen hit-test against `timelineTracksFrame`. The actual gesture is on `timelineSharedScrollView`; using the outer frame is an unnecessary coordinate dependency and can leave the tracker uncaptured even though the shared scroller later receives the gesture.
+- Commit `069db2e9cb74d5559fe9560ca8790e763b45cba8` changes the initial hit-test to the actual laid-out shared scroll viewport and adds test-only capture/release diagnostics showing tracker capture, viewport bounds, interception, delta, and computed velocity. No fling assertion or velocity threshold has been relaxed.
+- Pending: exact-head test/build, APK package, and emulator. First confirm the diagnostic says captured=true and a nonzero release velocity, then confirm fling movement at 64/128/240ms in both directions. Confirm clip long-press and pinch still do not fling. No merge/version bump/release until all checks are green.
+
+
+## 2026-11-18 — Visible text trim grip follows its touch target
+
+- Inspection of the current text-lane implementation found a concrete interaction mismatch: the broad transparent 48dp+ drag target and the visible white CapCut-style grip were separate sibling views. ACTION_MOVE translated only the transparent target, leaving the visible white grip at the old boundary; the user could feel the handle as unresponsive or disconnected.
+- Commit `4c0817600e96f4b0baf5cfcddc6b1931c21c7e08` keeps the visible grip's translation synchronized with its corresponding start/end touch target on every MOVE, and resets both together on UP/CANCEL. Existing trim math, min-span constraints, history commit and hit-target geometry are unchanged.
+- Pending exact-head Android tests/build, APK package, and emulator UI check. Validate both text start/end handles, drag direction and boundary clamping, plus video/audio/overlay grips; do not call this fixed until emulator evidence passes.
+
+
+## 2026-11-18 — Unified visible trim grip for non-text layers
+
+- The exact-head emulator run for `451c37cf80d3a79be912deedc658e2ab09addd54` still fails earlier in the filmstrip inertia step (release scrollX=384, post-UP movement 0 at 64/128/240ms); the new text-grip follow behavior is not reached by that run. Android unit/build and APK packaging passed.
+- Review of the shared non-text layer edge control found it still displayed a narrow teal 5x24px marker inside a much wider transparent hit target. This differs from the CapCut white edge tab and makes it harder to visually track the trim boundary.
+- Commit `28614bf0e414af7201c395b2aad0ec118036cca1` changes the visible marker to a square-corner white 10dp tab with a centered gray 2x14dp mark, as a child of the same interactive edge target. Thus the visual grip and touch target share translation by construction. The existing broad hit target, edge clamping, trim callbacks, and gesture exclusion are unchanged.
+- Pending exact-head Android tests/build, APK package, and emulator validation of both start/end grips across video, audio, and overlay lanes; verify text grip separately; verify the inertia failure independently. No merge/version bump/release until all checks green.
+
+
+## 2026-11-18 — Fling gate uses measured shared-scroll movement
+
+- Exact-head emulator run for `86c58b3c8e6a96f7dd2e988b440c42c4afafe93b` passed Android test/build and APK packaging but failed the strict filmstrip inertia assertion: shared scrollX was 367 at release and remained unchanged at 64/128/240ms.
+- The release path had two independent gates: a non-zero shared-scroll delta and `timelineFlingGestureIntercepted`, which was set only by the shared HorizontalScrollView's touch listener observing a one-finger MOVE. The Activity already captures the complete DOWN-to-UP trajectory and computes velocity, but Android's child-to-parent touch ownership transfer does not guarantee that the parent's listener observes the full MOVE sequence. This made the extra listener flag an unreliable veto even when the shared scroller had actually moved.
+- PR #45 commit `a516bd0a4e956552790a93438788651bccabdcfc` removes that redundant veto. A fling now requires a captured one-finger gesture, an actual non-zero change in the shared scroller's scrollX, and release velocity above Android's minimum fling velocity. Pinch still resets the tracker; ordinary clip/trim drags that do not scroll the timeline cannot trigger a fling.
+- Pending: exact-head Android unit/build, APK packaging and API 35 emulator run. Preserve the strict >=8px post-UP travel assertion and verify forward/reverse panning, clip long-press/trim, pinch, and shared ruler/lane/playhead synchronization. No merge, version bump or release.
+
+
+## 2026-11-19 — Split-filmstrip seam assertion samples beyond trim grip
+
+- Exact-head API 35 run for `54844d0c8428268be6d4eb8e335cb7c8608f5370` passed unit tests/build, debug APK packaging, setup and the clip split/drag persistence checks. The split was contiguous at 3958 ms (`gapMs=0`); after drag the saved ranges remained `0:3958,3958:8000` with `gapMs=0`.
+- The run then failed only in the screenshot assertion that checks filmstrip pixels on both sides of the joined seam. The PNG and geometry snapshot use the same 1080x1920 coordinate space; this was not a coordinate-scale mismatch. The probe sampled 18–22 px from the seam, where the selected clip's white trim handle/border still covers part of the left filmstrip. Replaying the exact pixel predicate against the uploaded PNG gave 2/5 left and 5/5 right at 18–22 px, but 5/5 on both sides at 28–32 px.
+- Commit `4bf1f140e357a8c6a0272a4e1daaad4da76480f7` moves the two-sided pixel probe to 28–32 px and documents why. It still verifies actual fixture-frame pixels on both sides; no assertion was removed or threshold weakened.
+- Pending: rerun exact-head unit/build, APK packaging and API 35 emulator smoke. The split/drag and filmstrip seam assertion must pass on the new head. No merge, version bump or release until every required check is green.
+
+
+## 2026-11-19 — Filmstrip second-wave decode contention experiment
+
+- Exact-head API 35 run for `d3038f8908e863c64cebc111c273620db7439f58` passed unit/build, APK packaging, clip split/drag persistence, and the corrected two-sided filmstrip seam pixel check. The split remained contiguous at 3958 ms (`gapMs=0`).
+- The strict thumbnail check then failed on one of seven visible cells: decode times were 281, 373, 433, 563, 908, 997 and 1676 ms; maximum queue wait was 467 ms and full visible-strip fill was 2190 ms. The 1676 ms outlier was the seventh cell (7428 ms), which reused a worker that had already decoded the 5142 ms cell. The same five-worker/four-second-reset configuration had passed this gate in the preceding API 35 run (max decode 1206 ms), indicating worker assignment and second-wave seek timing are variable.
+- Commit `ba89579810819dc509c80b65b272cd02aca4dcf6` changes only the dedicated background MMR pool from five to six workers. For the seven-cell viewport this reduces second-wave reuse from two workers to one. This is explicitly an experiment, not a claimed optimization.
+- Keep the existing strict 1500 ms per-cell decode and 2500 ms visible-strip-fill gates unchanged. The exact-head API 35 run must establish whether reduced decoder reuse outweighs additional codec contention. Revert the sixth worker if it worsens maximum decode/fill or causes preview/UI contention. No merge, version bump or release.

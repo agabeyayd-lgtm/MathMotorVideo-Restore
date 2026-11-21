@@ -9,10 +9,13 @@ import kotlin.math.roundToInt
  * thumbnail cells grows with pinch zoom and shrinks when the user zooms out.
  */
 internal object TimelineThumbnailMath {
-    // A 48dp strip matches the roughly 95px video lane in the 720x1600
-    // reference composition while keeping each thumbnail at its source aspect ratio.
-    const val THUMBNAIL_STRIP_HEIGHT_DP = 48
+    // More vertical room makes portrait frames readable while keeping each
+    // thumbnail fitted to its original source aspect ratio.
+    const val THUMBNAIL_STRIP_HEIGHT_DP = 64
     const val DEFAULT_SOURCE_ASPECT_RATIO = 9f / 16f
+    // Timeline cells are displayed small; decode at 80% of their rendered
+    // bounds to reduce first-open codec work without changing preview/export quality.
+    const val FILMSTRIP_DECODE_SCALE = 0.8f
 
     /** Width of a full-frame thumbnail at the fixed strip height, without cropping. */
     fun thumbnailCellWidthPx(stripHeightPx: Int, sourceAspectRatio: Float): Int {
@@ -163,6 +166,57 @@ internal object TimelineThumbnailMath {
         val safeCount = count.coerceAtLeast(1)
         val slot = index.coerceIn(0, safeCount - 1)
         return startMs + boundary(endMs - startMs, safeCount, slot + 1)
+    }
+
+    /**
+     * Maximum forward distance to decode continuously for a filmstrip request.
+     * Keep adjacent cells on the current decoder session, but avoid walking
+     * through multiple cell intervals when the planner makes a larger jump.
+     */
+    fun sequentialDecodeGapLimitMs(cellIntervalMs: Long): Long {
+        val interval = cellIntervalMs.coerceAtLeast(1L)
+        val half = interval / 2L + interval % 2L
+        return if (interval > Long.MAX_VALUE - half) Long.MAX_VALUE else interval + half
+    }
+
+    /**
+     * Whether a retained sequential decoder should be repositioned before a
+     * request. Backward seeks always reposition; large forward gaps do too.
+     */
+    fun shouldSeekSequentialDecoder(
+        lastOutputTimeMs: Long,
+        targetTimeMs: Long,
+        maxSequentialGapMs: Long
+    ): Boolean {
+        val last = lastOutputTimeMs.coerceAtLeast(0L)
+        val target = targetTimeMs.coerceAtLeast(0L)
+        if (target < last) return true
+        val limit = maxSequentialGapMs.coerceAtLeast(0L)
+        return limit > 0L && target - last >= limit
+    }
+
+    /**
+     * Finds a nearby cell that resolved to the same sync-frame image.
+     *
+     * A sync seek is fast, but long GOPs can map multiple neighboring cells to
+     * one keyframe. The caller uses this collision to switch only that cell to
+     * an exact timestamp decode.
+     */
+    fun nearbyDuplicateSyncFrameTimeMs(
+        requestedTimeMs: Long,
+        fingerprint: Long,
+        previousSamples: List<Pair<Long, Long>>,
+        maxDistanceMs: Long
+    ): Long? {
+        if (maxDistanceMs <= 0L) return null
+        return previousSamples.asSequence()
+            .filter { (sampleTimeMs, sampleFingerprint) ->
+                sampleTimeMs != requestedTimeMs &&
+                    sampleFingerprint == fingerprint &&
+                    kotlin.math.abs(sampleTimeMs - requestedTimeMs) <= maxDistanceMs
+            }
+            .minByOrNull { kotlin.math.abs(it.first - requestedTimeMs) }
+            ?.first
     }
 
     fun sampleTime(startMs: Long, endMs: Long, count: Int, index: Int): Long {
