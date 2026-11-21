@@ -5045,21 +5045,37 @@ python3 .github/scripts/assert-thumbnail-alignment.py verify \
 
 echo "Step 11/12: exercise live playback and validate ruler/filmstrip synchronization"
 
-timeout -k 2s 10s adb -s emulator-5554 logcat -d -v threadtime -s TimelineAlignmentTest:I \
-  > emulator-screenshots/timeline-play-button-measurement.txt 2>&1
-play_coords="$(python3 - emulator-screenshots/timeline-play-button-measurement.txt <<'PY'
+# Read the actual accessible Play button bounds from the live view hierarchy.
+# The timeline playhead centre is NOT the playback button position.
+if ! dump_hierarchy editor-before-live-playback.xml emulator-screenshots/editor-before-live-playback.xml; then
+  echo "Could not capture the editor hierarchy before the live-playback test."
+  collect_capture_diagnostics timeline-play-button-hierarchy-missing
+  exit 14
+fi
+play_coords="$(python3 - emulator-screenshots/editor-before-live-playback.xml <<'PY'
 import re
 import sys
-latest = None
-for line in open(sys.argv[1], errors="replace"):
-    match = re.search(
-        r"TIMELINE_ALIGNMENT_SNAPSHOT playheadCenterPx=(\d+) playheadCenterYpx=(\d+)",
-        line
-    )
-    if match:
-        latest = f"{match.group(1)} {match.group(2)}"
-if latest:
-    print(latest)
+import xml.etree.ElementTree as ET
+
+try:
+    root = ET.parse(sys.argv[1]).getroot()
+except (OSError, ET.ParseError) as error:
+    raise SystemExit(f"Cannot parse editor hierarchy: {error}")
+
+matches = []
+for node in root.iter("node"):
+    if node.attrib.get("content-desc", "") != "Önizlemeyi oynat veya duraklat":
+        continue
+    bounds = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+    if not bounds:
+        continue
+    x1, y1, x2, y2 = map(int, bounds.groups())
+    if x2 > x1 and y2 > y1:
+        matches.append(((x1 + x2) // 2, (y1 + y2) // 2))
+
+if len(matches) != 1:
+    raise SystemExit(f"Expected exactly one accessible preview Play button, found {len(matches)}.")
+print(*matches[0])
 PY
 )"
 if [ -z "$play_coords" ]; then
