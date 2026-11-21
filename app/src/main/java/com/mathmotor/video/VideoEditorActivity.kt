@@ -12882,35 +12882,6 @@ class VideoEditorActivity : Activity() {
      * seek after a duplicate sync-frame probe. Keep the full-resolution indexed
      * path bounded; larger sources retain the scaled timestamp decoder.
      */
-    private fun decodeTimelineFrameByIndex(
-        retriever: MediaMetadataRetriever,
-        requestedTimeMs: Long
-    ): Bitmap? {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return null
-        val frameCount = retriever.extractMetadata(
-            MediaMetadataRetriever.METADATA_KEY_VIDEO_FRAME_COUNT
-        )?.toLongOrNull() ?: return null
-        val durationMs = retriever.extractMetadata(
-            MediaMetadataRetriever.METADATA_KEY_DURATION
-        )?.toLongOrNull() ?: return null
-        val width = retriever.extractMetadata(
-            MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH
-        )?.toLongOrNull() ?: return null
-        val height = retriever.extractMetadata(
-            MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT
-        )?.toLongOrNull() ?: return null
-        if (frameCount <= 0L || durationMs <= 0L || width <= 0L || height <= 0L) return null
-        if (width * height > 2_500_000L) return null
-
-        val averageFrameRate = frameCount * 1_000.0 / durationMs.toDouble()
-        if (averageFrameRate !in 10.0..120.0) return null
-        val boundedTimeMs = requestedTimeMs.coerceIn(0L, durationMs)
-        val frameIndex = Math.round(
-            boundedTimeMs.toDouble() * frameCount.toDouble() / durationMs.toDouble()
-        ).coerceIn(0L, frameCount - 1L).toInt()
-        return runCatching { retriever.getFrameAtIndex(frameIndex) }.getOrNull()
-    }
-
     private fun decodeTimelineFrameOnDecoderThread(
         uri: Uri,
         requestedTimeMs: Long,
@@ -13017,39 +12988,36 @@ class VideoEditorActivity : Activity() {
             "scaled-closest-sync-unavailable"
         }
         val exactStartedAt = SystemClock.uptimeMillis()
+        // Frame-index extraction returns a full-resolution bitmap and repeatedly
+        // exceeded the thumbnail decode budget on API 35. Keep this path scaled
+        // at the decoder boundary so large source frames are never materialized.
         val platformFrame = retriever?.let { activeRetriever ->
-            val indexedFrame = decodeTimelineFrameByIndex(activeRetriever, requestedTimeMs)
-            if (indexedFrame != null) {
-                platformDecodePath = "frame-index"
-                indexedFrame
+            val scaledFrame = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                runCatching {
+                    activeRetriever.getScaledFrameAtTime(
+                        frameTimeUs,
+                        MediaMetadataRetriever.OPTION_CLOSEST,
+                        maxWidthPx.coerceAtLeast(1),
+                        maxHeightPx.coerceAtLeast(1)
+                    )
+                }.getOrNull()
             } else {
-                val scaledFrame = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                    runCatching {
-                        activeRetriever.getScaledFrameAtTime(
-                            frameTimeUs,
-                            MediaMetadataRetriever.OPTION_CLOSEST,
-                            maxWidthPx.coerceAtLeast(1),
-                            maxHeightPx.coerceAtLeast(1)
-                        )
-                    }.getOrNull()
+                null
+            }
+            if (scaledFrame != null) {
+                scaledFrame
+            } else {
+                platformDecodePath = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                    "full-frame-exact-fallback"
                 } else {
-                    null
+                    "full-frame-exact-legacy"
                 }
-                if (scaledFrame != null) {
-                    scaledFrame
-                } else {
-                    platformDecodePath = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                        "full-frame-exact-fallback"
-                    } else {
-                        "full-frame-exact-legacy"
-                    }
-                    runCatching {
-                        activeRetriever.getFrameAtTime(
-                            frameTimeUs,
-                            MediaMetadataRetriever.OPTION_CLOSEST
-                        )
-                    }.getOrNull()
-                }
+                runCatching {
+                    activeRetriever.getFrameAtTime(
+                        frameTimeUs,
+                        MediaMetadataRetriever.OPTION_CLOSEST
+                    )
+                }.getOrNull()
             }
         }
         if (Thread.currentThread().isInterrupted) {
