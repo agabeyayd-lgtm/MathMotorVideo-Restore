@@ -126,4 +126,64 @@ class TimelineThumbnailDiskCacheTest {
         }
         return bitmap
     }
+
+    @Test
+    fun coarseGridPersistsAcrossCacheOwnersAndKeepsSourcesIsolated() {
+        val directory = freshDirectory("coarse-grid-reopen")
+        val sourceA = "content://mathmotor.test/video/grid-a|duration=5000"
+        val sourceB = "content://mathmotor.test/video/grid-b|duration=5000"
+        val colors = listOf(
+            Color.rgb(220, 40, 40),
+            Color.rgb(40, 210, 70),
+            Color.rgb(40, 80, 220)
+        )
+        try {
+            val firstOwner = TimelineThumbnailDiskCache(directory)
+            listOf(0L, 500L, 1_000L).forEachIndexed { index, timestamp ->
+                val bitmap = Bitmap.createBitmap(48, 48, Bitmap.Config.ARGB_8888).apply {
+                    eraseColor(colors[index])
+                }
+                try {
+                    assertTrue(firstOwner.put(sourceA, timestamp, 48, 48, bitmap))
+                } finally {
+                    bitmap.recycle()
+                }
+            }
+            assertTrue(firstOwner.markGridComplete(sourceA))
+            val other = Bitmap.createBitmap(48, 48, Bitmap.Config.ARGB_8888).apply {
+                eraseColor(Color.MAGENTA)
+            }
+            try {
+                assertTrue(firstOwner.put(sourceB, 500L, 48, 48, other))
+                assertTrue(firstOwner.markGridComplete(sourceB))
+            } finally {
+                other.recycle()
+            }
+
+            val reopenedOwner = TimelineThumbnailDiskCache(directory)
+            assertTrue(reopenedOwner.isGridComplete(sourceA))
+            assertTrue(reopenedOwner.isGridComplete(sourceB))
+            val nearest = reopenedOwner.findNearest(sourceA, 760L, Long.MAX_VALUE)
+            assertNotNull(nearest)
+            try {
+                assertEquals(500L, nearest!!.timestampMs)
+                assertTrue(abs(Color.green(nearest.bitmap.getPixel(24, 24)) - 210) < 25)
+            } finally {
+                nearest?.bitmap?.recycle()
+            }
+            val isolated = reopenedOwner.findNearest(sourceB, 500L, Long.MAX_VALUE)
+            assertNotNull(isolated)
+            try {
+                assertEquals(Color.MAGENTA, isolated!!.bitmap.getPixel(24, 24))
+            } finally {
+                isolated?.bitmap?.recycle()
+            }
+            reopenedOwner.deleteSource(sourceA)
+            assertFalse(reopenedOwner.isGridComplete(sourceA))
+            assertTrue(reopenedOwner.isGridComplete(sourceB))
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
 }

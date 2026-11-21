@@ -18,7 +18,8 @@ import kotlin.math.abs
  */
 internal class TimelineThumbnailDiskCache(
     private val directory: File,
-    private val maxBytes: Long = 96L * 1024L * 1024L
+    private val maxBytes: Long = 96L * 1024L * 1024L,
+    private val maxFiles: Int = 20_000
 ) {
     data class CachedFrame(val timestampMs: Long, val bitmap: Bitmap)
 
@@ -88,43 +89,81 @@ internal class TimelineThumbnailDiskCache(
     ): CachedFrame? {
         val safeTimestamp = timestampMs.coerceAtLeast(0L)
         val distanceLimit = maxDistanceMs.coerceAtLeast(0L)
-        val lowerTimestamp = (safeTimestamp - distanceLimit).coerceAtLeast(0L)
-        val upperTimestamp = if (Long.MAX_VALUE - safeTimestamp < distanceLimit) {
-            Long.MAX_VALUE
-        } else {
-            safeTimestamp + distanceLimit
-        }
-        // File enumeration is performed once per source, not once per visible
-        // thumbnail. In particular, maxDistanceMs=0 (the normal exact-frame
-        // fallback) becomes a direct timestamp-index lookup rather than a full
-        // directory scan and sort on every worker.
-        val candidates = indexedFramesFor(sourceKey)
-            .subMap(lowerTimestamp, true, upperTimestamp, true)
-            .entries
-            .asSequence()
-            .flatMap { entry ->
-                entry.value.asSequence()
-                    .filter { it.isFile }
-                    .map { file ->
-                        Triple(abs(entry.key - safeTimestamp), entry.key, file)
-                    }
-            }
-            .sortedWith(
-                compareBy<Triple<Long, Long, File>> { it.first }
-                    .thenByDescending { it.third.length() }
-            )
-            .toList()
+        val index = indexedFramesFor(sourceKey)
+        var lower = index.floorEntry(safeTimestamp)
+        var upper = index.ceilingEntry(safeTimestamp)
 
-        for ((_, cachedTime, file) in candidates) {
-            val bitmap = decode(file)
-            if (bitmap != null) {
-                file.setLastModified(System.currentTimeMillis())
-                return CachedFrame(cachedTime, bitmap)
+        // Walk outward from the requested timestamp instead of sorting every
+        // cached file for every visible cell. The timestamp index makes the
+        // common nearest-frame lookup logarithmic plus one JPEG decode.
+        while (lower != null || upper != null) {
+            val sameTimestamp = lower != null && upper != null && lower.key == upper.key
+            val chooseLower = when {
+                lower == null -> false
+                upper == null -> true
+                sameTimestamp -> true
+                else -> (safeTimestamp - lower.key) <= (upper.key - safeTimestamp)
             }
-            file.delete()
-            sourceFrameIndexes[sourceKey]?.get(cachedTime)?.remove(file)
+            val entry = if (chooseLower) lower else upper
+            if (entry == null) break
+            val candidateTimestamp = entry.key
+            val distance = kotlin.math.abs(candidateTimestamp - safeTimestamp)
+            if (distance > distanceLimit) break
+
+            for (file in entry.value.toList().filter { it.isFile }.sortedByDescending { it.length() }) {
+                val bitmap = decode(file)
+                if (bitmap != null) {
+                    file.setLastModified(System.currentTimeMillis())
+                    return CachedFrame(candidateTimestamp, bitmap)
+                }
+                file.delete()
+                sourceFrameIndexes[sourceKey]?.get(candidateTimestamp)?.remove(file)
+            }
+
+            if (sameTimestamp) {
+                lower = index.lowerEntry(candidateTimestamp)
+                upper = index.higherEntry(candidateTimestamp)
+            } else if (chooseLower) {
+                lower = index.lowerEntry(candidateTimestamp)
+            } else {
+                upper = index.higherEntry(candidateTimestamp)
+            }
         }
         return null
+    }
+
+    fun containsTimestamp(sourceKey: String, timestampMs: Long): Boolean =
+        indexedFramesFor(sourceKey)[timestampMs.coerceAtLeast(0L)]
+            ?.any { it.isFile && it.length() > 0L } == true
+
+    fun isGridComplete(sourceKey: String): Boolean =
+        File(sourceDirectory(sourceKey), ".grid-v1.complete").isFile
+
+    fun markGridComplete(sourceKey: String): Boolean {
+        val source = sourceDirectory(sourceKey)
+        if (!source.exists() && !source.mkdirs()) return false
+        val marker = File(source, ".grid-v1.complete")
+        val temporary = File(source, ".grid-v1.complete.tmp")
+        return runCatching {
+            temporary.writeText("version=1")
+            if (marker.exists()) marker.delete()
+            check(temporary.renameTo(marker)) { "Could not publish frame-grid marker" }
+            true
+        }.getOrDefault(false).also {
+            if (!it) temporary.delete()
+        }
+    }
+
+    fun deleteSource(sourceKey: String) {
+        val source = sourceDirectory(sourceKey)
+        val bytes = source.walkTopDown()
+            .filter { it.isFile && it.extension.equals("jpg", ignoreCase = true) }
+            .sumOf { it.length().coerceAtLeast(0L) }
+        source.deleteRecursively()
+        sourceFrameIndexes.remove(sourceKey)
+        cachedBytes.updateAndGet { known ->
+            if (known < 0L) -1L else (known - bytes).coerceAtLeast(0L)
+        }
     }
 
     fun put(
@@ -260,11 +299,15 @@ internal class TimelineThumbnailDiskCache(
                 .filter { it.isFile && it.extension.equals("jpg", ignoreCase = true) }
                 .toList()
             var totalBytes = files.sumOf { it.length() }
-            if (totalBytes > maxBytes) {
+            var remainingFiles = files.size
+            if (totalBytes > maxBytes || remainingFiles > maxFiles.coerceAtLeast(1)) {
                 files.sortedBy { it.lastModified() }.forEach { file ->
-                    if (totalBytes <= maxBytes) return@forEach
+                    if (totalBytes <= maxBytes && remainingFiles <= maxFiles.coerceAtLeast(1)) return@forEach
                     val size = file.length()
-                    if (file.delete()) totalBytes -= size
+                    if (file.delete()) {
+                        totalBytes -= size
+                        remainingFiles--
+                    }
                 }
             }
             // Remove abandoned temporary writes left by a process killed during
