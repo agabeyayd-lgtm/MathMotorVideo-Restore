@@ -490,6 +490,8 @@ class VideoEditorActivity : Activity() {
     private val timelineThumbnailTasksBySource =
         java.util.concurrent.ConcurrentHashMap<String, MutableSet<TimelineThumbnailTask>>()
     private val timelineThumbnailSourceGenerations = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    // Stable across process restarts, but changes when the same URI's backing file changes.
+    private val timelineThumbnailDiskSourceKeys = java.util.concurrent.ConcurrentHashMap<String, String>()
     private val pendingTimelinePosterGenerations = java.util.concurrent.ConcurrentHashMap<String, Long>()
     // Learned from the actual decoded frame, so imported and restored clips share
     // the same aspect-ratio-aware filmstrip path without blocking the UI for metadata.
@@ -507,6 +509,44 @@ class VideoEditorActivity : Activity() {
 
     private fun timelineThumbnailSourceGeneration(uri: Uri): Long =
         timelineThumbnailSourceGenerations[uri.toString()] ?: 0L
+
+    /**
+     * Disk cache keys include source metadata so a file replaced in place cannot
+     * accidentally reuse frames from its previous contents. The URI alone remains
+     * the fallback for providers that expose no version metadata.
+     */
+    private fun timelineThumbnailDiskSourceKey(uri: Uri): String =
+        timelineThumbnailDiskSourceKeys.computeIfAbsent(uri.toString()) {
+            val fingerprint = when (uri.scheme) {
+                "file" -> uri.path?.let(::File)?.takeIf { it.isFile }?.let { file ->
+                    "size=${file.length()}|modified=${file.lastModified()}"
+                }
+                "content" -> runCatching {
+                    contentResolver.query(
+                        uri,
+                        arrayOf(
+                            android.provider.OpenableColumns.SIZE,
+                            MediaStore.MediaColumns.DATE_MODIFIED
+                        ),
+                        null,
+                        null,
+                        null
+                    )?.use { cursor ->
+                        if (!cursor.moveToFirst()) return@use null
+                        val sizeIndex = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                        val modifiedIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
+                        val size = sizeIndex.takeIf { it >= 0 && !cursor.isNull(it) }
+                            ?.let { cursor.getLong(it) }
+                        val modified = modifiedIndex.takeIf { it >= 0 && !cursor.isNull(it) }
+                            ?.let { cursor.getLong(it) }
+                        if (size == null && modified == null) null
+                        else "size=${size ?: "na"}|modified=${modified ?: "na"}"
+                    }
+                }.getOrNull()
+                else -> null
+            }
+            if (fingerprint.isNullOrBlank()) uri.toString() else "$uri|source-version=$fingerprint"
+        }
 
     private fun trackTimelineThumbnailTask(sourceKey: String, task: TimelineThumbnailTask) {
         timelineThumbnailTasksBySource.computeIfAbsent(sourceKey) {
@@ -530,6 +570,8 @@ class VideoEditorActivity : Activity() {
         val sourceKey = uri.toString()
         val nextGeneration = timelineThumbnailSourceGeneration(uri) + 1L
         timelineThumbnailSourceGenerations[sourceKey] = nextGeneration
+        // Recompute mutable source metadata if this URI is imported again later.
+        timelineThumbnailDiskSourceKeys.remove(sourceKey)
         // queue.removeIf() alone only removes work that has not started. The API-35
         // failure showed three decoders still running for a clip after it was removed;
         // a newly imported clip then waited behind frames that could never be displayed.
@@ -13300,16 +13342,17 @@ class VideoEditorActivity : Activity() {
                 // never on the main thread. A reopened project can therefore paint
                 // its cached filmstrip without blocking input or layout.
                 val diskLookupStartedAtUptimeMs = SystemClock.uptimeMillis()
+                val diskSourceKey = timelineThumbnailDiskSourceKey(uri)
                 // First prefer the exact-size entry. If the same source frame was
                 // already cached at another viewport size (for example after an
                 // Activity/process recreation), reuse that exact timestamp and fit it
                 // to the new cell instead of decoding the source video again.
                 // maxDistanceMs=0 is intentional: no neighbouring frame may be shown.
                 val exactSizeDiskFrame = timelineThumbnailDiskCache.getExact(
-                    sourceKey, timestampMs, decodeWidthPx, decodeHeightPx
+                    diskSourceKey, timestampMs, decodeWidthPx, decodeHeightPx
                 )
                 val diskExact = exactSizeDiskFrame ?: timelineThumbnailDiskCache.findNearest(
-                    sourceKey,
+                    diskSourceKey,
                     timestampMs,
                     maxDistanceMs = 0L
                 )?.bitmap
@@ -13359,7 +13402,7 @@ class VideoEditorActivity : Activity() {
                     diskCacheHit = true
                     if (timelineLifecycleDiagnosticsEnabled) android.util.Log.i(
                         "TimelineThumbnail",
-                        "TIMELINE_THUMBNAIL_DISK_CACHE_HIT sourceMs=$timestampMs exactTimestamp=true " +
+                        "TIMELINE_THUMBNAIL_DISK_CACHE_HIT uri=$uri sourceMs=$timestampMs exactTimestamp=true " +
                             "exactSize=${!diskCacheVariantHit} cached=${cachedWidth}x${cachedHeight} " +
                             "target=${decodeWidthPx}x${decodeHeightPx}"
                     )
@@ -13441,9 +13484,16 @@ class VideoEditorActivity : Activity() {
                     runCatching {
                         timelineThumbnailDiskWriter.execute {
                             try {
-                                timelineThumbnailDiskCache.put(
-                                    sourceKey, timestampMs, decodeWidthPx, decodeHeightPx, cacheCopy
+                                val persisted = timelineThumbnailDiskCache.put(
+                                    diskSourceKey, timestampMs, decodeWidthPx, decodeHeightPx, cacheCopy
                                 )
+                                if (persisted && timelineLifecycleDiagnosticsEnabled) {
+                                    android.util.Log.i(
+                                        "TimelineThumbnail",
+                                        "TIMELINE_THUMBNAIL_DISK_CACHE_PERSISTED uri=$uri sourceMs=$timestampMs " +
+                                            "width=$decodeWidthPx height=$decodeHeightPx"
+                                    )
+                                }
                             } catch (error: Exception) {
                                 if (timelineLifecycleDiagnosticsEnabled) {
                                     android.util.Log.w(
