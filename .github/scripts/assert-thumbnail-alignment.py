@@ -137,6 +137,22 @@ def verify(log_path: str, screenshot_path: str):
             "maximum representational difference is 0.5px)."
         )
 
+    # A grid thumbnail may deliberately stand in for a nearby requested cell
+    # (for example, targetMs=1708 uses gridMs=1500 within the 250ms grid limit).
+    # Its accessibility timestamp is therefore not the exact playhead time.
+    # The exact preview must match the latest app-measured playhead from this
+    # same final alignment capture, with the existing 35ms frame tolerance.
+    playhead_samples = [
+        int(playhead)
+        for playhead in re.findall(
+            r"TIMELINE_SYNC_SAMPLE .*?playheadMs=(\d+)", log
+        )
+    ]
+    if not playhead_samples:
+        raise SystemExit(
+            "FAIL: no app-measured playhead timestamp was recorded for the centered thumbnail."
+        )
+    preview_target_ms = playhead_samples[-1]
     ready = [
         (int(project), int(source))
         for project, source in re.findall(
@@ -145,14 +161,14 @@ def verify(log_path: str, screenshot_path: str):
     ]
     time_tolerance_ms = 35
     if not any(
-        abs(project - sample_ms) <= time_tolerance_ms
-        and abs(source - sample_ms) <= time_tolerance_ms
+        abs(project - preview_target_ms) <= time_tolerance_ms
+        and abs(source - preview_target_ms) <= time_tolerance_ms
         for project, source in ready
     ):
         raise SystemExit(
-            f"FAIL: preview did not decode the timestamp represented by the centered thumbnail "
-            f"within the fixed {time_tolerance_ms}ms limit "
-            f"(thumbnail={sample_ms}ms, ready preview frames={ready[-5:]})."
+            f"FAIL: preview did not decode the exact playhead timestamp within the fixed "
+            f"{time_tolerance_ms}ms limit (grid thumbnail={sample_ms}ms, "
+            f"playhead={preview_target_ms}ms, ready preview frames={ready[-5:]})."
         )
     scrub_ready = [
         (int(project), int(source))
@@ -161,14 +177,15 @@ def verify(log_path: str, screenshot_path: str):
         )
     ]
     if not any(
-        abs(project - sample_ms) <= time_tolerance_ms
-        and abs(source - sample_ms) <= time_tolerance_ms
+        abs(project - preview_target_ms) <= time_tolerance_ms
+        and abs(source - preview_target_ms) <= time_tolerance_ms
         for project, source in scrub_ready
     ):
         raise SystemExit(
-            f"FAIL: dragging the filmstrip did not update the preview to the centered playhead time "
-            f"within the fixed {time_tolerance_ms}ms limit "
-            f"(thumbnail={sample_ms}ms, scrub preview frames={scrub_ready[-5:]})."
+            f"FAIL: dragging the filmstrip did not update the preview to the exact playhead "
+            f"timestamp within the fixed {time_tolerance_ms}ms limit "
+            f"(grid thumbnail={sample_ms}ms, playhead={preview_target_ms}ms, "
+            f"scrub preview frames={scrub_ready[-5:]})."
         )
     grid_paint_events = []
     for line in log.splitlines():
