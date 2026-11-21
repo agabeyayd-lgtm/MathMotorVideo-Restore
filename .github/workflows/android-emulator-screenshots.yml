@@ -255,7 +255,7 @@ jobs:
           adb -s emulator-5554 shell settings put global window_animation_scale 0
           adb -s emulator-5554 shell settings put global transition_animation_scale 0
           adb -s emulator-5554 shell settings put global animator_duration_scale 0
-          gradle --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.mathmotor.video.VideoProjectDraftBackupTest
+          gradle --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.mathmotor.video.VideoProjectDraftBackupTest,com.mathmotor.video.TimelineThumbnailDiskCacheTest
           bash .github/scripts/capture-emulator-screenshots.sh
 
       - name: Upload emulator screenshots and diagnostics
