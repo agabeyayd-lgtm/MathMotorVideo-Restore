@@ -6747,9 +6747,14 @@ class VideoEditorActivity : Activity() {
                     if (clipIndex == 1 && clipBounds == "none") clipBounds = bounds
                 }
             }
-            if (view is ImageView && description.startsWith("Klip karesi @")) {
+            val thumbnailTimestampPrefix = when {
+                description.startsWith("Klip karesi @") -> "Klip karesi @"
+                description.startsWith("Klip ızgara karesi @") -> "Klip ızgara karesi @"
+                else -> null
+            }
+            if (view is ImageView && thumbnailTimestampPrefix != null) {
                 cellCandidates++
-                val timestampStart = description.indexOf("Klip karesi @") + "Klip karesi @".length
+                val timestampStart = description.indexOf(thumbnailTimestampPrefix) + thumbnailTimestampPrefix.length
                 val timestampEnd = description.indexOf("ms", timestampStart)
                 val timestamp = if (timestampEnd > timestampStart) {
                     description.substring(timestampStart, timestampEnd).toLongOrNull()
