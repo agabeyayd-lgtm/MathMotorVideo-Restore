@@ -64,13 +64,20 @@ internal class SequentialFilmstripFrameDecoder(
     fun decodeAtOrAfter(
         targetTimeMs: Long,
         maxWidthPx: Int,
-        maxHeightPx: Int
+        maxHeightPx: Int,
+        maxSequentialGapMs: Long
     ): DecodedFrame? {
         check(!invalidated) { "Sequential decoder invalidated for " + sourceUri }
         check(!Thread.currentThread().isInterrupted) { "Sequential decode interrupted" }
 
         val targetTimeUs = targetTimeMs.coerceAtLeast(0L) * 1_000L
-        if (lastOutputTimeUs >= 0L && targetTimeUs < lastOutputTimeUs) {
+        if (lastOutputTimeUs >= 0L &&
+            TimelineThumbnailMath.shouldSeekSequentialDecoder(
+                lastOutputTimeUs / 1_000L,
+                targetTimeMs,
+                maxSequentialGapMs
+            )
+        ) {
             seekAndFlush(targetTimeUs)
         }
 
