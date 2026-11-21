@@ -4055,7 +4055,7 @@ class VideoEditorActivity : Activity() {
                 } else tag
             }
             if (reorderable) {
-                row.addView(grip, LinearLayout.LayoutParams(dp(44), ViewGroup.LayoutParams.MATCH_PARENT))
+                row.addView(grip, LinearLayout.LayoutParams(timelineGripWidthPx(), ViewGroup.LayoutParams.MATCH_PARENT))
                 val sideAction: View = if (tag == "Video") {
                     val coverAction = LinearLayout(this).apply {
                         orientation = LinearLayout.VERTICAL
@@ -4123,7 +4123,7 @@ class VideoEditorActivity : Activity() {
                         }
                     }
                 }
-                row.addView(sideAction, LinearLayout.LayoutParams(dp(40), ViewGroup.LayoutParams.MATCH_PARENT))
+                row.addView(sideAction, LinearLayout.LayoutParams(timelineSideActionWidthPx(), ViewGroup.LayoutParams.MATCH_PARENT))
                 // The header is the first horizontally scrolling item. The
                 // zero-time spacer follows it so the clip still begins beneath
                 // the fixed centre playhead, but the header itself scrolls away
@@ -4166,7 +4166,7 @@ class VideoEditorActivity : Activity() {
                         ViewGroup.LayoutParams.MATCH_PARENT
                     )
                 )
-                row.addView(timelineRulerHeader, LinearLayout.LayoutParams(dp(56), ViewGroup.LayoutParams.MATCH_PARENT))
+                row.addView(timelineRulerHeader, LinearLayout.LayoutParams(timelineHeaderGutterWidthPx(), ViewGroup.LayoutParams.MATCH_PARENT))
             }
 
             if (reorderable) {
@@ -6561,8 +6561,13 @@ class VideoEditorActivity : Activity() {
             resources.displayMetrics.widthPixels, 6_500L, dp(11).toFloat(), dp(720).toFloat()
         )
 
-    /** The 84dp label/action header is now embedded in each scrolling row. */
-    private fun timelineHeaderGutterWidthPx(): Int = dp(56)
+    /** Use the exact child widths for both the media-row and ruler headers. */
+    private fun timelineGripWidthPx(): Int = dp(44)
+
+    private fun timelineSideActionWidthPx(): Int = dp(40)
+
+    private fun timelineHeaderGutterWidthPx(): Int =
+        TimelineScaleMath.mediaLaneHeaderWidthPx(timelineGripWidthPx(), timelineSideActionWidthPx())
 
     private fun timelineFrameWidth(viewportWidth: Int): Int =
         timelineTracksFrame.width.takeIf { it > 0 }
