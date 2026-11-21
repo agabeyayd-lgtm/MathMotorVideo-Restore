@@ -192,6 +192,41 @@ class TimelineThumbnailDiskCacheTest {
 
 
     @Test
+    fun lruEvictionInvalidatesCompletedGridMarker() {
+        val directory = freshDirectory("grid-marker-eviction")
+        val source = "content://mathmotor.test/video/grid-eviction"
+        val cache = TimelineThumbnailDiskCache(directory, 96L * 1024L * 1024L, 1)
+        val first = patternedBitmap(701)
+        try {
+            assertTrue(cache.put(source, 0L, 48, 48, first))
+        } finally {
+            first.recycle()
+        }
+        assertTrue(cache.markGridComplete(source))
+        val firstJpeg = directory.walkTopDown()
+            .first { it.isFile && it.extension.equals("jpg", ignoreCase = true) }
+        assertTrue("Could not age the first grid frame", firstJpeg.setLastModified(1L))
+
+        val second = patternedBitmap(702)
+        try {
+            assertTrue(cache.put(source, 500L, 48, 48, second))
+        } finally {
+            second.recycle()
+        }
+
+        assertFalse(
+            "The complete marker survived eviction of one of its grid frames",
+            cache.isGridComplete(source)
+        )
+        assertEquals(
+            1,
+            directory.walkTopDown()
+                .count { it.isFile && it.extension.equals("jpg", ignoreCase = true) }
+        )
+        directory.deleteRecursively()
+    }
+
+    @Test
     fun cacheEnforcesFileCountCapEvenWhenByteBudgetIsNotReached() {
         val directory = freshDirectory("file-count-cap")
         val cache = TimelineThumbnailDiskCache(directory, 96L * 1024L * 1024L, 3)
