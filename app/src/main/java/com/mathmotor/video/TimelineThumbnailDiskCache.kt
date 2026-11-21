@@ -28,6 +28,7 @@ internal class TimelineThumbnailDiskCache(
     // -1 means the existing on-disk size has not yet been reconciled. The first
     // reconciliation happens on the dedicated background cache-writer thread.
     private val cachedBytes = AtomicLong(-1L)
+    private val cachedFileCount = AtomicLong(-1L)
     private val sizeInitializationLock = Any()
     private val trimInProgress = AtomicBoolean(false)
     private val staleTemporaryFileAgeMs = 60L * 60L * 1_000L
@@ -156,13 +157,18 @@ internal class TimelineThumbnailDiskCache(
 
     fun deleteSource(sourceKey: String) {
         val source = sourceDirectory(sourceKey)
-        val bytes = source.walkTopDown()
+        val files = source.walkTopDown()
             .filter { it.isFile && it.extension.equals("jpg", ignoreCase = true) }
-            .sumOf { it.length().coerceAtLeast(0L) }
+            .toList()
+        val bytes = files.sumOf { it.length().coerceAtLeast(0L) }
+        val fileCount = files.size.toLong()
         source.deleteRecursively()
         sourceFrameIndexes.remove(sourceKey)
         cachedBytes.updateAndGet { known ->
             if (known < 0L) -1L else (known - bytes).coerceAtLeast(0L)
+        }
+        cachedFileCount.updateAndGet { known ->
+            if (known < 0L) -1L else (known - fileCount).coerceAtLeast(0L)
         }
     }
 
@@ -226,9 +232,9 @@ internal class TimelineThumbnailDiskCache(
         if (written) {
             addIndexedFrame(sourceKey, safeTimestamp, destination)
             val total = addToKnownSize(destination.length())
-            // Enforce the configured cap against both pre-existing files and the
-            // frame just published. This scan/eviction is isolated to the disk writer.
-            if (total > maxBytes) trimToLimit()
+            val fileCount = addToKnownFileCount()
+            // Enforce both the byte and file-count caps on the background writer.
+            if (total > maxBytes || fileCount > maxFiles.coerceAtLeast(1)) trimToLimit()
         }
         return destination.isFile && destination.length() > 0L
     }
@@ -241,6 +247,7 @@ internal class TimelineThumbnailDiskCache(
             if (secondRead >= 0L) return secondRead
             val cutoff = System.currentTimeMillis() - staleTemporaryFileAgeMs
             var existingBytes = 0L
+            var existingFileCount = 0L
             if (directory.isDirectory) {
                 directory.walkTopDown().forEach { file ->
                     if (!file.isFile) return@forEach
@@ -248,10 +255,12 @@ internal class TimelineThumbnailDiskCache(
                         if (file.lastModified() <= cutoff) file.delete()
                     } else if (file.extension.equals("jpg", ignoreCase = true)) {
                         existingBytes += file.length().coerceAtLeast(0L)
+                        existingFileCount++
                     }
                 }
             }
             cachedBytes.set(existingBytes)
+            cachedFileCount.set(existingFileCount)
             return existingBytes
         }
     }
@@ -259,6 +268,11 @@ internal class TimelineThumbnailDiskCache(
     private fun addToKnownSize(bytes: Long): Long {
         initializeKnownSize()
         return cachedBytes.addAndGet(bytes.coerceAtLeast(0L))
+    }
+
+    private fun addToKnownFileCount(): Long {
+        initializeKnownSize()
+        return cachedFileCount.incrementAndGet()
     }
 
     private fun decode(file: File): Bitmap? = runCatching {
@@ -319,6 +333,7 @@ internal class TimelineThumbnailDiskCache(
                 .filter { it.lastModified() <= staleTempCutoff }
                 .forEach { it.delete() }
             cachedBytes.set(totalBytes)
+            cachedFileCount.set(remainingFiles.toLong())
             directory.walkBottomUp()
                 .filter { it.isDirectory && it != directory }
                 .forEach { dir -> if (dir.list().isNullOrEmpty()) dir.delete() }

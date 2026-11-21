@@ -9,6 +9,7 @@ import kotlin.math.abs
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -187,6 +188,27 @@ class TimelineThumbnailDiskCacheTest {
         } finally {
             directory.deleteRecursively()
         }
+    }
+
+
+    @Test
+    fun cacheEnforcesFileCountCapEvenWhenByteBudgetIsNotReached() {
+        val directory = freshDirectory("file-count-cap")
+        val cache = TimelineThumbnailDiskCache(directory, 96L * 1024L * 1024L, 3)
+        val source = "content://mathmotor.test/video/file-count"
+        repeat(8) { index ->
+            val bitmap = patternedBitmap(index + 300)
+            try {
+                assertTrue(cache.put(source, index * 500L, 48, 48, bitmap))
+            } finally {
+                bitmap.recycle()
+            }
+        }
+        val files = directory.walkTopDown()
+            .filter { it.isFile && it.extension.equals("jpg", ignoreCase = true) }
+            .count()
+        assertEquals(3, files)
+        directory.deleteRecursively()
     }
 
 }
