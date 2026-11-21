@@ -1771,14 +1771,27 @@ class VideoEditorActivity : Activity() {
 
         // Compact playback time and fullscreen control share the left side of
         // the playback row; the play action stays on the phone's center axis.
-        timelinePlayheadLabel = label("00:00.0 / 00:00.0", 8.5f, Color.rgb(225, 233, 237), true).apply {
+        timelinePlayheadLabel = label("00:00.0 / 00:00.0", 10f, Color.rgb(225, 233, 237), true).apply {
             maxLines = 1
             gravity = Gravity.CENTER_VERTICAL or Gravity.START
             setSingleLine(true)
             ellipsize = android.text.TextUtils.TruncateAt.END
-            setPadding(dp(3), 0, dp(2), 0)
+            setPadding(dp(10), 0, dp(6), 0)
             contentDescription = "Oynatma zamanı ve toplam video süresi"
         }
+        // Keep the live time readout on its own row. The ruler below is reserved
+        // exclusively for time ticks, never playback actions or fit/undo controls.
+        val timelineTimeRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), 0, dp(4), 0)
+            addView(timelinePlayheadLabel, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(26)
+            ))
+        }
+        root.addView(timelineTimeRow, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(26)
+        ))
         playbackLeft = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -1790,12 +1803,6 @@ class VideoEditorActivity : Activity() {
             contentDescription = "Önizlemeyi geniş ekranda aç"
         }
         playbackLeft.addView(previewFocusButton, LinearLayout.LayoutParams(dp(38), dp(36)))
-        playbackLeft.addView(
-            timelinePlayheadLabel,
-            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply {
-                leftMargin = dp(3)
-            }
-        )
         centeredPlaybackRow.addView(
             playbackLeft,
             FrameLayout.LayoutParams(dp(132), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START or Gravity.CENTER_VERTICAL).apply {
@@ -3521,13 +3528,8 @@ class VideoEditorActivity : Activity() {
                 0,
                 LinearLayout.LayoutParams(dp(38), dp(36))
             )
-            if (::timelineRulerHeader.isInitialized) {
-                (timelinePlayheadLabel.parent as? ViewGroup)?.removeView(timelinePlayheadLabel)
-                timelineRulerHeader.addView(
-                    timelinePlayheadLabel,
-                    LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-                )
-            }
+            // The time readout remains on its dedicated row; the ruler header
+            // stays an empty alignment gutter in both normal and focus modes.
             centeredPlaybackRow.addView(
                 timelinePlayButton,
                 FrameLayout.LayoutParams(dp(46), dp(38), Gravity.CENTER)
