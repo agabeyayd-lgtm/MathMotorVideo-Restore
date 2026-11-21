@@ -13337,12 +13337,14 @@ class VideoEditorActivity : Activity() {
             var diskCacheVariantHit = false
             var decoded: Bitmap? = null
             var decodedSourceAspectRatio: Float? = null
+            // Keep the fingerprint available for the asynchronous disk writer below.
+            var diskSourceKey = sourceKey
             try {
                 // Persistent cache reads run on the background thumbnail workers,
                 // never on the main thread. A reopened project can therefore paint
                 // its cached filmstrip without blocking input or layout.
                 val diskLookupStartedAtUptimeMs = SystemClock.uptimeMillis()
-                val diskSourceKey = timelineThumbnailDiskSourceKey(uri)
+                diskSourceKey = timelineThumbnailDiskSourceKey(uri)
                 // First prefer the exact-size entry. If the same source frame was
                 // already cached at another viewport size (for example after an
                 // Activity/process recreation), reuse that exact timestamp and fit it
