@@ -13585,6 +13585,9 @@ class VideoEditorActivity : Activity() {
 
     private fun runTimelineGridIdleExactPass() {
         if (timelineScaleGestureActive || isFinishing || isDestroyed) return
+        // Keep at most one non-playhead exact fallback in flight. Missing grid
+        // cells are repaired serially rather than filling the shared decoder queue.
+        if (pendingTimelineGridExactTasks.isNotEmpty()) return
         val motionGeneration = timelineGridMotionGeneration.get()
         pendingTimelineGridTargets.entries.toList().forEach { (sourceKey, targets) ->
             targets.toList().forEach { request ->
@@ -13623,6 +13626,12 @@ class VideoEditorActivity : Activity() {
                     usePosterPlaceholder = false,
                     gridMotionGeneration = motionGeneration
                 )
+                android.util.Log.i(
+                    "TimelineThumbnail",
+                    "TIMELINE_GRID_EXACT_ENQUEUED sourceMs=" + request.timestampMs +
+                        " queuedNonPlayheadExact=" + pendingTimelineGridExactTasks.size
+                )
+                return
             }
             if (targets.isEmpty()) pendingTimelineGridTargets.remove(sourceKey, targets)
         }
@@ -13881,6 +13890,9 @@ class VideoEditorActivity : Activity() {
             onFinished = {
                 untrackTimelineThumbnailTask(sourceKey, task)
                 pendingTimelineGridExactTasks.remove(task)
+                if (gridMotionGeneration != null) {
+                    timelineHandler.post { scheduleTimelineGridIdleExactPass() }
+                }
             },
             onEnqueued = { submittedAtUptimeMs = SystemClock.uptimeMillis() },
             taskPriority = 0
