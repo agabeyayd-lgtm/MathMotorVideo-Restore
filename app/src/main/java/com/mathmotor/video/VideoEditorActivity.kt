@@ -3237,9 +3237,10 @@ class VideoEditorActivity : Activity() {
                     val panelParams = editorPanelScroll.layoutParams as? LinearLayout.LayoutParams
                     if (panelParams != null) {
                         val basePanelHeight = when {
-                            activeEditorPanel == "clipVolume" -> if (imeVisible) 112 else 150
+                            activeEditorPanel == "clipVolume" -> if (imeVisible) 112 else 136
                             activeEditorPanel == "text" && imeVisible -> 68
-                            else -> if (imeVisible) 124 else 196
+                            activeEditorPanel == "text" -> 216
+                            else -> if (imeVisible) 124 else 172
                         }
                         val stickyHeaderHeight = if (!imeVisible && activeEditorPanel != null &&
                             ::editorPanelReturnButton.isInitialized &&
@@ -3250,10 +3251,9 @@ class VideoEditorActivity : Activity() {
                     }
                 }
 
-                // The keyboard is a temporary text-entry mode. Collapse every
-                // nonessential row around the project canvas; keeping the playback
-                // controls and sticky panel header visible here cuts the actual 9:16
-                // canvas almost in half on a short viewport.
+                // The keyboard is a temporary text-entry mode. Collapse the
+                // timeline, transport row and dock while text entry is active;
+                // restore them as soon as the keyboard closes.
                 timelineCard.visibility = if (imeVisible) View.GONE else View.VISIBLE
                 setTimelinePanelMode(panelOpen = activeEditorPanel != null)
                 // Keep the transport control available while editing a layer or
@@ -3424,8 +3424,8 @@ class VideoEditorActivity : Activity() {
             referencePreviewCanvasHeight = fittedCanvasBounds.height
             referencePreviewStageHeightPx = stageHeight
         }
-        // Keep the project itself pixel-identical while tools are open. The dark
-        // surrounding work stage may reflow, but the editable/exportable canvas may not.
+        // Keep the project canvas dimensions steady during keyboard entry. For
+        // detail panels, fit the canvas to the reduced preview stage instead.
         val preserveProjectCanvas = !captureReferenceCanvas &&
             !previewFocusMode &&
             keyboardLayoutActive &&
@@ -3795,9 +3795,9 @@ class VideoEditorActivity : Activity() {
             editorDockScroll.visibility = if (keyboardLayoutActive) View.GONE else View.VISIBLE
         }
         if (::editorPanelReturnButton.isInitialized) {
-            // Every contextual panel needs a visible, reachable way back to
-            // the editor dock. The global dock is intentionally hidden while a
-            // panel owns the workspace, so export and audio must not trap users.
+            // Keep a dedicated return action as well as the persistent dock.
+            // This gives panel users an explicit way back without removing the
+            // transport or tool controls from the workspace.
             editorPanelReturnButton.visibility =
                 if (!keyboardLayoutActive) View.VISIBLE else View.GONE
         }
