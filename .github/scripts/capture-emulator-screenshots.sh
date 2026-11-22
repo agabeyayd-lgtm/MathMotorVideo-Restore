@@ -3395,7 +3395,7 @@ root = ET.parse(sys.argv[1]).getroot()
 for node in root.iter("node"):
     if node.attrib.get("class") != "android.widget.EditText" or node.attrib.get("enabled", "false") != "true":
         continue
-    match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
     if match:
         x1, y1, x2, y2 = map(int, match.groups())
         print((x1 + x2) // 2, (y1 + y2) // 2)
@@ -3422,7 +3422,7 @@ for node in root.iter("node"):
         continue
     if node.attrib.get("class") != "android.widget.Button" or node.attrib.get("enabled", "false") != "true":
         continue
-    match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
     if match:
         x1, y1, x2, y2 = map(int, match.groups())
         print((x1 + x2) // 2, (y1 + y2) // 2)
