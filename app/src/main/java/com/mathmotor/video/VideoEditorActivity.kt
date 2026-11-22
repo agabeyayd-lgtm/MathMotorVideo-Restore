@@ -8648,7 +8648,7 @@ class VideoEditorActivity : Activity() {
         editorDockScroll.visibility = if (keyboardLayoutActive) View.GONE else View.VISIBLE
         if (timelineSyncTestEnabled) {
             val toolLabels = (0 until editorDock.childCount).map { index ->
-                (editorDock.getChildAt(index) as? TextView)?.text?.toString()?.replace('\\n', ' ') ?: "?"
+                (editorDock.getChildAt(index) as? TextView)?.text?.toString()?.replace('\n', ' ') ?: "?"
             }
             android.util.Log.i(
                 "EditorTouchTest",
