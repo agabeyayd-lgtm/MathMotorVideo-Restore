@@ -2919,6 +2919,9 @@ class VideoEditorActivity : Activity() {
             val tab = miniButton("$symbol\n$title") {
                 if (key == "clip") {
                     if (clipToolsMode) exitClipTools() else enterClipTools()
+                } else if (key == "text") {
+                    if (clipToolsMode) exitClipTools()
+                    enterTextTools()
                 } else if (key == "captions") {
                     if (clipToolsMode) exitClipTools()
                     toggleEditorPanel("text")
@@ -8589,8 +8592,10 @@ class VideoEditorActivity : Activity() {
     }
 
     /** Text-track selection mirrors video and overlay: selection changes only the dock. */
+    /** Text tool selection opens its own dock; detail panels are a separate level. */
     private fun enterTextTools() {
         if (!::editorDock.isInitialized || !::editorPanelScroll.isInitialized) return
+        finishTextHistoryEdit()
         if (::editorPanelReturnButton.isInitialized) editorPanelReturnButton.visibility = View.GONE
         clipToolsMode = true
         activeClipTool = null
@@ -8604,36 +8609,38 @@ class VideoEditorActivity : Activity() {
         editorPanelScroll.visibility = View.GONE
         editorPanelScroll.translationY = 0f
         editorPanelScroll.alpha = 1f
-        // A text-layer tap can arrive while the text EditText still owns IME
-        // focus. Entering the contextual text dock must dismiss that keyboard;
-        // otherwise Android keeps the preview compressed to a narrow strip and
-        // the tap appears not to have selected the text layer.
         val focusedForTextTools = currentFocus
         val textToolsIme = getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
             as? android.view.inputmethod.InputMethodManager
         focusedForTextTools?.windowToken?.let { textToolsIme?.hideSoftInputFromWindow(it, 0) }
         focusedForTextTools?.clearFocus()
         if (::textInput.isInitialized) textInput.clearFocus()
+
         editorDock.removeAllViews()
         val tools = listOf(
             Triple("‹", "Geri", "Ana araçlara dön"),
-            Triple("T", "Düzenle", "Seçili metin katmanını düzenle"),
-            Triple("×", "Sil", "Seçili metin katmanını kaldır")
+            Triple("T+", "Metin ekle", "Yeni metin katmanı ekle"),
+            Triple("☺", "Çıkartmalar", "Çıkartma galerisini aç"),
+            Triple("Aa", "Metin şablonları", "Metin şablonlarını ve stillerini aç")
         )
         tools.forEach { (symbol, title, description) ->
             val action: () -> Unit = when (title) {
                 "Geri" -> ({ exitClipTools() })
-                "Düzenle" -> ({ showEditorPanel("text") })
-                "Sil" -> ({ removeSelectedTextLayer() })
+                "Metin ekle" -> ({ addTextLayer() })
+                "Çıkartmalar" -> ({ showEditorPanel("stickers") })
+                "Metin şablonları" -> ({ showEditorPanel("text") })
                 else -> ({})
             }
-            editorDock.addView(makeClipDockTool(symbol, title, description, action),
-                LinearLayout.LayoutParams(dp(60), dp(58)))
+            editorDock.addView(
+                makeClipDockTool(symbol, title, description, action),
+                LinearLayout.LayoutParams(dp(82), dp(58))
+            )
         }
         editorDockScroll.scrollTo(0, 0)
+        editorDockScroll.visibility = if (keyboardLayoutActive) View.GONE else View.VISIBLE
         if (timelineSyncTestEnabled) {
             val toolLabels = (0 until editorDock.childCount).map { index ->
-                (editorDock.getChildAt(index) as? TextView)?.text?.toString()?.replace('\n', ' ') ?: "?"
+                (editorDock.getChildAt(index) as? TextView)?.text?.toString()?.replace('\\n', ' ') ?: "?"
             }
             android.util.Log.i(
                 "EditorTouchTest",
