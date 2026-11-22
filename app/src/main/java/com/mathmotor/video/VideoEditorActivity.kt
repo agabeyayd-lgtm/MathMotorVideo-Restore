@@ -8600,6 +8600,14 @@ class VideoEditorActivity : Activity() {
         clipToolsMode = true
         activeClipTool = null
         activeEditorPanel = null
+        // Returning from a detail panel to the text-tool dock must also restore
+        // the transport row; the previous panel may have hidden it.
+        if (::centeredPlaybackRow.isInitialized) {
+            centeredPlaybackRow.visibility = if (keyboardLayoutActive) View.GONE else View.VISIBLE
+        }
+        if (::editorDockScroll.isInitialized) {
+            editorDockScroll.visibility = if (keyboardLayoutActive) View.GONE else View.VISIBLE
+        }
         updateClipTransformTouchAvailability()
         updateOverlayTransformTouchAvailability()
         textOverlayEditingEnabled = false
