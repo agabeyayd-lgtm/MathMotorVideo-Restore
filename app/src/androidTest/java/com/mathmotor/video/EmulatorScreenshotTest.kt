@@ -59,6 +59,25 @@ class EmulatorScreenshotTest {
             "Text layer panel did not appear in the emulator",
             device.wait(Until.hasObject(By.text("METİN KATMANLARI")), 8_000)
         )
+
+        // Opening a detail panel must not replace the editor's persistent
+        // transport row or its bottom tool dock. Only the software keyboard
+        // is allowed to temporarily hide these controls.
+        val playbackControl = device.findObject(By.desc("Önizlemeyi oynat veya duraklat"))
+        assertTrue(
+            "The playback control row disappeared while the text panel was open",
+            playbackControl != null && playbackControl.visibleBounds.height() > 0
+        )
+        val undoControl = device.findObject(By.desc("Proje işlemini geri al"))
+        assertTrue(
+            "The undo control disappeared while the text panel was open",
+            undoControl != null && undoControl.visibleBounds.height() > 0
+        )
+        val textDockTool = device.findObject(By.desc("Metin aracı"))
+        assertTrue(
+            "The bottom editor tool dock disappeared while the text panel was open",
+            textDockTool != null && textDockTool.visibleBounds.height() > 0
+        )
         takeScreenshot(device, "editor-text-panel.png")
     }
 
