@@ -3442,7 +3442,16 @@ if ! dump_hierarchy editor-main-dock-after-text-return.xml emulator-screenshots/
   collect_capture_diagnostics text-tools-back-did-not-restore-main-dock
   exit 64
 fi
-echo "PASS: the detail-panel arrow returned to text tools and Geri restored the global editor dock."
+# The transport row must return with the main dock: fullscreen, play and
+# history controls must not remain hidden after leaving text tools.
+for transport_control in "Önizlemeyi geniş ekranda aç" "Önizlemeyi oynat" "Proje işlemini geri al" "Proje işlemini yinele"; do
+  if ! grep -Fq "$transport_control" emulator-screenshots/editor-main-dock-after-text-return.xml; then
+    echo "The transport row did not restore '$transport_control' after leaving text tools."
+    collect_capture_diagnostics "text-tools-transport-$transport_control-missing"
+    exit 64
+  fi
+done
+echo "PASS: the detail-panel arrow returned to text tools, Geri restored the global dock, and all four transport controls returned."
 
 echo "Step 8b: verify project-wide Undo/Redo restores a real text-canvas drag"
 dump_hierarchy editor-text-history-before-undo.xml emulator-screenshots/editor-text-history-before-undo.xml || {
