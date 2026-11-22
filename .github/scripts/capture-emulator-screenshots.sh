@@ -3381,53 +3381,79 @@ if [ "$text_drag_dx" -lt -6 ] || [ "$text_drag_dx" -gt 6 ] || [ "$text_drag_dy" 
 fi
 echo "PASS: vertical in-canvas text drag moved the rendered selection frame from ($text_before_x,$text_before_y) to ($text_after_x,$text_after_y) without shifting it beyond the canvas edges."
 
-# The IME changes the lower editor layout: the return button moves after
-# the keyboard closes. Use the app's fresh post-IME layout measurement rather
-# than the stale coordinates from editor-text-panel.xml captured before typing.
-text_panel_back_current="$(python3 - emulator-screenshots/editor-text-selected-canvas-logcat.txt <<'PY'
+# Verify the visible top-bar Bitti ✓ action while the composer owns the
+# keyboard. It must confirm text and return to the text-tools strip.
+if ! dump_hierarchy editor-text-before-checkmark.xml emulator-screenshots/editor-text-before-checkmark.xml; then
+  collect_capture_diagnostics text-confirm-before-keyboard-hierarchy-missing
+  exit 63
+fi
+text_field_for_confirm="$(python3 - emulator-screenshots/editor-text-before-checkmark.xml <<'PY'
 import re
 import sys
-
-matches = []
-for line in open(sys.argv[1], errors="replace"):
-    match = re.search(
-        r"TEXT_PANEL_RETURN_BOUNDS visible=true x=(\d+) y=(\d+) width=(\d+) height=(\d+)",
-        line,
-    )
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("class") != "android.widget.EditText" or node.attrib.get("enabled", "false") != "true":
+        continue
+    match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
     if match:
-        matches.append(tuple(map(int, match.groups())))
-if not matches:
-    raise SystemExit("No visible post-IME text-panel return bounds were recorded.")
-x, y, width, height = matches[-1]
-if width < 100 or height < 40:
-    raise SystemExit(f"Invalid measured text-panel return size: {width}x{height}")
-print(x + width // 2, y + height // 2)
+        x1, y1, x2, y2 = map(int, match.groups())
+        print((x1 + x2) // 2, (y1 + y2) // 2)
+        raise SystemExit(0)
+raise SystemExit("The text composer EditText is not available before confirming.")
 PY
 )" || {
-  echo "Could not resolve the current text-panel return-button position after keyboard dismissal."
-  collect_capture_diagnostics text-history-panel-return-bounds-missing
+  collect_capture_diagnostics text-confirm-input-target-missing
   exit 63
 }
-echo "Measured the current post-IME text-panel return action at $text_panel_back_current."
-timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_panel_back_current
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$text_field_for_confirm"
 sleep 1
-timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I > emulator-screenshots/editor-text-panel-return-logcat.txt 2>&1 || true
-if ! grep -Fq "TEXT_PANEL_RETURN_TAPPED activePanel=text" emulator-screenshots/editor-text-panel-return-logcat.txt; then
-  echo "The measured text-panel return control did not report its click handler."
-  collect_capture_diagnostics text-history-panel-return-not-tapped
+if ! dump_hierarchy editor-text-keyboard-before-checkmark.xml emulator-screenshots/editor-text-keyboard-before-checkmark.xml; then
+  collect_capture_diagnostics text-confirm-keyboard-hierarchy-missing
   exit 63
 fi
-echo "PASS: the current text-panel return button ran its click handler and closed the detail panel."
-
-# The detail-panel arrow returns to the first-level text strip; its Geri action
-# must then restore the global editor dock and its controls.
-if ! dump_hierarchy editor-text-tools-after-panel-return.xml emulator-screenshots/editor-text-tools-after-panel-return.xml ||
-   ! grep -Fq "Metin şablonları" emulator-screenshots/editor-text-tools-after-panel-return.xml; then
-  echo "The text detail panel return did not restore the text-tools dock."
-  collect_capture_diagnostics text-tools-return-dock-missing
-  exit 64
+checkmark_coords="$(python3 - emulator-screenshots/editor-text-keyboard-before-checkmark.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("text", "").strip() != "Bitti ✓":
+        continue
+    if node.attrib.get("class") != "android.widget.Button" or node.attrib.get("enabled", "false") != "true":
+        continue
+    match = re.fullmatch(r"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]", node.attrib.get("bounds", ""))
+    if match:
+        x1, y1, x2, y2 = map(int, match.groups())
+        print((x1 + x2) // 2, (y1 + y2) // 2)
+        raise SystemExit(0)
+raise SystemExit("The visible top-bar Bitti ✓ button was not found.")
+PY
+)" || {
+  echo "The text-entry keyboard did not expose its Bitti ✓ action."
+  collect_capture_diagnostics text-confirm-checkmark-missing
+  exit 63
+}
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$checkmark_coords"
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I > emulator-screenshots/editor-text-checkmark-logcat.txt 2>&1 || true
+if ! grep -Fq "TEXT_PANEL_RETURN_TAPPED activePanel=text" emulator-screenshots/editor-text-checkmark-logcat.txt; then
+  echo "The top-bar Bitti ✓ button did not execute the text-panel return handler."
+  collect_capture_diagnostics text-confirm-checkmark-handler-not-called
+  exit 63
 fi
-tools_back_coords="$(find_bottom_tool emulator-screenshots/editor-text-tools-after-panel-return.xml "Geri" || true)"
+if ! dump_hierarchy editor-text-tools-after-checkmark.xml emulator-screenshots/editor-text-tools-after-checkmark.xml ||
+   ! grep -Fq "Metin şablonları" emulator-screenshots/editor-text-tools-after-checkmark.xml; then
+  echo "The top-bar Bitti ✓ action did not restore the four-action text-tools dock."
+  collect_capture_diagnostics text-confirm-checkmark-dock-missing
+  exit 63
+fi
+echo "PASS: the top-bar Bitti ✓ action confirmed text and returned from the composer to the text-tools dock."
+
+# The text-tools Geri action must then restore the global editor dock and all
+# transport controls (fullscreen, play, undo and redo).
+tools_back_coords="$(find_bottom_tool emulator-screenshots/editor-text-tools-after-checkmark.xml "Geri" || true)"
 if [ -z "$tools_back_coords" ]; then
   echo "The text-tools dock did not expose its Geri action."
   collect_capture_diagnostics text-tools-back-action-missing
@@ -3442,8 +3468,6 @@ if ! dump_hierarchy editor-main-dock-after-text-return.xml emulator-screenshots/
   collect_capture_diagnostics text-tools-back-did-not-restore-main-dock
   exit 64
 fi
-# The transport row must return with the main dock: fullscreen, play and
-# history controls must not remain hidden after leaving text tools.
 for transport_control in "Önizlemeyi geniş ekranda aç" "Önizlemeyi oynat" "Proje işlemini geri al" "Proje işlemini yinele"; do
   if ! grep -Fq "$transport_control" emulator-screenshots/editor-main-dock-after-text-return.xml; then
     echo "The transport row did not restore '$transport_control' after leaving text tools."
@@ -3451,7 +3475,7 @@ for transport_control in "Önizlemeyi geniş ekranda aç" "Önizlemeyi oynat" "P
     exit 64
   fi
 done
-echo "PASS: the detail-panel arrow returned to text tools, Geri restored the global dock, and all four transport controls returned."
+echo "PASS: Bitti ✓ returned to the text-tools dock; Geri restored main tools and all four transport controls."
 
 echo "Step 8b: verify project-wide Undo/Redo restores a real text-canvas drag"
 dump_hierarchy editor-text-history-before-undo.xml emulator-screenshots/editor-text-history-before-undo.xml || {
