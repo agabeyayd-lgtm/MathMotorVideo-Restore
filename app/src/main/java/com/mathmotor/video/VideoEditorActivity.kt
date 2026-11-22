@@ -284,8 +284,9 @@ class VideoEditorActivity : Activity() {
     private lateinit var previewCanvas: FrameLayout
     private lateinit var previewCanvasOutline: View
     private var lastPreviewCanvasMetrics: String? = null
-    // Keep the actual project canvas at its normal measured size while tools
-    // and the IME are open. Only surrounding controls may collapse or scroll.
+    // Keep the project canvas steady while the keyboard is open. A normal
+    // detail panel can reduce the preview stage so transport and dock controls
+    // remain visible alongside the scrollable panel.
     private var referencePreviewCanvasWidth = 0
     private var referencePreviewCanvasHeight = 0
     private var referencePreviewStageHeightPx = 0
@@ -2956,6 +2957,7 @@ class VideoEditorActivity : Activity() {
                     android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
                 )
                 text = dockLabel
+                contentDescription = "$title aracı"
                 textSize = 10f
                 gravity = Gravity.CENTER
                 minWidth = dp(60)
@@ -3060,14 +3062,14 @@ class VideoEditorActivity : Activity() {
     private fun applyPreviewStageSizing() {
         if (!::previewFrame.isInitialized) return
         val params = previewFrame.layoutParams as? LinearLayout.LayoutParams ?: return
-        val fixed = keyboardLayoutActive || activeEditorPanel != null
+        // Detail panels keep the transport row and bottom tool dock on screen.
+        // Let the preview use the remaining height instead of locking it to the
+        // pre-panel canvas size. Only keyboard mode retains the fixed canvas.
+        val fixed = keyboardLayoutActive
         if (fixed) {
-            // The dark work stage is allowed to collapse to the project's
-            // measured canvas height while a detail sheet is open. Keeping the
-            // old outer-stage height here wastes the exact vertical space needed
-            // by the timeline and detail controls, pushing the timeline downward.
-            // The inner project canvas remains pixel-identical; only its empty
-            // surrounding stage margin is removed.
+            // The keyboard temporarily takes over most of the viewport. Keep the
+            // measured project canvas steady in that mode while surrounding rows
+            // collapse; ordinary tool panels use the flexible preview branch.
             val fixedStageHeight = referencePreviewCanvasHeight
                 .takeIf { it > 0 }
                 ?: referencePreviewStageHeightPx.takeIf { it > 0 }
@@ -3269,9 +3271,9 @@ class VideoEditorActivity : Activity() {
                         if (imeVisible && activeEditorPanel == "text") View.GONE else View.VISIBLE
                 }
 
-                // Hide the global dock while a detail panel owns the controls.
-                bottomDock.visibility =
-                    if (imeVisible || activeEditorPanel != null) View.GONE else View.VISIBLE
+                // The global/contextual dock remains pinned while detail panels
+                // are open. Only the keyboard temporarily hides it.
+                bottomDock.visibility = if (imeVisible) View.GONE else View.VISIBLE
                 statusView.visibility = if (imeVisible) View.GONE else View.VISIBLE
                 if (topBar.childCount > 4) {
                     val topAction = topBar.getChildAt(4) as? Button
@@ -3426,7 +3428,7 @@ class VideoEditorActivity : Activity() {
         // surrounding work stage may reflow, but the editable/exportable canvas may not.
         val preserveProjectCanvas = !captureReferenceCanvas &&
             !previewFocusMode &&
-            (keyboardLayoutActive || activeEditorPanel != null) &&
+            keyboardLayoutActive &&
             referencePreviewCanvasWidth > 0 &&
             referencePreviewCanvasHeight > 0
         val canvasWidth = if (preserveProjectCanvas) {
@@ -3783,11 +3785,15 @@ class VideoEditorActivity : Activity() {
         activeEditorPanel = name
         applyPreviewStageSizing()
         setTimelinePanelMode(panelOpen = true)
-        // Detail controls replace the global dock while the project preview
-        // stays fixed. Recover vertical room from the playback row and dock,
-        // not from the preview canvas.
-        if (::centeredPlaybackRow.isInitialized) centeredPlaybackRow.visibility = View.GONE
-        if (::editorDockScroll.isInitialized) editorDockScroll.visibility = View.GONE
+        // Detail settings scroll in their own panel. Keep the transport controls
+        // and the current global/contextual dock visible; only the software
+        // keyboard may temporarily take those rows away.
+        if (::centeredPlaybackRow.isInitialized) {
+            centeredPlaybackRow.visibility = if (keyboardLayoutActive) View.GONE else View.VISIBLE
+        }
+        if (::editorDockScroll.isInitialized) {
+            editorDockScroll.visibility = if (keyboardLayoutActive) View.GONE else View.VISIBLE
+        }
         if (::editorPanelReturnButton.isInitialized) {
             // Every contextual panel needs a visible, reachable way back to
             // the editor dock. The global dock is intentionally hidden while a
@@ -3803,12 +3809,11 @@ class VideoEditorActivity : Activity() {
             val params = editorPanelScroll.layoutParams as? LinearLayout.LayoutParams
             if (params != null) {
                 val basePanelHeight = when (name) {
-                    "clipVolume" -> if (keyboardLayoutActive) 112 else 150
-                    // Keep a usable project preview visible while text controls
-                    // remain in this scrollable detail panel.
-                    // Room for the composer tabs without resizing the project preview canvas.
-                    "text" -> if (keyboardLayoutActive) 226 else 242
-                    else -> if (keyboardLayoutActive) 124 else 196
+                    "clipVolume" -> if (keyboardLayoutActive) 112 else 136
+                    // These panels remain scrollable; reserving less height keeps
+                    // the pinned playback row and tool dock visible on short phones.
+                    "text" -> if (keyboardLayoutActive) 226 else 216
+                    else -> if (keyboardLayoutActive) 124 else 172
                 }
                 val stickyHeaderHeight = 40
                 params.height = dp((basePanelHeight - stickyHeaderHeight).coerceAtLeast(72))
