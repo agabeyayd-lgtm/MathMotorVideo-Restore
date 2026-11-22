@@ -2144,9 +2144,14 @@ class VideoEditorActivity : Activity() {
         }, LinearLayout.LayoutParams(dp(66), dp(48)).apply { leftMargin = dp(4) })
         textInputRow.addView(miniButton("✓") {
             finishTextHistoryEdit()
-            val ime = getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
-            ime?.hideSoftInputFromWindow(textInput.windowToken, 0); textInput.clearFocus()
             status.text = "Metin güncellendi."
+            if (clipToolsMode && activeEditorPanel == "text") {
+                closeVisualLayerPanel("text")
+            } else {
+                val ime = getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
+                ime?.hideSoftInputFromWindow(textInput.windowToken, 0)
+                textInput.clearFocus()
+            }
         }, LinearLayout.LayoutParams(dp(48), dp(48)).apply { leftMargin = dp(6) })
         textPanel.addView(textInputRow, matchWrap())
 
@@ -3283,12 +3288,17 @@ class VideoEditorActivity : Activity() {
                         if (imeVisible) {
                             topAction.text = "Bitti ✓"
                             topAction.setOnClickListener {
-                                val focusedView = currentFocus
-                                val token = focusedView?.windowToken ?: root.windowToken
-                                val keyboard = getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
-                                    as? android.view.inputmethod.InputMethodManager
-                                keyboard?.hideSoftInputFromWindow(token, 0)
-                                focusedView?.clearFocus()
+                                if (clipToolsMode && activeEditorPanel == "text") {
+                                    finishTextHistoryEdit()
+                                    closeVisualLayerPanel("text")
+                                } else {
+                                    val focusedView = currentFocus
+                                    val token = focusedView?.windowToken ?: root.windowToken
+                                    val keyboard = getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
+                                        as? android.view.inputmethod.InputMethodManager
+                                    keyboard?.hideSoftInputFromWindow(token, 0)
+                                    focusedView?.clearFocus()
+                                }
                             }
                         } else {
                             topAction.text = "Dışa aktar ›"
