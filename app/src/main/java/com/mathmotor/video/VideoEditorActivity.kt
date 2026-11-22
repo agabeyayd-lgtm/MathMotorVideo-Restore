@@ -2208,23 +2208,17 @@ class VideoEditorActivity : Activity() {
         textPanel.addView(tabScroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(42)))
         textPanel.addView(tabFrame, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(190)))
 
-        // Keep preview gesture editing accessible above the tab drawer content.
-        // The emulator flow must be able to toggle direct manipulation without
-        // scrolling past the five category tabs.
+        // Put the five CapCut-style categories immediately below the text
+        // input. The gesture toggle, copy/delete actions and layer list are
+        // secondary controls and must not push the category strip below the
+        // visible text composer viewport.
         textPanel.removeView(textOverlayEditToggle)
-        textPanel.addView(textOverlayEditToggle, 2)
-
-        // Keep the five CapCut-style text categories directly below the text
-        // input. The old edit toggle/actions/layer list pushed these controls
-        // below the visible drawer fold, so UI automation and users could not
-        // reach them without scrolling the whole panel.
         textPanel.removeView(tabScroll)
         textPanel.removeView(tabFrame)
         textPanel.getChildAt(0)?.visibility = View.GONE // legacy METİN heading
-        // The gesture toggle must remain directly below the input row; insert
-        // the category strip and its content after it, not in front of it.
-        textPanel.addView(tabScroll, 3)
-        textPanel.addView(tabFrame, 4)
+        textPanel.addView(tabScroll, 2)
+        textPanel.addView(tabFrame, 3)
+        textPanel.addView(textOverlayEditToggle, 4)
 
         tabScrolls["Stiller"]?.visibility = View.VISIBLE
         tabButtons["Stiller"]?.apply {
@@ -3820,7 +3814,10 @@ class VideoEditorActivity : Activity() {
                     // Keep a usable project preview visible while text controls
                     // remain in this scrollable detail panel.
                     // Room for the composer tabs without resizing the project preview canvas.
-                    "text" -> if (keyboardLayoutActive) 226 else 242
+                    // Give the text composer enough height to show its input,
+                    // category tabs and first controls without hiding them below
+                    // the editor viewport on a phone-sized display.
+                    "text" -> if (keyboardLayoutActive) 256 else 272
                     else -> if (keyboardLayoutActive) 124 else 196
                 }
                 val stickyHeaderHeight = 40
