@@ -3811,16 +3811,18 @@ class VideoEditorActivity : Activity() {
             if (params != null) {
                 val basePanelHeight = when (name) {
                     "clipVolume" -> if (keyboardLayoutActive) 112 else 150
-                    // Keep a usable project preview visible while text controls
-                    // remain in this scrollable detail panel.
-                    // Room for the composer tabs without resizing the project preview canvas.
-                    // Give the text composer enough height to show its input,
-                    // category tabs and first controls without hiding them below
-                    // the editor viewport on a phone-sized display.
-                    "text" -> if (keyboardLayoutActive) 256 else 272
+                    // Keep the text composer within the same measured bottom-sheet
+                    // budget as the other editor panels. Its contents scroll vertically;
+                    // the input row and category tabs remain at the top and stay reachable.
+                    "text" -> if (keyboardLayoutActive) 68 else 196
                     else -> if (keyboardLayoutActive) 124 else 196
                 }
-                val stickyHeaderHeight = 40
+                // The return button is a sibling above the scroll view only when the
+                // keyboard is hidden. Do not reserve its height while it is GONE.
+                val stickyHeaderHeight = if (!keyboardLayoutActive &&
+                    ::editorPanelReturnButton.isInitialized &&
+                    editorPanelReturnButton.visibility == View.VISIBLE
+                ) 40 else 0
                 params.height = dp((basePanelHeight - stickyHeaderHeight).coerceAtLeast(72))
                 editorPanelScroll.layoutParams = params
             }
