@@ -2900,20 +2900,18 @@ for tool_label in "Geri" "Metin ekle" "Çıkartmalar" "Metin şablonları"; do
     exit 93
   fi
 done
-text_add_coords="$(find_bottom_tool emulator-screenshots/editor-text-tools-dock.xml "Yeni metin katmanı ekle" || true)"
-if [ -z "$text_add_coords" ]; then
-  echo "The text-tools dock did not expose its Metin ekle action."
-  collect_capture_diagnostics text-tools-add-action-missing
+text_templates_coords="$(find_bottom_tool emulator-screenshots/editor-text-tools-dock.xml "Metin şablonları" || true)"
+if [ -z "$text_templates_coords" ]; then
+  echo "The text-tools dock did not expose its Metin şablonları action."
+  collect_capture_diagnostics text-tools-templates-action-missing
   exit 93
 fi
-timeout -k 2s 8s adb -s emulator-5554 shell input tap "$text_add_coords"
-sleep 1
-# Metin ekle focuses the new text field. Dismiss only the IME to inspect the
-# full composer drawer, keeping the second-level panel open.
-timeout -k 2s 8s adb -s emulator-5554 shell input keyevent 4
+# Open the dedicated text-style composer without opening the keyboard.
+# Metin ekle is tested separately below as the text-entry action.
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$text_templates_coords"
 sleep 1
 if ! dump_hierarchy editor-text-panel.xml emulator-screenshots/editor-text-panel.xml; then
-  echo "Could not capture the text composer after opening Metin ekle."
+  echo "Could not capture the text composer after opening Metin şablonları."
   collect_capture_diagnostics text-composer-hierarchy-missing
   exit 93
 fi
