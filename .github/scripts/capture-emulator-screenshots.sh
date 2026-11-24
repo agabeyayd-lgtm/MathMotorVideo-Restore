@@ -2900,14 +2900,57 @@ for tool_label in "Geri" "Metin ekle" "Çıkartmalar" "Metin şablonları"; do
     exit 93
   fi
 done
-text_templates_coords="$(find_bottom_tool emulator-screenshots/editor-text-tools-dock.xml "Metin şablonları" || true)"
+text_add_coords="$(find_bottom_tool emulator-screenshots/editor-text-tools-dock.xml "Yeni metin katmanı ekle" || true)"
+if [ -z "$text_add_coords" ]; then
+  echo "The text-tools dock did not expose its Metin ekle action."
+  collect_capture_diagnostics text-tools-add-action-missing
+  exit 93
+fi
+# Verify the real text-entry action and its Bitti ✓ return path first.
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$text_add_coords"
+sleep 1
+if ! dump_hierarchy editor-text-add-keyboard.xml emulator-screenshots/editor-text-add-keyboard.xml; then
+  collect_capture_diagnostics text-add-keyboard-hierarchy-missing
+  exit 93
+fi
+add_confirm_coords="$(python3 - emulator-screenshots/editor-text-add-keyboard.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("text", "").strip() != "Bitti ✓":
+        continue
+    if node.attrib.get("class") != "android.widget.Button" or node.attrib.get("enabled", "false") != "true":
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        x1, y1, x2, y2 = map(int, match.groups())
+        if x2 > x1 and y2 > y1:
+            print((x1 + x2) // 2, (y1 + y2) // 2)
+            raise SystemExit(0)
+raise SystemExit("The Metin ekle action did not expose a tappable Bitti ✓ button.")
+PY
+)" || {
+  echo "The Metin ekle action did not expose its Bitti ✓ return action."
+  collect_capture_diagnostics text-add-checkmark-missing
+  exit 93
+}
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$add_confirm_coords"
+sleep 1
+if ! dump_hierarchy editor-text-tools-after-add-confirm.xml emulator-screenshots/editor-text-tools-after-add-confirm.xml ||
+   ! grep -Fq "Metin şablonları" emulator-screenshots/editor-text-tools-after-add-confirm.xml; then
+  echo "Bitti ✓ did not return from Metin ekle to the text-tools dock."
+  collect_capture_diagnostics text-add-checkmark-dock-missing
+  exit 93
+fi
+text_templates_coords="$(find_bottom_tool emulator-screenshots/editor-text-tools-after-add-confirm.xml "Metin şablonları" || true)"
 if [ -z "$text_templates_coords" ]; then
   echo "The text-tools dock did not expose its Metin şablonları action."
   collect_capture_diagnostics text-tools-templates-action-missing
   exit 93
 fi
-# Open the dedicated text-style composer without opening the keyboard.
-# Metin ekle is tested separately below as the text-entry action.
+# Open the dedicated text-style composer with the keyboard closed.
 timeout -k 2s 8s adb -s emulator-5554 shell input tap "$text_templates_coords"
 sleep 1
 if ! dump_hierarchy editor-text-panel.xml emulator-screenshots/editor-text-panel.xml; then
