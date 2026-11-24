@@ -3961,6 +3961,19 @@ class VideoEditorActivity : Activity() {
     }
 
     override fun onBackPressed() {
+        // Android Back should dismiss the IME before it navigates away from
+        // the active editor panel. Otherwise the text composer can be closed
+        // while the user is only trying to reveal its controls.
+        if (keyboardLayoutActive) {
+            val focusedView = currentFocus
+            if (focusedView != null) {
+                val keyboard = getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
+                    as? android.view.inputmethod.InputMethodManager
+                keyboard?.hideSoftInputFromWindow(focusedView.windowToken, 0)
+                focusedView.clearFocus()
+                return
+            }
+        }
         val panel = activeEditorPanel
         if (panel != null) {
             toggleEditorPanel(panel)
