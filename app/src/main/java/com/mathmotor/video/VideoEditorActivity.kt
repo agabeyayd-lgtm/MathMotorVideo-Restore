@@ -3281,8 +3281,19 @@ class VideoEditorActivity : Activity() {
                         topAction.visibility = View.VISIBLE
                         if (imeVisible) {
                             topAction.text = "Bitti ✓"
+                            topAction.contentDescription = "Metin girişini tamamla"
                             topAction.setOnClickListener {
                                 if (clipToolsMode && activeEditorPanel == "text") {
+                                    // Finish must dismiss the IME as well as close the
+                                    // composer. Otherwise returnToClipToolStrip sees the
+                                    // stale keyboard mode and keeps the text dock hidden.
+                                    val focusedView = currentFocus
+                                    val token = focusedView?.windowToken ?: root.windowToken
+                                    val keyboard = getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
+                                        as? android.view.inputmethod.InputMethodManager
+                                    keyboard?.hideSoftInputFromWindow(token, 0)
+                                    focusedView?.clearFocus()
+                                    applyKeyboardMode(false, root.height)
                                     finishTextHistoryEdit()
                                     closeVisualLayerPanel("text")
                                 } else {
@@ -3296,6 +3307,7 @@ class VideoEditorActivity : Activity() {
                             }
                         } else {
                             topAction.text = "Dışa aktar ›"
+                            topAction.contentDescription = "Dışa aktarma ayarlarını aç"
                             topAction.setOnClickListener { showEditorPanel("export") }
                         }
                     }
