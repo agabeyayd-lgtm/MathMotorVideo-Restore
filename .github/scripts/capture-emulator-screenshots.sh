@@ -3380,7 +3380,35 @@ for node in root.iter("node"):
 PY
 )"
 if [ -z "$text_edit_toggle_info" ]; then
-  echo "The text panel did not expose its shared preview-gesture toggle."
+  # The toggle is a secondary control below the tab strip in the scrollable
+  # text composer. Scroll that panel into view before declaring it missing.
+  echo "Text gesture toggle is below the initial composer viewport; scrolling the panel."
+  timeout -k 2s 8s adb -s emulator-5554 shell input swipe 540 1735 540 1450 450
+  sleep 1
+  if ! dump_hierarchy editor-text-panel-scrolled-for-gesture-toggle.xml emulator-screenshots/editor-text-panel-scrolled-for-gesture-toggle.xml; then
+    collect_capture_diagnostics text-canvas-edit-toggle-scroll-hierarchy-missing
+    exit 61
+  fi
+  text_edit_toggle_info="$(python3 - emulator-screenshots/editor-text-panel-scrolled-for-gesture-toggle.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    label = node.attrib.get("content-desc", "")
+    if "Önizleme üzerindeki yazıyı sürükleme" not in label:
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        x1, y1, x2, y2 = map(int, match.groups())
+        state = "kapalı" if "kapalı" in label.casefold() else "açık"
+        print((x1 + x2) // 2, (y1 + y2) // 2, state)
+        break
+PY
+)"
+fi
+if [ -z "$text_edit_toggle_info" ]; then
+  echo "The text panel did not expose its shared preview-gesture toggle after scrolling."
   collect_capture_diagnostics text-canvas-edit-toggle-missing
   exit 61
 fi
