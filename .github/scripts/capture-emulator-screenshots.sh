@@ -2886,7 +2886,78 @@ if [ -z "$text_tab_coords" ]; then
 fi
 timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_tab_coords
 sleep 1
-dump_hierarchy editor-text-panel.xml emulator-screenshots/editor-text-panel.xml || true
+# The Metin tool opens its first-level strip before the composer. Verify that
+# screen rather than expecting the old one-tap shortcut to the detail panel.
+if ! dump_hierarchy editor-text-tools-dock.xml emulator-screenshots/editor-text-tools-dock.xml; then
+  echo "Could not capture the first-level text-tools dock."
+  collect_capture_diagnostics text-tools-dock-hierarchy-missing
+  exit 93
+fi
+for tool_label in "Geri" "Metin ekle" "Çıkartmalar" "Metin şablonları"; do
+  if ! grep -Fq "$tool_label" emulator-screenshots/editor-text-tools-dock.xml; then
+    echo "The text-tools dock is missing '$tool_label'."
+    collect_capture_diagnostics "text-tools-dock-$tool_label-missing"
+    exit 93
+  fi
+done
+text_add_coords="$(find_bottom_tool emulator-screenshots/editor-text-tools-dock.xml "Yeni metin katmanı ekle" || true)"
+if [ -z "$text_add_coords" ]; then
+  echo "The text-tools dock did not expose its Metin ekle action."
+  collect_capture_diagnostics text-tools-add-action-missing
+  exit 93
+fi
+# Verify the real text-entry action and its Bitti ✓ return path first.
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$text_add_coords"
+sleep 1
+if ! dump_hierarchy editor-text-add-keyboard.xml emulator-screenshots/editor-text-add-keyboard.xml; then
+  collect_capture_diagnostics text-add-keyboard-hierarchy-missing
+  exit 93
+fi
+add_confirm_coords="$(python3 - emulator-screenshots/editor-text-add-keyboard.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("text", "").strip() != "Bitti ✓":
+        continue
+    if node.attrib.get("class") != "android.widget.Button" or node.attrib.get("enabled", "false") != "true":
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        x1, y1, x2, y2 = map(int, match.groups())
+        if x2 > x1 and y2 > y1:
+            print((x1 + x2) // 2, (y1 + y2) // 2)
+            raise SystemExit(0)
+raise SystemExit("The Metin ekle action did not expose a tappable Bitti ✓ button.")
+PY
+)" || {
+  echo "The Metin ekle action did not expose its Bitti ✓ return action."
+  collect_capture_diagnostics text-add-checkmark-missing
+  exit 93
+}
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$add_confirm_coords"
+sleep 1
+if ! dump_hierarchy editor-text-tools-after-add-confirm.xml emulator-screenshots/editor-text-tools-after-add-confirm.xml ||
+   ! grep -Fq "Metin şablonları" emulator-screenshots/editor-text-tools-after-add-confirm.xml; then
+  echo "Bitti ✓ did not return from Metin ekle to the text-tools dock."
+  collect_capture_diagnostics text-add-checkmark-dock-missing
+  exit 93
+fi
+text_templates_coords="$(find_bottom_tool emulator-screenshots/editor-text-tools-after-add-confirm.xml "Metin şablonları" || true)"
+if [ -z "$text_templates_coords" ]; then
+  echo "The text-tools dock did not expose its Metin şablonları action."
+  collect_capture_diagnostics text-tools-templates-action-missing
+  exit 93
+fi
+# Open the dedicated text-style composer with the keyboard closed.
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$text_templates_coords"
+sleep 1
+if ! dump_hierarchy editor-text-panel.xml emulator-screenshots/editor-text-panel.xml; then
+  echo "Could not capture the text composer after opening Metin şablonları."
+  collect_capture_diagnostics text-composer-hierarchy-missing
+  exit 93
+fi
 
 # Require the CapCut-style text composer tabs on the real Android view hierarchy.
 for text_tab in "Şablonlar" "Yazı tipleri" "Stiller" "Efektler" "Animasyonlar"; do
@@ -3045,13 +3116,35 @@ if [ -z "$text_panel_back" ]; then
   collect_capture_diagnostics text-canvas-panel-return-missing-on-open
   exit 52
 fi
-new_text_coords="$(find_bottom_tool emulator-screenshots/editor-text-panel.xml "＋ Yeni" || true)"
-if [ -z "$new_text_coords" ]; then
+new_text_action_coords="$(find_bottom_tool emulator-screenshots/editor-text-panel.xml "＋ Yeni" || true)"
+if [ -z "$new_text_action_coords" ]; then
   echo "The Metin panel did not expose its Yeni text-layer action."
   collect_capture_diagnostics text-canvas-add-action-missing
   exit 51
 fi
-timeout -k 2s 8s adb -s emulator-5554 shell input tap $new_text_coords
+text_input_coords="$(python3 - emulator-screenshots/editor-text-panel.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("class") != "android.widget.EditText":
+        continue
+    if node.attrib.get("enabled", "false").lower() != "true":
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        x1, y1, x2, y2 = map(int, match.groups())
+        print((x1 + x2) // 2, (y1 + y2) // 2)
+        raise SystemExit(0)
+raise SystemExit("The real text input field was not exposed in the composer hierarchy.")
+PY
+)" || {
+  echo "Could not locate the active text input field in the composer."
+  collect_capture_diagnostics text-input-hit-target-missing
+  exit 51
+}
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$text_input_coords"
 sleep 1
 timeout -k 2s 8s adb -s emulator-5554 shell input text "Canvas"
 # A deliberate pause longer than the former 650 ms debounce must not split
@@ -3287,7 +3380,35 @@ for node in root.iter("node"):
 PY
 )"
 if [ -z "$text_edit_toggle_info" ]; then
-  echo "The text panel did not expose its shared preview-gesture toggle."
+  # The toggle is a secondary control below the tab strip in the scrollable
+  # text composer. Scroll that panel into view before declaring it missing.
+  echo "Text gesture toggle is below the initial composer viewport; scrolling the panel."
+  timeout -k 2s 8s adb -s emulator-5554 shell input swipe 540 1735 540 1450 450
+  sleep 1
+  if ! dump_hierarchy editor-text-panel-scrolled-for-gesture-toggle.xml emulator-screenshots/editor-text-panel-scrolled-for-gesture-toggle.xml; then
+    collect_capture_diagnostics text-canvas-edit-toggle-scroll-hierarchy-missing
+    exit 61
+  fi
+  text_edit_toggle_info="$(python3 - emulator-screenshots/editor-text-panel-scrolled-for-gesture-toggle.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    label = node.attrib.get("content-desc", "")
+    if "Önizleme üzerindeki yazıyı sürükleme" not in label:
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        x1, y1, x2, y2 = map(int, match.groups())
+        state = "kapalı" if "kapalı" in label.casefold() else "açık"
+        print((x1 + x2) // 2, (y1 + y2) // 2, state)
+        break
+PY
+)"
+fi
+if [ -z "$text_edit_toggle_info" ]; then
+  echo "The text panel did not expose its shared preview-gesture toggle after scrolling."
   collect_capture_diagnostics text-canvas-edit-toggle-missing
   exit 61
 fi
@@ -3329,43 +3450,101 @@ if [ "$text_drag_dx" -lt -6 ] || [ "$text_drag_dx" -gt 6 ] || [ "$text_drag_dy" 
 fi
 echo "PASS: vertical in-canvas text drag moved the rendered selection frame from ($text_before_x,$text_before_y) to ($text_after_x,$text_after_y) without shifting it beyond the canvas edges."
 
-# The IME changes the lower editor layout: the return button moves after
-# the keyboard closes. Use the app's fresh post-IME layout measurement rather
-# than the stale coordinates from editor-text-panel.xml captured before typing.
-text_panel_back_current="$(python3 - emulator-screenshots/editor-text-selected-canvas-logcat.txt <<'PY'
-import re
-import sys
-
-matches = []
-for line in open(sys.argv[1], errors="replace"):
-    match = re.search(
-        r"TEXT_PANEL_RETURN_BOUNDS visible=true x=(\d+) y=(\d+) width=(\d+) height=(\d+)",
-        line,
-    )
-    if match:
-        matches.append(tuple(map(int, match.groups())))
-if not matches:
-    raise SystemExit("No visible post-IME text-panel return bounds were recorded.")
-x, y, width, height = matches[-1]
-if width < 100 or height < 40:
-    raise SystemExit(f"Invalid measured text-panel return size: {width}x{height}")
-print(x + width // 2, y + height // 2)
-PY
-)" || {
-  echo "Could not resolve the current text-panel return-button position after keyboard dismissal."
-  collect_capture_diagnostics text-history-panel-return-bounds-missing
-  exit 63
-}
-echo "Measured the current post-IME text-panel return action at $text_panel_back_current."
-timeout -k 2s 8s adb -s emulator-5554 shell input tap $text_panel_back_current
-sleep 1
-timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I > emulator-screenshots/editor-text-panel-return-logcat.txt 2>&1 || true
-if ! grep -Fq "TEXT_PANEL_RETURN_TAPPED activePanel=text" emulator-screenshots/editor-text-panel-return-logcat.txt; then
-  echo "The measured text-panel return control did not report its click handler."
-  collect_capture_diagnostics text-history-panel-return-not-tapped
+# Verify the visible top-bar Bitti ✓ action while the composer owns the
+# keyboard. It must confirm text and return to the text-tools strip.
+if ! dump_hierarchy editor-text-before-checkmark.xml emulator-screenshots/editor-text-before-checkmark.xml; then
+  collect_capture_diagnostics text-confirm-before-keyboard-hierarchy-missing
   exit 63
 fi
-echo "PASS: the current text-panel return button ran its click handler and closed the detail panel."
+text_field_for_confirm="$(python3 - emulator-screenshots/editor-text-before-checkmark.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("class") != "android.widget.EditText" or node.attrib.get("enabled", "false") != "true":
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        x1, y1, x2, y2 = map(int, match.groups())
+        print((x1 + x2) // 2, (y1 + y2) // 2)
+        raise SystemExit(0)
+raise SystemExit("The text composer EditText is not available before confirming.")
+PY
+)" || {
+  collect_capture_diagnostics text-confirm-input-target-missing
+  exit 63
+}
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$text_field_for_confirm"
+sleep 1
+if ! dump_hierarchy editor-text-keyboard-before-checkmark.xml emulator-screenshots/editor-text-keyboard-before-checkmark.xml; then
+  collect_capture_diagnostics text-confirm-keyboard-hierarchy-missing
+  exit 63
+fi
+checkmark_coords="$(python3 - emulator-screenshots/editor-text-keyboard-before-checkmark.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("text", "").strip() != "Bitti ✓":
+        continue
+    if node.attrib.get("class") != "android.widget.Button" or node.attrib.get("enabled", "false") != "true":
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        x1, y1, x2, y2 = map(int, match.groups())
+        print((x1 + x2) // 2, (y1 + y2) // 2)
+        raise SystemExit(0)
+raise SystemExit("The visible top-bar Bitti ✓ button was not found.")
+PY
+)" || {
+  echo "The text-entry keyboard did not expose its Bitti ✓ action."
+  collect_capture_diagnostics text-confirm-checkmark-missing
+  exit 63
+}
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$checkmark_coords"
+sleep 1
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I > emulator-screenshots/editor-text-checkmark-logcat.txt 2>&1 || true
+if ! grep -Fq "TEXT_PANEL_RETURN_TAPPED activePanel=text" emulator-screenshots/editor-text-checkmark-logcat.txt; then
+  echo "The top-bar Bitti ✓ button did not execute the text-panel return handler."
+  collect_capture_diagnostics text-confirm-checkmark-handler-not-called
+  exit 63
+fi
+if ! dump_hierarchy editor-text-tools-after-checkmark.xml emulator-screenshots/editor-text-tools-after-checkmark.xml ||
+   ! grep -Fq "Metin şablonları" emulator-screenshots/editor-text-tools-after-checkmark.xml; then
+  echo "The top-bar Bitti ✓ action did not restore the four-action text-tools dock."
+  collect_capture_diagnostics text-confirm-checkmark-dock-missing
+  exit 63
+fi
+echo "PASS: the top-bar Bitti ✓ action confirmed text and returned from the composer to the text-tools dock."
+
+# The text-tools Geri action must then restore the global editor dock and all
+# transport controls (fullscreen, play, undo and redo).
+tools_back_coords="$(find_bottom_tool emulator-screenshots/editor-text-tools-after-checkmark.xml "Geri" || true)"
+if [ -z "$tools_back_coords" ]; then
+  echo "The text-tools dock did not expose its Geri action."
+  collect_capture_diagnostics text-tools-back-action-missing
+  exit 64
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$tools_back_coords"
+sleep 1
+if ! dump_hierarchy editor-main-dock-after-text-return.xml emulator-screenshots/editor-main-dock-after-text-return.xml ||
+   ! grep -Fq "Proje" emulator-screenshots/editor-main-dock-after-text-return.xml ||
+   ! grep -Fq "Metin" emulator-screenshots/editor-main-dock-after-text-return.xml; then
+  echo "The text-tools Geri action did not restore the main editor dock."
+  collect_capture_diagnostics text-tools-back-did-not-restore-main-dock
+  exit 64
+fi
+for transport_control in "Önizlemeyi geniş ekranda aç" "Önizlemeyi oynat" "Proje işlemini geri al" "Proje işlemini yinele"; do
+  if ! grep -Fq "$transport_control" emulator-screenshots/editor-main-dock-after-text-return.xml; then
+    echo "The transport row did not restore '$transport_control' after leaving text tools."
+    collect_capture_diagnostics "text-tools-transport-$transport_control-missing"
+    exit 64
+  fi
+done
+echo "PASS: Bitti ✓ returned to the text-tools dock; Geri restored main tools and all four transport controls."
 
 echo "Step 8b: verify project-wide Undo/Redo restores a real text-canvas drag"
 dump_hierarchy editor-text-history-before-undo.xml emulator-screenshots/editor-text-history-before-undo.xml || {
@@ -3663,8 +3842,22 @@ if [ -z "$text_tab_after_history" ]; then
 fi
 timeout -k 2s 8s adb -s emulator-5554 shell input tap "$text_tab_after_history"
 sleep 1
+if ! dump_hierarchy editor-text-tools-after-history.xml emulator-screenshots/editor-text-tools-after-history.xml ||
+   ! grep -Fq "Metin şablonları" emulator-screenshots/editor-text-tools-after-history.xml; then
+  echo "The Metin tab did not restore the first-level text-tools dock after history."
+  collect_capture_diagnostics text-history-tools-dock-missing
+  exit 56
+fi
+history_templates_coords="$(find_bottom_tool emulator-screenshots/editor-text-tools-after-history.xml "Metin şablonları" || true)"
+if [ -z "$history_templates_coords" ]; then
+  echo "The restored text-tools dock did not expose Metin şablonları."
+  collect_capture_diagnostics text-history-templates-action-missing
+  exit 56
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$history_templates_coords"
+sleep 1
 if ! dump_hierarchy editor-text-panel-after-history.xml emulator-screenshots/editor-text-panel-after-history.xml; then
-  echo "Could not capture the text panel after grouped history restore."
+  echo "Could not capture the text composer after opening its templates panel."
   collect_capture_diagnostics text-history-reopened-panel-hierarchy-missing
   exit 56
 fi
@@ -3679,13 +3872,32 @@ timeout -k 2s 8s adb -s emulator-5554 logcat -c
 timeout -k 2s 8s adb -s emulator-5554 shell input tap "$text_panel_back_after_history"
 sleep 1
 timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I > emulator-screenshots/text-panel-return-logcat.txt 2>&1 || true
-if ! grep -Fq "TEXT_PANEL_RETURN_TAPPED activePanel=text" emulator-screenshots/text-panel-return-logcat.txt ||
-   ! grep -Fq "TEXT_PANEL_CLOSED activePanel=none" emulator-screenshots/text-panel-return-logcat.txt; then
+if ! grep -Fq "TEXT_PANEL_RETURN_TAPPED activePanel=text" emulator-screenshots/text-panel-return-logcat.txt; then
   echo "The text detail panel did not confirm its return-to-tools action after Undo/Redo."
   collect_capture_diagnostics text-history-panel-return-not-confirmed
   exit 56
 fi
-echo "PASS: after grouped text Undo/Redo, the Metin panel reopened and its measured return control closed it cleanly."
+if ! dump_hierarchy editor-text-tools-after-history-return.xml emulator-screenshots/editor-text-tools-after-history-return.xml ||
+   ! grep -Fq "Metin ekle" emulator-screenshots/editor-text-tools-after-history-return.xml; then
+  echo "The text composer return did not restore the first-level text-tools dock after Undo/Redo."
+  collect_capture_diagnostics text-history-return-dock-missing
+  exit 56
+fi
+history_tools_back="$(find_bottom_tool emulator-screenshots/editor-text-tools-after-history-return.xml "Geri" || true)"
+if [ -z "$history_tools_back" ]; then
+  echo "The history text-tools dock did not expose its Geri action."
+  collect_capture_diagnostics text-history-back-action-missing
+  exit 56
+fi
+timeout -k 2s 8s adb -s emulator-5554 shell input tap "$history_tools_back"
+sleep 1
+if ! dump_hierarchy editor-main-dock-after-history-text.xml emulator-screenshots/editor-main-dock-after-history-text.xml ||
+   ! grep -Fq "Proje" emulator-screenshots/editor-main-dock-after-history-text.xml; then
+  echo "The Geri action did not restore the main editor dock after Undo/Redo."
+  collect_capture_diagnostics text-history-back-main-dock-missing
+  exit 56
+fi
+echo "PASS: after grouped text Undo/Redo, the composer return and Geri actions restored the text tools and main editor dock."
 if ! take_screen emulator-screenshots/editor-text-panel-closed.png; then
   collect_capture_diagnostics text-canvas-panel-closed-capture-failure
   exit 6
@@ -3745,14 +3957,15 @@ text_reselected_bounds="$(detect_text_selection_bounds emulator-screenshots/edit
   exit 55
 }
 timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s EditorTouchTest:I > emulator-screenshots/text-preview-reselection-logcat.txt 2>&1 || true
-if ! grep -Fq "TEXT_TOOLS_DOCK_VISIBLE childCount=3" emulator-screenshots/text-preview-reselection-logcat.txt ||
-   ! grep -Fq "Düzenle" emulator-screenshots/text-preview-reselection-logcat.txt ||
-   ! grep -Fq "Sil" emulator-screenshots/text-preview-reselection-logcat.txt; then
-  echo "Tapping the text did not emit proof that the three-action contextual text dock was rebuilt."
+if ! grep -Fq "TEXT_TOOLS_DOCK_VISIBLE childCount=4" emulator-screenshots/text-preview-reselection-logcat.txt ||
+   ! grep -Fq "Metin ekle" emulator-screenshots/text-preview-reselection-logcat.txt ||
+   ! grep -Fq "Çıkartmalar" emulator-screenshots/text-preview-reselection-logcat.txt ||
+   ! grep -Fq "Metin şablonları" emulator-screenshots/text-preview-reselection-logcat.txt; then
+  echo "Tapping the preview text did not restore the four-action text-tools dock."
   collect_capture_diagnostics text-canvas-tap-did-not-reopen-tools
   exit 54
 fi
-echo "PASS: tapping the preview text restored its three-action text dock and selection frame at $text_reselected_bounds."
+echo "PASS: tapping the preview text restored its four-action text-tools dock and selection frame at $text_reselected_bounds."
 
 echo "Step 8c1: physically drag both text timeline edge handles and verify isolated timing changes"
 if ! dump_hierarchy editor-text-trim-before-start.xml emulator-screenshots/editor-text-trim-before-start.xml; then

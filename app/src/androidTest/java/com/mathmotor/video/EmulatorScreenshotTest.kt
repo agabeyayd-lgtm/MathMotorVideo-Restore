@@ -26,14 +26,15 @@ class EmulatorScreenshotTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val device = UiDevice.getInstance(instrumentation)
 
-        device.executeShellCommand("am force-stop com.mathmotor.video.next")
+        // Do not force-stop the target package here: instrumentation runs in
+        // the target app process and would kill its own test runner.
         device.executeShellCommand(
             "am start -n com.mathmotor.video.next/com.mathmotor.video.MainActivity"
         )
 
         assertTrue(
             "Home screen did not appear in the emulator",
-            device.wait(Until.hasObject(By.text("VİDEO STÜDYOSU")), 20_000)
+            device.wait(Until.hasObject(By.text("Video oluştur")), 20_000)
         )
         device.waitForIdle()
         takeScreenshot(device, "home.png")
@@ -353,6 +354,136 @@ class EmulatorScreenshotTest {
         )
         takeScreenshot(device, "video-split-restored-after-reopen.png")
     }
+
+    @Test
+    fun androidBackTraversesTextEditorLevelsAndClipTools() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val device = UiDevice.getInstance(instrumentation)
+
+        fun checkpoint(name: String) {
+            android.util.Log.i("EditorTouchTest", "ANDROID_BACK_STACK_STEP $name")
+        }
+        checkpoint("launch-home")
+        // Instrumentation runs inside the target app process. Do not force-stop
+        // this package here; that would terminate this test before navigation.
+        device.executeShellCommand(
+            "am start -n com.mathmotor.video.next/com.mathmotor.video.MainActivity"
+        )
+        assertTrue(
+            "Home screen did not appear before Android Back navigation test",
+            device.wait(Until.hasObject(By.text("Video oluştur")), 20_000)
+        )
+
+        val createProject = device.findObject(
+            By.clazz("android.widget.Button").textContains("Boş proje oluştur")
+        ) ?: throw AssertionError("Could not find the empty-project action")
+        createProject.click()
+        assertTrue(
+            "The editor did not open for Android Back navigation test",
+            device.wait(Until.hasObject(By.descContains("Metin")), 15_000)
+        )
+        device.waitForIdle()
+
+        val mainTextTool = device.findObject(
+            By.clazz("android.widget.Button").textContains("Metin")
+        ) ?: throw AssertionError("Could not find the main Metin tool")
+        mainTextTool.click()
+        assertTrue(
+            "The contextual text-tools dock did not open",
+            device.wait(Until.hasObject(By.desc("Yeni metin katmanı ekle")), 8_000)
+        )
+
+        val addText = device.findObject(By.desc("Yeni metin katmanı ekle"))
+            ?: throw AssertionError("Could not find Metin ekle in the text-tools dock")
+        addText.click()
+        assertTrue(
+            "The text composer did not open",
+            device.wait(Until.hasObject(By.desc("Metin girişini tamamla")), 8_000)
+        )
+        assertTrue(
+            "The text input field is missing from the composer",
+            device.hasObject(By.clazz("android.widget.EditText"))
+        )
+
+        // First Android Back must dismiss the keyboard without closing the composer.
+        checkpoint("back-dismiss-ime")
+        device.pressBack()
+        assertTrue(
+            "First Android Back closed the text composer instead of only dismissing the keyboard",
+            device.wait(Until.hasObject(By.clazz("android.widget.EditText")), 5_000)
+        )
+        assertTrue(
+            "First Android Back did not dismiss the IME",
+            !device.wait(Until.hasObject(By.desc("Metin girişini tamamla")), 1_000)
+        )
+
+        // Second Back closes the text detail panel but preserves the text-tools dock.
+        checkpoint("back-close-text-panel")
+        device.pressBack()
+        assertTrue(
+            "Second Android Back did not return to the contextual text-tools dock",
+            device.wait(Until.hasObject(By.desc("Yeni metin katmanı ekle")), 8_000)
+        )
+
+        // Third Back exits contextual text tools and restores the global editor dock.
+        checkpoint("back-exit-text-tools")
+        device.pressBack()
+        assertTrue(
+            "Third Android Back did not restore the global editor dock",
+            device.wait(Until.hasObject(By.textContains("Düzenle")), 8_000)
+        )
+        assertTrue(
+            "The main Metin tool was not restored with the global dock",
+            device.hasObject(By.clazz("android.widget.Button").textContains("Metin"))
+        )
+
+        // Verify the clip-tool strip uses the same Android Back return path.
+        val editTool = device.findObject(
+            By.clazz("android.widget.Button").textContains("Düzenle")
+        ) ?: throw AssertionError("Could not find the main Düzenle tool")
+        checkpoint("open-clip-tools")
+        editTool.click()
+        assertTrue(
+            "The contextual clip-tools dock did not open",
+            device.wait(Until.hasObject(By.desc("Kırpma ayarlarını aç")), 8_000)
+        )
+        checkpoint("back-exit-clip-tools")
+        device.pressBack()
+        assertTrue(
+            "Android Back did not restore the global dock from clip tools",
+            device.wait(Until.hasObject(By.textContains("Düzenle")), 8_000)
+        )
+
+        // Back from the Pixel launcher overview returns to HOME, not to the app.
+        // Select the app's actual Recents task to verify Android resumes the editor.
+        checkpoint("open-recents")
+        device.pressRecentApps()
+        val recentsAppLabel = device.wait(
+            Until.findObject(By.text("MathMotor Video")),
+            5_000
+        ) ?: device.wait(
+            Until.findObject(By.descContains("MathMotor Video")),
+            5_000
+        ) ?: throw AssertionError("MathMotor Video task was not visible in Android Recents")
+        assertTrue(
+            "The MathMotor Video task label is not visible in Android Recents",
+            recentsAppLabel.visibleBounds.width() > 0 && recentsAppLabel.visibleBounds.height() > 0
+        )
+        // This test creates only one recent app task; tapping the card's live
+        // preview (screen centre) reselects that exact editor task, not HOME.
+        device.click(device.displayWidth / 2, device.displayHeight / 2)
+        checkpoint("return-from-recents")
+        assertTrue(
+            "The editor was not resumed after selecting its Android Recents task",
+            device.wait(Until.hasObject(By.textContains("Düzenle")), 8_000)
+        )
+        android.util.Log.i(
+            "EditorTouchTest",
+            "ANDROID_BACK_STACK_PASS keyboard->text-panel->text-tools->main-dock; " +
+                "clip-tools->main-dock; recents->editor"
+        )
+    }
+
     private fun takeScreenshot(device: UiDevice, name: String) {
         // Screenshots are collected from the target app package by the CI script.
         // InstrumentationRegistry.context belongs to the separate test APK and can

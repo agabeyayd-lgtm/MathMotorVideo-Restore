@@ -1064,6 +1064,7 @@ class VideoEditorActivity : Activity() {
     private val editorTabButtons = linkedMapOf<String, Button>()
     private var activeEditorPanel: String? = null
     private var clipToolsMode = false
+    private var textToolsDockActive = false
     private var activeClipTool: String? = null
     private var textOverlayEditingEnabled: Boolean = false
     private var selectedVideoFilter = VideoFilterPreset.ORIGINAL
@@ -2144,9 +2145,14 @@ class VideoEditorActivity : Activity() {
         }, LinearLayout.LayoutParams(dp(66), dp(48)).apply { leftMargin = dp(4) })
         textInputRow.addView(miniButton("✓") {
             finishTextHistoryEdit()
-            val ime = getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
-            ime?.hideSoftInputFromWindow(textInput.windowToken, 0); textInput.clearFocus()
             status.text = "Metin güncellendi."
+            if (clipToolsMode && activeEditorPanel == "text") {
+                closeVisualLayerPanel("text")
+            } else {
+                val ime = getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
+                ime?.hideSoftInputFromWindow(textInput.windowToken, 0)
+                textInput.clearFocus()
+            }
         }, LinearLayout.LayoutParams(dp(48), dp(48)).apply { leftMargin = dp(6) })
         textPanel.addView(textInputRow, matchWrap())
 
@@ -2203,21 +2209,16 @@ class VideoEditorActivity : Activity() {
         textPanel.addView(tabScroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(42)))
         textPanel.addView(tabFrame, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(190)))
 
-        // Keep preview gesture editing accessible above the tab drawer content.
-        // The emulator flow must be able to toggle direct manipulation without
-        // scrolling past the five category tabs.
+        // Keep direct preview editing immediately below the text-entry row.
+        // The category strip remains directly after it, while the gesture
+        // control stays above the nested tab ScrollViews and is always reachable.
+        // Placing the toggle after tabFrame made vertical swipes scroll the
+        // nested tab content instead of revealing the outer composer control.
         textPanel.removeView(textOverlayEditToggle)
-        textPanel.addView(textOverlayEditToggle, 2)
-
-        // Keep the five CapCut-style text categories directly below the text
-        // input. The old edit toggle/actions/layer list pushed these controls
-        // below the visible drawer fold, so UI automation and users could not
-        // reach them without scrolling the whole panel.
         textPanel.removeView(tabScroll)
         textPanel.removeView(tabFrame)
         textPanel.getChildAt(0)?.visibility = View.GONE // legacy METİN heading
-        // The gesture toggle must remain directly below the input row; insert
-        // the category strip and its content after it, not in front of it.
+        textPanel.addView(textOverlayEditToggle, 2)
         textPanel.addView(tabScroll, 3)
         textPanel.addView(tabFrame, 4)
 
@@ -2919,6 +2920,9 @@ class VideoEditorActivity : Activity() {
             val tab = miniButton("$symbol\n$title") {
                 if (key == "clip") {
                     if (clipToolsMode) exitClipTools() else enterClipTools()
+                } else if (key == "text") {
+                    if (clipToolsMode) exitClipTools()
+                    enterTextTools()
                 } else if (key == "captions") {
                     if (clipToolsMode) exitClipTools()
                     toggleEditorPanel("text")
@@ -3042,9 +3046,20 @@ class VideoEditorActivity : Activity() {
      */
     private fun logPreviewCanvasTestSnapshot(reason: String) {
         if (!timelineSyncTestEnabled || !::previewCanvas.isInitialized) return
-        previewCanvas.post {
-            if (!::previewCanvas.isInitialized || previewCanvas.width <= 0 || previewCanvas.height <= 0) {
-                android.util.Log.w("PreviewCanvasTest", "PREVIEW_CANVAS_SNAPSHOT_MISSING reason=$reason")
+        // The preview canvas can be temporarily detached/reparented while the
+        // contextual sheet finishes its exit animation. Post to the main
+        // thread instead of either view, then read the canvas after layout.
+        Handler(Looper.getMainLooper()).post {
+            if (!::previewCanvas.isInitialized) {
+                android.util.Log.w("PreviewCanvasTest", "PREVIEW_CANVAS_SNAPSHOT_MISSING reason=$reason canvas=uninitialized")
+                return@post
+            }
+            if (previewCanvas.width <= 0 || previewCanvas.height <= 0 || !previewCanvas.isLaidOut) {
+                android.util.Log.w(
+                    "PreviewCanvasTest",
+                    "PREVIEW_CANVAS_SNAPSHOT_MISSING reason=$reason " +
+                        "canvas=${previewCanvas.width}x${previewCanvas.height} laidOut=${previewCanvas.isLaidOut}"
+                )
                 return@post
             }
             val location = IntArray(2)
@@ -3135,7 +3150,10 @@ class VideoEditorActivity : Activity() {
      * Wait for the next completed layout pass before recording geometry; reading
      * bounds inside the animation end callback can capture the previous frame.
      */
-    private fun logEditorPanelGeometryAfterLayout(state: String) {
+    private fun logEditorPanelGeometryAfterLayout(
+        state: String,
+        previewSnapshotReason: String? = null
+    ) {
         if (!timelineSyncTestEnabled ||
             !::previewFrame.isInitialized ||
             !::editorTimelineCard.isInitialized
@@ -3146,7 +3164,10 @@ class VideoEditorActivity : Activity() {
                 if (previewFrame.viewTreeObserver.isAlive) {
                     previewFrame.viewTreeObserver.removeOnPreDrawListener(this)
                 }
-                previewFrame.post { logEditorPanelGeometry(state) }
+                previewFrame.post {
+                    logEditorPanelGeometry(state)
+                    previewSnapshotReason?.let { logPreviewCanvasTestSnapshot(it) }
+                }
                 return true
             }
         }
@@ -3279,16 +3300,33 @@ class VideoEditorActivity : Activity() {
                         topAction.visibility = View.VISIBLE
                         if (imeVisible) {
                             topAction.text = "Bitti ✓"
+                            topAction.contentDescription = "Metin girişini tamamla"
                             topAction.setOnClickListener {
-                                val focusedView = currentFocus
-                                val token = focusedView?.windowToken ?: root.windowToken
-                                val keyboard = getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
-                                    as? android.view.inputmethod.InputMethodManager
-                                keyboard?.hideSoftInputFromWindow(token, 0)
-                                focusedView?.clearFocus()
+                                if (clipToolsMode && activeEditorPanel == "text") {
+                                    // Finish must dismiss the IME as well as close the
+                                    // composer. Otherwise returnToClipToolStrip sees the
+                                    // stale keyboard mode and keeps the text dock hidden.
+                                    val focusedView = currentFocus
+                                    val token = focusedView?.windowToken ?: root.windowToken
+                                    val keyboard = getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
+                                        as? android.view.inputmethod.InputMethodManager
+                                    keyboard?.hideSoftInputFromWindow(token, 0)
+                                    focusedView?.clearFocus()
+                                    applyKeyboardMode(false, root.height)
+                                    finishTextHistoryEdit()
+                                    closeVisualLayerPanel("text")
+                                } else {
+                                    val focusedView = currentFocus
+                                    val token = focusedView?.windowToken ?: root.windowToken
+                                    val keyboard = getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
+                                        as? android.view.inputmethod.InputMethodManager
+                                    keyboard?.hideSoftInputFromWindow(token, 0)
+                                    focusedView?.clearFocus()
+                                }
                             }
                         } else {
                             topAction.text = "Dışa aktar ›"
+                            topAction.contentDescription = "Dışa aktarma ayarlarını aç"
                             topAction.setOnClickListener { showEditorPanel("export") }
                         }
                     }
@@ -3608,6 +3646,7 @@ class VideoEditorActivity : Activity() {
         finishTextHistoryEdit()
         logEditorPanelGeometry("before-open:clip-tools")
         clipToolsMode = true
+        textToolsDockActive = false
         activeClipTool = null
         activeEditorPanel = null
         selectedTextLayerId = null
@@ -3736,7 +3775,9 @@ class VideoEditorActivity : Activity() {
     /** Leave the contextual clip tools and restore the global editor dock. */
     private fun exitClipTools() {
         if (!clipToolsMode) return
+        val returningFromTextTools = textToolsDockActive
         clipToolsMode = false
+        textToolsDockActive = false
         activeClipTool = null
         activeEditorPanel = null
         applyPreviewStageSizing()
@@ -3765,7 +3806,10 @@ class VideoEditorActivity : Activity() {
             button.setTextColor(Color.rgb(205, 216, 228))
         }
         editorDockScroll.scrollTo(0, 0)
-        logEditorPanelGeometry("closed")
+        logEditorPanelGeometryAfterLayout(
+            state = "closed",
+            previewSnapshotReason = if (returningFromTextTools) "text-panel-close" else null
+        )
     }
 
     private fun showEditorPanel(name: String) {
@@ -3804,13 +3848,18 @@ class VideoEditorActivity : Activity() {
             if (params != null) {
                 val basePanelHeight = when (name) {
                     "clipVolume" -> if (keyboardLayoutActive) 112 else 150
-                    // Keep a usable project preview visible while text controls
-                    // remain in this scrollable detail panel.
-                    // Room for the composer tabs without resizing the project preview canvas.
-                    "text" -> if (keyboardLayoutActive) 226 else 242
+                    // Keep the text composer within the same measured bottom-sheet
+                    // budget as the other editor panels. Its contents scroll vertically;
+                    // the input row and category tabs remain at the top and stay reachable.
+                    "text" -> if (keyboardLayoutActive) 68 else 196
                     else -> if (keyboardLayoutActive) 124 else 196
                 }
-                val stickyHeaderHeight = 40
+                // The return button is a sibling above the scroll view only when the
+                // keyboard is hidden. Do not reserve its height while it is GONE.
+                val stickyHeaderHeight = if (!keyboardLayoutActive &&
+                    ::editorPanelReturnButton.isInitialized &&
+                    editorPanelReturnButton.visibility == View.VISIBLE
+                ) 40 else 0
                 params.height = dp((basePanelHeight - stickyHeaderHeight).coerceAtLeast(72))
                 editorPanelScroll.layoutParams = params
             }
@@ -3917,7 +3966,7 @@ class VideoEditorActivity : Activity() {
                         editorPanelScroll.visibility = View.GONE
                         editorPanelScroll.translationY = 0f
                         editorPanelScroll.alpha = 1f
-                        editorPanelScroll.post {
+                        Handler(Looper.getMainLooper()).post {
                             logEditorPanelGeometry("closed")
                             if (timelineSyncTestEnabled && name == "text") {
                                 logPreviewCanvasTestSnapshot("text-panel-close")
@@ -3949,6 +3998,26 @@ class VideoEditorActivity : Activity() {
     }
 
     override fun onBackPressed() {
+        // Android Back dismisses the IME before it navigates away from an editor
+        // panel. Read the live WindowInsets as well as our layout flag: the IME
+        // animation can make the cached flag briefly lag behind the real window,
+        // and some IMEs temporarily leave currentFocus null while still visible.
+        val rootInsets = window.decorView.rootWindowInsets
+        val imeVisible = keyboardLayoutActive || (
+            Build.VERSION.SDK_INT >= 30 &&
+                rootInsets?.isVisible(WindowInsets.Type.ime()) == true
+            )
+        if (imeVisible) {
+            val focusedView = currentFocus
+            val token = focusedView?.windowToken ?: window.decorView.windowToken
+            val keyboard = getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
+                as? android.view.inputmethod.InputMethodManager
+            if (token != null) keyboard?.hideSoftInputFromWindow(token, 0)
+            focusedView?.clearFocus()
+            // Consume this Back even if currentFocus was temporarily null. The
+            // text/detail panel must remain open until the next Back press.
+            return
+        }
         val panel = activeEditorPanel
         if (panel != null) {
             toggleEditorPanel(panel)
@@ -8589,12 +8658,23 @@ class VideoEditorActivity : Activity() {
     }
 
     /** Text-track selection mirrors video and overlay: selection changes only the dock. */
+    /** Text tool selection opens its own dock; detail panels are a separate level. */
     private fun enterTextTools() {
         if (!::editorDock.isInitialized || !::editorPanelScroll.isInitialized) return
+        finishTextHistoryEdit()
         if (::editorPanelReturnButton.isInitialized) editorPanelReturnButton.visibility = View.GONE
         clipToolsMode = true
+        textToolsDockActive = true
         activeClipTool = null
         activeEditorPanel = null
+        // Returning from a detail panel to the text-tool dock must also restore
+        // the transport row; the previous panel may have hidden it.
+        if (::centeredPlaybackRow.isInitialized) {
+            centeredPlaybackRow.visibility = if (keyboardLayoutActive) View.GONE else View.VISIBLE
+        }
+        if (::editorDockScroll.isInitialized) {
+            editorDockScroll.visibility = if (keyboardLayoutActive) View.GONE else View.VISIBLE
+        }
         updateClipTransformTouchAvailability()
         updateOverlayTransformTouchAvailability()
         textOverlayEditingEnabled = false
@@ -8604,33 +8684,35 @@ class VideoEditorActivity : Activity() {
         editorPanelScroll.visibility = View.GONE
         editorPanelScroll.translationY = 0f
         editorPanelScroll.alpha = 1f
-        // A text-layer tap can arrive while the text EditText still owns IME
-        // focus. Entering the contextual text dock must dismiss that keyboard;
-        // otherwise Android keeps the preview compressed to a narrow strip and
-        // the tap appears not to have selected the text layer.
         val focusedForTextTools = currentFocus
         val textToolsIme = getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
             as? android.view.inputmethod.InputMethodManager
         focusedForTextTools?.windowToken?.let { textToolsIme?.hideSoftInputFromWindow(it, 0) }
         focusedForTextTools?.clearFocus()
         if (::textInput.isInitialized) textInput.clearFocus()
+
         editorDock.removeAllViews()
         val tools = listOf(
             Triple("‹", "Geri", "Ana araçlara dön"),
-            Triple("T", "Düzenle", "Seçili metin katmanını düzenle"),
-            Triple("×", "Sil", "Seçili metin katmanını kaldır")
+            Triple("T+", "Metin ekle", "Yeni metin katmanı ekle"),
+            Triple("☺", "Çıkartmalar", "Çıkartma galerisini aç"),
+            Triple("Aa", "Metin şablonları", "Metin şablonlarını ve stillerini aç")
         )
         tools.forEach { (symbol, title, description) ->
             val action: () -> Unit = when (title) {
                 "Geri" -> ({ exitClipTools() })
-                "Düzenle" -> ({ showEditorPanel("text") })
-                "Sil" -> ({ removeSelectedTextLayer() })
+                "Metin ekle" -> ({ addTextLayer() })
+                "Çıkartmalar" -> ({ showEditorPanel("stickers") })
+                "Metin şablonları" -> ({ showEditorPanel("text") })
                 else -> ({})
             }
-            editorDock.addView(makeClipDockTool(symbol, title, description, action),
-                LinearLayout.LayoutParams(dp(60), dp(58)))
+            editorDock.addView(
+                makeClipDockTool(symbol, title, description, action),
+                LinearLayout.LayoutParams(dp(82), dp(58))
+            )
         }
         editorDockScroll.scrollTo(0, 0)
+        editorDockScroll.visibility = if (keyboardLayoutActive) View.GONE else View.VISIBLE
         if (timelineSyncTestEnabled) {
             val toolLabels = (0 until editorDock.childCount).map { index ->
                 (editorDock.getChildAt(index) as? TextView)?.text?.toString()?.replace('\n', ' ') ?: "?"
@@ -8647,6 +8729,7 @@ class VideoEditorActivity : Activity() {
     private fun enterAudioTools() {
         if (!::editorDock.isInitialized || !::editorPanelScroll.isInitialized) return
         finishTextHistoryEdit()
+        textToolsDockActive = false
         selectedTextLayerId = null
         selectedOverlayId = null
         clipHandlesVisible = false
@@ -10322,6 +10405,7 @@ class VideoEditorActivity : Activity() {
     private fun enterOverlayTools() {
         if (!::editorDock.isInitialized || !::editorPanelScroll.isInitialized) return
         finishTextHistoryEdit()
+        textToolsDockActive = false
         selectedTextLayerId = null
         updatePreviewTextOverlay()
         clipToolsMode = true

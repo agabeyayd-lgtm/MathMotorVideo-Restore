@@ -258,8 +258,28 @@ jobs:
           adb -s emulator-5554 shell settings put global window_animation_scale 0
           adb -s emulator-5554 shell settings put global transition_animation_scale 0
           adb -s emulator-5554 shell settings put global animator_duration_scale 0
-          gradle --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.mathmotor.video.VideoProjectDraftBackupTest,com.mathmotor.video.TimelineThumbnailDiskCacheTest
-          bash .github/scripts/capture-emulator-screenshots.sh
+          if gradle --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.mathmotor.video.VideoProjectDraftBackupTest,com.mathmotor.video.TimelineThumbnailDiskCacheTest,com.mathmotor.video.EmulatorScreenshotTest#androidBackTraversesTextEditorLevelsAndClipTools; then
+            bash .github/scripts/capture-emulator-screenshots.sh
+          else
+            test_status=$?
+            mkdir -p emulator-screenshots/failed-test-diagnostics
+            timeout -k 2s 12s adb -s emulator-5554 logcat -d -v threadtime \
+              > emulator-screenshots/failed-test-diagnostics/logcat.txt 2>&1 || true
+            timeout -k 2s 8s adb -s emulator-5554 shell dumpsys input_method \
+              > emulator-screenshots/failed-test-diagnostics/input-method.txt 2>&1 || true
+            timeout -k 2s 8s adb -s emulator-5554 shell dumpsys window \
+              > emulator-screenshots/failed-test-diagnostics/window.txt 2>&1 || true
+            if [ -d app/build/reports/androidTests/connected/debug ]; then
+              cp -R app/build/reports/androidTests/connected/debug \
+                emulator-screenshots/failed-test-diagnostics/android-test-report
+            fi
+            if [ -d app/build/outputs/androidTest-results/connected/debug ]; then
+              cp -R app/build/outputs/androidTest-results/connected/debug \
+                emulator-screenshots/failed-test-diagnostics/android-test-results
+            fi
+            find emulator-screenshots/failed-test-diagnostics -maxdepth 4 -type f -print
+            exit "$test_status"
+          fi
 
       - name: Upload emulator screenshots and diagnostics
         if: always()
