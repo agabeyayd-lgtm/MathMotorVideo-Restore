@@ -2208,17 +2208,18 @@ class VideoEditorActivity : Activity() {
         textPanel.addView(tabScroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(42)))
         textPanel.addView(tabFrame, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(190)))
 
-        // Put the five CapCut-style categories immediately below the text
-        // input. The gesture toggle, copy/delete actions and layer list are
-        // secondary controls and must not push the category strip below the
-        // visible text composer viewport.
+        // Keep direct preview editing immediately below the text-entry row.
+        // The category strip remains directly after it, while the gesture
+        // control stays above the nested tab ScrollViews and is always reachable.
+        // Placing the toggle after tabFrame made vertical swipes scroll the
+        // nested tab content instead of revealing the outer composer control.
         textPanel.removeView(textOverlayEditToggle)
         textPanel.removeView(tabScroll)
         textPanel.removeView(tabFrame)
         textPanel.getChildAt(0)?.visibility = View.GONE // legacy METİN heading
-        textPanel.addView(tabScroll, 2)
-        textPanel.addView(tabFrame, 3)
-        textPanel.addView(textOverlayEditToggle, 4)
+        textPanel.addView(textOverlayEditToggle, 2)
+        textPanel.addView(tabScroll, 3)
+        textPanel.addView(tabFrame, 4)
 
         tabScrolls["Stiller"]?.visibility = View.VISIBLE
         tabButtons["Stiller"]?.apply {
