@@ -1064,6 +1064,7 @@ class VideoEditorActivity : Activity() {
     private val editorTabButtons = linkedMapOf<String, Button>()
     private var activeEditorPanel: String? = null
     private var clipToolsMode = false
+    private var textToolsDockActive = false
     private var activeClipTool: String? = null
     private var textOverlayEditingEnabled: Boolean = false
     private var selectedVideoFilter = VideoFilterPreset.ORIGINAL
@@ -3149,7 +3150,10 @@ class VideoEditorActivity : Activity() {
      * Wait for the next completed layout pass before recording geometry; reading
      * bounds inside the animation end callback can capture the previous frame.
      */
-    private fun logEditorPanelGeometryAfterLayout(state: String) {
+    private fun logEditorPanelGeometryAfterLayout(
+        state: String,
+        previewSnapshotReason: String? = null
+    ) {
         if (!timelineSyncTestEnabled ||
             !::previewFrame.isInitialized ||
             !::editorTimelineCard.isInitialized
@@ -3160,7 +3164,10 @@ class VideoEditorActivity : Activity() {
                 if (previewFrame.viewTreeObserver.isAlive) {
                     previewFrame.viewTreeObserver.removeOnPreDrawListener(this)
                 }
-                previewFrame.post { logEditorPanelGeometry(state) }
+                previewFrame.post {
+                    logEditorPanelGeometry(state)
+                    previewSnapshotReason?.let { logPreviewCanvasTestSnapshot(it) }
+                }
                 return true
             }
         }
@@ -3639,6 +3646,7 @@ class VideoEditorActivity : Activity() {
         finishTextHistoryEdit()
         logEditorPanelGeometry("before-open:clip-tools")
         clipToolsMode = true
+        textToolsDockActive = false
         activeClipTool = null
         activeEditorPanel = null
         selectedTextLayerId = null
@@ -3767,7 +3775,9 @@ class VideoEditorActivity : Activity() {
     /** Leave the contextual clip tools and restore the global editor dock. */
     private fun exitClipTools() {
         if (!clipToolsMode) return
+        val returningFromTextTools = textToolsDockActive
         clipToolsMode = false
+        textToolsDockActive = false
         activeClipTool = null
         activeEditorPanel = null
         applyPreviewStageSizing()
@@ -3796,7 +3806,10 @@ class VideoEditorActivity : Activity() {
             button.setTextColor(Color.rgb(205, 216, 228))
         }
         editorDockScroll.scrollTo(0, 0)
-        logEditorPanelGeometry("closed")
+        logEditorPanelGeometryAfterLayout(
+            state = "closed",
+            previewSnapshotReason = if (returningFromTextTools) "text-panel-close" else null
+        )
     }
 
     private fun showEditorPanel(name: String) {
@@ -8644,6 +8657,7 @@ class VideoEditorActivity : Activity() {
         finishTextHistoryEdit()
         if (::editorPanelReturnButton.isInitialized) editorPanelReturnButton.visibility = View.GONE
         clipToolsMode = true
+        textToolsDockActive = true
         activeClipTool = null
         activeEditorPanel = null
         // Returning from a detail panel to the text-tool dock must also restore
@@ -8708,6 +8722,7 @@ class VideoEditorActivity : Activity() {
     private fun enterAudioTools() {
         if (!::editorDock.isInitialized || !::editorPanelScroll.isInitialized) return
         finishTextHistoryEdit()
+        textToolsDockActive = false
         selectedTextLayerId = null
         selectedOverlayId = null
         clipHandlesVisible = false
@@ -10383,6 +10398,7 @@ class VideoEditorActivity : Activity() {
     private fun enterOverlayTools() {
         if (!::editorDock.isInitialized || !::editorPanelScroll.isInitialized) return
         finishTextHistoryEdit()
+        textToolsDockActive = false
         selectedTextLayerId = null
         updatePreviewTextOverlay()
         clipToolsMode = true
