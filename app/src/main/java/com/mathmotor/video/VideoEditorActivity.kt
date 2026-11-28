@@ -1547,7 +1547,7 @@ class VideoEditorActivity : Activity() {
                 isFocusable = true
                 contentDescription = description
             }
-            var startDistance = 0f
+            var startDistance = 0.0
             var startSizeSp = 24
             handle.setOnTouchListener { _, event ->
                 val layer = selectedTextLayer() ?: return@setOnTouchListener false
@@ -1559,7 +1559,7 @@ class VideoEditorActivity : Activity() {
                     MotionEvent.ACTION_DOWN -> {
                         startDistance = kotlin.math.hypot(
                             (event.rawX - centerX).toDouble(), (event.rawY - centerY).toDouble()
-                        ).coerceAtLeast(1f)
+                        ).coerceAtLeast(1.0)
                         startSizeSp = layer.sizeSp
                         beginTextHistoryEdit()
                         pauseActivePreview()
