@@ -1558,7 +1558,7 @@ class VideoEditorActivity : Activity() {
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
                         startDistance = kotlin.math.hypot(
-                            event.rawX - centerX, event.rawY - centerY
+                            (event.rawX - centerX).toDouble(), (event.rawY - centerY).toDouble()
                         ).coerceAtLeast(1f)
                         startSizeSp = layer.sizeSp
                         beginTextHistoryEdit()
@@ -1568,7 +1568,7 @@ class VideoEditorActivity : Activity() {
                     }
                     MotionEvent.ACTION_MOVE -> {
                         val currentDistance = kotlin.math.hypot(
-                            event.rawX - centerX, event.rawY - centerY
+                            (event.rawX - centerX).toDouble(), (event.rawY - centerY).toDouble()
                         )
                         layer.sizeSp = (startSizeSp * currentDistance / startDistance)
                             .toInt().coerceIn(12, 96)
