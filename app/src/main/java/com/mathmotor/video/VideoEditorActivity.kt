@@ -3044,13 +3044,11 @@ class VideoEditorActivity : Activity() {
      * which intermittently time out on the editor's large accessibility tree.
      */
     private fun logPreviewCanvasTestSnapshot(reason: String) {
-        if (!timelineSyncTestEnabled || !::previewCanvas.isInitialized || !::root.isInitialized) return
+        if (!timelineSyncTestEnabled || !::previewCanvas.isInitialized) return
         // The preview canvas can be temporarily detached/reparented while the
-        // contextual sheet finishes its exit animation. Posting to that child
-        // can leave the diagnostic Runnable queued until a future attachment.
-        // The editor root stays attached throughout panel transitions, so use
-        // it as the scheduler and read the canvas after the next layout pass.
-        root.post {
+        // contextual sheet finishes its exit animation. Post to the main
+        // thread instead of either view, then read the canvas after layout.
+        Handler(Looper.getMainLooper()).post {
             if (!::previewCanvas.isInitialized) {
                 android.util.Log.w("PreviewCanvasTest", "PREVIEW_CANVAS_SNAPSHOT_MISSING reason=$reason canvas=uninitialized")
                 return@post
