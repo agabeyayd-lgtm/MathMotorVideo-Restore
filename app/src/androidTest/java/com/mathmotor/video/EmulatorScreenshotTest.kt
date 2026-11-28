@@ -26,7 +26,8 @@ class EmulatorScreenshotTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val device = UiDevice.getInstance(instrumentation)
 
-        device.executeShellCommand("am force-stop com.mathmotor.video.next")
+        // Do not force-stop the target package here: instrumentation runs in
+        // the target app process and would kill its own test runner.
         device.executeShellCommand(
             "am start -n com.mathmotor.video.next/com.mathmotor.video.MainActivity"
         )
