@@ -1607,7 +1607,7 @@ class VideoEditorActivity : Activity() {
                     else -> true
                 }
             }
-            textSelectionFrame.addView(
+            addView(
                 handle,
                 FrameLayout.LayoutParams(dp(18), dp(18), gravity)
             )
