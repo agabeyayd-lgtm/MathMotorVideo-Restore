@@ -364,7 +364,8 @@ class EmulatorScreenshotTest {
             android.util.Log.i("EditorTouchTest", "ANDROID_BACK_STACK_STEP $name")
         }
         checkpoint("launch-home")
-        device.executeShellCommand("am force-stop com.mathmotor.video.next")
+        // Instrumentation runs inside the target app process. Do not force-stop
+        // this package here; that would terminate this test before navigation.
         device.executeShellCommand(
             "am start -n com.mathmotor.video.next/com.mathmotor.video.MainActivity"
         )
