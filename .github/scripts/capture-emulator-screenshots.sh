@@ -3450,6 +3450,70 @@ if [ "$text_drag_dx" -lt -6 ] || [ "$text_drag_dx" -gt 6 ] || [ "$text_drag_dy" 
 fi
 echo "PASS: vertical in-canvas text drag moved the rendered selection frame from ($text_before_x,$text_before_y) to ($text_after_x,$text_after_y) without shifting it beyond the canvas edges."
 
+# Verify that the selected text exposes real one-finger corner resize handles.
+# The existing two-finger pinch path is not sufficient on a phone when users
+# expect to grab a visible corner and resize the text directly.
+if ! dump_hierarchy editor-text-resize-before.xml emulator-screenshots/editor-text-resize-before.xml; then
+  collect_capture_diagnostics text-canvas-resize-before-hierarchy-missing
+  exit 66
+fi
+text_resize_start="$(python3 - emulator-screenshots/editor-text-resize-before.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("content-desc") != "Yazıyı sağ alt köşeden boyutlandır":
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        x1, y1, x2, y2 = map(int, match.groups())
+        print((x1 + x2) // 2, (y1 + y2) // 2)
+        raise SystemExit(0)
+raise SystemExit("The selected text layer did not expose its bottom-right resize handle.")
+PY
+)" || {
+  echo "Could not locate the text layer's bottom-right resize handle."
+  collect_capture_diagnostics text-canvas-resize-handle-missing
+  exit 66
+}
+read -r text_resize_x text_resize_y <<< "$text_resize_start"
+timeout -k 2s 8s adb -s emulator-5554 logcat -c
+timeout -k 2s 8s adb -s emulator-5554 shell input swipe "$text_resize_x" "$text_resize_y" "$((text_resize_x + 30))" "$((text_resize_y + 30))" 500
+sleep 1
+if ! dump_hierarchy editor-text-resize-after.xml emulator-screenshots/editor-text-resize-after.xml; then
+  collect_capture_diagnostics text-canvas-resize-after-hierarchy-missing
+  exit 66
+fi
+python3 - emulator-screenshots/editor-text-resize-before.xml emulator-screenshots/editor-text-resize-after.xml <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+def bounds(path, label):
+    root = ET.parse(path).getroot()
+    for node in root.iter("node"):
+        if node.attrib.get("content-desc") == label:
+            match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+            if match:
+                return tuple(map(int, match.groups()))
+    raise SystemExit(f"Missing selection frame in {path}")
+before = bounds(sys.argv[1], "Seçili metin katmanı sınırı")
+after = bounds(sys.argv[2], "Seçili metin katmanı sınırı")
+before_size = (before[2] - before[0]) * (before[3] - before[1])
+after_size = (after[2] - after[0]) * (after[3] - after[1])
+if after_size <= before_size + 20:
+    raise SystemExit(f"Corner drag did not enlarge the rendered text selection frame: before={before}, after={after}")
+print(f"PASS: corner resize enlarged the selected text frame from {before} to {after}.")
+PY
+timeout -k 2s 8s adb -s emulator-5554 logcat -d -v threadtime -s PreviewCanvasTest:I > emulator-screenshots/editor-text-resize-logcat.txt 2>&1 || true
+if ! grep -Eq "TEXT_CANVAS_RESIZE sizeSp=(2[5-9]|[3-9][0-9])" emulator-screenshots/editor-text-resize-logcat.txt; then
+  echo "The corner handle did not commit a larger text size."
+  collect_capture_diagnostics text-canvas-resize-size-not-increased
+  exit 66
+fi
+echo "PASS: one-finger corner resize increased the actual text layer size."
+
+
 # Verify the visible top-bar Bitti ✓ action while the composer owns the
 # keyboard. It must confirm text and return to the text-tools strip.
 if ! dump_hierarchy editor-text-before-checkmark.xml emulator-screenshots/editor-text-before-checkmark.xml; then
