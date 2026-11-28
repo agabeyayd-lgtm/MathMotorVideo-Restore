@@ -359,6 +359,10 @@ class EmulatorScreenshotTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val device = UiDevice.getInstance(instrumentation)
 
+        fun checkpoint(name: String) {
+            android.util.Log.i("EditorTouchTest", "ANDROID_BACK_STACK_STEP $name")
+        }
+        checkpoint("launch-home")
         device.executeShellCommand("am force-stop com.mathmotor.video.next")
         device.executeShellCommand(
             "am start -n com.mathmotor.video.next/com.mathmotor.video.MainActivity"
@@ -400,13 +404,19 @@ class EmulatorScreenshotTest {
         )
 
         // First Android Back must dismiss the keyboard without closing the composer.
+        checkpoint("back-dismiss-ime")
         device.pressBack()
         assertTrue(
             "First Android Back closed the text composer instead of only dismissing the keyboard",
-            device.wait(Until.hasObject(By.desc("Metin girişini tamamla")), 5_000)
+            device.wait(Until.hasObject(By.clazz("android.widget.EditText")), 5_000)
+        )
+        assertTrue(
+            "First Android Back did not dismiss the IME",
+            !device.wait(Until.hasObject(By.desc("Metin girişini tamamla")), 1_000)
         )
 
         // Second Back closes the text detail panel but preserves the text-tools dock.
+        checkpoint("back-close-text-panel")
         device.pressBack()
         assertTrue(
             "Second Android Back did not return to the contextual text-tools dock",
@@ -414,6 +424,7 @@ class EmulatorScreenshotTest {
         )
 
         // Third Back exits contextual text tools and restores the global editor dock.
+        checkpoint("back-exit-text-tools")
         device.pressBack()
         assertTrue(
             "Third Android Back did not restore the global editor dock",
@@ -428,11 +439,13 @@ class EmulatorScreenshotTest {
         val editTool = device.findObject(
             By.clazz("android.widget.Button").textContains("Düzenle")
         ) ?: throw AssertionError("Could not find the main Düzenle tool")
+        checkpoint("open-clip-tools")
         editTool.click()
         assertTrue(
             "The contextual clip-tools dock did not open",
             device.wait(Until.hasObject(By.desc("Kırpma ayarlarını aç")), 8_000)
         )
+        checkpoint("back-exit-clip-tools")
         device.pressBack()
         assertTrue(
             "Android Back did not restore the global dock from clip tools",
@@ -440,9 +453,11 @@ class EmulatorScreenshotTest {
         )
 
         // Android owns the Recents key; returning from overview must preserve the editor.
+        checkpoint("open-recents")
         device.pressRecentApps()
         SystemClock.sleep(700L)
         device.pressBack()
+        checkpoint("return-from-recents")
         assertTrue(
             "The editor was not restored after Android Recents was dismissed",
             device.wait(Until.hasObject(By.textContains("Düzenle")), 8_000)
