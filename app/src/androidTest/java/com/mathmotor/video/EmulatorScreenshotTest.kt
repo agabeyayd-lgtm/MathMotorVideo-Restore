@@ -371,7 +371,7 @@ class EmulatorScreenshotTest {
         )
         assertTrue(
             "Home screen did not appear before Android Back navigation test",
-            device.wait(Until.hasObject(By.text("VİDEO STÜDYOSU")), 20_000)
+            device.wait(Until.hasObject(By.text("Video oluştur")), 20_000)
         )
 
         val createProject = device.findObject(
