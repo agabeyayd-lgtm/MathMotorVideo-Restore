@@ -3953,7 +3953,7 @@ class VideoEditorActivity : Activity() {
                         editorPanelScroll.visibility = View.GONE
                         editorPanelScroll.translationY = 0f
                         editorPanelScroll.alpha = 1f
-                        editorPanelScroll.post {
+                        Handler(Looper.getMainLooper()).post {
                             logEditorPanelGeometry("closed")
                             if (timelineSyncTestEnabled && name == "text") {
                                 logPreviewCanvasTestSnapshot("text-panel-close")
