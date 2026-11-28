@@ -328,7 +328,7 @@ class VideoEditorActivity : Activity() {
     private var previewFocusMode = false
     private val previewFocusOriginalVisibility = linkedMapOf<View, Int>()
     private lateinit var previewTextOverlay: TextView
-    private lateinit var textSelectionFrame: View
+    private lateinit var textSelectionFrame: FrameLayout
     private lateinit var clipTransformTouchOverlay: View
     private lateinit var clipSelectionFrame: View
     private lateinit var overlayTransformTouchOverlay: View
@@ -1524,7 +1524,7 @@ class VideoEditorActivity : Activity() {
         )
         previewTextOverlays.add(previewTextOverlay)
         installPreviewTextTouch(previewTextOverlay)
-        textSelectionFrame = View(this).apply {
+        textSelectionFrame = FrameLayout(this).apply {
             visibility = View.GONE
             isClickable = false
             isFocusable = false
@@ -1536,6 +1536,86 @@ class VideoEditorActivity : Activity() {
             elevation = dp(TouchPriority.SELECTION_CHROME_DP).toFloat()
             contentDescription = "Seçili metin katmanı sınırı"
         }
+        fun addTextResizeHandle(gravity: Int, description: String) {
+            val handle = View(this).apply {
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.OVAL
+                    setColor(Color.rgb(14, 22, 32))
+                    setStroke(dp(2), Color.WHITE)
+                }
+                isClickable = true
+                isFocusable = true
+                contentDescription = description
+            }
+            var startDistance = 0.0
+            var startSizeSp = 24
+            handle.setOnTouchListener { _, event ->
+                val layer = selectedTextLayer() ?: return@setOnTouchListener false
+                val frameLocation = IntArray(2)
+                textSelectionFrame.getLocationOnScreen(frameLocation)
+                val centerX = frameLocation[0] + textSelectionFrame.width / 2f
+                val centerY = frameLocation[1] + textSelectionFrame.height / 2f
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        startDistance = kotlin.math.hypot(
+                            (event.rawX - centerX).toDouble(), (event.rawY - centerY).toDouble()
+                        ).coerceAtLeast(1.0)
+                        startSizeSp = layer.sizeSp
+                        beginTextHistoryEdit()
+                        pauseActivePreview()
+                        textSelectionFrame.parent?.requestDisallowInterceptTouchEvent(true)
+                        true
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        val currentDistance = kotlin.math.hypot(
+                            (event.rawX - centerX).toDouble(), (event.rawY - centerY).toDouble()
+                        )
+                        layer.sizeSp = (startSizeSp * currentDistance / startDistance)
+                            .toInt().coerceIn(12, 96)
+                        textSizeSp = layer.sizeSp
+                        if (::textSizeLabel.isInitialized && ::textSizeSeek.isInitialized) {
+                            loadingTextLayerControls = true
+                            try {
+                                textSizeLabel.text = "Yazı boyutu: ${layer.sizeSp} sp"
+                                textSizeSeek.progress = layer.sizeSp - 12
+                            } finally {
+                                loadingTextLayerControls = false
+                            }
+                        }
+                        updatePreviewTextOverlay()
+                        if (timelineSyncTestEnabled) android.util.Log.i(
+                            "PreviewCanvasTest",
+                            "TEXT_CANVAS_RESIZE sizeSp=${layer.sizeSp} layerId=${layer.id}"
+                        )
+                        true
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        textSelectionFrame.parent?.requestDisallowInterceptTouchEvent(false)
+                        finishTextHistoryEdit()
+                        refreshTextLayerList()
+                        status.text = "Yazı boyutu: ${layer.sizeSp} sp."
+                        true
+                    }
+                    MotionEvent.ACTION_CANCEL -> {
+                        layer.sizeSp = startSizeSp
+                        textSizeSp = startSizeSp
+                        updatePreviewTextOverlay()
+                        textSelectionFrame.parent?.requestDisallowInterceptTouchEvent(false)
+                        finishTextHistoryEdit()
+                        true
+                    }
+                    else -> true
+                }
+            }
+            textSelectionFrame.addView(
+                handle,
+                FrameLayout.LayoutParams(dp(18), dp(18), gravity)
+            )
+        }
+        addTextResizeHandle(Gravity.TOP or Gravity.LEFT, "Yazıyı sol üst köşeden boyutlandır")
+        addTextResizeHandle(Gravity.TOP or Gravity.RIGHT, "Yazıyı sağ üst köşeden boyutlandır")
+        addTextResizeHandle(Gravity.BOTTOM or Gravity.LEFT, "Yazıyı sol alt köşeden boyutlandır")
+        addTextResizeHandle(Gravity.BOTTOM or Gravity.RIGHT, "Yazıyı sağ alt köşeden boyutlandır")
         previewCanvas.addView(
             textSelectionFrame,
             FrameLayout.LayoutParams(dp(1), dp(1), Gravity.CENTER)
