@@ -454,14 +454,27 @@ class EmulatorScreenshotTest {
             device.wait(Until.hasObject(By.textContains("Düzenle")), 8_000)
         )
 
-        // Android owns the Recents key; returning from overview must preserve the editor.
+        // Back from the Pixel launcher overview returns to HOME, not to the app.
+        // Select the app's actual Recents task to verify Android resumes the editor.
         checkpoint("open-recents")
         device.pressRecentApps()
-        SystemClock.sleep(700L)
-        device.pressBack()
+        val recentsAppLabel = device.wait(
+            Until.findObject(By.text("MathMotor Video")),
+            5_000
+        ) ?: device.wait(
+            Until.findObject(By.descContains("MathMotor Video")),
+            5_000
+        ) ?: throw AssertionError("MathMotor Video task was not visible in Android Recents")
+        assertTrue(
+            "The MathMotor Video task label is not visible in Android Recents",
+            recentsAppLabel.visibleBounds.width() > 0 && recentsAppLabel.visibleBounds.height() > 0
+        )
+        // This test creates only one recent app task; tapping the card's live
+        // preview (screen centre) reselects that exact editor task, not HOME.
+        device.click(device.displayWidth / 2, device.displayHeight / 2)
         checkpoint("return-from-recents")
         assertTrue(
-            "The editor was not restored after Android Recents was dismissed",
+            "The editor was not resumed after selecting its Android Recents task",
             device.wait(Until.hasObject(By.textContains("Düzenle")), 8_000)
         )
         android.util.Log.i(
