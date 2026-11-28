@@ -353,6 +353,107 @@ class EmulatorScreenshotTest {
         )
         takeScreenshot(device, "video-split-restored-after-reopen.png")
     }
+
+    @Test
+    fun androidBackTraversesTextEditorLevelsAndClipTools() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val device = UiDevice.getInstance(instrumentation)
+
+        device.executeShellCommand("am force-stop com.mathmotor.video.next")
+        device.executeShellCommand(
+            "am start -n com.mathmotor.video.next/com.mathmotor.video.MainActivity"
+        )
+        assertTrue(
+            "Home screen did not appear before Android Back navigation test",
+            device.wait(Until.hasObject(By.text("VİDEO STÜDYOSU")), 20_000)
+        )
+
+        val createProject = device.findObject(
+            By.clazz("android.widget.Button").textContains("Boş proje oluştur")
+        ) ?: throw AssertionError("Could not find the empty-project action")
+        createProject.click()
+        assertTrue(
+            "The editor did not open for Android Back navigation test",
+            device.wait(Until.hasObject(By.descContains("Metin")), 15_000)
+        )
+        device.waitForIdle()
+
+        val mainTextTool = device.findObject(
+            By.clazz("android.widget.Button").textContains("Metin")
+        ) ?: throw AssertionError("Could not find the main Metin tool")
+        mainTextTool.click()
+        assertTrue(
+            "The contextual text-tools dock did not open",
+            device.wait(Until.hasObject(By.desc("Yeni metin katmanı ekle")), 8_000)
+        )
+
+        val addText = device.findObject(By.desc("Yeni metin katmanı ekle"))
+            ?: throw AssertionError("Could not find Metin ekle in the text-tools dock")
+        addText.click()
+        assertTrue(
+            "The text composer did not open",
+            device.wait(Until.hasObject(By.desc("Metin girişini tamamla")), 8_000)
+        )
+        assertTrue(
+            "The text input field is missing from the composer",
+            device.hasObject(By.clazz("android.widget.EditText"))
+        )
+
+        // First Android Back must dismiss the keyboard without closing the composer.
+        device.pressBack()
+        assertTrue(
+            "First Android Back closed the text composer instead of only dismissing the keyboard",
+            device.wait(Until.hasObject(By.desc("Metin girişini tamamla")), 5_000)
+        )
+
+        // Second Back closes the text detail panel but preserves the text-tools dock.
+        device.pressBack()
+        assertTrue(
+            "Second Android Back did not return to the contextual text-tools dock",
+            device.wait(Until.hasObject(By.desc("Yeni metin katmanı ekle")), 8_000)
+        )
+
+        // Third Back exits contextual text tools and restores the global editor dock.
+        device.pressBack()
+        assertTrue(
+            "Third Android Back did not restore the global editor dock",
+            device.wait(Until.hasObject(By.textContains("Düzenle")), 8_000)
+        )
+        assertTrue(
+            "The main Metin tool was not restored with the global dock",
+            device.hasObject(By.clazz("android.widget.Button").textContains("Metin"))
+        )
+
+        // Verify the clip-tool strip uses the same Android Back return path.
+        val editTool = device.findObject(
+            By.clazz("android.widget.Button").textContains("Düzenle")
+        ) ?: throw AssertionError("Could not find the main Düzenle tool")
+        editTool.click()
+        assertTrue(
+            "The contextual clip-tools dock did not open",
+            device.wait(Until.hasObject(By.desc("Kırpma ayarlarını aç")), 8_000)
+        )
+        device.pressBack()
+        assertTrue(
+            "Android Back did not restore the global dock from clip tools",
+            device.wait(Until.hasObject(By.textContains("Düzenle")), 8_000)
+        )
+
+        // Android owns the Recents key; returning from overview must preserve the editor.
+        device.pressRecentApps()
+        SystemClock.sleep(700L)
+        device.pressBack()
+        assertTrue(
+            "The editor was not restored after Android Recents was dismissed",
+            device.wait(Until.hasObject(By.textContains("Düzenle")), 8_000)
+        )
+        android.util.Log.i(
+            "EditorTouchTest",
+            "ANDROID_BACK_STACK_PASS keyboard->text-panel->text-tools->main-dock; " +
+                "clip-tools->main-dock; recents->editor"
+        )
+    }
+
     private fun takeScreenshot(device: UiDevice, name: String) {
         // Screenshots are collected from the target app package by the CI script.
         // InstrumentationRegistry.context belongs to the separate test APK and can
