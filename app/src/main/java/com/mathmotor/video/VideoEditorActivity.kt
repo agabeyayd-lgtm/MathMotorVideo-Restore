@@ -3998,18 +3998,25 @@ class VideoEditorActivity : Activity() {
     }
 
     override fun onBackPressed() {
-        // Android Back should dismiss the IME before it navigates away from
-        // the active editor panel. Otherwise the text composer can be closed
-        // while the user is only trying to reveal its controls.
-        if (keyboardLayoutActive) {
+        // Android Back dismisses the IME before it navigates away from an editor
+        // panel. Read the live WindowInsets as well as our layout flag: the IME
+        // animation can make the cached flag briefly lag behind the real window,
+        // and some IMEs temporarily leave currentFocus null while still visible.
+        val rootInsets = window.decorView.rootWindowInsets
+        val imeVisible = keyboardLayoutActive || (
+            Build.VERSION.SDK_INT >= 30 &&
+                rootInsets?.isVisible(WindowInsets.Type.ime()) == true
+            )
+        if (imeVisible) {
             val focusedView = currentFocus
-            if (focusedView != null) {
-                val keyboard = getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
-                    as? android.view.inputmethod.InputMethodManager
-                keyboard?.hideSoftInputFromWindow(focusedView.windowToken, 0)
-                focusedView.clearFocus()
-                return
-            }
+            val token = focusedView?.windowToken ?: window.decorView.windowToken
+            val keyboard = getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
+                as? android.view.inputmethod.InputMethodManager
+            if (token != null) keyboard?.hideSoftInputFromWindow(token, 0)
+            focusedView?.clearFocus()
+            // Consume this Back even if currentFocus was temporarily null. The
+            // text/detail panel must remain open until the next Back press.
+            return
         }
         val panel = activeEditorPanel
         if (panel != null) {
